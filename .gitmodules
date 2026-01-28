@@ -1,0 +1,3 @@
+[submodule "external/icepi-zero"]
+	path = external/icepi-zero
+	url = https://github.com/cheyao/icepi-zero.git

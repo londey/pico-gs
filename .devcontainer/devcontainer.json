@@ -1,0 +1,61 @@
+{
+    "name": "pico-gs FPGA Development",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "..",
+        "args": {
+            "OSS_CAD_SUITE_VERSION": "20260127",
+            "OSS_CAD_SUITE_DATE": "2026-01-27"
+        }
+    },
+    "remoteUser": "vscode",
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {}
+    },
+    "runArgs": [
+        "--privileged"
+    ],
+    "mounts": [
+        "source=pico-gs-cargo-cache,target=/opt/cargo/registry,type=volume"
+    ],
+    "containerEnv": {
+        "OSS_CAD_SUITE_PATH": "/opt/oss-cad-suite",
+        "GIT_EDITOR": "code --wait",
+        "SPECIFY_AI": "claude"
+    },
+    "remoteEnv": {
+        "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
+    },
+    "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "mshr-h.VerilogHDL",
+                "eirikpre.systemverilog",
+                "eamodio.gitlens",
+                "ms-vscode.makefile-tools",
+                "EditorConfig.EditorConfig",
+                "Anthropic.claude-code",
+                "streetsidesoftware.code-spell-checker"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash",
+                        "args": [
+                            "-l"
+                        ]
+                    }
+                },
+                "verilog.linting.linter": "verilator",
+                "files.associations": {
+                    "*.v": "verilog",
+                    "*.sv": "systemverilog",
+                    "*.lpf": "text"
+                }
+            }
+        }
+    },
+    "workspaceFolder": "/workspaces/pico-gs"
+}
