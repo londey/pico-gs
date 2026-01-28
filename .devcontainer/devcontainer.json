@@ -35,7 +35,8 @@
                 "eamodio.gitlens",
                 "ms-vscode.makefile-tools",
                 "EditorConfig.EditorConfig",
-                "Anthropic.claude-code"
+                "Anthropic.claude-code",
+                "streetsidesoftware.code-spell-checker"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
