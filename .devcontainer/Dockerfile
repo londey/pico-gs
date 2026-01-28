@@ -28,10 +28,6 @@ RUN apt-get update && apt-get install -y \
     locales \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv package manager (required for spec-kit)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:${PATH}"
-
 # Set up locale
 RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
@@ -48,6 +44,11 @@ ENV RUSTUP_HOME=/opt/rustup
 ENV CARGO_HOME=/opt/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
+# Install uv package manager (required for spec-kit)
+# Install to /opt/cargo/bin so it's available to all users
+ENV UV_INSTALL_DIR=/opt/cargo/bin
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install sysdoc from git
 RUN cargo install --git https://github.com/sysdoc-rs/sysdoc.git
@@ -72,16 +73,16 @@ ARG USER_UID=1000
 ARG USER_GID=${USER_UID}
 
 RUN if getent group ${USER_GID} > /dev/null 2>&1; then \
-        existing_group=$(getent group ${USER_GID} | cut -d: -f1); \
-        groupmod -n ${USERNAME} ${existing_group}; \
+    existing_group=$(getent group ${USER_GID} | cut -d: -f1); \
+    groupmod -n ${USERNAME} ${existing_group}; \
     else \
-        groupadd --gid ${USER_GID} ${USERNAME}; \
+    groupadd --gid ${USER_GID} ${USERNAME}; \
     fi \
     && if getent passwd ${USER_UID} > /dev/null 2>&1; then \
-        existing_user=$(getent passwd ${USER_UID} | cut -d: -f1); \
-        usermod -l ${USERNAME} -d /home/${USERNAME} -m ${existing_user}; \
+    existing_user=$(getent passwd ${USER_UID} | cut -d: -f1); \
+    usermod -l ${USERNAME} -d /home/${USERNAME} -m ${existing_user}; \
     else \
-        useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME}; \
+    useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME}; \
     fi \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/${USERNAME} \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
@@ -99,8 +100,10 @@ RUN echo '# OSS CAD Suite environment' >> /home/${USERNAME}/.bashrc \
     && echo 'source ${OSS_CAD_SUITE_PATH}/environment' >> /home/${USERNAME}/.bashrc
 
 # Add Rust/Cargo to path in bashrc
+# Use user-specific CARGO_HOME so vscode user can download crates and install tools
 RUN echo '# Rust environment' >> /home/${USERNAME}/.bashrc \
-    && echo 'export PATH="/opt/cargo/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
+    && echo 'export CARGO_HOME="${HOME}/.cargo"' >> /home/${USERNAME}/.bashrc \
+    && echo 'export PATH="/opt/cargo/bin:${HOME}/.cargo/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
 
 # Add uv to path in bashrc
 RUN echo '# uv package manager' >> /home/${USERNAME}/.bashrc \
@@ -108,7 +111,7 @@ RUN echo '# uv package manager' >> /home/${USERNAME}/.bashrc \
 
 # Install spec-kit as vscode user
 USER ${USERNAME}
-RUN /root/.cargo/bin/uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+RUN uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 
 # Switch back to root for final setup
 USER root
