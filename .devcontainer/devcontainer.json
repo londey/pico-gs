@@ -20,7 +20,8 @@
     ],
     "containerEnv": {
         "OSS_CAD_SUITE_PATH": "/opt/oss-cad-suite",
-        "GIT_EDITOR": "code --wait"
+        "GIT_EDITOR": "code --wait",
+        "SPECIFY_AI": "claude"
     },
     "remoteEnv": {
         "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"

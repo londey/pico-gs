@@ -28,6 +28,10 @@ RUN apt-get update && apt-get install -y \
     locales \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv package manager (required for spec-kit)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:${PATH}"
+
 # Set up locale
 RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
@@ -98,5 +102,17 @@ RUN echo '# OSS CAD Suite environment' >> /home/${USERNAME}/.bashrc \
 RUN echo '# Rust environment' >> /home/${USERNAME}/.bashrc \
     && echo 'export PATH="/opt/cargo/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
 
+# Add uv to path in bashrc
+RUN echo '# uv package manager' >> /home/${USERNAME}/.bashrc \
+    && echo 'export PATH="/home/${USERNAME}/.local/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
+
+# Install spec-kit as vscode user
+USER ${USERNAME}
+RUN /root/.cargo/bin/uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
+# Switch back to root for final setup
+USER root
+
+# Final user switch for workdir
 USER ${USERNAME}
 WORKDIR /workspaces
