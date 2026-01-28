@@ -34,7 +34,8 @@
                 "eirikpre.systemverilog",
                 "eamodio.gitlens",
                 "ms-vscode.makefile-tools",
-                "EditorConfig.EditorConfig"
+                "EditorConfig.EditorConfig",
+                "Anthropic.claude-code"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
