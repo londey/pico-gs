@@ -3,10 +3,6 @@ set -e
 
 echo "=== pico-gs Devcontainer Post-Create Setup ==="
 
-# Ensure git submodules are initialized
-echo "Initializing git submodules..."
-git submodule update --init --recursive
-
 # Source oss-cad-suite environment
 echo "Setting up OSS CAD Suite environment..."
 source /opt/oss-cad-suite/environment
