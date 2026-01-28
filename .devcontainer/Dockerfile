@@ -62,13 +62,23 @@ RUN mkdir -p /opt \
     && tar -xzf oss-cad-suite-linux-x64-${OSS_CAD_SUITE_VERSION}.tgz \
     && rm oss-cad-suite-linux-x64-${OSS_CAD_SUITE_VERSION}.tgz
 
-# Create non-root user for development
+# Create non-root user for development (handle existing UID/GID 1000)
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=${USER_UID}
 
-RUN groupadd --gid ${USER_GID} ${USERNAME} \
-    && useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME} \
+RUN if getent group ${USER_GID} > /dev/null 2>&1; then \
+        existing_group=$(getent group ${USER_GID} | cut -d: -f1); \
+        groupmod -n ${USERNAME} ${existing_group}; \
+    else \
+        groupadd --gid ${USER_GID} ${USERNAME}; \
+    fi \
+    && if getent passwd ${USER_UID} > /dev/null 2>&1; then \
+        existing_user=$(getent passwd ${USER_UID} | cut -d: -f1); \
+        usermod -l ${USERNAME} -d /home/${USERNAME} -m ${existing_user}; \
+    else \
+        useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME}; \
+    fi \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/${USERNAME} \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 

@@ -8,32 +8,27 @@
             "OSS_CAD_SUITE_DATE": "2026-01-27"
         }
     },
-
     "remoteUser": "vscode",
-
     "features": {
         "ghcr.io/devcontainers/features/git:1": {}
     },
-
     "runArgs": [
         "--privileged"
     ],
-
+    "initializeCommand": "node -e \"const fs=require('fs'),path=require('path'),home=process.env.HOME||process.env.USERPROFILE;fs.mkdirSync(path.join(home,'.claude'),{recursive:true});fs.existsSync(path.join(home,'.gitconfig'))||fs.writeFileSync(path.join(home,'.gitconfig'),'')\"",
     "mounts": [
         "source=pico-gs-cargo-cache,target=/opt/cargo/registry,type=volume",
-        "source=pico-gs-claude-config,target=/home/vscode/.claude,type=volume"
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
     ],
-
     "containerEnv": {
-        "OSS_CAD_SUITE_PATH": "/opt/oss-cad-suite"
+        "OSS_CAD_SUITE_PATH": "/opt/oss-cad-suite",
+        "GIT_EDITOR": "code --wait"
     },
-
     "remoteEnv": {
         "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
     },
-
     "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
-
     "customizations": {
         "vscode": {
             "extensions": [
@@ -48,7 +43,9 @@
                 "terminal.integrated.profiles.linux": {
                     "bash": {
                         "path": "/bin/bash",
-                        "args": ["-l"]
+                        "args": [
+                            "-l"
+                        ]
                     }
                 },
                 "verilog.linting.linter": "verilator",
@@ -60,8 +57,5 @@
             }
         }
     },
-
-    "workspaceFolder": "/workspaces/pico-gs",
-
-    "initializeCommand": "git submodule update --init --recursive"
+    "workspaceFolder": "/workspaces/pico-gs"
 }
