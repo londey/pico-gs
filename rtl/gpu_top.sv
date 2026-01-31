@@ -120,6 +120,7 @@ module gpu_top (
     wire [2:0][15:0] tri_y;
     wire [2:0][24:0] tri_z;
     wire [2:0][31:0] tri_color;
+    wire [15:0]      tri_inv_area;
 
     // Triangle mode signals
     wire mode_gouraud;
@@ -198,6 +199,7 @@ module gpu_top (
         .tri_y(tri_y),
         .tri_z(tri_z),
         .tri_color(tri_color),
+        .tri_inv_area(tri_inv_area),
         .mode_gouraud(mode_gouraud),
         .mode_textured(mode_textured),
         .mode_z_test(mode_z_test),
@@ -217,46 +219,275 @@ module gpu_top (
 
     // Temporary status assignments (will be connected to actual modules later)
     assign gpu_busy = 1'b0;    // No rendering pipeline yet
-    assign vblank = 1'b0;      // No display controller yet
+    // vblank is assigned from display timing generator (see display section)
 
     // ========================================================================
-    // Memory Subsystem (Phase 3 - To Be Implemented)
+    // Memory Subsystem (Phase 3 - Implemented)
     // ========================================================================
 
-    // TODO: Instantiate sram_controller module
-    // TODO: Instantiate sram_arbiter module
+    // Arbiter port signals
+    wire        arb_port0_req;
+    wire        arb_port0_we;
+    wire [23:0] arb_port0_addr;
+    wire [31:0] arb_port0_wdata;
+    wire [31:0] arb_port0_rdata;
+    wire        arb_port0_ack;
+    wire        arb_port0_ready;
 
-    // Temporary assignments to prevent synthesis warnings
-    assign sram_addr = 24'b0;
-    assign sram_data = 16'bz;  // High-Z when not driving
-    assign sram_we_n = 1'b1;   // Write disabled
-    assign sram_oe_n = 1'b1;   // Output disabled
-    assign sram_ce_n = 1'b1;   // Chip disabled
+    wire        arb_port1_req;
+    wire        arb_port1_we;
+    wire [23:0] arb_port1_addr;
+    wire [31:0] arb_port1_wdata;
+    wire [31:0] arb_port1_rdata;
+    wire        arb_port1_ack;
+    wire        arb_port1_ready;
+
+    wire        arb_port2_req;
+    wire        arb_port2_we;
+    wire [23:0] arb_port2_addr;
+    wire [31:0] arb_port2_wdata;
+    wire [31:0] arb_port2_rdata;
+    wire        arb_port2_ack;
+    wire        arb_port2_ready;
+
+    wire        arb_port3_req;
+    wire        arb_port3_we;
+    wire [23:0] arb_port3_addr;
+    wire [31:0] arb_port3_wdata;
+    wire [31:0] arb_port3_rdata;
+    wire        arb_port3_ack;
+    wire        arb_port3_ready;
+
+    // SRAM controller signals
+    wire        sram_ctrl_req;
+    wire        sram_ctrl_we;
+    wire [23:0] sram_ctrl_addr;
+    wire [31:0] sram_ctrl_wdata;
+    wire [31:0] sram_ctrl_rdata;
+    wire        sram_ctrl_ack;
+    wire        sram_ctrl_ready;
+
+    // SRAM Arbiter instantiation
+    sram_arbiter u_sram_arbiter (
+        .clk(clk_100),
+        .rst_n(rst_n_100),
+
+        // Port 0: Display Read (will be connected in Phase 4)
+        .port0_req(arb_port0_req),
+        .port0_we(arb_port0_we),
+        .port0_addr(arb_port0_addr),
+        .port0_wdata(arb_port0_wdata),
+        .port0_rdata(arb_port0_rdata),
+        .port0_ack(arb_port0_ack),
+        .port0_ready(arb_port0_ready),
+
+        // Port 1: Framebuffer Write (will be connected in Phase 5/6)
+        .port1_req(arb_port1_req),
+        .port1_we(arb_port1_we),
+        .port1_addr(arb_port1_addr),
+        .port1_wdata(arb_port1_wdata),
+        .port1_rdata(arb_port1_rdata),
+        .port1_ack(arb_port1_ack),
+        .port1_ready(arb_port1_ready),
+
+        // Port 2: Z-Buffer Read/Write (will be connected in Phase 7)
+        .port2_req(arb_port2_req),
+        .port2_we(arb_port2_we),
+        .port2_addr(arb_port2_addr),
+        .port2_wdata(arb_port2_wdata),
+        .port2_rdata(arb_port2_rdata),
+        .port2_ack(arb_port2_ack),
+        .port2_ready(arb_port2_ready),
+
+        // Port 3: Texture Read (deferred to future phase)
+        .port3_req(arb_port3_req),
+        .port3_we(arb_port3_we),
+        .port3_addr(arb_port3_addr),
+        .port3_wdata(arb_port3_wdata),
+        .port3_rdata(arb_port3_rdata),
+        .port3_ack(arb_port3_ack),
+        .port3_ready(arb_port3_ready),
+
+        // To SRAM controller
+        .sram_req(sram_ctrl_req),
+        .sram_we(sram_ctrl_we),
+        .sram_addr(sram_ctrl_addr),
+        .sram_wdata(sram_ctrl_wdata),
+        .sram_rdata(sram_ctrl_rdata),
+        .sram_ack(sram_ctrl_ack),
+        .sram_ready(sram_ctrl_ready)
+    );
+
+    // SRAM Controller instantiation
+    sram_controller u_sram_controller (
+        .clk(clk_100),
+        .rst_n(rst_n_100),
+
+        // From arbiter
+        .req(sram_ctrl_req),
+        .we(sram_ctrl_we),
+        .addr(sram_ctrl_addr),
+        .wdata(sram_ctrl_wdata),
+        .rdata(sram_ctrl_rdata),
+        .ack(sram_ctrl_ack),
+        .ready(sram_ctrl_ready),
+
+        // To external SRAM
+        .sram_addr(sram_addr),
+        .sram_data(sram_data),
+        .sram_we_n(sram_we_n),
+        .sram_oe_n(sram_oe_n),
+        .sram_ce_n(sram_ce_n)
+    );
+
+    // Temporary port assignments
+    // Port 0: Display controller (connected)
+    // Port 1: Rasterizer framebuffer (connected)
+    // Port 2: Rasterizer Z-buffer (connected)
+    // Port 3: Texture (not used yet)
+
+    assign arb_port3_req = 1'b0;
+    assign arb_port3_we = 1'b0;
+    assign arb_port3_addr = 24'b0;
+    assign arb_port3_wdata = 32'b0;
 
     // ========================================================================
-    // Display Pipeline (Phase 4 - To Be Implemented)
+    // Display Pipeline (Phase 4 - Implemented)
     // ========================================================================
 
-    // TODO: Instantiate timing_generator module
-    // TODO: Instantiate scanline_fifo module
-    // TODO: Instantiate display_controller module
-    // TODO: Instantiate dvi_encoder module
+    // Timing generator signals
+    wire        disp_hsync;
+    wire        disp_vsync;
+    wire        disp_enable;
+    wire [9:0]  disp_pixel_x;
+    wire [9:0]  disp_pixel_y;
+    wire        disp_frame_start;
 
-    // Temporary assignments to prevent synthesis warnings
-    assign tmds_data_p = 3'b0;
-    assign tmds_data_n = 3'b0;
-    assign tmds_clk_p = 1'b0;
-    assign tmds_clk_n = 1'b0;
-    assign gpio_vsync = 1'b0;
+    // Display controller signals
+    wire [7:0]  disp_pixel_red;
+    wire [7:0]  disp_pixel_green;
+    wire [7:0]  disp_pixel_blue;
+    wire        disp_vsync_out;
+
+    // Timing Generator instantiation
+    timing_generator u_timing_gen (
+        .clk_pixel(clk_pixel),
+        .rst_n(rst_n_pixel),
+        .hsync(disp_hsync),
+        .vsync(disp_vsync),
+        .display_enable(disp_enable),
+        .pixel_x(disp_pixel_x),
+        .pixel_y(disp_pixel_y),
+        .frame_start(disp_frame_start)
+    );
+
+    // Display Controller instantiation
+    display_controller u_display_ctrl (
+        .clk_sram(clk_100),
+        .rst_n_sram(rst_n_100),
+        .clk_pixel(clk_pixel),
+        .rst_n_pixel(rst_n_pixel),
+        .display_enable(disp_enable),
+        .pixel_x(disp_pixel_x),
+        .pixel_y(disp_pixel_y),
+        .frame_start(disp_frame_start),
+        .fb_display_base(fb_display),
+        .sram_req(arb_port0_req),
+        .sram_we(arb_port0_we),
+        .sram_addr(arb_port0_addr),
+        .sram_wdata(arb_port0_wdata),
+        .sram_rdata(arb_port0_rdata),
+        .sram_ack(arb_port0_ack),
+        .sram_ready(arb_port0_ready),
+        .pixel_red(disp_pixel_red),
+        .pixel_green(disp_pixel_green),
+        .pixel_blue(disp_pixel_blue),
+        .vsync_out(disp_vsync_out)
+    );
+
+    // DVI Output instantiation
+    dvi_output u_dvi_out (
+        .clk_pixel(clk_pixel),
+        .clk_tmds(clk_tmds),
+        .rst_n(rst_n_pixel),
+        .red(disp_pixel_red),
+        .green(disp_pixel_green),
+        .blue(disp_pixel_blue),
+        .hsync(disp_hsync),
+        .vsync(disp_vsync),
+        .display_enable(disp_enable),
+        .tmds_red_p(tmds_data_p[2]),
+        .tmds_red_n(tmds_data_n[2]),
+        .tmds_green_p(tmds_data_p[1]),
+        .tmds_green_n(tmds_data_n[1]),
+        .tmds_blue_p(tmds_data_p[0]),
+        .tmds_blue_n(tmds_data_n[0]),
+        .tmds_clk_p(tmds_clk_p),
+        .tmds_clk_n(tmds_clk_n)
+    );
+
+    // GPIO VSYNC output
+    assign gpio_vsync = disp_vsync_out;
+
+    // Update vblank status signal
+    assign vblank = disp_vsync;
 
     // ========================================================================
-    // Rendering Pipeline (Phases 5-7 - To Be Implemented)
+    // Rendering Pipeline (Phase 6 - Rasterizer)
     // ========================================================================
 
-    // TODO: Instantiate clear_engine module
-    // TODO: Instantiate triangle_setup module
-    // TODO: Instantiate rasterizer module
-    // TODO: Instantiate interpolator module
-    // TODO: Instantiate z_buffer module
+    wire rast_ready;
+
+    rasterizer u_rasterizer (
+        .clk(clk_100),
+        .rst_n(rst_n_100),
+
+        // Triangle input from register file
+        .tri_valid(tri_valid),
+        .tri_ready(rast_ready),
+
+        // Vertex 0
+        .v0_x(tri_x[0]),
+        .v0_y(tri_y[0]),
+        .v0_z(tri_z[0][15:0]),      // Use lower 16 bits of Z
+        .v0_color(tri_color[0][23:0]),  // RGB only
+
+        // Vertex 1
+        .v1_x(tri_x[1]),
+        .v1_y(tri_y[1]),
+        .v1_z(tri_z[1][15:0]),
+        .v1_color(tri_color[1][23:0]),
+
+        // Vertex 2
+        .v2_x(tri_x[2]),
+        .v2_y(tri_y[2]),
+        .v2_z(tri_z[2][15:0]),
+        .v2_color(tri_color[2][23:0]),
+
+        // Barycentric interpolation
+        .inv_area(tri_inv_area),
+
+        // Framebuffer write (SRAM arbiter port 1)
+        .fb_req(arb_port1_req),
+        .fb_we(arb_port1_we),
+        .fb_addr(arb_port1_addr),
+        .fb_wdata(arb_port1_wdata),
+        .fb_rdata(arb_port1_rdata),
+        .fb_ack(arb_port1_ack),
+        .fb_ready(arb_port1_ready),
+
+        // Z-buffer (SRAM arbiter port 2)
+        .zb_req(arb_port2_req),
+        .zb_we(arb_port2_we),
+        .zb_addr(arb_port2_addr),
+        .zb_wdata(arb_port2_wdata),
+        .zb_rdata(arb_port2_rdata),
+        .zb_ack(arb_port2_ack),
+        .zb_ready(arb_port2_ready),
+
+        // Configuration
+        .fb_base_addr(fb_draw[31:12]),  // Draw framebuffer base
+        .zb_base_addr(20'h20000)        // Z-buffer at fixed address for now
+    );
 
 endmodule

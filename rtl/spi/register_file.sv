@@ -19,6 +19,7 @@ module register_file (
     output reg  [2:0][15:0] tri_y,      // Y coordinates (12.4 fixed)
     output reg  [2:0][24:0] tri_z,      // Z coordinates (depth)
     output reg  [2:0][31:0] tri_color,  // RGBA8888 colors
+    output reg  [15:0]      tri_inv_area, // 1/area (0.16 fixed) from CPU
 
     // Triangle mode flags
     output reg          mode_gouraud,   // Gouraud shading enabled
@@ -47,6 +48,7 @@ module register_file (
     localparam ADDR_COLOR       = 7'h00;  // Vertex color (RGBA8888)
     localparam ADDR_UV          = 7'h01;  // UV coordinates (deferred)
     localparam ADDR_VERTEX      = 7'h02;  // Vertex position (triggers on 3rd write)
+    localparam ADDR_INV_AREA    = 7'h03;  // 1/area (16.16 fixed) for barycentric
     localparam ADDR_TRI_MODE    = 7'h04;  // Triangle mode flags
     localparam ADDR_TEX_BASE    = 7'h05;  // Texture base address (deferred)
     localparam ADDR_TEX_FMT     = 7'h06;  // Texture format (deferred)
@@ -71,6 +73,7 @@ module register_file (
     reg [24:0] vertex_z [0:2];      // Latched Z values
 
     reg [31:0] current_color;       // Current color (latched on next VERTEX write)
+    reg [15:0] current_inv_area;    // 1/area (0.16 fixed) for barycentric
 
     // ========================================================================
     // Writable Registers
@@ -94,6 +97,7 @@ module register_file (
         if (!rst_n) begin
             // Reset all registers
             current_color <= 32'hFFFFFFFF;  // White
+            current_inv_area <= 16'hFFFF;   // Default to ~1.0 (0.16 fixed)
             tri_mode <= 8'b0000;            // All modes disabled
             fb_draw <= 20'h00000;           // Framebuffer A (address 0x000000)
             fb_display <= 20'h00000;
@@ -112,6 +116,10 @@ module register_file (
                 case (cmd_addr)
                     ADDR_COLOR: begin
                         current_color <= cmd_wdata[31:0];
+                    end
+
+                    ADDR_INV_AREA: begin
+                        current_inv_area <= cmd_wdata[15:0];
                     end
 
                     ADDR_VERTEX: begin
@@ -148,6 +156,8 @@ module register_file (
                             tri_color[0] <= vertex_colors[0];
                             tri_color[1] <= vertex_colors[1];
                             tri_color[2] <= current_color;
+
+                            tri_inv_area <= current_inv_area;
 
                         end else begin
                             vertex_count <= vertex_count + 1'b1;

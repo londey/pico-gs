@@ -19,7 +19,14 @@ RTL_SOURCES = \
 	$(RTL_DIR)/core/reset_sync.sv \
 	$(RTL_DIR)/spi/spi_slave.sv \
 	$(RTL_DIR)/spi/register_file.sv \
-	$(RTL_DIR)/utils/async_fifo.sv
+	$(RTL_DIR)/utils/async_fifo.sv \
+	$(RTL_DIR)/memory/sram_controller.sv \
+	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/display/timing_generator.sv \
+	$(RTL_DIR)/display/tmds_encoder.sv \
+	$(RTL_DIR)/display/dvi_output.sv \
+	$(RTL_DIR)/display/display_controller.sv \
+	$(RTL_DIR)/render/rasterizer.sv
 
 # Constraint files
 LPF_FILE = $(CONSTRAINTS_DIR)/icepi_zero.lpf
@@ -50,7 +57,7 @@ $(BUILD_DIR):
 
 # Synthesis with Yosys
 synth: $(BUILD_DIR)
-	$(YOSYS) $(YOSYS_FLAGS) -p "read_verilog -sv $(RTL_SOURCES); synth_ecp5 -top $(TOP_MODULE) -json $(BUILD_DIR)/$(PROJECT).json"
+	$(YOSYS) $(YOSYS_FLAGS) -p "read_verilog -sv $(RTL_SOURCES); synth_ecp5 -nowidelut -top $(TOP_MODULE) -json $(BUILD_DIR)/$(PROJECT).json"
 
 # Place and route with nextpnr
 pnr: synth
