@@ -1,3 +1,9 @@
 [submodule "external/icepi-zero"]
 	path = external/icepi-zero
 	url = https://github.com/cheyao/icepi-zero.git
+[submodule ".claude/skills/claude-skill-rust"]
+	path = .claude/skills/claude-skill-rust
+	url = git@github.com:londey/claude-skill-rust.git
+[submodule ".claude/skills/claude-skill-verilog"]
+	path = .claude/skills/claude-skill-verilog
+	url = git@github.com:londey/claude-skill-verilog.git
