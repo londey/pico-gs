@@ -1,0 +1,56 @@
+[package]
+name = "pico-gs-host"
+version = "0.1.0"
+edition = "2021"
+description = "RP2350 host firmware for ICEpi SPI GPU"
+
+[dependencies]
+# RP2350 HAL
+rp235x-hal = { version = "0.3.0", features = [
+    "binary-info",
+    "critical-section-impl",
+    "rt",
+    "defmt",
+] }
+
+# Cortex-M runtime
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+
+# Embedded HAL traits
+embedded-hal = "1.0.0"
+
+# Lock-free queue for inter-core communication
+heapless = "0.9.2"
+
+# Matrix/vector math (no_std with software trig)
+glam = { version = "0.30", default-features = false, features = ["libm"] }
+
+# Software math for no_std (sin, cos, sqrt)
+libm = "0.2"
+
+# Fixed-point arithmetic for GPU register packing
+fixed = "1.30.0"
+
+# Logging
+defmt = "1.0.1"
+defmt-rtt = "1.1.0"
+
+# Panic handler
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+
+# Timing
+fugit = "0.3.7"
+
+[features]
+default = []
+usb-host = [] # Enable TinyUSB USB host for keyboard input (requires C sources)
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = "s"
+
+[profile.dev]
+debug = 2
+opt-level = 1
