@@ -39,11 +39,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust via rustup (required for sysdoc)
+# Install Rust via rustup (required for sysdoc + RP2350 firmware)
 ENV RUSTUP_HOME=/opt/rustup
 ENV CARGO_HOME=/opt/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
+
+# Add RP2350 (Cortex-M33) cross-compilation target for firmware builds
+RUN rustup target add thumbv8m.main-none-eabihf
 
 # Install uv package manager (required for spec-kit)
 # Install to /opt/cargo/bin so it's available to all users
