@@ -13,14 +13,47 @@ Auto-generated from all feature plans. Last updated: 2026-01-31
 ## Project Structure
 
 ```text
-backend/
-frontend/
-tests/
+pico-gs/
+├── spi_gpu/              # FPGA RTL component (SystemVerilog)
+│   ├── src/              # RTL sources (gpu_top.sv, core/, spi/, memory/, render/, display/, utils/)
+│   ├── tests/            # Testbenches (parallel structure)
+│   ├── constraints/      # FPGA constraints
+│   └── Makefile          # FPGA build system
+├── host_app/             # RP2350 firmware component (Rust)
+│   ├── src/              # Firmware sources
+│   ├── tests/            # Firmware tests
+│   └── Cargo.toml        # Workspace member
+├── asset_build_tool/     # Asset preparation tool (Rust)
+│   ├── src/              # Tool sources
+│   └── Cargo.toml        # Workspace member
+├── assets/               # Asset management
+│   ├── source/           # Source assets (.obj, .png - committed)
+│   └── compiled/         # Generated assets (.rs, .bin - gitignored)
+├── specs/                # Feature specifications
+├── build.sh              # Unified build script
+└── Cargo.toml            # Workspace root
 ```
 
 ## Commands
 
-# Add commands for 
+# Build entire project
+./build.sh
+
+# Build specific component
+./build.sh --fpga-only
+./build.sh --firmware-only
+./build.sh --assets-only
+
+# Build in release mode
+./build.sh --release
+
+# FPGA-specific builds
+cd spi_gpu && make bitstream
+cd spi_gpu && make synth
+
+# Firmware-specific builds
+cargo build -p pico-gs-host
+cargo test -p pico-gs-host 
 
 ## Code Style
 

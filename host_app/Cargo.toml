@@ -1,7 +1,7 @@
 [package]
 name = "pico-gs-host"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "RP2350 host firmware for ICEpi SPI GPU"
 
 [dependencies]
@@ -45,12 +45,3 @@ fugit = "0.3.7"
 [features]
 default = []
 usb-host = [] # Enable TinyUSB USB host for keyboard input (requires C sources)
-
-[profile.release]
-debug = 2
-lto = true
-opt-level = "s"
-
-[profile.dev]
-debug = 2
-opt-level = 1

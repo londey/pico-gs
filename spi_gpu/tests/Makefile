@@ -1,7 +1,7 @@
 # Verilator Testbenches for ICEpi GPU
 
 # Directories
-RTL_DIR = ../../rtl
+RTL_DIR = ../src
 BUILD_DIR = sim_build
 
 # Verilator settings
@@ -19,10 +19,10 @@ test_timing: obj_dir/Vtb_timing_generator
 	@./obj_dir/Vtb_timing_generator
 
 # Build timing generator testbench
-obj_dir/Vtb_timing_generator: tb_timing_generator.sv $(RTL_DIR)/display/timing_generator.sv
+obj_dir/Vtb_timing_generator: display/tb_timing_generator.sv $(RTL_DIR)/display/timing_generator.sv
 	$(VERILATOR) $(VERILATOR_FLAGS) -o Vtb_timing_generator \
 		-I$(RTL_DIR)/display \
-		tb_timing_generator.sv \
+		display/tb_timing_generator.sv \
 		$(RTL_DIR)/display/timing_generator.sv
 
 # Test rasterizer
@@ -31,11 +31,11 @@ test_rasterizer: obj_dir/Vtb_rasterizer
 	@./obj_dir/Vtb_rasterizer
 
 # Build rasterizer testbench
-obj_dir/Vtb_rasterizer: tb_rasterizer.sv $(RTL_DIR)/render/rasterizer.sv
+obj_dir/Vtb_rasterizer: render/tb_rasterizer.sv $(RTL_DIR)/render/rasterizer.sv
 	$(VERILATOR) --binary --trace --top-module tb_rasterizer -Wno-fatal \
 		-o Vtb_rasterizer \
 		-I$(RTL_DIR)/render \
-		tb_rasterizer.sv \
+		render/tb_rasterizer.sv \
 		$(RTL_DIR)/render/rasterizer.sv
 
 # Clean build artifacts

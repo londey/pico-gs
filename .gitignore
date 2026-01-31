@@ -8,6 +8,7 @@ target/
 
 # FPGA/RTL Build Artifacts
 build/
+spi_gpu/build/
 obj_dir/
 *.vcd
 *.fst
@@ -24,6 +25,11 @@ obj_dir/**/*.json
 build/**/*.bin
 target/**/*.bin
 obj_dir/**/*.bin
+
+# Generated assets (regenerated on build)
+assets/compiled/
+host_app/src/assets/*.rs
+!host_app/src/assets/mod.rs
 
 # IDE
 .idea/

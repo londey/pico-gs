@@ -7,8 +7,8 @@ DEVICE = 25k
 PACKAGE = CABGA381
 
 # Directories
-RTL_DIR = rtl
-TB_DIR = tb
+RTL_DIR = src
+TB_DIR = tests
 CONSTRAINTS_DIR = constraints
 BUILD_DIR = build
 
@@ -73,8 +73,8 @@ program: bitstream
 
 # Verilator simulation (placeholder for cocotb)
 sim:
-	@echo "Simulation target - use cocotb testbenches in $(TB_DIR)/"
-	@echo "Run: cd $(TB_DIR)/unit && pytest test_*.py"
+	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
+	@echo "Run: cd $(TB_DIR) && make all"
 
 # Clean build artifacts
 clean:
