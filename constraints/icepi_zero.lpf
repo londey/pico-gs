@@ -1,0 +1,119 @@
+# ICEpi Zero Pin Constraints for ECP5-25K CABGA381
+# SPI GPU v2.0 - Pin assignments for SPI, GPIO, SRAM, and DVI interfaces
+
+# ==============================================================================
+# Clock Inputs
+# ==============================================================================
+LOCATE COMP "clk_50" SITE "P3";
+IOBUF PORT "clk_50" IO_TYPE=LVCMOS33;
+FREQUENCY PORT "clk_50" 50 MHZ;
+
+# ==============================================================================
+# SPI Interface (from RP2350)
+# ==============================================================================
+LOCATE COMP "spi_sck" SITE "B19";
+LOCATE COMP "spi_mosi" SITE "A18";
+LOCATE COMP "spi_miso" SITE "B18";
+LOCATE COMP "spi_cs_n" SITE "A19";
+
+IOBUF PORT "spi_sck" IO_TYPE=LVCMOS33;
+IOBUF PORT "spi_mosi" IO_TYPE=LVCMOS33;
+IOBUF PORT "spi_miso" IO_TYPE=LVCMOS33;
+IOBUF PORT "spi_cs_n" IO_TYPE=LVCMOS33;
+
+# ==============================================================================
+# GPIO Status Outputs (to RP2350)
+# ==============================================================================
+LOCATE COMP "gpio_cmd_full" SITE "C19";
+LOCATE COMP "gpio_cmd_empty" SITE "D19";
+LOCATE COMP "gpio_vsync" SITE "E19";
+
+IOBUF PORT "gpio_cmd_full" IO_TYPE=LVCMOS33;
+IOBUF PORT "gpio_cmd_empty" IO_TYPE=LVCMOS33;
+IOBUF PORT "gpio_vsync" IO_TYPE=LVCMOS33;
+
+# ==============================================================================
+# SRAM Interface (32MB, 16-bit async)
+# ==============================================================================
+# Address bus [23:0]
+LOCATE COMP "sram_addr[0]" SITE "D14";
+LOCATE COMP "sram_addr[1]" SITE "C14";
+LOCATE COMP "sram_addr[2]" SITE "B14";
+LOCATE COMP "sram_addr[3]" SITE "A14";
+LOCATE COMP "sram_addr[4]" SITE "D13";
+LOCATE COMP "sram_addr[5]" SITE "C13";
+LOCATE COMP "sram_addr[6]" SITE "B13";
+LOCATE COMP "sram_addr[7]" SITE "A13";
+LOCATE COMP "sram_addr[8]" SITE "D12";
+LOCATE COMP "sram_addr[9]" SITE "C12";
+LOCATE COMP "sram_addr[10]" SITE "B12";
+LOCATE COMP "sram_addr[11]" SITE "A12";
+LOCATE COMP "sram_addr[12]" SITE "D11";
+LOCATE COMP "sram_addr[13]" SITE "C11";
+LOCATE COMP "sram_addr[14]" SITE "B11";
+LOCATE COMP "sram_addr[15]" SITE "A11";
+LOCATE COMP "sram_addr[16]" SITE "D10";
+LOCATE COMP "sram_addr[17]" SITE "C10";
+LOCATE COMP "sram_addr[18]" SITE "B10";
+LOCATE COMP "sram_addr[19]" SITE "A10";
+LOCATE COMP "sram_addr[20]" SITE "D9";
+LOCATE COMP "sram_addr[21]" SITE "C9";
+LOCATE COMP "sram_addr[22]" SITE "B9";
+LOCATE COMP "sram_addr[23]" SITE "A9";
+
+# Data bus [15:0]
+LOCATE COMP "sram_data[0]" SITE "E14";
+LOCATE COMP "sram_data[1]" SITE "F14";
+LOCATE COMP "sram_data[2]" SITE "G14";
+LOCATE COMP "sram_data[3]" SITE "H14";
+LOCATE COMP "sram_data[4]" SITE "E13";
+LOCATE COMP "sram_data[5]" SITE "F13";
+LOCATE COMP "sram_data[6]" SITE "G13";
+LOCATE COMP "sram_data[7]" SITE "H13";
+LOCATE COMP "sram_data[8]" SITE "E12";
+LOCATE COMP "sram_data[9]" SITE "F12";
+LOCATE COMP "sram_data[10]" SITE "G12";
+LOCATE COMP "sram_data[11]" SITE "H12";
+LOCATE COMP "sram_data[12]" SITE "E11";
+LOCATE COMP "sram_data[13]" SITE "F11";
+LOCATE COMP "sram_data[14]" SITE "G11";
+LOCATE COMP "sram_data[15]" SITE "H11";
+
+# Control signals
+LOCATE COMP "sram_we_n" SITE "E10";
+LOCATE COMP "sram_oe_n" SITE "F10";
+LOCATE COMP "sram_ce_n" SITE "G10";
+
+# I/O standards for SRAM
+IOBUF PORT "sram_addr[*]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sram_data[*]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sram_we_n" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sram_oe_n" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sram_ce_n" IO_TYPE=LVCMOS33 DRIVE=8;
+
+# ==============================================================================
+# DVI/HDMI Output (TMDS @ 251.75MHz)
+# ==============================================================================
+# TMDS data channels (differential on ECP5)
+LOCATE COMP "tmds_data_p[0]" SITE "A16";  # Blue
+LOCATE COMP "tmds_data_n[0]" SITE "B16";
+LOCATE COMP "tmds_data_p[1]" SITE "A15";  # Green
+LOCATE COMP "tmds_data_n[1]" SITE "B15";
+LOCATE COMP "tmds_data_p[2]" SITE "A17";  # Red
+LOCATE COMP "tmds_data_n[2]" SITE "B17";
+
+# TMDS clock channel
+LOCATE COMP "tmds_clk_p" SITE "C16";
+LOCATE COMP "tmds_clk_n" SITE "D16";
+
+# TMDS I/O standards (LVDS for high-speed SERDES)
+IOBUF PORT "tmds_data_p[*]" IO_TYPE=LVDS DIFFRESISTOR=100;
+IOBUF PORT "tmds_data_n[*]" IO_TYPE=LVDS DIFFRESISTOR=100;
+IOBUF PORT "tmds_clk_p" IO_TYPE=LVDS DIFFRESISTOR=100;
+IOBUF PORT "tmds_clk_n" IO_TYPE=LVDS DIFFRESISTOR=100;
+
+# ==============================================================================
+# Reset (active-low)
+# ==============================================================================
+LOCATE COMP "rst_n" SITE "P4";
+IOBUF PORT "rst_n" IO_TYPE=LVCMOS33;
