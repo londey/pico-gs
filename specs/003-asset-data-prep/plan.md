@@ -1,63 +1,66 @@
 # Implementation Plan: Asset Data Preparation Tool
 
-**Branch**: `003-asset-data-prep` | **Date**: 2026-01-31 | **Spec**: [spec.md](spec.md)
+**Branch**: `003-asset-data-prep` | **Date**: 2026-02-01 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/003-asset-data-prep/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
 ## Summary
 
-Build a command-line tool that converts PNG images to RGBA8888 texture data and OBJ mesh files to GPU-compatible patch format (≤16 vertices, ≤32 indices per patch), generating Rust source files with `include_bytes!()` macros and binary data files for embedding in RP2350 firmware. The tool validates input formats, automatically splits large meshes, derives unique identifiers from filenames with parent directory prefixes, and provides progress output with a `--quiet` flag for CI/CD integration.
+Build a command-line Rust tool that converts PNG textures to RGBA8888 GPU format and OBJ meshes to vertex patch data, outputting Rust const arrays with binary data files for direct inclusion in RP2350 firmware. The tool validates power-of-two texture dimensions (8×8 to 1024×1024), automatically splits meshes into patches (≤16 vertices, ≤32 indices), and generates firmware-compatible output with include_bytes!() references to binary data files.
 
 ## Technical Context
 
 **Language/Version**: Rust stable (1.75+)
-**Primary Dependencies**:
-- Image decoding: `image` crate (PNG support)
-- OBJ parsing: `tobj` or `wavefront_obj` crate
-- CLI framework: `clap` (v4.x) for argument parsing
-- Binary I/O: std::fs, std::io
-
+**Primary Dependencies**: PNG decoding library, OBJ file parser
 **Storage**: File I/O (input: .png/.obj files, output: .rs source files + .bin data files)
-**Testing**: `cargo test` with unit tests for parsing, conversion, and output generation
-**Target Platform**: Development machines (Linux, macOS, Windows) - build-time tool, not embedded
-**Project Type**: Single CLI application
-**Performance Goals**:
-- PNG conversion: <1 second for 1024×1024 textures
-- OBJ conversion: <2 seconds for ~1000 vertex meshes
-- Batch processing: <10 seconds for 10 textures + 5 meshes
-
-**Constraints**:
-- Output must be valid Rust syntax (compile without errors)
-- Binary data must be little-endian f32/u16 for RP2350 compatibility
-- Identifiers must be unique and valid Rust names
-- No GUI required (CLI only)
-
-**Scale/Scope**:
-- Typical asset set: 10-20 textures + 5-10 meshes
-- Max texture size: 1024×1024 RGBA8
-- Max mesh size: ~10k vertices (split into hundreds of patches)
-- Output size: ~4 MB total (RP2350 flash limit)
+**Testing**: cargo test
+**Target Platform**: Development machine (Linux/macOS/Windows), outputs data for RP2350 embedded target
+**Project Type**: Single project (command-line tool in workspace)
+**Performance Goals**: PNG conversion <1s, OBJ conversion <2s, full asset set (10 textures + 5 meshes) <10s
+**Constraints**: Generated data stored in flash (4 MB total budget), zero runtime RAM overhead, outputs must be no_std compatible
+**Scale/Scope**: Typical game content (10-20 textures up to 1024×1024, 5-10 meshes up to ~1000 vertices each)
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-**Applicability**: The project constitution targets the ICEpi GPU RTL development. This feature is a **host-side build tool**, not FPGA hardware, so most articles do not apply directly. However, we check for spirit-of-the-law alignment:
+**Article V: Test-First Development** ✅ PASS
+- Unit tests for PNG validation (dimensions, format conversion)
+- Unit tests for OBJ parsing (positions, UVs, normals, face triangulation)
+- Unit tests for mesh patch splitting algorithm
+- Integration tests for end-to-end conversion (PNG → binary, OBJ → patches)
+- Contract tests for generated Rust output (compiles in firmware, correct types)
 
-| Article | Applies? | Check | Status |
-|---------|----------|-------|--------|
-| I: Open Toolchain Mandate | Indirect | Tool uses Rust (open toolchain), generates data for open GPU | ✅ PASS |
-| II: Resource Budget Discipline | No | Not FPGA resource; tool runs on dev machine | N/A |
-| III: Bandwidth-First Design | No | Not FPGA hardware | N/A |
-| IV: Interface Stability Covenant | Yes | Output format is contract with firmware | ✅ PASS - Binary format specified with versioning path |
-| V: Test-First Development | Yes | CLI tool requires testing | ✅ PASS - cargo test planned |
-| VI: Incremental Delivery | Yes | Build tool should deliver value incrementally | ✅ PASS - Texture conversion (P1) → Mesh conversion (P2) → Output integration (P3) |
-| VII: Simplicity Gate | Yes | Avoid feature creep in build tools | ✅ PASS - Compressed textures, optimization deferred (see Out of Scope) |
-| VIII: Documentation as Artifact | Yes | Tool needs docs for users | ✅ PASS - quickstart.md planned |
-| IX: Host Responsibility Boundary | Yes | Tool prepares data, GPU renders it | ✅ PASS - Clear separation: tool converts, firmware transforms |
+**Article VI: Incremental Delivery** ✅ PASS
+- Milestone 1: PNG to RGBA8888 conversion (US-1, validates file I/O and format conversion)
+- Milestone 2: OBJ to mesh patches (US-2, validates geometry processing and splitting)
+- Milestone 3: Rust output generation (US-3, validates firmware integration)
+- Each milestone independently testable and valuable
 
-**Overall**: ✅ **PASS** - No constitution violations. Tool aligns with project philosophy of incremental, tested, well-documented development.
+**Article VII: Simplicity Gate** ✅ PASS
+- In scope: PNG/OBJ conversion, RGBA8888 output, patch splitting, basic validation
+- Out of scope: Compressed textures, mipmaps, LOD generation, mesh optimization, GUI, batch parallel processing
+- Core goal: Convert source assets to GPU-compatible format for firmware inclusion
+
+**Article VIII: Documentation as Artifact** ✅ PASS
+- Feature spec with requirements, user stories, success criteria
+- Implementation plan (this file) with technical context and milestones
+- Data model for entities (texture assets, mesh patches, vertex data)
+- Generated output includes comments documenting asset metadata and memory requirements
+
+**Article X: Rust Code Standards** ✅ PASS
+- Modern module organization (`<module_name>.rs` style)
+- Error handling with `Result<T, E>` and `?` operator (no unwrap/expect in production)
+- Use `thiserror` for custom error types (library crate)
+- Use `log` crate for progress output (no println! except in main CLI)
+- Rustdoc comments for all public items
+- Build verification: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `cargo build --release`, `cargo deny check`, `cargo audit`
+- Dependencies with `default-features = false` and explicit features
+
+**Not Applicable:**
+- Articles I-IV, IX: FPGA/GPU-specific (not applicable to build-time tooling)
+- Article XI: Verilog standards (not applicable to Rust code)
 
 ## Project Structure
 
@@ -65,195 +68,84 @@ Build a command-line tool that converts PNG images to RGBA8888 texture data and 
 
 ```text
 specs/003-asset-data-prep/
-├── spec.md              # Feature specification (completed via /speckit.specify)
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (library choices, format decisions)
-├── data-model.md        # Phase 1 output (asset structures, file formats)
-├── quickstart.md        # Phase 1 output (how to use the tool)
-├── contracts/           # Phase 1 output (CLI interface, output format)
-│   ├── cli-interface.md
-│   └── output-format.md
-├── checklists/
-│   └── requirements.md  # Validation checklist (from /speckit.specify)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created yet)
+├── plan.md              # This file (implementation plan)
+├── spec.md              # Feature specification
+├── research.md          # Phase 0: Technology selections and decisions
+├── data-model.md        # Phase 1: Core types and transformation pipeline
+├── quickstart.md        # Phase 1: User guide for tool usage
+├── contracts/           # Phase 1: CLI and output format specifications
+│   ├── cli-interface.md     # Command-line interface contract
+│   └── output-format.md     # Binary and Rust output format contract
+└── tasks.md             # Phase 2: Implementation tasks (existing)
 ```
 
 ### Source Code (repository root)
 
 ```text
-# CLI tool structure
-tools/asset-prep/        # New directory for the asset preparation tool
-├── Cargo.toml
-├── src/
-│   ├── main.rs          # CLI entry point, argument parsing
-│   ├── lib.rs           # Library API for testing
-│   ├── png_converter.rs # PNG → RGBA8888 conversion
-│   ├── obj_converter.rs # OBJ → mesh patch conversion
-│   ├── mesh_patcher.rs  # Mesh splitting algorithm
-│   ├── output_gen.rs    # Rust source + binary file generation
-│   ├── identifier.rs    # Filename → Rust identifier sanitization
-│   └── types.rs         # Shared types (TextureAsset, MeshPatch)
-└── tests/
-    ├── integration/
-    │   ├── png_conversion_test.rs
-    │   ├── obj_conversion_test.rs
-    │   └── end_to_end_test.rs
-    └── fixtures/
-        ├── test-texture.png
-        ├── test-cube.obj
-        └── test-teapot.obj
-
-# Integration with firmware
-firmware/                # Existing firmware directory (002-rp2350-host-software)
-├── assets/              # Generated asset files (output from tool)
-│   ├── textures/        # Generated .rs + .bin files for textures
-│   └── meshes/          # Generated .rs + .bin files for meshes
-└── src/
-    └── assets.rs        # Include point for generated assets
+pico-gs/
+├── asset_build_tool/        # Cargo workspace member (NEW for this feature)
+│   ├── Cargo.toml           # Package manifest
+│   ├── src/
+│   │   ├── main.rs          # CLI entry point (clap argument parsing)
+│   │   ├── lib.rs           # Public library interface
+│   │   ├── texture.rs       # PNG to RGBA8888 conversion
+│   │   ├── mesh.rs          # OBJ parsing and validation
+│   │   ├── patch.rs         # Mesh patch splitting algorithm
+│   │   ├── codegen.rs       # Rust wrapper and binary file generation
+│   │   ├── identifier.rs    # Filename to Rust identifier conversion
+│   │   └── error.rs         # Error types (thiserror)
+│   └── tests/
+│       ├── texture_tests.rs # Unit tests for texture conversion
+│       ├── mesh_tests.rs    # Unit tests for mesh parsing
+│       ├── patch_tests.rs   # Unit tests for patch splitting
+│       ├── integration_tests.rs # End-to-end CLI tests
+│       └── fixtures/        # Test assets
+│           ├── valid_256x256.png
+│           ├── invalid_300x200.png
+│           ├── cube.obj     # Simple 8-vertex cube
+│           └── teapot.obj   # Complex ~1000-vertex mesh
+│
+├── host_app/                # Existing firmware project
+│   └── assets/              # Generated asset files (gitignored in initial version)
+│       ├── textures/
+│       │   ├── example.rs   # Generated Rust wrapper
+│       │   └── example.bin  # Generated binary data
+│       └── meshes/
+│           ├── cube_patch0.rs
+│           ├── cube_patch0_pos.bin
+│           ├── cube_patch0_uv.bin
+│           ├── cube_patch0_norm.bin
+│           └── cube_patch0_idx.bin
+│
+├── assets/                  # Source assets (committed to git)
+│   ├── source/
+│   │   ├── textures/
+│   │   │   └── *.png        # Original PNG files
+│   │   └── meshes/
+│   │       └── *.obj        # Original OBJ files
+│   └── compiled/            # Generated output (gitignored)
+│       ├── textures/
+│       └── meshes/
+│
+├── Cargo.toml               # Workspace root (add asset_build_tool member)
+└── build.sh                 # Update to invoke asset_build_tool
 ```
 
-**Structure Decision**: CLI tool in `tools/asset-prep/` as standalone Rust project. Keeps tool separate from firmware code, allowing independent versioning and testing. Generated output (`firmware/assets/`) is included in firmware build via `mod` declarations. This matches Rust conventions for workspace projects with multiple crates.
+**Structure Decision**: Single project (Option 1) - command-line tool in Cargo workspace
+
+The `asset_build_tool` crate is a new workspace member that operates as a build-time utility. It reads source assets from `assets/source/`, generates Rust wrapper files and binary data files, and outputs them to `assets/compiled/` or directly to `host_app/assets/` for firmware inclusion.
+
+This structure integrates cleanly with the existing workspace:
+- No impact on `spi_gpu/` (FPGA RTL)
+- No impact on `host_app/` source (firmware consumes generated files)
+- New `asset_build_tool/` member added to workspace
+- Follows project conventions (Rust project in workspace, consistent directory structure)
 
 ## Complexity Tracking
 
-**No violations recorded** - all constitution checks passed.
+> **Fill ONLY if Constitution Check has violations that must be justified**
 
----
-
-## Phase 0: Research & Technology Selection
-
-**Objective**: Resolve all technical unknowns and select concrete dependencies.
-
-### Research Tasks
-
-1. **PNG Decoding Library Evaluation**
-   - **Question**: Which Rust crate provides reliable PNG decoding with RGBA8 support?
-   - **Options**: `image` (most popular), `png` (lower-level), `lodepng` (C bindings)
-   - **Criteria**: Power-of-two validation support, color space handling, performance
-
-2. **OBJ Parser Library Evaluation**
-   - **Question**: Which Rust crate handles Wavefront OBJ format with face triangulation?
-   - **Options**: `tobj`, `wavefront_obj`, custom parser
-   - **Criteria**: Quad/polygon support, normal/UV parsing, error handling
-
-3. **Mesh Splitting Algorithm Design**
-   - **Question**: How to efficiently split meshes into 16-vertex patches with minimal vertex duplication?
-   - **Approach**: Greedy sequential (spec FR-018) vs. graph partitioning
-   - **Trade-off**: Simplicity vs. optimization
-
-4. **Binary Output Format**
-   - **Question**: Should binary files use custom header or raw data?
-   - **Options**: Raw f32/u16 arrays (simpler) vs. structured format with metadata
-   - **Criteria**: include_bytes!() compatibility, debuggability
-
-5. **CLI Framework Selection**
-   - **Question**: Use clap derive vs. builder API?
-   - **Options**: clap v4 (derive macros), clap builder, structopt (deprecated)
-   - **Criteria**: Ease of use, help generation, subcommand support
-
-### Output
-
-**File**: `research.md` containing:
-- Decision for each research task
-- Rationale with pros/cons
-- Code snippets demonstrating chosen approach
-- Any assumptions or constraints discovered
-
----
-
-## Phase 1: Design Artifacts
-
-**Prerequisites**: `research.md` completed with all technology choices resolved.
-
-### 1. Data Model (`data-model.md`)
-
-Define core types and their relationships:
-
-**Entities**:
-- `TextureAsset`: Represents converted PNG with RGBA8888 data
-- `MeshAsset`: Represents converted OBJ with multiple patches
-- `MeshPatch`: 16-vertex, 32-index segment of mesh
-- `VertexData`: Position, UV, normal per vertex
-- `OutputFile`: Rust source + binary pair
-
-**Transformations**:
-- PNG → TextureAsset (validation, format conversion)
-- OBJ → MeshAsset (parsing, triangulation, patch splitting)
-- TextureAsset → (Rust file, binary file)
-- MeshAsset → [(Rust file, binary file) per patch]
-
-**Validation Rules**:
-- Texture dimensions: power-of-two, 8×8 to 1024×1024
-- Mesh patches: ≤16 vertices, ≤32 indices
-- Identifiers: valid Rust names, no conflicts
-
-### 2. API Contracts (`contracts/`)
-
-**CLI Interface** (`cli-interface.md`):
-```bash
-# Convert single texture
-asset-prep texture input.png -o output_dir/
-
-# Convert single mesh
-asset-prep mesh input.obj -o output_dir/
-
-# Batch convert directory
-asset-prep batch assets/ -o firmware/assets/
-
-# Flags
---quiet        # Suppress progress output
---patch-size   # Override vertex limit (default: 16)
---index-limit  # Override index limit (default: 32)
-```
-
-**Output Format** (`output-format.md`):
-Specify exact structure of generated .rs and .bin files:
-
-```rust
-// Example: textures/player.rs
-pub const PLAYER: &[u8] = include_bytes!("player.bin");
-// Meta: 256x256 RGBA8, 262144 bytes, 4K-aligned
-```
-
-Binary file layout (little-endian):
-```text
-Texture: [RGBA8 bytes, row-major]
-Mesh positions: [f32, f32, f32, ...]
-Mesh UVs: [f32, f32, ...]
-Mesh normals: [f32, f32, f32, ...]
-Mesh indices: [u16, u16, ...]
-```
-
-### 3. Quickstart Guide (`quickstart.md`)
-
-User-facing guide covering:
-- Installation (cargo install)
-- Basic usage examples
-- Workflow integration (add to build.rs)
-- Troubleshooting common errors
-
-### 4. Agent Context Update
-
-Run `.specify/scripts/bash/update-agent-context.sh claude` to add:
-- Rust stable
-- `image`, `tobj`, `clap` crates
-- CLI tool structure
-
----
-
-## Phase 2: Task Generation
-
-**Not executed by this command** - use `/speckit.tasks` after Phase 1 completion.
-
-Expected output: `tasks.md` with dependency-ordered implementation tasks derived from data model and contracts.
-
----
-
-## Next Steps
-
-1. Execute Phase 0 research (automated)
-2. Execute Phase 1 design generation (automated)
-3. Review generated artifacts
-4. Run `/speckit.tasks` to generate implementation tasks
-5. Begin implementation with `/speckit.implement`
-
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
