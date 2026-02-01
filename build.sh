@@ -140,10 +140,10 @@ if [ "$BUILD_FIRMWARE" = true ]; then
     echo -e "${YELLOW}[3/5] Building RP2350 firmware...${NC}"
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
-        cargo build --release -p pico-gs-host
+        cargo build --release -p pico-gs-host --target thumbv8m.main-none-eabihf
         FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/release/pico-gs-host"
     else
-        cargo build -p pico-gs-host
+        cargo build -p pico-gs-host --target thumbv8m.main-none-eabihf
         FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/debug/pico-gs-host"
     fi
     echo -e "${GREEN}✓ Firmware built: ${FIRMWARE_ELF}${NC}"
@@ -182,7 +182,7 @@ echo ""
 if [ "$FLASH_FIRMWARE" = true ]; then
     echo -e "${YELLOW}Flashing firmware to RP2350...${NC}"
     cd "${HOST_APP}"
-    cargo run --release
+    cargo run --release --target thumbv8m.main-none-eabihf
     echo -e "${GREEN}✓ Firmware flashed${NC}"
 fi
 

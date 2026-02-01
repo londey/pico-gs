@@ -1,5 +1,7 @@
-[build]
-target = "thumbv8m.main-none-eabihf"
+# Cargo configuration for pico-gs workspace
+#
+# Target-specific configuration for RP2350 firmware (host_app).
+# The asset_build_tool builds for the host machine and is unaffected by this config.
 
 [target.thumbv8m.main-none-eabihf]
 runner = "probe-rs run --chip RP2350"
