@@ -48,6 +48,9 @@ ENV PATH="${CARGO_HOME}/bin:${PATH}"
 # Add RP2350 (Cortex-M33) cross-compilation target for firmware builds
 RUN rustup target add thumbv8m.main-none-eabihf
 
+# Install Rust security and dependency auditing tools
+RUN cargo install cargo-deny cargo-audit
+
 # Install uv package manager (required for spec-kit)
 # Install to /opt/cargo/bin so it's available to all users
 ENV UV_INSTALL_DIR=/opt/cargo/bin

@@ -1,0 +1,61 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Security vulnerability database checks
+version = 2
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = [
+]
+
+[licenses]
+# Only allow permissive open source licenses
+version = 2
+confidence-threshold = 0.8
+
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    # Embedded-specific licenses
+    "0BSD",           # Zero-Clause BSD (compiler-builtins, etc.)
+    "BSL-1.0",        # Boost Software License (math libraries)
+]
+
+# Don't warn about unused licenses in the allow list
+unused-allowed-license = "allow"
+
+[bans]
+# Deny multiple versions of the same crate (strict for embedded to avoid bloat)
+multiple-versions = "deny"
+wildcards = "allow"
+highlight = "all"
+skip = []
+skip-tree = []
+
+[sources]
+# Ensure all dependencies come from trusted sources
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Allow specific git dependencies for build tools (not runtime dependencies)
+allow-git = [
+    "https://github.com/sysdoc-rs/sysdoc.git",
+]
+
+[graph]
+# Configure dependency graph analysis for embedded target
+targets = [
+    { triple = "thumbv8m.main-none-eabihf" },  # RP2350 (Cortex-M33)
+]
+all-features = false
+no-default-features = false
