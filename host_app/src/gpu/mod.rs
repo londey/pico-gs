@@ -118,17 +118,17 @@ impl GpuHandle {
     }
 
     /// Check if the GPU command FIFO is almost full.
-    pub fn is_fifo_full(&self) -> bool {
+    pub fn is_fifo_full(&mut self) -> bool {
         self.cmd_full.is_high().unwrap_or(false)
     }
 
     /// Check if the GPU command FIFO is empty.
-    pub fn is_fifo_empty(&self) -> bool {
+    pub fn is_fifo_empty(&mut self) -> bool {
         self.cmd_empty.is_high().unwrap_or(false)
     }
 
     /// Block until VSYNC rising edge.
-    pub fn wait_vsync(&self) {
+    pub fn wait_vsync(&mut self) {
         // Wait for VSYNC to go low (ensure we catch the next edge).
         while self.vsync.is_high().unwrap_or(false) {
             cortex_m::asm::nop();

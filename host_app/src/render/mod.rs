@@ -27,9 +27,9 @@ pub const QUEUE_CAPACITY: usize = 64;
 /// The inter-core render command queue type.
 pub type CommandQueue = spsc::Queue<RenderCommand, QUEUE_CAPACITY>;
 /// Producer end of the command queue (owned by Core 0).
-pub type CommandProducer<'a> = spsc::Producer<'a, RenderCommand, QUEUE_CAPACITY>;
+pub type CommandProducer<'a> = spsc::Producer<'a, RenderCommand>;
 /// Consumer end of the command queue (owned by Core 1).
-pub type CommandConsumer<'a> = spsc::Consumer<'a, RenderCommand, QUEUE_CAPACITY>;
+pub type CommandConsumer<'a> = spsc::Consumer<'a, RenderCommand>;
 
 /// A single vertex in object space.
 #[derive(Clone, Copy, Debug)]

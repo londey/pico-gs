@@ -17,6 +17,7 @@ use defmt_rtt as _;
 use panic_probe as _;
 use rp235x_hal as hal;
 
+use embedded_hal::digital::{InputPin, OutputPin};
 use hal::clocks::Clock;
 use hal::fugit::RateExtU32;
 use hal::multicore::{Multicore, Stack};
@@ -189,7 +190,7 @@ fn main() -> ! {
                     enqueue_blocking(
                         &mut producer,
                         RenderCommand::UploadTexture(UploadTextureCommand {
-                            gpu_address: gpu::registers::TEXTURE_BASE as u32,
+                            gpu_address: gpu::registers::TEXTURE_BASE_ADDR as u32,
                             texture_id: assets::textures::TEX_ID_CHECKERBOARD,
                         }),
                     );
