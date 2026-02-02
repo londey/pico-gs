@@ -1,7 +1,9 @@
 # Tasks: Asset Data Preparation Tool
 
-**Input**: Design documents from `/workspaces/pico-gs/specs/003-asset-data-prep/`
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
+**Input**: Design documents from `/specs/003-asset-data-prep/`
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
+
+**Tests**: Per Article V (Test-First Development), all modules require test coverage.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -11,192 +13,154 @@
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
 
----
+## Path Conventions
 
-## Phase 1: Setup (Project Initialization)
-
-**Purpose**: Create project structure and configure dependencies
-
-- [ ] T001 Create tools/asset-prep/ directory structure with Cargo.toml
-- [ ] T002 Create tools/asset-prep/src/ directory for source files
-- [ ] T003 Create tools/asset-prep/tests/ directory with integration/ and fixtures/ subdirectories
-- [ ] T004 [P] Add image = "0.25" dependency to tools/asset-prep/Cargo.toml
-- [ ] T005 [P] Add tobj = "4.0" dependency to tools/asset-prep/Cargo.toml
-- [ ] T006 [P] Add clap = { version = "4.5", features = ["derive"] } dependency to tools/asset-prep/Cargo.toml
-- [ ] T007 Create tools/asset-prep/src/main.rs with basic CLI skeleton
-- [ ] T008 Create tools/asset-prep/src/lib.rs with module declarations
-
-**Checkpoint**: Project structure ready, dependencies configured, builds successfully with `cargo build`
+- **Workspace member**: `asset_build_tool/` at repository root
+- Paths shown below use `asset_build_tool/src/` and `asset_build_tool/tests/`
 
 ---
 
-## Phase 2: Foundational (Shared Types & Utilities)
+## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Core infrastructure that ALL user stories depend on - MUST be complete before ANY user story implementation
+**Purpose**: Project initialization and basic structure
+
+- [ ] T001 Create asset_build_tool directory and Cargo.toml manifest
+- [ ] T002 Add asset_build_tool to workspace members in root Cargo.toml
+- [ ] T003 [P] Create src/lib.rs with crate-level lints per Article X (deny unsafe_code, clippy configuration)
+- [ ] T004 [P] Create src/main.rs with CLI entry point stub
+- [ ] T005 [P] Add dependencies to asset_build_tool/Cargo.toml (image, tobj, clap, thiserror, log with default-features=false)
+- [ ] T006 [P] Add dev-dependencies to asset_build_tool/Cargo.toml (env_logger for tests)
+- [ ] T007 [P] Configure cargo-deny in asset_build_tool/deny.toml (license and advisory validation)
+- [ ] T008 [P] Create asset_build_tool/tests/fixtures/ directory for test assets
+- [ ] T009 [P] Add test fixture: valid_256x256.png (RGBA8, power-of-two)
+- [ ] T010 [P] Add test fixture: invalid_300x200.png (non-power-of-two, should fail validation)
+- [ ] T011 [P] Add test fixture: cube.obj (8 vertices, 12 triangles, fits in 1 patch)
+- [ ] T012 [P] Add test fixture: teapot.obj or multi-patch mesh (~1000 vertices for patch splitting)
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T009 [P] Create TextureAsset struct in tools/asset-prep/src/types.rs
-- [ ] T010 [P] Create VertexData struct in tools/asset-prep/src/types.rs
-- [ ] T011 [P] Create MeshPatch struct in tools/asset-prep/src/types.rs
-- [ ] T012 [P] Create MeshAsset struct in tools/asset-prep/src/types.rs
-- [ ] T013 [P] Create OutputFile and BinaryFile structs in tools/asset-prep/src/types.rs
-- [ ] T014 Create identifier generation function in tools/asset-prep/src/identifier.rs (sanitize filename to Rust identifier)
-- [ ] T015 Add identifier conflict detection in tools/asset-prep/src/identifier.rs
-- [ ] T016 Add parent directory extraction for identifiers in tools/asset-prep/src/identifier.rs
-- [ ] T017 [P] Create CLI Args struct with clap derive in tools/asset-prep/src/main.rs
-- [ ] T018 [P] Create texture subcommand definition in tools/asset-prep/src/main.rs
-- [ ] T019 [P] Create mesh subcommand definition in tools/asset-prep/src/main.rs
-- [ ] T020 [P] Create batch subcommand definition in tools/asset-prep/src/main.rs
-- [ ] T021 Add global --quiet flag handling in tools/asset-prep/src/main.rs
-- [ ] T022 Create error types and Result aliases in tools/asset-prep/src/lib.rs
-- [ ] T023 Add progress reporting utility in tools/asset-prep/src/lib.rs (respects --quiet flag)
+- [ ] T013 [P] Create src/error.rs with AssetError enum using thiserror (Io, ImageDecode, ObjParse, InvalidDimensions, etc. per data-model.md)
+- [ ] T014 [P] Create src/identifier.rs with generate_identifier function (parent dir + filename sanitization per contracts/output-format.md)
+- [ ] T015 [P] Write unit tests for identifier generation in asset_build_tool/tests/identifier_tests.rs
+- [ ] T016 [P] Create src/binary_writer.rs with functions to write f32/u16 arrays as little-endian binary files
+- [ ] T017 [P] Write unit tests for binary writer in asset_build_tool/tests/binary_writer_tests.rs
+- [ ] T018 Create src/main.rs CLI structure with clap derive API (Cli struct, Commands enum for texture/mesh subcommands per contracts/cli-interface.md)
+- [ ] T019 Add --quiet global flag handling and env_logger initialization in src/main.rs
 
-**Checkpoint**: Foundation ready - all user stories can now proceed (sequentially or in parallel)
+**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
 ---
 
-## Phase 3: User Story 1 - PNG to RGBA8888 Texture Conversion (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Convert PNG to GPU Texture Format (Priority: P1) 🎯 MVP
 
-**Goal**: Convert PNG images to RGBA8888 format with validation of power-of-two dimensions (8×8 to 1024×1024)
+**Goal**: Convert PNG images to RGBA8888 GPU format with power-of-two validation (8×8 to 1024×1024)
 
-**Independent Test**: Convert a 256×256 PNG and verify RGBA8888 output with correct dimensions and pixel data
+**Independent Test**: Convert a valid 256×256 PNG and verify output matches expected RGBA8888 format with correct dimensions and pixel values. No mesh data or firmware integration required.
 
-**Why this is MVP**: Core functionality for all textured rendering, can be tested independently without mesh data or firmware integration
+### Tests for User Story 1
+
+> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
+
+- [ ] T020 [P] [US1] Unit test for is_power_of_two validation in asset_build_tool/tests/texture_tests.rs
+- [ ] T021 [P] [US1] Unit test for texture dimension range validation (8×8 min, 1024×1024 max) in asset_build_tool/tests/texture_tests.rs
+- [ ] T022 [P] [US1] Unit test for PNG to RGBA8888 conversion (grayscale, indexed, RGB, RGBA inputs) in asset_build_tool/tests/texture_tests.rs
+- [ ] T023 [P] [US1] Integration test for texture CLI command with valid_256x256.png fixture in asset_build_tool/tests/integration_tests.rs
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Create tools/asset-prep/src/png_converter.rs module
-- [ ] T025 [US1] Implement is_power_of_two(n: u32) helper in tools/asset-prep/src/png_converter.rs
-- [ ] T026 [US1] Implement validate_texture_dimensions(width: u32, height: u32) in tools/asset-prep/src/png_converter.rs
-- [ ] T027 [US1] Implement load_and_validate_png(path: &Path) in tools/asset-prep/src/png_converter.rs (uses image::open)
-- [ ] T028 [US1] Implement convert_to_rgba8(img: DynamicImage) in tools/asset-prep/src/png_converter.rs
-- [ ] T029 [US1] Add error handling for non-power-of-two dimensions with actionable hints in tools/asset-prep/src/png_converter.rs
-- [ ] T030 [US1] Add error handling for out-of-range dimensions (< 8×8 or > 1024×1024) in tools/asset-prep/src/png_converter.rs
-- [ ] T031 [US1] Implement convert_texture(input: PathBuf, quiet: bool) -> Result&lt;TextureAsset&gt; in tools/asset-prep/src/png_converter.rs
-- [ ] T032 [US1] Wire texture subcommand to png_converter::convert_texture in tools/asset-prep/src/main.rs
-- [ ] T033 [US1] Add progress output for texture conversion in tools/asset-prep/src/png_converter.rs (dimensions, size, identifier)
+- [ ] T024 [P] [US1] Create src/texture.rs module with TextureAsset struct per data-model.md
+- [ ] T025 [US1] Implement validate_texture_dimensions function in src/texture.rs (power-of-two check, size range)
+- [ ] T026 [US1] Implement load_and_convert_png function in src/texture.rs (uses image crate, converts to RGBA8)
+- [ ] T027 [US1] Implement texture CLI command handler in src/main.rs (parse args, call texture module, handle errors)
+- [ ] T028 [US1] Add progress output for texture conversion using log::info (dimensions, size, identifier, output path)
+- [ ] T029 [US1] Run integration test with valid PNG fixture and verify .rs and .bin files are generated correctly
 
-**Checkpoint**: At this point, User Story 1 (PNG texture conversion) should be fully functional and testable independently
+**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
 ---
 
-## Phase 4: User Story 2 - OBJ to Mesh Patches Conversion (Priority: P2)
+## Phase 4: User Story 2 - Convert OBJ to Mesh Patches (Priority: P2)
 
-**Goal**: Convert OBJ mesh files to patch format with vertex data (positions, UVs, normals) and triangle indices, automatically splitting large meshes
+**Goal**: Convert OBJ mesh files to GPU-compatible patch format with automatic splitting (≤16 vertices, ≤32 indices per patch)
 
-**Independent Test**: Convert cube.obj and verify vertex positions, UVs, normals, indices are correctly extracted and split into patches
+**Independent Test**: Convert a simple cube.obj (8 vertices, 12 triangles) and verify vertex positions, UVs, normals, and indices are correctly extracted and fit in 1 patch. Convert teapot.obj and verify automatic splitting into multiple patches.
 
-**Why P2**: Essential for 3D rendering, depends on working asset pipeline but can be tested independently from texture conversion
+### Tests for User Story 2
+
+- [ ] T030 [P] [US2] Unit test for mesh data validation (non-empty, correct array lengths) in asset_build_tool/tests/mesh_tests.rs
+- [ ] T031 [P] [US2] Unit test for missing attribute handling (default UVs, default normals) in asset_build_tool/tests/mesh_tests.rs
+- [ ] T032 [P] [US2] Unit test for patch splitting algorithm with cube fixture in asset_build_tool/tests/patch_tests.rs
+- [ ] T033 [P] [US2] Unit test for patch splitting with multi-patch mesh in asset_build_tool/tests/patch_tests.rs
+- [ ] T034 [P] [US2] Integration test for mesh CLI command with cube.obj fixture in asset_build_tool/tests/integration_tests.rs
 
 ### Implementation for User Story 2
 
-- [ ] T034 [P] [US2] Create tools/asset-prep/src/obj_converter.rs module
-- [ ] T035 [P] [US2] Create tools/asset-prep/src/mesh_patcher.rs module
-- [ ] T036 [US2] Implement load_obj_mesh(path: &Path) in tools/asset-prep/src/obj_converter.rs (uses tobj::load_obj with triangulate: true)
-- [ ] T037 [US2] Implement handle_missing_attributes(mesh: &tobj::Mesh) in tools/asset-prep/src/obj_converter.rs (default UVs and normals)
-- [ ] T038 [US2] Implement validate_mesh_data(positions: &[f32], indices: &[u32]) in tools/asset-prep/src/obj_converter.rs
-- [ ] T039 [US2] Add warning output for missing UVs in tools/asset-prep/src/obj_converter.rs
-- [ ] T040 [US2] Add warning output for missing normals in tools/asset-prep/src/obj_converter.rs
-- [ ] T041 [US2] Define MAX_VERTICES_PER_PATCH and MAX_INDICES_PER_PATCH constants in tools/asset-prep/src/mesh_patcher.rs (default 16 and 32)
-- [ ] T042 [US2] Implement greedy sequential split algorithm in tools/asset-prep/src/mesh_patcher.rs (split_into_patches function)
-- [ ] T043 [US2] Add vertex_map for global-to-local index mapping in tools/asset-prep/src/mesh_patcher.rs
-- [ ] T044 [US2] Implement patch boundary detection (vertex/index limit exceeded) in tools/asset-prep/src/mesh_patcher.rs
-- [ ] T045 [US2] Implement vertex duplication across patch boundaries in tools/asset-prep/src/mesh_patcher.rs
-- [ ] T046 [US2] Implement convert_mesh(input: PathBuf, patch_size: usize, index_limit: usize, quiet: bool) -> Result&lt;MeshAsset&gt; in tools/asset-prep/src/obj_converter.rs
-- [ ] T047 [US2] Wire mesh subcommand to obj_converter::convert_mesh in tools/asset-prep/src/main.rs
-- [ ] T048 [US2] Add progress output for mesh conversion in tools/asset-prep/src/obj_converter.rs (original counts, patch count, identifier)
-- [ ] T049 [US2] Add patch count reporting (always, regardless of splitting) in tools/asset-prep/src/obj_converter.rs
+- [ ] T035 [P] [US2] Create src/mesh.rs module with MeshAsset and VertexData structs per data-model.md
+- [ ] T036 [P] [US2] Create src/patch.rs module with MeshPatch struct per data-model.md
+- [ ] T037 [US2] Implement load_obj_mesh function in src/mesh.rs (uses tobj crate with triangulate=true)
+- [ ] T038 [US2] Implement handle_missing_attributes function in src/mesh.rs (default UVs [0,0], default normals [0,0,0])
+- [ ] T039 [US2] Implement validate_mesh_data function in src/mesh.rs (check non-empty, array lengths, index bounds)
+- [ ] T040 [US2] Implement split_into_patches function in src/patch.rs (greedy sequential algorithm per research.md)
+- [ ] T041 [US2] Implement mesh CLI command handler in src/main.rs (parse args including --patch-size and --index-limit, call mesh module)
+- [ ] T042 [US2] Add progress output for mesh conversion using log::info (original vertex/triangle count, patch count, output paths)
+- [ ] T043 [US2] Run integration test with cube.obj and verify single patch output is correct
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
 ---
 
-## Phase 5: User Story 3 - Firmware-Compatible Output Generation (Priority: P3)
+## Phase 5: User Story 3 - Generate Firmware-Compatible Output (Priority: P3)
 
-**Goal**: Generate Rust const arrays with include_bytes!() macros and binary data files for direct firmware inclusion
+**Goal**: Generate Rust const arrays with include_bytes!() references to binary data files for direct firmware inclusion
 
-**Independent Test**: Include generated Rust files in firmware build and verify compilation succeeds with correct data structures
+**Independent Test**: Include generated .rs files in a test firmware build and verify they compile without errors, contain expected data structures, and binary files are accessible via include_bytes!()
 
-**Why P3**: Integration feature that completes the pipeline from source files to compiled firmware, depends on US1 and US2
+### Tests for User Story 3
+
+- [ ] T044 [P] [US3] Unit test for texture Rust wrapper generation in asset_build_tool/tests/codegen_tests.rs (verify format matches contracts/output-format.md)
+- [ ] T045 [P] [US3] Unit test for mesh patch Rust wrapper generation in asset_build_tool/tests/codegen_tests.rs
+- [ ] T046 [P] [US3] Contract test: Create test Rust file that includes generated texture .rs and verifies it compiles in asset_build_tool/tests/contract_tests.rs
+- [ ] T047 [P] [US3] Contract test: Create test Rust file that includes generated mesh .rs and verifies it compiles with bytemuck::cast_slice in asset_build_tool/tests/contract_tests.rs
 
 ### Implementation for User Story 3
 
-- [ ] T050 [US3] Create tools/asset-prep/src/output_gen.rs module
-- [ ] T051 [US3] Implement generate_texture_output(asset: &TextureAsset, output_dir: &Path) -> Result&lt;OutputFile&gt; in tools/asset-prep/src/output_gen.rs
-- [ ] T052 [US3] Generate Rust source template for textures with WIDTH, HEIGHT, DATA constants in tools/asset-prep/src/output_gen.rs
-- [ ] T053 [US3] Add metadata comments to texture Rust output (source path, dimensions, size, 4K alignment requirement) in tools/asset-prep/src/output_gen.rs
-- [ ] T054 [US3] Add usage example comments to texture Rust output in tools/asset-prep/src/output_gen.rs
-- [ ] T055 [US3] Generate binary file for texture pixel data (RGBA8888, row-major) in tools/asset-prep/src/output_gen.rs
-- [ ] T056 [US3] Implement generate_mesh_patch_output(asset: &MeshAsset, patch: &MeshPatch, output_dir: &Path) -> Result&lt;OutputFile&gt; in tools/asset-prep/src/output_gen.rs
-- [ ] T057 [US3] Generate Rust source template for mesh patches with VERTEX_COUNT, INDEX_COUNT, and include_bytes!() for 4 arrays in tools/asset-prep/src/output_gen.rs
-- [ ] T058 [US3] Add metadata comments to mesh Rust output (source path, patch index, vertex/index counts, triangle count) in tools/asset-prep/src/output_gen.rs
-- [ ] T059 [US3] Add usage example comments with bytemuck::cast_slice to mesh Rust output in tools/asset-prep/src/output_gen.rs
-- [ ] T060 [US3] Generate 4 binary files per mesh patch (positions, UVs, normals, indices) in tools/asset-prep/src/output_gen.rs
-- [ ] T061 [US3] Implement little-endian encoding for f32 values (positions, UVs, normals) in tools/asset-prep/src/output_gen.rs
-- [ ] T062 [US3] Implement little-endian encoding for u16 indices in tools/asset-prep/src/output_gen.rs
-- [ ] T063 [US3] Implement write_output_files(output: &OutputFile, output_dir: &Path) in tools/asset-prep/src/output_gen.rs
-- [ ] T064 [US3] Wire texture output generation to texture subcommand in tools/asset-prep/src/main.rs
-- [ ] T065 [US3] Wire mesh output generation to mesh subcommand in tools/asset-prep/src/main.rs
-- [ ] T066 [US3] Add file naming convention (identifier_lowercase.rs and .bin) in tools/asset-prep/src/output_gen.rs
-- [ ] T067 [US3] Add patch naming convention (identifier_lowercase_patchN.rs and _pos/_uv/_norm/_idx.bin) in tools/asset-prep/src/output_gen.rs
+- [ ] T048 [P] [US3] Create src/codegen.rs module with OutputFile and BinaryFile structs per data-model.md
+- [ ] T049 [US3] Implement generate_texture_output function in src/codegen.rs (creates .rs wrapper with WIDTH, HEIGHT, DATA consts and .bin file per contracts/output-format.md)
+- [ ] T050 [US3] Implement generate_mesh_patch_output function in src/codegen.rs (creates .rs wrapper with VERTEX_COUNT, INDEX_COUNT, POSITIONS, UVS, NORMALS, INDICES consts and 4 .bin files)
+- [ ] T051 [US3] Implement write_output_files function in src/codegen.rs (writes .rs and .bin files to output directory)
+- [ ] T052 [US3] Integrate output generation into texture CLI command handler in src/main.rs
+- [ ] T053 [US3] Integrate output generation into mesh CLI command handler in src/main.rs (loop over all patches)
+- [ ] T054 [US3] Add metadata comments to generated .rs files (source path, dimensions/counts, memory requirements per contracts/output-format.md)
+- [ ] T055 [US3] Run contract tests to verify generated files compile and binary data is accessible
 
-**Checkpoint**: All user stories should now be independently functional - generated files compile in firmware
+**Checkpoint**: All user stories should now be independently functional
 
 ---
 
-## Phase 6: Batch Processing & Integration (Builds on US1, US2, US3)
+## Phase 6: Polish & Cross-Cutting Concerns
 
-**Purpose**: Batch mode that processes entire directories, combining all three user stories
+**Purpose**: Improvements that affect multiple user stories
 
-- [ ] T068 Implement directory scanning for .png and .obj files in tools/asset-prep/src/main.rs
-- [ ] T069 Add recursive file discovery in tools/asset-prep/src/main.rs
-- [ ] T070 Skip hidden files (starting with '.') in tools/asset-prep/src/main.rs
-- [ ] T071 Implement batch texture processing loop in tools/asset-prep/src/main.rs
-- [ ] T072 Implement batch mesh processing loop in tools/asset-prep/src/main.rs
-- [ ] T073 Add batch progress output (scanning, counts, per-file progress) in tools/asset-prep/src/main.rs
-- [ ] T074 Add batch summary output (total textures/meshes converted, total patches) in tools/asset-prep/src/main.rs
-- [ ] T075 Wire batch subcommand to batch processing logic in tools/asset-prep/src/main.rs
-- [ ] T076 Add identifier conflict detection across batch in tools/asset-prep/src/main.rs
-
-**Checkpoint**: Batch mode works, processes entire asset directories with progress reporting
-
----
-
-## Phase 7: Error Handling & Edge Cases
-
-**Purpose**: Robust error handling with actionable error messages
-
-- [ ] T077 [P] Add file not found error handling with path hints in tools/asset-prep/src/lib.rs
-- [ ] T078 [P] Add corrupted PNG error handling in tools/asset-prep/src/png_converter.rs
-- [ ] T079 [P] Add corrupted OBJ error handling in tools/asset-prep/src/obj_converter.rs
-- [ ] T080 [P] Add grayscale PNG handling (convert to RGBA8) in tools/asset-prep/src/png_converter.rs
-- [ ] T081 [P] Add indexed color PNG handling (apply palette) in tools/asset-prep/src/png_converter.rs
-- [ ] T082 [P] Add quad face triangulation handling in tools/asset-prep/src/obj_converter.rs (tobj handles this)
-- [ ] T083 [P] Add polygon face triangulation handling (fan triangulation) in tools/asset-prep/src/obj_converter.rs
-- [ ] T084 Add IO error handling with permission hints in tools/asset-prep/src/output_gen.rs
-- [ ] T085 Add empty mesh validation (no vertices/faces) in tools/asset-prep/src/obj_converter.rs
-- [ ] T086 Add proper exit codes (0=success, 2=not found, 3=invalid format, 4=validation, 5=IO, 6=conflict) in tools/asset-prep/src/main.rs
-
-**Checkpoint**: All edge cases handled with clear error messages and actionable hints
-
----
-
-## Phase 8: Polish & Documentation
-
-**Purpose**: Final improvements for usability and maintainability
-
-- [ ] T087 Add help text examples to CLI subcommands in tools/asset-prep/src/main.rs
-- [ ] T088 Add version info from Cargo.toml in tools/asset-prep/src/main.rs
-- [ ] T089 Create tools/asset-prep/README.md with installation and basic usage
-- [ ] T090 Add fixture files to tools/asset-prep/tests/fixtures/ (test-texture.png, test-cube.obj, test-teapot.obj)
-- [ ] T091 Validate quickstart.md examples work end-to-end
-- [ ] T092 Add sample integration with build.rs in quickstart.md
-- [ ] T093 Create example firmware assets module in quickstart.md
-- [ ] T094 Test quiet mode suppresses output correctly
-- [ ] T095 Verify all error messages include actionable hints
-
-**Checkpoint**: Tool is polished, documented, and ready for release
+- [ ] T056 [P] Add comprehensive rustdoc comments to all public items in src/lib.rs, src/texture.rs, src/mesh.rs, src/patch.rs, src/codegen.rs
+- [ ] T057 [P] Add usage examples to README.md (texture conversion, mesh conversion, batch processing workflow)
+- [ ] T058 [P] Verify all error messages are actionable per success criterion SC-009 (include suggestions for fixes)
+- [ ] T059 Run cargo fmt to format all code
+- [ ] T060 Run cargo fmt --check to verify formatting
+- [ ] T061 Run cargo clippy -- -D warnings to check for lints
+- [ ] T062 Run cargo test to execute all unit, integration, and contract tests
+- [ ] T063 Run cargo build --release to verify release build
+- [ ] T064 Run cargo doc --no-deps --document-private-items to generate documentation
+- [ ] T065 Run cargo deny check to validate licenses and advisories
+- [ ] T066 Run cargo audit to scan for security vulnerabilities
+- [ ] T067 [P] Update build.sh to invoke asset_build_tool for asset compilation
+- [ ] T068 [P] Create assets/source/textures/ directory with timber_square_planks.png (existing asset)
+- [ ] T069 Test full workflow: convert timber_square_planks.png using asset_build_tool and verify output
 
 ---
 
@@ -206,79 +170,48 @@
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Story 1 (Phase 3)**: Depends on Foundational completion
-- **User Story 2 (Phase 4)**: Depends on Foundational completion (can run in parallel with US1)
-- **User Story 3 (Phase 5)**: Depends on US1 and US2 completion (needs both texture and mesh output types)
-- **Batch Processing (Phase 6)**: Depends on US1, US2, US3 completion
-- **Error Handling (Phase 7)**: Can run in parallel with user stories (different concerns)
-- **Polish (Phase 8)**: Depends on all previous phases
+- **User Stories (Phase 3-5)**: All depend on Foundational phase completion
+  - User stories can then proceed in parallel (if staffed)
+  - Or sequentially in priority order (P1 → P2 → P3)
+- **Polish (Phase 6)**: Depends on all desired user stories being complete
 
 ### User Story Dependencies
 
-- **User Story 1 (P1)**: MVP - Can start after Foundational (Phase 2)
-- **User Story 2 (P2)**: Can start after Foundational (Phase 2) - Parallel with US1
-- **User Story 3 (P3)**: Requires US1 and US2 to define output types
+- **User Story 1 (P1)**: Can start after Foundational (Phase 2) - No dependencies on other stories
+- **User Story 2 (P2)**: Can start after Foundational (Phase 2) - No dependencies on other stories
+- **User Story 3 (P3)**: Integrates with US1 and US2 output generation, but can be implemented independently by testing with fixtures
 
 ### Within Each User Story
 
-**US1 (Texture Conversion)**:
-- T024 (create module) → T025-T030 (validation/conversion logic in parallel) → T031 (integrate) → T032-T033 (wire to CLI)
-
-**US2 (Mesh Conversion)**:
-- T034-T035 (create modules in parallel) → T036-T040 (OBJ loading in parallel) → T041-T045 (patching logic) → T046 (integrate) → T047-T049 (wire to CLI)
-
-**US3 (Output Generation)**:
-- T050 (create module) → T051-T055 (texture output in parallel with T056-T062 mesh output) → T063 (write files) → T064-T067 (integrate)
+- Tests (if included) MUST be written and FAIL before implementation
+- Module creation before function implementation
+- Validation/parsing before processing
+- CLI command handlers after core logic
+- Integration tests after implementation complete
+- Story complete before moving to next priority
 
 ### Parallel Opportunities
 
-**Phase 1 (Setup)**: T004, T005, T006 (add dependencies in parallel)
-
-**Phase 2 (Foundational)**:
-- T009-T013 (create all type structs in parallel)
-- T017-T020 (create all CLI subcommands in parallel)
-
-**Phase 3 (US1)**: T025, T026, T027, T028 (validation and conversion helpers in parallel)
-
-**Phase 4 (US2)**:
-- T034, T035 (create modules in parallel)
-- T036, T037, T038, T039, T040 (OBJ loading and validation in parallel)
-
-**Phase 5 (US3)**:
-- T051-T055 (texture output) can run in parallel with T056-T062 (mesh output)
-
-**Phase 7 (Error Handling)**: T077-T083 (most error handling tasks are independent)
-
-**Cross-Story Parallelism**: Once Phase 2 completes, US1 (Phase 3) and US2 (Phase 4) can be worked on simultaneously by different developers
+- All Setup tasks marked [P] can run in parallel
+- All Foundational tasks marked [P] can run in parallel (within Phase 2)
+- Once Foundational phase completes, all user stories can start in parallel (if team capacity allows)
+- All tests for a user story marked [P] can run in parallel
+- Modules within a story marked [P] can run in parallel (e.g., texture.rs and error.rs are independent)
+- Different user stories can be worked on in parallel by different team members
 
 ---
 
 ## Parallel Example: User Story 1
 
 ```bash
-# After Foundational phase is complete, launch US1 validation helpers in parallel:
-Task T025: "Implement is_power_of_two(n: u32) helper in tools/asset-prep/src/png_converter.rs"
-Task T026: "Implement validate_texture_dimensions(width: u32, height: u32) in tools/asset-prep/src/png_converter.rs"
-Task T027: "Implement load_and_validate_png(path: &Path) in tools/asset-prep/src/png_converter.rs"
-Task T028: "Implement convert_to_rgba8(img: DynamicImage) in tools/asset-prep/src/png_converter.rs"
+# Launch all tests for User Story 1 together:
+Task: "Unit test for is_power_of_two validation in asset_build_tool/tests/texture_tests.rs"
+Task: "Unit test for texture dimension range validation in asset_build_tool/tests/texture_tests.rs"
+Task: "Unit test for PNG to RGBA8888 conversion in asset_build_tool/tests/texture_tests.rs"
+Task: "Integration test for texture CLI command in asset_build_tool/tests/integration_tests.rs"
 
-# Then integrate sequentially:
-Task T031: "Implement convert_texture(...) in tools/asset-prep/src/png_converter.rs"
-Task T032: "Wire texture subcommand to png_converter::convert_texture in tools/asset-prep/src/main.rs"
-```
-
----
-
-## Parallel Example: User Story 3
-
-```bash
-# After US1 and US2 complete, launch texture and mesh output generation in parallel:
-Task T051-T055: "Generate texture output (Rust + binary) in tools/asset-prep/src/output_gen.rs"
-Task T056-T062: "Generate mesh output (Rust + 4 binaries) in tools/asset-prep/src/output_gen.rs"
-
-# Then integrate sequentially:
-Task T063: "Implement write_output_files(...) in tools/asset-prep/src/output_gen.rs"
-Task T064-T067: "Wire output generation to subcommands in tools/asset-prep/src/main.rs"
+# Launch all modules for User Story 1 together:
+Task: "Create src/texture.rs module with TextureAsset struct"
 ```
 
 ---
@@ -287,68 +220,57 @@ Task T064-T067: "Wire output generation to subcommands in tools/asset-prep/src/m
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup → Project builds
-2. Complete Phase 2: Foundational → Types and CLI structure ready
-3. Complete Phase 3: User Story 1 → PNG texture conversion works
-4. **STOP and VALIDATE**: Convert a 256×256 PNG, verify RGBA8888 output
-5. Result: Working texture converter (MVP deliverable!)
+1. Complete Phase 1: Setup
+2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+3. Complete Phase 3: User Story 1 (PNG texture conversion)
+4. **STOP and VALIDATE**: Test User Story 1 independently with various PNG files
+5. Run build verification (cargo fmt, clippy, test, build --release)
 
-### Incremental Delivery (Recommended)
+### Incremental Delivery
 
-1. **Setup + Foundational** → Foundation ready
-2. **Add US1 (P1)** → Test independently → PNG converter works! 🎯
-3. **Add US2 (P2)** → Test independently → Mesh converter works!
-4. **Add US3 (P3)** → Test independently → Firmware integration works!
-5. **Add Batch (Phase 6)** → Full workflow complete
-6. Each phase adds value without breaking previous work
+1. Complete Setup + Foundational → Foundation ready
+2. Add User Story 1 (PNG textures) → Test independently → MVP complete!
+3. Add User Story 2 (OBJ meshes) → Test independently → Mesh support added
+4. Add User Story 3 (Firmware output) → Test independently → Full pipeline complete
+5. Each story adds value without breaking previous stories
 
 ### Parallel Team Strategy
 
 With multiple developers:
 
-1. Team completes Setup + Foundational together (T001-T023)
-2. Once Foundational is done (after T023):
-   - **Developer A**: User Story 1 (T024-T033) - PNG conversion
-   - **Developer B**: User Story 2 (T034-T049) - OBJ conversion
-   - **Developer C**: Error Handling (T077-T086) - Can start early
-3. After US1 and US2 complete:
-   - **Developer A + B**: User Story 3 together (T050-T067) - Output generation
-4. After US3 complete:
-   - **Any developer**: Batch mode (T068-T076)
-5. **Everyone**: Polish & Documentation (T087-T095)
-
----
-
-## Task Count Summary
-
-- **Phase 1 (Setup)**: 8 tasks
-- **Phase 2 (Foundational)**: 15 tasks (CRITICAL - blocks all stories)
-- **Phase 3 (US1 - Texture)**: 10 tasks (MVP)
-- **Phase 4 (US2 - Mesh)**: 16 tasks
-- **Phase 5 (US3 - Output)**: 18 tasks
-- **Phase 6 (Batch)**: 9 tasks
-- **Phase 7 (Error Handling)**: 10 tasks
-- **Phase 8 (Polish)**: 9 tasks
-- **Total**: 95 tasks
-
-### Priority Breakdown
-
-- **P1 (MVP - US1)**: 33 tasks (Setup + Foundational + US1)
-- **P2 (US2)**: +16 tasks = 49 total
-- **P3 (US3)**: +18 tasks = 67 total
-- **Full Feature**: 95 tasks (includes batch, error handling, polish)
+1. Team completes Setup + Foundational together
+2. Once Foundational is done:
+   - Developer A: User Story 1 (PNG conversion)
+   - Developer B: User Story 2 (OBJ parsing and patching)
+   - Developer C: User Story 3 (Output generation for both)
+3. Stories complete and integrate independently
 
 ---
 
 ## Notes
 
-- **[P] tasks**: Different files, no dependencies - can run in parallel
-- **[Story] label**: Maps task to specific user story for traceability
-- **MVP path**: T001-T033 delivers working PNG texture converter
-- **Each user story**: Independently completable and testable
-- **Commit strategy**: Commit after each task or logical group
-- **Checkpoints**: Stop at any checkpoint to validate independently
-- **No tests included**: Spec did not explicitly request TDD, focus on implementation
-- **File paths**: All paths are absolute from repository root (`/workspaces/pico-gs/`)
-- **Dependencies**: Research.md decisions (image, tobj, clap) already resolved
-- **Binary format**: Little-endian throughout (matches RP2350 native byte order)
+- [P] tasks = different files, no dependencies
+- [Story] label maps task to specific user story for traceability
+- Each user story should be independently completable and testable
+- Verify tests fail before implementing (TDD approach per Article V)
+- Commit after each task or logical group
+- Stop at any checkpoint to validate story independently
+- Follow Article X: Rust Code Standards for all implementations (thiserror for errors, log for output, no unwrap/expect)
+- Build verification must pass before considering feature complete (fmt, clippy, test, deny, audit)
+
+---
+
+## Task Count Summary
+
+- **Phase 1 (Setup)**: 12 tasks
+- **Phase 2 (Foundational)**: 7 tasks (BLOCKING)
+- **Phase 3 (User Story 1 - Textures)**: 10 tasks (4 tests + 6 implementation)
+- **Phase 4 (User Story 2 - Meshes)**: 14 tasks (5 tests + 9 implementation)
+- **Phase 5 (User Story 3 - Output)**: 12 tasks (4 tests + 8 implementation)
+- **Phase 6 (Polish)**: 14 tasks
+
+**Total**: 69 tasks
+
+**Parallel opportunities**: 32 tasks marked [P] can run in parallel within their phase
+**Test coverage**: 15 test tasks ensuring comprehensive validation per Article V
+**Independent stories**: Each user story (US1, US2, US3) can be tested and delivered independently
