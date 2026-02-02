@@ -6,29 +6,23 @@
 
 ## Overview
 
-This document specifies the complete command-line interface for the asset data preparation tool, including command syntax, flags, arguments, exit codes, and error handling behavior.
+> **Note**: The CLI is a **secondary interface** for manual/debug use. The **primary interface** is the Rust library API used by `host_app/build.rs` as a `[build-dependency]`. See `data-model.md` for the library API and `output-format.md` for the build.rs integration pattern.
+
+This document specifies the command-line interface for the asset data preparation tool, including command syntax, flags, arguments, exit codes, and error handling behavior. The CLI wraps the same library functions used by build.rs.
 
 ## Installation
 
-### From Crates.io (Recommended)
+The CLI binary is built as part of the workspace. No separate installation is needed.
 
 ```bash
-cargo install asset-prep
-```
+# Build from workspace root
+cargo build -p asset-prep
 
-### From Source
+# Run directly
+cargo run -p asset-prep -- --help
 
-```bash
-git clone https://github.com/your-org/pico-gs
-cd pico-gs/tools/asset-prep
-cargo build --release
-cargo install --path .
-```
-
-### Verify Installation
-
-```bash
-asset-prep --version
+# Or use the built binary
+./target/debug/asset-prep --version
 # Output: asset-prep 0.1.0
 ```
 
@@ -198,85 +192,9 @@ Success: Mesh converted successfully (284 patches)
 
 ---
 
-### 3. `batch` - Batch Convert Directory
+### ~~3. `batch` - Batch Convert Directory~~ (Removed)
 
-Automatically converts all PNG and OBJ files in a directory, preserving subdirectory structure for identifiers.
-
-**Syntax**:
-```bash
-asset-prep batch <INPUT_DIR> --output <OUTPUT_DIR> [--patch-size N] [--index-limit N]
-```
-
-**Arguments**:
-
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `<INPUT_DIR>` | Path | Yes | Input directory containing .png and .obj files |
-
-**Flags**:
-
-| Flag | Short | Type | Required | Default | Description |
-|------|-------|------|----------|---------|-------------|
-| `--output` | `-o` | Path | Yes | - | Output directory for generated files |
-| `--patch-size` | - | usize | No | 16 | Maximum vertices per patch for meshes |
-| `--index-limit` | - | usize | No | 32 | Maximum indices per patch for meshes |
-
-**Behavior**:
-- Recursively scans `<INPUT_DIR>` for `.png` and `.obj` files
-- Skips hidden files (starting with `.`)
-- Processes textures first, then meshes
-- Uses parent directory name in identifier (e.g., `textures/player.png` → `TEXTURES_PLAYER`)
-- Reports total count at completion
-
-**Examples**:
-
-```bash
-# Batch convert all assets
-asset-prep batch assets/ -o firmware/assets/
-
-# With custom patch limits
-asset-prep batch assets/ -o firmware/assets/ --patch-size 12 --index-limit 36
-
-# Quiet mode for CI/CD
-asset-prep batch assets/ -o firmware/assets/ --quiet
-```
-
-**Expected Directory Structure**:
-```
-assets/
-├── textures/
-│   ├── player.png
-│   └── enemy.png
-└── meshes/
-    ├── cube.obj
-    └── sphere.obj
-```
-
-**Expected Progress Output** (when `--quiet` is not set):
-```
-Batch converting assets from: assets/
-Scanning directory...
-Found 2 textures, 2 meshes
-
-Converting textures...
-  [1/2] textures/player.png → TEXTURES_PLAYER
-  [2/2] textures/enemy.png → TEXTURES_ENEMY
-
-Converting meshes...
-  [1/2] meshes/cube.obj → MESHES_CUBE (1 patch)
-  [2/2] meshes/sphere.obj → MESHES_SPHERE (3 patches)
-
-Summary:
-  Textures: 2 converted
-  Meshes: 2 converted (4 total patches)
-  Output: firmware/assets/
-Success: Batch conversion complete
-```
-
-**Quiet Mode Output**:
-```
-(no output unless errors occur)
-```
+> **Note**: The `batch` subcommand has been removed. Batch processing is now handled by the library's `build_assets()` function, invoked by `host_app/build.rs`. The CLI retains `texture` and `mesh` subcommands for debugging individual assets.
 
 ---
 
@@ -377,7 +295,7 @@ $ asset-prep --help
 
 ```
 asset-prep 0.1.0
-Convert PNG/OBJ assets to RP2350 firmware format
+Convert PNG/OBJ assets to RP2350 firmware format (debug CLI)
 
 USAGE:
     asset-prep [OPTIONS] <SUBCOMMAND>
@@ -390,18 +308,17 @@ OPTIONS:
 SUBCOMMANDS:
     texture    Convert a PNG image to RGBA8888 texture format
     mesh       Convert an OBJ mesh to patch format
-    batch      Batch convert all assets in a directory
     help       Print this message or the help of the given subcommand(s)
+
+NOTE: For production builds, use the library API via host_app/build.rs.
+      This CLI is for debugging individual asset conversions.
 
 EXAMPLES:
     # Convert single texture
-    asset-prep texture assets/player.png -o firmware/assets/
+    asset-prep texture host_app/assets/textures/player.png -o /tmp/debug/
 
     # Convert single mesh
-    asset-prep mesh assets/cube.obj -o firmware/assets/
-
-    # Batch convert directory
-    asset-prep batch assets/ -o firmware/assets/
+    asset-prep mesh host_app/assets/meshes/cube.obj -o /tmp/debug/
 
 For more information on a specific command, use:
     asset-prep <SUBCOMMAND> --help
@@ -497,49 +414,6 @@ EXAMPLES:
     asset-prep mesh assets/terrain.obj -o firmware/assets/ --index-limit 48
 ```
 
-### Subcommand Help: `batch`
-
-```bash
-$ asset-prep batch --help
-```
-
-```
-asset-prep-batch 0.1.0
-Batch convert all assets in a directory
-
-USAGE:
-    asset-prep batch [OPTIONS] <INPUT_DIR>
-
-ARGS:
-    <INPUT_DIR>    Input directory containing .png and .obj files
-
-OPTIONS:
-    -o, --output <OUTPUT_DIR>    Output directory for generated files
-        --patch-size <N>         Maximum vertices per patch for meshes [default: 16]
-        --index-limit <N>        Maximum indices per patch for meshes [default: 32]
-    -q, --quiet                  Suppress progress output
-    -h, --help                   Print help information
-
-DESCRIPTION:
-    Recursively scans the input directory for .png and .obj files and converts
-    them all. Parent directory names are included in identifiers to avoid conflicts.
-
-    Files are processed in order:
-      1. All PNG textures
-      2. All OBJ meshes
-
-    Hidden files (starting with '.') are skipped.
-
-EXAMPLES:
-    # Convert all assets
-    asset-prep batch assets/ -o firmware/assets/
-
-    # With custom patch limits
-    asset-prep batch assets/ -o firmware/assets/ --patch-size 20
-
-    # Quiet mode for CI/CD
-    asset-prep batch assets/ -o firmware/assets/ --quiet
-```
 
 ---
 
@@ -623,44 +497,16 @@ $ echo $?
 0
 ```
 
-### Example 4: Batch Conversion
+### Example 4: Quiet Mode
 
 ```bash
-$ asset-prep batch assets/ -o firmware/assets/
-
-Batch converting assets from: assets/
-Scanning directory...
-Found 3 textures, 2 meshes
-
-Converting textures...
-  [1/3] textures/player.png → TEXTURES_PLAYER
-  [2/3] textures/enemy.png → TEXTURES_ENEMY
-  [3/3] ui/button.png → UI_BUTTON
-
-Converting meshes...
-  [1/2] meshes/cube.obj → MESHES_CUBE (1 patch)
-  [2/2] meshes/sphere.obj → MESHES_SPHERE (96 patches)
-
-Summary:
-  Textures: 3 converted
-  Meshes: 2 converted (97 total patches)
-  Output: firmware/assets/
-Success: Batch conversion complete
-
-$ echo $?
-0
-```
-
-### Example 5: Quiet Mode (CI/CD)
-
-```bash
-$ asset-prep batch assets/ -o firmware/assets/ --quiet
+$ asset-prep texture host_app/assets/textures/player.png -o /tmp/debug/ --quiet
 $ echo $?
 0
 
 # No output on success, only exit code 0
 # Errors still printed to stderr:
-$ asset-prep texture missing.png -o firmware/assets/ --quiet
+$ asset-prep texture missing.png -o /tmp/debug/ --quiet
 Error: File not found: missing.png
   Hint: Check that the path is correct and the file exists
 $ echo $?
@@ -671,51 +517,43 @@ $ echo $?
 
 ## Integration with Build Systems
 
-### Cargo Build Script (`build.rs`)
+### Primary: Library API via build.rs (Recommended)
+
+The primary way to use the asset tool is as a library, not via the CLI. See `output-format.md` for the full build.rs integration pattern.
 
 ```rust
-use std::process::Command;
+// host_app/build.rs
+use asset_build_tool::{AssetBuildConfig, build_assets};
+use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rerun-if-changed=assets/");
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
-    let status = Command::new("asset-prep")
-        .args(&["batch", "assets/", "-o", "firmware/assets/", "--quiet"])
-        .status()
-        .expect("Failed to run asset-prep");
+    let config = AssetBuildConfig {
+        source_dir: manifest_dir.join("assets"),
+        out_dir: out_dir.join("assets"),
+        patch_size: 16,
+        index_limit: 32,
+    };
 
-    if !status.success() {
-        panic!("Asset conversion failed");
-    }
+    println!("cargo:rerun-if-changed={}", config.source_dir.display());
+    build_assets(&config).expect("Asset build failed");
 }
 ```
 
-### Makefile
+With this approach, `cargo build -p pico-gs-host` handles everything. No separate CLI invocation needed.
 
-```makefile
-.PHONY: assets
-assets:
-	asset-prep batch assets/ -o firmware/assets/
+### Secondary: CLI for Debugging
 
-.PHONY: assets-clean
-assets-clean:
-	rm -rf firmware/assets/*.rs firmware/assets/*.bin
+The CLI is useful for debugging individual asset conversions:
 
-build: assets
-	cargo build --release
-```
+```bash
+# Debug a single texture conversion
+cargo run -p asset-prep -- texture host_app/assets/textures/player.png -o /tmp/debug/
 
-### CI/CD (GitHub Actions)
-
-```yaml
-- name: Install asset-prep
-  run: cargo install asset-prep
-
-- name: Convert assets
-  run: asset-prep batch assets/ -o firmware/assets/ --quiet
-
-- name: Build firmware
-  run: cargo build --release
+# Debug a single mesh conversion
+cargo run -p asset-prep -- mesh host_app/assets/meshes/cube.obj -o /tmp/debug/
 ```
 
 ---
@@ -724,11 +562,10 @@ build: assets
 
 This CLI interface provides:
 
-1. **Three subcommands**: `texture`, `mesh`, `batch` for different use cases
+1. **Two subcommands**: `texture` and `mesh` for debugging individual asset conversions
 2. **Configurable limits**: `--patch-size` and `--index-limit` for mesh conversion
-3. **Quiet mode**: `--quiet` flag for automated builds
+3. **Quiet mode**: `--quiet` flag to suppress non-error output
 4. **Clear error messages**: Actionable hints with appropriate exit codes
 5. **Progress reporting**: Detailed output showing conversion progress
-6. **Auto-generated help**: Comprehensive `--help` documentation
 
-The interface is designed to be intuitive for manual use while also supporting automated build integration through quiet mode and exit codes.
+The CLI is a **secondary interface** for debugging. For production builds, the library API is used directly by `host_app/build.rs` — see `output-format.md` for the build.rs integration pattern.

@@ -398,9 +398,37 @@ pub const CUBE_PATCH0_INDICES: &[u8] = include_bytes!("cube_patch0_idx.bin");
 
 ---
 
-## 5. CLI Framework
+## 5. Build Integration Architecture
 
-**Decision**: `clap` v4 with derive macros
+**Decision**: Library crate as `[build-dependency]` with `build.rs` integration
+
+**Rationale**:
+
+The asset tool is restructured as a library-first crate. The primary consumer is `host_app/build.rs`, which calls the library API during `cargo build`. An optional CLI binary wraps the library for manual debugging.
+
+**Why library + build.rs over standalone CLI + shell script**:
+
+1. **Self-contained builds**: `cargo build -p pico-gs-host` handles everything — no shell script orchestration needed
+2. **Incremental rebuilds**: Cargo's `rerun-if-changed` directives mean assets are only reconverted when source files actually change, unlike a shell script that rebuilds everything every time
+3. **Standard Rust pattern**: build.rs + build-dependencies is the idiomatic way to generate code at build time in Rust projects
+4. **No file copying**: Output goes directly to `OUT_DIR`, included via `include!(concat!(env!("OUT_DIR"), ...))`. No intermediate directories or copy steps
+5. **Cross-platform**: Works identically on Linux, macOS, and Windows without shell script differences
+
+**How build-dependencies work with cross-compilation**:
+
+When `host_app` targets `thumbv8m.main-none-eabihf` (RP2350), Cargo automatically compiles `[build-dependencies]` for the **host** machine, not the target. This means `image`, `tobj`, and other desktop-only crates work correctly as build-dependencies even though the firmware targets a no_std embedded platform.
+
+**Source asset location**: `host_app/assets/` (outside `src/`, conventional for non-Rust source files). build.rs accesses them via `CARGO_MANIFEST_DIR`.
+
+**Output location**: Cargo's `OUT_DIR/assets/`. Generated files are ephemeral and not committed to version control. The library generates a master `mod.rs` that re-exports all asset modules.
+
+**`clap` note**: The `clap` dependency is only needed by the optional CLI binary (`main.rs`). It is not used by the library API and should remain a regular dependency (not a build-dependency of host_app). Only the library portion of the crate is used as a build-dependency.
+
+---
+
+## 6. CLI Framework
+
+**Decision**: `clap` v4 with derive macros (for optional CLI binary only)
 
 **Rationale**:
 
@@ -410,7 +438,7 @@ The derive API is the clear choice for modern Rust CLI development in 2026:
 - **Maintainability**: Declarative approach is easier to extend and modify than builder API
 - **Help generation**: Automatic `--help` output with proper formatting and examples
 - **Type safety**: Arguments are strongly typed with validation at parse time
-- **Subcommand support**: Clean syntax for `texture`, `mesh`, `batch` subcommands
+- **Subcommand support**: Clean syntax for `texture` and `mesh` subcommands
 - **Community standard**: Derive API is recommended approach for new projects
 - **Interop**: Can drop to builder API for specific args if needed (rare)
 
@@ -477,24 +505,6 @@ enum Commands {
         index_limit: usize,
     },
 
-    /// Batch convert all assets in a directory
-    Batch {
-        /// Input directory containing .png and .obj files
-        #[arg(value_name = "INPUT_DIR")]
-        input: PathBuf,
-
-        /// Output directory for generated files
-        #[arg(short, long, value_name = "OUTPUT_DIR")]
-        output: PathBuf,
-
-        /// Maximum vertices per patch for meshes (default: 16)
-        #[arg(long, default_value = "16")]
-        patch_size: usize,
-
-        /// Maximum indices per patch for meshes (default: 32)
-        #[arg(long, default_value = "32")]
-        index_limit: usize,
-    },
 }
 
 fn main() {
@@ -505,38 +515,26 @@ fn main() {
             if !cli.quiet {
                 println!("Converting texture: {}", input.display());
             }
-            // Texture conversion logic...
+            // Calls asset_build_tool::convert_texture() library function
         }
         Commands::Mesh { input, output, patch_size, index_limit } => {
             if !cli.quiet {
                 println!("Converting mesh: {} (patch size: {}, index limit: {})",
                     input.display(), patch_size, index_limit);
             }
-            // Mesh conversion logic...
-        }
-        Commands::Batch { input, output, patch_size, index_limit } => {
-            if !cli.quiet {
-                println!("Batch converting assets from: {}", input.display());
-            }
-            // Batch processing logic...
+            // Calls asset_build_tool::convert_mesh() library function
         }
     }
 }
 ```
 
-**Usage Examples**:
+**Usage Examples** (CLI is for debugging; production builds use build.rs):
 ```bash
-# Convert single texture
-$ asset-prep texture assets/player.png -o firmware/assets/textures/
+# Debug a single texture conversion
+$ asset-prep texture host_app/assets/textures/player.png -o /tmp/debug/
 
-# Convert single mesh with custom limits
-$ asset-prep mesh assets/cube.obj -o firmware/assets/meshes/ --patch-size 12
-
-# Batch convert (auto-detect .png and .obj files)
-$ asset-prep batch assets/ -o firmware/assets/
-
-# Quiet mode for CI/CD
-$ asset-prep batch assets/ -o firmware/assets/ --quiet
+# Debug a single mesh conversion with custom limits
+$ asset-prep mesh host_app/assets/meshes/cube.obj -o /tmp/debug/ --patch-size 12
 
 # Help text (auto-generated)
 $ asset-prep --help
@@ -582,40 +580,36 @@ if !input.exists() {
 | OBJ Parsing | `tobj` crate | Most popular, built-in triangulation, proven reliability |
 | Mesh Splitting | Greedy sequential | Simple O(n) algorithm, meets FR-018, predictable output |
 | Binary Format | Raw arrays + `include_bytes!()` | No parsing overhead, compile-time inclusion, flash-efficient |
-| CLI Framework | `clap` v4 derive macros | Ergonomic, maintainable, automatic help generation |
+| Build Integration | Library + build.rs | Self-contained cargo build, incremental rebuilds, standard Rust pattern |
+| CLI Framework | `clap` v4 derive macros (optional CLI) | Ergonomic, maintainable, automatic help generation |
 
 ### Implementation Priorities
 
 **Phase 0 Complete**: All research tasks resolved with concrete decisions.
 
 **Next Phase Actions**:
-1. Add dependencies to `Cargo.toml`:
+1. Add dependencies to `asset_build_tool/Cargo.toml`:
    ```toml
    [dependencies]
    image = "0.25"
    tobj = "4.0"
-   clap = { version = "4.5", features = ["derive"] }
+   clap = { version = "4.5", features = ["derive"] }  # For optional CLI only
+   thiserror = "1.0"
+   log = "0.4"
    ```
 
-2. Create project structure:
-   ```
-   tools/asset-prep/
-   ├── Cargo.toml
-   ├── src/
-   │   ├── main.rs
-   │   ├── lib.rs
-   │   ├── png_converter.rs
-   │   ├── obj_converter.rs
-   │   ├── mesh_patcher.rs
-   │   ├── output_gen.rs
-   │   └── types.rs
-   └── tests/
+2. Add build-dependency to `host_app/Cargo.toml`:
+   ```toml
+   [build-dependencies]
+   asset-prep = { path = "../asset_build_tool" }
    ```
 
-3. Implement in order:
+3. Create `host_app/build.rs` and `host_app/assets/` directory
+
+4. Implement in order:
    - P1: PNG texture conversion (US-1)
    - P2: OBJ mesh conversion (US-2)
-   - P3: Firmware-compatible output (US-3)
+   - P3: Firmware-compatible output via build.rs (US-3)
 
 ### Remaining Considerations
 

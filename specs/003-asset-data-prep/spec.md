@@ -15,6 +15,14 @@
 - Q: Flash budget validation - Should the tool validate total asset size against RP2350's 4 MB flash limit? → A: No validation (developer responsible for checking flash usage at firmware build time)
 - Q: Mesh patch count limits - Should there be a maximum number of patches per mesh with warnings or errors? → A: Always report patch count, no warnings (developer decides if patch count is acceptable)
 
+### Session 2026-02-02
+
+- Q: Should the asset tool be a standalone CLI application or a library used as a build dependency? → A: Library-first design. The asset_build_tool crate exposes a public Rust API and is used as a `[build-dependency]` by host_app via build.rs. An optional CLI binary (main.rs) wraps the library for manual/debug use.
+- Q: Where should source assets live? → A: `host_app/assets/` (outside src/, conventional for non-Rust source files). build.rs references them via `CARGO_MANIFEST_DIR`.
+- Q: Where should generated output go? → A: Cargo's `OUT_DIR` (ephemeral, not committed to VCS). host_app includes generated code via `include!(concat!(env!("OUT_DIR"), "/assets/mod.rs"))`.
+- Q: How does the build pipeline work? → A: `cargo build -p pico-gs-host` triggers build.rs, which calls the asset_build_tool library to convert all assets in `host_app/assets/` and write outputs to `OUT_DIR`. No shell script orchestration needed for assets.
+- Q: Should the batch CLI subcommand be kept? → A: No. The build.rs replaces batch functionality by scanning the source asset directory. The CLI retains `texture` and `mesh` subcommands for debugging individual assets.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Convert PNG to GPU Texture Format (Priority: P1)
@@ -55,19 +63,20 @@ A developer needs to convert standard .obj mesh files into mesh patch format wit
 
 ### User Story 3 - Generate Firmware-Compatible Output (Priority: P3)
 
-A developer needs the converted texture and mesh data to be output as Rust const arrays that can be directly included in the rp2350-host-software firmware build, eliminating manual data entry and reducing errors.
+A developer needs the converted texture and mesh data to be automatically generated during the firmware build process, output as Rust const arrays in `OUT_DIR` that are included in the rp2350-host-software firmware via build.rs, eliminating manual data entry, shell script orchestration, and reducing errors.
 
-**Why this priority**: Integration feature that enables the actual use of converted assets in firmware. Depends on US-1 and US-2 being functional. Delivers value by completing the asset pipeline from source files to compiled firmware.
+**Why this priority**: Integration feature that enables the actual use of converted assets in firmware. Depends on US-1 and US-2 being functional. Delivers value by completing the asset pipeline from source files to compiled firmware with a single `cargo build` command.
 
-**Independent Test**: Can be fully tested by including generated Rust source files in a firmware build and verifying they compile without errors, contain expected data structures, and are accessible from firmware code.
+**Independent Test**: Can be fully tested by running `cargo build -p pico-gs-host` and verifying that generated Rust source files in `OUT_DIR` compile without errors, contain expected data structures, and are accessible from firmware code via `include!()`.
 
 **Acceptance Scenarios**:
 
-1. **Given** converted texture data, **When** output is generated, **Then** a Rust source file and binary file are created, with the Rust file using include_bytes!() to reference the binary RGBA8888 pixel data
-2. **Given** converted mesh data, **When** output is generated, **Then** Rust source files and binary data files are created for vertex positions, UVs, normals, and indices with include_bytes!() references
-3. **Given** multiple assets converted, **When** output is generated, **Then** each asset produces its own Rust file with a unique identifier (based on input filename) usable from firmware code
-4. **Given** output files included in firmware project, **When** firmware is compiled, **Then** build succeeds and asset data is accessible at compile time with correct types
+1. **Given** converted texture data, **When** output is generated to `OUT_DIR`, **Then** a Rust source file and binary file are created, with the Rust file using include_bytes!() to reference the binary RGBA8888 pixel data
+2. **Given** converted mesh data, **When** output is generated to `OUT_DIR`, **Then** Rust source files and binary data files are created for vertex positions, UVs, normals, and indices with include_bytes!() references
+3. **Given** multiple assets in `host_app/assets/`, **When** `cargo build -p pico-gs-host` is run, **Then** build.rs calls the library to convert all assets and generates a master `mod.rs` in `OUT_DIR` that re-exports all asset modules
+4. **Given** output files generated in `OUT_DIR`, **When** firmware includes them via `include!(concat!(env!("OUT_DIR"), "/assets/mod.rs"))`, **Then** build succeeds and asset data is accessible at compile time with correct types
 5. **Given** texture data generated, **When** output includes memory layout comments, **Then** comments document the required 4K alignment for GPU base addresses
+6. **Given** a source asset file is modified in `host_app/assets/`, **When** `cargo build` is run again, **Then** only the modified asset is reconverted (incremental rebuild via `cargo:rerun-if-changed`)
 
 ---
 
@@ -139,11 +148,17 @@ A developer needs the converted texture and mesh data to be output as Rust const
 - **FR-035**: System MUST report patch count for all converted meshes (including original vertex count and resulting patch count, regardless of whether splitting occurred)
 - **FR-036**: System MUST use only the immediate parent directory name in identifiers (not full path), and report an error if identifier conflicts still occur after including parent directory
 
+**Library API:**
+
+- **FR-037**: System MUST expose a public Rust library API (`build_assets()`) that accepts a source directory, output directory, and configuration (patch size, index limit) and processes all .png and .obj files found in the source directory
+- **FR-038**: System MUST generate a master `mod.rs` file in the output directory that re-exports all generated asset modules, suitable for inclusion via `include!(concat!(env!("OUT_DIR"), "/assets/mod.rs"))`
+- **FR-039**: System MUST emit `cargo:rerun-if-changed` directives (or provide the information for build.rs to emit them) for all source asset files to support incremental rebuilds
+
 **User Interface and Output:**
 
-- **FR-037**: System MUST display progress information by default (asset name, operation, status) during conversion
-- **FR-038**: System MUST support a --quiet flag that suppresses all non-error output for use in automated build scripts
-- **FR-039**: System MUST write all progress and informational messages to stdout and all errors/warnings to stderr
+- **FR-040**: System MUST display progress information by default (asset name, operation, status) during conversion when used via CLI
+- **FR-041**: System MUST support a --quiet flag in the CLI that suppresses all non-error output
+- **FR-042**: System MUST write all progress and informational messages to stdout and all errors/warnings to stderr when used via CLI. When used as a library in build.rs, errors are reported via `Result` return values.
 
 ### Key Entities
 
@@ -180,11 +195,11 @@ A developer needs the converted texture and mesh data to be output as Rust const
 - **A-003**: OBJ files use standard Wavefront OBJ format (no material references will be processed)
 - **A-004**: Mesh vertex positions are in model space; transformation to screen space is the responsibility of host software
 - **A-005**: Initial version does not support compressed texture format (8-bit indexed); only RGBA8888 output
-- **A-006**: Tool outputs Rust wrapper files (using include_bytes!() macro) and binary data files for inclusion via `include!()` or `mod` declarations in firmware
+- **A-006**: Tool outputs Rust wrapper files (using include_bytes!() macro) and binary data files to Cargo's `OUT_DIR` for inclusion via `include!(concat!(env!("OUT_DIR"), ...))` in firmware. Generated output is ephemeral and not committed to version control.
 - **A-007**: Developers have external tools (e.g., Blender, GIMP) for preparing source assets before conversion
 - **A-008**: Texture and mesh data will fit within RP2350's 4 MB flash capacity when combined with firmware code
-- **A-009**: Tool runs on development machine (not on RP2350 hardware); it's a build-time utility
-- **A-010**: Generated output (both Rust wrappers and binary files) is committed to version control and organized as one Rust file per asset with accompanying binary data
+- **A-009**: Tool runs as a `[build-dependency]` of host_app, invoked by build.rs during `cargo build`. It compiles and runs on the development machine (host target), not on RP2350 hardware. An optional CLI binary is available for manual/debug use.
+- **A-010**: Source assets (.png, .obj) are stored in `host_app/assets/` and committed to version control. Generated output lives in `OUT_DIR` and is not committed.
 
 ## Dependencies *(optional)*
 
@@ -207,9 +222,9 @@ A developer needs the converted texture and mesh data to be output as Rust const
 - Automatic texture resizing or padding to power-of-two - developer must prepare correct sizes
 - Material or lighting data extraction from .obj/.mtl files - future enhancement
 - Flash budget validation or warnings - developer responsible for managing total flash usage at firmware build time
-- GUI or interactive tool - command-line only
+- GUI or interactive tool - library API and optional CLI only
 - Live preview or visualization of converted assets - future enhancement
-- Batch processing with parallel conversion - process files sequentially
+- Parallel asset conversion - process files sequentially within build.rs
 - Cross-patch vertex sharing optimization - patches are independent in this version
 
 ## Related Features *(optional)*

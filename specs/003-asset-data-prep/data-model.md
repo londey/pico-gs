@@ -8,6 +8,74 @@
 
 This document defines the core data structures, validation rules, and transformation pipeline for the asset data preparation tool. All types are designed to support the conversion of PNG images and OBJ meshes into RP2350 firmware-compatible binary format.
 
+## Library API Types
+
+### AssetBuildConfig
+
+Configuration for the asset build process, used by build.rs.
+
+**Rust Type Signature**:
+```rust
+pub struct AssetBuildConfig {
+    /// Directory containing source assets (textures/*.png, meshes/*.obj)
+    pub source_dir: PathBuf,
+
+    /// Output directory for generated files (typically OUT_DIR/assets)
+    pub out_dir: PathBuf,
+
+    /// Maximum vertices per mesh patch (default: 16)
+    pub patch_size: usize,
+
+    /// Maximum indices per mesh patch (default: 32)
+    pub index_limit: usize,
+}
+```
+
+### GeneratedAsset
+
+Metadata about a generated asset, returned by the build process.
+
+**Rust Type Signature**:
+```rust
+pub struct GeneratedAsset {
+    /// Rust module name for this asset
+    pub module_name: String,
+
+    /// Rust identifier prefix (uppercase)
+    pub identifier: String,
+
+    /// Path to the generated .rs file (relative to out_dir)
+    pub rs_path: PathBuf,
+
+    /// Source file that produced this asset (for rerun-if-changed)
+    pub source_path: PathBuf,
+}
+```
+
+### Public API Functions
+
+```rust
+/// Process all assets in source_dir and write outputs to out_dir.
+/// Returns list of generated assets for building the master mod.rs.
+pub fn build_assets(config: &AssetBuildConfig) -> Result<Vec<GeneratedAsset>, AssetError>;
+
+/// Convert a single PNG texture and write output files to out_dir.
+pub fn convert_texture(input: &Path, out_dir: &Path) -> Result<TextureAsset, AssetError>;
+
+/// Convert a single OBJ mesh and write output files to out_dir.
+pub fn convert_mesh(
+    input: &Path,
+    out_dir: &Path,
+    patch_size: usize,
+    index_limit: usize,
+) -> Result<MeshAsset, AssetError>;
+
+/// Generate the master mod.rs file that re-exports all asset modules.
+pub fn generate_mod_rs(assets: &[GeneratedAsset], out_dir: &Path) -> Result<(), AssetError>;
+```
+
+---
+
 ## Core Types
 
 ### TextureAsset
@@ -222,6 +290,26 @@ pub struct BinaryFile {
 ## Transformation Pipeline
 
 ### Pipeline Overview
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  cargo build -p pico-gs-host                            │
+│                                                         │
+│  host_app/build.rs                                      │
+│    ├─ AssetBuildConfig { source_dir, out_dir, ... }     │
+│    ├─ build_assets(&config)                             │
+│    │   ├─ Scan host_app/assets/textures/*.png           │
+│    │   ├─ Scan host_app/assets/meshes/*.obj             │
+│    │   ├─ Convert each asset → OUT_DIR/assets/          │
+│    │   └─ Generate OUT_DIR/assets/mod.rs                │
+│    └─ println!("cargo:rerun-if-changed=assets/")        │
+│                                                         │
+│  host_app/src/assets/mod.rs                             │
+│    └─ include!(concat!(env!("OUT_DIR"), "/assets/mod.rs"))│
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Per-Asset Pipelines
 
 ```text
 ┌─────────────┐
@@ -817,88 +905,69 @@ Offset | Type | Count       | Description
 
 ---
 
-## Usage Example
+## Usage Examples
 
-### Texture Workflow
-
-```rust
-// 1. Load PNG
-let img = image::open("assets/player.png")?;
-let (width, height) = img.dimensions();
-
-// 2. Validate
-validate_texture_dimensions(width, height)?;
-
-// 3. Convert
-let texture_asset = TextureAsset {
-    source_path: PathBuf::from("assets/player.png"),
-    width,
-    height,
-    pixel_data: img.to_rgba8().into_raw(),
-    identifier: "PLAYER".to_string(),
-};
-
-// 4. Generate output
-let output = generate_texture_output(&texture_asset, Path::new("firmware/assets"));
-
-// 5. Write files
-std::fs::write(
-    format!("firmware/assets/{}", output.rust_filename),
-    output.rust_source
-)?;
-std::fs::write(
-    format!("firmware/assets/{}", output.binary_files[0].filename),
-    &output.binary_files[0].data
-)?;
-```
-
-### Mesh Workflow
+### Primary Usage: build.rs (Recommended)
 
 ```rust
-// 1. Load OBJ
-let (models, _) = tobj::load_obj("assets/cube.obj", &tobj::LoadOptions {
-    triangulate: true,
-    ..Default::default()
-})?;
+// host_app/build.rs
+use asset_build_tool::{AssetBuildConfig, build_assets};
+use std::path::PathBuf;
 
-let mesh = &models[0].mesh;
+fn main() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
-// 2. Handle missing attributes
-let (positions, uvs, normals) = handle_missing_attributes(mesh);
+    let config = AssetBuildConfig {
+        source_dir: manifest_dir.join("assets"),
+        out_dir: out_dir.join("assets"),
+        patch_size: 16,
+        index_limit: 32,
+    };
 
-// 3. Validate
-validate_mesh_data(&positions, &mesh.indices)?;
+    // Tell Cargo to rerun if source assets change
+    println!("cargo:rerun-if-changed={}", config.source_dir.display());
 
-// 4. Split into patches
-let patches = split_into_patches(&positions, &uvs, &normals, &mesh.indices);
+    let generated = build_assets(&config).expect("Asset build failed");
 
-// 5. Create asset
-let mesh_asset = MeshAsset {
-    source_path: PathBuf::from("assets/cube.obj"),
-    identifier: "CUBE".to_string(),
-    patches,
-    original_vertex_count: positions.len() / 3,
-    original_triangle_count: mesh.indices.len() / 3,
-};
-
-// 6. Generate output for each patch
-for patch in &mesh_asset.patches {
-    let output = generate_mesh_patch_output(&mesh_asset, patch, Path::new("firmware/assets"));
-
-    // Write .rs file
-    std::fs::write(
-        format!("firmware/assets/{}", output.rust_filename),
-        output.rust_source
-    )?;
-
-    // Write .bin files
-    for bin_file in &output.binary_files {
-        std::fs::write(
-            format!("firmware/assets/{}", bin_file.filename),
-            &bin_file.data
-        )?;
+    // Emit rerun-if-changed for each source file
+    for asset in &generated {
+        println!("cargo:rerun-if-changed={}", asset.source_path.display());
     }
 }
+```
+
+```rust
+// host_app/src/assets/mod.rs
+include!(concat!(env!("OUT_DIR"), "/assets/mod.rs"));
+```
+
+### Library API: Single Texture
+
+```rust
+use asset_build_tool::convert_texture;
+use std::path::Path;
+
+let asset = convert_texture(
+    Path::new("host_app/assets/textures/player.png"),
+    Path::new("/tmp/out"),
+)?;
+// asset.width, asset.height, asset.identifier are available
+```
+
+### Library API: Single Mesh
+
+```rust
+use asset_build_tool::convert_mesh;
+use std::path::Path;
+
+let asset = convert_mesh(
+    Path::new("host_app/assets/meshes/cube.obj"),
+    Path::new("/tmp/out"),
+    16, // patch_size
+    32, // index_limit
+)?;
+// asset.patches.len() gives the number of patches
 ```
 
 ---
