@@ -38,7 +38,7 @@ if command -v specify &> /dev/null; then
     if [ ! -d "/workspaces/pico-gs/.specify" ]; then
         echo "Initializing spec-kit for pico-gs..."
         cd /workspaces/pico-gs
-        specify init pico-gs --ai claude --skip-git-init || echo "  (manual initialization may be needed)"
+        specify init --here --ai claude || echo "  (manual initialization may be needed)"
     else
         echo "  spec-kit already initialized"
     fi
