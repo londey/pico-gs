@@ -1,4 +1,5 @@
 **/*.local.json
+.specify
 
 # Rust
 target/
@@ -42,3 +43,4 @@ Thumbs.db
 # Environment
 .env*
 *.log
+
