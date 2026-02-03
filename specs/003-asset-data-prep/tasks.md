@@ -40,8 +40,8 @@
 - [ ] T010 [P] Add test fixture: invalid_300x200.png (non-power-of-two, should fail validation)
 - [ ] T011 [P] Add test fixture: cube.obj (8 vertices, 12 triangles, fits in 1 patch)
 - [ ] T012 [P] Add test fixture: teapot.obj or multi-patch mesh (~1000 vertices for patch splitting)
-- [ ] T013 [P] Create host_app/assets/textures/ directory and move timber_square_planks.png from assets/source/textures/
-- [ ] T014 [P] Create host_app/assets/meshes/ directory and move teapot.obj from assets/source/meshes/
+- [ ] T013 [P] Verify host_app/assets/textures/ directory exists with source texture files
+- [ ] T014 [P] Verify host_app/assets/meshes/ directory exists with source mesh files
 - [ ] T015 [P] Add [build-dependencies] section to host_app/Cargo.toml with asset-prep = { path = "../asset_build_tool" }
 - [ ] T016 [P] Create host_app/build.rs stub that calls asset_build_tool::build_assets() (initially a no-op or prints a message)
 

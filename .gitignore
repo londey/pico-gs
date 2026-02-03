@@ -1,8 +1,8 @@
 **/*.local.json
-.specify
+/.specify
 
 # Rust
-target/
+/target
 **/*.rs.bk
 *.rlib
 *.prof*

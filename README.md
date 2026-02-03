@@ -25,7 +25,6 @@ pico-gs/
 ├── asset_build_tool/     # Asset preparation tool
 │   └── src/              # Asset conversion pipeline
 ├── assets/
-│   ├── source/           # Source assets (.obj, .png)
 │   └── compiled/         # Generated GPU data (gitignored)
 ├── specs/                # Feature specifications
 ├── build.sh              # Unified build script
@@ -84,7 +83,7 @@ cargo test -p pico-gs-host
 **Assets:**
 ```bash
 cargo build -p asset-prep
-./target/debug/asset-prep mesh assets/source/meshes/model.obj -o assets/compiled/meshes
+./target/debug/asset-prep mesh host_app/assets/meshes/model.obj -o assets/compiled/meshes
 ```
 
 ## Development

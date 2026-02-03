@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Directories
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ASSETS_SOURCE="${REPO_ROOT}/assets/source"
+ASSETS_SOURCE="${REPO_ROOT}/host_app/assets"
 ASSETS_COMPILED="${REPO_ROOT}/assets/compiled"
 HOST_APP_ASSETS="${REPO_ROOT}/host_app/src/assets"
 BUILD_TOOL="${REPO_ROOT}/asset_build_tool"
