@@ -1,97 +1,92 @@
-use asset_prep::png_converter;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use std::process;
 
 #[derive(Parser)]
 #[command(name = "asset-prep")]
-#[command(about = "Asset preparation tool for RP2350 firmware", long_about = None)]
+#[command(about = "Convert PNG/OBJ assets to RP2350 firmware format (debug CLI)", long_about = None)]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Suppress all non-error output
+    /// Suppress progress output (only show errors)
     #[arg(short, long, global = true)]
     quiet: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Convert PNG texture to RGBA8888 format
+    /// Convert a PNG image to RGBA8888 texture format
     Texture {
-        /// Input PNG file
+        /// Input PNG file path
         input: PathBuf,
 
-        /// Output directory
+        /// Output directory for generated .rs and .bin files
         #[arg(short, long)]
         output: PathBuf,
     },
-    /// Convert OBJ mesh to patch format
+    /// Convert an OBJ mesh to patch format
     Mesh {
-        /// Input OBJ file
+        /// Input OBJ file path
         input: PathBuf,
 
-        /// Output directory
+        /// Output directory for generated files
         #[arg(short, long)]
         output: PathBuf,
 
-        /// Maximum vertices per patch (default: 16)
+        /// Maximum vertices per patch
         #[arg(long, default_value = "16")]
         patch_size: usize,
 
-        /// Maximum indices per patch (default: 32)
+        /// Maximum indices per patch
         #[arg(long, default_value = "32")]
         index_limit: usize,
     },
-    /// Batch convert all assets in a directory
-    Batch {
-        /// Input directory
-        input: PathBuf,
-
-        /// Output directory
-        #[arg(short, long)]
-        output: PathBuf,
-    },
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Texture { input, output } => {
-            // Convert PNG to TextureAsset
-            let texture = png_converter::convert_texture(input, cli.quiet)?;
+    // Initialize logging (suppressed if --quiet)
+    if !cli.quiet {
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Info)
+            .init();
+    }
 
-            // Note: Output file generation (US3) not yet implemented
-            // For MVP, we've validated the conversion works
-            eprintln!(
-                "\n✓ Texture conversion successful: {} ({}×{}, {} KB)",
-                texture.identifier,
-                texture.width,
-                texture.height,
-                texture.size_bytes() / 1024
-            );
-            eprintln!("Note: Output file generation will be added in Phase 5");
-            eprintln!("Output directory: {}", output.display());
-
-            Ok(())
-        }
+    let result = match cli.command {
+        Commands::Texture { input, output } => asset_build_tool::convert_texture(&input, &output)
+            .map(|t| {
+                if !cli.quiet {
+                    eprintln!(
+                        "Success: Texture converted — {} ({}×{}, {} KB)",
+                        t.identifier,
+                        t.width,
+                        t.height,
+                        t.size_bytes() / 1024
+                    );
+                }
+            }),
         Commands::Mesh {
             input,
             output,
             patch_size,
             index_limit,
-        } => {
-            eprintln!("Mesh conversion not yet implemented");
-            eprintln!("Input: {:?}", input);
-            eprintln!("Output: {:?}", output);
-            eprintln!("Patch size: {}, Index limit: {}", patch_size, index_limit);
-            Ok(())
-        }
-        Commands::Batch { input, output } => {
-            eprintln!("Batch conversion not yet implemented");
-            eprintln!("Input: {:?}", input);
-            eprintln!("Output: {:?}", output);
-            Ok(())
-        }
+        } => asset_build_tool::convert_mesh(&input, &output, patch_size, index_limit).map(|m| {
+            if !cli.quiet {
+                eprintln!(
+                    "Success: Mesh converted — {} ({} vertices -> {} patches)",
+                    m.identifier,
+                    m.original_vertex_count,
+                    m.patch_count()
+                );
+            }
+        }),
+    };
+
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        process::exit(1);
     }
 }

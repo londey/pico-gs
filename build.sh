@@ -12,16 +12,11 @@ NC='\033[0m' # No Color
 
 # Directories
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ASSETS_SOURCE="${REPO_ROOT}/host_app/assets"
-ASSETS_COMPILED="${REPO_ROOT}/assets/compiled"
-HOST_APP_ASSETS="${REPO_ROOT}/host_app/src/assets"
-BUILD_TOOL="${REPO_ROOT}/asset_build_tool"
 HOST_APP="${REPO_ROOT}/host_app"
 SPI_GPU="${REPO_ROOT}/spi_gpu"
 OUTPUT_DIR="${REPO_ROOT}/build"
 
 # Default build targets
-BUILD_ASSETS=true
 BUILD_FIRMWARE=true
 BUILD_FPGA=true
 RELEASE_MODE=false
@@ -32,17 +27,16 @@ FLASH_FPGA=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --assets-only)
-            BUILD_FIRMWARE=false
+            # Assets are now built automatically by host_app/build.rs during cargo build.
+            # This flag triggers a firmware build which includes asset conversion.
             BUILD_FPGA=false
             shift
             ;;
         --firmware-only)
-            BUILD_ASSETS=false
             BUILD_FPGA=false
             shift
             ;;
         --fpga-only)
-            BUILD_ASSETS=false
             BUILD_FIRMWARE=false
             shift
             ;;
@@ -62,8 +56,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --assets-only       Build only asset conversion tool and process assets"
-            echo "  --firmware-only     Build only RP2350 firmware (skips assets and FPGA)"
+            echo "  --assets-only       Build firmware (assets are converted automatically by build.rs)"
+            echo "  --firmware-only     Build only RP2350 firmware (skips FPGA)"
             echo "  --fpga-only         Build only FPGA bitstream"
             echo "  --release           Build in release mode (optimized)"
             echo "  --flash-firmware    Flash firmware to RP2350 after build"
@@ -83,61 +77,9 @@ done
 echo -e "${GREEN}=== pico-gs Build System ===${NC}"
 echo ""
 
-# Step 1: Build asset preparation tool
-if [ "$BUILD_ASSETS" = true ]; then
-    echo -e "${YELLOW}[1/5] Building asset preparation tool...${NC}"
-    cd "${REPO_ROOT}"
-    if [ "$RELEASE_MODE" = true ]; then
-        cargo build --release -p asset-prep
-        ASSET_TOOL_BIN="${REPO_ROOT}/target/release/asset-prep"
-    else
-        cargo build -p asset-prep
-        ASSET_TOOL_BIN="${REPO_ROOT}/target/debug/asset-prep"
-    fi
-    echo -e "${GREEN}✓ Asset tool built${NC}"
-    echo ""
-fi
-
-# Step 2: Process source assets
-if [ "$BUILD_ASSETS" = true ]; then
-    echo -e "${YELLOW}[2/5] Processing source assets...${NC}"
-
-    # Create output directories
-    mkdir -p "${ASSETS_COMPILED}/meshes"
-    mkdir -p "${ASSETS_COMPILED}/textures"
-    mkdir -p "${HOST_APP_ASSETS}"
-
-    # Convert meshes (.obj → .rs + .bin)
-    if ls "${ASSETS_SOURCE}"/meshes/*.obj 1> /dev/null 2>&1; then
-        for obj_file in "${ASSETS_SOURCE}"/meshes/*.obj; do
-            echo "  Converting $(basename "$obj_file")..."
-            "${ASSET_TOOL_BIN}" mesh "$obj_file" -o "${ASSETS_COMPILED}/meshes" || echo "  Warning: mesh conversion not yet implemented"
-        done
-    fi
-
-    # Convert textures (.png → .rs + .bin)
-    if ls "${ASSETS_SOURCE}"/textures/*.png 1> /dev/null 2>&1; then
-        for png_file in "${ASSETS_SOURCE}"/textures/*.png; do
-            echo "  Converting $(basename "$png_file")..."
-            "${ASSET_TOOL_BIN}" texture "$png_file" -o "${ASSETS_COMPILED}/textures" || echo "  Warning: texture conversion not yet implemented"
-        done
-    fi
-
-    # Copy generated .rs files to firmware assets folder
-    if ls "${ASSETS_COMPILED}"/meshes/*.rs 1> /dev/null 2>&1; then
-        cp "${ASSETS_COMPILED}"/meshes/*.rs "${HOST_APP_ASSETS}/" 2>/dev/null || true
-    fi
-    if ls "${ASSETS_COMPILED}"/textures/*.rs 1> /dev/null 2>&1; then
-        cp "${ASSETS_COMPILED}"/textures/*.rs "${HOST_APP_ASSETS}/" 2>/dev/null || true
-    fi
-
-    echo -e "${GREEN}✓ Assets processed${NC}"
-    echo ""
-fi
-
-# Step 3: Build RP2350 firmware
+# Step 1: Build RP2350 firmware (asset conversion happens automatically via build.rs)
 if [ "$BUILD_FIRMWARE" = true ]; then
-    echo -e "${YELLOW}[3/5] Building RP2350 firmware...${NC}"
+    echo -e "${YELLOW}[1/3] Building RP2350 firmware (includes asset conversion)...${NC}"
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
         cargo build --release -p pico-gs-host --target thumbv8m.main-none-eabihf
@@ -150,9 +92,9 @@ if [ "$BUILD_FIRMWARE" = true ]; then
     echo ""
 fi
 
-# Step 4: Build FPGA bitstream
+# Step 2: Build FPGA bitstream
 if [ "$BUILD_FPGA" = true ]; then
-    echo -e "${YELLOW}[4/5] Building FPGA bitstream...${NC}"
+    echo -e "${YELLOW}[2/3] Building FPGA bitstream...${NC}"
     cd "${SPI_GPU}"
     make clean
     make bitstream
@@ -161,8 +103,8 @@ if [ "$BUILD_FPGA" = true ]; then
     echo ""
 fi
 
-# Step 5: Copy outputs to unified build directory
-echo -e "${YELLOW}[5/5] Collecting build outputs...${NC}"
+# Step 3: Copy outputs to unified build directory
+echo -e "${YELLOW}[3/3] Collecting build outputs...${NC}"
 mkdir -p "${OUTPUT_DIR}"
 
 if [ "$BUILD_FIRMWARE" = true ] && [ -f "$FIRMWARE_ELF" ]; then

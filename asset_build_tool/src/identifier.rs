@@ -1,15 +1,16 @@
-use anyhow::{bail, Context, Result};
-use std::collections::HashSet;
+use crate::error::AssetError;
+use std::collections::HashMap;
 use std::path::Path;
 
-/// Generate a Rust identifier from a file path
-/// Includes parent directory name to avoid conflicts (e.g., textures/player.png → TEXTURES_PLAYER)
-pub fn generate_identifier(path: &Path) -> Result<String> {
+/// Generate a Rust identifier from a file path.
+///
+/// Includes the immediate parent directory name to avoid conflicts
+/// (e.g., `textures/player.png` → `TEXTURES_PLAYER`).
+pub fn generate_identifier(path: &Path) -> Result<String, AssetError> {
     let filename = path
         .file_stem()
-        .context("Invalid filename")?
-        .to_str()
-        .context("Non-UTF8 filename")?;
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| AssetError::Validation(format!("Invalid filename: {}", path.display())))?;
 
     let parent = path
         .parent()
@@ -28,14 +29,34 @@ pub fn generate_identifier(path: &Path) -> Result<String> {
     Ok(identifier.to_uppercase())
 }
 
-/// Sanitize a string to a valid Rust identifier
-/// Replaces invalid characters with underscores, ensures it starts with letter/underscore
+/// Check a list of source paths for identifier collisions.
+///
+/// Returns `Ok(())` if no collisions, or `Err(IdentifierCollision)` with
+/// the first collision found.
+pub fn check_collisions(paths: &[&Path]) -> Result<(), AssetError> {
+    let mut seen: HashMap<String, &Path> = HashMap::new();
+
+    for &path in paths {
+        let ident = generate_identifier(path)?;
+        if let Some(&previous) = seen.get(&ident) {
+            return Err(AssetError::IdentifierCollision {
+                identifier: ident,
+                path_a: previous.to_path_buf(),
+                path_b: path.to_path_buf(),
+            });
+        }
+        seen.insert(ident, path);
+    }
+
+    Ok(())
+}
+
+/// Sanitize a string to a valid Rust identifier component.
 fn sanitize_to_rust_ident(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
 
     for (i, ch) in s.chars().enumerate() {
         if i == 0 {
-            // First character must be letter or underscore
             if ch.is_alphabetic() || ch == '_' {
                 result.push(ch);
             } else if ch.is_numeric() {
@@ -44,50 +65,18 @@ fn sanitize_to_rust_ident(s: &str) -> String {
             } else {
                 result.push('_');
             }
+        } else if ch.is_alphanumeric() || ch == '_' {
+            result.push(ch);
         } else {
-            // Subsequent characters can be alphanumeric or underscore
-            if ch.is_alphanumeric() || ch == '_' {
-                result.push(ch);
-            } else {
-                result.push('_');
-            }
+            result.push('_');
         }
     }
 
-    // Handle empty result
     if result.is_empty() {
         result.push_str("ASSET");
     }
 
     result
-}
-
-/// Detect identifier conflicts in a set of file paths
-pub fn detect_conflicts(paths: &[&Path]) -> Result<Vec<String>> {
-    let mut seen = HashSet::new();
-    let mut conflicts = Vec::new();
-
-    for path in paths {
-        let ident = generate_identifier(path)?;
-        if !seen.insert(ident.clone()) {
-            conflicts.push(ident);
-        }
-    }
-
-    Ok(conflicts)
-}
-
-/// Check if identifier already exists and suggest alternative
-pub fn check_conflict(identifier: &str, existing: &HashSet<String>) -> Option<String> {
-    if existing.contains(identifier) {
-        Some(format!(
-            "Identifier '{}' conflicts with existing asset. \
-             Consider renaming the source file or moving it to a different directory.",
-            identifier
-        ))
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -102,10 +91,15 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_with_invalid_chars() {
+    fn test_sanitize_special_chars() {
         assert_eq!(sanitize_to_rust_ident("my-texture"), "my_texture");
-        assert_eq!(sanitize_to_rust_ident("texture.old"), "texture_old");
-        assert_eq!(sanitize_to_rust_ident("123start"), "_123start");
+        assert_eq!(sanitize_to_rust_ident("button@hover"), "button_hover");
+        assert_eq!(sanitize_to_rust_ident("foo.bar"), "foo_bar");
+    }
+
+    #[test]
+    fn test_sanitize_leading_digit() {
+        assert_eq!(sanitize_to_rust_ident("3d-cube"), "_3d_cube");
     }
 
     #[test]
@@ -121,13 +115,40 @@ mod tests {
     }
 
     #[test]
-    fn test_conflict_detection() {
+    fn test_generate_identifier_special_chars() {
+        let path = PathBuf::from("ui/button-hover.png");
+        assert_eq!(generate_identifier(&path).unwrap(), "UI_BUTTON_HOVER");
+    }
+
+    #[test]
+    fn test_generate_identifier_deeply_nested() {
+        // Only immediate parent is used
+        let path = PathBuf::from("assets/textures/characters/player.png");
+        assert_eq!(generate_identifier(&path).unwrap(), "CHARACTERS_PLAYER");
+    }
+
+    #[test]
+    fn test_no_collision() {
         let paths: Vec<&Path> = vec![
             Path::new("textures/player.png"),
-            Path::new("ui/player.png"), // Different parent, no conflict
+            Path::new("ui/player.png"),
             Path::new("textures/enemy.png"),
         ];
-        let conflicts = detect_conflicts(&paths).unwrap();
-        assert_eq!(conflicts.len(), 0);
+        assert!(check_collisions(&paths).is_ok());
+    }
+
+    #[test]
+    fn test_collision_detected() {
+        let paths: Vec<&Path> = vec![
+            Path::new("textures/foo@bar.png"),
+            Path::new("textures/foo_bar.png"),
+        ];
+        let err = check_collisions(&paths).unwrap_err();
+        match err {
+            AssetError::IdentifierCollision { identifier, .. } => {
+                assert_eq!(identifier, "TEXTURES_FOO_BAR");
+            }
+            _ => panic!("Expected IdentifierCollision error"),
+        }
     }
 }

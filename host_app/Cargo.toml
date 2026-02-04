@@ -42,6 +42,9 @@ panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 # Timing
 fugit = "0.3.7"
 
+[build-dependencies]
+asset-prep = { path = "../asset_build_tool" }
+
 [features]
 default = []
 usb-host = [] # Enable TinyUSB USB host for keyboard input (requires C sources)
