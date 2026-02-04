@@ -126,7 +126,7 @@ A developer wants to clear the framebuffer and z-buffer by drawing full-screen t
 - **FR-003**: Each texture unit MUST support blend function configuration with operations: multiply, add, subtract, inverse subtract
 - **FR-004**: Blend functions MUST be applied per-component (independently to R, G, B, A channels)
 - **FR-005**: Each texture unit MUST have registers for: base address, width, height, storage format, swizzle pattern
-- **FR-006**: Register map MUST support RGBA8 texture format (8 bits per channel, 32 bits per pixel)
+- **FR-006**: Register map MUST support RGBA8 texture format (8 bits per channel, 32 bits per pixel); framebuffer uses RGB565 (16 bits per pixel) for bandwidth efficiency
 - **FR-007**: Register map MUST support compressed texture format with 8-bit index per 2x2 texel tile
 - **FR-008**: Compressed texture format MUST include lookup table configuration for mapping indices to RGBA8 values
 - **FR-009**: Register map MUST NOT include clear_color, clear, or clear_z registers (functionality replaced by triangle rendering)
@@ -172,4 +172,4 @@ A developer wants to clear the framebuffer and z-buffer by drawing full-screen t
 - Compressed texture lookup table is stored in a memory region accessible by the texture units
 - Swizzle patterns operate on read texture data before blend operations
 - Default/reset values for all registers are well-defined (assumed 0 or disabled state)
-- The existing framebuffer format (RGBA8) is the target output format for all blending operations
+- The framebuffer format (RGB565, 16 bits per pixel) is the target output format for all blending operations; stored in lower 16 bits of 32-bit words for addressing simplicity

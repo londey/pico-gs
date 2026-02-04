@@ -49,15 +49,15 @@ module display_controller (
     // ========================================================================
 
     wire        fifo_wr_en;
-    wire [31:0] fifo_wr_data;
+    wire [15:0] fifo_wr_data;
     wire        fifo_wr_full;
     wire        fifo_rd_en;
-    wire [31:0] fifo_rd_data;
+    wire [15:0] fifo_rd_data;
     wire        fifo_rd_empty;
     wire [9:0]  fifo_rd_count;
 
     async_fifo #(
-        .WIDTH(32),         // RGBA8888 pixels
+        .WIDTH(16),         // RGB565 pixels (16-bit color)
         .DEPTH(1024)        // ~1.6 scanlines
     ) u_scanline_fifo (
         .wr_clk(clk_sram),
@@ -113,8 +113,9 @@ module display_controller (
                 FETCH_IDLE: begin
                     // Check if we need to fetch more data
                     if (fifo_rd_count < PREFETCH_THRESHOLD && fetch_y < V_DISPLAY && sram_ready) begin
-                        // Calculate address: base + (y * 640 + x) * 4 bytes / 4 bytes per word
-                        // Address = base + y * 640 (in words)
+                        // Calculate address: base + (y * 640) pixels
+                        // RGB565 stored in lower 16 bits of 32-bit words (upper 16 bits unused)
+                        // Address = base + y * 640 (in 32-bit words, 1 pixel per word)
                         fetch_addr <= {fb_display_base, 12'b0} + (fetch_y * 10'd640);
                         fetch_line_end <= {fb_display_base, 12'b0} + (fetch_y * 10'd640) + 10'd640;
 
@@ -177,10 +178,12 @@ module display_controller (
     // Read from FIFO when display is active
     assign fifo_rd_en = display_enable && !fifo_rd_empty;
 
-    // Extract RGB from FIFO data (RGBA8888 format)
-    assign pixel_red   = fifo_rd_data[23:16];
-    assign pixel_green = fifo_rd_data[15:8];
-    assign pixel_blue  = fifo_rd_data[7:0];
+    // Extract RGB from FIFO data (RGB565 format) and expand to RGB888
+    // RGB565: [15:11]=R5, [10:5]=G6, [4:0]=B5
+    // Expand to 8-bit by replicating MSBs to minimize color banding
+    assign pixel_red   = {fifo_rd_data[15:11], fifo_rd_data[15:13]};  // R5→R8
+    assign pixel_green = {fifo_rd_data[10:5],  fifo_rd_data[10:9]};   // G6→G8
+    assign pixel_blue  = {fifo_rd_data[4:0],   fifo_rd_data[4:2]};    // B5→B8
 
     // VSYNC output for GPIO (synchronized to pixel clock)
     assign vsync_out = frame_start;
