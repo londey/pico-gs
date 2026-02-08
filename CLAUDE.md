@@ -30,7 +30,10 @@ pico-gs/
 ├── assets/               # Asset management
 │   ├── source/           # Source assets (.obj, .png - committed)
 │   └── compiled/         # Generated assets (.rs, .bin - gitignored)
-├── specs/                # Feature specifications
+├── doc/                  # Syskit specifications
+│   ├── requirements/     # REQ-NNN documents (what the system must do)
+│   ├── interfaces/       # INT-NNN documents (contracts between components)
+│   └── design/           # UNIT-NNN documents (how components implement requirements)
 ├── build.sh              # Unified build script
 └── Cargo.toml            # Workspace root
 ```
@@ -82,5 +85,18 @@ Quick reference:
 - `/syskit-plan` — Create implementation task breakdown
 - `/syskit-implement` — Execute planned tasks
 
-Specifications live in `doc/` (requirements, interfaces, design).
+**Specifications** live in `doc/`:
+- `doc/requirements/` — REQ-NNN documents (what the system must do)
+- `doc/interfaces/` — INT-NNN documents (contracts between components)
+- `doc/design/` — UNIT-NNN documents (how components implement requirements)
+
+**Key documents**:
+- [INT-010](doc/interfaces/int_010_gpu_register_map.md) — GPU Register Map (primary hardware/software interface)
+- [INT-011](doc/interfaces/int_011_sram_memory_layout.md) — SRAM Memory Layout
+- [INT-020](doc/interfaces/int_020_gpu_driver_api.md) — GPU Driver API (host firmware)
+- [INT-021](doc/interfaces/int_021_render_command_format.md) — Render Command Format
+- [REQ-050](doc/requirements/req_050_performance_targets.md) — Performance Targets
+- [doc/design/design_decisions.md](doc/design/design_decisions.md) — Architecture Decision Records (ADRs)
+- [doc/design/concept_of_execution.md](doc/design/concept_of_execution.md) — Runtime behavior
+
 Working documents live in `.syskit/` (analysis, tasks, manifest).
