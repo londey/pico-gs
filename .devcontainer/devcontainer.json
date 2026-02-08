@@ -20,13 +20,13 @@
     ],
     "containerEnv": {
         "OSS_CAD_SUITE_PATH": "/opt/oss-cad-suite",
-        "GIT_EDITOR": "code --wait",
-        "SPECIFY_AI": "claude"
+        "GIT_EDITOR": "code --wait"
     },
     "remoteEnv": {
         "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
     },
     "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
+    "postAttachCommand": "bash .devcontainer/scripts/post-attach.sh",
     "customizations": {
         "vscode": {
             "extensions": [

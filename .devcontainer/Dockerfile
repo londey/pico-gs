@@ -51,11 +51,6 @@ RUN rustup target add thumbv8m.main-none-eabihf
 # Install Rust security and dependency auditing tools
 RUN cargo install cargo-deny cargo-audit
 
-# Install uv package manager (required for spec-kit)
-# Install to /opt/cargo/bin so it's available to all users
-ENV UV_INSTALL_DIR=/opt/cargo/bin
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-
 # Install sysdoc from git
 RUN cargo install --git https://github.com/sysdoc-rs/sysdoc.git
 
@@ -111,16 +106,10 @@ RUN echo '# Rust environment' >> /home/${USERNAME}/.bashrc \
     && echo 'export CARGO_HOME="${HOME}/.cargo"' >> /home/${USERNAME}/.bashrc \
     && echo 'export PATH="/opt/cargo/bin:${HOME}/.cargo/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
 
-# Add uv to path in bashrc
-RUN echo '# uv package manager' >> /home/${USERNAME}/.bashrc \
-    && echo 'export PATH="/home/${USERNAME}/.local/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
-
-# Install spec-kit as vscode user
-USER ${USERNAME}
-RUN uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
-
-# Switch back to root for final setup
-USER root
+# Download syskit installer for use during post-attach
+RUN curl -fsSL https://raw.githubusercontent.com/londey/syskit/refs/heads/master/install_syskit.sh \
+    -o /opt/syskit-installer.sh \
+    && chmod +x /opt/syskit-installer.sh
 
 # Final user switch for workdir
 USER ${USERNAME}

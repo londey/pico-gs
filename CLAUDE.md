@@ -68,3 +68,19 @@ cargo test -p pico-gs-host
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
+
+## syskit
+
+This project uses syskit for specification-driven development.
+
+**Before any syskit workflow, read `.syskit/AGENTS.md` for full instructions.**
+
+Quick reference:
+- `/syskit-guide` — Interactive onboarding (start here if new)
+- `/syskit-impact <change>` — Analyze impact of a proposed change
+- `/syskit-propose` — Propose spec modifications based on impact analysis
+- `/syskit-plan` — Create implementation task breakdown
+- `/syskit-implement` — Execute planned tasks
+
+Specifications live in `doc/` (requirements, interfaces, design).
+Working documents live in `.syskit/` (analysis, tasks, manifest).

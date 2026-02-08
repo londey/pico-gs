@@ -29,23 +29,6 @@ else
     echo "ANTHROPIC_API_KEY not set - run 'claude' and use /login to authenticate"
 fi
 
-# Verify spec-kit is available
-echo "Verifying spec-kit..."
-if command -v specify &> /dev/null; then
-    echo "  specify: $(specify --version 2>/dev/null || echo 'installed')"
-
-    # Initialize spec-kit for the project if not already initialized
-    if [ ! -d "/workspaces/pico-gs/.specify" ]; then
-        echo "Initializing spec-kit for pico-gs..."
-        cd /workspaces/pico-gs
-        specify init --here --ai claude || echo "  (manual initialization may be needed)"
-    else
-        echo "  spec-kit already initialized"
-    fi
-else
-    echo "  specify: not found (install with: uv tool install specify-cli --from git+https://github.com/github/spec-kit.git)"
-fi
-
 echo ""
 echo "=== Setup Complete ==="
 echo ""
@@ -53,5 +36,4 @@ echo "Available tools:"
 echo "  yosys, nextpnr-ecp5, ecppack, openFPGALoader (FPGA synthesis)"
 echo "  sysdoc (documentation)"
 echo "  claude (AI assistant)"
-echo "  specify (spec-driven development)"
 echo ""

@@ -1,0 +1,140 @@
+---
+description: Create implementation task breakdown from approved specification changes
+arguments:
+  - name: analysis
+    description: Name of the analysis folder (optional, uses most recent if not specified)
+    required: false
+---
+
+# Plan Implementation Tasks
+
+You are creating an implementation task breakdown based on approved specification changes.
+
+## Instructions
+
+### Step 1: Load Approved Changes
+
+If `$ARGUMENTS.analysis` is provided:
+- Load `.syskit/analysis/$ARGUMENTS.analysis/proposed_changes.md`
+
+Otherwise:
+- Find the most recent folder in `.syskit/analysis/`
+- Load `proposed_changes.md` from that folder
+
+Verify the status shows changes were approved. If not, prompt user to run `/syskit-propose` first.
+
+### Step 2: Load Current Specifications
+
+Load all affected documents from `doc/` to understand the current state.
+
+Also load relevant design unit documents to understand implementation structure.
+
+### Step 3: Identify Implementation Scope
+
+For each specification change, identify:
+
+1. Which source files need modification
+2. Which tests need modification or creation
+3. Dependencies between changes (what must be done first)
+4. Verification method for each change
+
+### Step 4: Create Task Folder
+
+Create `.syskit/tasks/<date>_<change_name>/` with:
+
+1. `plan.md` — Overall implementation strategy
+2. `snapshot.md` — SHA256 of relevant documents at planning time
+3. `task_001_<n>.md` through `task_NNN_<n>.md` — Individual tasks
+
+### Step 5: Write Implementation Plan
+
+Create `plan.md`:
+
+```markdown
+# Implementation Plan: <change name>
+
+Based on: ../.syskit/analysis/<folder>/proposed_changes.md
+Created: <timestamp>
+Status: In Progress
+
+## Overview
+
+<Brief description of what is being implemented>
+
+## Specification Changes Applied
+
+| Document | Change Type | Summary |
+|----------|-------------|---------|
+| <doc> | Modified | <summary> |
+
+## Implementation Strategy
+
+<High-level approach to implementing these changes>
+
+## Task Sequence
+
+| # | Task | Dependencies | Est. Effort |
+|---|------|--------------|-------------|
+| 1 | <task name> | None | <small/medium/large> |
+| 2 | <task name> | Task 1 | <effort> |
+
+## Verification Approach
+
+<How we will verify the implementation meets the specifications>
+
+## Risks and Considerations
+
+- <risk or consideration>
+```
+
+### Step 6: Write Individual Tasks
+
+For each task, create `task_NNN_<n>.md`:
+
+```markdown
+# Task NNN: <task name>
+
+Status: Pending
+Dependencies: <list or "None">
+Specification References: <REQ-NNN, INT-NNN, UNIT-NNN>
+
+## Objective
+
+<What this task accomplishes>
+
+## Files to Modify
+
+- `<filepath>`: <what changes>
+- `<filepath>`: <what changes>
+
+## Files to Create
+
+- `<filepath>`: <purpose>
+
+## Implementation Steps
+
+1. <step>
+2. <step>
+3. <step>
+
+## Verification
+
+- [ ] <verification criterion>
+- [ ] <verification criterion>
+
+## Notes
+
+<Any additional context or considerations>
+```
+
+### Step 7: Present Plan
+
+Output the implementation plan summary and ask:
+
+"Implementation plan created with <n> tasks. 
+
+Ready to begin implementation?
+- 'start' to begin with Task 1
+- 'start <n>' to begin with a specific task
+- 'review <n>' to discuss a specific task
+- 'revise' to modify the plan"
