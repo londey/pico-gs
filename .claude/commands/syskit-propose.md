@@ -24,9 +24,13 @@ Otherwise:
 
 ### Step 2: Check Freshness
 
-Compare snapshot hashes against `.syskit/manifest.md`:
+Run the freshness check script:
 
-- If any affected documents have changed since analysis, warn the user
+```bash
+.syskit/scripts/manifest-check.sh .syskit/analysis/<folder>/snapshot.md
+```
+
+- If any affected documents have changed (exit code 1), warn the user
 - Recommend re-running impact analysis if changes are significant
 - Proceed with caution if user confirms
 

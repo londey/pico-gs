@@ -27,9 +27,13 @@ Otherwise:
 
 ### Step 2: Check Freshness
 
-Compare snapshot hashes against `.syskit/manifest.md`:
+Run the freshness check script:
 
-- If referenced specifications changed, warn user
+```bash
+.syskit/scripts/manifest-check.sh .syskit/tasks/<folder>/snapshot.md
+```
+
+- If referenced specifications changed (exit code 1), warn user
 - Changes to specs may invalidate the task plan
 - Recommend re-running `/syskit-plan` if changes are significant
 
