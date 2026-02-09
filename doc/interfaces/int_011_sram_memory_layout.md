@@ -18,6 +18,7 @@ Internal
 - REQ-006 (Textured Triangle)
 - REQ-014 (Enhanced Z-Buffer)
 - REQ-025 (Framebuffer Format)
+- INT-014 (Texture Memory Layout)
 
 ## Specification
 
@@ -158,26 +159,44 @@ z_addr = Z_BASE + (y * 640 + x) * 4
 | Base Address | 0x384000 |
 | End Address | 0x43FFFF |
 | Size | 786,432 bytes (~768 KB) |
-| Pixel Format | RGBA8888 (32 bits, full 32-bit usage) |
+| Formats Supported | RGBA4444 (16 bpp), BC1 (0.5 bpp compressed) |
 
-**Note**: Textures use full RGBA8888 format (all 32 bits used) unlike framebuffer which stores RGB565 in lower 16 bits. Textures maintain higher quality for sampling and filtering; conversion to RGB565 happens during rasterization when writing to framebuffer.
+**Memory layout:** See INT-014 (Texture Memory Layout) for detailed format
+specifications. All textures are organized in 4x4 texel blocks.
 
-**Capacity Examples**:
+**Note**: Textures use RGBA4444 or BC1 formats as specified in INT-014.
+Unlike the framebuffer (RGB565 in lower 16 bits), textures utilize full
+storage efficiency with no padding. BC1 provides 8:1 compression over
+legacy RGBA8888.
 
-| Texture Size | Bytes | Count in Region |
+**RGBA4444 Capacity (16 bpp):**
+
+| Texture Size | Bytes | Count in 768 KB |
 |--------------|-------|-----------------|
-| 256×256 | 262,144 | 3 |
-| 128×128 | 65,536 | 12 |
-| 64×64 | 16,384 | 48 |
-| 32×32 | 4,096 | 192 |
+| 512x512 | 524,288 | 1 |
+| 256x256 | 131,072 | 6 |
+| 128x128 | 32,768 | 24 |
+| 64x64 | 8,192 | 96 |
+
+**BC1 Capacity (0.5 bpp compressed):**
+
+| Texture Size | Bytes | Count in 768 KB |
+|--------------|-------|-----------------|
+| 1024x1024 | 524,288 | 1 |
+| 512x512 | 131,072 | 6 |
+| 256x256 | 32,768 | 24 |
+| 128x128 | 8,192 | 96 |
 
 **Texture Address Alignment**: Textures must be 4K aligned for TEX_BASE register.
 
-**Recommended Texture Layout**:
+**Recommended Texture Layout (RGBA4444, 256x256)**:
 ```
-0x384000  Texture 0 (up to 256×256)
-0x3C4000  Texture 1 (up to 256×256)
-0x404000  Texture 2 (up to 256×256)
+0x384000  Texture 0 (128 KB)
+0x3A4000  Texture 1 (128 KB)
+0x3C4000  Texture 2 (128 KB)
+0x3E4000  Texture 3 (128 KB)
+0x404000  Texture 4 (128 KB)
+0x424000  Texture 5 (128 KB)
 0x440000  (end of default texture region)
 ```
 
@@ -245,12 +264,12 @@ Access: Single pixel or short burst writes
 
 ```
 Priority: MEDIUM
-Pattern: Random access within texture bounds
+Pattern: Random access within texture bounds (block-oriented)
 Bandwidth: Up to 50 MB/s (depends on texture cache hit rate)
-Access: Single texel (4 bytes) per fetch
+Access: RGBA4444: 2 bytes per texel, BC1: 8 bytes per 4x4 block
 ```
 
-**Optimization**: Future versions may add small texture cache in BRAM to reduce SRAM traffic.
+**Optimization**: BC1 textures fetch entire 8-byte blocks, providing 16 pixels per fetch. Future versions may add small texture cache in BRAM to reduce SRAM traffic.
 
 ---
 

@@ -36,9 +36,9 @@ Internal
 ## Specification
 
 
-**Version**: 2.0
-**Date**: January 2026
-**Status**: Multi-Texture Rework
+**Version**: 3.0
+**Date**: February 2026
+**Status**: Texture Format Update
 
 ---
 
@@ -53,10 +53,10 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 [63:0]    Register value (64 bits)
 ```
 
-**Major Features** (v2.0):
+**Major Features** (v3.0):
 - 4 independent texture units with separate UV coordinates
 - Texture blend modes (multiply, add, subtract, inverse subtract)
-- Compressed texture format with lookup tables
+- RGBA4444 and BC1 block-compressed texture formats (see INT-014)
 - Swizzle patterns for channel reordering
 - Z-buffer with configurable compare functions
 - Alpha blending modes
@@ -92,28 +92,28 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 | 0x10 | TEX0_BASE | R/W | Texture 0 base address |
 | 0x11 | TEX0_FMT | R/W | Texture 0 format, dimensions, swizzle |
 | 0x12 | TEX0_BLEND | R/W | Texture 0 blend function |
-| 0x13 | TEX0_LUT_BASE | R/W | Texture 0 LUT address (compressed) |
+| 0x13 | - | - | Reserved |
 | 0x14 | TEX0_WRAP | R/W | Texture 0 UV wrapping mode |
 | 0x15-0x17 | - | - | Reserved (texture 0) |
 | **Texture Unit 1** ||||
 | 0x18 | TEX1_BASE | R/W | Texture 1 base address |
 | 0x19 | TEX1_FMT | R/W | Texture 1 format, dimensions, swizzle |
 | 0x1A | TEX1_BLEND | R/W | Texture 1 blend function |
-| 0x1B | TEX1_LUT_BASE | R/W | Texture 1 LUT address (compressed) |
+| 0x1B | - | - | Reserved |
 | 0x1C | TEX1_WRAP | R/W | Texture 1 UV wrapping mode |
 | 0x1D-0x1F | - | - | Reserved (texture 1) |
 | **Texture Unit 2** ||||
 | 0x20 | TEX2_BASE | R/W | Texture 2 base address |
 | 0x21 | TEX2_FMT | R/W | Texture 2 format, dimensions, swizzle |
 | 0x22 | TEX2_BLEND | R/W | Texture 2 blend function |
-| 0x23 | TEX2_LUT_BASE | R/W | Texture 2 LUT address (compressed) |
+| 0x23 | - | - | Reserved |
 | 0x24 | TEX2_WRAP | R/W | Texture 2 UV wrapping mode |
 | 0x25-0x27 | - | - | Reserved (texture 2) |
 | **Texture Unit 3** ||||
 | 0x28 | TEX3_BASE | R/W | Texture 3 base address |
 | 0x29 | TEX3_FMT | R/W | Texture 3 format, dimensions, swizzle |
 | 0x2A | TEX3_BLEND | R/W | Texture 3 blend function |
-| 0x2B | TEX3_LUT_BASE | R/W | Texture 3 LUT address (compressed) |
+| 0x2B | - | - | Reserved |
 | 0x2C | TEX3_WRAP | R/W | Texture 3 UV wrapping mode |
 | 0x2D-0x2F | - | - | Reserved (texture 3) |
 | **Rendering Config** ||||
@@ -251,10 +251,20 @@ Texture format, dimensions, and swizzle pattern.
 [19:16]   Swizzle pattern (4 bits, see encoding below)
 [15:8]    HEIGHT_LOG2: log₂(height), valid 3-10 (8 to 1024 pixels)
 [7:4]     WIDTH_LOG2: log₂(width), valid 3-10 (8 to 1024 pixels)
-[3:2]     Reserved
-[1]       COMPRESSED: 0=RGBA8, 1=8-bit indexed with 2×2 tiles
+[3]       Reserved (write as 0)
+[2:1]     FORMAT: Texture format encoding
+          00 = RGBA4444 (16 bits per pixel, see INT-014)
+          01 = BC1 (block compressed, 64 bits per 4x4 block, see INT-014)
+          10 = Reserved (future format)
+          11 = Reserved (future format)
 [0]       ENABLE: 0=disabled, 1=enabled
 ```
+
+**Format Notes**:
+- BC1 textures (FORMAT=01) require width and height to be multiples of 4
+- Attempting to use non-multiple-of-4 dimensions with BC1 results in undefined behavior
+- Swizzle patterns apply after texture decode (see INT-014)
+- See INT-014 for detailed texture memory layout specifications
 
 **Dimension Encoding**:
 
@@ -288,7 +298,8 @@ Texture format, dimensions, and swizzle pattern.
 | 0xC | 111A | RGB=1 (white), preserve alpha |
 | 0xD-0xF | Reserved | Default to RGBA |
 
-**Example**: 64×64 texture, RGBA8, enabled → WIDTH_LOG2=6, HEIGHT_LOG2=6 → write 0x00060061
+**Example**: 64x64 texture, RGBA4444, enabled → WIDTH_LOG2=6, HEIGHT_LOG2=6, FORMAT=00 → write 0x00000000_00000661
+**Example**: 256x256 texture, BC1, enabled → WIDTH_LOG2=8, HEIGHT_LOG2=8, FORMAT=01 → write 0x00000000_00000883
 
 **Reset Value**: 0x0000000000000000 (disabled)
 
@@ -323,31 +334,12 @@ Step 6: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 
 ---
 
-### TEXn_LUT_BASE (0x13, 0x1B, 0x23, 0x2B)
+### Reserved (0x13, 0x1B, 0x23, 0x2B)
 
-Lookup table base address for compressed textures.
+Previously TEXn_LUT_BASE (v2.0). Reserved in v3.0. Write as 0.
 
-```
-[63:32]   Reserved (write as 0)
-[31:12]   Lookup table base address bits [31:12] (4K aligned)
-[11:0]    Ignored (assumed 0)
-```
-
-**LUT Format** (used when TEXn_FMT.COMPRESSED=1):
-- 256 entries, each 16 bytes (4 texels × 4 bytes RGBA8)
-- Total size: 4096 bytes (1 page)
-- Each entry represents a 2×2 texel tile
-
-**LUT Entry Layout**:
-```
-Entry[i] at offset (i × 16):
-  +0:  Texel [0,0] RGBA8 (4 bytes)
-  +4:  Texel [1,0] RGBA8 (4 bytes)
-  +8:  Texel [0,1] RGBA8 (4 bytes)
-  +12: Texel [1,1] RGBA8 (4 bytes)
-```
-
-**Reset Value**: 0x0000000000000000
+**Note**: These registers were used for indexed compression lookup tables in v2.0.
+BC1 compression (v3.0) does not require separate lookup tables.
 
 ---
 
@@ -684,13 +676,12 @@ gpu_write(REG_FB_ZBUFFER, (0x001 << 32) | 0x258000);  // LEQUAL
 ### New Features in v2.0
 
 **Multi-Texturing**: Up to 4 texture units (TEX0-TEX3)
-- Each has: BASE, FMT, BLEND, LUT_BASE, WRAP registers
+- Each has: BASE, FMT, BLEND, WRAP registers
 - Each vertex gets 4 UV coordinates (UV0-UV3)
 - Textures blend sequentially (0→1→2→3)
 
 **Texture Enhancements**:
 - Swizzle patterns (16 predefined channel orderings)
-- Compressed format (8-bit indexed, 2×2 tiles)
 - UV wrapping modes (REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, MIRROR)
 - Per-texture blend modes (MULTIPLY, ADD, SUBTRACT, INVERSE_SUBTRACT)
 
@@ -705,6 +696,28 @@ gpu_write(REG_FB_ZBUFFER, (0x001 << 32) | 0x258000);  // LEQUAL
 **Memory Upload**:
 - MEM_ADDR/MEM_DATA registers for bulk transfer
 - Auto-increment for efficient uploads
+
+---
+
+## Migration Guide (v2.0 → v3.0)
+
+### Format Changes (v3.0)
+
+**BREAKING CHANGE:** RGBA8888 and 8-bit indexed compression formats removed.
+
+**Texture Formats:**
+- v2.0: RGBA8 (COMPRESSED=0), 8-bit indexed (COMPRESSED=1)
+- v3.0: RGBA4444 (FORMAT=00), BC1 (FORMAT=01)
+
+**Register Encoding Change:**
+- TEXn_FMT bit [1] (COMPRESSED) replaced with bits [2:1] (FORMAT)
+- TEXn_LUT_BASE registers (0x13, 0x1B, 0x23, 0x2B) removed (now Reserved)
+
+**Migration:**
+- RGBA8 → RGBA4444: Quantize 8-bit channels to 4 bits
+- Indexed → BC1: Re-encode using BC1 compression
+- All assets must be regenerated with updated asset_build_tool
+- See INT-014 for new texture memory layout specifications
 
 ---
 
@@ -765,15 +778,18 @@ No special casing required.
 0x384000: Textures
 ```
 
-### Compressed Texture Index
+### BC1 Texture Dimensions
 
-8-bit index gives 0-255 range. LUT has exactly 256 entries, so all indices are valid. Each LUT entry is 16 bytes (4 texels × 4 bytes), so LUT is 4096 bytes total.
+BC1 compressed textures require both width and height to be multiples of 4. Since power-of-2 dimensions (8, 16, 32, ..., 1024) are all multiples of 4, this constraint is automatically satisfied by the WIDTH_LOG2/HEIGHT_LOG2 encoding.
 
-**LUT Address Calculation**:
+**BC1 Block Address Calculation**:
 ```
-lut_entry_addr = TEXn_LUT_BASE + (index << 4)  // index × 16
-texel_addr = lut_entry_addr + (ty × 2 + tx) × 4  // tx, ty in {0,1}
+block_x = pixel_x / 4
+block_y = pixel_y / 4
+block_addr = TEXn_BASE + (block_y * (width / 4) + block_x) * 8
 ```
+
+See INT-014 for full BC1 decompression algorithm.
 
 ### Texture Address Validation
 
@@ -789,25 +805,25 @@ texel_addr = lut_entry_addr + (ty × 2 + tx) × 4  // tx, ty in {0,1}
 ### Example 1: Multi-Texture Rendering (Diffuse + Lightmap)
 
 ```c
-// Configure texture unit 0: diffuse map at 0x384000, 256×256
+// Configure texture unit 0: diffuse map (RGBA4444) at 0x384000, 256x256
 gpu_write(REG_TEX0_BASE, 0x384000);
 gpu_write(REG_TEX0_FMT,
     (0x0 << 16) |  // Swizzle: RGBA
     (8 << 8) |     // HEIGHT_LOG2: 256
-    (8 << 0) |     // WIDTH_LOG2: 256
-    (0 << 1) |     // COMPRESSED: no
+    (8 << 4) |     // WIDTH_LOG2: 256
+    (0x0 << 1) |   // FORMAT: RGBA4444
     (1 << 0)       // ENABLE: yes
 );
 gpu_write(REG_TEX0_BLEND, 0x00);  // MULTIPLY (ignored for tex0)
 gpu_write(REG_TEX0_WRAP, 0x0);    // REPEAT on both axes
 
-// Configure texture unit 1: lightmap at 0x3C4000, 256×256
+// Configure texture unit 1: lightmap (BC1) at 0x3C4000, 256x256
 gpu_write(REG_TEX1_BASE, 0x3C4000);
 gpu_write(REG_TEX1_FMT,
     (0x0 << 16) |  // Swizzle: RGBA
     (8 << 8) |     // HEIGHT_LOG2: 256
-    (8 << 0) |     // WIDTH_LOG2: 256
-    (0 << 1) |     // COMPRESSED: no
+    (8 << 4) |     // WIDTH_LOG2: 256
+    (0x1 << 1) |   // FORMAT: BC1
     (1 << 0)       // ENABLE: yes
 );
 gpu_write(REG_TEX1_BLEND, 0x00);  // MULTIPLY (modulate with tex0)
@@ -843,48 +859,25 @@ gpu_write(REG_VERTEX, PACK_XYZ(x2, y2, z2));  // Triggers draw
 
 ---
 
-### Example 2: Compressed Texture Setup
+### Example 2: BC1 Compressed Texture Setup
 
 ```c
-// Upload 256-entry LUT to SRAM at 0x500000
-// Each entry is 16 bytes (4 RGBA8 texels in 2×2 tile)
-gpu_write(REG_MEM_ADDR, 0x500000);
-for (int i = 0; i < 256; i++) {
-    uint32_t tile[4] = {
-        get_tile_texel(i, 0, 0),  // Texel [0,0] RGBA8
-        get_tile_texel(i, 1, 0),  // Texel [1,0] RGBA8
-        get_tile_texel(i, 0, 1),  // Texel [0,1] RGBA8
-        get_tile_texel(i, 1, 1)   // Texel [1,1] RGBA8
-    };
-    gpu_write(REG_MEM_DATA, tile[0]);  // Auto-increments
-    gpu_write(REG_MEM_DATA, tile[1]);
-    gpu_write(REG_MEM_DATA, tile[2]);
-    gpu_write(REG_MEM_DATA, tile[3]);
-}
-
-// Upload compressed texture indices to 0x404000
-// For 128×128 texture: (128/2) × (128/2) = 4096 indices
-// Pack 4 indices per 32-bit word
+// Upload BC1-compressed texture to SRAM at 0x404000
+// For 128x128 texture: (128/4) x (128/4) = 1024 blocks x 8 bytes = 8192 bytes
 gpu_write(REG_MEM_ADDR, 0x404000);
-for (int i = 0; i < 4096 / 4; i++) {
-    uint32_t packed =
-        (indices[i*4+0] << 0) |
-        (indices[i*4+1] << 8) |
-        (indices[i*4+2] << 16) |
-        (indices[i*4+3] << 24);
-    gpu_write(REG_MEM_DATA, packed);
+for (int i = 0; i < 8192 / 4; i++) {
+    gpu_write(REG_MEM_DATA, bc1_data[i]);  // Auto-increments by 4
 }
 
-// Configure texture unit 0 for compressed format
+// Configure texture unit 0 for BC1 compressed format
 gpu_write(REG_TEX0_BASE, 0x404000);
 gpu_write(REG_TEX0_FMT,
     (0x0 << 16) |  // Swizzle: RGBA
     (7 << 8) |     // HEIGHT_LOG2: 128
-    (7 << 0) |     // WIDTH_LOG2: 128
-    (1 << 1) |     // COMPRESSED: yes
+    (7 << 4) |     // WIDTH_LOG2: 128
+    (0x1 << 1) |   // FORMAT: BC1
     (1 << 0)       // ENABLE: yes
 );
-gpu_write(REG_TEX0_LUT_BASE, 0x500000);
 gpu_write(REG_TEX0_WRAP, 0x0);  // REPEAT
 ```
 
@@ -961,14 +954,14 @@ gpu_write(REG_ALPHA_BLEND, 0x00);  // DISABLED
 ### Example 5: Channel Swizzling (Grayscale)
 
 ```c
-// Use a single-channel grayscale texture
+// Use a single-channel grayscale texture (RGBA4444)
 // Swizzle 0x7: RRR1 (replicate R to RGB, alpha=1)
 gpu_write(REG_TEX0_BASE, 0x384000);
 gpu_write(REG_TEX0_FMT,
     (0x7 << 16) |  // Swizzle: RRR1 (grayscale to RGB)
     (8 << 8) |     // HEIGHT_LOG2: 256
-    (8 << 0) |     // WIDTH_LOG2: 256
-    (0 << 1) |     // COMPRESSED: no
+    (8 << 4) |     // WIDTH_LOG2: 256
+    (0x0 << 1) |   // FORMAT: RGBA4444
     (1 << 0)       // ENABLE: yes
 );
 
@@ -988,9 +981,8 @@ After hardware reset or power-on:
 | UV0-UV3 | 0x0000000000000000 | Zero coordinates |
 | VERTEX | N/A | Write-only trigger |
 | TEX0-TEX3 BASE | 0x0000000000000000 | Address 0x000000 |
-| TEX0-TEX3 FMT | 0x0000000000000000 | Disabled, 8×8 default |
+| TEX0-TEX3 FMT | 0x0000000000000000 | Disabled, RGBA4444, 8x8 default |
 | TEX0-TEX3 BLEND | 0x0000000000000000 | MULTIPLY |
-| TEX0-TEX3 LUT_BASE | 0x0000000000000000 | Address 0x000000 |
 | TEX0-TEX3 WRAP | 0x0000000000000000 | REPEAT both axes |
 | TRI_MODE | 0x0000000000000000 | Flat, no texture, no Z |
 | ALPHA_BLEND | 0x0000000000000000 | Disabled |
@@ -1045,6 +1037,13 @@ Active-high outputs from GPU to host.
 ---
 
 ## Version History
+
+**Version 3.0** (February 2026):
+- Replaced RGBA8888 with RGBA4444 texture format
+- Replaced 8-bit indexed compression with BC1 block compression
+- TEXn_FMT.COMPRESSED bit replaced with 2-bit FORMAT field
+- Removed TEXn_LUT_BASE registers (no longer needed)
+- Added INT-014 (Texture Memory Layout) reference for format details
 
 **Version 2.0** (January 2026):
 - Added 4 independent texture units (TEX0-TEX3)

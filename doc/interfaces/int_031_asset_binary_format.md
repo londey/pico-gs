@@ -37,9 +37,9 @@ Generated in `OUT_DIR/assets/` by build.rs:
 $OUT_DIR/assets/
 ├── mod.rs                     # Master module file (re-exports all assets)
 ├── textures_player.rs         # Rust wrapper
-├── textures_player.bin        # Binary RGBA8888 data
+├── textures_player_rgba4444.bin  # Binary RGBA4444 data
 ├── textures_enemy.rs
-├── textures_enemy.bin
+├── textures_enemy_bc1.bin     # Binary BC1 compressed data
 ├── meshes_cube_patch0.rs      # Mesh patch 0
 ├── meshes_cube_patch0_pos.bin # Positions
 ├── meshes_cube_patch0_uv.bin  # UV coordinates
@@ -97,7 +97,7 @@ host_app/assets/
 
 **Textures**:
 - Rust wrapper: `{identifier_lowercase}.rs`
-- Binary data: `{identifier_lowercase}.bin`
+- Binary data: `{identifier_lowercase}_rgba4444.bin` or `{identifier_lowercase}_bc1.bin`
 
 **Meshes** (per patch):
 - Rust wrapper: `{identifier_lowercase}_patch{n}.rs` (where n is 0-based)
@@ -115,84 +115,146 @@ host_app/assets/
 **Template**:
 ```rust
 // Generated from: {source_path}
-// Dimensions: {width}×{height} RGBA8
+// Dimensions: {width}x{height}
+// Format: {format}
 // Size: {byte_count} bytes ({kb_size} KB)
 // GPU Requirements: 4K-aligned base address
 
 pub const {IDENTIFIER}_WIDTH: u32 = {width};
 pub const {IDENTIFIER}_HEIGHT: u32 = {height};
+pub const {IDENTIFIER}_FORMAT: TextureFormat = TextureFormat::{format_enum};
 pub const {IDENTIFIER}_DATA: &[u8] = include_bytes!("{bin_filename}");
 
 // Usage in firmware:
-// let texture = Texture::from_rgba8({IDENTIFIER}_WIDTH, {IDENTIFIER}_HEIGHT, {IDENTIFIER}_DATA);
+// gpu.set_texture(0, {IDENTIFIER}_WIDTH, {IDENTIFIER}_HEIGHT,
+//                  {IDENTIFIER}_FORMAT, {IDENTIFIER}_DATA);
 ```
 
 **Field Descriptions**:
 - `{source_path}`: Original PNG file path (e.g., `assets/textures/player.png`)
 - `{width}`, `{height}`: Texture dimensions (u32, power-of-two, 8-1024)
-- `{byte_count}`: Total bytes = width × height × 4
+- `{format}`: Texture format string (`RGBA4444` or `BC1`)
+- `{byte_count}`: Total bytes (format-dependent, see below)
 - `{kb_size}`: Size in KB, formatted to 1 decimal place
 - `{IDENTIFIER}`: Uppercase identifier (e.g., `TEXTURES_PLAYER`)
-- `{bin_filename}`: Relative path to binary file (e.g., `player.bin`)
+- `{format_enum}`: Rust enum variant (`RGBA4444` or `BC1`)
+- `{bin_filename}`: Relative path to binary file (e.g., `player_rgba4444.bin`)
 
-**Example** (`player.rs`):
+**Example** (`player.rs` - RGBA4444):
 ```rust
 // Generated from: assets/textures/player.png
-// Dimensions: 256×256 RGBA8
-// Size: 262144 bytes (256.0 KB)
+// Dimensions: 256x256
+// Format: RGBA4444
+// Size: 131072 bytes (128.0 KB)
 // GPU Requirements: 4K-aligned base address
 
 pub const PLAYER_WIDTH: u32 = 256;
 pub const PLAYER_HEIGHT: u32 = 256;
-pub const PLAYER_DATA: &[u8] = include_bytes!("player.bin");
+pub const PLAYER_FORMAT: TextureFormat = TextureFormat::RGBA4444;
+pub const PLAYER_DATA: &[u8] = include_bytes!("player_rgba4444.bin");
 
 // Usage in firmware:
-// let texture = Texture::from_rgba8(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_DATA);
+// gpu.set_texture(0, PLAYER_WIDTH, PLAYER_HEIGHT,
+//                  PLAYER_FORMAT, PLAYER_DATA);
 ```
 
-### Binary Data File (`.bin`)
+**Example** (`lightmap.rs` - BC1):
+```rust
+// Generated from: assets/textures/lightmap.png
+// Dimensions: 256x256
+// Format: BC1
+// Size: 32768 bytes (32.0 KB)
+// GPU Requirements: 4K-aligned base address
 
-**Format**: Raw RGBA8888 pixel data
+pub const LIGHTMAP_WIDTH: u32 = 256;
+pub const LIGHTMAP_HEIGHT: u32 = 256;
+pub const LIGHTMAP_FORMAT: TextureFormat = TextureFormat::BC1;
+pub const LIGHTMAP_DATA: &[u8] = include_bytes!("lightmap_bc1.bin");
+
+// Usage in firmware:
+// gpu.set_texture(1, LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT,
+//                  LIGHTMAP_FORMAT, LIGHTMAP_DATA);
+```
+
+### RGBA4444 Binary Data File (`_rgba4444.bin`)
+
+**Format**: Raw RGBA4444 pixel data, organized in 4x4 blocks
 
 **Layout**:
 ```
-Offset (bytes) | Data
----------------|-------------------------------------
-0              | Pixel[0][0].R (u8)
-1              | Pixel[0][0].G (u8)
-2              | Pixel[0][0].B (u8)
-3              | Pixel[0][0].A (u8)
-4              | Pixel[0][1].R (u8)
-5              | Pixel[0][1].G (u8)
-...            | ...
-width*4 - 4    | Pixel[0][width-1].R (u8)
-width*4 - 3    | Pixel[0][width-1].G (u8)
-width*4 - 2    | Pixel[0][width-1].B (u8)
-width*4 - 1    | Pixel[0][width-1].A (u8)
-width*4        | Pixel[1][0].R (u8)
-...            | ...
-Total          | width × height × 4 bytes
+Block Organization: Left-to-right, top-to-bottom
+Within each 4x4 block: Left-to-right, top-to-bottom
+
+Block 0 (pixels 0,0 to 3,3):
+  Offset 0-1:   Pixel[0,0] (u16 little-endian: R4G4B4A4)
+  Offset 2-3:   Pixel[1,0] (u16 little-endian)
+  Offset 4-5:   Pixel[2,0] (u16 little-endian)
+  Offset 6-7:   Pixel[3,0] (u16 little-endian)
+  Offset 8-9:   Pixel[0,1] (u16 little-endian)
+  ...
+  Offset 30-31: Pixel[3,3] (u16 little-endian)
+
+Block 1 (pixels 4,0 to 7,3):
+  Offset 32-33: Pixel[4,0] (u16 little-endian)
+  ...
+
+Total size: (width / 4) x (height / 4) x 32 bytes
 ```
 
 **Properties**:
-- Byte order: N/A (single bytes)
-- Row order: Top to bottom (row 0 is top of image)
-- Pixel order: Left to right within each row
-- Color channels: RGBA (red, green, blue, alpha)
-- Channel range: 0-255 (u8)
+- Byte order: Little-endian
+- Block size: 32 bytes (16 pixels x 2 bytes)
+- Pixel format: [15:12]=R, [11:8]=G, [7:4]=B, [3:0]=A
+- Channel range: 0-15 (4 bits per channel)
 
 **Size Examples**:
-- 8×8: 256 bytes
-- 16×16: 1,024 bytes (1 KB)
-- 256×256: 262,144 bytes (256 KB)
-- 1024×1024: 4,194,304 bytes (4 MB)
+- 64x64: 8,192 bytes (8 KB)
+- 256x256: 131,072 bytes (128 KB)
+- 512x512: 524,288 bytes (512 KB)
 
-**Hex Dump Example** (4×4 texture, first 16 bytes):
+See INT-014 for full format specification and address calculation.
+
+### BC1 Binary Data File (`_bc1.bin`)
+
+**Format**: BC1 block-compressed texture data
+
+**Layout**:
 ```
-00000000  ff 00 00 ff  00 ff 00 ff  00 00 ff ff  ff ff 00 ff  |................|
-          └─Red px─┘  └─Green px┘  └─Blue px─┘  └─Yellow px┘
-          R  G  B  A   R  G  B  A   R  G  B  A   R  G  B  A
+Block Organization: Left-to-right, top-to-bottom
+Each block: 8 bytes, represents 4x4 pixels
+
+Block 0 (pixels 0,0 to 3,3):
+  Offset 0-1: color0 (RGB565, u16 little-endian)
+  Offset 2-3: color1 (RGB565, u16 little-endian)
+  Offset 4-7: indices (2 bits per pixel, u32 little-endian)
+
+Block 1 (pixels 4,0 to 7,3):
+  Offset 8-9:   color0 (RGB565)
+  Offset 10-11: color1 (RGB565)
+  Offset 12-15: indices (u32)
+  ...
+
+Total size: (width / 4) x (height / 4) x 8 bytes
 ```
+
+**Properties**:
+- Byte order: Little-endian
+- Block size: 8 bytes (4x4 pixels compressed)
+- Compression ratio: 8:1 vs RGBA8, 4:1 vs RGBA4444
+- Color endpoints: RGB565 format
+- Indices: 2 bits per pixel
+
+**Constraints**:
+- Texture width MUST be multiple of 4
+- Texture height MUST be multiple of 4
+
+**Size Examples**:
+- 64x64: 2,048 bytes (2 KB)
+- 256x256: 32,768 bytes (32 KB)
+- 512x512: 131,072 bytes (128 KB)
+- 1024x1024: 524,288 bytes (512 KB)
+
+See INT-014 for full format specification including BC1 decompression algorithm.
 
 ---
 
@@ -431,6 +493,31 @@ let bytes: Vec<u8> = indices.iter()
 std::fs::write("indices.bin", bytes)?;
 ```
 
+**Generating RGBA4444 binary data (from RGBA8)**:
+```rust
+fn rgba8_to_rgba4444_blocks(rgba8: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let mut output = Vec::new();
+    for block_y in 0..(height / 4) {
+        for block_x in 0..(width / 4) {
+            for texel_y in 0..4 {
+                for texel_x in 0..4 {
+                    let px = block_x * 4 + texel_x;
+                    let py = block_y * 4 + texel_y;
+                    let i = (py * width + px) * 4;
+                    let r4 = (rgba8[i] >> 4) as u16;
+                    let g4 = (rgba8[i + 1] >> 4) as u16;
+                    let b4 = (rgba8[i + 2] >> 4) as u16;
+                    let a4 = (rgba8[i + 3] >> 4) as u16;
+                    let packed = (r4 << 12) | (g4 << 8) | (b4 << 4) | a4;
+                    output.extend_from_slice(&packed.to_le_bytes());
+                }
+            }
+        }
+    }
+    output
+}
+```
+
 ---
 
 ## Firmware Integration
@@ -443,6 +530,12 @@ The library generates a master `mod.rs` in `OUT_DIR/assets/` that re-exports all
 ```rust
 // Auto-generated by asset_build_tool - do not edit
 // Source: host_app/assets/
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TextureFormat {
+    RGBA4444,
+    BC1,
+}
 
 // Textures
 include!("textures_player.rs");
@@ -468,15 +561,13 @@ This single `include!()` brings all generated asset constants into scope. No man
 ```rust
 use crate::assets::*;
 
-// Constants are available directly from the included module
-let texture = Texture {
-    width: TEXTURES_PLAYER_WIDTH,
-    height: TEXTURES_PLAYER_HEIGHT,
-    data: TEXTURES_PLAYER_DATA,
-};
-
-// Upload to GPU (assumes GPU API)
-gpu.upload_texture(0, &texture);
+// Upload texture to GPU with format
+gpu.set_texture(0,
+    TEXTURES_PLAYER_WIDTH,
+    TEXTURES_PLAYER_HEIGHT,
+    TEXTURES_PLAYER_FORMAT,
+    TEXTURES_PLAYER_DATA,
+);
 ```
 
 ### Using Mesh Data
@@ -560,18 +651,31 @@ fn main() {
 
 ## File Size Estimates
 
-### Textures
+### Textures (RGBA4444)
 
-| Dimensions | Pixels | Size (bytes) | Size (KB) | Size (MB) |
-|------------|--------|--------------|-----------|-----------|
-| 8×8 | 64 | 256 | 0.25 | 0.00024 |
-| 16×16 | 256 | 1,024 | 1 | 0.001 |
-| 32×32 | 1,024 | 4,096 | 4 | 0.004 |
-| 64×64 | 4,096 | 16,384 | 16 | 0.016 |
-| 128×128 | 16,384 | 65,536 | 64 | 0.0625 |
-| 256×256 | 65,536 | 262,144 | 256 | 0.25 |
-| 512×512 | 262,144 | 1,048,576 | 1,024 | 1 |
-| 1024×1024 | 1,048,576 | 4,194,304 | 4,096 | 4 |
+| Dimensions | Pixels | Size (bytes) | Size (KB) |
+|------------|--------|--------------|-----------|
+| 8x8 | 64 | 128 | 0.125 |
+| 16x16 | 256 | 512 | 0.5 |
+| 32x32 | 1,024 | 2,048 | 2 |
+| 64x64 | 4,096 | 8,192 | 8 |
+| 128x128 | 16,384 | 32,768 | 32 |
+| 256x256 | 65,536 | 131,072 | 128 |
+| 512x512 | 262,144 | 524,288 | 512 |
+| 1024x1024 | 1,048,576 | 2,097,152 | 2,048 |
+
+### Textures (BC1)
+
+| Dimensions | Pixels | Size (bytes) | Size (KB) |
+|------------|--------|--------------|-----------|
+| 8x8 | 64 | 32 | 0.03 |
+| 16x16 | 256 | 128 | 0.125 |
+| 32x32 | 1,024 | 512 | 0.5 |
+| 64x64 | 4,096 | 2,048 | 2 |
+| 128x128 | 16,384 | 8,192 | 8 |
+| 256x256 | 65,536 | 32,768 | 32 |
+| 512x512 | 262,144 | 131,072 | 128 |
+| 1024x1024 | 1,048,576 | 524,288 | 512 |
 
 ### Meshes (per patch)
 
@@ -587,13 +691,13 @@ fn main() {
 
 | Asset | Type | Count | Avg Size | Total Size |
 |-------|------|-------|----------|------------|
-| UI textures | 64×64 | 10 | 16 KB | 160 KB |
-| Character textures | 256×256 | 5 | 256 KB | 1,280 KB |
+| UI textures (RGBA4444) | 64x64 | 10 | 8 KB | 80 KB |
+| Character textures (RGBA4444) | 256x256 | 5 | 128 KB | 640 KB |
 | Environment meshes | Patches | 50 | 600 bytes | 30 KB |
 | Character meshes | Patches | 100 | 600 bytes | 60 KB |
-| **Total** | - | - | - | **~1.5 MB** |
+| **Total** | - | - | - | **~0.8 MB** |
 
-This fits comfortably within RP2350's 4 MB flash budget, leaving ~2.5 MB for firmware code and other data.
+With RGBA4444 (50% savings vs RGBA8) and BC1 (87.5% savings vs RGBA8), this fits very comfortably within RP2350's 4 MB flash budget, leaving ~3.2 MB for firmware code and other data.
 
 ---
 
@@ -621,9 +725,12 @@ When implementing output generation, ensure:
    - [ ] Use raw data (no headers or padding)
 
 4. **Texture binary**:
-   - [ ] RGBA8888 format (4 bytes per pixel)
-   - [ ] Row-major order (top to bottom)
-   - [ ] Size = width × height × 4
+   - [ ] RGBA4444: 4x4 block organization, 32 bytes per block
+   - [ ] RGBA4444: Size = (width / 4) x (height / 4) x 32
+   - [ ] BC1: 4x4 block organization, 8 bytes per block
+   - [ ] BC1: Size = (width / 4) x (height / 4) x 8
+   - [ ] BC1: Width and height are multiples of 4
+   - [ ] Format matches filename suffix (_rgba4444.bin or _bc1.bin)
 
 5. **Mesh binaries**:
    - [ ] Positions: vertex_count × 3 × 4 bytes
