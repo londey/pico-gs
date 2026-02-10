@@ -55,7 +55,14 @@ Once they respond, create the requirement:
 2. Read the created file
 3. Walk the user through filling in each section interactively — ask them questions to populate:
    - **Classification:** Help them choose Priority (Essential/Important/Nice-to-have), Stability (Stable/Evolving/Volatile), and Verification method
-   - **Requirement statement:** Help them write a clear SHALL/SHOULD/MAY statement
+   - **Requirement statement:** Help them write the requirement in condition/response format: "When [condition], the system SHALL [observable behavior]."
+     Before finalizing the statement, validate it against the quality criteria:
+     1. **Condition/Response format** — Does it follow "When X, the system SHALL Y"? If not, help identify the trigger condition that makes this testable.
+     2. **Singular** — Does it address exactly one thing? If it uses "and" or "or" to combine distinct capabilities, split it into separate requirements.
+     3. **Appropriate Level** — Does it describe a capability or behavior (correct) rather than data layout, register fields, or encoding details (too low-level)? If it specifies struct fields, byte offsets, or protocol encoding, move that detail to an interface document and have the requirement reference the interface instead.
+     4. **Unambiguous** — Could two engineers interpret this differently? Eliminate vague terms like "fast", "efficient", "appropriate".
+     5. **Necessary** — Is this requirement essential, or is it an implementation detail that belongs in a design unit?
+     If the statement fails any check, explain the issue to the user and help them revise it before proceeding.
    - **Rationale:** Ask why this requirement exists
 4. Leave **Allocated To** and **Interfaces** as TBD — these will be filled in after creating those documents
 
@@ -74,6 +81,7 @@ Once they respond:
    - **Parties:** Leave Provider/Consumer as TBD until the design unit exists
    - **Referenced By:** Add the requirement just created (e.g., REQ-001)
    - **Specification:** Help them write at least an overview of what this interface does
+   - Help the user understand that detailed data layouts, field definitions, register maps, and encoding specifications belong here in the interface document — not in requirements. If the user described low-level details during requirement creation that were redirected here, incorporate them into the interface specification.
 
 Write the completed content to the file.
 

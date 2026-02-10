@@ -47,6 +47,19 @@ For each affected document, propose specific modifications:
 3. Show the proposed new content
 4. Note any ripple effects to other documents
 
+### Step 4.5: Validate Requirement Quality
+
+For any proposed changes to requirement documents, validate each requirement statement against the quality criteria before including it in the proposal:
+
+1. **Format:** Each requirement must use the condition/response pattern: "When [condition], the system SHALL [observable behavior]." If a proposed requirement lacks a trigger condition, identify one and rewrite it.
+2. **Appropriate Level:** If the proposed requirement specifies data layout, register fields, byte encoding, packet structure, or wire protocol details, flag this and recommend:
+   - Create or update an interface document with the detailed specification
+   - Rewrite the requirement to reference the interface (e.g., "When X occurs, the system SHALL conform to INT-NNN")
+3. **Singular:** If a proposed requirement addresses multiple capabilities, recommend splitting it into separate requirements.
+4. **Verifiable:** The condition must define a clear test setup and the behavior a clear pass criterion. If a requirement is too vague to test, recommend making it more specific.
+
+If any proposed requirement fails validation, include the quality issue in the "Rationale" section of the proposal and present a corrected version alongside the original for user review.
+
 ### Step 5: Write Proposed Changes
 
 Create/update `.syskit/analysis/<folder>/proposed_changes.md`:

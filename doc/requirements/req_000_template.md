@@ -18,12 +18,13 @@ Or copy this template and modify.
 
 ## Requirement
 
-The system SHALL ...
+When [condition/trigger], the system SHALL [observable behavior/response].
 
-Use:
-- **SHALL** for mandatory requirements
-- **SHOULD** for recommended requirements
-- **MAY** for optional requirements
+Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
+
+- Each requirement must have a testable trigger condition and observable outcome
+- Describe capabilities/behaviors, not data layout or encoding
+- For struct fields, byte formats, protocols → create an interface (INT-NNN) and reference it
 
 ## Rationale
 
