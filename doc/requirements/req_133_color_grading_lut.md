@@ -33,11 +33,11 @@ Post-processing effects like gamma correction and color grading are traditionall
 
 The GPU SHALL implement three independent 1D LUTs for color grading, indexed by the RGB565 framebuffer components:
 
-- **Red LUT:** 32 entries (indexed by R[4:0]), each entry is R5G5B5 (15 bits)
-- **Green LUT:** 64 entries (indexed by G[5:0]), each entry is R5G5B5 (15 bits)
-- **Blue LUT:** 32 entries (indexed by B[4:0]), each entry is R5G5B5 (15 bits)
+- **Red LUT:** 32 entries (indexed by R[4:0]), each entry is RGB888 (24 bits)
+- **Green LUT:** 64 entries (indexed by G[5:0]), each entry is RGB888 (24 bits)
+- **Blue LUT:** 32 entries (indexed by B[4:0]), each entry is RGB888 (24 bits)
 
-Total storage: (32 + 64 + 32) x 15 bits = 1920 bits, fitting in 1 EBR block.
+Total storage: (32 + 64 + 32) × 24 bits = 3072 bits, fitting in 1 EBR block (512×36 configuration, using 128 of 512 entries).
 
 ### FR-133-2: LUT Lookup Process
 
@@ -45,14 +45,13 @@ For each scanout pixel, the GPU SHALL:
 1. Read RGB565 pixel from framebuffer
 2. Extract components: `r5 = pixel[15:11]`, `g6 = pixel[10:5]`, `b5 = pixel[4:0]`
 3. Lookup in parallel:
-   - `lut_r_out = red_lut[r5]` (returns R5G5B5)
-   - `lut_g_out = green_lut[g6]` (returns R5G5B5)
-   - `lut_b_out = blue_lut[b5]` (returns R5G5B5)
-4. Sum with saturation:
-   - `final_r = saturate(lut_r_out[14:10] + lut_g_out[14:10] + lut_b_out[14:10], 5'h1F)`
-   - `final_g = saturate(lut_r_out[9:5] + lut_g_out[9:5] + lut_b_out[9:5], 5'h1F)`
-   - `final_b = saturate(lut_r_out[4:0] + lut_g_out[4:0] + lut_b_out[4:0], 5'h1F)`
-5. Expand final RGB555 to RGB888 for DVI TMDS encoding
+   - `lut_r_out = red_lut[r5]` (returns RGB888)
+   - `lut_g_out = green_lut[g6]` (returns RGB888)
+   - `lut_b_out = blue_lut[b5]` (returns RGB888)
+4. Sum with saturation to produce final RGB888 for DVI TMDS encoding:
+   - `final_R8 = saturate(lut_r_out[23:16] + lut_g_out[23:16] + lut_b_out[23:16], 8'hFF)`
+   - `final_G8 = saturate(lut_r_out[15:8] + lut_g_out[15:8] + lut_b_out[15:8], 8'hFF)`
+   - `final_B8 = saturate(lut_r_out[7:0] + lut_g_out[7:0] + lut_b_out[7:0], 8'hFF)`
 
 ### FR-133-3: LUT Upload Protocol
 
@@ -60,7 +59,7 @@ The firmware SHALL upload LUT entries using the following protocol:
 1. Write to `COLOR_GRADE_CTRL[2]` (RESET_ADDR) to reset LUT address pointer
 2. For each entry:
    - Write to `COLOR_GRADE_LUT_ADDR` to select LUT (00=R, 01=G, 10=B) and entry index
-   - Write to `COLOR_GRADE_LUT_DATA` to upload 15-bit entry data (R5G5B5 format)
+   - Write to `COLOR_GRADE_LUT_DATA` to upload 24-bit entry data (RGB888 format)
 3. Write to `COLOR_GRADE_CTRL[1]` (SWAP_BANKS) to activate new LUT at next vblank
 
 ### FR-133-4: Double-Buffering
@@ -82,7 +81,7 @@ When `COLOR_GRADE_CTRL[0]` (ENABLE) is 0, the LUT SHALL be bypassed and framebuf
 
 - [ ] Upload LUT data via COLOR_GRADE_LUT_ADDR and COLOR_GRADE_LUT_DATA registers
 - [ ] Three 1D LUTs with correct entry counts (R:32, G:64, B:32)
-- [ ] Each LUT entry is R5G5B5 format (15 bits)
+- [ ] Each LUT entry is RGB888 format (24 bits)
 - [ ] LUT lookup indexes by RGB565 component values (R5, G6, B5)
 - [ ] LUT outputs are summed with saturation to produce final scanout color
 - [ ] LUT applies at scanout (between framebuffer read and DVI encoder)

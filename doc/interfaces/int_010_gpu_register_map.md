@@ -654,23 +654,23 @@ Selects which LUT and entry to write via COLOR_GRADE_LUT_DATA.
 Write LUT entry data. Entry is written to the address selected by COLOR_GRADE_LUT_ADDR. Writes go to the inactive bank.
 
 ```
-[63:15]   Reserved (write as 0)
-[14:10]   R output (5 bits)
-[9:5]     G output (5 bits)
-[4:0]     B output (5 bits)
+[63:24]   Reserved (write as 0)
+[23:16]   R output (8 bits)
+[15:8]    G output (8 bits)
+[7:0]     B output (8 bits)
 ```
 
-**Entry Format**: R5G5B5 (15 bits per entry). Each LUT entry specifies the RGB contribution of that input channel to the final output.
+**Entry Format**: RGB888 (24 bits per entry). Each LUT entry specifies the RGB contribution of that input channel to the final output. Full 8-bit output precision matches the DVI TMDS RGB888 scanout format.
 
 **Lookup Process** (per scanout pixel):
 ```
-lut_r_out = red_lut[pixel_R5]     // R5G5B5
-lut_g_out = green_lut[pixel_G6]   // R5G5B5
-lut_b_out = blue_lut[pixel_B5]    // R5G5B5
+lut_r_out = red_lut[pixel_R5]     // RGB888
+lut_g_out = green_lut[pixel_G6]   // RGB888
+lut_b_out = blue_lut[pixel_B5]    // RGB888
 
-final_R5 = saturate(lut_r_out.R + lut_g_out.R + lut_b_out.R, 31)
-final_G5 = saturate(lut_r_out.G + lut_g_out.G + lut_b_out.G, 31)
-final_B5 = saturate(lut_r_out.B + lut_g_out.B + lut_b_out.B, 31)
+final_R8 = saturate(lut_r_out.R + lut_g_out.R + lut_b_out.R, 255)
+final_G8 = saturate(lut_r_out.G + lut_g_out.G + lut_b_out.G, 255)
+final_B8 = saturate(lut_r_out.B + lut_g_out.B + lut_b_out.B, 255)
 ```
 
 **Upload Protocol**:

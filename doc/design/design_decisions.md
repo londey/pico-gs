@@ -159,18 +159,18 @@ The LUT can be placed either at pixel write (in the render pipeline) or at displ
 ### Decision
 
 Place 3× 1D color grading LUTs at display scanout in the display controller (UNIT-008):
-- Red LUT: 32 entries × R5G5B5 (indexed by R5 of RGB565 pixel)
-- Green LUT: 64 entries × R5G5B5 (indexed by G6 of RGB565 pixel)
-- Blue LUT: 32 entries × R5G5B5 (indexed by B5 of RGB565 pixel)
-- Outputs summed with saturation per channel: `final = clamp(R_LUT[R5] + G_LUT[G6] + B_LUT[B5])`
+- Red LUT: 32 entries × RGB888 (indexed by R5 of RGB565 pixel)
+- Green LUT: 64 entries × RGB888 (indexed by G6 of RGB565 pixel)
+- Blue LUT: 32 entries × RGB888 (indexed by B5 of RGB565 pixel)
+- Outputs summed with saturation per channel: `final = clamp(R_LUT[R5] + G_LUT[G6] + B_LUT[B5])` at 8-bit (255)
 - Double-buffered (write inactive bank, swap at vblank)
-- 1 EBR block total, bypass when disabled
+- 1 EBR block total (512×36 configuration), bypass when disabled
 - Host upload via COLOR_GRADE_LUT_ADDR/DATA registers (0x45/0x46)
 
 ### Rationale
 
 - **Scanout placement**: No overdraw waste (each pixel processed exactly once), alpha blending operates in linear space (correct), LUT can be changed without re-rendering
-- **RGB565-native indices**: 32/64/32 entries fit in 1 EBR (vs 256 entries per channel = 3 EBR for 8-bit indices)
+- **RGB565-native indices**: 32/64/32 entries with RGB888 output fit in 1 EBR (512×36 config) (vs 256 entries per channel = 3 EBR for 8-bit indices)
 - **Cross-channel output**: Each LUT produces RGB output, enabling effects like color tinting (red input influences green output)
 - **Double-buffering**: Prevents tearing during LUT updates
 - **Alternatives considered**: Per-pixel LUT at render time (wastes work on overdraw), single per-channel LUT (no cross-channel effects), 3D LUT (too large for EBR)
@@ -179,7 +179,7 @@ Place 3× 1D color grading LUTs at display scanout in the display controller (UN
 
 - +1 EBR block (total EBR: 18 of 56, 32.1%)
 - +2 cycles scanout latency (1 EBR read + 1 sum/saturate — fits within pixel period at 100MHz)
-- +~200 LUTs for summation and saturation
+- +~230 LUTs for summation and saturation (8-bit adders)
 - +~100 FFs for control FSM (upload, bank swap)
 - Real-time gamma correction, color temperature, artistic grading with no render overhead
 - See REQ-133 for full specification

@@ -43,10 +43,10 @@ TBD
 ### Internal State
 
 - Scanline FIFO (prefetch buffer for display scanout)
-- Color grading LUT: 3 sub-LUTs in 1 EBR block, double-buffered
-  - Red LUT: 32 entries × 15 bits (R5G5B5)
-  - Green LUT: 64 entries × 15 bits (R5G5B5)
-  - Blue LUT: 32 entries × 15 bits (R5G5B5)
+- Color grading LUT: 3 sub-LUTs in 1 EBR block (512×36 configuration), double-buffered
+  - Red LUT: 32 entries × 24 bits (RGB888)
+  - Green LUT: 64 entries × 24 bits (RGB888)
+  - Blue LUT: 32 entries × 24 bits (RGB888)
 - LUT bank select (active/inactive for double-buffering)
 - Display timing counters (h_count, v_count)
 
@@ -58,14 +58,13 @@ TBD
 2. **Color Grading LUT** (if COLOR_GRADE_CTRL.ENABLE=1):
    a. Extract RGB565 components: R5=pixel[15:11], G6=pixel[10:5], B5=pixel[4:0]
    b. Parallel LUT lookups (1 cycle EBR read):
-      - `lut_r_out = red_lut[R5]` → R5G5B5
-      - `lut_g_out = green_lut[G6]` → R5G5B5
-      - `lut_b_out = blue_lut[B5]` → R5G5B5
-   c. Sum with saturation (1 cycle combinational):
-      - `final_R5 = min(lut_r_out[14:10] + lut_g_out[14:10] + lut_b_out[14:10], 31)`
-      - `final_G5 = min(lut_r_out[9:5] + lut_g_out[9:5] + lut_b_out[9:5], 31)`
-      - `final_B5 = min(lut_r_out[4:0] + lut_g_out[4:0] + lut_b_out[4:0], 31)`
-   d. Expand RGB555 to RGB888 for TMDS: `R8 = {R5, R5[4:2]}`, `G8 = {G5, G5[4:2]}`, `B8 = {B5, B5[4:2]}`
+      - `lut_r_out = red_lut[R5]` → RGB888
+      - `lut_g_out = green_lut[G6]` → RGB888
+      - `lut_b_out = blue_lut[B5]` → RGB888
+   c. Sum with saturation (1 cycle combinational) to produce final RGB888:
+      - `final_R8 = min(lut_r_out[23:16] + lut_g_out[23:16] + lut_b_out[23:16], 255)`
+      - `final_G8 = min(lut_r_out[15:8] + lut_g_out[15:8] + lut_b_out[15:8], 255)`
+      - `final_B8 = min(lut_r_out[7:0] + lut_g_out[7:0] + lut_b_out[7:0], 255)`
 3. **Bypass Mode** (if COLOR_GRADE_CTRL.ENABLE=0):
    - Standard RGB565→RGB888 expansion: `R8 = {R5, R5[4:2]}`, `G8 = {G6, G6[5:4]}`, `B8 = {B5, B5[4:2]}`
 4. **TMDS Output**: Send RGB888 to DVI encoder (UNIT-009)
@@ -73,7 +72,7 @@ TBD
 **LUT Upload Protocol:**
 1. Host writes COLOR_GRADE_CTRL[2] (RESET_ADDR)
 2. Host writes COLOR_GRADE_LUT_ADDR to select LUT and entry
-3. Host writes COLOR_GRADE_LUT_DATA with R5G5B5 value → written to inactive bank
+3. Host writes COLOR_GRADE_LUT_DATA with RGB888 value → written to inactive bank
 4. Repeat for all entries
 5. Host writes COLOR_GRADE_CTRL[1] (SWAP_BANKS) → banks swap at next vblank
 
@@ -101,12 +100,12 @@ TBD
 - Testbench for bank swapping: verify swap occurs at vblank without tearing
 - Testbench for LUT bypass: verify unchanged RGB565→RGB888 when disabled
 - Testbench for cross-channel effects: verify R→G color tinting works correctly
-- Testbench for saturation: verify summed outputs clamp to 5-bit max (31)
+- Testbench for saturation: verify summed outputs clamp to 8-bit max (255)
 - Timing verification: LUT adds ≤2 cycles, within pixel period
 
 **Estimated FPGA Resources:**
-- Color grading LUT: 1 EBR block (dual-bank, 128 entries × 15 bits per bank)
-- Summation + saturation logic: ~200 LUTs
+- Color grading LUT: 1 EBR block (dual-bank, 128 entries × 24 bits per bank, 512×36 EBR config)
+- Summation + saturation logic: ~230 LUTs
 - Control FSM (upload, bank swap): ~100 FFs
 
 ## Design Notes
