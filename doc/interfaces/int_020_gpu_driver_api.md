@@ -116,6 +116,75 @@ Upload a block of 32-bit words to GPU SRAM via MEM_ADDR/MEM_DATA registers.
 
 ---
 
+## Texture Upload
+
+### `gpu_upload_texture(handle: &GpuHandle, slot: u8, width: u32, height: u32, format: TextureFormat, data: &[u8])`
+
+Upload a single-level texture to GPU SRAM and configure texture unit registers.
+
+**Sequence**:
+1. Allocate GPU SRAM for texture (4K aligned)
+2. Upload texture data via `gpu_upload_memory()`
+3. Write TEXn_BASE register (texture address)
+4. Write TEXn_FMT register (width_log2, height_log2, format, enable, mip_levels=1)
+
+**Parameters**:
+- `slot`: Texture unit index (0-3)
+- `width`, `height`: Texture dimensions (power-of-2, 8-1024)
+- `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
+- `data`: Texture pixel data (size must match format and dimensions)
+
+**Example**:
+```rust
+gpu_upload_texture(&gpu, 0, 256, 256, TextureFormat::BC1, PLAYER_DATA);
+```
+
+---
+
+### `gpu_upload_texture_with_mipmaps(handle: &GpuHandle, slot: u8, width: u32, height: u32, format: TextureFormat, mip_levels: u8, data: &[u8], mip_offsets: &[usize])`
+
+Upload a texture with mipmap chain to GPU SRAM and configure texture unit registers.
+
+**Sequence**:
+1. Calculate total size (sum of all mipmap level sizes)
+2. Allocate GPU SRAM for texture chain (4K aligned base address)
+3. Upload all mipmap levels sequentially via `gpu_upload_memory()`
+4. Write TEXn_BASE register (base level address)
+5. Write TEXn_FMT register (width_log2, height_log2, format, enable, mip_levels)
+6. Write TEXn_MIP_BIAS register (default: 0, no bias)
+
+**Parameters**:
+- `slot`: Texture unit index (0-3)
+- `width`, `height`: Base level dimensions (power-of-2, 8-1024)
+- `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
+- `mip_levels`: Number of mipmap levels (1-11)
+- `data`: Complete mipmap chain data (all levels concatenated)
+- `mip_offsets`: Byte offsets of each mipmap level within `data`
+
+**Validation**:
+- `mip_levels` must be in range [1, 11]
+- `mip_levels` must be ≤ min(width_log2, height_log2) + 1
+- `mip_offsets.len()` must equal `mip_levels`
+- Total data size must match expected mipmap chain size
+
+**Example**:
+```rust
+gpu_upload_texture_with_mipmaps(
+    &gpu,
+    0,  // slot
+    PLAYER_WIDTH,
+    PLAYER_HEIGHT,
+    PLAYER_FORMAT,
+    PLAYER_MIP_LEVELS,
+    PLAYER_DATA,
+    &PLAYER_MIP_OFFSETS
+);
+```
+
+**Performance**: Same as single-level upload (~3 MB/s), but total size is ~33% larger with full mipmap chain.
+
+---
+
 ## Frame Synchronization
 
 ### `gpu_wait_vsync(handle: &GpuHandle)`

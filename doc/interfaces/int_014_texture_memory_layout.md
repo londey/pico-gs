@@ -230,6 +230,129 @@ and 8-bit indexed compression formats.
 
 All existing assets must be regenerated.
 
+---
+
+## Mipmap Chain Organization
+
+**Version**: Added in v2.0 (Mipmap Support)
+
+### Overview
+
+Textures may include a mipmap chain: the base level plus progressively downsampled levels. Mipmaps improve visual quality by reducing aliasing and improving texture cache performance.
+
+**Mipmap levels**: Base (level 0) + N additional levels, where each level dimension = max(prev_dimension / 2, minimum_dimension)
+
+**Minimum dimension**:
+- RGBA4444: 1 pixel
+- BC1: 4 pixels (minimum BC1 block size)
+
+### Memory Layout
+
+Mipmaps are stored **sequentially** in memory, starting with the base level.
+
+**Layout for 256×256 BC1 texture (9 levels)**:
+```
+Address Offset | Level | Dimensions | Block Grid | Size (bytes)
+---------------|-------|------------|------------|-------------
++0x0000        | 0     | 256×256    | 64×64      | 32,768
++0x8000        | 1     | 128×128    | 32×32      | 8,192
++0xA000        | 2     | 64×64      | 16×16      | 2,048
++0xA800        | 3     | 32×32      | 8×8        | 512
++0xAA00        | 4     | 16×16      | 4×4        | 128
++0xAA80        | 5     | 8×8        | 2×2        | 32
++0xAAA0        | 6     | 4×4        | 1×1        | 8
++0xAAA8        | 7     | 2×2        | 1×1        | 8 (min block)
++0xAAB0        | 8     | 1×1        | 1×1        | 8 (min block)
+---------------|-------|------------|------------|-------------
+Total size: 43,704 bytes (42.7 KB) vs 32,768 bytes (32 KB) for base only
+Memory overhead: +33.6%
+```
+
+**Note**: BC1 blocks are always 8 bytes minimum, so levels smaller than 4×4 still occupy one full block.
+
+### Address Calculation
+
+**Mipmap level address:**
+```
+mip_address[0] = texture_base  // Base level
+
+For i > 0:
+  mip_address[i] = mip_address[i-1] + size_of_level(i-1)
+```
+
+**Level size calculation:**
+```
+width_at_level(i)  = max(base_width >> i, min_width)
+height_at_level(i) = max(base_height >> i, min_height)
+
+For RGBA4444:
+  min_width = 1, min_height = 1
+  size_of_level(i) = width_at_level(i) * height_at_level(i) * 2 bytes
+
+For BC1:
+  min_width = 4, min_height = 4
+  block_width  = max(width_at_level(i) / 4, 1)
+  block_height = max(height_at_level(i) / 4, 1)
+  size_of_level(i) = block_width * block_height * 8 bytes
+```
+
+### Size Examples
+
+**RGBA4444 with full mipmap chain:**
+
+| Base Size | Levels | Base Size | Mipmap Chain Size | Overhead |
+|-----------|--------|-----------|-------------------|----------|
+| 64×64     | 7      | 8 KB      | 10.7 KB           | +33.3%   |
+| 256×256   | 9      | 128 KB    | 170.7 KB          | +33.3%   |
+| 512×512   | 10     | 512 KB    | 682.7 KB          | +33.3%   |
+
+**BC1 with full mipmap chain:**
+
+| Base Size | Levels | Base Size | Mipmap Chain Size | Overhead |
+|-----------|--------|-----------|-------------------|----------|
+| 64×64     | 5      | 2 KB      | 2.7 KB            | +33.3%   |
+| 256×256   | 7      | 32 KB     | 42.7 KB           | +33.3%   |
+| 512×512   | 8      | 128 KB    | 170.7 KB          | +33.3%   |
+| 1024×1024 | 9      | 512 KB    | 682.7 KB          | +33.3%   |
+
+**Memory overhead is consistent at ~33% for full mipmap chains.**
+
+### Alignment
+
+Mipmap chains do not require additional alignment beyond the 4K alignment required for TEXn_BASE. The base level must be 4K aligned; subsequent levels are stored sequentially with no padding.
+
+### Partial Mipmap Chains
+
+Textures may include fewer than the maximum mipmap levels. For example, a 256×256 texture could have:
+- MIP_LEVELS=1: Base only (32 KB)
+- MIP_LEVELS=5: Base + 4 mips (256→128→64→32→16, total ~42 KB)
+- MIP_LEVELS=9: Full chain down to 1×1 (total ~43 KB)
+
+The GPU will clamp LOD selection to [0, MIP_LEVELS-1].
+
+### GPU Addressing
+
+The pixel pipeline calculates the mipmap level address using a cumulative offset table:
+
+**Hardware implementation** (UNIT-006):
+```systemverilog
+// Precomputed offset table based on TEXn_FMT fields
+logic [31:0] mip_offsets[0:10];  // Up to 11 levels
+
+always_comb begin
+    mip_offsets[0] = 0;
+    for (int i = 1; i < mip_levels; i++) begin
+        mip_offsets[i] = mip_offsets[i-1] +
+                         calculate_level_size(width_log2, height_log2, i-1, format);
+    end
+end
+
+// Select mipmap level
+mip_base_addr = texture_base + mip_offsets[selected_mip];
+```
+
+---
+
 ## Constraints
 
 - All textures must use power-of-2 dimensions (8 to 1024)

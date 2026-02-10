@@ -244,10 +244,17 @@ Base address of texture in SRAM. Must be 4K aligned.
 
 ### TEXn_FMT (0x11, 0x19, 0x21, 0x29)
 
-Texture format, dimensions, and swizzle pattern.
+Texture format, dimensions, swizzle pattern, and mipmap levels.
 
 ```
-[63:20]   Reserved (write as 0)
+[63:24]   Reserved (write as 0)
+[23:20]   MIP_LEVELS: Number of mipmap levels (0-15)
+          0000 = No mipmaps (disabled, single level only)
+          0001 = Base level only (equivalent to 0, backward compatible)
+          0010 = Base + 1 mip level (2 levels total)
+          ...
+          1011 = Base + 10 mip levels (11 levels total, max for 1024×1024)
+          1100-1111 = Reserved
 [19:16]   Swizzle pattern (4 bits, see encoding below)
 [15:8]    HEIGHT_LOG2: log₂(height), valid 3-10 (8 to 1024 pixels)
 [7:4]     WIDTH_LOG2: log₂(width), valid 3-10 (8 to 1024 pixels)
@@ -265,6 +272,13 @@ Texture format, dimensions, and swizzle pattern.
 - Attempting to use non-multiple-of-4 dimensions with BC1 results in undefined behavior
 - Swizzle patterns apply after texture decode (see INT-014)
 - See INT-014 for detailed texture memory layout specifications
+
+**Mipmap Notes**:
+- MIP_LEVELS=0 or MIP_LEVELS=1: Single level only, no mipmap addressing
+- MIP_LEVELS=N (N>1): Texture has N mipmap levels stored sequentially per INT-014
+- Maximum mip levels = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)
+  - Example: 256×256 (log2=8) can have up to 9 levels (256→128→64→32→16→8→4→2→1)
+- See INT-014 for mipmap chain memory layout
 
 **Dimension Encoding**:
 
@@ -298,8 +312,8 @@ Texture format, dimensions, and swizzle pattern.
 | 0xC | 111A | RGB=1 (white), preserve alpha |
 | 0xD-0xF | Reserved | Default to RGBA |
 
-**Example**: 64x64 texture, RGBA4444, enabled → WIDTH_LOG2=6, HEIGHT_LOG2=6, FORMAT=00 → write 0x00000000_00000661
-**Example**: 256x256 texture, BC1, enabled → WIDTH_LOG2=8, HEIGHT_LOG2=8, FORMAT=01 → write 0x00000000_00000883
+**Example**: 64x64 texture, RGBA4444, enabled, no mipmaps → WIDTH_LOG2=6, HEIGHT_LOG2=6, FORMAT=00, MIP_LEVELS=1 → write 0x00000000_00100661
+**Example**: 256x256 texture, BC1, enabled, 9 mipmap levels → WIDTH_LOG2=8, HEIGHT_LOG2=8, FORMAT=01, MIP_LEVELS=9 → write 0x00000000_00900883
 
 **Reset Value**: 0x0000000000000000 (disabled)
 
@@ -334,12 +348,39 @@ Step 6: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 
 ---
 
-### Reserved (0x13, 0x1B, 0x23, 0x2B)
+### TEXn_MIP_BIAS (0x13, 0x1B, 0x23, 0x2B)
 
-Previously TEXn_LUT_BASE (v2.0). Reserved in v3.0. Write as 0.
+Mipmap LOD (Level of Detail) bias for artistic control.
 
-**Note**: These registers were used for indexed compression lookup tables in v2.0.
-BC1 compression (v3.0) does not require separate lookup tables.
+```
+[63:8]    Reserved (write as 0)
+[7:0]     MIP_BIAS: Signed 8-bit fixed-point bias (-4.0 to +3.99)
+          Format: 2's complement, 2 fractional bits
+          Range: -128 to +127 → -4.00 to +3.96875
+          Examples:
+            0x00 = 0.0 (no bias)
+            0x04 = 1.0 (sharper, select higher-res mip)
+            0xFC = -1.0 (blurrier, select lower-res mip)
+```
+
+**LOD Calculation**:
+```
+raw_lod = log₂(max(|du/dx|, |dv/dx|, |du/dy|, |dv/dy|))
+biased_lod = raw_lod + (MIP_BIAS / 4.0)
+final_lod = clamp(biased_lod, 0, MIP_LEVELS - 1)
+mip_level = round(final_lod)  // Nearest-mip mode
+```
+
+**Use Cases**:
+- Positive bias: Sharper textures (reduce blurriness at distance)
+- Negative bias: Softer textures (reduce aliasing, shimmer)
+- Typical range: -0.5 to +0.5
+
+**Reset Value**: 0x0000000000000000 (no bias)
+
+**Version**: Added in v4.0 (Mipmap Support)
+
+**Note**: Previously Reserved in v3.0 (TEXn_LUT_BASE in v2.0).
 
 ---
 
