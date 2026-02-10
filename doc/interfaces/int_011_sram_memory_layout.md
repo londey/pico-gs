@@ -264,12 +264,16 @@ Access: Single pixel or short burst writes
 
 ```
 Priority: MEDIUM
-Pattern: Random access within texture bounds (block-oriented)
-Bandwidth: Up to 50 MB/s (depends on texture cache hit rate)
-Access: RGBA4444: 2 bytes per texel, BC1: 8 bytes per 4x4 block
+Pattern: Burst block reads on cache miss (REQ-131)
+Bandwidth: ~5-15 MB/s average (with >85% cache hit rate)
+Access: BC1: 8 bytes per cache miss, RGBA4444: 32 bytes per cache miss
 ```
 
-**Optimization**: BC1 textures fetch entire 8-byte blocks, providing 16 pixels per fetch. Future versions may add small texture cache in BRAM to reduce SRAM traffic.
+**Texture Cache (REQ-131)**: Each sampler has an on-chip 4-way set-associative texture cache (4x1024x18-bit EBR banks). On cache hit, no SRAM access is needed. On cache miss, the full 4x4 block is fetched:
+- BC1: 8 bytes = 4 SRAM reads on 16-bit bus (~8 cycles)
+- RGBA4444: 32 bytes = 16 SRAM reads on 16-bit bus (~18 cycles)
+
+With >85% expected hit rate, average texture SRAM bandwidth is significantly reduced from a worst-case ~50 MB/s, freeing bandwidth for framebuffer and Z-buffer operations.
 
 ---
 
@@ -300,13 +304,15 @@ Access: Read-test-write per pixel
 
 ### Allocated Budget
 
-| Consumer | Bandwidth | % of Total |
-|----------|-----------|------------|
-| Display scanout | 74 MB/s | 37% |
-| Framebuffer write | 50 MB/s | 25% |
-| Z-buffer R/W | 40 MB/s | 20% |
-| Texture fetch | 30 MB/s | 15% |
-| **Headroom** | 6 MB/s | 3% |
+| Consumer | Bandwidth | % of Total | Notes |
+|----------|-----------|------------|-------|
+| Display scanout | 74 MB/s | 37% | Sequential, highest priority |
+| Framebuffer write | 50 MB/s | 25% | Rasterizer pixel output |
+| Z-buffer R/W | 40 MB/s | 20% | Read-test-write per pixel |
+| Texture fetch | ~10 MB/s | 5% | With texture cache (REQ-131), >85% hit rate |
+| **Headroom** | ~26 MB/s | 13% | Freed by texture cache |
+
+**Note**: Pre-cache texture fetch budget was 30 MB/s (15%). The per-sampler texture cache (REQ-131) reduces average texture SRAM bandwidth to ~5-15 MB/s depending on scene complexity and cache hit rate, freeing ~15-25 MB/s for other consumers.
 
 ### Fill Rate Estimate
 

@@ -359,6 +359,18 @@ mip_base_addr = texture_base + mip_offsets[selected_mip];
 - BC1 textures must have dimensions that are multiples of 4
 - Base address must be 4K aligned
 
+## Texture Cache Considerations (REQ-131)
+
+The pixel pipeline uses an on-chip texture cache (REQ-131) to reduce SRAM bandwidth. The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
+
+```
+set = (block_x[5:0] ^ block_y[5:0])  // 64 sets
+```
+
+This is a **hardware-only optimization** — the physical memory layout in SRAM is unchanged. Textures remain stored in linear left-to-right, top-to-bottom block order as specified above. The XOR indexing prevents systematic cache aliasing where vertically adjacent block rows would map to the same cache sets under linear indexing.
+
+**Note**: If future profiling reveals persistent cache thrashing, a Morton/Z-order physical layout could be considered. This would require changes to the asset pipeline (UNIT-030, INT-031) and is not currently planned.
+
 ## Notes
 
 Created as part of texture format migration (RGBA8888/Indexed -> RGBA4444/BC1).

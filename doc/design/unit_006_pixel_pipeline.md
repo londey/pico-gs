@@ -21,6 +21,7 @@ Texture sampling, blending, z-test, framebuffer write
 - REQ-024 (Texture Sampling)
 - REQ-027 (Z-Buffer Operations)
 - REQ-028 (Alpha Blending)
+- REQ-131 (Texture Cache)
 
 ## Interfaces
 
@@ -56,18 +57,27 @@ TBD
 ### Internal State
 
 - Texture decode pipeline registers
-- BC1 block cache (optional optimization)
+- Per-sampler texture cache (4 caches, each with 4x1024x18-bit EBR banks)
+- Cache tags, valid bits, and pseudo-LRU replacement state per sampler
+- Cache fill state machine (SRAM read + decompress + bank write)
 
 ### Algorithm / Behavior
 
 The pixel pipeline processes rasterized fragments through the following stages:
 
-1. **Texture Sampling (per enabled texture unit):**
+0. **Texture Cache Lookup (per enabled texture unit, REQ-131):**
    - Apply UV wrapping mode (REQ-012, TEXn_WRAP)
-   - Calculate texture address using block-organized layout (INT-014)
-   - Decode texture format based on TEXn_FMT.FORMAT:
-     - FORMAT=00 (RGBA4444): Read 16-bit pixel, expand to RGBA8 (FR-024-1)
-     - FORMAT=01 (BC1): Read 8-byte block, decompress, extract pixel (FR-024-2)
+   - Compute block_x = pixel_x / 4, block_y = pixel_y / 4
+   - Compute cache set = (block_x[5:0] ^ block_y[5:0]) (XOR set indexing)
+   - Compare tags across 4 ways in the sampler's cache
+   - **HIT:** Read 4 bilinear texels from interleaved banks (1 cycle)
+   - **MISS:** Stall pipeline, execute cache fill (see below), then read texels
+
+1. **Texture Sampling (per enabled texture unit):**
+   - On cache hit: read decompressed RGBA5652 texels directly from cache banks
+   - On cache miss: fetch 4x4 block from SRAM, decompress, fill cache line:
+     - FORMAT=00 (RGBA4444): Read 32 bytes from SRAM, convert to RGBA5652
+     - FORMAT=01 (BC1): Read 8 bytes from SRAM, decompress to RGBA5652
    - Apply swizzle pattern (REQ-011, TEXn_FMT.SWIZZLE)
 
 2. **Multi-Texture Blending:**
@@ -118,21 +128,57 @@ wire [7:0] a8 = {a4, a4};
 - Color interpolation using fixed-point dividers (divide-by-3 or divide-by-2)
 - Alpha mode detection: compare color0 vs color1 as u16
 
+**Texture Cache Architecture (REQ-131):**
+
+Each sampler has an independent 4-way set-associative texture cache:
+
+```
+Per-Sampler Cache:
+  4 x EBR blocks (1024x18-bit each), interleaved by texel parity:
+    Bank 0: (even_x, even_y) texels — 4 per cache line, 1024 entries
+    Bank 1: (odd_x, even_y)  texels — 4 per cache line, 1024 entries
+    Bank 2: (even_x, odd_y)  texels — 4 per cache line, 1024 entries
+    Bank 3: (odd_x, odd_y)   texels — 4 per cache line, 1024 entries
+
+  256 cache lines = 64 sets x 4 ways
+  Cache line = 4x4 block of RGBA5652 (18 bits/texel)
+  Tag = texture_base[31:12] + mip_level[3:0] + block_addr (sufficient bits)
+
+  Set index = block_x[5:0] ^ block_y[5:0]  (XOR-folded)
+  Replacement: pseudo-LRU per set
+
+Cache Fill State Machine:
+  IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
+  - BC1:      4 SRAM reads (8 bytes) + decompress → ~8 cycles
+  - RGBA4444: 16 SRAM reads (32 bytes) + convert  → ~18 cycles
+
+Invalidation:
+  - TEXn_BASE or TEXn_FMT write → clear all valid bits for sampler N
+```
+
 **Estimated FPGA Resources:**
 - RGBA4444 decoder: ~20 LUTs, 0 DSPs
-- BC1 decoder: ~150-200 LUTs, 2-4 DSPs (for division), 64-byte BRAM (palette cache)
+- BC1 decoder: ~150-200 LUTs, 2-4 DSPs (for division)
+- Texture cache (per sampler): 4 EBR blocks (1024x18), ~200-400 LUTs (tags, comparators, FSM)
+- Texture cache (all 4 samplers): 16 EBR blocks total (288 Kbits), ~800-1600 LUTs
 
 ## Implementation
 
 - `spi_gpu/src/render/pixel_pipeline.sv`: Main implementation
 - `spi_gpu/src/render/texture_rgba4444.sv`: RGBA4444 decoder (new)
 - `spi_gpu/src/render/texture_bc1.sv`: BC1 decoder (new)
+- `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (new, REQ-131)
 
 ## Verification
 
 - Testbench for RGBA4444 decoder: verify all 16 nibble values expand correctly
 - Testbench for BC1 decoder: verify 4-color and 1-bit alpha modes
 - Integration test with rasterizer: render textured triangles and compare to reference
+- Testbench for texture cache: verify hit/miss behavior, tag matching, and replacement
+- Cache invalidation test: verify TEXn_BASE/TEXn_FMT writes invalidate cache
+- Bilinear interleaving test: verify 2x2 quad reads from 4 different banks
+- XOR set indexing test: verify adjacent blocks map to different sets
+- Cache fill test: verify SRAM read + decompress + bank write pipeline
 
 ## Design Notes
 

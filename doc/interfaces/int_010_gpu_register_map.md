@@ -1108,6 +1108,14 @@ Active-high outputs from GPU to host.
 
 See specification details above.
 
+## Texture Cache Interaction (REQ-131)
+
+Writing to **TEXn_BASE** or **TEXn_FMT** registers implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SRAM.
+
+No explicit cache control registers are defined for MVP. Future versions may add a `CACHE_CTRL` register for:
+- Explicit cache flush/invalidate
+- Cache hit/miss statistics for performance tuning
+
 ## Notes
 
 Migrated from speckit contract: specs/001-spi-gpu/contracts/register-map.md

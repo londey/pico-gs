@@ -36,10 +36,12 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - **Current Allocation:**
   - Display scanline FIFO: ~32 Kbits (4 KB, 1024 words × 32 bits)
   - Async FIFOs (SPI, command): ~16 Kbits (2 KB)
-  - **Headroom:** ~720 Kbits (~90 KB) for future features (texture cache, etc.)
+  - Texture cache (4 samplers × 4 banks): ~288 Kbits (36 KB, 16 EBR blocks) (REQ-131)
+  - **Total allocated:** ~336 Kbits (~42 KB)
+  - **Headroom:** ~420 Kbits (~53 KB) for future features
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
-- **References:** REQ-051, UNIT-008 (Display Controller)
-- **Rationale:** Reserve space for performance optimizations (texture caching, larger FIFOs)
+- **References:** REQ-051, REQ-131, UNIT-006, UNIT-008 (Display Controller)
+- **Rationale:** Texture cache is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches
 
 ### Host Firmware Resources (RP2350)
 

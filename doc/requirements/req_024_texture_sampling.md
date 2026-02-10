@@ -98,6 +98,19 @@ Apply UV wrapping mode (TEXn_WRAP) before addressing. See REQ-012.
 
 For BC1 textures, wrapping must respect 4x4 block boundaries.
 
+### FR-024-5: Cache-Aware Sampling Pipeline
+
+Texture sampling SHALL first check the per-sampler texture cache (REQ-131):
+
+1. Apply UV wrapping (FR-024-4) and compute texel coordinates
+2. Compute cache set index using XOR-folded addressing and compare tags
+3. On cache hit: read decompressed RGBA5652 texels directly from interleaved banks (1 cycle for 2x2 bilinear quad)
+4. On cache miss: stall pipeline, fetch 4x4 block from SRAM, decompress to RGBA5652, fill cache line, then resume sampling
+5. Apply swizzle pattern (FR-024-3) after reading from cache
+6. Bilinear filtering operates on 4 texels read in parallel from the 4 interleaved banks
+
+**Note**: The cache stores decompressed RGBA5652 texels, so format-specific decoding (FR-024-1, FR-024-2) occurs only on cache miss during the fill operation, not on every texel access.
+
 ## Verification Method
 
 **Test:** Execute relevant test suite for texture sampling, including:
@@ -108,6 +121,10 @@ For BC1 textures, wrapping must respect 4x4 block boundaries.
 - [ ] BC1 color interpolation matches reference implementation
 - [ ] Swizzle patterns apply correctly to decoded RGBA values
 - [ ] UV wrapping modes work correctly with block-organized textures
+- [ ] Texture cache hit returns correct RGBA5652 texels
+- [ ] Texture cache miss triggers SRAM fetch and correct cache fill
+- [ ] Bilinear 2x2 quad reads from 4 banks simultaneously on cache hit
+- [ ] Cache invalidation on TEXn_BASE/TEXn_FMT write prevents stale data
 
 ## Notes
 
