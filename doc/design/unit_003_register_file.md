@@ -54,3 +54,5 @@ TBD
 ## Design Notes
 
 Migrated from speckit module specification.
+
+New registers added in INT-010 v5.0: DITHER_MODE (0x32), COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46). Register file must store and decode these addresses. DITHER_MODE outputs to UNIT-006 (Pixel Pipeline). COLOR_GRADE registers output to UNIT-008 (Display Controller).

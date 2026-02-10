@@ -151,7 +151,7 @@ set = (block_x[5:0] ^ block_y[5:0])  // XOR of low 6 bits, giving 64 sets
 ## Notes
 
 - XOR set indexing is a hardware-only optimization; no physical texture memory layout change is required. The linear 4x4 block layout in SRAM (INT-014) remains unchanged.
-- RGBA5652 preserves RGB565 precision (matching framebuffer format) with minimal alpha for BC1 punch-through support.
+- RGBA5652 preserves RGB565 precision (matching framebuffer format) with minimal alpha for BC1 punch-through support. After cache read, texel data is promoted from RGBA5652 to 10.8 fixed-point format for pipeline processing (see FR-024-6). The cache itself stores the compact RGBA5652 format to maximize capacity.
 - RGBA4444 textures lose 2 bits of alpha precision in cache (4-bit to 2-bit); this is acceptable as the final framebuffer is RGB565 with no alpha channel stored.
 - For bilinear filtering across block boundaries (e.g., texel at x=3 needs neighbor at x=4 in next block), both blocks must be resident in the cache. The 4-way associativity provides sufficient capacity for this case.
 - See DD-010 in design_decisions.md for architectural rationale.

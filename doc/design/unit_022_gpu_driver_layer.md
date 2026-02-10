@@ -18,6 +18,9 @@ SPI transaction handling and flow control
 - REQ-119 (GPU Flow Control)
 - REQ-121 (Async SPI Transmission)
 - REQ-123 (Double-Buffered Rendering)
+- REQ-132 (Ordered Dithering)
+- REQ-133 (Color Grading LUT)
+- REQ-134 (Extended Precision Fragment Processing)
 
 ## Interfaces
 
@@ -65,3 +68,5 @@ TBD
 ## Design Notes
 
 Migrated from speckit module specification.
+
+New API functions added for INT-020: `gpu_set_dither_mode()`, `gpu_set_color_grade_enable()`, `gpu_upload_color_lut()`. These wrap register writes to DITHER_MODE (0x32) and COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46).

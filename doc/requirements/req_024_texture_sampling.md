@@ -111,6 +111,19 @@ Texture sampling SHALL first check the per-sampler texture cache (REQ-131):
 
 **Note**: The cache stores decompressed RGBA5652 texels, so format-specific decoding (FR-024-1, FR-024-2) occurs only on cache miss during the fill operation, not on every texel access.
 
+### FR-024-6: Texture Format Promotion to 10.8
+
+After cache read, texture pixel data SHALL be promoted from RGBA5652 to 10.8 fixed-point:
+
+- **R5→R10:** left shift 5, replicate top 5 bits to bottom 5 (`{R5, R5}`)
+- **G6→G10:** left shift 4, replicate top 6 bits to bottom 4 (`{G6, G6[5:2]}`)
+- **B5→B10:** left shift 5, replicate top 5 bits to bottom 5 (`{B5, B5}`)
+- **A2→A10:** expand (00→0, 01→341, 10→682, 11→1023)
+
+Fractional bits are zero after promotion. Promotion occurs in a dedicated pipeline stage (1 cycle, pipelined).
+
+See REQ-134 for 10.8 fixed-point format details.
+
 ## Verification Method
 
 **Test:** Execute relevant test suite for texture sampling, including:
@@ -125,6 +138,8 @@ Texture sampling SHALL first check the per-sampler texture cache (REQ-131):
 - [ ] Texture cache miss triggers SRAM fetch and correct cache fill
 - [ ] Bilinear 2x2 quad reads from 4 banks simultaneously on cache hit
 - [ ] Cache invalidation on TEXn_BASE/TEXn_FMT write prevents stale data
+- [ ] RGBA5652→10.8 promotion produces correct values for all component ranges
+- [ ] A2 expansion produces correct 10-bit alpha values (0, 341, 682, 1023)
 
 ## Notes
 

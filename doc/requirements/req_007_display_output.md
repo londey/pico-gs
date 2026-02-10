@@ -31,10 +31,12 @@ None
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- - [ ] 640×480 @ 60Hz resolution via DVI/HDMI
+- [ ] 640×480 @ 60Hz resolution via DVI/HDMI
 - [ ] TMDS encoding using ECP5 SERDES blocks
 - [ ] Stable sync signals (no rolling, tearing, or flicker)
 - [ ] Display refresh never stalls regardless of draw load
+- [ ] Color grading LUT applies correctly at scanout when enabled
+- [ ] LUT updates complete within one frame without tearing
 
 ---
 

@@ -11,6 +11,7 @@ Internal
 - **Consumer:** UNIT-004 (Triangle Setup)
 - **Consumer:** UNIT-005 (Rasterizer)
 - **Consumer:** UNIT-006 (Pixel Pipeline)
+- **Consumer:** UNIT-008 (Display Controller)
 - **Consumer:** UNIT-022 (GPU Driver Layer)
 
 ## Referenced By
@@ -32,13 +33,16 @@ Internal
 - REQ-016 (Triangle-Based Clearing)
 - REQ-110 (GPU Initialization)
 - REQ-118 (Clear Framebuffer)
+- REQ-132 (Ordered Dithering)
+- REQ-133 (Color Grading LUT)
+- REQ-134 (Extended Precision Fragment Processing)
 
 ## Specification
 
 
-**Version**: 3.0
+**Version**: 5.0
 **Date**: February 2026
-**Status**: Texture Format Update
+**Status**: Color Pipeline Enhancement
 
 ---
 
@@ -53,7 +57,7 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 [63:0]    Register value (64 bits)
 ```
 
-**Major Features** (v3.0):
+**Major Features** (v5.0):
 - 4 independent texture units with separate UV coordinates
 - Texture blend modes (multiply, add, subtract, inverse subtract)
 - RGBA4444 and BC1 block-compressed texture formats (see INT-014)
@@ -61,6 +65,8 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 - Z-buffer with configurable compare functions
 - Alpha blending modes
 - Memory upload interface
+- Ordered dithering control (v5.0)
+- Color grading LUT at scanout (v5.0)
 
 ---
 
@@ -119,13 +125,17 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 | **Rendering Config** ||||
 | 0x30 | TRI_MODE | R/W | Triangle rendering mode |
 | 0x31 | ALPHA_BLEND | R/W | Alpha blending mode |
-| 0x32-0x3F | - | - | Reserved (rendering config) |
+| 0x32 | DITHER_MODE | R/W | Ordered dithering control |
+| 0x33-0x3F | - | - | Reserved (rendering config) |
 | **Framebuffer** ||||
 | 0x40 | FB_DRAW | R/W | Draw target framebuffer address |
 | 0x41 | FB_DISPLAY | R/W | Display scanout framebuffer address |
 | 0x42 | FB_ZBUFFER | R/W | Z-buffer address + compare function |
 | 0x43 | FB_STENCIL | - | Reserved (stencil buffer) |
-| 0x44-0x4F | - | - | Reserved (framebuffer config) |
+| 0x44 | COLOR_GRADE_CTRL | R/W | Color grading LUT control |
+| 0x45 | COLOR_GRADE_LUT_ADDR | R/W | Color grading LUT address |
+| 0x46 | COLOR_GRADE_LUT_DATA | W | Color grading LUT data |
+| 0x47-0x4F | - | - | Reserved (framebuffer config) |
 | **Status & Control** ||||
 | 0x70 | MEM_ADDR | R/W | Memory upload address pointer |
 | 0x71 | MEM_DATA | R/W | Memory upload data (auto-increment) |
@@ -464,11 +474,36 @@ A_out = A_src + A_dst × (1 - A_src)
 ```
 
 **Notes**:
-- ADD/SUBTRACT: Per-component, saturate to [0, 255]
-- ALPHA_BLEND: Standard Porter-Duff source-over operator
+- All blend operations performed in 10.8 fixed-point format (see REQ-134)
+- ADD/SUBTRACT: Per-component, saturate to [0, 1023] in 10-bit integer range
+- ALPHA_BLEND: Standard Porter-Duff source-over operator in 10.8 precision
 - Disable Z_WRITE when rendering transparent objects (keep Z_TEST enabled)
 
 **Reset Value**: 0x0000000000000000 (disabled)
+
+---
+
+### 0x32: DITHER_MODE
+
+Controls ordered dithering before RGB565 framebuffer conversion. See REQ-132.
+
+```
+[63:4]    Reserved (write as 0)
+[3:2]     PATTERN: Dither pattern selection
+          00 = Blue noise 16x16 (default)
+          01-11 = Reserved
+[1]       Reserved (write as 0)
+[0]       ENABLE: 1=dithering enabled (default), 0=disabled
+```
+
+**Notes**:
+- Dithering is enabled by default after reset
+- Dithering adds spatial noise to smooth the 10.8→RGB565 quantization
+- When disabled, 10.8 values truncate directly to RGB565
+
+**Reset Value**: 0x0000000000000001 (enabled, blue noise)
+
+**Version**: Added in v5.0
 
 ---
 
@@ -567,6 +602,85 @@ Reserved for future stencil buffer configuration.
 - Stencil reference value
 
 **Reset Value**: 0x0000000000000000
+
+---
+
+### 0x44: COLOR_GRADE_CTRL
+
+Color grading LUT control. See REQ-133.
+
+```
+[63:3]    Reserved (write as 0)
+[2]       RESET_ADDR: Write 1 to reset LUT address pointer (self-clearing)
+[1]       SWAP_BANKS: Write 1 to swap LUT banks at next vblank (self-clearing)
+[0]       ENABLE: 1=color grading enabled, 0=disabled (default)
+```
+
+**Notes**:
+- Color grading LUT is applied at display scanout between framebuffer read and DVI encoder
+- SWAP_BANKS takes effect at the next vertical blanking interval (no tearing)
+- Firmware writes go to the inactive bank; SWAP_BANKS activates the new data
+
+**Reset Value**: 0x0000000000000000 (disabled)
+
+**Version**: Added in v5.0
+
+---
+
+### 0x45: COLOR_GRADE_LUT_ADDR
+
+Selects which LUT and entry to write via COLOR_GRADE_LUT_DATA.
+
+```
+[63:8]    Reserved (write as 0)
+[7:6]     LUT_SELECT: LUT to address
+          00 = Red LUT (32 entries, index 0-31)
+          01 = Green LUT (64 entries, index 0-63)
+          10 = Blue LUT (32 entries, index 0-31)
+          11 = Reserved
+[5:0]     ENTRY_INDEX: Entry within selected LUT
+          For R/B LUTs: bits [4:0] used (0-31), bit [5] ignored
+          For G LUT: bits [5:0] used (0-63)
+```
+
+**Reset Value**: 0x0000000000000000
+
+**Version**: Added in v5.0
+
+---
+
+### 0x46: COLOR_GRADE_LUT_DATA
+
+Write LUT entry data. Entry is written to the address selected by COLOR_GRADE_LUT_ADDR. Writes go to the inactive bank.
+
+```
+[63:15]   Reserved (write as 0)
+[14:10]   R output (5 bits)
+[9:5]     G output (5 bits)
+[4:0]     B output (5 bits)
+```
+
+**Entry Format**: R5G5B5 (15 bits per entry). Each LUT entry specifies the RGB contribution of that input channel to the final output.
+
+**Lookup Process** (per scanout pixel):
+```
+lut_r_out = red_lut[pixel_R5]     // R5G5B5
+lut_g_out = green_lut[pixel_G6]   // R5G5B5
+lut_b_out = blue_lut[pixel_B5]    // R5G5B5
+
+final_R5 = saturate(lut_r_out.R + lut_g_out.R + lut_b_out.R, 31)
+final_G5 = saturate(lut_r_out.G + lut_g_out.G + lut_b_out.G, 31)
+final_B5 = saturate(lut_r_out.B + lut_g_out.B + lut_b_out.B, 31)
+```
+
+**Upload Protocol**:
+1. Write COLOR_GRADE_CTRL[2] (RESET_ADDR) to reset pointer
+2. For each LUT entry: write COLOR_GRADE_LUT_ADDR, then COLOR_GRADE_LUT_DATA
+3. Write COLOR_GRADE_CTRL[1] (SWAP_BANKS) to activate at next vblank
+
+**Reset Value**: 0x0000000000000000
+
+**Version**: Added in v5.0
 
 ---
 
@@ -1027,6 +1141,10 @@ After hardware reset or power-on:
 | TEX0-TEX3 WRAP | 0x0000000000000000 | REPEAT both axes |
 | TRI_MODE | 0x0000000000000000 | Flat, no texture, no Z |
 | ALPHA_BLEND | 0x0000000000000000 | Disabled |
+| DITHER_MODE | 0x0000000000000001 | Enabled, blue noise |
+| COLOR_GRADE_CTRL | 0x0000000000000000 | Disabled |
+| COLOR_GRADE_LUT_ADDR | 0x0000000000000000 | Red LUT, entry 0 |
+| COLOR_GRADE_LUT_DATA | N/A | Write-only |
 | FB_DRAW | 0x0000000000000000 | Address 0x000000 |
 | FB_DISPLAY | 0x0000000000000000 | Address 0x000000 |
 | FB_ZBUFFER | 0x0000000000000000 | LESS compare, address 0x000000 |
@@ -1078,6 +1196,13 @@ Active-high outputs from GPU to host.
 ---
 
 ## Version History
+
+**Version 5.0** (February 2026):
+- Added DITHER_MODE register (0x32) for ordered dithering control
+- Added COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46) for color grading LUT
+- All blend operations specified in 10.8 fixed-point format
+- Dithering enabled by default (DITHER_MODE reset = 0x01)
+- Added UNIT-008 (Display Controller) as consumer for color grading registers
 
 **Version 3.0** (February 2026):
 - Replaced RGBA8888 with RGBA4444 texture format

@@ -30,13 +30,14 @@ None
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- - [ ] Set TEXn_BLEND register for each texture unit (except TEX0)
+- [ ] Set TEXn_BLEND register for each texture unit (except TEX0)
 - [ ] Support MULTIPLY blend mode (texture × previous result)
 - [ ] Support ADD blend mode (texture + previous result, saturate)
 - [ ] Support SUBTRACT blend mode (previous - texture, saturate)
 - [ ] Support INVERSE_SUBTRACT blend mode (texture - previous, saturate)
 - [ ] Blend operations apply per-component (R, G, B, A independently)
 - [ ] Textures evaluate sequentially (TEX0 → TEX1 → TEX2 → TEX3)
+- [ ] Saturation occurs at 10-bit integer range (0-1023) in 10.8 internal format
 - [ ] Verify mathematical correctness with test patterns
 
 ---
@@ -45,3 +46,5 @@ None
 ## Notes
 
 User Story: As a firmware developer, I want to control how multiple textures combine together, so that I can achieve effects like modulated lighting, additive glow, and subtractive masking
+
+All texture blend operations are performed in 10.8 fixed-point format (10 integer bits, 8 fractional bits). See REQ-134 for format details.

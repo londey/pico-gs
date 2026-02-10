@@ -21,6 +21,9 @@ Internal
 - REQ-117 (VSync Synchronization)
 - REQ-118 (Clear Framebuffer)
 - REQ-119 (GPU Flow Control)
+- REQ-132 (Ordered Dithering)
+- REQ-133 (Color Grading LUT)
+- REQ-134 (Extended Precision Fragment Processing)
 
 ## Specification
 
@@ -182,6 +185,75 @@ gpu_upload_texture_with_mipmaps(
 ```
 
 **Performance**: Same as single-level upload (~3 MB/s), but total size is ~33% larger with full mipmap chain.
+
+---
+
+## Dithering and Color Grading
+
+### `gpu_set_dither_mode(handle: &GpuHandle, enabled: bool)`
+
+Enable or disable ordered dithering before RGB565 framebuffer conversion.
+
+**Sequence**:
+1. `gpu_write(DITHER_MODE, if enabled { 0x01 } else { 0x00 })`
+
+**Notes**:
+- Dithering is enabled by default after GPU init
+- Dithering smooths the 10.8→RGB565 quantization using a blue noise pattern
+- Disable for pixel-perfect rendering or solid-color fills
+
+### `gpu_set_color_grade_enable(handle: &GpuHandle, enabled: bool)`
+
+Enable or disable the color grading LUT at display scanout.
+
+**Sequence**:
+1. `gpu_write(COLOR_GRADE_CTRL, if enabled { 0x01 } else { 0x00 })`
+
+**Notes**:
+- When disabled, framebuffer pixels pass directly to DVI encoder with standard RGB565→RGB888 expansion
+- LUT must be uploaded before enabling (undefined output with uninitialized LUT)
+
+### `gpu_upload_color_lut(handle: &GpuHandle, red: &[u16; 32], green: &[u16; 64], blue: &[u16; 32])`
+
+Upload all 3 color grading LUTs and activate at next vblank.
+
+**Sequence**:
+1. Write COLOR_GRADE_CTRL[2] (RESET_ADDR) to reset LUT address pointer
+2. For each Red LUT entry (0-31):
+   - `gpu_write(COLOR_GRADE_LUT_ADDR, (0b00 << 6) | index)`
+   - `gpu_write(COLOR_GRADE_LUT_DATA, red[index] & 0x7FFF)`
+3. For each Green LUT entry (0-63):
+   - `gpu_write(COLOR_GRADE_LUT_ADDR, (0b01 << 6) | index)`
+   - `gpu_write(COLOR_GRADE_LUT_DATA, green[index] & 0x7FFF)`
+4. For each Blue LUT entry (0-31):
+   - `gpu_write(COLOR_GRADE_LUT_ADDR, (0b10 << 6) | index)`
+   - `gpu_write(COLOR_GRADE_LUT_DATA, blue[index] & 0x7FFF)`
+5. Write COLOR_GRADE_CTRL[1] (SWAP_BANKS) to activate at next vblank
+
+**Parameters**:
+- `red`: 32 entries, each R5G5B5 (15-bit) packed in low bits of u16
+- `green`: 64 entries, each R5G5B5 (15-bit) packed in low bits of u16
+- `blue`: 32 entries, each R5G5B5 (15-bit) packed in low bits of u16
+
+**Performance**: 128 entries × 2 register writes each = 256 SPI transactions ≈ 737 µs at 25 MHz
+
+**Example** (identity LUT — no color change):
+```rust
+let mut red = [0u16; 32];
+let mut green = [0u16; 64];
+let mut blue = [0u16; 32];
+
+// Identity: each channel maps to itself
+for i in 0..32 {
+    red[i] = (i as u16) << 10;   // R input → R output only
+    blue[i] = i as u16;           // B input → B output only
+}
+for i in 0..64 {
+    green[i] = ((i >> 1) as u16) << 5;  // G input → G output only (6→5 bit)
+}
+
+gpu_upload_color_lut(&gpu, &red, &green, &blue);
+```
 
 ---
 

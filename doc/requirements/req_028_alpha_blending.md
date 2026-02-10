@@ -33,3 +33,5 @@ TBD (will be filled by establish-traceability.py)
 ## Notes
 
 Functional requirements grouped from specification.
+
+Alpha blending operations are performed in 10.8 fixed-point format (10 integer bits, 8 fractional bits). Destination pixels are read from the RGB565 framebuffer and promoted to 10.8 format by left-shifting and replicating MSBs. After blending, the result passes through ordered dithering (REQ-132) before RGB565 conversion.

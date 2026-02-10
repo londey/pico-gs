@@ -32,10 +32,11 @@ None
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- - [ ] Set TRI_MODE with GOURAUD=1
+- [ ] Set TRI_MODE with GOURAUD=1
 - [ ] Set COLOR register before each VERTEX write
-- [ ] Colors interpolate linearly across triangle in screen space
-- [ ] No banding artifacts visible in 8-bit per channel output
+- [ ] Colors interpolate linearly across triangle in screen space (RGBA8)
+- [ ] With dithering enabled, smooth gradients visible in RGB565 framebuffer output
+- [ ] With dithering disabled, quantization artifacts limited to RGB565 precision
 
 ---
 

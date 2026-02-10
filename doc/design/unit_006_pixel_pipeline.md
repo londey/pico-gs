@@ -22,6 +22,8 @@ Texture sampling, blending, z-test, framebuffer write
 - REQ-027 (Z-Buffer Operations)
 - REQ-028 (Alpha Blending)
 - REQ-131 (Texture Cache)
+- REQ-132 (Ordered Dithering)
+- REQ-134 (Extended Precision Fragment Processing)
 
 ## Interfaces
 
@@ -51,8 +53,15 @@ TBD
 
 ### Outputs
 
-- Pixel color (RGB565) to framebuffer
+- Pixel color (RGB565) to framebuffer via SRAM arbiter
 - Z value to Z-buffer (if Z_WRITE enabled)
+
+### Pipeline Data Format
+
+All internal fragment processing uses **10.8 fixed-point format** (18 bits per channel):
+- Bits [17:8]: 10-bit integer part (range 0-1023, with 2-bit overflow headroom above 255)
+- Bits [7:0]: 8-bit fractional part (precision 1/256)
+- Matches ECP5 DSP slice width (18×18 multipliers) for efficient multiply operations
 
 ### Internal State
 
@@ -63,43 +72,62 @@ TBD
 
 ### Algorithm / Behavior
 
-The pixel pipeline processes rasterized fragments through the following stages:
+The pixel pipeline processes rasterized fragments through a 7-stage pipeline. All color operations use 10.8 fixed-point format (REQ-134).
 
-0. **Texture Cache Lookup (per enabled texture unit, REQ-131):**
-   - Apply UV wrapping mode (REQ-012, TEXn_WRAP)
-   - Compute block_x = pixel_x / 4, block_y = pixel_y / 4
-   - Compute cache set = (block_x[5:0] ^ block_y[5:0]) (XOR set indexing)
-   - Compare tags across 4 ways in the sampler's cache
-   - **HIT:** Read 4 bilinear texels from interleaved banks (1 cycle)
-   - **MISS:** Stall pipeline, execute cache fill (see below), then read texels
+**Stage 0: Texture Cache Lookup (per enabled texture unit, REQ-131):**
+- Apply UV wrapping mode (REQ-012, TEXn_WRAP)
+- Compute block_x = pixel_x / 4, block_y = pixel_y / 4
+- Compute cache set = (block_x[5:0] ^ block_y[5:0]) (XOR set indexing)
+- Compare tags across 4 ways in the sampler's cache
+- **HIT:** Read 4 bilinear texels from interleaved banks (1 cycle)
+- **MISS:** Stall pipeline, execute cache fill (see below), then read texels
 
-1. **Texture Sampling (per enabled texture unit):**
-   - On cache hit: read decompressed RGBA5652 texels directly from cache banks
-   - On cache miss: fetch 4x4 block from SRAM, decompress, fill cache line:
-     - FORMAT=00 (RGBA4444): Read 32 bytes from SRAM, convert to RGBA5652
-     - FORMAT=01 (BC1): Read 8 bytes from SRAM, decompress to RGBA5652
-   - Apply swizzle pattern (REQ-011, TEXn_FMT.SWIZZLE)
+**Stage 1: Texture Sampling (per enabled texture unit):**
+- On cache hit: read decompressed RGBA5652 texels directly from cache banks
+- On cache miss: fetch 4x4 block from SRAM, decompress, fill cache line:
+  - FORMAT=00 (RGBA4444): Read 32 bytes from SRAM, convert to RGBA5652
+  - FORMAT=01 (BC1): Read 8 bytes from SRAM, decompress to RGBA5652
+- Apply swizzle pattern (REQ-011, TEXn_FMT.SWIZZLE)
 
-2. **Multi-Texture Blending:**
-   - Sample up to 4 texture units (TEX0-TEX3)
-   - Blend sequentially using TEXn_BLEND modes (REQ-009)
-   - TEX0_BLEND is ignored (first texture is passthrough)
+**Stage 2: Format Promotion (RGBA5652 → 10.8):**
+- Promote texture data to 10.8 fixed-point via `texel_promote.sv` (combinational):
+  - R5→R10: `{R5, R5}` (left shift 5, replicate MSBs)
+  - G6→G10: `{G6, G6[5:2]}` (left shift 4, replicate MSBs)
+  - B5→B10: `{B5, B5}` (left shift 5, replicate MSBs)
+  - A2→A10: expand (00→0, 01→341, 10→682, 11→1023)
+- Fractional bits are zero after promotion
 
-3. **Shading:**
-   - Multiply by interpolated vertex color if GOURAUD enabled (REQ-004)
+**Stage 3: Multi-Texture Blending (10.8 precision):**
+- Blend up to 4 texture units sequentially using TEXn_BLEND modes (REQ-009)
+- TEX0_BLEND is ignored (first texture is passthrough)
+- Blend operations use 18×18 DSP multipliers:
+  - **MULTIPLY:** `result = (a * b) >> 8`
+  - **ADD:** `result = saturate(a + b)` at 10-bit integer max (1023)
+  - **SUBTRACT:** `result = saturate(a - b)` at 0
+  - **INVERSE_SUBTRACT:** `result = saturate(b - a)` at 0
 
-4. **Z-Buffer Test:**
-   - Compare fragment Z with Z-buffer value (REQ-027)
-   - Z_COMPARE function from FB_ZBUFFER register
-   - Early discard if test fails
+**Stage 4: Vertex Color Modulation (10.8 precision):**
+- Multiply by rasterizer's interpolated RGBA (10.8) if GOURAUD enabled (REQ-004)
+- `result = (tex_color * vtx_color) >> 8` per component using DSP multipliers
 
-5. **Alpha Blending:**
-   - Blend with framebuffer using ALPHA_BLEND mode (REQ-013, REQ-028)
+**Stage 5: Z-Buffer Test + Alpha Blending (10.8 precision):**
+- Compare fragment Z with Z-buffer value (REQ-027, FB_ZBUFFER.Z_COMPARE)
+- Early discard if test fails
+- For alpha blending (REQ-013, REQ-028):
+  1. Read destination pixel from framebuffer (RGB565)
+  2. Promote to 10.8 via `fb_promote.sv`: same MSB replication as texture promotion, alpha defaults to 1023
+  3. Blend in 10.8: `result = (src * alpha + dst * (1023 - alpha)) >> 8`
 
-6. **Framebuffer Write:**
-   - Convert RGBA8 to RGB565 (REQ-025)
-   - Write to framebuffer at FB_DRAW address
-   - If Z_WRITE enabled, write Z value to Z-buffer
+**Stage 6: Ordered Dithering + Framebuffer Write:**
+- If DITHER_MODE.ENABLE=1 (REQ-132):
+  1. Read dither matrix entry indexed by `{screen_y[3:0], screen_x[3:0]}` from EBR
+  2. Scale 6-bit dither values per channel: top 3 bits for R/B (8→5 loss), top 2 bits for G (8→6 loss)
+  3. Add scaled dither to fractional bits below RGB565 threshold
+  4. Carry propagates into integer part if needed
+- Extract upper bits from 10-bit integer: R[9:5]→R5, G[9:4]→G6, B[9:5]→B5
+- Pack into RGB565 and write to framebuffer at FB_DRAW address
+- If Z_WRITE enabled, write Z value to Z-buffer
+- Alpha channel is discarded (RGB565 has no alpha storage)
 
 ### Implementation Notes
 
@@ -161,13 +189,22 @@ Invalidation:
 - BC1 decoder: ~150-200 LUTs, 2-4 DSPs (for division)
 - Texture cache (per sampler): 4 EBR blocks (1024x18), ~200-400 LUTs (tags, comparators, FSM)
 - Texture cache (all 4 samplers): 16 EBR blocks total (288 Kbits), ~800-1600 LUTs
+- 10.8 blend/shade pipeline: ~8-12 DSP slices (18×18 multipliers), ~1500-2500 LUTs
+- Texel/FB promotion: ~200-400 LUTs (combinational)
+- Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
+- Total pipeline latency: ~12-15 cycles (fully pipelined, 1 pixel/cycle throughput)
 
 ## Implementation
 
 - `spi_gpu/src/render/pixel_pipeline.sv`: Main implementation
-- `spi_gpu/src/render/texture_rgba4444.sv`: RGBA4444 decoder (new)
-- `spi_gpu/src/render/texture_bc1.sv`: BC1 decoder (new)
-- `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (new, REQ-131)
+- `spi_gpu/src/render/texture_rgba4444.sv`: RGBA4444 decoder
+- `spi_gpu/src/render/texture_bc1.sv`: BC1 decoder
+- `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (REQ-131)
+- `spi_gpu/src/render/texel_promote.sv`: RGBA5652→10.8 promotion (REQ-134)
+- `spi_gpu/src/render/fb_promote.sv`: RGB565→10.8 framebuffer readback promotion (REQ-134)
+- `spi_gpu/src/render/texture_blend.sv`: 10.8 texture blend operations (REQ-134)
+- `spi_gpu/src/render/alpha_blend.sv`: 10.8 alpha blend operations (REQ-134)
+- `spi_gpu/src/render/dither.sv`: Ordered dithering with blue noise EBR (REQ-132)
 
 ## Verification
 
