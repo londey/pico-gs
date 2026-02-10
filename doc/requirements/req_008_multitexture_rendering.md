@@ -36,7 +36,7 @@ None
 - [ ] All enabled textures sample and blend in a single draw call
 - [ ] Textures can have different dimensions (e.g., 256×256 diffuse, 64×64 lightmap)
 - [ ] Each texture unit has independent base address and format configuration
-- [ ] See [contracts/register-map.md](contracts/register-map.md) for register details
+- [ ] See INT-010 (GPU Register Map) for register details
 
 
 ## Notes

@@ -25,7 +25,8 @@ None
 
 ## Interfaces
 
-TBD (will be filled by establish-traceability.py)
+- INT-002 (DVI TMDS Output)
+- INT-010 (GPU Register Map)
 
 ## Verification Method
 

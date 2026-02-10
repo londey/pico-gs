@@ -25,7 +25,8 @@ None
 
 ## Interfaces
 
-TBD (will be filled by establish-traceability.py)
+- INT-010 (GPU Register Map)
+- INT-011 (SRAM Memory Layout)
 
 ## Verification Method
 

@@ -21,7 +21,9 @@ None
 
 ### Internal Interfaces
 
-TBD
+- Called by UNIT-034 (Build.rs Orchestrator) via output generation functions
+- Receives `TextureAsset` from UNIT-030 (PNG Decoder) and `MeshAsset` from UNIT-031 (OBJ Parser)
+- Generates `.rs` wrapper files and `.bin` data files, plus a master `mod.rs`
 
 ## Design Description
 

@@ -12,7 +12,7 @@ External Standard
 ## Parties
 
 - **Provider:** External
-- **Consumer:** TBD (will be filled by establish-traceability.py)
+- **Consumer:** UNIT-020 (Core 0 Scene Manager), Host firmware
 
 ## Referenced By
 

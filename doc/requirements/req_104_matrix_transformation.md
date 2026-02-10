@@ -1,0 +1,35 @@
+# REQ-104: Matrix Transformation Pipeline
+
+## Classification
+
+- **Priority:** Essential
+- **Stability:** Stable
+- **Verification:** Test
+
+## Requirement
+
+The system SHALL implement a model-view-projection (MVP) transformation pipeline that transforms object-space vertex positions to screen-space pixel coordinates suitable for GPU register packing. The pipeline SHALL perform the following stages in order: MVP matrix multiplication (object space to clip space), perspective divide (clip space to normalized device coordinates), and viewport mapping (NDC to screen pixels for a 640x480 display). The system SHALL also provide normal vector transformation for lighting, back-face culling via screen-space winding order test, and construction functions for perspective projection, look-at view, and rotation matrices.
+
+## Rationale
+
+The host CPU performs all vertex transformation and projection so that the GPU receives pre-transformed screen-space triangles, keeping the GPU hardware focused on rasterization and fragment processing without requiring a hardware vertex shader.
+
+## Parent Requirements
+
+None
+
+## Allocated To
+
+- UNIT-023 (Transformation Pipeline)
+
+## Interfaces
+
+- INT-021 (Render Command Format)
+
+## Verification Method
+
+**Test:** Verify that a known object-space vertex transformed by a known MVP matrix produces the expected screen-space coordinates (x in 0..639, y in 0..479, z in 0.0..1.0). Verify that back-face culling correctly identifies front-facing (counter-clockwise) and back-facing (clockwise) triangles. Verify that normal transformation preserves unit length.
+
+## Notes
+
+The implementation uses the `glam` crate for matrix and vector math with hardware FPU. Perspective divide guards against near-zero W values. Viewport mapping flips the Y axis (NDC +Y up to screen +Y down). The Z output is clamped to [0, 1] for the GPU's 25-bit depth buffer.

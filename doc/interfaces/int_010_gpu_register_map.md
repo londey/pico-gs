@@ -200,8 +200,8 @@ Latches texture coordinates for the next vertex push. Values are pre-divided by 
 Latches vertex position and triggers vertex push. Third push submits triangle.
 
 ```
-[63:57]   Reserved (write as 0)
-[56:32]   Z depth (25 bits unsigned)
+[63:48]   Reserved (write as 0)
+[47:32]   Z depth (16 bits unsigned)
 [31:16]   Y coordinate (12.4 signed fixed-point)
 [15:0]    X coordinate (12.4 signed fixed-point)
 ```
@@ -210,8 +210,8 @@ Latches vertex position and triggers vertex push. Third push submits triangle.
 - Bits 15:4: Signed integer (-2048 to +2047)
 - Bits 3:0: Fractional (1/16 pixel)
 
-**Z Format (25 bits)**:
-- Unsigned, 0 = near plane, 0x1FFFFFF = far plane
+**Z Format (16 bits)**:
+- Unsigned, 0 = near plane, 0xFFFF = far plane
 - Maps to normalized device coordinates after projection
 - Higher values are further away
 
@@ -570,10 +570,10 @@ Z-buffer configuration: base address and compare function.
 - If test passes: write fragment color
 - If test fails: discard fragment
 
-**Z-Buffer Memory Format**: 32-bit words with 24-bit depth:
+**Z-Buffer Memory Format**: 32-bit words with 16-bit depth:
 ```
-[31:24] = unused (should be 0)
-[23:0]  = depth value (0 = near, 0xFFFFFF = far)
+[31:16] = unused (should be 0)
+[15:0]  = depth value (0 = near, 0xFFFF = far)
 ```
 
 **Typical Usage**:

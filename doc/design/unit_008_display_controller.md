@@ -25,7 +25,11 @@ None
 
 ### Internal Interfaces
 
-TBD
+- Reads framebuffer pixels from SRAM via UNIT-007 (SRAM Arbiter) display port (highest priority)
+- Receives display base address and buffer swap commands from UNIT-003 (Register File)
+- Receives color grading LUT data and control from UNIT-003
+- Drives UNIT-009 (DVI TMDS Encoder) with RGB888 pixel data and sync signals
+- Generates vsync signal consumed by host firmware for frame synchronization
 
 ## Design Description
 

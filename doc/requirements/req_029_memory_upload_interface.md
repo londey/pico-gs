@@ -16,7 +16,7 @@ This requirement defines the functional behavior of the memory upload interface 
 
 ## Parent Requirements
 
-None
+- REQ-015 (Memory Upload Interface — user story and detailed acceptance criteria)
 
 ## Allocated To
 
@@ -25,12 +25,12 @@ None
 
 ## Interfaces
 
-TBD (will be filled by establish-traceability.py)
+- INT-010 (GPU Register Map)
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for memory upload interface.
+**Test:** Execute relevant test suite for memory upload interface. See REQ-015 for detailed acceptance criteria.
 
 ## Notes
 
-Functional requirements grouped from specification.
+This is the functional-format counterpart of REQ-015. See REQ-015 for the full user story and acceptance criteria.

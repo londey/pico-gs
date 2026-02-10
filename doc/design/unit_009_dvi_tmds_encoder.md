@@ -21,33 +21,107 @@ None
 
 ### Internal Interfaces
 
-TBD
+- Receives pixel RGB888 data, hsync, vsync, and display_enable from UNIT-008 (Display Controller)
+- Outputs differential TMDS pairs to physical DVI/HDMI connector
 
 ## Design Description
 
 ### Inputs
 
-TBD
+**tmds_encoder (per-channel):**
+
+| Signal | Width | Description |
+|--------|-------|-------------|
+| `clk` | 1 | Pixel clock (25.175 MHz for 640x480) |
+| `rst_n` | 1 | Active-low reset |
+| `data_in` | 8 | 8-bit pixel channel data |
+| `data_enable` | 1 | Data enable (active region vs blanking) |
+| `control` | 2 | Control signals (hsync/vsync on blue channel) |
+
+**dvi_output (top-level):**
+
+| Signal | Width | Description |
+|--------|-------|-------------|
+| `clk_pixel` | 1 | 25.175 MHz pixel clock |
+| `clk_tmds` | 1 | 251.75 MHz TMDS bit clock (10x pixel clock) |
+| `rst_n` | 1 | Active-low reset |
+| `red`, `green`, `blue` | 8 each | RGB888 pixel data |
+| `hsync`, `vsync` | 1 each | Sync signals |
+| `display_enable` | 1 | Active display region |
 
 ### Outputs
 
-TBD
+**tmds_encoder (per-channel):**
+
+| Signal | Width | Description |
+|--------|-------|-------------|
+| `tmds_out` | 10 | 10-bit TMDS encoded symbol |
+
+**dvi_output (top-level):**
+
+| Signal | Width | Description |
+|--------|-------|-------------|
+| `tmds_red_p/n` | 1 each | Differential red TMDS pair |
+| `tmds_green_p/n` | 1 each | Differential green TMDS pair |
+| `tmds_blue_p/n` | 1 each | Differential blue TMDS pair |
+| `tmds_clk_p/n` | 1 each | Differential TMDS clock pair (pixel clock) |
 
 ### Internal State
 
-TBD
+**tmds_encoder:**
+- **dc_bias** [4:0 signed]: Running DC balance counter (-16 to +16), reset to 0 during control periods
+- **tmds_out** [9:0]: Registered 10-bit output symbol
+
+**dvi_output:**
+- **shift_red/green/blue** [9:0]: Shift registers for 10:1 serialization
+- **bit_count** [2:0]: Serialization bit counter (0-9), loads new symbol at 0
 
 ### Algorithm / Behavior
 
-TBD
+**TMDS 8b/10b Encoding (per channel, combinational + 1 registered stage):**
+
+*Stage 1 -- Transition Minimization:*
+1. Count ones in data_in[7:0]
+2. If ones > 4, or (ones == 4 and bit[0] == 0): use XNOR encoding; else use XOR
+3. Produce 9-bit intermediate: stage1[0] = data_in[0], stage1[n] = stage1[n-1] XOR/XNOR data_in[n], stage1[8] = 1 for XOR / 0 for XNOR
+
+*Stage 2 -- DC Balancing:*
+1. Count ones/zeros in stage1[7:0], compute disparity = ones - zeros
+2. If dc_bias == 0 or disparity == 0: invert data bits if stage1[8] == 0; set bit[9] = ~stage1[8]
+3. If dc_bias and disparity have same sign: invert data bits to correct balance; set bit[9] = 1
+4. If opposite sign: don't invert; set bit[9] = 0
+5. Update dc_bias accumulator accordingly
+
+*Control Period Encoding:*
+- When data_enable == 0, output one of four fixed 10-bit control symbols based on control[1:0]
+- Reset dc_bias to 0 during control periods
+
+**10:1 Serialization (dvi_output):**
+1. Three tmds_encoder instances produce 10-bit symbols at pixel clock rate
+2. At clk_tmds (10x pixel clock): shift registers serialize 10 bits MSB-first
+3. When bit_count reaches 0: load new 10-bit symbol from encoder; reset bit_count to 9
+4. Differential outputs: _p = shift[9], _n = ~shift[9] (pseudo-differential; production uses OLVDS primitives)
+5. Clock channel: tmds_clk_p = clk_pixel, tmds_clk_n = ~clk_pixel
+
+**Blue Channel Special Handling:**
+- Blue encoder receives {vsync, hsync} as control[1:0] per DVI specification
+- Red and green encoders receive control = 2'b00
 
 ## Implementation
 
-- `spi_gpu/src/display/tmds_encoder.sv`: Main implementation
+- `spi_gpu/src/display/tmds_encoder.sv`: TMDS 8b/10b encoder (one instance per channel)
+- `spi_gpu/src/display/dvi_output.sv`: Top-level DVI output with 3 encoder instances and serialization
 
 ## Verification
 
-TBD
+- Verify TMDS encoding: known 8-bit inputs produce correct 10-bit symbols per DVI spec
+- Verify DC balance: after encoding a long sequence, dc_bias remains bounded
+- Verify control symbols: each of the 4 control codes produces the correct 10-bit pattern
+- Verify data_enable switching: dc_bias resets to 0 when entering control period
+- Verify serialization: 10-bit parallel symbol correctly appears as 10 serial bits MSB-first
+- Verify bit_count reload: new symbol loaded every 10 clk_tmds cycles
+- Verify blue channel sync: hsync/vsync appear in blue control symbols during blanking
+- Verify differential outputs: _p and _n are always complementary
 
 ## Design Notes
 

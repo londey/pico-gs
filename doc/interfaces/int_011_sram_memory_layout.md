@@ -133,14 +133,14 @@ pixel_addr = FB_BASE + (y * 640 + x) * 4
 | Base Address | 0x258000 |
 | End Address | 0x383FFF |
 | Size | 1,228,800 bytes (padded) |
-| Depth Format | 24-bit in 32-bit word |
+| Depth Format | 16-bit in 32-bit word |
 | Dimensions | 640 × 480 |
 | Row Pitch | 2,560 bytes |
 
 **Storage Format**:
 ```
-[31:24]   Unused (reads as 0)
-[23:0]    Depth value (0 = near, 0xFFFFFF = far)
+[31:16]   Unused (reads as 0)
+[15:0]    Depth value (0 = near, 0xFFFF = far)
 ```
 
 **Address Calculation**:

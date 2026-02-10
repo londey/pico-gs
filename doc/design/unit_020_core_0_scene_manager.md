@@ -26,33 +26,62 @@ None
 
 ### Internal Interfaces
 
-TBD
+- **UNIT-026 (Inter-Core Queue)**: Owns the `CommandProducer` end of the SPSC queue; enqueues `RenderCommand` variants via `enqueue_blocking()`.
+- **UNIT-025 (USB Keyboard Handler)**: Calls `input::poll_keyboard()` each frame to receive `KeyEvent::SelectDemo` events.
+- **UNIT-027 (Demo State Machine)**: Reads `Scene.active_demo` to determine per-frame rendering; calls `Scene::switch_demo()` on keyboard input.
+- **UNIT-023 (Transformation Pipeline)**: Calls `transform::perspective()`, `transform::look_at()`, `transform::rotate_y()` to build MVP matrices for the teapot demo.
+- **UNIT-024 (Lighting Calculator)**: Invoked indirectly through `render::mesh::render_teapot()` which calls `compute_lighting()` per vertex.
 
 ## Design Description
 
 ### Inputs
 
-TBD
+- **USB keyboard events**: `input::poll_keyboard()` returns `Option<KeyEvent>` (keys 1/2/3 select demos).
+- **Static mesh data**: `TeapotMesh` generated at startup from compiled asset data (`assets::teapot`).
+- **Pre-built demo vertices**: `gouraud_triangle_vertices()` and `textured_triangle_vertices()` return `[GpuVertex; 3]` arrays.
 
 ### Outputs
 
-TBD
+- **Render commands**: `RenderCommand` variants enqueued to the inter-core SPSC queue via `CommandProducer`. Commands include `ClearFramebuffer`, `SetTriMode`, `SubmitScreenTriangle`, `UploadTexture`, and `WaitVsync`.
+- **defmt log messages**: Diagnostic output for demo switches and teapot mesh statistics.
 
 ### Internal State
 
-TBD
+- **`Scene`** struct (`scene/mod.rs`):
+  - `active_demo: Demo` -- currently active demo variant.
+  - `needs_init: bool` -- set true on demo switch, cleared after one-time initialization runs.
+- **`producer: CommandProducer<'static>`** -- owned producer end of the SPSC queue.
+- **`angle: f32`** -- current Y-axis rotation angle for the teapot demo (wraps at 2*pi).
+- **`projection: Mat4`, `view: Mat4`** -- camera matrices, computed once at startup.
+- **`lights: [DirectionalLight; 4]`, `ambient: AmbientLight`** -- lighting parameters, constant.
+- **`teapot_mesh: TeapotMesh`** -- vertex/index data generated once at startup.
+- **`gouraud_verts`, `textured_verts`** -- pre-packed `[GpuVertex; 3]` for the simple triangle demos.
 
 ### Algorithm / Behavior
 
-TBD
+1. **Initialization**: Configure clocks, SPI0, GPIO pins. Call `gpu::gpu_init()` to verify GPU presence. Split the static `COMMAND_QUEUE` into producer/consumer halves. Spawn Core 1 with the consumer and GPU handle. Initialize `Scene::new()` (defaults to `GouraudTriangle`) and `input::init_keyboard()`. Pre-generate mesh data and camera matrices.
+2. **Main loop** (runs indefinitely on Core 0):
+   a. **Poll input**: Call `input::poll_keyboard()`; on `SelectDemo` event, call `scene.switch_demo()`.
+   b. **One-time init on demo switch**: If `scene.needs_init` is true, perform demo-specific setup (e.g., upload checkerboard texture for `TexturedTriangle`, reset angle for `SpinningTeapot`). Clear the flag.
+   c. **Per-frame rendering**: Match on `scene.active_demo`:
+      - `GouraudTriangle`: Enqueue clear (black) + SetTriMode(gouraud) + 1 ScreenTriangle.
+      - `TexturedTriangle`: Enqueue clear (black) + SetTriMode(textured) + 1 ScreenTriangle.
+      - `SpinningTeapot`: Build model/view/projection matrices from incrementing angle. Enqueue clear (dark blue, with depth clear) + SetTriMode(gouraud, z_test, z_write). Call `render_teapot()` which transforms, lights, culls, and enqueues ~144 front-facing triangles.
+   d. **End frame**: Enqueue `WaitVsync` to signal Core 1 to sync and swap buffers.
+3. **Backpressure**: `enqueue_blocking()` spins with NOP when the SPSC queue is full, providing flow control between Core 0 (producer) and Core 1 (consumer).
 
 ## Implementation
 
-- `host_app/src/scene/mod.rs`: Main implementation
+- `host_app/src/scene/mod.rs`: `Scene` struct and `switch_demo()` logic
+- `host_app/src/main.rs`: `main()` entry point, initialization, main loop, `enqueue_blocking()`
+- `host_app/src/scene/demos.rs`: Demo vertex data, lighting parameters, constants
 
 ## Verification
 
-TBD
+- **Unit tests**: Verify `Scene::new()` defaults to `GouraudTriangle` with `needs_init = true`. Verify `switch_demo()` sets `needs_init` and returns true only on actual change.
+- **Integration tests**: Confirm that each demo variant enqueues the expected sequence of `RenderCommand`s per frame (clear + mode + triangles + vsync).
+- **Backpressure test**: Verify `enqueue_blocking()` retries when the queue is full and succeeds when space becomes available.
+- **Demo switch test**: Verify that switching demos triggers one-time init (e.g., texture upload for `TexturedTriangle`, angle reset for `SpinningTeapot`).
 
 ## Design Notes
 

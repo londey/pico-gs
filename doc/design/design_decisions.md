@@ -39,7 +39,7 @@ When adding a new decision, copy this template:
 ## DD-010: Per-Sampler Texture Cache Architecture
 
 **Date:** 2026-02-10
-**Status:** Proposed
+**Status:** Accepted
 
 ### Context
 
@@ -76,7 +76,7 @@ Add a 4-way set-associative texture cache per sampler (4 caches total):
 ## DD-011: 10.8 Fixed-Point Fragment Processing
 
 **Date:** 2026-02-10
-**Status:** Proposed
+**Status:** Accepted
 
 ### Context
 
@@ -111,7 +111,7 @@ Use always-on 10.8 fixed-point format (18 bits per channel) for all internal fra
 ## DD-012: Blue Noise Dithering for RGB565 Conversion
 
 **Date:** 2026-02-10
-**Status:** Proposed
+**Status:** Accepted
 
 ### Context
 
@@ -148,7 +148,7 @@ Use a 16×16 blue noise dither pattern stored in 1 EBR block:
 ## DD-013: Color Grading LUT at Display Scanout
 
 **Date:** 2026-02-10
-**Status:** Proposed
+**Status:** Accepted
 
 ### Context
 
@@ -194,19 +194,21 @@ Place 3× 1D color grading LUTs at display scanout in the display controller (UN
 
 ### Context
 
-...
+The project needed an architectural reference for a fixed-function 3D GPU targeting a small FPGA. The PS2 Graphics Synthesizer (GS) provides a well-documented model of a register-driven, triangle-based rasterizer with texture mapping — closely matching the capabilities achievable on an ECP5-25K.
 
 ### Decision
 
-See research documentation for full details.
+Use the PS2 GS architecture as the primary design reference: register-driven vertex submission, fixed-function triangle rasterization with Gouraud shading, hardware Z-buffering, and multi-texture support via independent texture units.
 
 ### Rationale
 
-Extracted from research.md: specs/001-spi-gpu/research.md
+The PS2 GS is well-documented, uses a register-based command interface (suitable for SPI), and its feature set (textured triangles, alpha blending, Z-buffer) maps well to ECP5 resources. More complex GPU architectures (unified shaders, tile-based rendering) exceed the FPGA budget.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Fixed-function pipeline limits flexibility but simplifies hardware and verification
+- Register-driven interface maps naturally to SPI command transactions
+- Feature scope bounded by PS2 GS capabilities (no programmable shaders, no tessellation)
 
 ---
 
@@ -218,19 +220,22 @@ TBD - Document specific trade-offs and implications.
 
 ### Context
 
-...
+The GPU must fit within a Lattice ECP5-25K FPGA. Resource budgets constrain every architectural decision.
 
 ### Decision
 
-See research documentation for full details.
+Target the ECP5-25K (LFE5U-25F) with the following resource budget: ~24K LUTs, 56 EBR blocks (1,008 Kbits BRAM), 28 DSP slices (18×18 multipliers), and 4 SERDES channels for DVI output.
 
 ### Rationale
 
-Extracted from research.md: specs/001-spi-gpu/research.md
+The ECP5-25K is the smallest ECP5 variant with enough resources for a basic 3D pipeline, and has full open-source toolchain support (Yosys + nextpnr). Larger variants (45K, 85K) cost more and aren't needed for the target feature set.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- All hardware features must fit within 24K LUTs, 56 EBR, 28 DSP budget
+- EBR blocks are the scarcest resource — texture cache, dither matrix, color LUT, and FIFOs compete for 56 blocks
+- DSP slices enable hardware multiply for barycentric interpolation and fixed-point math
+- SERDES provides DVI/HDMI output without external serializer chips
 
 ---
 
@@ -242,458 +247,183 @@ TBD - Document specific trade-offs and implications.
 
 ### Context
 
-...
+The GPU needs a video output standard compatible with common monitors. Options include VGA (analog), DVI (digital), and HDMI (digital + audio).
 
 ### Decision
 
-See research documentation for full details.
+Use DVI TMDS output at 640×480@60Hz over an HDMI-compatible connector, using the ECP5 SERDES for serialization.
 
 ### Rationale
 
-Extracted from research.md: specs/001-spi-gpu/research.md
+DVI is electrically compatible with HDMI for video-only output. 640×480@60Hz requires a 25.175 MHz pixel clock, well within ECP5 PLL range. The ECP5 SERDES handles 10:1 serialization at 251.75 MHz (10× pixel clock). VGA was rejected due to requiring external DAC.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Requires PLL configuration for 25.175 MHz pixel clock and 251.75 MHz SERDES clock
+- HDMI monitors accept DVI signals natively (video-only, no audio)
+- Resolution fixed at 640×480 to stay within SRAM bandwidth limits
+- 4 SERDES channels used (R, G, B, clock)
 
 ---
 
 
-## DD-004: Decision 1: Language and HAL
+## DD-004: Rust with rp235x-hal
 
 **Date:** 2026-02-08
 **Status:** Accepted
 
 ### Context
 
-**Decision**: Rust with `rp235x-hal` (bare-metal, no Embassy)
-
-**Rationale**: The user specified Rust targeting Cortex M33 cores. `rp235x-hal` is the community-standard HAL for RP2350, based on the mature `rp2040-hal`. It provides direct access to SPI, DMA, GPIO, and multicore primitives. A bare-metal approach (vs Embassy async) gives deterministic timing essential for 30+ FPS real-time rendering on the render core.
-
-**Alternatives considered**:
-- Embassy-rp: Good for async I/O but cooperative...
+The RP2350 host firmware needs a language and HAL. Rust was specified as the language. The choice is between bare-metal HAL and async frameworks.
 
 ### Decision
 
-See research documentation for full details.
+Use Rust with `rp235x-hal` (bare-metal, no Embassy). Direct access to SPI, DMA, GPIO, and multicore primitives with deterministic timing.
 
 ### Rationale
 
-Extracted from research.md: specs/002-rp2350-host-software/research.md
+`rp235x-hal` is the community-standard HAL for RP2350, based on the mature `rp2040-hal`. A bare-metal approach (vs Embassy async) gives deterministic timing essential for 30+ FPS real-time rendering on the render core. Embassy's cooperative scheduling adds unpredictable latency.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Deterministic timing for render loop on Core 1
+- No async runtime overhead; interrupt-driven where needed
+- Must manually manage concurrency between cores
+- Ecosystem limited to `no_std` crates
 
 ---
 
 
-## DD-005: Decision 2: Target and Toolchain
+## DD-005: Cortex-M33 Target and Toolchain
 
 **Date:** 2026-02-08
 **Status:** Accepted
 
 ### Context
 
-**Decision**: `thumbv8m.main-none-eabihf` target (Cortex-M33 with hardware FPU)
-
-**Rationale**: The RP2350's Cortex-M33 cores have a single-precision hardware FPU and DSP extensions. The `eabihf` target enables hardware float calling conventions, critical for matrix math and lighting performance. The user explicitly chose Cortex M33 over the RP2350's RISC-V cores for this reason.
-
-**Build tools**:
-- `probe-rs` (v0.24+) for flash/debug via SWD
-- `flip-link` for stack overflow protection
-- `defmt...
+The RP2350 has dual Cortex-M33 cores (with hardware FPU) and dual RISC-V cores. A target and toolchain must be chosen.
 
 ### Decision
 
-See research documentation for full details.
+Use `thumbv8m.main-none-eabihf` target (Cortex-M33 with hardware FPU). Build with `probe-rs` for flash/debug, `flip-link` for stack overflow protection, and `defmt` for logging.
 
 ### Rationale
 
-Extracted from research.md: specs/002-rp2350-host-software/research.md
+The Cortex-M33 cores have a single-precision hardware FPU and DSP extensions. The `eabihf` target enables hardware float calling conventions, critical for matrix math and lighting performance.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Hardware float for matrix/lighting calculations (no software emulation overhead)
+- `probe-rs` enables SWD debug and flash programming
+- `flip-link` provides stack overflow detection in debug builds
+- `defmt` provides efficient logging over RTT
 
 ---
 
 
-## DD-006: Decision 3: Dual-Core Communication
+## DD-006: Dual-Core Communication via heapless SPSC Queue
 
 **Date:** 2026-02-08
 **Status:** Accepted
 
 ### Context
 
-**Decision**: `heapless::spsc::Queue` for the inter-core render command queue, with SIO FIFO doorbell signaling
-
-**Rationale**: The RP2350 provides hardware SIO FIFOs (8-deep, 32-bit) for inter-core signaling, but they're too small for render commands. `heapless::spsc::Queue` is a proven single-producer single-consumer lock-free queue that requires no allocator and no mutexes. The SIO FIFO can signal "new commands available" to avoid busy-polling on Core 1.
-
-**Alternatives considered**:
-- `bbqu...
+Core 0 (scene manager) must send render commands to Core 1 (render executor). The RP2350 hardware SIO FIFOs are only 8-deep × 32-bit, too small for render commands.
 
 ### Decision
 
-See research documentation for full details.
+Use `heapless::spsc::Queue` for the inter-core render command queue, with SIO FIFO doorbell signaling to wake Core 1.
 
 ### Rationale
 
-Extracted from research.md: specs/002-rp2350-host-software/research.md
+`heapless::spsc::Queue` is a proven lock-free single-producer single-consumer queue requiring no allocator or mutexes. SIO FIFO signals "new commands available" to avoid busy-polling.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Lock-free, wait-free command submission from Core 0
+- Fixed queue capacity must be sized at compile time
+- SIO doorbell avoids Core 1 busy-polling (power savings)
+- Queue overflow must be handled by Core 0 (back-pressure)
 
 ---
 
 
-## DD-007: 1. PNG Decoding Library
+## DD-007: PNG Decoding with image Crate
 
 **Date:** 2026-02-08
 **Status:** Accepted
 
 ### Context
 
-**Decision**: `image` crate (v0.25+)
-
-**Rationale**:
-The `image` crate is the de facto standard for image processing in Rust and provides the best balance of ergonomics, features, and reliability:
-
-- **High-level API**: Provides simple `open()` and `to_rgba8()` methods that handle all color space conversions automatically
-- **Format support**: Handles PNG, JPEG, and other formats through a unified interface, enabling future format extensions
-- **Active maintenance**: Widely used (10M+ downloads...
+The asset build tool needs to decode PNG textures and convert them to GPU-native formats (RGBA4444, BC1). A Rust PNG/image library is needed.
 
 ### Decision
 
-See research documentation for full details.
+Use the `image` crate (v0.25+) for PNG decoding in the asset build tool.
 
 ### Rationale
 
-Extracted from research.md: specs/003-asset-data-prep/research.md
+The `image` crate is the de facto standard for image processing in Rust. It provides `open()` and `to_rgba8()` for automatic color space conversion, handles PNG and other formats, and is actively maintained (10M+ downloads).
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Simple API for loading any image format to RGBA8
+- Large dependency tree (acceptable for host-side build tool, not embedded)
+- Future format support (JPEG, etc.) available without additional crates
 
 ---
 
 
-## DD-008: 2. OBJ Parser Library
+## DD-008: OBJ Parsing with tobj Crate
 
 **Date:** 2026-02-08
 **Status:** Accepted
 
 ### Context
 
-**Decision**: `tobj` crate (v4.0+)
-
-**Rationale**:
-`tobj` is the clear winner for our use case, offering the best combination of features, reliability, and ecosystem integration:
-
-- **Most popular**: 971K+ all-time downloads, used by 88 crates - proven reliability
-- **Triangulation support**: Meshes can be triangulated on-the-fly with trivial triangle fan conversion
-- **Complete attribute parsing**: Handles positions, normals, UVs, and vertex colors with optional attribute support
-- **Simple AP...
+The asset build tool needs to parse Wavefront OBJ mesh files and extract vertex positions, normals, and UV coordinates.
 
 ### Decision
 
-See research documentation for full details.
+Use the `tobj` crate (v4.0+) for OBJ file parsing.
 
 ### Rationale
 
-Extracted from research.md: specs/003-asset-data-prep/research.md
+`tobj` is the most popular Rust OBJ parser (971K+ downloads). It supports triangulation, handles positions/normals/UVs, and provides a simple API.
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
+- Automatic triangulation of non-triangle faces
+- Handles all standard OBJ attributes needed (v, vt, vn, f)
+- No MTL material support needed (textures assigned separately)
 
 ---
 
 
-## DD-009: 3. Mesh Splitting Algorithm
+## DD-009: Greedy Sequential Triangle Packing
 
 **Date:** 2026-02-08
 **Status:** Accepted
 
 ### Context
 
-**Algorithm Description**:
-
-Based on FR-018 requirements, we implement a **greedy sequential triangle packing** algorithm that fills each patch with triangles until adding the next triangle would violate vertex or index limits.
-
-**Design Rationale**:
-- **Simplicity**: Easy to implement, debug, and maintain
-- **Predictability**: Deterministic output for the same input mesh
-- **Performance**: O(n) time complexity where n is the number of triangles
-- **Trade-off**: Accepts some vertex duplication...
+Large meshes must be split into "patches" that fit within the GPU's per-draw vertex/index limits. A splitting algorithm is needed.
 
 ### Decision
 
-See research documentation for full details.
+Implement greedy sequential triangle packing: fill each patch with triangles in order until the next triangle would exceed vertex or index limits, then start a new patch.
 
 ### Rationale
 
-Extracted from research.md: specs/003-asset-data-prep/research.md
+- O(n) time complexity
+- Deterministic output for the same input
+- Simple to implement, debug, and maintain
+- Accepts some vertex duplication at patch boundaries as an acceptable trade-off
 
 ### Consequences
 
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-001: PS2 Graphics Synthesizer Reference
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/001-spi-gpu/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-002: ECP5 FPGA Resources
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/001-spi-gpu/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-003: DVI/HDMI Output
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/001-spi-gpu/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-004: Decision 1: Language and HAL
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-**Decision**: Rust with `rp235x-hal` (bare-metal, no Embassy)
-
-**Rationale**: The user specified Rust targeting Cortex M33 cores. `rp235x-hal` is the community-standard HAL for RP2350, based on the mature `rp2040-hal`. It provides direct access to SPI, DMA, GPIO, and multicore primitives. A bare-metal approach (vs Embassy async) gives deterministic timing essential for 30+ FPS real-time rendering on the render core.
-
-**Alternatives considered**:
-- Embassy-rp: Good for async I/O but cooperative...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/002-rp2350-host-software/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-005: Decision 2: Target and Toolchain
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-**Decision**: `thumbv8m.main-none-eabihf` target (Cortex-M33 with hardware FPU)
-
-**Rationale**: The RP2350's Cortex-M33 cores have a single-precision hardware FPU and DSP extensions. The `eabihf` target enables hardware float calling conventions, critical for matrix math and lighting performance. The user explicitly chose Cortex M33 over the RP2350's RISC-V cores for this reason.
-
-**Build tools**:
-- `probe-rs` (v0.24+) for flash/debug via SWD
-- `flip-link` for stack overflow protection
-- `defmt...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/002-rp2350-host-software/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-006: Decision 3: Dual-Core Communication
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-**Decision**: `heapless::spsc::Queue` for the inter-core render command queue, with SIO FIFO doorbell signaling
-
-**Rationale**: The RP2350 provides hardware SIO FIFOs (8-deep, 32-bit) for inter-core signaling, but they're too small for render commands. `heapless::spsc::Queue` is a proven single-producer single-consumer lock-free queue that requires no allocator and no mutexes. The SIO FIFO can signal "new commands available" to avoid busy-polling on Core 1.
-
-**Alternatives considered**:
-- `bbqu...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/002-rp2350-host-software/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-007: 1. PNG Decoding Library
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-**Decision**: `image` crate (v0.25+)
-
-**Rationale**:
-The `image` crate is the de facto standard for image processing in Rust and provides the best balance of ergonomics, features, and reliability:
-
-- **High-level API**: Provides simple `open()` and `to_rgba8()` methods that handle all color space conversions automatically
-- **Format support**: Handles PNG, JPEG, and other formats through a unified interface, enabling future format extensions
-- **Active maintenance**: Widely used (10M+ downloads...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/003-asset-data-prep/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-008: 2. OBJ Parser Library
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-**Decision**: `tobj` crate (v4.0+)
-
-**Rationale**:
-`tobj` is the clear winner for our use case, offering the best combination of features, reliability, and ecosystem integration:
-
-- **Most popular**: 971K+ all-time downloads, used by 88 crates - proven reliability
-- **Triangulation support**: Meshes can be triangulated on-the-fly with trivial triangle fan conversion
-- **Complete attribute parsing**: Handles positions, normals, UVs, and vertex colors with optional attribute support
-- **Simple AP...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/003-asset-data-prep/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
-
----
-
-
-## DD-009: 3. Mesh Splitting Algorithm
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-**Algorithm Description**:
-
-Based on FR-018 requirements, we implement a **greedy sequential triangle packing** algorithm that fills each patch with triangles until adding the next triangle would violate vertex or index limits.
-
-**Design Rationale**:
-- **Simplicity**: Easy to implement, debug, and maintain
-- **Predictability**: Deterministic output for the same input mesh
-- **Performance**: O(n) time complexity where n is the number of triangles
-- **Trade-off**: Accepts some vertex duplication...
-
-### Decision
-
-See research documentation for full details.
-
-### Rationale
-
-Extracted from research.md: specs/003-asset-data-prep/research.md
-
-### Consequences
-
-TBD - Document specific trade-offs and implications.
+- Vertex duplication at patch boundaries (~5-15% overhead for typical meshes)
+- Triangle ordering preserved within patches (important for transparency)
+- No spatial optimization (adjacent triangles may land in different patches)
 
 ---

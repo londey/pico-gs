@@ -39,7 +39,12 @@ None
 
 ### Internal Interfaces
 
-TBD
+- Receives fragment data (position, UV, color, Z) from UNIT-005 (Rasterizer)
+- Reads texture data from SRAM via UNIT-007 (SRAM Arbiter) texture port
+- Reads/writes framebuffer for alpha blending via UNIT-007
+- Receives texture configuration (base address, format, dimensions) from UNIT-003 (Register File)
+- Receives dither and blend mode configuration from UNIT-003
+- Outputs final RGB565 pixel + Z value to SRAM via UNIT-007
 
 ## Design Description
 

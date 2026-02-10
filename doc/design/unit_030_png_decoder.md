@@ -21,7 +21,9 @@ None
 
 ### Internal Interfaces
 
-TBD
+- Called by UNIT-034 (Build.rs Orchestrator) via `load_and_convert()` function
+- Produces `TextureAsset` struct consumed by UNIT-033 (Codegen Engine) for output generation
+- Uses `identifier::generate_identifier()` for asset naming
 
 ## Design Description
 

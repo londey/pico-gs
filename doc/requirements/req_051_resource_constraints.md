@@ -20,11 +20,12 @@ None
 
 ## Allocated To
 
-TBD (will be filled by establish-traceability.py)
+- All GPU hardware units (UNIT-001 through UNIT-009)
 
 ## Interfaces
 
-TBD (will be filled by establish-traceability.py)
+- INT-010 (GPU Register Map)
+- INT-011 (SRAM Memory Layout)
 
 ## Functional Requirements
 

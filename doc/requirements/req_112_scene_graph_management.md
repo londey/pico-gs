@@ -24,7 +24,8 @@ None
 
 ## Interfaces
 
-TBD (will be filled by establish-traceability.py)
+- INT-020 (GPU Driver API)
+- INT-021 (Render Command Format)
 
 ## Verification Method
 

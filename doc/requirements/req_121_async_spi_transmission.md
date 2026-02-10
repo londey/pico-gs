@@ -24,7 +24,7 @@ None
 
 ## Interfaces
 
-TBD (will be filled by establish-traceability.py)
+- INT-012 (SPI Transaction Format)
 
 ## Verification Method
 
