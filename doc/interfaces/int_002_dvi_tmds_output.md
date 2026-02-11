@@ -13,10 +13,12 @@ External Standard
 
 - **Provider:** External
 - **Consumer:** UNIT-009 (DVI TMDS Encoder)
+- **Provider:** UNIT-009 (DVI TMDS Encoder)
 
 ## Referenced By
 
 - REQ-007 (Display Output)
+- REQ-026 (Display Output Timing)
 
 ## Specification
 

@@ -21,6 +21,9 @@ None
 ## Allocated To
 
 - UNIT-023 (Transformation Pipeline)
+- UNIT-021 (Core 1 Render Executor)
+- UNIT-020 (Core 0 Scene Manager)
+- UNIT-026 (Inter-Core Queue)
 
 ## Interfaces
 

@@ -17,6 +17,7 @@ External Standard
 ## Referenced By
 
 - REQ-103 (Unknown)
+- REQ-113 (USB Keyboard Input)
 
 ## Specification
 

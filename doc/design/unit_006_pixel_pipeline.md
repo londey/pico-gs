@@ -24,18 +24,20 @@ Texture sampling, blending, z-test, framebuffer write
 - REQ-131 (Texture Cache)
 - REQ-132 (Ordered Dithering)
 - REQ-134 (Extended Precision Fragment Processing)
+- REQ-025 (Framebuffer Format)
 
 ## Interfaces
 
 ### Provides
 
-None
+- INT-032 (Texture Cache Architecture)
 
 ### Consumes
 
 - INT-010 (GPU Register Map)
 - INT-011 (SRAM Memory Layout)
 - INT-014 (Texture Memory Layout)
+- INT-032 (Texture Cache Architecture)
 
 ### Internal Interfaces
 

@@ -21,6 +21,10 @@ None
 ## Allocated To
 
 - UNIT-021 (Core 1 Render Executor)
+- UNIT-020 (Core 0 Scene Manager)
+- UNIT-023 (Transformation Pipeline)
+- UNIT-022 (GPU Driver Layer)
+- UNIT-024 (Lighting Calculator)
 
 ## Interfaces
 

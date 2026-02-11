@@ -19,6 +19,7 @@ Internal
 - REQ-011 (Swizzle Patterns)
 - REQ-024 (Texture Sampling)
 - INT-011 (SRAM Memory Layout - overall memory allocation)
+- REQ-131 (Texture Cache)
 
 ## Specification
 

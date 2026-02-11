@@ -6,9 +6,9 @@ Scene graph management and animation
 
 ## Implements Requirements
 
-- REQ-100 (Unknown)
-- REQ-101 (Unknown)
-- REQ-102 (Unknown)
+- REQ-100 (Host Firmware Architecture)
+- REQ-101 (Scene Management)
+- REQ-102 (Render Pipeline Execution)
 - REQ-104 (Unknown)
 - REQ-111 (Dual-Core Architecture)
 - REQ-112 (Scene Graph Management)
@@ -23,6 +23,7 @@ None
 ### Consumes
 
 - INT-021 (Render Command Format)
+- INT-013 (GPIO Status Signals)
 
 ### Internal Interfaces
 

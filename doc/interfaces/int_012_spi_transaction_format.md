@@ -14,6 +14,9 @@ Internal
 
 - REQ-001 (Basic Host Communication)
 - REQ-020 (SPI Electrical Interface)
+- REQ-121 (Async SPI Transmission)
+- REQ-105 (GPU Communication Protocol)
+- REQ-021 (Command Buffer FIFO)
 
 ## Specification
 

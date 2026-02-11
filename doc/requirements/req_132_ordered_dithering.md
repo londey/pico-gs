@@ -22,6 +22,7 @@ Converting 10.8 fixed-point fragment colors to RGB565 format discards fractional
 ## Allocated To
 
 - UNIT-006 (Pixel Pipeline)
+- UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
 

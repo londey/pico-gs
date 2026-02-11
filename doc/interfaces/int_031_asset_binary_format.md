@@ -8,11 +8,13 @@ Internal
 
 - **Provider:** External
 - **Consumer:** UNIT-034 (Build.rs Orchestrator)
+- **Consumer:** UNIT-033 (Codegen Engine)
 
 ## Referenced By
 
 - REQ-200 (Unknown)
 - REQ-201 (Unknown)
+- REQ-202 (Asset Build Orchestration)
 
 ## Specification
 

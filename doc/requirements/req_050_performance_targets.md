@@ -8,11 +8,25 @@
 
 ## Requirement
 
-The system SHALL meet the performance targets defined in the specification.
+When rendering typical scene content, the system SHALL achieve frame rates and throughput sufficient for interactive rendering as measured by the performance observations defined in quality_metrics.md.
 
 ## Rationale
 
-These targets ensure the system meets performance, resource, and reliability expectations.
+Performance is highly content-dependent (triangle count, overdraw, texture cache hit rate). Rather than setting arbitrary numeric targets, this requirement establishes that the system must support interactive rendering for typical scenes.
+
+**Target Use Case:** Low-poly textured and lit animated models (e.g., skeletal animated T-Rex) at interactive frame rates (≥15 FPS).
+
+**Hardware Constraints:**
+- 50 MHz FPGA clock for GPU rendering pipeline
+- 100 MHz SRAM access (16-bit bus = 200 MB/s theoretical)
+- 25 MHz QSPI command interface (72-bit transactions = ~3 MB/s command bandwidth)
+
+**Actual Performance Observations** (tracked in quality_metrics.md):
+- Triangle throughput: ~17,000 triangles/second @ 60 fps (SpinningTeapot: 288 tri/frame)
+- Fill rate: ~12.5 Mpixels/second theoretical maximum (derived from SRAM bandwidth)
+- Frame time: Content-dependent (simple scenes may exceed 60 FPS, complex scenes may drop below)
+
+These performance characteristics place the system in the PSX-to-N64 capability range given the hardware constraints.
 
 ## Parent Requirements
 
@@ -29,8 +43,17 @@ None
 
 ## Verification Method
 
-**Analysis:** Measure actual performance/resource usage against targets.
+**Analysis:** Measure actual performance/resource usage against observations defined in quality_metrics.md:
+
+- [ ] Measure triangle throughput for typical test scenes (flat, Gouraud, textured)
+- [ ] Measure fill rate for typical pixel workloads (cache hit vs cache miss)
+- [ ] Measure frame time for reference scenes (SpinningTeapot, low-poly animated model)
+- [ ] Verify interactive frame rate (≥15 FPS) for target use case content
+- [ ] Document actual performance observations in quality_metrics.md
 
 ## Notes
 
-Non-functional requirement. See specifications for specific numeric targets.
+Performance targets are **content-dependent observations**, not fixed requirements. See [quality_metrics.md](quality_metrics.md) for detailed performance measurements and analysis.
+
+Specific resource constraints (FPGA LUT/EBR usage, SRAM/Flash budgets) are defined in REQ-051.
+Reliability and timing constraints are defined in REQ-052 and quality_metrics.md.

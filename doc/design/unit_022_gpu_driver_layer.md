@@ -7,9 +7,9 @@ SPI transaction handling and flow control
 ## Implements Requirements
 
 - REQ-100 (Unknown)
-- REQ-101 (Unknown)
-- REQ-102 (Unknown)
-- REQ-105 (Unknown)
+- REQ-101 (Scene Management)
+- REQ-102 (Render Pipeline Execution)
+- REQ-105 (GPU Communication Protocol)
 - REQ-110 (GPU Initialization)
 - REQ-115 (Render Mesh Patch)
 - REQ-116 (Upload Texture)

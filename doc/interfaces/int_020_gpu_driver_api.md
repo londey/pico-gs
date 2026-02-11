@@ -24,6 +24,9 @@ Internal
 - REQ-132 (Ordered Dithering)
 - REQ-133 (Color Grading LUT)
 - REQ-134 (Extended Precision Fragment Processing)
+- REQ-122 (Default Demo Startup)
+- REQ-120 (Async Data Loading)
+- REQ-112 (Scene Graph Management)
 
 ## Specification
 

@@ -6,9 +6,9 @@ Render command queue consumer
 
 ## Implements Requirements
 
-- REQ-100 (Unknown)
-- REQ-101 (Unknown)
-- REQ-102 (Unknown)
+- REQ-100 (Host Firmware Architecture)
+- REQ-101 (Scene Management)
+- REQ-102 (Render Pipeline Execution)
 - REQ-104 (Unknown)
 - REQ-111 (Dual-Core Architecture)
 - REQ-115 (Render Mesh Patch)

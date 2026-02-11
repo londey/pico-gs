@@ -27,6 +27,7 @@ None
 - INT-010 (GPU Register Map) - TEXn_FMT register (format, dimensions, swizzle)
 - INT-011 (SRAM Memory Layout) - Texture memory region
 - INT-014 (Texture Memory Layout) - Format specifications and addressing
+- INT-032 (Texture Cache Architecture)
 
 ## Functional Requirements
 

@@ -13,6 +13,7 @@ External Standard
 
 - **Provider:** External
 - **Consumer:** UNIT-001 (SPI Slave Controller)
+- **Consumer:** UNIT-022 (GPU Driver Layer)
 
 ## Referenced By
 

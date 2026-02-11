@@ -8,6 +8,7 @@ Demo selection and switching logic
 
 - REQ-103 (Unknown)
 - REQ-122 (Default Demo Startup)
+- REQ-101 (Scene Management)
 
 ## Interfaces
 

@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to use BC1 block-compressed textures, so that I can reduce memory usage and bandwidth for texture-heavy scenes
+When firmware configures a texture unit with FORMAT=01 (BC1 compression), the system SHALL decode BC1 block-compressed texture data (8 bytes per 4×4 block) and sample texels using the decompressed RGB565 color palette interpolation specified in INT-014.
 
 ## Rationale
 

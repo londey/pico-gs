@@ -8,11 +8,11 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to write to GPU registers over SPI, so that I can configure the GPU and submit primitives
+When the host firmware needs to configure the GPU or submit primitives, the system SHALL accept 72-bit SPI transactions (1 R/W + 7 addr + 64 data bits) in Mode 0 format and complete register writes within a deterministic cycle count.
 
 ## Rationale
 
-This requirement enables the user story described above.
+The RP2350 host must communicate with the FPGA GPU over a wired interface. SPI was selected because it provides sufficient bandwidth (25 MHz = ~3 MB/s), requires minimal pin count (4 pins + CS), has hardware support on both RP2350 and ECP5 FPGA, and is deterministic (critical for real-time rendering). The 72-bit transaction format (7-bit address + 64-bit data) aligns with the GPU's 64-bit register width.
 
 ## Parent Requirements
 
@@ -45,4 +45,4 @@ None
 
 ## Notes
 
-User Story: As a firmware developer, I want to write to GPU registers over SPI, so that I can configure the GPU and submit primitives
+This is the foundational communication requirement. All other GPU functionality depends on the ability to write to registers via SPI transactions.

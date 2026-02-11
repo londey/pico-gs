@@ -22,10 +22,12 @@ None
 
 - UNIT-005 (Rasterizer) — RGBA8 interpolation output promotion to 10.8
 - UNIT-006 (Pixel Pipeline) — All blend operations in 10.8 format
+- UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
 
 - INT-010 (GPU Register Map) — Vertex COLOR register input (ABGR8888 promoted to 10.8)
+- INT-020 (GPU Driver API)
 
 ## Functional Requirements
 

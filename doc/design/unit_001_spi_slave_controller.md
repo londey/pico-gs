@@ -8,6 +8,7 @@ Receives 72-bit SPI transactions and writes to register file
 
 - REQ-001 (Basic Host Communication)
 - REQ-020 (SPI Electrical Interface)
+- REQ-051 (Resource Constraints)
 
 ## Interfaces
 

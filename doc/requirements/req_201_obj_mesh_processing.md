@@ -22,11 +22,13 @@ None
 
 - UNIT-031 (OBJ Parser)
 - UNIT-032 (Mesh Patch Splitter)
+- UNIT-033 (Codegen Engine)
 
 ## Interfaces
 
 - INT-004 (Wavefront OBJ Format)
 - INT-031 (Asset Binary Format)
+- INT-030 (Asset Tool CLI Interface)
 
 ## Verification Method
 

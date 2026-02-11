@@ -8,11 +8,11 @@
 
 ## Requirement
 
-The system SHALL implement gpu initialization as specified in the functional requirements.
+When the host firmware powers on, the system SHALL initialize the GPU by: (1) detecting GPU presence via SPI transaction, (2) configuring default register state (framebuffer addresses, display mode, rendering config), and (3) verifying GPU readiness via status register polling, completing the entire sequence within 100ms.
 
 ## Rationale
 
-This requirement defines the functional behavior of the gpu initialization subsystem.
+Deterministic initialization ensures the GPU is in a known state before rendering begins. The 100ms timeout provides sufficient margin for SPI transactions while keeping startup latency imperceptible to users (<1 frame at 10 FPS). Default configuration prevents undefined behavior if firmware attempts to render before explicit setup.
 
 ## Parent Requirements
 
@@ -29,8 +29,16 @@ None
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for gpu initialization.
+**Test:** Verify initialization sequence meets the following criteria:
+
+- [ ] GPU presence detection succeeds (valid response to SPI transaction)
+- [ ] Default framebuffer addresses configured (FB_DRAW, FB_DISPLAY, FB_ZBUFFER)
+- [ ] Default display mode configured (640×480 @ 60 Hz)
+- [ ] Default rendering config set (Z-test enabled, alpha blend disabled, flat shading)
+- [ ] Status register polling confirms GPU ready
+- [ ] Entire initialization sequence completes within 100ms from power-on
+- [ ] GPU accepts rendering commands immediately after initialization
 
 ## Notes
 
-Functional requirements grouped from specification.
+Initialization is performed by UNIT-022 (GPU Driver Layer) during firmware startup. The sequence is documented in [concept_of_execution.md](../design/concept_of_execution.md).

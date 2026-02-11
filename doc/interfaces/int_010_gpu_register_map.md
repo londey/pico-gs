@@ -36,6 +36,19 @@ Internal
 - REQ-132 (Ordered Dithering)
 - REQ-133 (Color Grading LUT)
 - REQ-134 (Extended Precision Fragment Processing)
+- REQ-123 (Double-Buffered Rendering)
+- REQ-105 (GPU Communication Protocol)
+- REQ-131 (Texture Cache)
+- REQ-052 (Reliability Requirements)
+- REQ-050 (Performance Targets)
+- REQ-051 (Resource Constraints)
+- REQ-027 (Z-Buffer Operations)
+- REQ-026 (Display Output Timing)
+- REQ-024 (Texture Sampling)
+- REQ-023 (Rasterization Algorithm)
+- REQ-022 (Vertex Submission Protocol)
+- REQ-029 (Memory Upload Interface)
+- REQ-028 (Alpha Blending)
 
 ## Specification
 

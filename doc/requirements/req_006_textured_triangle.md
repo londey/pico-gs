@@ -8,11 +8,11 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to submit a triangle with texture coordinates, so that I can render textured surfaces
+When the firmware writes three VERTEX registers with TRI_MODE configured for texture mapping (TEXTURED=1), the system SHALL rasterize a triangle with UV coordinates interpolated across the surface and sample texture data at each pixel using the configured texture unit.
 
 ## Rationale
 
-This requirement enables the user story described above.
+Texture mapping is essential for realistic rendering, allowing surface detail without increasing geometric complexity. It enables: realistic materials (wood, metal, stone), decals and labels, sprite rendering for UI, and efficient detail representation (one 256×256 texture = 65,536 triangles of flat-shaded detail).
 
 ## Parent Requirements
 
@@ -27,6 +27,7 @@ None
 
 - INT-010 (GPU Register Map)
 - INT-011 (SRAM Memory Layout)
+- INT-014 (Texture Memory Layout)
 
 ## Verification Method
 
@@ -45,4 +46,4 @@ None
 
 ## Notes
 
-User Story: As a firmware developer, I want to submit a triangle with texture coordinates, so that I can render textured surfaces
+Texture mapping requires both geometric data (vertices) and UV coordinates. The GPU supports up to 4 simultaneous texture units (REQ-008) with various blend modes (REQ-009).

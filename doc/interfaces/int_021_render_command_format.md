@@ -20,6 +20,7 @@ Internal
 - REQ-111 (Dual-Core Architecture)
 - REQ-114 (Render Command Queue)
 - REQ-115 (Render Mesh Patch)
+- REQ-112 (Scene Graph Management)
 
 ## Specification
 

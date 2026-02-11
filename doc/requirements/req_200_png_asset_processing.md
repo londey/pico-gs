@@ -21,11 +21,13 @@ None
 ## Allocated To
 
 - UNIT-030 (PNG Decoder)
+- UNIT-033 (Codegen Engine)
 
 ## Interfaces
 
 - INT-003 (Texture Input Formats)
 - INT-031 (Asset Binary Format)
+- INT-030 (Asset Tool CLI Interface)
 
 ## Verification Method
 

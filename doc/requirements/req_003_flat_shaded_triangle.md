@@ -8,11 +8,11 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to submit a triangle with a single color, so that I can render simple geometry without texture overhead
+When the firmware writes three VERTEX registers with TRI_MODE configured for flat shading (GOURAUD=0, TEXTURED=0), the system SHALL rasterize a triangle using the single COLOR value from the first vertex for all pixels.
 
 ## Rationale
 
-This requirement enables the user story described above.
+Flat-shaded triangles are the simplest rendering primitive, requiring no texture sampling or color interpolation. They enable UI rendering, solid-color geometry, debug visualization, and serve as a baseline for verifying the rasterization pipeline before adding more complex shading modes (Gouraud, texturing).
 
 ## Parent Requirements
 
@@ -44,4 +44,4 @@ None
 
 ## Notes
 
-User Story: As a firmware developer, I want to submit a triangle with a single color, so that I can render simple geometry without texture overhead
+Flat shading is the foundation of the rendering pipeline. All triangles (even textured ones) can fall back to this mode if no texture units are enabled.

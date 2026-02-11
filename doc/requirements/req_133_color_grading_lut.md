@@ -21,6 +21,7 @@ Post-processing effects like gamma correction and color grading are traditionall
 ## Allocated To
 
 - UNIT-008 (Display Controller)
+- UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
 

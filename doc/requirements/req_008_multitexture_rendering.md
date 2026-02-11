@@ -25,6 +25,7 @@ None
 ## Interfaces
 
 - INT-010 (GPU Register Map)
+- INT-014 (Texture Memory Layout)
 
 ## Verification Method
 

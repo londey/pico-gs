@@ -22,6 +22,7 @@ None
 
 - UNIT-020 (Core 0 Scene Manager)
 - UNIT-021 (Core 1 Render Executor)
+- UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
 

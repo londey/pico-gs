@@ -8,6 +8,7 @@ Rust source and binary data generation for compiled assets
 
 - REQ-200 (Unknown)
 - REQ-201 (Unknown)
+- REQ-202 (Asset Build Orchestration)
 
 ## Interfaces
 
@@ -18,6 +19,7 @@ None
 ### Consumes
 
 - INT-031 (Asset Binary Format)
+- INT-014 (Texture Memory Layout)
 
 ### Internal Interfaces
 

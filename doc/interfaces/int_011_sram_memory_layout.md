@@ -19,6 +19,12 @@ Internal
 - REQ-014 (Enhanced Z-Buffer)
 - REQ-025 (Framebuffer Format)
 - INT-014 (Texture Memory Layout)
+- REQ-123 (Double-Buffered Rendering)
+- REQ-050 (Performance Targets)
+- REQ-051 (Resource Constraints)
+- REQ-027 (Z-Buffer Operations)
+- REQ-024 (Texture Sampling)
+- REQ-023 (Rasterization Algorithm)
 
 ## Specification
 

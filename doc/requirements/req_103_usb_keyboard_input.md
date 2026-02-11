@@ -21,10 +21,12 @@ None
 ## Allocated To
 
 - UNIT-025 (USB Keyboard Handler)
+- UNIT-027 (Demo State Machine)
 
 ## Interfaces
 
 - INT-005 (USB HID Keyboard)
+- INT-021 (Render Command Format)
 
 ## Verification Method
 

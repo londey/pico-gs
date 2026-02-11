@@ -22,10 +22,13 @@ None
 
 - UNIT-020 (Core 0 Scene Manager)
 - UNIT-027 (Demo State Machine)
+- UNIT-021 (Core 1 Render Executor)
+- UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
 
 - INT-021 (Render Command Format)
+- INT-020 (GPU Driver API)
 
 ## Verification Method
 

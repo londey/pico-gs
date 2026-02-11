@@ -8,6 +8,7 @@ TMDS encoding and differential output
 
 - REQ-007 (Display Output)
 - REQ-026 (Display Output Timing)
+- REQ-051 (Resource Constraints)
 
 ## Interfaces
 
@@ -16,6 +17,7 @@ TMDS encoding and differential output
 - INT-002 (DVI TMDS Output)
 
 ### Consumes
+- INT-002 (DVI TMDS Output)
 
 None
 
