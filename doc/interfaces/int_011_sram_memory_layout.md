@@ -217,10 +217,53 @@ legacy RGBA8888.
 | Size | 29,097,984 bytes (~27.7 MB) |
 
 **Potential Uses**:
+- **Color grading LUTs** (v9.0 recommendation)
 - Additional framebuffers (triple buffering)
 - Larger texture storage
 - Future: vertex buffers, command lists
 - Host scratch memory
+
+**Recommended Color Grading LUT Region (v9.0)**:
+```
+0x440000 ┬─────────────────────────────────────────┐
+         │  Color Grading LUTs                     │
+         │  (Recommended allocation)               │
+0x441000 │  LUT 0 (identity, 4KiB)                 │
+0x442000 │  LUT 1 (gamma 2.2, 4KiB)                │
+0x443000 │  LUT 2 (warm tint, 4KiB)                │
+0x444000 │  LUT 3 (cool tint, 4KiB)                │
+0x445000 │  LUT 4 (high contrast, 4KiB)            │
+         │  ... (16 LUTs fit in 64KiB)             │
+0x450000 ├─────────────────────────────────────────┤
+         │  Free / Additional LUTs                 │
+         │  ~27.6 MB                               │
+0x2000000 └─────────────────────────────────────────┘
+```
+
+**LUT Format** (384 bytes per LUT, padded to 4KiB alignment):
+```
+Offset  | Data           | Description
+--------|----------------|----------------------------------
+0x000   | RGB888         | Red LUT entry 0 (R_in=0)
+0x003   | RGB888         | Red LUT entry 1 (R_in=1)
+...     | ...            | ...
+0x05D   | RGB888         | Red LUT entry 31 (R_in=31)
+0x060   | RGB888         | Green LUT entry 0 (G_in=0)
+...     | ...            | ...
+0x11D   | RGB888         | Green LUT entry 63 (G_in=63)
+0x120   | RGB888         | Blue LUT entry 0 (B_in=0)
+...     | ...            | ...
+0x17D   | RGB888         | Blue LUT entry 31 (B_in=31)
+0x180   | (padding)      | Unused (pad to 4KiB boundary)
+```
+
+Each RGB888 entry: 3 bytes in order R[7:0], G[7:0], B[7:0]
+
+**Usage Notes**:
+- Each LUT: 384 bytes actual data + padding to 4KiB
+- Firmware can pre-prepare multiple LUTs at boot for instant switching
+- LUT auto-load triggered via FB_DISPLAY or FB_DISPLAY_SYNC writes (see INT-010 v9.0)
+- Typical setup: identity, gamma correction, various artistic grades
 
 ---
 

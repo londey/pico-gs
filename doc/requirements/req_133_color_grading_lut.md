@@ -25,8 +25,9 @@ Post-processing effects like gamma correction and color grading are traditionall
 
 ## Interfaces
 
-- INT-010 (GPU Register Map) — COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
-- INT-020 (GPU Driver API) — `gpu_set_color_grade_enable()`, `gpu_upload_color_lut()`
+- INT-010 (GPU Register Map) — FB_DISPLAY (0x41), FB_DISPLAY_SYNC (0x47)
+- INT-011 (SRAM Memory Layout) — Color grading LUT data storage region
+- INT-020 (GPU Driver API) — `gpu_swap_buffers()`, `gpu_prepare_lut()`
 
 ## Functional Requirements
 
@@ -54,44 +55,103 @@ For each scanout pixel, the GPU SHALL:
    - `final_G8 = saturate(lut_r_out[15:8] + lut_g_out[15:8] + lut_b_out[15:8], 8'hFF)`
    - `final_B8 = saturate(lut_r_out[7:0] + lut_g_out[7:0] + lut_b_out[7:0], 8'hFF)`
 
-### FR-133-3: LUT Upload Protocol
+### FR-133-3: LUT Upload Protocol (SRAM-Based)
 
-The firmware SHALL upload LUT entries using the following protocol:
-1. Write to `COLOR_GRADE_CTRL[2]` (RESET_ADDR) to reset LUT address pointer
-2. For each entry:
-   - Write to `COLOR_GRADE_LUT_ADDR` to select LUT (00=R, 01=G, 10=B) and entry index
-   - Write to `COLOR_GRADE_LUT_DATA` to upload 24-bit entry data (RGB888 format)
-3. Write to `COLOR_GRADE_CTRL[1]` (SWAP_BANKS) to activate new LUT at next vblank
+The firmware SHALL upload LUT data to SRAM and trigger auto-load using the following protocol:
 
-### FR-133-4: Double-Buffering
+1. **Prepare LUT data in SRAM** (384 bytes at 4KiB-aligned address):
+   - Use MEM_ADDR/MEM_DATA registers or bulk transfer to upload LUT to SRAM
+   - LUT format (sequential, 384 bytes total):
+     - Offset 0x000-0x05D: Red LUT (32 entries × 3 bytes RGB888)
+     - Offset 0x060-0x11D: Green LUT (64 entries × 3 bytes RGB888)
+     - Offset 0x120-0x17D: Blue LUT (32 entries × 3 bytes RGB888)
+   - Each entry: 3 bytes in order R[23:16], G[15:8], B[7:0]
 
-The LUT SHALL use two banks:
-- Firmware writes update the **inactive** bank
-- `SWAP_BANKS` bit swaps banks during vertical blank interval
-- Scanout always reads from the **active** bank
+2. **Trigger LUT auto-load**:
+   - Write to `FB_DISPLAY` (0x41, non-blocking) or `FB_DISPLAY_SYNC` (0x47, blocking)
+   - Set `FB_ADDR` to framebuffer address, `LUT_ADDR` to SRAM LUT base address, `COLOR_GRADE_ENABLE=1`
+   - Hardware auto-loads 384 bytes from SRAM to inactive EBR bank during vblank
+   - Bank swap happens atomically with framebuffer switch at vsync
+
+3. **Skip LUT update** (framebuffer-only switch):
+   - Set `LUT_ADDR=0` to skip auto-load and keep current LUT
+   - Only framebuffer address changes at vsync
+
+**SRAM LUT Memory Format:**
+```
+Offset  | Data           | Description
+--------|----------------|----------------------------------
+0x000   | RGB888         | Red LUT entry 0 (R_in=0)
+0x003   | RGB888         | Red LUT entry 1 (R_in=1)
+...     | ...            | ...
+0x05D   | RGB888         | Red LUT entry 31 (R_in=31)
+0x060   | RGB888         | Green LUT entry 0 (G_in=0)
+0x063   | RGB888         | Green LUT entry 1 (G_in=1)
+...     | ...            | ...
+0x11D   | RGB888         | Green LUT entry 63 (G_in=63)
+0x120   | RGB888         | Blue LUT entry 0 (B_in=0)
+0x123   | RGB888         | Blue LUT entry 1 (B_in=1)
+...     | ...            | ...
+0x17D   | RGB888         | Blue LUT entry 31 (B_in=31)
+0x180   | (padding)      | Unused (pad to 4KiB boundary)
+```
+
+**LUT DMA Timing:**
+- DMA transfer: 384 bytes = 192 × 16-bit SRAM reads at 100MHz
+- Transfer time: ~1.92µs
+- Vblank period: ~1.43ms (640×480@60Hz)
+- Ample margin for LUT load during vblank
+
+### FR-133-4: Double-Buffering (Auto-Swap)
+
+The LUT SHALL use two EBR banks for double-buffering:
+- **Active bank**: Used by scanout for LUT lookups
+- **Inactive bank**: Target for LUT DMA auto-load
+- Bank swap is **implicit** and occurs atomically at vsync when LUT auto-load triggered
+- No explicit `SWAP_BANKS` control needed (automatic with `FB_DISPLAY` writes when `LUT_ADDR != 0`)
+
+**Auto-Load Sequence:**
+1. Firmware writes to `FB_DISPLAY` or `FB_DISPLAY_SYNC` with `LUT_ADDR != 0`
+2. At vsync edge:
+   a. Hardware DMAs 384 bytes from SRAM to inactive EBR bank
+   b. After DMA completes, banks swap atomically
+   c. Framebuffer address switch also takes effect
+3. Scanout immediately uses new LUT from newly-active bank
 
 This ensures LUT updates do not cause tearing or artifacts during display refresh.
 
 ### FR-133-5: Bypass Mode
 
-When `COLOR_GRADE_CTRL[0]` (ENABLE) is 0, the LUT SHALL be bypassed and framebuffer pixels SHALL pass directly to the DVI encoder with standard RGB565→RGB888 expansion. Default state is disabled (bypass).
+When `FB_DISPLAY[0]` (COLOR_GRADE_ENABLE) is 0, the LUT SHALL be bypassed and framebuffer pixels SHALL pass directly to the DVI encoder with standard RGB565→RGB888 expansion:
+- `R8 = {R5, R5[4:2]}` (replicate MSBs to fill 8 bits)
+- `G8 = {G6, G6[5:4]}`
+- `B8 = {B5, B5[4:2]}`
+
+Default state after reset is disabled (bypass, `COLOR_GRADE_ENABLE=0`).
 
 ## Verification Method
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- [ ] Upload LUT data via COLOR_GRADE_LUT_ADDR and COLOR_GRADE_LUT_DATA registers
+- [ ] Upload LUT data to SRAM (384 bytes at 4KiB-aligned address)
 - [ ] Three 1D LUTs with correct entry counts (R:32, G:64, B:32)
-- [ ] Each LUT entry is RGB888 format (24 bits)
+- [ ] Each LUT entry is RGB888 format (24 bits, 3 bytes)
 - [ ] LUT lookup indexes by RGB565 component values (R5, G6, B5)
 - [ ] LUT outputs are summed with saturation to produce final scanout color
 - [ ] LUT applies at scanout (between framebuffer read and DVI encoder)
-- [ ] LUT updates are double-buffered (swap during vblank, no tearing)
-- [ ] Color grading can be enabled/disabled via COLOR_GRADE_CTRL register
+- [ ] LUT auto-load from SRAM triggered by FB_DISPLAY/FB_DISPLAY_SYNC write
+- [ ] LUT DMA completes within vblank period (~1.92µs of 1.43ms budget)
+- [ ] LUT updates are double-buffered (auto-swap during vblank, no tearing)
+- [ ] Bank swap happens atomically with framebuffer switch
+- [ ] Color grading can be enabled/disabled via FB_DISPLAY[0] (COLOR_GRADE_ENABLE)
+- [ ] LUT_ADDR=0 skips auto-load, only switches framebuffer
+- [ ] FB_DISPLAY (non-blocking) returns immediately, changes apply at next vsync
+- [ ] FB_DISPLAY_SYNC (blocking) waits for vsync before completing
 - [ ] Verify identity LUT (each channel maps to itself) produces unchanged output
 - [ ] Verify gamma correction curve produces visually correct result
 - [ ] Verify color tinting (cross-channel LUT) works correctly
 - [ ] Scanout timing unaffected (2 cycle LUT latency within pixel period)
+- [ ] Multiple LUTs can be pre-prepared in SRAM and switched instantly
 
 ## Notes
 
@@ -99,4 +159,12 @@ The LUT architecture uses three 1D LUTs with RGB outputs (rather than one 3D LUT
 
 Common use cases: gamma correction (linear→sRGB), color temperature adjustment, brightness/contrast/saturation, artistic color grading, fade-to-black effects.
 
-See DD-013 in design_decisions.md for architectural rationale.
+**Version 9.0 Change (February 2026):**
+- LUT upload mechanism changed from register-based (COLOR_GRADE_CTRL/ADDR/DATA) to SRAM-based auto-load
+- Reduces SPI traffic from 128+ register writes to 1 register write (1000× reduction)
+- Enables atomic framebuffer + LUT switch in single operation
+- Firmware must pre-upload LUT data to SRAM before triggering auto-load
+- Multiple LUTs can be pre-prepared in SRAM for instant switching
+
+See DD-013 in design_decisions.md for LUT architecture rationale.
+See DD-014 in design_decisions.md for SRAM-based auto-load rationale.

@@ -29,7 +29,7 @@ None
 - Outputs mode flags (gouraud, textured, z_test, z_write) to rasterizer pipeline
 - Outputs clear_trigger/clear_color to framebuffer clear logic
 - Outputs dither_enable/dither_pattern to UNIT-006 (Pixel Pipeline) for ordered dithering control
-- Outputs color_grade_ctrl/lut_addr/lut_data to UNIT-008 (Display Controller) for color grading LUT
+- Outputs fb_display_sync/lut_dma_trigger signals to UNIT-008 (Display Controller) for LUT auto-load DMA (v9.0)
 - Reads gpu_busy from rasterizer, vblank from display controller, fifo_depth from UNIT-002 for status register
 
 ## Design Description
@@ -69,13 +69,11 @@ None
 | `clear_trigger` | 1 | One-cycle clear command pulse |
 | `dither_enable` | 1 | Ordered dithering enabled (DITHER_MODE[0]) |
 | `dither_pattern` | 2 | Dither pattern selection (DITHER_MODE[3:2]) |
-| `color_grade_enable` | 1 | Color grading LUT enabled (COLOR_GRADE_CTRL[0]) |
-| `color_grade_swap` | 1 | One-cycle pulse to swap LUT banks (COLOR_GRADE_CTRL[1]) |
-| `color_grade_reset_addr` | 1 | One-cycle pulse to reset LUT address pointer (COLOR_GRADE_CTRL[2]) |
-| `color_grade_lut_select` | 2 | LUT select: 00=Red, 01=Green, 10=Blue (COLOR_GRADE_LUT_ADDR[7:6]) |
-| `color_grade_lut_index` | 6 | LUT entry index (COLOR_GRADE_LUT_ADDR[5:0]) |
-| `color_grade_lut_data` | 24 | RGB888 LUT entry data (COLOR_GRADE_LUT_DATA[23:0]) |
-| `color_grade_lut_wr` | 1 | One-cycle pulse on COLOR_GRADE_LUT_DATA write |
+| `fb_lut_addr` | 13 | LUT SRAM base address (FB_DISPLAY[18:6]) (v9.0) |
+| `color_grade_enable` | 1 | Color grading LUT enabled (FB_DISPLAY[0]) (v9.0) |
+| `lut_dma_trigger` | 1 | One-cycle pulse at vsync when LUT_ADDR != 0 (v9.0) |
+| `spi_cs_hold` | 1 | Keep SPI CS asserted for blocking write (FB_DISPLAY_SYNC) (v9.0) |
+| `vsync_edge` | 1 | Input: vsync rising edge detector (v9.0) |
 
 ### Internal State
 
@@ -86,8 +84,12 @@ None
 - **current_inv_area** [15:0]: 1/area value to apply when triangle emitted
 - **tri_mode** [7:0]: Mode flags register (bits [3:0] decoded to gouraud/textured/z_test/z_write)
 - **dither_mode** [7:0]: Dither control register (bit 0 = enable, bits [3:2] = pattern)
-- **color_grade_ctrl** [7:0]: Color grading control (bit 0 = enable, bit 1 = swap_banks pulse, bit 2 = reset_addr pulse)
-- **color_grade_lut_addr** [7:0]: LUT address (bits [7:6] = LUT select, bits [5:0] = entry index)
+- **fb_display** [31:0]: Framebuffer display address + LUT control (v9.0)
+  - [31:19]: FB address >> 12 (4KiB aligned)
+  - [18:6]: LUT address >> 12 (4KiB aligned, 0 = no LUT load)
+  - [0]: Color grading enable
+- **fb_display_sync_pending** [0]: FB_DISPLAY_SYNC write pending (blocking mode) (v9.0)
+- **fb_display_sync_data** [31:0]: Latched FB_DISPLAY_SYNC data during blocking wait (v9.0)
 
 **Register Address Map:**
 
@@ -99,14 +101,12 @@ None
 | 0x03 | INV_AREA | W |
 | 0x04 | TRI_MODE | R/W |
 | 0x08 | FB_DRAW | R/W |
-| 0x09 | FB_DISPLAY | R/W |
+| 0x09 | FB_DISPLAY | R/W (v9.0: CHANGED, includes LUT addr + enable) |
 | 0x0A | CLEAR_COLOR | R/W |
 | 0x0B | CLEAR | W (pulse) |
 | 0x10 | STATUS | R (busy, vblank, fifo_depth, vertex_count) |
 | 0x32 | DITHER_MODE | R/W (enable, pattern) |
-| 0x44 | COLOR_GRADE_CTRL | R/W (enable, swap_banks pulse, reset_addr pulse) |
-| 0x45 | COLOR_GRADE_LUT_ADDR | R/W (LUT select, entry index) |
-| 0x46 | COLOR_GRADE_LUT_DATA | W (RGB888 LUT entry, triggers write pulse) |
+| 0x47 | FB_DISPLAY_SYNC | W (v9.0: NEW, blocking variant of FB_DISPLAY) |
 | 0x7F | ID | R (0x6702) |
 
 ### Algorithm / Behavior
@@ -123,16 +123,26 @@ None
 - CLEAR register (0x0B) generates a one-cycle clear_trigger pulse
 - tri_valid and clear_trigger are self-clearing (deasserted next cycle)
 - DITHER_MODE (0x32): Stores dither_mode register; outputs dither_enable (bit 0) and dither_pattern (bits [3:2]) to UNIT-006 (Pixel Pipeline). Reset value: 0x01 (enabled, blue noise pattern)
-- COLOR_GRADE_CTRL (0x44): Stores color_grade_ctrl; bit 0 = enable (persistent), bit 1 = swap_banks (one-cycle pulse to UNIT-008), bit 2 = reset_addr (one-cycle pulse to UNIT-008). Pulse bits are self-clearing
-- COLOR_GRADE_LUT_ADDR (0x45): Stores color_grade_lut_addr; bits [7:6] select the LUT (Red/Green/Blue), bits [5:0] select the entry index
-- COLOR_GRADE_LUT_DATA (0x46): Write-only; outputs the 24-bit RGB888 data (bits [23:0]) and asserts a one-cycle color_grade_lut_wr pulse to UNIT-008 (Display Controller). The LUT address from 0x45 determines the target entry
+- **FB_DISPLAY (0x09, v9.0)**: Stores fb_display register (non-blocking):
+  - [31:19]: Framebuffer address >> 12
+  - [18:6]: LUT SRAM address >> 12 (0 = no LUT load)
+  - [0]: Color grading enable
+  - Outputs fb_lut_addr, color_grade_enable to UNIT-008
+  - At vsync edge: if LUT_ADDR != 0, assert lut_dma_trigger for one cycle
+- **FB_DISPLAY_SYNC (0x47, v9.0)**: Blocking variant of FB_DISPLAY:
+  - Latch write data to fb_display_sync_data
+  - Set fb_display_sync_pending = 1
+  - Assert spi_cs_hold = 1 (keeps SPI CS asserted, blocking host)
+  - Wait for vsync_edge input
+  - On vsync_edge: apply fb_display_sync_data to fb_display, clear pending, deassert spi_cs_hold
+  - Trigger lut_dma if LUT_ADDR != 0
 
 **Register Read Logic (combinational):**
 - STATUS register packs: {vblank, gpu_busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}
 - DITHER_MODE returns: {56'b0, dither_mode[7:0]}
-- COLOR_GRADE_CTRL returns: {56'b0, color_grade_ctrl[7:0]} (pulse bits read as 0)
-- COLOR_GRADE_LUT_ADDR returns: {56'b0, color_grade_lut_addr[7:0]}
-- ID register returns constant 0x6702
+- FB_DISPLAY returns: {32'b0, fb_display[31:0]} (v9.0)
+- FB_DISPLAY_SYNC: Write-only (blocking register, no read value)
+- ID register returns constant 0x00000900_00006702 (v9.0: version 9.0)
 - Undefined addresses return 0
 
 ## Implementation
@@ -150,7 +160,9 @@ None
 - Verify clear_trigger: write to CLEAR, confirm one-cycle pulse
 - Verify DITHER_MODE: write then read back, confirm dither_enable and dither_pattern outputs match written value
 - Verify DITHER_MODE reset: confirm reset value is 0x01 (enabled, blue noise)
-- Verify COLOR_GRADE_CTRL: write enable bit, confirm color_grade_enable output; write swap_banks bit, confirm one-cycle pulse; write reset_addr bit, confirm one-cycle pulse
+- **Verify FB_DISPLAY (v9.0)**: write with FB/LUT addresses + enable, confirm outputs; at vsync, confirm lut_dma_trigger if LUT_ADDR != 0
+- **Verify FB_DISPLAY_SYNC (v9.0)**: write and confirm spi_cs_hold asserted; simulate vsync_edge, confirm cs_hold deasserted and fb_display updated; confirm lut_dma_trigger
+- **Verify blocking timeout (v9.0)**: confirm FB_DISPLAY_SYNC blocks SPI transaction until vsync (max 16.67ms)
 - Verify COLOR_GRADE_LUT_ADDR: write LUT select and index, confirm color_grade_lut_select and color_grade_lut_index outputs
 - Verify COLOR_GRADE_LUT_DATA: write data, confirm 24-bit color_grade_lut_data output and one-cycle color_grade_lut_wr pulse
 - Verify reset: all registers return to defaults (white color, address 0, modes disabled, dither enabled)
@@ -159,4 +171,14 @@ None
 
 Migrated from speckit module specification.
 
-Registers DITHER_MODE (0x32), COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46) were added per INT-010 v5.0 and are now reflected in the Outputs, Internal State, Register Address Map, and Algorithm/Behavior sections above. DITHER_MODE outputs to UNIT-006 (Pixel Pipeline). COLOR_GRADE registers output to UNIT-008 (Display Controller). Note: the RTL implementation (register_file.sv) does not yet include these registers and needs to be updated to match this design.
+**Version History:**
+- v5.0: Added DITHER_MODE (0x32), COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
+- v9.0: Replaced COLOR_GRADE registers with SRAM-based auto-load
+  - Removed COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46)
+  - Expanded FB_DISPLAY (0x09) to include LUT address and enable flag
+  - Added FB_DISPLAY_SYNC (0x47) for blocking vsync-synchronized writes
+  - Added SPI CS hold mechanism for blocking mode
+  - LUT DMA trigger generated at vsync when LUT_ADDR != 0
+  - See DD-014 for rationale
+
+Note: RTL implementation (register_file.sv) needs to be updated to reflect v9.0 changes.

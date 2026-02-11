@@ -187,6 +187,122 @@ Place 3× 1D color grading LUTs at display scanout in the display controller (UN
 ---
 
 
+## DD-014: SRAM-Based Color Grading LUT Auto-Load
+
+**Date:** 2026-02-11
+**Status:** Accepted
+
+### Context
+
+The original color grading LUT design (DD-013, v5.0) used register-based upload via COLOR_GRADE_CTRL/ADDR/DATA registers. To update all 128 LUT entries:
+- Required 128+ register writes over SPI (2 writes per entry: address + data)
+- Total: 256 SPI transactions ≈ 737 µs at 25 MHz SPI clock
+- Separate operations for framebuffer switch and LUT update
+- Race conditions possible between vsync wait and register writes
+
+For typical game rendering that switches both framebuffer and color grading per frame, this represents significant SPI overhead and complexity.
+
+### Decision
+
+Replace register-based LUT upload with SRAM-based auto-load DMA (v9.0):
+
+**Register Changes:**
+- **Remove** COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
+- **Expand** FB_DISPLAY (0x41) to include: FB address (13b), LUT SRAM address (13b), enable flag (1b)
+- **Add** FB_DISPLAY_SYNC (0x47): Blocking variant that waits for vsync before completing
+
+**Upload Protocol:**
+1. Firmware prepares 384-byte LUT in SRAM (via MEM_ADDR/MEM_DATA or bulk transfer)
+2. Firmware writes FB_DISPLAY or FB_DISPLAY_SYNC with both FB and LUT addresses
+3. At vsync: hardware DMAs 384 bytes from SRAM to inactive EBR bank (~1.92µs)
+4. LUT banks swap atomically with framebuffer switch
+
+**LUT SRAM Format:**
+- 384 bytes sequential: Red[96B] + Green[192B] + Blue[96B]
+- Each entry: 3 bytes (R, G, B) in RGB888 format
+- 4KiB alignment required for base address
+
+### Rationale
+
+**Performance:**
+- **1000× SPI traffic reduction**: 1 register write vs 128+ writes
+- **Atomic updates**: Framebuffer and LUT switch in single operation
+- **No race conditions**: Hardware-synchronized at vsync
+- **SRAM bandwidth negligible**: 1.92µs of 1.43ms vblank (0.13%)
+
+**Simplicity:**
+- **Firmware**: One blocking call vs multi-step sequence (`wait_vsync() + multiple writes + swap`)
+- **Synchronization**: Hardware handles vsync coordination
+- **API**: `gpu_swap_buffers(fb, lut, enable, blocking)` – single function
+
+**Flexibility:**
+- **Pre-prepared LUTs**: Store multiple LUTs in SRAM, switch instantly
+- **Conditional load**: LUT_ADDR=0 skips load, only switches framebuffer
+- **Blocking/non-blocking**: Choose based on use case
+
+**Tradeoffs:**
+- Uses 4KiB SRAM per LUT (3712 bytes wasted per LUT due to alignment)
+- Total: ~27.7MB free space can hold 16+ LUTs with minimal impact
+- Adds LUT DMA controller (~180 LUTs, ~80 FFs to UNIT-008)
+
+### Alternatives Considered
+
+1. **Keep register-based upload, add DMA as optional path**
+   - Rejected: Doubles complexity, confuses API, minimal benefit for debugging
+   - SRAM-based is strictly superior in all use cases
+
+2. **Use existing MEM_DATA sequential write without alignment requirement**
+   - Rejected: Requires firmware to track LUT address state, error-prone
+   - 4KiB alignment simplifies addressing, enables instant switching
+
+3. **Pack multiple LUTs in single 4KiB block**
+   - Rejected: Complex addressing, no benefit (SRAM is abundant)
+   - Simple 1 LUT = 1 block is clearer
+
+4. **Keep FB_DISPLAY address-only, add separate LUT_DISPLAY register**
+   - Rejected: Requires two register writes, loses atomicity benefit
+   - Combining in one register ensures single atomic operation
+
+### Consequences
+
+**Hardware:**
+- +LUT DMA controller in UNIT-008 (~180 LUTs, ~80 FFs)
+- +SPI CS hold mechanism in UNIT-003 for blocking writes (~20 LUTs, ~10 FFs)
+- -Register decode logic for COLOR_GRADE_CTRL/ADDR/DATA (~50 LUTs saved)
+- Net: +~150 LUTs, +~90 FFs
+
+**Firmware:**
+- Simplified API: `gpu_swap_buffers()` combines frame flip + LUT update
+- Pre-upload LUTs to SRAM once (via `gpu_prepare_lut()`)
+- Instant LUT switching (change LUT address only)
+- Example use cases:
+  - Identity LUT at 0x441000 (default)
+  - Gamma 2.2 at 0x442000 (realistic lighting)
+  - Warm tint at 0x443000 (sunset scenes)
+  - Cool tint at 0x444000 (underwater scenes)
+
+**Performance Impact:**
+- **Positive**: 1000× reduction in SPI traffic for LUT updates
+- **Positive**: Atomic framebuffer+LUT switch eliminates race conditions
+- **Neutral**: SRAM bandwidth impact negligible (0.13% of vblank)
+- **Neutral**: SRAM usage minimal (64KiB for 16 LUTs of 27.7MB free)
+
+**Migration:**
+- v8.0 firmware must be updated to use new `gpu_swap_buffers()` API
+- LUT data must be pre-uploaded to SRAM instead of sent via registers
+- Breaking change but vastly simpler end result
+
+### References
+
+- INT-010 v9.0: GPU Register Map (FB_DISPLAY, FB_DISPLAY_SYNC)
+- REQ-133: Color Grading LUT (updated upload protocol)
+- INT-011: SRAM Memory Layout (recommended LUT region)
+- UNIT-008: Display Controller (LUT DMA controller)
+- UNIT-003: Register File (FB_DISPLAY_SYNC blocking logic)
+
+---
+
+
 ## DD-001: PS2 Graphics Synthesizer Reference
 
 **Date:** 2026-02-08

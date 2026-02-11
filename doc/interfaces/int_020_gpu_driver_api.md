@@ -205,60 +205,88 @@ Enable or disable ordered dithering before RGB565 framebuffer conversion.
 - Dithering smooths the 10.8→RGB565 quantization using a blue noise pattern
 - Disable for pixel-perfect rendering or solid-color fills
 
-### `gpu_set_color_grade_enable(handle: &GpuHandle, enabled: bool)`
+### `gpu_prepare_lut(handle: &GpuHandle, lut_addr: u32, lut: &ColorGradeLut)`
 
-Enable or disable the color grading LUT at display scanout.
-
-**Sequence**:
-1. `gpu_write(COLOR_GRADE_CTRL, if enabled { 0x01 } else { 0x00 })`
-
-**Notes**:
-- When disabled, framebuffer pixels pass directly to DVI encoder with standard RGB565→RGB888 expansion
-- LUT must be uploaded before enabling (undefined output with uninitialized LUT)
-
-### `gpu_upload_color_lut(handle: &GpuHandle, red: &[u32; 32], green: &[u32; 64], blue: &[u32; 32])`
-
-Upload all 3 color grading LUTs and activate at next vblank.
+Upload color grading LUT data to SRAM for later auto-load.
 
 **Sequence**:
-1. Write COLOR_GRADE_CTRL[2] (RESET_ADDR) to reset LUT address pointer
-2. For each Red LUT entry (0-31):
-   - `gpu_write(COLOR_GRADE_LUT_ADDR, (0b00 << 6) | index)`
-   - `gpu_write(COLOR_GRADE_LUT_DATA, red[index] & 0xFFFFFF)`
-3. For each Green LUT entry (0-63):
-   - `gpu_write(COLOR_GRADE_LUT_ADDR, (0b01 << 6) | index)`
-   - `gpu_write(COLOR_GRADE_LUT_DATA, green[index] & 0xFFFFFF)`
-4. For each Blue LUT entry (0-31):
-   - `gpu_write(COLOR_GRADE_LUT_ADDR, (0b10 << 6) | index)`
-   - `gpu_write(COLOR_GRADE_LUT_DATA, blue[index] & 0xFFFFFF)`
-5. Write COLOR_GRADE_CTRL[1] (SWAP_BANKS) to activate at next vblank
+1. `gpu_write(MEM_ADDR, lut_addr)` — set SRAM destination address
+2. For each Red LUT entry (32 entries × 3 bytes):
+   - Write 3 bytes R,G,B via `MEM_DATA` (auto-increments address)
+3. For each Green LUT entry (64 entries × 3 bytes):
+   - Write 3 bytes R,G,B via `MEM_DATA`
+4. For each Blue LUT entry (32 entries × 3 bytes):
+   - Write 3 bytes R,G,B via `MEM_DATA`
 
 **Parameters**:
-- `red`: 32 entries, each RGB888 (24-bit) packed in low bits of u32
-- `green`: 64 entries, each RGB888 (24-bit) packed in low bits of u32
-- `blue`: 32 entries, each RGB888 (24-bit) packed in low bits of u32
+- `lut_addr`: SRAM address for LUT storage (must be 4KiB aligned)
+- `lut`: LUT data structure with red[32], green[64], blue[32] RGB888 entries
 
-**Performance**: 128 entries × 2 register writes each = 256 SPI transactions ≈ 737 µs at 25 MHz
-
-**Example** (identity LUT — no color change):
+**Format in SRAM** (384 bytes total):
 ```rust
-let mut red = [0u32; 32];
-let mut green = [0u32; 64];
-let mut blue = [0u32; 32];
-
-// Identity: each channel maps to itself (with full 8-bit output precision)
-for i in 0..32 {
-    let v8 = (i * 255 / 31) as u32;   // R5→R8 expansion
-    red[i] = v8 << 16;                  // R input → R output only
-    blue[i] = v8;                        // B input → B output only
+struct ColorGradeLut {
+    red: [(u8, u8, u8); 32],    // 32 entries × 3 bytes (R,G,B) = 96 bytes
+    green: [(u8, u8, u8); 64],  // 64 entries × 3 bytes = 192 bytes
+    blue: [(u8, u8, u8); 32],   // 32 entries × 3 bytes = 96 bytes
 }
-for i in 0..64 {
-    let v8 = (i * 255 / 63) as u32;   // G6→G8 expansion
-    green[i] = v8 << 8;                 // G input → G output only
-}
-
-gpu_upload_color_lut(&gpu, &red, &green, &blue);
 ```
+
+**Performance**: 384 bytes ÷ 4 bytes/write = 96 MEM_DATA writes ≈ 276 µs at 25 MHz
+
+**Notes**:
+- LUT data can be prepared once at init or anytime before use
+- Multiple LUTs can be pre-prepared in SRAM for instant switching
+- Use `gpu_create_identity_lut()`, `gpu_create_gamma_lut()`, etc. to generate LUT data
+
+**Example**:
+```rust
+// Prepare identity LUT at 0x441000
+let identity_lut = gpu_create_identity_lut();
+gpu_prepare_lut(&gpu, 0x441000, &identity_lut);
+
+// Prepare gamma 2.2 LUT at 0x442000
+let gamma_lut = gpu_create_gamma_lut(2.2);
+gpu_prepare_lut(&gpu, 0x442000, &gamma_lut);
+```
+
+### `gpu_create_identity_lut() → ColorGradeLut`
+
+Create identity LUT where each channel maps to itself (no color change).
+
+**Returns**: LUT where output RGB = input RGB (with 5→8 / 6→8 bit expansion)
+
+**Example**:
+```rust
+let identity = gpu_create_identity_lut();
+// identity.red[31] = (248, 0, 0)  — R5=31 → R8=248, G8=0, B8=0
+// identity.green[63] = (0, 252, 0) — G6=63 → R8=0, G8=252, B8=0
+// identity.blue[31] = (0, 0, 248)  — B5=31 → R8=0, G8=0, B8=248
+```
+
+### `gpu_create_gamma_lut(gamma: f32) → ColorGradeLut`
+
+Create gamma correction LUT (linear → gamma curve).
+
+**Parameters**:
+- `gamma`: Gamma value (typical: 2.2 for sRGB, 2.4 for Rec.709)
+
+**Returns**: LUT where each channel's output = `(input / max)^(1/gamma) * 255`
+
+**Example**:
+```rust
+let srgb_lut = gpu_create_gamma_lut(2.2);
+gpu_prepare_lut(&gpu, 0x442000, &srgb_lut);
+```
+
+### `gpu_create_contrast_lut(contrast: f32, brightness: f32) → ColorGradeLut`
+
+Create contrast/brightness adjustment LUT.
+
+**Parameters**:
+- `contrast`: Contrast multiplier (1.0 = no change, >1.0 = more contrast, <1.0 = less contrast)
+- `brightness`: Brightness offset (-128 to +128, 0 = no change)
+
+**Returns**: LUT where `output = saturate(input * contrast + brightness)`
 
 ---
 
@@ -274,13 +302,46 @@ Block until the GPU asserts the VSYNC GPIO signal.
 
 **Timing**: VSYNC pulses every 16.67 ms (60 Hz), pulse width ~400 ns
 
-### `gpu_swap_buffers(handle: &GpuHandle, draw: u32, display: u32)`
+### `gpu_swap_buffers(handle: &GpuHandle, draw: u32, display: u32, lut_addr: u32, enable_grading: bool, blocking: bool)`
 
-Configure which framebuffer is drawn to and which is displayed.
+Configure which framebuffer is drawn to and displayed, with optional color grading LUT auto-load.
+
+**Parameters**:
+- `draw`: Framebuffer address for rendering (FB_DRAW)
+- `display`: Framebuffer address for scanout (must be 4KiB aligned)
+- `lut_addr`: SRAM address of color grading LUT (4KiB aligned), or 0 to skip LUT update
+- `enable_grading`: Enable (true) or bypass (false) color grading
+- `blocking`: Block until vsync (true) or return immediately (false)
 
 **Sequence**:
-1. `gpu_write(FB_DISPLAY, display)` — takes effect at next VSYNC
-2. `gpu_write(FB_DRAW, draw)`
+1. Build register value:
+   ```rust
+   let reg_value = ((display >> 12) << 19)
+                 | ((lut_addr >> 12) << 6)
+                 | (enable_grading as u64);
+   ```
+2. Write to appropriate register:
+   - If `blocking == true`: `gpu_write(FB_DISPLAY_SYNC, reg_value)` — **blocks until vsync**
+   - If `blocking == false`: `gpu_write(FB_DISPLAY, reg_value)` — returns immediately
+3. Write draw framebuffer: `gpu_write(FB_DRAW, draw)`
+
+**Behavior**:
+- Non-blocking mode (`blocking=false`): Write returns immediately, changes take effect at next vsync
+- Blocking mode (`blocking=true`): Write waits for vsync (SPI CS held asserted), changes apply atomically
+- If `lut_addr != 0`: Hardware auto-loads 384-byte LUT from SRAM during vblank
+- If `lut_addr == 0`: Skip LUT load, only switch framebuffer
+
+**Examples**:
+```rust
+// Non-blocking swap with gamma correction LUT
+gpu_swap_buffers(&gpu, 0x12C000, 0x000000, 0x442000, true, false);
+
+// Blocking swap without color grading
+gpu_swap_buffers(&gpu, 0x000000, 0x12C000, 0, false, true);
+
+// Framebuffer-only swap (keep current LUT)
+gpu_swap_buffers(&gpu, 0x12C000, 0x000000, 0, true, false);
+```
 
 ---
 

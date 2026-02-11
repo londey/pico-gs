@@ -53,9 +53,9 @@ Internal
 ## Specification
 
 
-**Version**: 8.0
+**Version**: 9.0
 **Date**: February 2026
-**Status**: Enhanced Rendering Features + Register Consolidation (Pre-1.0)
+**Status**: SRAM-Based Color Grading LUT Auto-Load (Pre-1.0)
 
 ---
 
@@ -151,13 +151,12 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 | 0x33-0x3F | - | - | Reserved (rendering config) |
 | **Framebuffer** ||||
 | 0x40 | FB_DRAW | R/W | Draw target framebuffer address |
-| 0x41 | FB_DISPLAY | R/W | Display scanout framebuffer address |
+| 0x41 | FB_DISPLAY | R/W | **Display scanout + LUT control (non-blocking)** (v9.0: CHANGED) |
 | 0x42 | FB_ZBUFFER | R/W | Z-buffer address (v8.0: Z_COMPARE moved to RENDER_MODE) |
 | 0x43 | FB_CONTROL | R/W | **Scissor rect + write enables** (v8.0: NEW) |
-| 0x44 | COLOR_GRADE_CTRL | R/W | Color grading LUT control |
-| 0x45 | COLOR_GRADE_LUT_ADDR | R/W | Color grading LUT address |
-| 0x46 | COLOR_GRADE_LUT_DATA | W | Color grading LUT data |
-| 0x47-0x4F | - | - | Reserved (framebuffer config) |
+| 0x44-0x46 | - | - | Reserved (v9.0: FREED, was COLOR_GRADE_CTRL/ADDR/DATA) |
+| 0x47 | FB_DISPLAY_SYNC | R/W | **Display scanout + LUT control (vsync-blocking)** (v9.0: NEW) |
+| 0x48-0x4F | - | - | Reserved (framebuffer config) |
 | **Performance Counters** ||||
 | 0x50 | PERF_TEX0 | R | **TEX0 hits[31:0] + misses[63:32]** (v8.0: PACKED) |
 | 0x51 | PERF_TEX1 | R | TEX1 hits + misses (v8.0: PACKED) |
@@ -781,21 +780,58 @@ Address where triangles are rendered. Must be 4K aligned.
 
 ---
 
-### 0x41: FB_DISPLAY
+### 0x41: FB_DISPLAY (Non-Blocking)
 
-Address scanned out to display. Must be 4K aligned.
+Display scanout framebuffer address with optional color grading LUT auto-load. Non-blocking write (returns immediately).
 
 ```
 [63:32]   Reserved (write as 0)
-[31:12]   Base address bits [31:12]
-[11:0]    Ignored (assumed 0)
+[31:19]   FB_ADDR: Framebuffer base address >> 12 (4KiB aligned, 13 bits)
+          Effective address range: 0x000000 - 0x1FFF000 (32 MB SRAM)
+[18:6]    LUT_ADDR: Color grading LUT base address >> 12 (4KiB aligned, 13 bits)
+          Effective address range: 0x000000 - 0x1FFF000
+          Special value: 0x0000 = skip LUT auto-load, keep current LUT
+[5:1]     Reserved (write as 0)
+[0]       COLOR_GRADE_ENABLE: 1=color grading enabled, 0=bypass (RGB565→RGB888 expansion)
 ```
 
-**Notes**:
-- Change takes effect at next VSYNC (no tearing)
-- Default after reset: 0x000000
+**Behavior**:
+- Write returns immediately (non-blocking)
+- Framebuffer switch and LUT auto-load (if enabled) take effect at next vsync
+- If `LUT_ADDR != 0`: Hardware auto-loads 384-byte LUT from SRAM to inactive EBR bank during vblank, then swaps banks atomically with framebuffer switch
+- If `LUT_ADDR == 0`: Skip LUT auto-load, only switch framebuffer
+- Non-blocking allows firmware to continue work during frame rendering
 
-**Reset Value**: 0x0000000000000000
+**SRAM LUT Format** (384 bytes at LUT_ADDR):
+```
+Offset  | Data    | Description
+--------|---------|----------------------------------
+0x000   | RGB888  | Red LUT entry 0 (R_in=0)
+0x003   | RGB888  | Red LUT entry 1 (R_in=1)
+...     | ...     | ...
+0x05D   | RGB888  | Red LUT entry 31 (R_in=31)
+0x060   | RGB888  | Green LUT entry 0 (G_in=0)
+...     | ...     | ...
+0x11D   | RGB888  | Green LUT entry 63 (G_in=63)
+0x120   | RGB888  | Blue LUT entry 0 (B_in=0)
+...     | ...     | ...
+0x17D   | RGB888  | Blue LUT entry 31 (B_in=31)
+```
+
+Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
+
+**Notes**:
+- Replaces v8.0 COLOR_GRADE_CTRL/ADDR/DATA register-based LUT upload (v9.0 change)
+- LUT data must be prepared in SRAM by firmware before write (see REQ-133)
+- Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
+- LUT address must be 4KiB aligned (bits [11:0] assumed 0)
+- LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
+- For blocking write (waits for vsync), use FB_DISPLAY_SYNC (0x47) instead
+- Backwards compatible: writing only FB address with LUT_ADDR=0, ENABLE=0 behaves like v8.0
+
+**Reset Value**: 0x0000000000000000 (FB at 0x000000, no LUT, color grading disabled)
+
+**Version**: Modified in v9.0 (expanded from address-only to include LUT control)
 
 ---
 
@@ -870,82 +906,69 @@ Framebuffer control: scissor rectangle and write enable masks.
 
 ---
 
-### 0x44: COLOR_GRADE_CTRL
+### 0x47: FB_DISPLAY_SYNC (V-Sync Blocking)
 
-Color grading LUT control. See REQ-133.
+Display scanout framebuffer address with optional color grading LUT auto-load. **Blocking write** (waits for vsync).
 
 ```
-[63:3]    Reserved (write as 0)
-[2]       RESET_ADDR: Write 1 to reset LUT address pointer (self-clearing)
-[1]       SWAP_BANKS: Write 1 to swap LUT banks at next vblank (self-clearing)
-[0]       ENABLE: 1=color grading enabled, 0=disabled (default)
+[63:32]   Reserved (write as 0)
+[31:19]   FB_ADDR: Framebuffer base address >> 12 (4KiB aligned, 13 bits)
+          Effective address range: 0x000000 - 0x1FFF000 (32 MB SRAM)
+[18:6]    LUT_ADDR: Color grading LUT base address >> 12 (4KiB aligned, 13 bits)
+          Effective address range: 0x000000 - 0x1FFF000
+          Special value: 0x0000 = skip LUT auto-load, keep current LUT
+[5:1]     Reserved (write as 0)
+[0]       COLOR_GRADE_ENABLE: 1=color grading enabled, 0=bypass (RGB565→RGB888 expansion)
 ```
+
+**Behavior**:
+- **Write blocks** until next vsync edge (SPI CS remains asserted)
+- Framebuffer switch and LUT auto-load (if enabled) happen atomically at vsync
+- SPI transaction completes only after vsync trigger and updates applied
+- If `LUT_ADDR != 0`: Hardware auto-loads 384-byte LUT from SRAM to inactive EBR bank during vblank, then swaps banks atomically with framebuffer switch
+- If `LUT_ADDR == 0`: Skip LUT auto-load, only switch framebuffer
+- Blocking write ties up SPI bus for 0-16.67ms (max one frame period)
+
+**SRAM LUT Format** (384 bytes at LUT_ADDR):
+```
+Offset  | Data    | Description
+--------|---------|----------------------------------
+0x000   | RGB888  | Red LUT entry 0 (R_in=0)
+0x003   | RGB888  | Red LUT entry 1 (R_in=1)
+...     | ...     | ...
+0x05D   | RGB888  | Red LUT entry 31 (R_in=31)
+0x060   | RGB888  | Green LUT entry 0 (G_in=0)
+...     | ...     | ...
+0x11D   | RGB888  | Green LUT entry 63 (G_in=63)
+0x120   | RGB888  | Blue LUT entry 0 (B_in=0)
+...     | ...     | ...
+0x17D   | RGB888  | Blue LUT entry 31 (B_in=31)
+```
+
+Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
+
+**Use Cases**:
+- Game rendering: Atomic frame flip + color grading update
+- PS2/N64-style rendering: Natural sync point between frames
+- Simplified firmware: No explicit `gpu_wait_vsync()` needed
+- Prevents tearing artifacts
+
+**Implementation**:
+- SPI slave keeps CS asserted during vsync wait via `spi_cs_hold` signal
+- Register data latched on write, applied at vsync edge
+- LUT DMA triggered during vblank if `LUT_ADDR != 0`
 
 **Notes**:
-- Color grading LUT is applied at display scanout between framebuffer read and DVI encoder
-- SWAP_BANKS takes effect at the next vertical blanking interval (no tearing)
-- Firmware writes go to the inactive bank; SWAP_BANKS activates the new data
+- Same register format as FB_DISPLAY (0x41), only difference is blocking behavior
+- LUT data must be prepared in SRAM by firmware before write (see REQ-133)
+- Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
+- LUT address must be 4KiB aligned (bits [11:0] assumed 0)
+- LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
+- For non-blocking write, use FB_DISPLAY (0x41) instead
 
-**Reset Value**: 0x0000000000000000 (disabled)
+**Reset Value**: N/A (write-only blocking register)
 
-**Version**: Added in v5.0
-
----
-
-### 0x45: COLOR_GRADE_LUT_ADDR
-
-Selects which LUT and entry to write via COLOR_GRADE_LUT_DATA.
-
-```
-[63:8]    Reserved (write as 0)
-[7:6]     LUT_SELECT: LUT to address
-          00 = Red LUT (32 entries, index 0-31)
-          01 = Green LUT (64 entries, index 0-63)
-          10 = Blue LUT (32 entries, index 0-31)
-          11 = Reserved
-[5:0]     ENTRY_INDEX: Entry within selected LUT
-          For R/B LUTs: bits [4:0] used (0-31), bit [5] ignored
-          For G LUT: bits [5:0] used (0-63)
-```
-
-**Reset Value**: 0x0000000000000000
-
-**Version**: Added in v5.0
-
----
-
-### 0x46: COLOR_GRADE_LUT_DATA
-
-Write LUT entry data. Entry is written to the address selected by COLOR_GRADE_LUT_ADDR. Writes go to the inactive bank.
-
-```
-[63:24]   Reserved (write as 0)
-[23:16]   R output (8 bits)
-[15:8]    G output (8 bits)
-[7:0]     B output (8 bits)
-```
-
-**Entry Format**: RGB888 (24 bits per entry). Each LUT entry specifies the RGB contribution of that input channel to the final output. Full 8-bit output precision matches the DVI TMDS RGB888 scanout format.
-
-**Lookup Process** (per scanout pixel):
-```
-lut_r_out = red_lut[pixel_R5]     // RGB888
-lut_g_out = green_lut[pixel_G6]   // RGB888
-lut_b_out = blue_lut[pixel_B5]    // RGB888
-
-final_R8 = saturate(lut_r_out.R + lut_g_out.R + lut_b_out.R, 255)
-final_G8 = saturate(lut_r_out.G + lut_g_out.G + lut_b_out.G, 255)
-final_B8 = saturate(lut_r_out.B + lut_g_out.B + lut_b_out.B, 255)
-```
-
-**Upload Protocol**:
-1. Write COLOR_GRADE_CTRL[2] (RESET_ADDR) to reset pointer
-2. For each LUT entry: write COLOR_GRADE_LUT_ADDR, then COLOR_GRADE_LUT_DATA
-3. Write COLOR_GRADE_CTRL[1] (SWAP_BANKS) to activate at next vblank
-
-**Reset Value**: 0x0000000000000000
-
-**Version**: Added in v5.0
+**Version**: Added in v9.0
 
 ---
 
@@ -1198,9 +1221,9 @@ GPU identification (read-only).
 [15:0]    DEVICE_ID: 0x6702 ("gp" + version 2)
 ```
 
-**Example**: Version 2.0 → reads as 0x00000200_00006702
+**Example**: Version 9.0 → reads as 0x00000900_00006702
 
-**Reset Value**: 0x0000020000006702 (version 2.0)
+**Reset Value**: 0x0000090000006702 (version 9.0)
 
 ---
 
@@ -1816,13 +1839,11 @@ After hardware reset or power-on (v8.0):
 | TEX0-TEX3 MIP_BIAS | 0x0000000000000000 | No bias |
 | TEX0-TEX3 WRAP | 0x0000000000000000 | REPEAT both axes |
 | RENDER_MODE | 0x0000000000000401 | GOURAUD=1, DITHER_EN=1, Z_COMPARE=LEQUAL, all else 0 (v8.0) |
-| COLOR_GRADE_CTRL | 0x0000000000000000 | Disabled |
-| COLOR_GRADE_LUT_ADDR | 0x0000000000000000 | Red LUT, entry 0 |
-| COLOR_GRADE_LUT_DATA | N/A | Write-only |
 | FB_DRAW | 0x0000000000000000 | Address 0x000000 |
-| FB_DISPLAY | 0x0000000000000000 | Address 0x000000 |
+| FB_DISPLAY | 0x0000000000000000 | FB=0x000000, LUT=0x0, color grading disabled (v9.0: CHANGED) |
 | FB_ZBUFFER | 0x0000000000000000 | Address 0x000000 (v8.0: Z_COMPARE moved to RENDER_MODE) |
 | FB_CONTROL | 0x00000000_3FF003FF | Full screen scissor 1024×1024, all writes enabled (v8.0 NEW) |
+| FB_DISPLAY_SYNC | N/A | Write-only blocking register (v9.0: NEW) |
 | PERF_TEX0-3 | 0x0000000000000000 | Both hits and misses zero (v8.0 packed) |
 | PERF_PIXELS | 0x0000000000000000 | Both counters zero (v8.0 packed) |
 | PERF_FRAGMENTS | 0x0000000000000000 | Both counters zero (v8.0 packed) |
@@ -1831,7 +1852,7 @@ After hardware reset or power-on (v8.0):
 | MEM_ADDR | 0x0000000000000000 | Address 0x000000 |
 | MEM_DATA | N/A | Depends on memory |
 | STATUS | 0x0000000000000000 | Idle, FIFO empty |
-| ID | 0x0000080000006702 | **Version 8.0**, device 0x6702 (v8.0) |
+| ID | 0x0000090000006702 | **Version 9.0**, device 0x6702 (v9.0) |
 | vertex_count | 0 | Internal state counter |
 
 ---
@@ -1875,6 +1896,26 @@ Active-high outputs from GPU to host.
 ---
 
 ## Version History
+
+**Version 9.0** (February 2026):
+- **BREAKING CHANGE**: FB_DISPLAY (0x41) register expanded to include LUT control
+  - Now includes framebuffer address (13 bits), LUT SRAM address (13 bits), and COLOR_GRADE_ENABLE flag
+  - Non-blocking write (returns immediately)
+  - Change takes effect at next vsync
+  - LUT auto-load from SRAM if LUT_ADDR != 0 (384 bytes DMA during vblank)
+- **NEW**: FB_DISPLAY_SYNC (0x47) blocking variant of FB_DISPLAY
+  - Same register format as FB_DISPLAY
+  - Write blocks until vsync (SPI CS held asserted)
+  - Framebuffer switch and LUT auto-load happen atomically at vsync
+  - Enables single-operation frame flip + color grading update
+- **REMOVED**: COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
+  - Register-based LUT upload replaced with SRAM-based auto-load
+  - Reduces SPI traffic from 128+ register writes to 1 register write (1000× reduction)
+  - Firmware must prepare LUT data in SRAM before switching (see REQ-133)
+  - Freed addresses 0x44-0x46 (3 registers) for future features
+- **Migration**: Firmware must pre-upload LUT data to SRAM via MEM_ADDR/MEM_DATA or other bulk transfer
+- **Benefit**: Atomic framebuffer + LUT switch, simplified synchronization, vastly reduced SPI traffic
+- **ID register version**: 0x0000090000006702 (v9.0)
 
 **Version 8.0** (February 2026):
 - **BREAKING CHANGE**: COLOR register format changed to pack diffuse[63:32] + specular[31:0]
