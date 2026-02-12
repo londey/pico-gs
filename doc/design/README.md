@@ -65,4 +65,5 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-032: Mesh Patch Splitter](unit_032_mesh_patch_splitter.md)
 - [UNIT-033: Codegen Engine](unit_033_codegen_engine.md)
 - [UNIT-034: Build.rs Orchestrator](unit_034_buildrs_orchestrator.md)
+- [UNIT-035: PC SPI Driver (FT232H)](unit_035_pc_spi_driver.md)
 <!-- TOC-END -->

@@ -82,6 +82,7 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - [REQ-103: USB Keyboard Input](req_103_usb_keyboard_input.md)
 - [REQ-104: Matrix Transformation Pipeline](req_104_matrix_transformation.md)
 - [REQ-105: GPU Communication Protocol](req_105_gpu_communication_protocol.md)
+- [REQ-106: PC Debug Host](req_106_pc_debug_host.md)
 - [REQ-110: GPU Initialization](req_110_gpu_initialization.md)
 - [REQ-111: Dual-Core Architecture](req_111_dualcore_architecture.md)
 - [REQ-112: Scene Graph Management](req_112_scene_graph_management.md)

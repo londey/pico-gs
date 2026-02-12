@@ -56,4 +56,5 @@ Interface types:
 - [INT-030: Asset Tool CLI Interface](int_030_asset_tool_cli_interface.md)
 - [INT-031: Asset Binary Format](int_031_asset_binary_format.md)
 - [INT-032: Texture Cache Architecture](int_032_texture_cache_architecture.md)
+- [INT-040: Host Platform HAL](int_040_host_platform_hal.md)
 <!-- TOC-END -->
