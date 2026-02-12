@@ -3,10 +3,10 @@ set -e
 
 echo "=== syskit Post-Attach Setup ==="
 
-# Always install/update syskit to ensure latest version
-echo "  Installing syskit..."
+# Download and install latest syskit from master branch
+echo "  Installing latest syskit..."
 cd /workspaces/pico-gs
-bash /opt/syskit-installer.sh
+curl -fsSL https://raw.githubusercontent.com/londey/syskit/refs/heads/master/install_syskit.sh | bash
 echo "  syskit installed successfully"
 
 echo "=== Post-Attach Setup Complete ==="

@@ -122,4 +122,7 @@ SPI transaction handling and flow control
 
 Migrated from speckit module specification.
 
-API functions `gpu_set_dither_mode()`, `gpu_set_color_grade_enable()`, and `gpu_upload_color_lut()` were added per INT-020 and are now reflected in the Inputs, Outputs, and Algorithm/Behavior sections above. These wrap register writes to DITHER_MODE (0x32) and COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46). Note: the Rust implementation (gpu/mod.rs) does not yet include these functions and needs to be updated to match this design.
+API functions `gpu_set_dither_mode()`, `gpu_set_color_grade_enable()`, and `gpu_upload_color_lut()` were added per INT-020 and are now reflected in the Inputs, Outputs, and Algorithm/Behavior sections above. These wrap register writes to DITHER_MODE (0x32) and COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46).
+
+**Note:** This document describes v8.0 register-based LUT upload. v9.0 migrates to SRAM-based auto-load (see DD-014, INT-010 v9.0).
+

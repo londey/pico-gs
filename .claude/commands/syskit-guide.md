@@ -38,8 +38,11 @@ Explain the project structure syskit has set up:
 
 Explain the naming convention:
 - `req_001_motor_control.md` → referenced as `REQ-001`
+- `req_001.01_torque_limit.md` → referenced as `REQ-001.01` (child of REQ-001)
 - `int_002_spi_bus.md` → referenced as `INT-002`
 - `unit_003_pwm_driver.md` → referenced as `UNIT-003`
+
+Explain that requirements support hierarchical numbering — child requirements use dot-notation (e.g., `REQ-001.03`) so the parent relationship is visible from the ID itself.
 
 Explain that these documents cross-reference each other to create a traceability web:
 - Requirements reference the interfaces they use and the design units that implement them
@@ -149,7 +152,7 @@ Provide a brief inventory of existing documents:
 
 Explain the conventions this project uses:
 
-1. **Naming:** `req_NNN_name.md` → `REQ-NNN`, `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN`
+1. **Naming:** `req_NNN_name.md` → `REQ-NNN` (child requirements: `req_NNN.NN_name.md` → `REQ-NNN.NN`), `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN`
 2. **Cross-references:** Documents link to each other using these IDs to create traceability:
    - Requirements → Interfaces they use, Design Units that implement them
    - Design Units → Requirements they satisfy, Interfaces they provide/consume

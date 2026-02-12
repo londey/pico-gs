@@ -106,11 +106,6 @@ RUN echo '# Rust environment' >> /home/${USERNAME}/.bashrc \
     && echo 'export CARGO_HOME="${HOME}/.cargo"' >> /home/${USERNAME}/.bashrc \
     && echo 'export PATH="/opt/cargo/bin:${HOME}/.cargo/bin:${PATH}"' >> /home/${USERNAME}/.bashrc
 
-# Download syskit installer for use during post-attach
-RUN curl -fsSL https://raw.githubusercontent.com/londey/syskit/refs/heads/master/install_syskit.sh \
-    -o /opt/syskit-installer.sh \
-    && chmod +x /opt/syskit-installer.sh
-
 # Final user switch for workdir
 USER ${USERNAME}
 WORKDIR /workspaces

@@ -8,6 +8,12 @@ Functional
 
 Medium
 
+## Classification
+
+- **Priority:** Medium
+- **Stability:** Stable
+- **Verification:** Demonstration
+
 ## Overview
 
 The GPU shall support mipmap chains for textures, enabling proper filtering of textured surfaces at varying distances from the camera.

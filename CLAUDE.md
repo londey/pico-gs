@@ -100,3 +100,9 @@ Quick reference:
 - [doc/design/concept_of_execution.md](doc/design/concept_of_execution.md) — Runtime behavior
 
 Working documents live in `.syskit/` (analysis, tasks, manifest).
+
+# Scripts and tools
+
+* Prefer to use pre-created .sh files when available
+* Prefer to use common bash commands
+* Python is not available

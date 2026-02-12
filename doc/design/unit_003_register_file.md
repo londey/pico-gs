@@ -101,12 +101,12 @@ None
 | 0x03 | INV_AREA | W |
 | 0x04 | TRI_MODE | R/W |
 | 0x08 | FB_DRAW | R/W |
-| 0x09 | FB_DISPLAY | R/W (v9.0: CHANGED, includes LUT addr + enable) |
+| 0x09 | FB_DISPLAY | R/W |
 | 0x0A | CLEAR_COLOR | R/W |
 | 0x0B | CLEAR | W (pulse) |
 | 0x10 | STATUS | R (busy, vblank, fifo_depth, vertex_count) |
 | 0x32 | DITHER_MODE | R/W (enable, pattern) |
-| 0x47 | FB_DISPLAY_SYNC | W (v9.0: NEW, blocking variant of FB_DISPLAY) |
+| 0x47 | FB_DISPLAY_SYNC | W |
 | 0x7F | ID | R (0x6702) |
 
 ### Algorithm / Behavior
@@ -181,4 +181,3 @@ Migrated from speckit module specification.
   - LUT DMA trigger generated at vsync when LUT_ADDR != 0
   - See DD-014 for rationale
 
-Note: RTL implementation (register_file.sv) needs to be updated to reflect v9.0 changes.

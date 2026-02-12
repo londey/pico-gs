@@ -40,6 +40,7 @@ When adding a new decision, copy this template:
 
 **Date:** 2026-02-10
 **Status:** Accepted
+**Implementation:** RTL PENDING
 
 ### Context
 
@@ -77,6 +78,7 @@ Add a 4-way set-associative texture cache per sampler (4 caches total):
 
 **Date:** 2026-02-10
 **Status:** Accepted
+**Implementation:** RTL PENDING
 
 ### Context
 
@@ -112,6 +114,7 @@ Use always-on 10.8 fixed-point format (18 bits per channel) for all internal fra
 
 **Date:** 2026-02-10
 **Status:** Accepted
+**Implementation:** RTL PENDING
 
 ### Context
 
@@ -149,6 +152,7 @@ Use a 16×16 blue noise dither pattern stored in 1 EBR block:
 
 **Date:** 2026-02-10
 **Status:** Accepted
+**Implementation:** SUPERSEDED BY DD-014 (v9.0 uses SRAM-based upload instead of registers)
 
 ### Context
 
@@ -191,6 +195,7 @@ Place 3× 1D color grading LUTs at display scanout in the display controller (UN
 
 **Date:** 2026-02-11
 **Status:** Accepted
+**Implementation:** RTL PENDING, RUST PENDING
 
 ### Context
 
