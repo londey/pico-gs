@@ -63,12 +63,12 @@ impl SpiTransport for Ft232hTransport {
 }
 
 impl FlowControl for Ft232hTransport {
-    fn is_cmd_full(&self) -> bool {
+    fn is_cmd_full(&mut self) -> bool {
         // TODO: Read FT232H GPIO pin for CMD_FULL signal
         todo!("FT232H GPIO read CMD_FULL")
     }
 
-    fn is_cmd_empty(&self) -> bool {
+    fn is_cmd_empty(&mut self) -> bool {
         // TODO: Read FT232H GPIO pin for CMD_EMPTY signal
         todo!("FT232H GPIO read CMD_EMPTY")
     }

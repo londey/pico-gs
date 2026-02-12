@@ -100,11 +100,11 @@ impl SpiTransport for Rp2350Transport {
 }
 
 impl FlowControl for Rp2350Transport {
-    fn is_cmd_full(&self) -> bool {
+    fn is_cmd_full(&mut self) -> bool {
         self.cmd_full.is_high().unwrap_or(false)
     }
 
-    fn is_cmd_empty(&self) -> bool {
+    fn is_cmd_empty(&mut self) -> bool {
         self.cmd_empty.is_high().unwrap_or(false)
     }
 

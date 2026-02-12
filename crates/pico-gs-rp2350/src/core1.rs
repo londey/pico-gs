@@ -17,6 +17,9 @@ const PERF_LOG_INTERVAL: u32 = 120;
 
 /// Core 1 entry point. Owns the GPU driver and processes render commands.
 pub fn core1_main(mut gpu: GpuDriver<Rp2350Transport>, mut consumer: CommandConsumer<'static>) -> ! {
+    // Configure Core 1's own MPU with stack guard regions.
+    unsafe { crate::configure_stack_guards() };
+
     defmt::info!("Core 1 started, entering render loop");
 
     let textures = StaticTextureSource;

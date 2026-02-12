@@ -134,12 +134,12 @@ impl<S: SpiTransport + FlowControl> GpuDriver<S> {
     }
 
     /// Check if the GPU command FIFO is almost full.
-    pub fn is_fifo_full(&self) -> bool {
+    pub fn is_fifo_full(&mut self) -> bool {
         self.spi.is_cmd_full()
     }
 
     /// Check if the GPU command FIFO is empty.
-    pub fn is_fifo_empty(&self) -> bool {
+    pub fn is_fifo_empty(&mut self) -> bool {
         self.spi.is_cmd_empty()
     }
 }

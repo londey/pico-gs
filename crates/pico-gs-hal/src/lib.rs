@@ -20,10 +20,10 @@ pub trait SpiTransport {
 /// May be bundled into `SpiTransport` implementations or used independently.
 pub trait FlowControl {
     /// Returns true if GPU command FIFO is almost full.
-    fn is_cmd_full(&self) -> bool;
+    fn is_cmd_full(&mut self) -> bool;
 
     /// Returns true if GPU command FIFO is empty.
-    fn is_cmd_empty(&self) -> bool;
+    fn is_cmd_empty(&mut self) -> bool;
 
     /// Block until VSYNC rising edge is detected.
     fn wait_vsync(&mut self);

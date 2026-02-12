@@ -44,8 +44,10 @@ pub static IMAGE_DEF: hal::block::ImageDef = hal::block::ImageDef::secure_exe();
 /// External crystal frequency (Pico 2 standard).
 const XTAL_FREQ_HZ: u32 = 12_000_000;
 
-/// Core 1 stack allocation (4 KiB).
-static CORE1_STACK: Stack<4096> = Stack::new();
+/// Core 1 stack allocation in dedicated SRAM9 bank (4 KiB).
+/// Stack<1016> = 1016×4 + 1 + 31 padding = 4096 bytes with repr(C, align(32)).
+#[link_section = ".core1_stack"]
+static CORE1_STACK: Stack<1016> = Stack::new();
 
 /// Statically allocated render command queue shared between cores.
 /// Safety: Split into Producer (Core 0) and Consumer (Core 1) which are
@@ -53,8 +55,49 @@ static CORE1_STACK: Stack<4096> = Stack::new();
 /// the shared head/tail pointers.
 static mut COMMAND_QUEUE: CommandQueue = CommandQueue::new();
 
+/// Configure MPU guard regions for dual-core stack overflow detection.
+///
+/// Sets 32-byte read-only regions at the bottom of SRAM8 and SRAM9.
+/// A stack overflow (write into guard) triggers a MemManage fault.
+/// Each core has its own MPU — both must call this at startup.
+///
+/// # Safety
+///
+/// Must be called once per core before any deep stack usage.
+pub(crate) unsafe fn configure_stack_guards() {
+    let mpu = &*cortex_m::peripheral::MPU::PTR;
+
+    // Disable MPU while configuring.
+    mpu.ctrl.write(0);
+
+    // MAIR attribute 0: Normal memory, outer+inner write-back, read/write-allocate.
+    mpu.mair[0].write(0xFF);
+
+    // Region 0: SRAM8 bottom 32 bytes (Core 0 stack guard).
+    // RBAR: base=0x20080000, SH=00 non-shareable, AP=10 priv-RO, XN=1.
+    // RLAR: limit=0x20080000 (32-byte region), AttrIndx=0, EN=1.
+    mpu.rnr.write(0);
+    mpu.rbar.write(0x2008_0000 | (0b10 << 1) | 1);
+    mpu.rlar.write(0x2008_0000 | 1);
+
+    // Region 1: SRAM9 bottom 32 bytes (Core 1 stack guard).
+    mpu.rnr.write(1);
+    mpu.rbar.write(0x2008_1000 | (0b10 << 1) | 1);
+    mpu.rlar.write(0x2008_1000 | 1);
+
+    // Enable MPU: PRIVDEFENA (default map for privileged) + ENABLE.
+    mpu.ctrl.write((1 << 2) | 1);
+
+    // Barriers to ensure MPU config takes effect before next instruction.
+    cortex_m::asm::dsb();
+    cortex_m::asm::isb();
+}
+
 #[hal::entry]
 fn main() -> ! {
+    // Configure MPU stack guards before any deep stack usage.
+    unsafe { configure_stack_guards() };
+
     defmt::info!("pico-gs-rp2350: Core 0 starting");
 
     let mut pac = hal::pac::Peripherals::take().unwrap();
