@@ -1,11 +1,12 @@
+// Spec-ref: unit_020_core_0_scene_manager.md `37762bd3934e6c65` 2026-02-12
+// Spec-ref: unit_027_demo_state_machine.md `bb8e1ed71e91ee7a` 2026-02-12
 //! Scene graph management and demo state machine.
 
 pub mod demos;
-pub mod input;
 
 use demos::Demo;
 
-/// Scene state managed by Core 0.
+/// Scene state managed by the host application.
 pub struct Scene {
     pub active_demo: Demo,
     pub needs_init: bool,

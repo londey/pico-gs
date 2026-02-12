@@ -4,6 +4,7 @@
 //! Gouraud-lit spinning demo. 146 vertices, 288 triangles.
 
 use glam::Vec3;
+use pico_gs_core::render::mesh::MeshRef;
 
 /// Segments around the Y axis.
 const SEGMENTS: usize = 16;
@@ -31,7 +32,7 @@ const BODY_VERTS: usize = NUM_RINGS * SEGMENTS; // 144
 pub const MAX_VERTICES: usize = BODY_VERTS + 2; // + bottom cap + top cap = 146
 
 /// Maximum triangle count.
-/// Bottom cap fan (16) + body quads (8 bands × 16 segments × 2) + top cap fan (16) = 288.
+/// Bottom cap fan (16) + body quads (8 bands x 16 segments x 2) + top cap fan (16) = 288.
 pub const MAX_TRIANGLES: usize = SEGMENTS * 2 + (NUM_RINGS - 1) * SEGMENTS * 2;
 
 /// Pre-generated teapot mesh data (body of revolution).
@@ -108,7 +109,7 @@ impl TeapotMesh {
         normals[vi] = Vec3::Y;
         vi += 1;
 
-        // --- Bottom cap fan: bottom_idx → first ring ---
+        // --- Bottom cap fan: bottom_idx -> first ring ---
         for s in 0..SEGMENTS {
             let next_s = (s + 1) % SEGMENTS;
             indices[ti] = [
@@ -138,7 +139,7 @@ impl TeapotMesh {
             }
         }
 
-        // --- Top cap fan: last ring → top_idx ---
+        // --- Top cap fan: last ring -> top_idx ---
         let last_ring_base = ring_base + (NUM_RINGS - 1) * SEGMENTS;
         for s in 0..SEGMENTS {
             let next_s = (s + 1) % SEGMENTS;
@@ -156,6 +157,15 @@ impl TeapotMesh {
             indices,
             vertex_count: vi,
             triangle_count: ti,
+        }
+    }
+
+    /// Create a MeshRef for use with the platform-agnostic render pipeline.
+    pub fn as_mesh_ref(&self) -> MeshRef<'_> {
+        MeshRef {
+            positions: &self.positions[..self.vertex_count],
+            normals: &self.normals[..self.vertex_count],
+            indices: &self.indices[..self.triangle_count],
         }
     }
 }

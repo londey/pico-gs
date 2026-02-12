@@ -1,7 +1,7 @@
+// Spec-ref: unit_023_transformation_pipeline.md `eec29f9d919d2b06` 2026-02-12
 //! MVP transform pipeline: matrix transforms, viewport mapping, perspective divide.
 
 use crate::gpu::registers;
-use crate::math::fixed;
 use glam::{Mat4, Vec3, Vec4};
 
 /// Screen-space vertex after transform, ready for GPU packing.
@@ -21,19 +21,19 @@ pub struct ScreenVertex {
 /// - z normalized to 0.0 (near) .. 1.0 (far)
 /// - w is the clip-space W for perspective-correct texture interpolation
 pub fn transform_vertex(position: Vec3, mvp: &Mat4) -> ScreenVertex {
-    // Apply MVP: object space → clip space.
+    // Apply MVP: object space -> clip space.
     let clip = *mvp * Vec4::new(position.x, position.y, position.z, 1.0);
 
-    // Perspective divide: clip space → NDC (normalized device coordinates).
+    // Perspective divide: clip space -> NDC (normalized device coordinates).
     let w = clip.w;
     let inv_w = if w.abs() > 1e-6 { 1.0 / w } else { 1.0 };
     let ndc_x = clip.x * inv_w;
     let ndc_y = clip.y * inv_w;
     let ndc_z = clip.z * inv_w;
 
-    // Viewport transform: NDC (-1..+1) → screen pixels.
-    // NDC x: -1 = left, +1 = right → screen 0..639
-    // NDC y: -1 = bottom, +1 = top → screen 479..0 (Y flipped)
+    // Viewport transform: NDC (-1..+1) -> screen pixels.
+    // NDC x: -1 = left, +1 = right -> screen 0..639
+    // NDC y: -1 = bottom, +1 = top -> screen 479..0 (Y flipped)
     let screen_w = registers::SCREEN_WIDTH as f32;
     let screen_h = registers::SCREEN_HEIGHT as f32;
 

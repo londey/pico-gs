@@ -1,3 +1,5 @@
+// Spec-ref: unit_020_core_0_scene_manager.md `37762bd3934e6c65` 2026-02-12
+// Spec-ref: unit_027_demo_state_machine.md `bb8e1ed71e91ee7a` 2026-02-12
 //! Demo definitions and per-frame update logic.
 
 use crate::gpu::vertex::GpuVertex;
@@ -16,6 +18,16 @@ impl Demo {
     /// Default demo on boot.
     pub fn default() -> Self {
         Demo::GouraudTriangle
+    }
+
+    /// Convert from a `u8` index (as used by `InputEvent::SelectDemo`).
+    pub fn from_index(index: u8) -> Option<Self> {
+        match index {
+            0 => Some(Demo::GouraudTriangle),
+            1 => Some(Demo::TexturedTriangle),
+            2 => Some(Demo::SpinningTeapot),
+            _ => None,
+        }
     }
 }
 
@@ -81,5 +93,5 @@ pub fn teapot_ambient() -> AmbientLight {
 /// Teapot base surface color (light gray, opaque).
 pub const TEAPOT_COLOR: [u8; 4] = [200, 200, 210, 255];
 
-/// Rotation speed in radians per frame (at 60 fps → ~1 revolution per 6 seconds).
+/// Rotation speed in radians per frame (at 60 fps -> ~1 revolution per 6 seconds).
 pub const TEAPOT_ROTATION_SPEED: f32 = core::f32::consts::TAU / 360.0;

@@ -1,3 +1,5 @@
+// Spec-ref: unit_020_core_0_scene_manager.md `37762bd3934e6c65` 2026-02-12
+// Spec-ref: unit_026_intercore_queue.md `b6e2e8bae3f95390` 2026-02-12
 //! RP2350 Host Firmware for ICEpi SPI GPU
 //!
 //! Core 0: Scene graph management, USB keyboard input, render command generation.
@@ -8,16 +10,15 @@
 
 mod assets;
 mod core1;
-mod gpu;
-mod math;
-mod render;
-mod scene;
+mod input;
+mod queue;
+mod transport;
 
 use defmt_rtt as _;
 use panic_probe as _;
 use rp235x_hal as hal;
 
-use embedded_hal::digital::{InputPin, OutputPin};
+use embedded_hal::digital::OutputPin;
 use hal::clocks::Clock;
 use hal::fugit::RateExtU32;
 use hal::multicore::{Multicore, Stack};
@@ -25,13 +26,16 @@ use hal::sio::Sio;
 
 use glam::Vec3;
 
-use render::{
-    ClearCommand, CommandQueue, RenderCommand, RenderFlags, ScreenTriangleCommand,
-    UploadTextureCommand,
+use pico_gs_core::gpu::GpuDriver;
+use pico_gs_core::render::{
+    ClearCommand, RenderCommand, RenderFlags, ScreenTriangleCommand, UploadTextureCommand,
 };
-use scene::demos::{self, Demo};
-use scene::input::{self, KeyEvent};
-use scene::Scene;
+use pico_gs_core::scene::demos::{self, Demo};
+use pico_gs_core::scene::Scene;
+
+use input::KeyEvent;
+use queue::{CommandQueue, CommandProducer};
+use transport::Rp2350Transport;
 
 /// Boot ROM image definition for Cortex-M33 secure mode.
 #[link_section = ".start_block"]
@@ -52,7 +56,7 @@ static mut COMMAND_QUEUE: CommandQueue = CommandQueue::new();
 
 #[hal::entry]
 fn main() -> ! {
-    defmt::info!("pico-gs-host: Core 0 starting");
+    defmt::info!("pico-gs-rp2350: Core 0 starting");
 
     let mut pac = hal::pac::Peripherals::take().unwrap();
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
@@ -104,14 +108,15 @@ fn main() -> ! {
     // Error LED (onboard GP25).
     let mut led = pins.gpio25.into_push_pull_output();
 
-    // --- Initialize GPU driver ---
-    let gpu_handle = match gpu::gpu_init(spi_bus, spi_cs, cmd_full, cmd_empty, vsync) {
-        Ok(handle) => {
+    // --- Initialize GPU driver via HAL transport ---
+    let transport = Rp2350Transport::new(spi_bus, spi_cs, cmd_full, cmd_empty, vsync);
+    let gpu_driver = match GpuDriver::new(transport) {
+        Ok(driver) => {
             defmt::info!("GPU detected: v2.0");
-            handle
+            driver
         }
         Err(e) => {
-            defmt::error!("GPU init failed: {}", e);
+            defmt::error!("GPU init failed: {:?}", defmt::Debug2Format(&e));
             // Halt with LED blink pattern.
             let core = unsafe { cortex_m::Peripherals::steal() };
             let mut delay = cortex_m::delay::Delay::new(core.SYST, sys_freq);
@@ -135,7 +140,7 @@ fn main() -> ! {
     let core1 = &mut cores[1];
 
     let _ = core1.spawn(CORE1_STACK.take().unwrap(), move || {
-        core1::core1_main(gpu_handle, consumer);
+        core1::core1_main(gpu_driver, consumer);
     });
 
     defmt::info!("Core 1 spawned, entering Core 0 main loop");
@@ -157,13 +162,13 @@ fn main() -> ! {
     );
 
     // Teapot camera + lighting (constant).
-    let projection = render::transform::perspective(
+    let projection = pico_gs_core::render::transform::perspective(
         core::f32::consts::FRAC_PI_4,
         640.0 / 480.0,
         0.1,
         100.0,
     );
-    let view = render::transform::look_at(
+    let view = pico_gs_core::render::transform::look_at(
         Vec3::new(0.0, 0.5, 3.0),
         Vec3::new(0.0, 0.1, 0.0),
         Vec3::Y,
@@ -190,7 +195,7 @@ fn main() -> ! {
                     enqueue_blocking(
                         &mut producer,
                         RenderCommand::UploadTexture(UploadTextureCommand {
-                            gpu_address: gpu::registers::TEXTURE_BASE_ADDR as u32,
+                            gpu_address: pico_gs_core::gpu::registers::TEXTURE_BASE_ADDR,
                             texture_id: assets::textures::TEX_ID_CHECKERBOARD,
                         }),
                     );
@@ -261,7 +266,7 @@ fn main() -> ! {
             }
 
             Demo::SpinningTeapot => {
-                let model = render::transform::rotate_y(angle);
+                let model = pico_gs_core::render::transform::rotate_y(angle);
                 let mv = view * model;
                 let mvp = projection * mv;
 
@@ -282,8 +287,8 @@ fn main() -> ! {
                     }),
                 );
 
-                render::mesh::render_teapot(
-                    &teapot_mesh,
+                pico_gs_core::render::mesh::render_mesh(
+                    &teapot_mesh.as_mesh_ref(),
                     &mvp,
                     &mv,
                     demos::TEAPOT_COLOR,
@@ -306,7 +311,7 @@ fn main() -> ! {
 
 /// Enqueue a command with backpressure: spin until space is available.
 fn enqueue_blocking(
-    producer: &mut render::CommandProducer<'_>,
+    producer: &mut CommandProducer<'_>,
     cmd: RenderCommand,
 ) {
     loop {

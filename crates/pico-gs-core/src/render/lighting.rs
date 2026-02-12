@@ -1,3 +1,4 @@
+// Spec-ref: unit_024_lighting_calculator.md `85a7cbe7c1a2f427` 2026-02-12
 //! Gouraud lighting calculation for directional lights + ambient.
 
 use crate::render::{AmbientLight, DirectionalLight};
@@ -5,7 +6,7 @@ use glam::Vec3;
 
 /// Compute Gouraud lighting for a single vertex.
 ///
-/// Evaluates: ambient + Σ(max(0, dot(N, L[i])) × light_color[i])
+/// Evaluates: ambient + sum(max(0, dot(N, L[i])) * light_color[i])
 /// for up to 4 directional lights plus ambient.
 ///
 /// Returns lit vertex color as [R, G, B, A] with channels clamped to 0-255.

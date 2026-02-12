@@ -1,10 +1,14 @@
 [package]
-name = "pico-gs-host"
+name = "pico-gs-rp2350"
 version.workspace = true
 edition.workspace = true
-description = "RP2350 host firmware for ICEpi SPI GPU"
+description = "RP2350 embedded host application for pico-gs SPI GPU"
 
 [dependencies]
+# Platform-agnostic crates
+pico-gs-hal = { path = "../pico-gs-hal" }
+pico-gs-core = { path = "../pico-gs-core" }
+
 # RP2350 HAL
 rp235x-hal = { version = "0.3.0", features = [
     "binary-info",
@@ -29,9 +33,6 @@ glam = { version = "0.30", default-features = false, features = ["libm"] }
 # Software math for no_std (sin, cos, sqrt)
 libm = "0.2"
 
-# Fixed-point arithmetic for GPU register packing
-fixed = "1.30.0"
-
 # Logging
 defmt = "1.0.1"
 defmt-rtt = "1.1.0"
@@ -43,8 +44,8 @@ panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 fugit = "0.3.7"
 
 [build-dependencies]
-asset-prep = { path = "../asset_build_tool" }
+asset-prep = { path = "../asset-build-tool" }
 
 [features]
 default = []
-usb-host = [] # Enable TinyUSB USB host for keyboard input (requires C sources)
+usb-host = []

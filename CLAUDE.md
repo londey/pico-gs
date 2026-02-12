@@ -15,27 +15,45 @@ Auto-generated from all feature plans. Last updated: 2026-01-31
 
 ```text
 pico-gs/
-├── spi_gpu/              # FPGA RTL component (SystemVerilog)
-│   ├── src/              # RTL sources (gpu_top.sv, core/, spi/, memory/, render/, display/, utils/)
-│   ├── tests/            # Testbenches (parallel structure)
-│   ├── constraints/      # FPGA constraints
-│   └── Makefile          # FPGA build system
-├── host_app/             # RP2350 firmware component (Rust)
-│   ├── src/              # Firmware sources
-│   ├── tests/            # Firmware tests
-│   └── Cargo.toml        # Workspace member
-├── asset_build_tool/     # Asset preparation tool (Rust)
-│   ├── src/              # Tool sources
-│   └── Cargo.toml        # Workspace member
-├── assets/               # Asset management
-│   ├── source/           # Source assets (.obj, .png - committed)
-│   └── compiled/         # Generated assets (.rs, .bin - gitignored)
-├── doc/                  # Syskit specifications
-│   ├── requirements/     # REQ-NNN documents (what the system must do)
-│   ├── interfaces/       # INT-NNN documents (contracts between components)
-│   └── design/           # UNIT-NNN documents (how components implement requirements)
-├── build.sh              # Unified build script
-└── Cargo.toml            # Workspace root
+├── crates/
+│   ├── pico-gs-hal/          # Platform abstraction traits (no_std)
+│   │   └── src/lib.rs        # SpiTransport, FlowControl, InputSource traits
+│   ├── pico-gs-core/         # Platform-agnostic GPU driver, rendering, scene (no_std)
+│   │   ├── src/
+│   │   │   ├── gpu/          # GpuDriver<S>, registers, vertex packing
+│   │   │   ├── math/         # Fixed-point math (12.4, 1.15, z25)
+│   │   │   ├── render/       # Commands, mesh rendering, transform, lighting
+│   │   │   └── scene/        # Scene management, demo definitions
+│   │   └── tests/            # Integration tests
+│   ├── pico-gs-rp2350/       # RP2350 firmware (dual-core, USB keyboard, SPI GPIO)
+│   │   ├── src/
+│   │   │   ├── transport.rs  # Rp2350Transport: SpiTransport + FlowControl
+│   │   │   ├── input.rs      # USB keyboard InputSource
+│   │   │   ├── core1.rs      # Core 1 render loop (SPSC consumer)
+│   │   │   ├── queue.rs      # SPSC queue type aliases
+│   │   │   ├── assets/       # Build-generated mesh/texture includes
+│   │   │   └── main.rs       # Dual-core entry point
+│   │   ├── build.rs          # Asset conversion via asset-build-tool
+│   │   ├── assets/           # Source assets (.obj, .png)
+│   │   └── memory.x          # RP2350 linker script
+│   ├── pico-gs-pc/           # PC debug host (FT232H stub, terminal input)
+│   │   └── src/
+│   │       ├── transport.rs  # Ft232hTransport (stub, todo!())
+│   │       ├── input.rs      # TerminalInput (stub)
+│   │       └── main.rs       # Single-threaded entry point
+│   └── asset-build-tool/     # Asset preparation tool (.obj/.png → GPU format)
+│       └── src/
+├── spi_gpu/                  # FPGA RTL component (SystemVerilog)
+│   ├── src/                  # RTL sources
+│   ├── tests/                # Testbenches
+│   ├── constraints/          # FPGA constraints
+│   └── Makefile              # FPGA build system
+├── doc/                      # Syskit specifications
+│   ├── requirements/         # REQ-NNN documents
+│   ├── interfaces/           # INT-NNN documents
+│   └── design/               # UNIT-NNN documents
+├── build.sh                  # Unified build script
+└── Cargo.toml                # Workspace root
 ```
 
 ## Commands
@@ -46,6 +64,7 @@ pico-gs/
 # Build specific component
 ./build.sh --fpga-only
 ./build.sh --firmware-only
+./build.sh --pc-only
 ./build.sh --assets-only
 
 # Build in release mode
@@ -55,9 +74,12 @@ pico-gs/
 cd spi_gpu && make bitstream
 cd spi_gpu && make synth
 
-# Firmware-specific builds
-cargo build -p pico-gs-host
-cargo test -p pico-gs-host 
+# Firmware-specific builds (RP2350)
+cargo build -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
+cargo test -p pico-gs-core
+
+# PC debug host build
+cargo build -p pico-gs-pc
 
 ## Code Style
 

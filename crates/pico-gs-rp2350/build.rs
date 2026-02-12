@@ -5,13 +5,23 @@ fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
-    let source_dir = manifest_dir.join("assets");
+    // Assets live at the workspace root level.
+    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+    let source_dir = workspace_root.join("assets").join("source");
+
+    // Fall back to crate-local assets if workspace-level doesn't exist.
+    let source_dir = if source_dir.exists() {
+        source_dir
+    } else {
+        manifest_dir.join("assets")
+    };
+
     let assets_out_dir = out_dir.join("assets");
 
-    // Rerun if the source assets directory changes
+    // Rerun if the source assets directory changes.
     println!("cargo:rerun-if-changed={}", source_dir.display());
 
-    // Also rerun if individual asset files change
+    // Also rerun if individual asset files change.
     rerun_if_changed_recursive(&source_dir);
 
     let config = AssetBuildConfig {

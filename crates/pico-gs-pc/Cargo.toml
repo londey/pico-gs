@@ -1,0 +1,16 @@
+[package]
+name = "pico-gs-pc"
+version.workspace = true
+edition.workspace = true
+description = "PC debug host for ICEpi SPI GPU (via FT232H)"
+
+[dependencies]
+# Platform-agnostic crates
+pico-gs-hal = { path = "../pico-gs-hal" }
+pico-gs-core = { path = "../pico-gs-core" }
+
+# ftdi = "0.1"       # TODO: uncomment when FT232H integration is ready
+# crossterm = "0.28"  # TODO: uncomment for terminal input
+
+log = "0.4"
+env_logger = "0.11"

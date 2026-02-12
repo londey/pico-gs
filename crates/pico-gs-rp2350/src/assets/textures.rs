@@ -1,5 +1,7 @@
 //! Demo texture data stored in flash as const arrays.
 
+use pico_gs_core::render::commands::{TextureInfo, TextureSource};
+
 /// 64x64 checkerboard texture (RGBA8888, 4096 pixels = 4096 u32 words).
 /// Alternating 8x8 blocks of white and dark gray.
 pub const CHECKERBOARD_64: Texture = Texture {
@@ -24,6 +26,26 @@ pub const TEXTURE_TABLE: &[&Texture] = &[&CHECKERBOARD_64];
 
 /// Texture ID constants.
 pub const TEX_ID_CHECKERBOARD: u8 = 0;
+
+/// Adapter implementing the platform-agnostic TextureSource trait.
+pub struct Rp2350TextureSource;
+
+impl TextureSource for Rp2350TextureSource {
+    fn get_texture(&self, id: u8) -> Option<TextureInfo<'_>> {
+        let tex_id = id as usize;
+        if tex_id >= TEXTURE_TABLE.len() {
+            return None;
+        }
+        let tex = TEXTURE_TABLE[tex_id];
+        Some(TextureInfo {
+            data: tex.data,
+            width: tex.width,
+            height: tex.height,
+            width_log2: tex.width_log2,
+            height_log2: tex.height_log2,
+        })
+    }
+}
 
 /// Generate the 64x64 checkerboard at compile time.
 const CHECKERBOARD_64_DATA: [u32; 64 * 64] = {

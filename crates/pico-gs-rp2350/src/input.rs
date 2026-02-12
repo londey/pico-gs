@@ -1,9 +1,10 @@
+// Spec-ref: unit_025_usb_keyboard_handler.md `cc607c87aa46749d` 2026-02-12
 //! USB keyboard input handling.
 //!
 //! When the `usb-host` feature is enabled, uses TinyUSB C FFI for USB HID.
 //! Otherwise, provides a no-op stub (no keyboard, default demo persists).
 
-use super::demos::Demo;
+use pico_gs_core::scene::demos::Demo;
 
 /// HID keycode constants for number keys.
 const HID_KEY_1: u8 = 0x1E;

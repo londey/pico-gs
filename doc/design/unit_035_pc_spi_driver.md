@@ -58,8 +58,7 @@ The FT232H supports SPI clocks up to 30 MHz. Default is 25 MHz (matching RP2350)
 
 ## Implementation
 
-- `crates/pico-gs-pc/src/hal_impl/spi.rs`: FT232H SPI transport
-- `crates/pico-gs-pc/src/hal_impl/gpio.rs`: FT232H GPIO for flow control
+- `crates/pico-gs-pc/src/transport.rs`: FT232H SPI transport and GPIO flow control
 
 ## Verification
 

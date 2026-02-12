@@ -1,4 +1,8 @@
-//! Render command types and inter-core queue definitions.
+// Spec-ref: unit_026_intercore_queue.md `b6e2e8bae3f95390` 2026-02-12
+//! Render command types and data structures.
+//!
+//! Platform-agnostic render types. The inter-core SPSC queue (RP2350-specific)
+//! is defined in pico-gs-rp2350.
 
 pub mod commands;
 pub mod lighting;
@@ -6,30 +10,12 @@ pub mod mesh;
 pub mod transform;
 
 use crate::gpu::vertex::GpuVertex;
-use glam::{Mat4, Vec3};
-use heapless::spsc;
+use glam::Vec3;
 
 /// Maximum vertices per mesh patch.
 pub const MAX_PATCH_VERTICES: usize = 128;
-/// Maximum indices per mesh patch (128 vertices × ~3 triangles each, rounded up).
+/// Maximum indices per mesh patch (128 vertices x ~3 triangles each, rounded up).
 pub const MAX_PATCH_INDICES: usize = 384;
-
-/// Render command queue capacity.
-///
-/// Teapot demo submits ~290 commands per frame (clear + mode + ~288 triangles + vsync).
-/// Queue depth of 64 allows Core 0 to run ahead of Core 1 by up to 64 commands,
-/// reducing stall frequency and improving overlap between transform/lighting on
-/// Core 0 and SPI transmission on Core 1.
-///
-/// Memory: 64 × ~80 bytes (largest variant) ≈ 5 KB SRAM.
-pub const QUEUE_CAPACITY: usize = 64;
-
-/// The inter-core render command queue type.
-pub type CommandQueue = spsc::Queue<RenderCommand, QUEUE_CAPACITY>;
-/// Producer end of the command queue (owned by Core 0).
-pub type CommandProducer<'a> = spsc::Producer<'a, RenderCommand>;
-/// Consumer end of the command queue (owned by Core 1).
-pub type CommandConsumer<'a> = spsc::Consumer<'a, RenderCommand>;
 
 /// A single vertex in object space.
 #[derive(Clone, Copy, Debug)]
@@ -88,15 +74,13 @@ impl RenderFlags {
     }
 }
 
-/// Render command: the unit of work flowing from Core 0 to Core 1.
+/// Render command: the unit of work for GPU submission.
 ///
-/// Lightweight commands go through the SPSC queue directly.
-/// Large data (mesh patches) use a separate shared buffer mechanism.
+/// On RP2350 these flow through an SPSC queue from Core 0 to Core 1.
+/// On PC they are executed directly in the main loop.
 #[derive(Clone, Copy, Debug)]
 pub enum RenderCommand {
     /// Submit a pre-packed screen-space triangle directly to the GPU.
-    /// Used by US1 (Gouraud) and US2 (Textured) where Core 0 provides
-    /// already-packed vertices (no transform/lighting needed on Core 1).
     SubmitScreenTriangle(ScreenTriangleCommand),
     /// Wait for GPU vertical sync and swap framebuffers.
     WaitVsync,

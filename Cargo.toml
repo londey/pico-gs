@@ -1,7 +1,10 @@
 [workspace]
 members = [
-    "host_app",
-    "asset_build_tool",
+    "crates/pico-gs-hal",
+    "crates/pico-gs-core",
+    "crates/pico-gs-rp2350",
+    "crates/pico-gs-pc",
+    "crates/asset-build-tool",
 ]
 resolver = "2"
 

@@ -1,15 +1,17 @@
-//! Mesh rendering: transform, light, and submit triangles from Core 0.
+//! Mesh rendering: transform, light, and submit triangles.
 //!
 //! Processes a static mesh (positions + normals + indices) through the
-//! MVP transform → Gouraud lighting → GPU vertex packing pipeline,
-//! then enqueues ScreenTriangleCommands for Core 1 to execute.
+//! MVP transform -> Gouraud lighting -> GPU vertex packing pipeline,
+//! then calls an enqueue closure for each ScreenTriangleCommand.
 
-use crate::assets::teapot::TeapotMesh;
 use crate::gpu::vertex::GpuVertex;
 use crate::render::lighting::compute_lighting;
 use crate::render::transform::{is_front_facing, transform_normal, transform_vertex, ScreenVertex};
 use crate::render::{AmbientLight, DirectionalLight, RenderCommand, ScreenTriangleCommand};
-use glam::Mat4;
+use glam::{Mat4, Vec3};
+
+/// Maximum vertices supported in a single mesh render call.
+const MAX_TRANSFORMED: usize = 148;
 
 /// Cached per-vertex transform + lighting result.
 #[derive(Clone, Copy)]
@@ -18,12 +20,21 @@ struct TransformedVertex {
     color: [u8; 4],
 }
 
-/// Render a teapot mesh for one frame: transform all vertices, then submit
+/// A reference to static mesh data for rendering.
+/// Decouples the render pipeline from any specific mesh storage format.
+pub struct MeshRef<'a> {
+    pub positions: &'a [Vec3],
+    pub normals: &'a [Vec3],
+    pub indices: &'a [[u16; 3]],
+}
+
+/// Render a mesh for one frame: transform all vertices, then submit
 /// front-facing triangles as ScreenTriangleCommands.
 ///
-/// This runs on Core 0 each frame. The `enqueue` closure handles backpressure.
-pub fn render_teapot<F>(
-    mesh: &TeapotMesh,
+/// The `enqueue` closure handles backpressure (SPSC queue on RP2350,
+/// direct execution on PC).
+pub fn render_mesh<F>(
+    mesh: &MeshRef<'_>,
     mvp: &Mat4,
     mv: &Mat4,
     base_color: [u8; 4],
@@ -34,7 +45,6 @@ pub fn render_teapot<F>(
     F: FnMut(RenderCommand),
 {
     // Phase 1: Transform all vertices and compute lighting.
-    // We process up to MAX_VERTICES (146) vertices into a stack buffer.
     let mut transformed = [TransformedVertex {
         screen: ScreenVertex {
             x: 0.0,
@@ -43,9 +53,9 @@ pub fn render_teapot<F>(
             w: 1.0,
         },
         color: [0; 4],
-    }; 148]; // Slightly over MAX_VERTICES to avoid bounds issues.
+    }; MAX_TRANSFORMED];
 
-    let vert_count = mesh.vertex_count.min(transformed.len());
+    let vert_count = mesh.positions.len().min(MAX_TRANSFORMED);
     for i in 0..vert_count {
         let pos = mesh.positions[i];
         let norm = mesh.normals[i];
@@ -58,8 +68,7 @@ pub fn render_teapot<F>(
     }
 
     // Phase 2: Submit front-facing triangles.
-    for t in 0..mesh.triangle_count {
-        let [i0, i1, i2] = mesh.indices[t];
+    for &[i0, i1, i2] in mesh.indices {
         let (i0, i1, i2) = (i0 as usize, i1 as usize, i2 as usize);
 
         if i0 >= vert_count || i1 >= vert_count || i2 >= vert_count {

@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Directories
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOST_APP="${REPO_ROOT}/host_app"
+FIRMWARE_CRATE="${REPO_ROOT}/crates/pico-gs-rp2350"
 SPI_GPU="${REPO_ROOT}/spi_gpu"
 OUTPUT_DIR="${REPO_ROOT}/build"
 
@@ -27,7 +27,7 @@ FLASH_FPGA=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --assets-only)
-            # Assets are now built automatically by host_app/build.rs during cargo build.
+            # Assets are built automatically by pico-gs-rp2350/build.rs during cargo build.
             # This flag triggers a firmware build which includes asset conversion.
             BUILD_FPGA=false
             shift
@@ -38,6 +38,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fpga-only)
             BUILD_FIRMWARE=false
+            shift
+            ;;
+        --pc-only)
+            BUILD_FIRMWARE=false
+            BUILD_FPGA=false
+            BUILD_PC=true
             shift
             ;;
         --release)
@@ -59,6 +65,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --assets-only       Build firmware (assets are converted automatically by build.rs)"
             echo "  --firmware-only     Build only RP2350 firmware (skips FPGA)"
             echo "  --fpga-only         Build only FPGA bitstream"
+            echo "  --pc-only           Build only PC debug host (pico-gs-pc)"
             echo "  --release           Build in release mode (optimized)"
             echo "  --flash-firmware    Flash firmware to RP2350 after build"
             echo "  --flash-fpga        Program FPGA after build"
@@ -82,13 +89,26 @@ if [ "$BUILD_FIRMWARE" = true ]; then
     echo -e "${YELLOW}[1/3] Building RP2350 firmware (includes asset conversion)...${NC}"
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
-        cargo build --release -p pico-gs-host --target thumbv8m.main-none-eabihf
-        FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/release/pico-gs-host"
+        cargo build --release -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
+        FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/release/pico-gs-rp2350"
     else
-        cargo build -p pico-gs-host --target thumbv8m.main-none-eabihf
-        FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/debug/pico-gs-host"
+        cargo build -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
+        FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/debug/pico-gs-rp2350"
     fi
     echo -e "${GREEN}✓ Firmware built: ${FIRMWARE_ELF}${NC}"
+    echo ""
+fi
+
+# Step 1b: Build PC debug host
+if [ "${BUILD_PC:-false}" = true ]; then
+    echo -e "${YELLOW}Building PC debug host...${NC}"
+    cd "${REPO_ROOT}"
+    if [ "$RELEASE_MODE" = true ]; then
+        cargo build --release -p pico-gs-pc
+    else
+        cargo build -p pico-gs-pc
+    fi
+    echo -e "${GREEN}✓ PC debug host built${NC}"
     echo ""
 fi
 
@@ -108,8 +128,8 @@ echo -e "${YELLOW}[3/3] Collecting build outputs...${NC}"
 mkdir -p "${OUTPUT_DIR}"
 
 if [ "$BUILD_FIRMWARE" = true ] && [ -f "$FIRMWARE_ELF" ]; then
-    cp "$FIRMWARE_ELF" "${OUTPUT_DIR}/pico-gs-host.elf"
-    echo "  Firmware: ${OUTPUT_DIR}/pico-gs-host.elf"
+    cp "$FIRMWARE_ELF" "${OUTPUT_DIR}/pico-gs-rp2350.elf"
+    echo "  Firmware: ${OUTPUT_DIR}/pico-gs-rp2350.elf"
 fi
 
 if [ "$BUILD_FPGA" = true ] && [ -f "$FPGA_BITSTREAM" ]; then
@@ -123,8 +143,8 @@ echo ""
 # Optional: Flash firmware
 if [ "$FLASH_FIRMWARE" = true ]; then
     echo -e "${YELLOW}Flashing firmware to RP2350...${NC}"
-    cd "${HOST_APP}"
-    cargo run --release --target thumbv8m.main-none-eabihf
+    cd "${REPO_ROOT}"
+    cargo run --release -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
     echo -e "${GREEN}✓ Firmware flashed${NC}"
 fi
 
