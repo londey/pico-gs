@@ -8,7 +8,7 @@ use pico_gs_core::gpu::GpuDriver;
 use pico_gs_core::render::commands;
 use pico_gs_core::render::RenderCommand;
 
-use crate::assets::textures::Rp2350TextureSource;
+use pico_gs_core::assets::textures::StaticTextureSource;
 use crate::queue::CommandConsumer;
 use crate::transport::Rp2350Transport;
 
@@ -19,7 +19,7 @@ const PERF_LOG_INTERVAL: u32 = 120;
 pub fn core1_main(mut gpu: GpuDriver<Rp2350Transport>, mut consumer: CommandConsumer<'static>) -> ! {
     defmt::info!("Core 1 started, entering render loop");
 
-    let textures = Rp2350TextureSource;
+    let textures = StaticTextureSource;
     let mut frame_count: u32 = 0;
     let mut cmds_this_frame: u32 = 0;
     let mut idle_spins: u32 = 0;

@@ -43,9 +43,6 @@ panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 # Timing
 fugit = "0.3.7"
 
-[build-dependencies]
-asset-prep = { path = "../asset-build-tool" }
-
 [features]
 default = []
 usb-host = []

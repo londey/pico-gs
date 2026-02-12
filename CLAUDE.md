@@ -81,9 +81,34 @@ cargo test -p pico-gs-core
 # PC debug host build
 cargo build -p pico-gs-pc
 
-## Code Style
+## Rust Code Style
 
-: Follow standard conventions
+- Follow standard Rust conventions and idioms; use `rustfmt` for formatting
+- Prefer modern `module_name.rs` file style over `mod.rs` (Rust 2018+)
+- All public items require `///` doc comments (modules use `//!`); functions need `# Arguments`, `# Returns`, `# Errors` sections
+- Document constants with purpose and spec reference where applicable
+- Blank lines between module-level items, between doc-commented struct fields, and after `use` blocks
+- Avoid `.unwrap()` / `.expect()` in production code; use `Result<T, E>` + `?` operator
+- Libraries: `thiserror` for error types; applications: `anyhow` (std crates only; no_std uses custom enums)
+- Logging: `defmt` for no_std/embedded, `log` crate for std; avoid `println!`/`eprintln!`
+- Add dependencies with `default-features = false`, explicitly enable only needed features
+- Crate-level lints: `#![deny(unsafe_code)]`, clippy pedantic + `missing_docs` gated on release builds via `cfg_attr`
+
+### Build Verification (Rust)
+
+After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` → `cargo build --release`
+
+## SystemVerilog Code Style
+
+- All modules, wires, registers require comments; active-low signals use `_n` suffix
+- `always_ff`: simple non-blocking assignments only (exceptions: memory inference, async reset synchronizers)
+- `always_comb`: all combinational logic; default assignments at top to avoid latches
+- One declaration per line; explicit bit widths on all literals; files start with `` `default_nettype none ``
+- Always use `begin`/`end` blocks for `if`/`else`/`case`
+- FSMs: separate state register (`always_ff`) from next-state logic (`always_comb`); use enums for state encoding
+- One module per file, filename matches module name; always use named port connections
+- CDC: 2-FF synchronizer for single-bit, gray coding for multi-bit
+- Lint with `verilator --lint-only -Wall`; fix all warnings, do not suppress with pragmas
 
 ## Recent Changes
 - 003-asset-data-prep: Added Rust stable (1.75+) + PNG decoding library, OBJ file parser

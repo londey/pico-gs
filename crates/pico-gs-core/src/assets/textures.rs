@@ -1,6 +1,6 @@
 //! Demo texture data stored in flash as const arrays.
 
-use pico_gs_core::render::commands::{TextureInfo, TextureSource};
+use crate::render::commands::{TextureInfo, TextureSource};
 
 /// 64x64 checkerboard texture (RGBA8888, 4096 pixels = 4096 u32 words).
 /// Alternating 8x8 blocks of white and dark gray.
@@ -27,10 +27,10 @@ pub const TEXTURE_TABLE: &[&Texture] = &[&CHECKERBOARD_64];
 /// Texture ID constants.
 pub const TEX_ID_CHECKERBOARD: u8 = 0;
 
-/// Adapter implementing the platform-agnostic TextureSource trait.
-pub struct Rp2350TextureSource;
+/// Adapter implementing the TextureSource trait using the static texture table.
+pub struct StaticTextureSource;
 
-impl TextureSource for Rp2350TextureSource {
+impl TextureSource for StaticTextureSource {
     fn get_texture(&self, id: u8) -> Option<TextureInfo<'_>> {
         let tex_id = id as usize;
         if tex_id >= TEXTURE_TABLE.len() {

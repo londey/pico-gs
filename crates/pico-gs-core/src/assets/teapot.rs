@@ -4,7 +4,7 @@
 //! Gouraud-lit spinning demo. 146 vertices, 288 triangles.
 
 use glam::Vec3;
-use pico_gs_core::render::mesh::MeshRef;
+use crate::render::mesh::MeshRef;
 
 /// Segments around the Y axis.
 const SEGMENTS: usize = 16;

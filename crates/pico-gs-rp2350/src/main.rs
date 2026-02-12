@@ -8,7 +8,6 @@
 #![no_std]
 #![no_main]
 
-mod assets;
 mod core1;
 mod input;
 mod queue;
@@ -154,7 +153,7 @@ fn main() -> ! {
     let gouraud_verts = demos::gouraud_triangle_vertices();
     let textured_verts = demos::textured_triangle_vertices();
 
-    let teapot_mesh = assets::teapot::TeapotMesh::generate();
+    let teapot_mesh = pico_gs_core::assets::teapot::TeapotMesh::generate();
     defmt::info!(
         "Teapot mesh: {} vertices, {} triangles",
         teapot_mesh.vertex_count,
@@ -196,7 +195,7 @@ fn main() -> ! {
                         &mut producer,
                         RenderCommand::UploadTexture(UploadTextureCommand {
                             gpu_address: pico_gs_core::gpu::registers::TEXTURE_BASE_ADDR,
-                            texture_id: assets::textures::TEX_ID_CHECKERBOARD,
+                            texture_id: pico_gs_core::assets::textures::TEX_ID_CHECKERBOARD,
                         }),
                     );
                 }
