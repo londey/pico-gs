@@ -56,7 +56,7 @@ None
 
 ## Implementation
 
-- `host_app/src/scene/input.rs`: Public API (`init_keyboard()`, `poll_keyboard()`), keycode mapping, `KeyEvent` type, TinyUSB FFI module
+- `crates/pico-gs-rp2350/src/input.rs`: Public API (`init_keyboard()`, `poll_keyboard()`), keycode mapping, `KeyEvent` type, TinyUSB FFI module
 
 ## Verification
 

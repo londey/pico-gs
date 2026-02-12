@@ -8,11 +8,11 @@
 
 ## Requirement
 
-The system SHALL implement SPI-based communication with the GPU using a 9-byte transaction format where the first byte encodes the register address (bit 7 = read/write flag, bits 6:0 = 7-bit register address) and the remaining 8 bytes carry a 64-bit data payload in MSB-first order. Register writes SHALL block until the GPU command FIFO has space, as indicated by the CMD_FULL GPIO input being deasserted. The system SHALL support register read, register write, bulk memory upload via MEM_ADDR/MEM_DATA auto-increment, triangle submission via sequential COLOR/UV0/VERTEX register writes, vsync synchronization via VSYNC GPIO edge detection, and double-buffered framebuffer swap via FB_DRAW/FB_DISPLAY register updates.
+The system SHALL implement SPI-based communication with the GPU using a 9-byte transaction format where the first byte encodes the register address (bit 7 = read/write flag, bits 6:0 = 7-bit register address) and the remaining 8 bytes carry a 64-bit data payload in MSB-first order, conforming to INT-012. The SPI transport SHALL be abstracted behind the `SpiTransport` trait defined in INT-040, enabling the same GPU driver logic to operate over platform-specific SPI implementations. Register writes SHALL block until the GPU command FIFO has space, as indicated by the CMD_FULL signal being deasserted. The system SHALL support register read, register write, bulk memory upload via MEM_ADDR/MEM_DATA auto-increment, triangle submission via sequential COLOR/UV0/VERTEX register writes, vsync synchronization via VSYNC signal edge detection, and double-buffered framebuffer swap via FB_DRAW/FB_DISPLAY register updates.
 
 ## Rationale
 
-The SPI register interface is the sole communication channel between the host MCU and the FPGA-based GPU. Correct framing, flow control, and register sequencing are critical to reliable rendering.
+The SPI register interface is the sole communication channel between the host and the FPGA-based GPU. Correct framing, flow control, and register sequencing are critical to reliable rendering. Abstracting the SPI transport behind the `SpiTransport` trait (INT-040) allows the same GPU driver logic to operate over both rp235x-hal SPI on the RP2350 and FT232H USB-to-SPI on a PC.
 
 ## Parent Requirements
 
@@ -21,12 +21,14 @@ None
 ## Allocated To
 
 - UNIT-022 (GPU Driver Layer)
+- UNIT-035 (PC SPI Driver)
 
 ## Interfaces
 
 - INT-010 (GPU Register Map)
 - INT-012 (SPI Transaction Format)
 - INT-020 (GPU Driver API)
+- INT-040 (Host Platform HAL)
 
 ## Verification Method
 
@@ -34,4 +36,4 @@ None
 
 ## Notes
 
-The GPU driver owns all SPI and GPIO resources (SPI0 bus, CS on GPIO5, CMD_FULL on GPIO6, CMD_EMPTY on GPIO7, VSYNC on GPIO8). SPI runs at 25 MHz in Mode 0. CS is manually toggled per transaction. GPU identity is verified at startup by reading the ID register (expected device ID 0x6702).
+On the RP2350 platform, the SPI transport is implemented via rp235x-hal SPI0 at 25 MHz with manual GPIO chip-select (GPIO5) and GPIO flow control pins (CMD_FULL on GPIO6, CMD_EMPTY on GPIO7, VSYNC on GPIO8). On the PC platform, the SPI transport is implemented via the FT232H USB-to-SPI adapter using the ftdi crate, with flow control signals read via FT232H GPIO pins. GPU identity is verified at startup on both platforms by reading the ID register (expected device ID 0x6702).

@@ -7,7 +7,7 @@ Internal
 ## Parties
 
 - **Provider:** UNIT-022 (GPU Driver Layer)
-- **Consumer:** UNIT-021 (Core 1 Render Executor)
+- **Consumer:** UNIT-021 (Core 1 Render Executor), pico-gs-pc main loop
 
 ## Referenced By
 

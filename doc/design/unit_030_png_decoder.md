@@ -110,9 +110,9 @@ fn compress_bc1(rgba8: &[u8], width: usize, height: usize) -> Vec<u8> {
 
 ## Implementation
 
-- `asset_build_tool/src/png_converter.rs`: Main implementation
-- `asset_build_tool/src/format_rgba4444.rs`: RGBA4444 converter (new)
-- `asset_build_tool/src/format_bc1.rs`: BC1 encoder wrapper (new)
+- `crates/asset-build-tool/src/png_converter.rs`: Main implementation
+- `crates/asset-build-tool/src/format_rgba4444.rs`: RGBA4444 converter (new)
+- `crates/asset-build-tool/src/format_bc1.rs`: BC1 encoder wrapper (new)
 
 ## Verification
 

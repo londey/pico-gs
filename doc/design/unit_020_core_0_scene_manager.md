@@ -60,7 +60,10 @@ None
 
 ### Algorithm / Behavior
 
-1. **Initialization**: Configure clocks, SPI0, GPIO pins. Call `gpu::gpu_init()` to verify GPU presence. Split the static `COMMAND_QUEUE` into producer/consumer halves. Spawn Core 1 with the consumer and GPU handle. Initialize `Scene::new()` (defaults to `GouraudTriangle`) and `input::init_keyboard()`. Pre-generate mesh data and camera matrices.
+1. **Initialization** (platform-specific):
+   - **RP2350**: Configure clocks, SPI0, GPIO pins. Call `GpuDriver::new()` to verify GPU. Split SPSC queue. Spawn Core 1 with consumer and GPU handle.
+   - **PC**: Open FT232H device. Call `GpuDriver::new()` to verify GPU. No queue or core spawning needed.
+   - **Common**: Initialize `Scene::new()` (defaults to `GouraudTriangle`) and input subsystem. Pre-generate mesh data and camera matrices.
 2. **Main loop** (runs indefinitely on Core 0):
    a. **Poll input**: Call `input::poll_keyboard()`; on `SelectDemo` event, call `scene.switch_demo()`.
    b. **One-time init on demo switch**: If `scene.needs_init` is true, perform demo-specific setup (e.g., upload checkerboard texture for `TexturedTriangle`, reset angle for `SpinningTeapot`). Clear the flag.
@@ -73,9 +76,9 @@ None
 
 ## Implementation
 
-- `host_app/src/scene/mod.rs`: `Scene` struct and `switch_demo()` logic
-- `host_app/src/main.rs`: `main()` entry point, initialization, main loop, `enqueue_blocking()`
-- `host_app/src/scene/demos.rs`: Demo vertex data, lighting parameters, constants
+- `crates/pico-gs-core/src/scene/mod.rs`: `Scene` struct and `switch_demo()` logic (platform-agnostic)
+- `crates/pico-gs-core/src/scene/demos.rs`: Demo vertex data, lighting parameters, constants (platform-agnostic)
+- `crates/pico-gs-rp2350/src/main.rs`: RP2350 main loop orchestration, `enqueue_blocking()`
 
 ## Verification
 

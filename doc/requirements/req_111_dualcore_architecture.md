@@ -8,15 +8,15 @@
 
 ## Requirement
 
-The system SHALL implement dual-core architecture as specified in the functional requirements.
+When running on the RP2350 platform, the system SHALL implement dual-core architecture where Core 0 manages scene state and generates render commands, and Core 1 consumes and executes render commands against the GPU driver, as specified in REQ-100.
 
 ## Rationale
 
-This requirement defines the functional behavior of the dual-core architecture subsystem.
+This requirement defines the functional behavior of the dual-core architecture subsystem on the RP2350 platform. Separating scene logic from GPU communication across the two Cortex-M33 cores allows overlap between CPU-intensive transforms and I/O-bound SPI transmission.
 
 ## Parent Requirements
 
-None
+- REQ-100 (Host Firmware Architecture)
 
 ## Allocated To
 
@@ -29,8 +29,8 @@ None
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for dual-core architecture.
+**Test:** Verify that Core 0 produces render commands and Core 1 consumes them, with correct SPSC queue backpressure behavior.
 
 ## Notes
 
-Functional requirements grouped from specification.
+The dual-core architecture is specific to the RP2350 platform. The PC platform uses a single-threaded execution model where scene management and GPU communication execute sequentially. See REQ-100 for the multi-platform architecture overview.

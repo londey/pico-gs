@@ -60,7 +60,7 @@ None
 
 ## Implementation
 
-- `asset_build_tool/src/obj_converter.rs`: Main implementation
+- `crates/asset-build-tool/src/obj_converter.rs`: Main implementation
 
 ## Verification
 

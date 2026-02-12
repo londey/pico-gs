@@ -70,8 +70,8 @@ The CLI (`main.rs`) provides single-file conversion commands (`Texture`, `Mesh`)
 
 ## Implementation
 
-- `asset_build_tool/src/lib.rs:build_assets`: Main implementation
-- `asset_build_tool/src/main.rs`: CLI entry point (debug/standalone mode)
+- `crates/asset-build-tool/src/lib.rs:build_assets`: Main implementation
+- `crates/asset-build-tool/src/main.rs`: CLI entry point (debug/standalone mode)
 
 ## Verification
 

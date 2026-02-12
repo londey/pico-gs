@@ -62,7 +62,7 @@ None
 
 ## Implementation
 
-- `host_app/src/render/transform.rs`: All transform functions and `ScreenVertex` type
+- `crates/pico-gs-core/src/render/transform.rs`: All transform functions and `ScreenVertex` type
 
 ## Verification
 

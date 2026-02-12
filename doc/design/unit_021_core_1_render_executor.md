@@ -68,8 +68,8 @@ None
 
 ## Implementation
 
-- `host_app/src/core1.rs`: `core1_main()` entry point, dequeue loop, performance counters
-- `host_app/src/render/commands.rs`: `execute()` dispatcher, per-command GPU interactions
+- `crates/pico-gs-rp2350/src/core1.rs`: `core1_main()` entry point, dequeue loop, performance counters (RP2350-specific)
+- `crates/pico-gs-core/src/render/commands.rs`: `execute()` dispatcher, per-command GPU interactions (shared)
 
 ## Verification
 
@@ -79,5 +79,7 @@ None
 - **Performance logging test**: Verify stats are logged every `PERF_LOG_INTERVAL` frames.
 
 ## Design Notes
+
+**Platform scope:** This unit describes the RP2350-specific Core 1 render executor. On the PC platform, command execution is performed synchronously in the main loop (no separate core/thread). The command dispatch logic (`render::commands::execute()`) is shared and lives in pico-gs-core.
 
 Migrated from speckit module specification.

@@ -6,6 +6,43 @@ This document describes the runtime behavior of the system: how it starts up, ho
 
 The pico-gs system is a two-chip 3D graphics pipeline. An RP2350 microcontroller (dual Cortex-M33, 150 MHz) acts as the host, performing scene management, vertex transformation, and lighting on Core 0, while Core 1 serializes render commands over a 25 MHz SPI bus to a Lattice ECP5 FPGA. The FPGA implements a fixed-function triangle rasterizer with Gouraud shading, Z-buffering, and texture sampling. It drives a 640x480 DVI output from a double-buffered framebuffer stored in 32 MB of external async SRAM. The host and GPU communicate through a register-write protocol: each SPI transaction is a 9-byte frame (1-byte address + 8-byte data) that writes to the GPU register file, which accumulates vertex data and triggers rasterization on every third vertex write.
 
+## Platform Variants
+
+The pico-gs host software supports two execution platforms:
+
+### RP2350 Platform (Production)
+
+The primary platform, as described throughout this document. Dual Cortex-M33 cores running no_std Rust firmware, communicating with the GPU over hardware SPI0. See sections below for full details.
+
+### PC Platform (Debug)
+
+A secondary platform for GPU development and debugging. A standard PC running a Rust std binary communicates with the same spi_gpu FPGA hardware via an Adafruit FT232H USB-to-SPI adapter.
+
+**Key differences from RP2350:**
+
+| Aspect | RP2350 | PC |
+|--------|--------|-----|
+| Threading | Dual-core (Core 0 + Core 1) | Single-threaded |
+| SPI transport | rp235x-hal SPI0, 25 MHz | FT232H MPSSE SPI, configurable speed |
+| Inter-stage comm | Lock-free SPSC queue (64 entries) | Direct function calls (synchronous) |
+| Input | USB HID keyboard (TinyUSB) | Terminal keyboard (crossterm) |
+| Logging | defmt over RTT | tracing with file/console output |
+| Debug features | LED error indicator | Frame capture, command replay, full tracing |
+
+**PC execution flow:**
+1. Initialize FT232H SPI adapter and GPIO pins
+2. Call `GpuDriver::new(ft232h_transport)` to verify GPU presence (ID register check)
+3. Initialize scene state (same code as RP2350 Core 0)
+4. Main loop (single-threaded):
+   a. Poll terminal keyboard input
+   b. Update scene state, generate render commands
+   c. Execute each render command immediately via GPU driver (no queue)
+   d. Wait for vsync (poll FT232H GPIO)
+   e. Swap framebuffers
+5. Log all GPU register writes with timestamps for post-analysis
+
+**Shared code path:** Scene management, vertex transformation, lighting calculation, GPU vertex packing, and render command generation are identical between platforms. Only the execution orchestration (threading, command dispatch, I/O) differs.
+
 ## Operational Modes
 
 Reference: `doc/requirements/states_and_modes.md`

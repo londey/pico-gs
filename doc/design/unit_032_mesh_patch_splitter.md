@@ -65,7 +65,7 @@ Key properties:
 
 ## Implementation
 
-- `asset_build_tool/src/mesh_patcher.rs`: Main implementation
+- `crates/asset-build-tool/src/mesh_patcher.rs`: Main implementation
 
 ## Verification
 

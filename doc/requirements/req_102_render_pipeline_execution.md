@@ -37,4 +37,6 @@ None
 
 ## Notes
 
-The executor runs in an infinite loop on Core 1, spinning with NOP when the queue is empty. Framebuffer clear is implemented by rendering two full-viewport triangles (color clear) plus two additional far-plane triangles when depth clear is requested. Performance counters are logged every 120 frames via defmt.
+On the RP2350 platform, the executor runs in an infinite loop on Core 1, spinning with NOP when the queue is empty. On the PC platform, commands are executed synchronously in the main loop (no queue). The command dispatch logic is platform-agnostic and shared. See REQ-100 for the multi-platform architecture.
+
+Framebuffer clear is implemented by rendering two full-viewport triangles (color clear) plus two additional far-plane triangles when depth clear is requested. Performance counters are logged every 120 frames via defmt (RP2350) or tracing (PC).

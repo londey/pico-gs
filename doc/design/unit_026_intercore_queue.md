@@ -55,8 +55,9 @@ None
 
 ## Implementation
 
-- `host_app/src/render/mod.rs`: `CommandQueue`, `CommandProducer`, `CommandConsumer` type aliases; `RenderCommand` enum and associated structs; `QUEUE_CAPACITY` constant
-- `host_app/src/main.rs`: `COMMAND_QUEUE` static allocation, `split()` call, `enqueue_blocking()` helper
+- `crates/pico-gs-core/src/render/mod.rs`: `RenderCommand` enum and associated structs (shared)
+- `crates/pico-gs-rp2350/src/queue.rs`: `CommandQueue`, `CommandProducer`, `CommandConsumer` type aliases; `QUEUE_CAPACITY` constant (RP2350-specific)
+- `crates/pico-gs-rp2350/src/main.rs`: `COMMAND_QUEUE` static allocation, `split()` call, `enqueue_blocking()` helper (RP2350-specific)
 
 ## Verification
 

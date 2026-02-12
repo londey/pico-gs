@@ -56,7 +56,7 @@ This implements standard Gouraud shading: per-vertex lighting with Lambertian di
 
 ## Implementation
 
-- `host_app/src/render/lighting.rs`: `compute_lighting()` function
+- `crates/pico-gs-core/src/render/lighting.rs`: `compute_lighting()` function
 
 ## Verification
 

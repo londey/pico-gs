@@ -548,3 +548,83 @@ Implement greedy sequential triangle packing: fill each patch with triangles in 
 - No spatial optimization (adjacent triangles may land in different patches)
 
 ---
+
+
+## DD-015: Multi-Platform Host Architecture
+
+**Date:** 2026-02-12
+**Status:** Accepted
+**Implementation:** RUST PENDING
+
+### Context
+
+Debugging the spi_gpu FPGA is difficult when the only host is the RP2350 microcontroller. The RP2350 has limited logging (defmt over RTT), no filesystem for frame capture, and requires physical hardware for every test. An Adafruit FT232H breakout board can drive the same SPI protocol from a PC, enabling full logging, frame capture, command replay, and faster iteration during GPU development.
+
+The host application currently has platform-specific code (rp235x-hal SPI, TinyUSB input, dual-core SPSC queue) tightly coupled with platform-agnostic logic (scene management, geometry, lighting, command generation). These must be separated.
+
+### Decision
+
+Split the host application into multiple Rust crates with a shared core:
+
+```
+crates/
+├── pico-gs-core/          # Platform-agnostic shared library
+│   ├── gpu/               # GPU driver API (register protocol, command building)
+│   ├── render/            # Command types, lighting, mesh rendering, transforms
+│   ├── scene/             # Scene state machine, demo definitions
+│   └── math/              # Fixed-point utilities
+├── pico-gs-hal/           # Platform abstraction traits
+│   ├── SpiTransport       # SPI read/write/transfer
+│   ├── GpioInput          # CMD_FULL, CMD_EMPTY, VSYNC polling
+│   └── InputSource        # Keyboard/input event abstraction
+├── pico-gs-rp2350/        # RP2350 embedded application
+│   ├── hal_impl/          # rp235x-hal SPI + GPIO implementations
+│   ├── main.rs            # Dual-core entry point
+│   ├── core1.rs           # Render executor on Core 1
+│   └── input.rs           # TinyUSB keyboard handler
+├── pico-gs-pc/            # PC debug application
+│   ├── hal_impl/          # FT232H SPI + GPIO implementations
+│   ├── main.rs            # Single-threaded entry point
+│   ├── input.rs           # Terminal keyboard handler
+│   ├── capture.rs         # Frame capture / command logging
+│   └── replay.rs          # Command replay from logs
+└── asset-build-tool/      # Asset preparation (moved from root)
+```
+
+Key design principles:
+1. GPU driver API (`gpu_write`, `gpu_read`, `gpu_init`, etc.) is generic over HAL traits -- same code runs on both platforms
+2. Scene management, transforms, lighting, and command generation are fully platform-agnostic in pico-gs-core
+3. Platform-specific code is limited to: SPI transport, GPIO access, input handling, and application orchestration (threading model)
+4. The inter-core SPSC queue is RP2350-specific; the PC version calls command execution directly (single-threaded)
+
+### Rationale
+
+- **Multi-crate over feature flags**: Platform differences (threading model, input system, logging framework) are too deep for `#[cfg]` flags. Separate crates give clean boundaries and independent dependency trees (no_std vs std)
+- **Trait-based HAL**: The GPU driver already uses `embedded-hal` traits internally. Extracting a custom HAL trait that wraps the 9-byte SPI protocol + flow control GPIO makes the driver genuinely platform-agnostic
+- **PC-first for GPU debugging**: Full tracing, frame capture, command replay, and assertion checking are trivial on a PC but impractical on the RP2350
+- **Shared core**: ~70% of the host code (scene, geometry, lighting, command building) is pure computation with no platform dependencies
+
+### Alternatives Considered
+
+1. **Single crate with feature flags**: Rejected -- `no_std` vs `std`, different threading models, and different dependency trees make this unwieldy. Would require `#[cfg]` on almost every module.
+2. **Separate codebases**: Rejected -- duplicates all shared logic, changes must be applied twice, divergence inevitable.
+3. **PC-only testing via simulation**: Rejected -- doesn't test actual SPI protocol over real hardware. FT232H tests the real GPU.
+
+### Consequences
+
+- +3 new crates (pico-gs-core, pico-gs-hal, pico-gs-pc)
+- Existing host_app becomes pico-gs-rp2350 (breaking rename)
+- asset_build_tool moves to crates/ (path change only)
+- GPU debugging dramatically simplified with PC logging + frame capture
+- Both platforms share identical GPU driver and rendering logic
+- Build system (build.sh, Cargo.toml) must be updated
+- All specification path references must be updated
+
+### References
+
+- INT-040: Host Platform HAL (trait definitions)
+- REQ-100: Host Firmware Architecture (multi-platform)
+- REQ-106: PC Debug Host (PC-specific requirements)
+- UNIT-035: PC SPI Driver (FT232H implementation)
+
+---

@@ -64,8 +64,8 @@ None
 
 ## Implementation
 
-- `host_app/src/scene/demos.rs`: `Demo` enum, vertex generators, lighting parameters, constants
-- `host_app/src/scene/mod.rs`: `Scene` struct with `new()` and `switch_demo()`
+- `crates/pico-gs-core/src/scene/demos.rs`: `Demo` enum, vertex generators, lighting parameters, constants
+- `crates/pico-gs-core/src/scene/mod.rs`: `Scene` struct with `new()` and `switch_demo()`
 
 ## Verification
 

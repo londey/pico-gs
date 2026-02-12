@@ -97,7 +97,7 @@ include!("meshes_cube_patch0.rs");
 
 ## Implementation
 
-- `asset_build_tool/src/output_gen.rs`: Main implementation
+- `crates/asset-build-tool/src/output_gen.rs`: Main implementation
 - Update templates to include `TextureFormat` enum
 - Add format detection logic based on file naming convention
 
