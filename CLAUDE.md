@@ -117,6 +117,12 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## Markdown Style
+
+- Use semantic line breaks: start each sentence on its own line.
+  Adjacent lines render as a single paragraph in HTML, but one-sentence-per-line produces cleaner diffs and easier code review.
+
 <!-- MANUAL ADDITIONS END -->
 
 ## syskit
