@@ -8,11 +8,15 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to configure z-buffer compare functions, so that I can control depth testing behavior (reverse Z, equal test, always pass, etc.)
+The system SHALL support the following capability: As a firmware developer, I want to configure z-buffer compare functions and depth range clipping, so that I can control depth testing behavior (reverse Z, equal test, always pass, Z scissor, early Z rejection, etc.)
 
 ## Rationale
 
 This requirement enables the user story described above.
+
+Configurable compare functions allow reverse-Z rendering (GEQUAL), decal passes (EQUAL), skybox last (ALWAYS), and other standard depth-testing patterns.
+Depth range clipping (Z scissor) allows the firmware to discard fragments outside a configurable [Z_RANGE_MIN, Z_RANGE_MAX] sub-range, enabling depth-based effects such as clip planes and layered rendering without CPU-side geometry clipping.
+Early Z-test moves the depth comparison before texture fetch, so fragments that would fail the depth test skip texture and blending stages entirely, reducing SRAM bandwidth for overdraw-heavy scenes.
 
 ## Parent Requirements
 
@@ -32,7 +36,10 @@ None
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- - [ ] Set FB_ZBUFFER register with base address and compare function
+### Compare Functions
+
+- [ ] Set FB_ZBUFFER register with base address
+- [ ] Configure Z_COMPARE via RENDER_MODE register
 - [ ] Support LESS compare (incoming < zbuffer)
 - [ ] Support LEQUAL compare (incoming ≤ zbuffer)
 - [ ] Support EQUAL compare (incoming = zbuffer)
@@ -43,9 +50,34 @@ None
 - [ ] Support NEVER compare (always fail)
 - [ ] Space reserved in register for future stencil operations
 
+### Depth Range Clipping (Z Scissor)
+
+- [ ] Z_RANGE register accepts Z_RANGE_MIN and Z_RANGE_MAX fields (16-bit each)
+- [ ] Fragments with interpolated Z < Z_RANGE_MIN are discarded before depth test
+- [ ] Fragments with interpolated Z > Z_RANGE_MAX are discarded before depth test
+- [ ] Fragments with Z_RANGE_MIN ≤ Z ≤ Z_RANGE_MAX proceed to depth test normally
+- [ ] Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF passes all fragments (full range, default)
+- [ ] Z_RANGE clipping is applied before the depth compare function
+- [ ] Discarded fragments do not modify the Z-buffer or color buffer
+
+### Early Z-Test
+
+- [ ] When Z_TEST_EN=1 and Z_COMPARE is not ALWAYS, the Z-buffer read and comparison are performed before texture fetch
+- [ ] Fragments that fail early Z do not issue texture reads or blending operations
+- [ ] Fragments that pass early Z proceed through the full pixel pipeline
+- [ ] When Z_COMPARE=ALWAYS, early Z is bypassed (all fragments proceed to texture/blend)
+- [ ] When Z_TEST_EN=0, early Z is bypassed (no Z-buffer read occurs)
+- [ ] Early Z produces bit-identical results to late Z for all compare functions
+
 ---
 
 
 ## Notes
 
-User Story: As a firmware developer, I want to configure z-buffer compare functions, so that I can control depth testing behavior (reverse Z, equal test, always pass, etc.)
+User Story: As a firmware developer, I want to configure z-buffer compare functions and depth range clipping, so that I can control depth testing behavior (reverse Z, equal test, always pass, Z scissor, early Z rejection, etc.)
+
+The Z_RANGE register provides depth range clipping without requiring CPU-side geometry processing.
+When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF (the default), no fragments are clipped and the feature has zero overhead.
+
+Early Z is a performance optimization only — it does not change functional results.
+The Z-buffer write remains at the end of the pipeline regardless of early Z status, ensuring correct behavior for all compare functions and write-enable combinations.

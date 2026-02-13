@@ -43,6 +43,8 @@ The GPU design SHALL fit within the following ECP5-25K resource budget:
 
 All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 
+- Depth range clipping: combinational comparison (0 additional cycles, ~20-40 LUTs for two 16-bit comparators)
+- Early Z-test: reuses existing Z-buffer read port (0 additional cycles when bypassed; ~0 additional LUTs, reorders existing Z-test logic)
 - Texture format promotion: combinational (0 additional cycles)
 - Ordered dithering: 1 cycle EBR read (pipelined, no stall)
 - Color grading LUT: 2 cycle scanout latency (within pixel period at 100MHz)

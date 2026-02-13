@@ -44,6 +44,7 @@ None
 ### Outputs
 
 - **Render commands**: `RenderCommand` variants enqueued to the inter-core SPSC queue via `CommandProducer`. Commands include `ClearFramebuffer`, `SetTriMode`, `SubmitScreenTriangle`, `UploadTexture`, and `WaitVsync`.
+  - **v10.0 note:** `RenderFlags` now includes a `color_write` field. When `color_write` is false, the GPU writes only to the Z-buffer (RENDER_MODE bit 4 = 0). This enables Z-prepass rendering where depth is established first, then a second color pass writes only to visible pixels.
 - **defmt log messages**: Diagnostic output for demo switches and teapot mesh statistics.
 
 ### Internal State
@@ -76,6 +77,9 @@ None
            - Fully outside: skip.
            - Partially inside: compute 6-bit clip_flags bitmask.
         3. Enqueue `RenderMeshPatch { patch, mvp, mv, lights, ambient, flags, clip_flags }` per visible patch (~20-29 commands vs ~144 SubmitScreenTriangle previously).
+        4. *(Optional Z-prepass)*: When enabled, the SpinningTeapot demo performs two passes:
+           - **Z-prepass**: Enqueue `SetTriMode` with `z_test=true, z_write=true, color_write=false`. Enqueue all visible `RenderMeshPatch` commands. The GPU writes only depth, establishing the Z-buffer without color writes.
+           - **Color pass**: Enqueue `SetTriMode` with `z_test=true, z_write=false, color_write=true`. Re-enqueue visible patches. Fragments that fail the Z-test are rejected early, reducing overdraw.
    d. **End frame**: Enqueue `WaitVsync` to signal Core 1 to sync and swap buffers.
 3. **Backpressure**: `enqueue_blocking()` spins with NOP when the SPSC queue is full, providing flow control between Core 0 (producer) and Core 1 (consumer).
 

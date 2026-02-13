@@ -25,7 +25,10 @@ None
 - Receives triangle vertex data from UNIT-003 (Register File) via tri_valid and vertex buses
 - Outputs edge function coefficients, bounding box, and vertex attributes to UNIT-005 (Edge Walker / rasterizer iteration stages)
 - Receives fb_base_addr and zb_base_addr configuration from UNIT-003
-- Issues framebuffer and Z-buffer memory requests to UNIT-007 (SRAM Arbiter) ports 1 and 2
+
+**Note:** UNIT-004 does not directly issue SRAM memory requests.
+Triangle setup computes edge coefficients and bounding boxes, then emits fragment data to UNIT-005 (Rasterizer) which in turn passes fragments to UNIT-006 (Pixel Pipeline).
+All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 
 ## Design Description
 
@@ -48,40 +51,34 @@ None
 | `inv_area` | 16 | 1/area (0.16 fixed point) from CPU |
 | `fb_base_addr` | 20 | Framebuffer base address [31:12] |
 | `zb_base_addr` | 20 | Z-buffer base address [31:12] |
-| `fb_ack`, `fb_ready` | 1 each | SRAM arbiter handshake for framebuffer port |
-| `fb_rdata` | 32 | Framebuffer read data (unused) |
-| `zb_ack`, `zb_ready` | 1 each | SRAM arbiter handshake for Z-buffer port |
-| `zb_rdata` | 32 | Z-buffer read data |
+| `downstream_ready` | 1 | UNIT-005 ready to accept setup data |
 
 ### Outputs
 
 | Signal | Width | Description |
 |--------|-------|-------------|
 | `tri_ready` | 1 | Ready to accept new triangle |
-| `fb_req` | 1 | Framebuffer SRAM request |
-| `fb_we` | 1 | Framebuffer write enable (always 1) |
-| `fb_addr` | 24 | Framebuffer SRAM address |
-| `fb_wdata` | 32 | Framebuffer write data (RGB565 in lower 16 bits) |
-| `zb_req` | 1 | Z-buffer SRAM request |
-| `zb_we` | 1 | Z-buffer write enable (0=read, 1=write) |
-| `zb_addr` | 24 | Z-buffer SRAM address |
-| `zb_wdata` | 32 | Z-buffer write data (16-bit depth in lower half) |
+| `setup_valid` | 1 | One-cycle pulse: setup data is ready for UNIT-005 |
+| `setup_edge0_A/B/C` | 3x21 signed | Edge 0 coefficients |
+| `setup_edge1_A/B/C` | 3x21 signed | Edge 1 coefficients |
+| `setup_edge2_A/B/C` | 3x21 signed | Edge 2 coefficients |
+| `setup_bbox_min_x` | 10 | Bounding box minimum X |
+| `setup_bbox_max_x` | 10 | Bounding box maximum X |
+| `setup_bbox_min_y` | 10 | Bounding box minimum Y |
+| `setup_bbox_max_y` | 10 | Bounding box maximum Y |
+| `setup_v0_z`, `setup_v1_z`, `setup_v2_z` | 3x16 | Vertex Z depths |
+| `setup_v0_color`, `setup_v1_color`, `setup_v2_color` | 3x24 | Vertex RGB888 colors |
+| `setup_inv_area` | 16 | 1/area (0.16 fixed point) passed through |
 
 ### Internal State
 
-**FSM States (4-bit):**
+**FSM States (3-bit):**
 - IDLE (0): Waiting for tri_valid, tri_ready asserted
-- SETUP (1): Compute edge function coefficients and bounding box
-- ITER_START (2): Initialize scanline position and compute triangle area
-- EDGE_TEST (3): Evaluate edge functions at current pixel
-- BARY_CALC (4): Check inside/outside and compute barycentric weights
-- INTERPOLATE (5): Interpolate Z and color using barycentric coordinates
-- ZBUF_READ (6): Issue Z-buffer read request
-- ZBUF_WAIT (7): Wait for Z-buffer read acknowledgement
-- ZBUF_TEST (8): Compare interpolated Z with stored Z
-- WRITE_PIXEL (9): Issue framebuffer and Z-buffer writes
-- WRITE_WAIT (10): Wait for write acknowledgements
-- ITER_NEXT (11): Advance to next pixel in bounding box
+- SETUP (1): Compute edge function coefficients and bounding box (1 cycle)
+- EMIT (2): Assert setup_valid for one cycle, output all setup data to UNIT-005
+
+**Note:** Legacy states ITER_START through ITER_NEXT (states 2-11 in previous versions) have been removed.
+Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstream by UNIT-005 (Edge Walker) and UNIT-006 (Pixel Pipeline).
 
 **Vertex Registers:**
 - x0..x2, y0..y2 [9:0]: Integer pixel coordinates (converted from 12.4 by dropping fractional bits)
@@ -94,14 +91,8 @@ None
 **Bounding Box:**
 - bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y [9:0]: Screen-clamped bounding box
 
-**Iteration State:**
-- curr_x, curr_y [9:0]: Current pixel position
-- e0, e1, e2 [31:0 signed]: Edge function values at current pixel
-- w0, w1, w2 [31:0]: Barycentric weights (e * inv_area)
-- interp_z [15:0], interp_r/g/b [7:0]: Interpolated fragment values
-- zbuf_value [15:0]: Z-buffer value read from SRAM
-- inv_area_reg [15:0]: Latched 1/area
-- tri_area_x2 [31:0 signed]: 2x triangle area
+**Latched Pass-Through:**
+- inv_area_reg [15:0]: Latched 1/area (passed through to UNIT-005)
 
 ### Algorithm / Behavior
 
@@ -113,17 +104,10 @@ Computes three edge function coefficient sets from the latched vertex positions:
 
 Computes bounding box as min/max of vertex coordinates clamped to screen (640x480).
 
-**ITER_START State (1 cycle):**
-Sets curr_x/curr_y to bbox top-left. Computes tri_area_x2 by evaluating edge0 at v0.
-
-**Rasterization Loop (EDGE_TEST -> BARY_CALC -> INTERPOLATE -> ZBUF_READ -> ZBUF_WAIT -> ZBUF_TEST -> WRITE_PIXEL -> WRITE_WAIT -> ITER_NEXT):**
-1. Evaluate all three edge functions at (curr_x, curr_y)
-2. If all e0, e1, e2 >= 0: pixel is inside triangle; compute barycentric weights w = e[15:0] * inv_area_reg
-3. Interpolate Z and RGB using weighted sum, shift right 16, and saturate
-4. Read Z-buffer at (zb_base + curr_y*640 + curr_x)
-5. If interp_z < zbuf_value: write RGB565 pixel to framebuffer and new Z to Z-buffer
-6. Advance to next pixel; scan left-to-right, top-to-bottom within bounding box
-7. Return to IDLE when bounding box exhausted
+**Output Handshake (EMIT state):**
+1. Assert `setup_valid` for one cycle with all edge coefficients, bounding box, vertex attributes, and inv_area on the output buses.
+2. Wait for downstream ready (UNIT-005 backpressure).
+3. Return to IDLE, reassert `tri_ready`.
 
 ## Implementation
 
@@ -138,8 +122,14 @@ Sets curr_x/curr_y to bbox top-left. Computes tri_area_x2 by evaluating edge0 at
 - Verify Z-buffer test: closer fragment passes, farther fragment is discarded
 - Verify pixel output: RGB888 to RGB565 conversion is correct (R[7:3], G[7:2], B[7:3])
 - Verify degenerate triangles: zero-area triangle produces no pixel writes
-- Verify SRAM handshake: fb_req/zb_req deassert correctly after ack
+- Verify setup_valid handshake: setup_valid asserts for one cycle and deasserts when downstream_ready is low
 
 ## Design Notes
 
 Migrated from speckit module specification.
+
+**v10.0 reconciliation:** UNIT-004 previously described the entire rasterization pipeline including pixel iteration, Z-buffer access, and framebuffer writes.
+These responsibilities have been split: UNIT-004 now performs only triangle setup (edge coefficients, bounding box), emitting results to UNIT-005 (Edge Walker) which iterates pixels and passes fragments to UNIT-006 (Pixel Pipeline) for Z-test, color write, and SRAM access.
+The FSM was reduced from 12 states (4-bit) to 3 states (3-bit).
+SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
+See DD-015 for rationale.

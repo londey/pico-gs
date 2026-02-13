@@ -28,8 +28,8 @@ None
 ### Internal Interfaces
 
 - Port 0 (highest priority): UNIT-008 (Display Controller) display read
-- Port 1: UNIT-004/UNIT-005 (Rasterizer) framebuffer write
-- Port 2: UNIT-004/UNIT-005 (Rasterizer) Z-buffer read/write
+- Port 1: UNIT-006 (Pixel Pipeline) framebuffer write
+- Port 2: UNIT-006 (Pixel Pipeline) Z-buffer read/write
 - Port 3 (lowest priority): UNIT-006 (Pixel Pipeline) texture read
 - Downstream: connects to external SRAM controller via req/ack handshake
 
@@ -89,6 +89,12 @@ None
 
 **Fixed-Priority Arbitration:**
 Priority order: Port 0 (display) > Port 1 (framebuffer) > Port 2 (Z-buffer) > Port 3 (texture). This ensures display refresh never stalls.
+
+**Temporal Access Pattern Note:**
+With early Z-test support (UNIT-006), a Z-prepass can be performed where only Z-buffer writes occur (color_write disabled).
+During the Z-prepass, Port 1 (framebuffer) sees no traffic, effectively giving Port 2 (Z-buffer) higher throughput since it only competes with Port 0 (display).
+During the subsequent color pass, Port 2 traffic is reduced (fewer Z writes due to early rejection), improving Port 1 framebuffer write throughput.
+This temporal separation improves overall SRAM utilization without requiring changes to the arbiter logic.
 
 **Grant State Machine (2 states):**
 

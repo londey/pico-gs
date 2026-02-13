@@ -34,7 +34,8 @@ None
 - [ ] GPU presence detection succeeds (valid response to SPI transaction)
 - [ ] Default framebuffer addresses configured (FB_DRAW, FB_DISPLAY, FB_ZBUFFER)
 - [ ] Default display mode configured (640×480 @ 60 Hz)
-- [ ] Default rendering config set (Z-test enabled, alpha blend disabled, flat shading)
+- [ ] Default rendering config set (Z-test enabled, alpha blend disabled, flat shading, color write enabled)
+- [ ] Default Z_RANGE register configured (Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF = full range)
 - [ ] Status register polling confirms GPU ready
 - [ ] Entire initialization sequence completes within 100ms from power-on
 - [ ] GPU accepts rendering commands immediately after initialization
@@ -42,3 +43,6 @@ None
 ## Notes
 
 Initialization is performed by UNIT-022 (GPU Driver Layer) during firmware startup. The sequence is documented in [concept_of_execution.md](../design/concept_of_execution.md).
+
+Default register state additions: Z_RANGE is initialized to full range (Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF) so that depth range clipping is effectively disabled until explicitly configured.
+RENDER_MODE is initialized with COLOR_WRITE_EN=1 ensuring color output is enabled by default.

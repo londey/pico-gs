@@ -25,6 +25,7 @@ Performance is highly content-dependent (triangle count, overdraw, texture cache
 - Triangle throughput: ~17,000 triangles/second @ 60 fps (SpinningTeapot: 288 tri/frame)
 - Fill rate: ~12.5 Mpixels/second theoretical maximum (derived from SRAM bandwidth)
 - Frame time: Content-dependent (simple scenes may exceed 60 FPS, complex scenes may drop below)
+- Early Z rejection: Reduces effective fill cost for overdraw-heavy scenes by skipping texture and blending stages for occluded fragments (see REQ-014). Benefit scales with overdraw ratio; scenes with 2-3x overdraw may see 30-50% reduction in SRAM texture bandwidth.
 
 These performance characteristics place the system in the PSX-to-N64 capability range given the hardware constraints.
 

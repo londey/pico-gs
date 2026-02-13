@@ -146,8 +146,9 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 | 0x1F | TEX3_WRAP | R/W | UV wrapping mode (v8.0: MOVED from 0x2C) |
 | 0x20-0x2F | - | - | Reserved (v8.0: FREED from texture registers) |
 | **Rendering Config** ||||
-| 0x30 | RENDER_MODE | R/W | **Unified rendering state** (v8.0: CHANGED, consolidates TRI_MODE+ALPHA_BLEND+Z-modes+dither) |
-| 0x31-0x32 | - | - | Reserved (v8.0: FREED, was ALPHA_BLEND, DITHER_MODE) |
+| 0x30 | RENDER_MODE | R/W | **Unified rendering state** (v10.0: CHANGED, added COLOR_WRITE_EN) |
+| 0x31 | Z_RANGE | R/W | **Depth range clipping min/max** (v10.0: NEW) |
+| 0x32 | - | - | Reserved (v8.0: FREED, was DITHER_MODE) |
 | 0x33-0x3F | - | - | Reserved (rendering config) |
 | **Framebuffer** ||||
 | 0x40 | FB_DRAW | R/W | Draw target framebuffer address |
@@ -700,7 +701,7 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
           01 = CULL_CW (cull clockwise-wound triangles)
           10 = CULL_CCW (cull counter-clockwise triangles)
           11 = Reserved (treat as CULL_NONE)
-[4]       Reserved
+[4]       COLOR_WRITE_EN: Enable color buffer writes (1=enabled, 0=Z-only pass) - v10.0: moved from FB_CONTROL
 [3]       Z_WRITE_EN: Write to Z-buffer on depth test pass
 [2]       Z_TEST_EN: Enable depth testing
 [1]       Reserved
@@ -714,14 +715,15 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
 
 **Common Mode Combinations**:
 
-| Use Case | GOURAUD | Z_TEST_EN | Z_WRITE_EN | Z_COMPARE | ALPHA_BLEND | CULL_MODE |
-|----------|---------|-----------|------------|-----------|-------------|-----------|
-| Opaque 3D object | 1 | 1 | 1 | LEQUAL | DISABLED | CULL_CW |
-| Transparent object | 1 | 1 | 0 | LEQUAL | ALPHA_BLEND | CULL_NONE |
-| Skybox | 1 | 0 | 0 | ALWAYS | DISABLED | CULL_NONE |
-| Particle additive | 1 | 1 | 0 | LEQUAL | ADD | CULL_NONE |
-| UI/HUD 2D | 0 | 0 | 0 | ALWAYS | ALPHA_BLEND | CULL_NONE |
-| Z-prepass | 0 | 1 | 1 | LEQUAL | DISABLED | CULL_CW |
+| Use Case | GOURAUD | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE | ALPHA_BLEND | CULL_MODE |
+|----------|---------|-----------|------------|----------------|-----------|-------------|-----------|
+| Opaque 3D object | 1 | 1 | 1 | 1 | LEQUAL | DISABLED | CULL_CW |
+| Transparent object | 1 | 1 | 0 | 1 | LEQUAL | ALPHA_BLEND | CULL_NONE |
+| Skybox | 1 | 0 | 0 | 1 | ALWAYS | DISABLED | CULL_NONE |
+| Particle additive | 1 | 1 | 0 | 1 | LEQUAL | ADD | CULL_NONE |
+| UI/HUD 2D | 0 | 0 | 0 | 1 | ALWAYS | ALPHA_BLEND | CULL_NONE |
+| Z-prepass | 0 | 1 | 1 | 0 | LEQUAL | DISABLED | CULL_CW |
+| Depth-only shadow | 0 | 1 | 1 | 0 | LEQUAL | DISABLED | CULL_CW |
 
 **Notes**:
 - Z_COMPARE moved from FB_ZBUFFER[34:32] for better grouping with Z_TEST_EN/Z_WRITE_EN
@@ -736,17 +738,41 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
   if signed_area == 0: degenerate (always culled)
   ```
 
-**Reset Value**: 0x0000000000000401 (GOURAUD=1, DITHER_EN=1, DITHER_PATTERN=0, Z_COMPARE=LEQUAL, all else 0)
+**Reset Value**: 0x0000000000000411 (GOURAUD=1, COLOR_WRITE_EN=1, DITHER_EN=1, DITHER_PATTERN=0, Z_COMPARE=LEQUAL, all else 0)
 
 ---
 
-### 0x31: ALPHA_BLEND (REMOVED in v8.0)
+### 0x31: Z_RANGE (Depth Range Clipping)
 
-**v7.0**: Separate ALPHA_BLEND register at address 0x31
+Depth range clipping register (Z scissor). Fragments whose Z value falls outside [Z_RANGE_MIN, Z_RANGE_MAX] are discarded before any SRAM access.
 
-**v8.0 CHANGE**: Alpha blend mode packed into RENDER_MODE[9:7]. This register no longer exists.
+```
+[63:32]   Reserved (write as 0)
+[31:16]   Z_RANGE_MAX: Maximum Z value (16-bit unsigned, inclusive)
+[15:0]    Z_RANGE_MIN: Minimum Z value (16-bit unsigned, inclusive)
+```
 
-See RENDER_MODE register (0x30) for current alpha blend mode control.
+**Depth Range Test**:
+```
+if fragment_z < Z_RANGE_MIN or fragment_z > Z_RANGE_MAX:
+    discard fragment (no SRAM access, no Z-test, no color write)
+```
+
+**Use Cases**:
+- **Fog/distance culling**: Set Z_RANGE_MAX to discard fragments beyond a fog distance
+- **Near-plane clipping**: Set Z_RANGE_MIN to discard fragments too close to camera
+- **Depth slicing**: Render specific depth layers for multi-pass effects
+- **Disabled (default)**: Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF passes all fragments
+
+**Notes**:
+- Test uses inclusive comparison: MIN <= fragment_z <= MAX
+- Combined with early Z-test in Stage 0 of pixel pipeline (UNIT-006)
+- Z_RANGE applies regardless of RENDER_MODE.Z_TEST_EN setting (independent clip test)
+- v8.0: This address was previously ALPHA_BLEND (REMOVED in v8.0, moved to RENDER_MODE[9:7])
+
+**Reset Value**: 0x00000000FFFF0000 (Z_RANGE_MAX=0xFFFF, Z_RANGE_MIN=0x0000 -- all fragments pass)
+
+**Version**: Added in v10.0
 
 ---
 
@@ -868,7 +894,7 @@ Framebuffer control: scissor rectangle and write enable masks.
 ```
 [63:43]   Reserved (write as 0)
 [42]      STENCIL_WRITE_EN: Enable stencil buffer writes (future use)
-[41]      COLOR_WRITE_EN: Enable color buffer writes (0=Z-only pass)
+[41]      Reserved (v10.0: COLOR_WRITE_EN moved to RENDER_MODE[4])
 [40]      Z_WRITE_EN_OVERRIDE: Override RENDER_MODE.Z_WRITE_EN (reserved)
 [39:30]   SCISSOR_HEIGHT: Scissor rectangle height (10 bits, 1-1024)
 [29:20]   SCISSOR_WIDTH: Scissor rectangle width (10 bits, 1-1024)
@@ -883,8 +909,8 @@ Framebuffer control: scissor rectangle and write enable masks.
 - Typical use: UI rendering (set scissor per UI element to prevent overdraw)
 
 **Write Enable Flags**:
-- **COLOR_WRITE_EN** (bit 41): When 0, disables all color writes to framebuffer
-  - Use for Z-only prepass (render depth but not color)
+- **COLOR_WRITE_EN**: Moved to RENDER_MODE[4] in v10.0. See RENDER_MODE register (0x30) for color write control.
+  - Use RENDER_MODE.COLOR_WRITE_EN for Z-only prepass (render depth but not color)
   - Z-test still occurs if RENDER_MODE.Z_TEST_EN=1
 
 - **Z_WRITE_EN_OVERRIDE** (bit 40): **Future use, currently reserved**
@@ -895,12 +921,12 @@ Framebuffer control: scissor rectangle and write enable masks.
 
 **Common Use Cases**:
 
-| Use Case | COLOR_WRITE_EN | Z_WRITE_EN_OVERRIDE | SCISSOR |
-|----------|----------------|---------------------|---------|
-| Normal rendering | 1 | 0 (use RENDER_MODE) | Full screen or UI bounds |
-| Z-only prepass | 0 | 0 (use RENDER_MODE) | Full screen |
-| UI element | 1 | 0 | UI element bounding box |
-| HUD overlay | 1 | 0 | HUD region |
+| Use Case | Z_WRITE_EN_OVERRIDE | SCISSOR |
+|----------|---------------------|---------|
+| Normal rendering | 0 (use RENDER_MODE) | Full screen or UI bounds |
+| Z-only prepass | 0 (use RENDER_MODE) | Full screen |
+| UI element | 0 | UI element bounding box |
+| HUD overlay | 0 | HUD region |
 
 **Reset Value**: 0x00000000_3FF003FF (full screen scissor 1024×1024 at 0,0, all writes enabled)
 

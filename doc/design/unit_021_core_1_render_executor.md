@@ -61,13 +61,15 @@ None
    a. **Dequeue**: Attempt `consumer.dequeue()`. If `None`, increment `idle_spins` and execute a NOP (spin-wait).
    b. **Dispatch**: On successful dequeue, call `render::commands::execute(&mut gpu, &cmd)` which pattern-matches the `RenderCommand` variant:
       - `ClearFramebuffer` -- renders two full-screen triangles for color clear; optionally clears depth buffer with two more triangles at far plane.
-      - `SetTriMode` -- writes TRI_MODE register with gouraud/z_test/z_write flags.
+      - `SetTriMode` -- writes RENDER_MODE register (0x30) with gouraud/z_test/z_write/color_write flags.
       - `SubmitScreenTriangle` -- writes COLOR, UV0 (if textured), and VERTEX registers for 3 vertices. Retained for simple triangle demos.
       - `RenderMeshPatch` -- **full vertex processing pipeline**:
         1. DMA prefetch patch data from flash into inactive input buffer (double-buffered).
         2. Vertex processing: unpack u16/i16 SoA blob (positions, normals, UVs), convert to f32 (positions via VCVT, normals divide by 32767.0, UVs divide by 8192.0), transform (MVP with quantization bias), perspective divide, viewport map, compute lighting, pack GpuVertex into 16-entry cache.
-        3. Triangle submission: for each u8 strip entry, extract vertex_idx and kick, back-face cull, optionally clip, pack GPU register writes into active output buffer.
-        4. SPI output: submit filled output buffer to BufferedSpiTransport. Swap buffers.
+        3. RENDER_MODE configuration: write RENDER_MODE register (0x30) with flags from the command (gouraud, z_test, z_write, color_write). The `color_write` flag (bit 4) controls whether color buffer writes are enabled; when false, the GPU performs Z-only rendering for prepass.
+        4. Optional Z_RANGE write: if the command includes z_range parameters (z_range_min, z_range_max), write the Z_RANGE register (0x31) with `{z_range_max[15:0], z_range_min[15:0]}`. This restricts Z-test to a sub-range of the depth buffer.
+        5. Triangle submission: for each u8 strip entry, extract vertex_idx and kick, back-face cull, optionally clip, pack GPU register writes into active output buffer.
+        6. SPI output: submit filled output buffer to BufferedSpiTransport. Swap buffers.
       - `UploadTexture` -- uploads texture data via MEM_ADDR/MEM_DATA and configures TEX0 registers.
       - `WaitVsync` -- blocks on VSYNC pin edge, then swaps draw/display framebuffers.
    c. **Frame boundary**: After executing a `WaitVsync` command, increment `frame_count`, log performance stats every 120 frames, and reset per-frame counters.

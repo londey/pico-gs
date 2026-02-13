@@ -49,6 +49,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - **`read()` parameters**: `addr: u8` (7-bit register address with bit 7 set for read).
 - **`upload_memory()` parameters**: `gpu_addr: u32` (target SRAM address), `data: &[u32]` (word array to upload).
 - **`submit_triangle()` parameters**: Three `&GpuVertex` references and a `textured: bool` flag.
+- **`gpu_set_render_mode()` parameters**: `gouraud: bool`, `z_test: bool`, `z_write: bool`, `color_write: bool` -- configure RENDER_MODE register (0x30) flags. When `color_write` is false, the GPU writes only to the Z-buffer (Z-prepass mode).
+- **`gpu_set_z_range()` parameters**: `z_min: u16`, `z_max: u16` -- write Z_RANGE register (0x31) to restrict Z-test to a sub-range. Default: min=0, max=0xFFFF (full range).
 - **`gpu_set_dither_mode()` parameters**: `enabled: bool` -- enable or disable ordered dithering.
 - **`gpu_set_color_grade_enable()` parameters**: `enabled: bool` -- enable or disable color grading LUT at scanout.
 - **`gpu_upload_color_lut()` parameters**: `red: &[u32; 32]` (Red LUT, 32 RGB888 entries), `green: &[u32; 64]` (Green LUT, 64 RGB888 entries), `blue: &[u32; 32]` (Blue LUT, 32 RGB888 entries).
@@ -81,21 +83,23 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 5. **Buffer swap** (`swap_buffers()`): Swap `draw_fb` and `display_fb` values, write both to their respective GPU registers.
 6. **Memory upload** (`upload_memory()`): Write base address to MEM_ADDR (0x70), then write each data word to MEM_DATA (0x71) which auto-increments the address.
 7. **Triangle submit** (`submit_triangle()`): For each of 3 vertices, write COLOR register, optionally UV0 register (if textured), then VERTEX register (third VERTEX write triggers GPU rasterization).
-8. **Dither mode** (`gpu_set_dither_mode(enabled)`): Write DITHER_MODE register (0x32) with 0x01 if enabled, 0x00 if disabled. Dithering smooths 10.8-to-RGB565 quantization using a blue noise pattern; enabled by default after GPU init.
-9. **Color grade enable** (`gpu_set_color_grade_enable(enabled)`): Write COLOR_GRADE_CTRL register (0x44) with 0x01 if enabled, 0x00 if disabled. The LUT must be uploaded before enabling (undefined output with uninitialized LUT).
-10. **Color LUT upload** (`gpu_upload_color_lut(red, green, blue)`):
+8. **Render mode** (`gpu_set_render_mode(gouraud, z_test, z_write, color_write)`): Pack flags into a single byte (bit 0 = gouraud, bit 1 = textured (reserved, always 0 via this API), bit 2 = z_test, bit 3 = z_write, bit 4 = color_write) and write to RENDER_MODE register (0x30). Replaces the legacy TRI_MODE register.
+9. **Z range** (`gpu_set_z_range(z_min, z_max)`): Write Z_RANGE register (0x31) with `{z_max[15:0], z_min[15:0]}` packed into the lower 32 bits. Default value after reset is 0x0000FFFF (min=0, max=0xFFFF, full range). Used to restrict Z-test to a depth sub-range for layered rendering or Z-prepass partitioning.
+10. **Dither mode** (`gpu_set_dither_mode(enabled)`): Write DITHER_MODE register (0x32) with 0x01 if enabled, 0x00 if disabled. Dithering smooths 10.8-to-RGB565 quantization using a blue noise pattern; enabled by default after GPU init.
+11. **Color grade enable** (`gpu_set_color_grade_enable(enabled)`): Write COLOR_GRADE_CTRL register (0x44) with 0x01 if enabled, 0x00 if disabled. The LUT must be uploaded before enabling (undefined output with uninitialized LUT).
+12. **Color LUT upload** (`gpu_upload_color_lut(red, green, blue)`):
     a. Write COLOR_GRADE_CTRL with bit 2 set (RESET_ADDR) to reset the LUT address pointer.
     b. For each of the 32 Red LUT entries: write COLOR_GRADE_LUT_ADDR (0x45) with `(0b00 << 6) | index`, then write COLOR_GRADE_LUT_DATA (0x46) with `red[index] & 0xFFFFFF`.
     c. For each of the 64 Green LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b01 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `green[index] & 0xFFFFFF`.
     d. For each of the 32 Blue LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b10 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `blue[index] & 0xFFFFFF`.
     e. Write COLOR_GRADE_CTRL with bit 1 set (SWAP_BANKS) to activate the new LUT data at the next vblank.
-11. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR, optionally UV0, then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on kick parameter (0/1/2).
-12. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
+13. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR, optionally UV0, then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on kick parameter (0/1/2).
+14. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
 
 ## Implementation
 
 - `crates/pico-gs-core/src/gpu/mod.rs`: Platform-agnostic GPU driver (generic over `SpiTransport`)
-- `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants
+- `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants (includes `Z_RANGE = 0x31`, `RENDER_MODE = 0x30`, `RENDER_MODE_COLOR_WRITE = 1 << 4`)
 - `crates/pico-gs-core/src/gpu/vertex.rs`: Vertex packing
 
 ## Verification
@@ -110,6 +114,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - **Dither mode test**: Verify `gpu_set_dither_mode(true)` writes 0x01 to DITHER_MODE (0x32), and `gpu_set_dither_mode(false)` writes 0x00.
 - **Color grade enable test**: Verify `gpu_set_color_grade_enable(true)` writes 0x01 to COLOR_GRADE_CTRL (0x44), and `gpu_set_color_grade_enable(false)` writes 0x00.
 - **Color LUT upload test**: Verify `gpu_upload_color_lut()` performs the correct sequence: reset addr, 32 red entries (addr + data writes), 64 green entries, 32 blue entries, then swap banks. Total: 260 SPI transactions.
+- **Render mode test**: Verify `gpu_set_render_mode(true, true, true, true)` writes 0x1D to RENDER_MODE (0x30) (bits 0,2,3,4 set), and `gpu_set_render_mode(false, false, false, false)` writes 0x00. Verify `color_write=false` produces a value with bit 4 clear.
+- **Z range test**: Verify `gpu_set_z_range(0, 0xFFFF)` writes 0x0000_FFFF_0000_0000 to Z_RANGE (0x31). Verify `gpu_set_z_range(0x100, 0xFF00)` writes the correct packed value.
 
 ## Design Notes
 

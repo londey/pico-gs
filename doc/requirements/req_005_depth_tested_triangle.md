@@ -45,3 +45,7 @@ None
 ## Notes
 
 User Story: As a firmware developer, I want to enable Z-buffer testing, so that overlapping triangles render in correct depth order
+
+**Implementation note (early Z optimization):** When Z_TEST_EN=1 and Z_COMPARE is not ALWAYS, the Z-buffer read and comparison may be performed before texture fetch as an optimization (see REQ-014).
+This does not change functional behavior — the same fragments pass or fail — but rejected fragments skip texture and blending stages, reducing SRAM bandwidth consumption.
+The Z-buffer write remains at the end of the pipeline regardless of early Z status.

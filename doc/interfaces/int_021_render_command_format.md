@@ -65,7 +65,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
 | mv_matrix | Mat4x4 | Model-view matrix (for normal/lighting transform) |
 | lights | [DirectionalLight; 4] | Directional light sources |
 | ambient | AmbientColor | Ambient light level |
-| flags | RenderFlags | textured, z_test, z_write, gouraud |
+| flags | RenderFlags | textured, z_test, z_write, gouraud, color_write |
 | clip_flags | u8 | 6-bit frustum plane crossing bitmask from Core 0 culling (bit per plane: left, right, bottom, top, near, far) |
 
 **Processing (Core 1)**:
@@ -81,7 +81,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
    h. Compute Gouraud lighting: `color = ambient + Σ(max(0, dot(N, L[i])) × light_color[i])`
    i. If textured: convert UV i16 → f32 (divide by 8192.0). Compute U/W, V/W, 1/W in 1.15 fixed-point
    j. Pack into GpuVertex format and store in clip-space vertex cache
-3. Configure GPU RENDER_MODE register based on flags
+3. Configure GPU RENDER_MODE register based on flags (includes GOURAUD, Z_TEST_EN, Z_WRITE_EN, COLOR_WRITE_EN, Z_COMPARE, ALPHA_BLEND, CULL_MODE)
 4. For each index entry in the packed u8 strip command stream:
    a. Extract vertex index (bits [7:4]) and kick control (bits [3:2])
    b. Look up transformed vertex from cache

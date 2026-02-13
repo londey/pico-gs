@@ -26,7 +26,8 @@ None
 - Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata
 - Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses
 - Outputs framebuffer configuration (fb_draw, fb_display) to UNIT-007 (SRAM Arbiter) and UNIT-008 (Display Controller)
-- Outputs mode flags (gouraud, textured, z_test, z_write) to rasterizer pipeline
+- Outputs mode flags (gouraud, textured, z_test, z_write, color_write) to rasterizer pipeline
+- Outputs Z range clipping parameters (z_range_min, z_range_max) to pixel pipeline (UNIT-006)
 - Outputs clear_trigger/clear_color to framebuffer clear logic
 - Outputs dither_enable/dither_pattern to UNIT-006 (Pixel Pipeline) for ordered dithering control
 - Outputs fb_display_sync/lut_dma_trigger signals to UNIT-008 (Display Controller) for LUT auto-load DMA (v9.0)
@@ -59,10 +60,13 @@ None
 | `tri_z[0:2]` | 3x25 | Vertex Z depth values |
 | `tri_color[0:2]` | 3x32 | Vertex RGBA8888 colors |
 | `tri_inv_area` | 16 | 1/area (0.16 fixed), CPU-provided |
-| `mode_gouraud` | 1 | Gouraud shading enabled (TRI_MODE[0]) |
-| `mode_textured` | 1 | Texture mapping enabled (TRI_MODE[1]) |
-| `mode_z_test` | 1 | Z-test enabled (TRI_MODE[2]) |
-| `mode_z_write` | 1 | Z-write enabled (TRI_MODE[3]) |
+| `mode_gouraud` | 1 | Gouraud shading enabled (RENDER_MODE[0]) |
+| `mode_textured` | 1 | Texture mapping enabled (RENDER_MODE[1]) |
+| `mode_z_test` | 1 | Z-test enabled (RENDER_MODE[2]) |
+| `mode_z_write` | 1 | Z-write enabled (RENDER_MODE[3]) |
+| `mode_color_write` | 1 | Color buffer write enabled (RENDER_MODE[4]) |
+| `z_range_min` | 16 | Z range clipping minimum (Z_RANGE[15:0]) |
+| `z_range_max` | 16 | Z range clipping maximum (Z_RANGE[31:16]) |
 | `fb_draw` | 20 | Draw target address [31:12] |
 | `fb_display` | 20 | Display source address [31:12] |
 | `clear_color` | 32 | RGBA8888 clear color |
@@ -105,6 +109,7 @@ None
 | 0x0A | CLEAR_COLOR | R/W |
 | 0x0B | CLEAR | W (pulse) |
 | 0x10 | STATUS | R (busy, vblank, fifo_depth, vertex_count) |
+| 0x31 | Z_RANGE | R/W (z_range_min, z_range_max) |
 | 0x32 | DITHER_MODE | R/W (enable, pattern) |
 | 0x47 | FB_DISPLAY_SYNC | W |
 | 0x7F | ID | R (0x6702) |
@@ -165,6 +170,9 @@ None
 - **Verify blocking timeout (v9.0)**: confirm FB_DISPLAY_SYNC blocks SPI transaction until vsync (max 16.67ms)
 - Verify COLOR_GRADE_LUT_ADDR: write LUT select and index, confirm color_grade_lut_select and color_grade_lut_index outputs
 - Verify COLOR_GRADE_LUT_DATA: write data, confirm 24-bit color_grade_lut_data output and one-cycle color_grade_lut_wr pulse
+- Verify Z_RANGE: write then read back, confirm z_range_min and z_range_max outputs match written value
+- Verify Z_RANGE reset: confirm reset value is 0x0000FFFF (min=0, max=0xFFFF)
+- Verify mode_color_write output: write RENDER_MODE with bit 4 set/clear, confirm mode_color_write output tracks
 - Verify reset: all registers return to defaults (white color, address 0, modes disabled, dither enabled)
 
 ## Design Notes

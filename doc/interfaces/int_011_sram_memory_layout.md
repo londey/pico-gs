@@ -331,15 +331,21 @@ With >85% expected hit rate, average texture SRAM bandwidth is significantly red
 ```
 Priority: LOW
 Pattern: Matches rasterization pattern
-Bandwidth: ~50 MB/s for read + write
-Access: Read-test-write per pixel
+Bandwidth: ~50 MB/s for read + write (max), reduced with early Z-test
+Access: Read-test (early, before texture) + write (late, after all processing)
 ```
 
-**Z-Buffer Access Sequence**:
-1. Read current Z at (x, y)
-2. Compare with incoming Z
-3. If test passes: write new Z and color
-4. If test fails: discard pixel
+**Z-Buffer Access Sequence** (with early Z-test, v10.0):
+1. **Stage 0 (Early)**: Read current Z at (x, y)
+2. Compare with incoming Z (using RENDER_MODE.Z_COMPARE function)
+3. If test fails: discard fragment immediately (no texture fetch, no color write, no Z write)
+4. If test passes: proceed through texture/blend pipeline (Stages 1-5)
+5. **Stage 6 (Late)**: If Z_WRITE_EN=1, write new Z value to Z-buffer
+
+**Note**: Z-buffer reads now occur before texture reads in the pipeline (UNIT-006 Stage 0 vs Stage 1+).
+This may improve bandwidth utilization: early fragment rejection reduces total SRAM accesses for texture, framebuffer read (alpha blend), and Z write.
+In scenes with high overdraw (3-4x), early Z-test can reduce effective Z+texture+FB bandwidth by 30-50%.
+No changes to Z-buffer addresses, sizes, or data format.
 
 ---
 

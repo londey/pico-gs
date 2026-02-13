@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL implement a render command execution pipeline on Core 1 that dequeues render commands from the inter-core SPSC queue and dispatches each command to the GPU driver. The pipeline SHALL support the following command types: framebuffer clear (with optional depth clear), triangle rendering mode configuration, mesh patch rendering (vertex transformation, lighting, culling, clipping, and GPU submission), screen-space triangle submission (for simple demos), texture upload, and vsync synchronization with framebuffer swap. The primary per-frame command type SHALL be RenderMeshPatch. Frame boundaries SHALL be delineated by WaitVsync commands.
+The system SHALL implement a render command execution pipeline on Core 1 that dequeues render commands from the inter-core SPSC queue and dispatches each command to the GPU driver. The pipeline SHALL support the following command types: framebuffer clear (with optional depth clear), triangle rendering mode configuration (including per-material color write enable), mesh patch rendering (vertex transformation, lighting, culling, clipping, and GPU submission), screen-space triangle submission (for simple demos), texture upload, and vsync synchronization with framebuffer swap. The primary per-frame command type SHALL be RenderMeshPatch. Frame boundaries SHALL be delineated by WaitVsync commands.
 
 ## Rationale
 
@@ -40,3 +40,6 @@ None
 On the RP2350 platform, the executor runs in an infinite loop on Core 1, spinning with NOP when the queue is empty. On the PC platform, commands are executed synchronously in the main loop (no queue). The command dispatch logic is platform-agnostic and shared. See REQ-100 for the multi-platform architecture.
 
 Framebuffer clear is implemented by rendering two full-viewport triangles (color clear) plus two additional far-plane triangles when depth clear is requested. Performance counters are logged every 120 frames via defmt (RP2350) or tracing (PC).
+
+**Z-prepass rendering pattern:** The per-material color write enable (COLOR_WRITE_EN in RENDER_MODE) supports a Z-prepass workflow: first render all opaque geometry with COLOR_WRITE_EN=0 and Z_WRITE_EN=1 to populate the Z-buffer, then re-render with COLOR_WRITE_EN=1 and Z_WRITE_EN=0 using EQUAL depth compare.
+Combined with early Z rejection (REQ-014), this eliminates overdraw cost for the color pass since every fragment either passes (exact depth match) or is rejected early.

@@ -36,6 +36,84 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-018: Early Z-Test, Depth Range Clipping, and Per-Material Color Write Enable
+
+**Date:** 2026-02-13
+**Status:** Proposed
+**Implementation:** RTL PENDING, RUST PENDING
+
+### Context
+
+The pixel pipeline (UNIT-006) currently performs the Z-buffer test at Stage 5, after texture cache lookup, texture sampling, format promotion, multi-texture blending, and vertex color modulation.
+When a fragment fails the Z-test, all texture fetches and blending computations for that fragment are wasted.
+In scenes with high overdraw (multiple overlapping objects), this wastes significant SRAM bandwidth and pipeline cycles on fragments that will never be visible.
+
+Additionally, there is no mechanism to discard fragments by depth range (analogous to X/Y scissor), and the COLOR_WRITE_EN flag is located in FB_CONTROL (0x43) rather than alongside other per-material render controls in RENDER_MODE (0x30).
+
+### Decision
+
+Three related changes to the pixel pipeline and register layout:
+
+1. **Early Z-Test**: Move Z-buffer read and depth comparison from Stage 5 to Stage 0.
+   If a fragment fails, skip all subsequent stages.
+   Z-buffer write remains at Stage 6.
+   Bypassed when Z_TEST_EN=0 or Z_COMPARE=ALWAYS.
+
+2. **Depth Range Clipping (Z Scissor)**: Add Z_RANGE register at 0x31 with Z_RANGE_MIN [15:0] and Z_RANGE_MAX [31:16].
+   Fragments outside [MIN, MAX] are discarded before any SRAM access.
+   When MIN=0x0000 and MAX=0xFFFF, all fragments pass (disabled).
+
+3. **Per-Material Color Write Enable**: Move COLOR_WRITE_EN from FB_CONTROL (0x43, bit 41) to RENDER_MODE (0x30, bit 4).
+   Groups all per-material write controls in a single register.
+
+### Rationale
+
+**Early Z-Test:**
+- Eliminates wasted texture fetches for occluded fragments
+- In high-overdraw scenes (3-4x), ~60-75% of fragments fail the Z-test
+- Bypass conditions checked combinationally at zero cost
+
+**Depth Range Clipping:**
+- Zero-cost rejection: register comparison only, no SRAM access
+- Register address 0x31 freed in v8.0 (previously ALPHA_BLEND)
+- Analogous to X/Y scissor, completing the 3D scissor volume
+
+**Per-Material Color Write Enable:**
+- Reduces register writes per material change
+- Groups related controls: Z_TEST_EN (bit 2), Z_WRITE_EN (bit 3), COLOR_WRITE_EN (bit 4)
+
+### Alternatives Considered
+
+1. **Late Z-test only**: Rejected -- texture fetches for occluded fragments are the primary bandwidth waste.
+2. **Hierarchical Z-buffer (Hi-Z)**: Rejected -- requires additional BRAM. Could be a future enhancement.
+3. **Separate Z_RANGE_MIN and Z_RANGE_MAX registers**: Rejected -- both fit in a single 32-bit register.
+4. **Keep COLOR_WRITE_EN in FB_CONTROL**: Rejected -- requires extra register write per material.
+
+### Consequences
+
+**Hardware (RTL):**
+- UNIT-006: Pipeline reordered; new Stage 0 with Z-buffer read + compare + depth range check
+- UNIT-003: New Z_RANGE register decode; COLOR_WRITE_EN routing from RENDER_MODE
+- UNIT-007: Z-buffer read requests arrive before texture read requests
+
+**Firmware (Rust):**
+- INT-020: New `gpu_set_z_range()`; `gpu_set_render_mode()` updated for COLOR_WRITE_EN
+- INT-021: RenderFlags gains `color_write` field
+- Migration: Code using FB_CONTROL[41] must move to RENDER_MODE[4]
+
+**Performance:**
+- Positive: Eliminates wasted texture bandwidth for occluded fragments
+- Positive: Depth range clipping is free (register comparison only)
+- Neutral: No additional BRAM consumption
+- Neutral: Pipeline latency unchanged for passing fragments
+
+### References
+
+- INT-010, INT-011, INT-020, INT-021, UNIT-006, REQ-027
+
+---
+
+
 ## DD-017: 16-bit Fixed-Point Mesh Vertex Data with SoA Patch Layout
 
 **Date:** 2026-02-13

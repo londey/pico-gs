@@ -191,6 +191,54 @@ gpu_upload_texture_with_mipmaps(
 
 ---
 
+## Rendering Configuration
+
+### `gpu_set_render_mode(handle: &GpuHandle, gouraud: bool, z_test: bool, z_write: bool, color_write: bool, z_compare: ZCompare, alpha_blend: AlphaBlend, cull_mode: CullMode, dither: bool)`
+
+Configure per-material rendering state in a single register write.
+
+**Sequence**:
+1. Build RENDER_MODE register value from parameters:
+   ```rust
+   let value = (z_compare as u64) << 13
+             | (dither as u64) << 10
+             | (alpha_blend as u64) << 7
+             | (cull_mode as u64) << 5
+             | (color_write as u64) << 4
+             | (z_write as u64) << 3
+             | (z_test as u64) << 2
+             | (gouraud as u64);
+   ```
+2. `gpu_write(RENDER_MODE, value)`
+
+**Parameters**:
+- `gouraud`: Enable Gouraud shading (true) or flat shading (false)
+- `z_test`: Enable depth testing
+- `z_write`: Enable Z-buffer writes on depth test pass
+- `color_write`: Enable color buffer writes (false = Z-only prepass)
+- `z_compare`: Depth comparison function (LESS, LEQUAL, EQUAL, GEQUAL, GREATER, NOTEQUAL, ALWAYS, NEVER)
+- `alpha_blend`: Alpha blending mode (DISABLED, ADD, SUBTRACT, ALPHA_BLEND)
+- `cull_mode`: Backface culling (NONE, CW, CCW)
+- `dither`: Enable ordered dithering
+
+### `gpu_set_z_range(handle: &GpuHandle, z_min: u16, z_max: u16)`
+
+Configure depth range clipping (Z scissor). Fragments outside [z_min, z_max] are discarded before any SRAM access.
+
+**Sequence**:
+1. `gpu_write(Z_RANGE, ((z_max as u64) << 16) | (z_min as u64))`
+
+**Parameters**:
+- `z_min`: Minimum Z value (16-bit unsigned, inclusive). Fragments with Z < z_min are discarded.
+- `z_max`: Maximum Z value (16-bit unsigned, inclusive). Fragments with Z > z_max are discarded.
+
+**Notes**:
+- Default (disabled): z_min=0x0000, z_max=0xFFFF (passes all fragments)
+- Depth range test is independent of RENDER_MODE.Z_TEST_EN
+- Depth range test occurs before early Z-test in the pixel pipeline (Stage 0)
+
+---
+
 ## Dithering and Color Grading
 
 ### `gpu_set_dither_mode(handle: &GpuHandle, enabled: bool)`

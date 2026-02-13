@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Texture sampling, blending, z-test, framebuffer write
+Depth range clipping, early Z-test, texture sampling, blending, framebuffer write
 
 ## Implements Requirements
 
@@ -60,8 +60,8 @@ Texture sampling, blending, z-test, framebuffer write
 
 ### Outputs
 
-- Pixel color (RGB565) to framebuffer via SRAM arbiter
-- Z value to Z-buffer (if Z_WRITE enabled)
+- Pixel color (RGB565) to framebuffer via SRAM arbiter (if COLOR_WRITE_EN=1)
+- Z value to Z-buffer (if Z_WRITE_EN=1)
 
 ### Pipeline Data Format
 
@@ -81,7 +81,22 @@ All internal fragment processing uses **10.8 fixed-point format** (18 bits per c
 
 The pixel pipeline processes rasterized fragments through a 7-stage pipeline. All color operations use 10.8 fixed-point format (REQ-134).
 
-**Stage 0: Texture Cache Lookup (per enabled texture unit, REQ-131):**
+**Stage 0: Depth Range Test + Early Z-Test:**
+- **Depth Range Test** (Z Scissor): Compare fragment Z against Z_RANGE register (0x31):
+  - If `fragment_z < Z_RANGE_MIN` or `fragment_z > Z_RANGE_MAX`: discard fragment immediately
+  - No SRAM access required (register comparison only)
+  - When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF: all fragments pass (effectively disabled)
+- **Early Z-Test** (REQ-027, RENDER_MODE.Z_COMPARE):
+  - Read Z-buffer value at fragment (x, y) from SRAM
+  - Compare fragment Z against Z-buffer using Z_COMPARE function
+  - If test fails: discard fragment, skip all subsequent stages (no texture fetch, no FB write)
+  - If test passes: continue to Stage 1
+  - **Bypass conditions**: Early Z-test is skipped (fragment always passes) when:
+    - RENDER_MODE.Z_TEST_EN = 0 (depth testing disabled)
+    - RENDER_MODE.Z_COMPARE = ALWAYS (110)
+  - Z-buffer write deferred to Stage 6 (ensures only visible fragments update Z)
+
+**Stage 1: Texture Cache Lookup (per enabled texture unit, REQ-131):**
 - Apply UV wrapping mode (REQ-012, TEXn_WRAP)
 - Compute block_x = pixel_x / 4, block_y = pixel_y / 4
 - Compute cache set = (block_x[5:0] ^ block_y[5:0]) (XOR set indexing)
@@ -89,14 +104,14 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
 - **HIT:** Read 4 bilinear texels from interleaved banks (1 cycle)
 - **MISS:** Stall pipeline, execute cache fill (see below), then read texels
 
-**Stage 1: Texture Sampling (per enabled texture unit):**
+**Stage 2: Texture Sampling (per enabled texture unit):**
 - On cache hit: read decompressed RGBA5652 texels directly from cache banks
 - On cache miss: fetch 4x4 block from SRAM, decompress, fill cache line:
   - FORMAT=00 (RGBA4444): Read 32 bytes from SRAM, convert to RGBA5652
   - FORMAT=01 (BC1): Read 8 bytes from SRAM, decompress to RGBA5652
 - Apply swizzle pattern (REQ-011, TEXn_FMT.SWIZZLE)
 
-**Stage 2: Format Promotion (RGBA5652 → 10.8):**
+**Stage 3: Format Promotion (RGBA5652 → 10.8):**
 - Promote texture data to 10.8 fixed-point via `texel_promote.sv` (combinational):
   - R5→R10: `{R5, R5}` (left shift 5, replicate MSBs)
   - G6→G10: `{G6, G6[5:2]}` (left shift 4, replicate MSBs)
@@ -104,7 +119,7 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
   - A2→A10: expand (00→0, 01→341, 10→682, 11→1023)
 - Fractional bits are zero after promotion
 
-**Stage 3: Multi-Texture Blending (10.8 precision):**
+**Stage 4: Multi-Texture Blending (10.8 precision):**
 - Blend up to 4 texture units sequentially using TEXn_BLEND modes (REQ-009)
 - TEX0_BLEND is ignored (first texture is passthrough)
 - Blend operations use 18×18 DSP multipliers:
@@ -113,27 +128,24 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
   - **SUBTRACT:** `result = saturate(a - b)` at 0
   - **INVERSE_SUBTRACT:** `result = saturate(b - a)` at 0
 
-**Stage 4: Vertex Color Modulation (10.8 precision):**
+**Stage 5: Vertex Color Modulation (Gouraud) + Alpha Blending (10.8 precision):**
 - Multiply by rasterizer's interpolated RGBA (10.8) if GOURAUD enabled (REQ-004)
 - `result = (tex_color * vtx_color) >> 8` per component using DSP multipliers
-
-**Stage 5: Z-Buffer Test + Alpha Blending (10.8 precision):**
-- Compare fragment Z with Z-buffer value (REQ-027, FB_ZBUFFER.Z_COMPARE)
-- Early discard if test fails
 - For alpha blending (REQ-013, REQ-028):
   1. Read destination pixel from framebuffer (RGB565)
   2. Promote to 10.8 via `fb_promote.sv`: same MSB replication as texture promotion, alpha defaults to 1023
   3. Blend in 10.8: `result = (src * alpha + dst * (1023 - alpha)) >> 8`
 
-**Stage 6: Ordered Dithering + Framebuffer Write:**
+**Stage 6: Ordered Dithering + Framebuffer Write + Z Write:**
 - If DITHER_MODE.ENABLE=1 (REQ-132):
   1. Read dither matrix entry indexed by `{screen_y[3:0], screen_x[3:0]}` from EBR
   2. Scale 6-bit dither values per channel: top 3 bits for R/B (8→5 loss), top 2 bits for G (8→6 loss)
   3. Add scaled dither to fractional bits below RGB565 threshold
   4. Carry propagates into integer part if needed
 - Extract upper bits from 10-bit integer: R[9:5]→R5, G[9:4]→G6, B[9:5]→B5
-- Pack into RGB565 and write to framebuffer at FB_DRAW address
-- If Z_WRITE enabled, write Z value to Z-buffer
+- Pack into RGB565
+- If RENDER_MODE.COLOR_WRITE_EN=1: write color to framebuffer at FB_DRAW address
+- If RENDER_MODE.Z_WRITE_EN=1: write Z value to Z-buffer
 - Alpha channel is discarded (RGB565 has no alpha storage)
 
 ### Implementation Notes
@@ -199,7 +211,7 @@ Invalidation:
 - 10.8 blend/shade pipeline: ~8-12 DSP slices (18×18 multipliers), ~1500-2500 LUTs
 - Texel/FB promotion: ~200-400 LUTs (combinational)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
-- Total pipeline latency: ~12-15 cycles (fully pipelined, 1 pixel/cycle throughput)
+- Total pipeline latency: ~13-16 cycles (fully pipelined, 1 pixel/cycle throughput)
 
 ## Implementation
 
@@ -212,6 +224,7 @@ Invalidation:
 - `spi_gpu/src/render/texture_blend.sv`: 10.8 texture blend operations (REQ-134)
 - `spi_gpu/src/render/alpha_blend.sv`: 10.8 alpha blend operations (REQ-134)
 - `spi_gpu/src/render/dither.sv`: Ordered dithering with blue noise EBR (REQ-132)
+- `spi_gpu/src/render/early_z.sv`: Depth range test + early Z-test logic
 
 ## Verification
 
@@ -223,6 +236,11 @@ Invalidation:
 - Bilinear interleaving test: verify 2x2 quad reads from 4 different banks
 - XOR set indexing test: verify adjacent blocks map to different sets
 - Cache fill test: verify SRAM read + decompress + bank write pipeline
+- Early Z-test: verify discard before texture fetch when Z-test fails
+- Early Z-test bypass: verify passthrough when Z_TEST_EN=0 or Z_COMPARE=ALWAYS
+- Depth range test: verify discard when fragment Z outside [Z_RANGE_MIN, Z_RANGE_MAX]
+- Depth range test disabled: verify passthrough when Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF
+- COLOR_WRITE_EN: verify Z-only prepass (Z writes without color writes)
 
 ## Design Notes
 

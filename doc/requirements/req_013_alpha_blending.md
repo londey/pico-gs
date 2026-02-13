@@ -48,3 +48,7 @@ None
 User Story: As a firmware developer, I want to blend rendered pixels with framebuffer content based on alpha, so that I can render transparent and semi-transparent objects
 
 Alpha blending operations are performed in 10.8 fixed-point format. Destination pixels are read from the RGB565 framebuffer and promoted to 10.8 format by left-shifting and replicating MSBs. After blending, the result passes through ordered dithering (REQ-132) before RGB565 conversion.
+
+**Early Z compatibility:** Transparent objects are rendered with Z_WRITE=0 (as noted above) but Z_TEST=1.
+Early Z-test (REQ-014) is compatible with this usage: occluded transparent fragments are correctly rejected by early Z (they would have failed the depth test at any pipeline stage), saving texture and blending work.
+Since there is no alpha test (alpha kill) in this pipeline, early Z never incorrectly discards a fragment that would have modified the framebuffer.
