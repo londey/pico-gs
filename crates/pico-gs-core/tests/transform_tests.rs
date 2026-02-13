@@ -132,11 +132,7 @@ mod perspective_projection {
             0.1,
             100.0,
         );
-        let view = Mat4::look_at_rh(
-            Vec3::new(0.0, 0.0, 5.0),
-            Vec3::ZERO,
-            Vec3::Y,
-        );
+        let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
         let mvp = proj * view;
 
         let sv = transform_vertex(Vec3::ZERO, &mvp);
@@ -148,17 +144,8 @@ mod perspective_projection {
 
     #[test]
     fn closer_objects_are_larger() {
-        let proj = Mat4::perspective_rh(
-            core::f32::consts::FRAC_PI_4,
-            640.0 / 480.0,
-            0.1,
-            100.0,
-        );
-        let view = Mat4::look_at_rh(
-            Vec3::new(0.0, 0.0, 5.0),
-            Vec3::ZERO,
-            Vec3::Y,
-        );
+        let proj = Mat4::perspective_rh(core::f32::consts::FRAC_PI_4, 640.0 / 480.0, 0.1, 100.0);
+        let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
         let mvp = proj * view;
 
         // Two points at same X but different Z distances.
@@ -168,27 +155,28 @@ mod perspective_projection {
         let cx = (SCREEN_WIDTH as f32 - 1.0) * 0.5;
         let near_offset = (near_pt.x - cx).abs();
         let far_offset = (far_pt.x - cx).abs();
-        assert!(near_offset > far_offset, "near {} vs far {}", near_offset, far_offset);
+        assert!(
+            near_offset > far_offset,
+            "near {} vs far {}",
+            near_offset,
+            far_offset
+        );
     }
 
     #[test]
     fn w_increases_with_distance() {
-        let proj = Mat4::perspective_rh(
-            core::f32::consts::FRAC_PI_4,
-            640.0 / 480.0,
-            0.1,
-            100.0,
-        );
-        let view = Mat4::look_at_rh(
-            Vec3::new(0.0, 0.0, 5.0),
-            Vec3::ZERO,
-            Vec3::Y,
-        );
+        let proj = Mat4::perspective_rh(core::f32::consts::FRAC_PI_4, 640.0 / 480.0, 0.1, 100.0);
+        let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
         let mvp = proj * view;
 
         let near_pt = transform_vertex(Vec3::new(0.0, 0.0, 1.0), &mvp);
         let far_pt = transform_vertex(Vec3::new(0.0, 0.0, -1.0), &mvp);
-        assert!(far_pt.w > near_pt.w, "far W {} > near W {}", far_pt.w, near_pt.w);
+        assert!(
+            far_pt.w > near_pt.w,
+            "far W {} > near W {}",
+            far_pt.w,
+            near_pt.w
+        );
     }
 }
 
@@ -230,25 +218,70 @@ mod back_face_culling {
 
     #[test]
     fn ccw_triangle_is_front_facing() {
-        let v0 = ScreenVertex { x: 320.0, y: 100.0, z: 0.5, w: 1.0 };
-        let v1 = ScreenVertex { x: 200.0, y: 400.0, z: 0.5, w: 1.0 };
-        let v2 = ScreenVertex { x: 440.0, y: 400.0, z: 0.5, w: 1.0 };
+        let v0 = ScreenVertex {
+            x: 320.0,
+            y: 100.0,
+            z: 0.5,
+            w: 1.0,
+        };
+        let v1 = ScreenVertex {
+            x: 200.0,
+            y: 400.0,
+            z: 0.5,
+            w: 1.0,
+        };
+        let v2 = ScreenVertex {
+            x: 440.0,
+            y: 400.0,
+            z: 0.5,
+            w: 1.0,
+        };
         assert!(is_front_facing(&v0, &v1, &v2));
     }
 
     #[test]
     fn cw_triangle_is_back_facing() {
-        let v0 = ScreenVertex { x: 320.0, y: 100.0, z: 0.5, w: 1.0 };
-        let v1 = ScreenVertex { x: 440.0, y: 400.0, z: 0.5, w: 1.0 };
-        let v2 = ScreenVertex { x: 200.0, y: 400.0, z: 0.5, w: 1.0 };
+        let v0 = ScreenVertex {
+            x: 320.0,
+            y: 100.0,
+            z: 0.5,
+            w: 1.0,
+        };
+        let v1 = ScreenVertex {
+            x: 440.0,
+            y: 400.0,
+            z: 0.5,
+            w: 1.0,
+        };
+        let v2 = ScreenVertex {
+            x: 200.0,
+            y: 400.0,
+            z: 0.5,
+            w: 1.0,
+        };
         assert!(!is_front_facing(&v0, &v1, &v2));
     }
 
     #[test]
     fn degenerate_line_is_back_facing() {
-        let v0 = ScreenVertex { x: 100.0, y: 100.0, z: 0.5, w: 1.0 };
-        let v1 = ScreenVertex { x: 200.0, y: 200.0, z: 0.5, w: 1.0 };
-        let v2 = ScreenVertex { x: 300.0, y: 300.0, z: 0.5, w: 1.0 };
+        let v0 = ScreenVertex {
+            x: 100.0,
+            y: 100.0,
+            z: 0.5,
+            w: 1.0,
+        };
+        let v1 = ScreenVertex {
+            x: 200.0,
+            y: 200.0,
+            z: 0.5,
+            w: 1.0,
+        };
+        let v2 = ScreenVertex {
+            x: 300.0,
+            y: 300.0,
+            z: 0.5,
+            w: 1.0,
+        };
         assert!(!is_front_facing(&v0, &v1, &v2));
     }
 }
@@ -272,15 +305,114 @@ mod matrix_builders {
 
     #[test]
     fn look_at_z_axis() {
-        let view = Mat4::look_at_rh(
-            Vec3::new(0.0, 0.0, 5.0),
-            Vec3::ZERO,
-            Vec3::Y,
-        );
+        let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
         // The origin should be at (0, 0, -5) in view space.
         let p = view * Vec4::new(0.0, 0.0, 0.0, 1.0);
         assert!((p.x).abs() < 0.01);
         assert!((p.y).abs() < 0.01);
         assert!((p.z - (-5.0)).abs() < 0.01);
+    }
+}
+
+// --- Quantization bias matrix (mirrors render/transform.rs) ---
+
+fn build_quantization_bias(aabb_min: [f32; 3], aabb_max: [f32; 3]) -> Mat4 {
+    let extent = [
+        aabb_max[0] - aabb_min[0],
+        aabb_max[1] - aabb_min[1],
+        aabb_max[2] - aabb_min[2],
+    ];
+    let scale = Vec3::new(
+        extent[0] / 65535.0,
+        extent[1] / 65535.0,
+        extent[2] / 65535.0,
+    );
+    Mat4::from_translation(Vec3::new(aabb_min[0], aabb_min[1], aabb_min[2]))
+        * Mat4::from_scale(scale)
+}
+
+mod quantization_bias {
+    use super::*;
+
+    #[test]
+    fn corner_min_maps_to_aabb_min() {
+        let aabb_min = [-2.0, 0.0, 1.0];
+        let aabb_max = [4.0, 3.0, 7.0];
+        let bias = build_quantization_bias(aabb_min, aabb_max);
+        let model = Mat4::IDENTITY;
+        let adjusted = model * bias;
+
+        // u16 (0, 0, 0) as f32 → should map to aabb_min
+        let p = adjusted * Vec4::new(0.0, 0.0, 0.0, 1.0);
+        assert!((p.x - aabb_min[0]).abs() < 0.001, "x: {}", p.x);
+        assert!((p.y - aabb_min[1]).abs() < 0.001, "y: {}", p.y);
+        assert!((p.z - aabb_min[2]).abs() < 0.001, "z: {}", p.z);
+    }
+
+    #[test]
+    fn corner_max_maps_to_aabb_max() {
+        let aabb_min = [-2.0, 0.0, 1.0];
+        let aabb_max = [4.0, 3.0, 7.0];
+        let bias = build_quantization_bias(aabb_min, aabb_max);
+        let model = Mat4::IDENTITY;
+        let adjusted = model * bias;
+
+        // u16 (65535, 65535, 65535) as f32
+        let p = adjusted * Vec4::new(65535.0, 65535.0, 65535.0, 1.0);
+        assert!((p.x - aabb_max[0]).abs() < 0.01, "x: {}", p.x);
+        assert!((p.y - aabb_max[1]).abs() < 0.01, "y: {}", p.y);
+        assert!((p.z - aabb_max[2]).abs() < 0.01, "z: {}", p.z);
+    }
+
+    #[test]
+    fn midpoint_maps_to_center() {
+        let aabb_min = [0.0, 0.0, 0.0];
+        let aabb_max = [10.0, 20.0, 30.0];
+        let bias = build_quantization_bias(aabb_min, aabb_max);
+
+        let p = bias * Vec4::new(32768.0, 32768.0, 32768.0, 1.0);
+        // Midpoint of each axis: 10*32768/65535 ≈ 5.0001, etc.
+        assert!((p.x - 5.0).abs() < 0.1, "x: {}", p.x);
+        assert!((p.y - 10.0).abs() < 0.1, "y: {}", p.y);
+        assert!((p.z - 15.0).abs() < 0.1, "z: {}", p.z);
+    }
+
+    #[test]
+    fn unit_aabb_identity_like() {
+        // AABB (0,0,0)-(1,1,1): scale = 1/65535 per axis
+        let bias = build_quantization_bias([0.0; 3], [1.0, 1.0, 1.0]);
+        let p = bias * Vec4::new(65535.0, 65535.0, 65535.0, 1.0);
+        assert!((p.x - 1.0).abs() < 0.001);
+        assert!((p.y - 1.0).abs() < 0.001);
+        assert!((p.z - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn degenerate_axis_no_nan() {
+        // Flat mesh (zero extent on Y axis)
+        let bias = build_quantization_bias([0.0, 5.0, 0.0], [10.0, 5.0, 10.0]);
+        let p = bias * Vec4::new(65535.0, 65535.0, 65535.0, 1.0);
+        // X and Z should map to max, Y should stay at aabb_min (5.0)
+        assert!((p.x - 10.0).abs() < 0.01, "x: {}", p.x);
+        assert!((p.y - 5.0).abs() < 0.01, "y: {} (should be 5.0)", p.y);
+        assert!((p.z - 10.0).abs() < 0.01, "z: {}", p.z);
+        // Verify no NaN
+        assert!(!p.x.is_nan());
+        assert!(!p.y.is_nan());
+        assert!(!p.z.is_nan());
+    }
+
+    #[test]
+    fn asymmetric_aabb_non_uniform_scale() {
+        // Asymmetric: X range 10, Y range 1, Z range 100
+        let aabb_min = [0.0, 0.0, 0.0];
+        let aabb_max = [10.0, 1.0, 100.0];
+        let bias = build_quantization_bias(aabb_min, aabb_max);
+
+        // Same u16 input on all axes → different model-space output
+        let p = bias * Vec4::new(65535.0, 65535.0, 65535.0, 1.0);
+        assert!((p.x - 10.0).abs() < 0.01);
+        assert!((p.y - 1.0).abs() < 0.01);
+        assert!((p.z - 100.0).abs() < 0.1);
     }
 }

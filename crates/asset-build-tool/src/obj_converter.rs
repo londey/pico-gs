@@ -48,8 +48,29 @@ pub fn load_and_convert(
         )));
     }
 
-    // Split into patches
-    let patches = mesh_patcher::split_into_patches(&vertices, &indices, patch_size, index_limit);
+    // Split into raw patches (f32 vertex data)
+    let raw_patches =
+        mesh_patcher::split_into_patches(&vertices, &indices, patch_size, index_limit);
+
+    // Compute mesh-wide AABB (quantization coordinate system)
+    let (aabb_min, aabb_max) = mesh_patcher::compute_mesh_aabb(&raw_patches);
+
+    // Quantize each patch and pack into SoA blobs
+    let patches = raw_patches
+        .iter()
+        .map(|raw| {
+            let (patch_aabb_min, patch_aabb_max) = mesh_patcher::compute_aabb(&raw.vertices);
+            let data = mesh_patcher::pack_soa_blob(&raw.vertices, &raw.indices, aabb_min, aabb_max);
+            crate::types::MeshPatch {
+                data,
+                aabb_min: patch_aabb_min,
+                aabb_max: patch_aabb_max,
+                vertex_count: raw.vertices.len(),
+                entry_count: raw.indices.len(),
+                patch_index: raw.patch_index,
+            }
+        })
+        .collect();
 
     let identifier = generate_identifier(path)?;
 
@@ -59,6 +80,8 @@ pub fn load_and_convert(
         identifier,
         original_vertex_count,
         original_triangle_count,
+        aabb_min,
+        aabb_max,
     })
 }
 

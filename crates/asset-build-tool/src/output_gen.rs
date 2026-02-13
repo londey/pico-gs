@@ -1,8 +1,20 @@
 use crate::error::AssetError;
+#[cfg(test)]
+use crate::mesh_patcher;
 use crate::types::{GeneratedAsset, MeshAsset, TextureAsset};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+
+/// Format an f32 as a valid Rust literal (always includes decimal point).
+fn f32_literal(v: f32) -> String {
+    let s = format!("{}", v);
+    if s.contains('.') || s.contains("inf") || s.contains("NaN") {
+        s
+    } else {
+        format!("{}.0", s)
+    }
+}
 
 /// Write texture output files (.rs wrapper + .bin data) and return generated asset metadata.
 pub fn write_texture_output(
@@ -51,7 +63,7 @@ pub const {id}_DATA: &[u8] = include_bytes!("{bin}");
     }])
 }
 
-/// Write mesh output files (per-patch .rs wrappers + .bin data files).
+/// Write mesh output files (per-patch .rs wrappers + single .bin SoA blob each).
 pub fn write_mesh_output(
     mesh: &MeshAsset,
     out_dir: &Path,
@@ -65,62 +77,47 @@ pub fn write_mesh_output(
             patch.patch_index
         );
         let rs_filename = format!("{}.rs", base_name);
-        let pos_bin = format!("{}_pos.bin", base_name);
-        let uv_bin = format!("{}_uv.bin", base_name);
-        let norm_bin = format!("{}_norm.bin", base_name);
-        let idx_bin = format!("{}_idx.bin", base_name);
+        let bin_filename = format!("{}.bin", base_name);
 
         let const_name = format!("{}_PATCH{}", mesh.identifier, patch.patch_index);
 
-        // Write binary files
-        write_f32_binary(
-            &out_dir.join(&pos_bin),
-            &patch
-                .vertices
-                .iter()
-                .flat_map(|v| v.position)
-                .collect::<Vec<_>>(),
-        )?;
-        write_f32_binary(
-            &out_dir.join(&uv_bin),
-            &patch.vertices.iter().flat_map(|v| v.uv).collect::<Vec<_>>(),
-        )?;
-        write_f32_binary(
-            &out_dir.join(&norm_bin),
-            &patch
-                .vertices
-                .iter()
-                .flat_map(|v| v.normal)
-                .collect::<Vec<_>>(),
-        )?;
-        write_u16_binary(&out_dir.join(&idx_bin), &patch.indices)?;
+        // Write single SoA blob binary
+        fs::write(out_dir.join(&bin_filename), &patch.data)?;
 
-        // Generate Rust wrapper
+        // Generate Rust wrapper per INT-031
         let rust_source = format!(
-            r#"// Generated from: {} (patch {} of {})
-// Vertices: {}, Indices: {} ({} triangles)
-
-pub const {c}_VERTEX_COUNT: usize = {vc};
-pub const {c}_INDEX_COUNT: usize = {ic};
-
-pub const {c}_POSITIONS: &[u8] = include_bytes!("{pos}");
-pub const {c}_UVS: &[u8] = include_bytes!("{uv}");
-pub const {c}_NORMALS: &[u8] = include_bytes!("{norm}");
-pub const {c}_INDICES: &[u8] = include_bytes!("{idx}");
-"#,
+            "// Generated from: {} (patch {} of {})\n\
+             // Vertices: {}, Entries: {}\n\
+             // Patch AABB: ({}, {}, {}) to ({}, {}, {})\n\
+             // Data size: {} bytes (SoA blob: u16 pos + i16 norm + i16 uv + u16 idx)\n\
+             \n\
+             pub const {c}_VERTEX_COUNT: usize = {vc};\n\
+             pub const {c}_ENTRY_COUNT: usize = {ec};\n\
+             pub const {c}_AABB_MIN: [f32; 3] = [{amin_x}, {amin_y}, {amin_z}];\n\
+             pub const {c}_AABB_MAX: [f32; 3] = [{amax_x}, {amax_y}, {amax_z}];\n\
+             pub const {c}_DATA: &[u8] = include_bytes!(\"{bin}\");\n",
             mesh.source.display(),
             patch.patch_index,
             mesh.patches.len(),
-            patch.vertices.len(),
-            patch.indices.len(),
-            patch.triangle_count(),
+            patch.vertex_count,
+            patch.entry_count,
+            f32_literal(patch.aabb_min[0]),
+            f32_literal(patch.aabb_min[1]),
+            f32_literal(patch.aabb_min[2]),
+            f32_literal(patch.aabb_max[0]),
+            f32_literal(patch.aabb_max[1]),
+            f32_literal(patch.aabb_max[2]),
+            patch.data.len(),
             c = const_name,
-            vc = patch.vertices.len(),
-            ic = patch.indices.len(),
-            pos = pos_bin,
-            uv = uv_bin,
-            norm = norm_bin,
-            idx = idx_bin,
+            vc = patch.vertex_count,
+            ec = patch.entry_count,
+            amin_x = f32_literal(patch.aabb_min[0]),
+            amin_y = f32_literal(patch.aabb_min[1]),
+            amin_z = f32_literal(patch.aabb_min[2]),
+            amax_x = f32_literal(patch.aabb_max[0]),
+            amax_y = f32_literal(patch.aabb_max[1]),
+            amax_z = f32_literal(patch.aabb_max[2]),
+            bin = bin_filename,
         );
 
         fs::write(out_dir.join(&rs_filename), rust_source)?;
@@ -133,6 +130,70 @@ pub const {c}_INDICES: &[u8] = include_bytes!("{idx}");
         });
     }
 
+    // Generate per-mesh wrapper with mesh-level AABB and MeshPatchDescriptor array
+    let mesh_base_name = mesh.identifier.to_lowercase();
+    let mesh_rs_filename = format!("{}.rs", mesh_base_name);
+
+    let mut mesh_source = format!(
+        "// Generated from: {}\n\
+         // Patches: {}\n\
+         // Total vertices: {}, Total entries: {}\n\
+         \n\
+         /// Overall mesh bounding box (model space).\n\
+         /// Also serves as quantization AABB for u16 position encoding.\n\
+         pub const {id}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];\n\
+         pub const {id}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];\n\
+         pub const {id}_PATCH_COUNT: usize = {pc};\n\
+         \n\
+         /// Per-patch descriptors.\n\
+         pub const {id}_PATCHES: [MeshPatchDescriptor; {pc}] = [\n",
+        mesh.source.display(),
+        mesh.patches.len(),
+        mesh.total_vertices(),
+        mesh.total_entries(),
+        id = mesh.identifier,
+        min_x = f32_literal(mesh.aabb_min[0]),
+        min_y = f32_literal(mesh.aabb_min[1]),
+        min_z = f32_literal(mesh.aabb_min[2]),
+        max_x = f32_literal(mesh.aabb_max[0]),
+        max_y = f32_literal(mesh.aabb_max[1]),
+        max_z = f32_literal(mesh.aabb_max[2]),
+        pc = mesh.patches.len(),
+    );
+
+    for patch in &mesh.patches {
+        let const_name = format!("{}_PATCH{}", mesh.identifier, patch.patch_index);
+        mesh_source.push_str(&format!(
+            "    MeshPatchDescriptor {{\n\
+             \x20       data: {c}_DATA,\n\
+             \x20       aabb_min: [{amin_x}, {amin_y}, {amin_z}],\n\
+             \x20       aabb_max: [{amax_x}, {amax_y}, {amax_z}],\n\
+             \x20       vertex_count: {vc},\n\
+             \x20       entry_count: {ec},\n\
+             \x20   }},\n",
+            c = const_name,
+            amin_x = f32_literal(patch.aabb_min[0]),
+            amin_y = f32_literal(patch.aabb_min[1]),
+            amin_z = f32_literal(patch.aabb_min[2]),
+            amax_x = f32_literal(patch.aabb_max[0]),
+            amax_y = f32_literal(patch.aabb_max[1]),
+            amax_z = f32_literal(patch.aabb_max[2]),
+            vc = patch.vertex_count,
+            ec = patch.entry_count,
+        ));
+    }
+
+    mesh_source.push_str("];\n");
+
+    fs::write(out_dir.join(&mesh_rs_filename), mesh_source)?;
+
+    generated.push(GeneratedAsset {
+        module_name: mesh_base_name,
+        identifier: mesh.identifier.clone(),
+        rs_path: mesh_rs_filename.into(),
+        source_path: mesh.source.clone(),
+    });
+
     Ok(generated)
 }
 
@@ -143,6 +204,20 @@ pub fn write_mod_rs(generated: &[GeneratedAsset], out_dir: &Path) -> Result<(), 
 
     writeln!(file, "// Auto-generated by asset_build_tool - do not edit")?;
     writeln!(file)?;
+
+    // Emit MeshPatchDescriptor struct if there are any mesh assets
+    let has_meshes = generated.iter().any(|g| g.identifier.contains("PATCH"));
+    if has_meshes {
+        writeln!(file, "#[derive(Copy, Clone)]")?;
+        writeln!(file, "pub struct MeshPatchDescriptor {{")?;
+        writeln!(file, "    pub data: &'static [u8],")?;
+        writeln!(file, "    pub aabb_min: [f32; 3],")?;
+        writeln!(file, "    pub aabb_max: [f32; 3],")?;
+        writeln!(file, "    pub vertex_count: usize,")?;
+        writeln!(file, "    pub entry_count: usize,")?;
+        writeln!(file, "}}")?;
+        writeln!(file)?;
+    }
 
     // Sort for deterministic output
     let mut rs_files: Vec<&str> = generated
@@ -160,25 +235,38 @@ pub fn write_mod_rs(generated: &[GeneratedAsset], out_dir: &Path) -> Result<(), 
     Ok(())
 }
 
-/// Write a slice of f32 values as little-endian binary.
-fn write_f32_binary(path: &Path, data: &[f32]) -> Result<(), AssetError> {
-    let bytes: Vec<u8> = data.iter().flat_map(|&f| f.to_le_bytes()).collect();
-    fs::write(path, bytes)?;
-    Ok(())
-}
-
-/// Write a slice of u16 values as little-endian binary.
-fn write_u16_binary(path: &Path, data: &[u16]) -> Result<(), AssetError> {
-    let bytes: Vec<u8> = data.iter().flat_map(|&i| i.to_le_bytes()).collect();
-    fs::write(path, bytes)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{MeshPatch, VertexData};
     use std::path::PathBuf;
+
+    /// Build a test MeshAsset from raw vertex/index data (mirrors obj_converter pipeline).
+    fn make_test_mesh(
+        verts: &[VertexData],
+        indices: &[u16],
+        aabb_min: [f32; 3],
+        aabb_max: [f32; 3],
+    ) -> MeshAsset {
+        let data = mesh_patcher::pack_soa_blob(verts, indices, aabb_min, aabb_max);
+        let (patch_min, patch_max) = mesh_patcher::compute_aabb(verts);
+        MeshAsset {
+            source: PathBuf::from("meshes/cube.obj"),
+            patches: vec![MeshPatch {
+                data,
+                aabb_min: patch_min,
+                aabb_max: patch_max,
+                vertex_count: verts.len(),
+                entry_count: indices.len(),
+                patch_index: 0,
+            }],
+            identifier: "MESHES_CUBE".to_string(),
+            original_vertex_count: verts.len(),
+            original_triangle_count: indices.len() / 3,
+            aabb_min,
+            aabb_max,
+        }
+    }
 
     #[test]
     fn test_write_texture_output() {
@@ -216,52 +304,59 @@ mod tests {
     #[test]
     fn test_write_mesh_output() {
         let dir = tempfile::tempdir().unwrap();
-        let mesh = MeshAsset {
-            source: PathBuf::from("meshes/cube.obj"),
-            patches: vec![MeshPatch {
-                vertices: vec![
-                    VertexData {
-                        position: [0.0, 0.0, 0.0],
-                        uv: [0.0, 0.0],
-                        normal: [0.0, 1.0, 0.0],
-                    },
-                    VertexData {
-                        position: [1.0, 0.0, 0.0],
-                        uv: [1.0, 0.0],
-                        normal: [0.0, 1.0, 0.0],
-                    },
-                    VertexData {
-                        position: [0.0, 1.0, 0.0],
-                        uv: [0.0, 1.0],
-                        normal: [0.0, 1.0, 0.0],
-                    },
-                ],
-                indices: vec![0, 1, 2],
-                patch_index: 0,
-            }],
-            identifier: "MESHES_CUBE".to_string(),
-            original_vertex_count: 3,
-            original_triangle_count: 1,
-        };
+        let verts = [
+            VertexData {
+                position: [0.0, 0.0, 0.0],
+                uv: [0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            VertexData {
+                position: [1.0, 0.0, 0.0],
+                uv: [1.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+            VertexData {
+                position: [0.0, 1.0, 0.0],
+                uv: [0.0, 1.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+        ];
+        let indices = [0u16, 1, 2];
+        let aabb_min = [0.0, 0.0, 0.0];
+        let aabb_max = [1.0, 1.0, 1.0];
+        let mesh = make_test_mesh(&verts, &indices, aabb_min, aabb_max);
 
         let result = write_mesh_output(&mesh, dir.path());
         assert!(result.is_ok());
         let generated = result.unwrap();
-        assert_eq!(generated.len(), 1);
+        // 1 per-patch + 1 per-mesh wrapper = 2 generated assets
+        assert_eq!(generated.len(), 2);
 
-        // Check files exist
+        // Check per-patch files exist
         assert!(dir.path().join("meshes_cube_patch0.rs").exists());
-        assert!(dir.path().join("meshes_cube_patch0_pos.bin").exists());
-        assert!(dir.path().join("meshes_cube_patch0_uv.bin").exists());
-        assert!(dir.path().join("meshes_cube_patch0_norm.bin").exists());
-        assert!(dir.path().join("meshes_cube_patch0_idx.bin").exists());
+        assert!(dir.path().join("meshes_cube_patch0.bin").exists());
 
-        // Check binary sizes
-        let pos_data = fs::read(dir.path().join("meshes_cube_patch0_pos.bin")).unwrap();
-        assert_eq!(pos_data.len(), 3 * 3 * 4); // 3 vertices * 3 components * 4 bytes
+        // Check blob size: N=3 vertices * 16 + M=3 indices * 2 = 54 bytes
+        let bin_data = fs::read(dir.path().join("meshes_cube_patch0.bin")).unwrap();
+        assert_eq!(bin_data.len(), 3 * 16 + 3 * 2);
 
-        let idx_data = fs::read(dir.path().join("meshes_cube_patch0_idx.bin")).unwrap();
-        assert_eq!(idx_data.len(), 3 * 2); // 3 indices * 2 bytes
+        // Check per-patch rs file contains expected constants
+        let rs_content = fs::read_to_string(dir.path().join("meshes_cube_patch0.rs")).unwrap();
+        assert!(rs_content.contains("MESHES_CUBE_PATCH0_VERTEX_COUNT"));
+        assert!(rs_content.contains("MESHES_CUBE_PATCH0_ENTRY_COUNT"));
+        assert!(rs_content.contains("MESHES_CUBE_PATCH0_AABB_MIN"));
+        assert!(rs_content.contains("MESHES_CUBE_PATCH0_AABB_MAX"));
+        assert!(rs_content.contains("MESHES_CUBE_PATCH0_DATA"));
+        assert!(rs_content.contains("include_bytes!"));
+
+        // Check per-mesh wrapper exists with mesh-level AABB and descriptor array
+        assert!(dir.path().join("meshes_cube.rs").exists());
+        let mesh_rs = fs::read_to_string(dir.path().join("meshes_cube.rs")).unwrap();
+        assert!(mesh_rs.contains("MESHES_CUBE_AABB_MIN"));
+        assert!(mesh_rs.contains("MESHES_CUBE_AABB_MAX"));
+        assert!(mesh_rs.contains("MESHES_CUBE_PATCH_COUNT"));
+        assert!(mesh_rs.contains("MESHES_CUBE_PATCHES"));
+        assert!(mesh_rs.contains("MeshPatchDescriptor"));
     }
 
     #[test]

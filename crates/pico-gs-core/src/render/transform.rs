@@ -90,3 +90,36 @@ pub fn look_at(eye: Vec3, target: Vec3, up: Vec3) -> Mat4 {
 pub fn rotate_y(angle: f32) -> Mat4 {
     Mat4::from_rotation_y(angle)
 }
+
+/// Build a quantization bias matrix that maps u16 `[0, 65535]` back to model space.
+///
+/// The matrix is: `translate(aabb_min) * scale(extent / 65535.0)`.
+///
+/// Usage: `adjusted_model = original_model * bias_matrix`, then
+/// `mvp = projection * view * adjusted_model`.
+///
+/// Degenerate axes (zero extent) produce zero scale, which is correct —
+/// all vertices on that axis have the same coordinate (aabb_min).
+///
+/// # Arguments
+///
+/// * `aabb_min` - Mesh-wide AABB minimum (quantization range start).
+/// * `aabb_max` - Mesh-wide AABB maximum (quantization range end).
+///
+/// # Returns
+///
+/// 4x4 matrix to pre-multiply with the model matrix.
+pub fn build_quantization_bias(aabb_min: [f32; 3], aabb_max: [f32; 3]) -> Mat4 {
+    let extent = [
+        aabb_max[0] - aabb_min[0],
+        aabb_max[1] - aabb_min[1],
+        aabb_max[2] - aabb_min[2],
+    ];
+    let scale = Vec3::new(
+        extent[0] / 65535.0,
+        extent[1] / 65535.0,
+        extent[2] / 65535.0,
+    );
+    Mat4::from_translation(Vec3::new(aabb_min[0], aabb_min[1], aabb_min[2]))
+        * Mat4::from_scale(scale)
+}

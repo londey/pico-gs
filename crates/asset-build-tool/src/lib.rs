@@ -20,7 +20,9 @@ pub mod mesh_patcher;
 pub mod output_gen;
 
 pub use error::AssetError;
-pub use types::{AssetBuildConfig, GeneratedAsset, MeshAsset, MeshPatch, TextureAsset};
+pub use types::{
+    AssetBuildConfig, GeneratedAsset, MeshAsset, MeshPatch, RawMeshPatch, TextureAsset,
+};
 
 use std::fs;
 use std::path::{Path, PathBuf};

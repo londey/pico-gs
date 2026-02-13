@@ -1,4 +1,4 @@
-use asset_build_tool::{AssetBuildConfig, build_assets};
+use asset_build_tool::{build_assets, AssetBuildConfig};
 use std::path::{Path, PathBuf};
 
 fn main() {
@@ -34,15 +34,9 @@ fn main() {
     match build_assets(&config) {
         Ok(generated) => {
             for asset in &generated {
-                println!(
-                    "cargo:rerun-if-changed={}",
-                    asset.source_path.display()
-                );
+                println!("cargo:rerun-if-changed={}", asset.source_path.display());
             }
-            eprintln!(
-                "asset_build_tool: converted {} asset(s)",
-                generated.len()
-            );
+            eprintln!("asset_build_tool: converted {} asset(s)", generated.len());
         }
         Err(e) => {
             panic!("Asset build failed: {}", e);

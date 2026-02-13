@@ -69,22 +69,35 @@ impl Default for VertexData {
     }
 }
 
-/// A mesh patch with bounded vertex and index counts.
+/// Raw mesh patch output from the splitter (f32 vertex data, u16 indices).
+///
+/// This is the intermediate representation between splitting and quantization.
 #[derive(Debug, Clone)]
-pub struct MeshPatch {
-    /// Vertex data (positions, UVs, normals).
+pub struct RawMeshPatch {
+    /// Vertex data (positions, UVs, normals) in f32.
     pub vertices: Vec<VertexData>,
-    /// Triangle indices (u16 for GPU compatibility).
+    /// Triangle indices (u16, local to this patch).
     pub indices: Vec<u16>,
     /// Patch index (0-based) within parent mesh.
     pub patch_index: usize,
 }
 
-impl MeshPatch {
-    /// Get triangle count.
-    pub fn triangle_count(&self) -> usize {
-        self.indices.len() / 3
-    }
+/// A quantized mesh patch with SoA blob data, ready for firmware inclusion.
+#[derive(Debug, Clone)]
+pub struct MeshPatch {
+    /// Contiguous SoA blob: quantized positions (u16), normals (i16),
+    /// UVs (i16), indices (u16 LE).
+    pub data: Vec<u8>,
+    /// Patch AABB minimum in model space (from original f32 positions).
+    pub aabb_min: [f32; 3],
+    /// Patch AABB maximum in model space (from original f32 positions).
+    pub aabb_max: [f32; 3],
+    /// Number of vertices (for SoA offset calculation).
+    pub vertex_count: usize,
+    /// Number of index entries.
+    pub entry_count: usize,
+    /// Patch index (0-based) within parent mesh.
+    pub patch_index: usize,
 }
 
 /// Complete mesh asset (may contain multiple patches).
@@ -92,7 +105,7 @@ impl MeshPatch {
 pub struct MeshAsset {
     /// Source filename (for metadata).
     pub source: PathBuf,
-    /// All patches that make up this mesh.
+    /// All quantized patches that make up this mesh.
     pub patches: Vec<MeshPatch>,
     /// Rust identifier (sanitized from filename).
     pub identifier: String,
@@ -100,17 +113,21 @@ pub struct MeshAsset {
     pub original_vertex_count: usize,
     /// Total original triangle count (after triangulation).
     pub original_triangle_count: usize,
+    /// Overall mesh AABB minimum (quantization coordinate system).
+    pub aabb_min: [f32; 3],
+    /// Overall mesh AABB maximum (quantization coordinate system).
+    pub aabb_max: [f32; 3],
 }
 
 impl MeshAsset {
     /// Get total vertices across all patches.
     pub fn total_vertices(&self) -> usize {
-        self.patches.iter().map(|p| p.vertices.len()).sum()
+        self.patches.iter().map(|p| p.vertex_count).sum()
     }
 
-    /// Get total indices across all patches.
-    pub fn total_indices(&self) -> usize {
-        self.patches.iter().map(|p| p.indices.len()).sum()
+    /// Get total index entries across all patches.
+    pub fn total_entries(&self) -> usize {
+        self.patches.iter().map(|p| p.entry_count).sum()
     }
 
     /// Get patch count.
