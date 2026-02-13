@@ -30,7 +30,8 @@ pub fn f32_to_1_15(val: f32) -> u16 {
 /// Range: 0 to 0x1FFFFFF.
 pub fn f32_to_z25(val: f32) -> u32 {
     let clamped = val.clamp(0.0, 1.0);
-    (clamped * 0x1FF_FFFF as f32) as u32
+    let scaled = (clamped * 0x1FF_FFFF as f32) as u32;
+    scaled.min(0x1FF_FFFF)
 }
 
 /// Pack RGBA bytes into a u32 (ABGR format matching GPU COLOR register).

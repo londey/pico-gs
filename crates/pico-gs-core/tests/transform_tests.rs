@@ -218,6 +218,7 @@ mod back_face_culling {
 
     #[test]
     fn ccw_triangle_is_front_facing() {
+        // In screen-space (Y-down), CCW winding: top → bottom-right → bottom-left.
         let v0 = ScreenVertex {
             x: 320.0,
             y: 100.0,
@@ -225,13 +226,13 @@ mod back_face_culling {
             w: 1.0,
         };
         let v1 = ScreenVertex {
-            x: 200.0,
+            x: 440.0,
             y: 400.0,
             z: 0.5,
             w: 1.0,
         };
         let v2 = ScreenVertex {
-            x: 440.0,
+            x: 200.0,
             y: 400.0,
             z: 0.5,
             w: 1.0,
@@ -241,6 +242,7 @@ mod back_face_culling {
 
     #[test]
     fn cw_triangle_is_back_facing() {
+        // In screen-space (Y-down), CW winding: top → bottom-left → bottom-right.
         let v0 = ScreenVertex {
             x: 320.0,
             y: 100.0,
@@ -248,13 +250,13 @@ mod back_face_culling {
             w: 1.0,
         };
         let v1 = ScreenVertex {
-            x: 440.0,
+            x: 200.0,
             y: 400.0,
             z: 0.5,
             w: 1.0,
         };
         let v2 = ScreenVertex {
-            x: 200.0,
+            x: 440.0,
             y: 400.0,
             z: 0.5,
             w: 1.0,

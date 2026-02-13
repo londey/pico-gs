@@ -128,7 +128,8 @@ mod f32_to_1_15 {
 mod f32_to_z25 {
     fn f32_to_z25(val: f32) -> u32 {
         let clamped = val.clamp(0.0, 1.0);
-        (clamped * 0x1FF_FFFFu32 as f32) as u32
+        let scaled = (clamped * 0x1FF_FFFFu32 as f32) as u32;
+        scaled.min(0x1FF_FFFF)
     }
 
     #[test]
@@ -217,7 +218,8 @@ mod position_packing {
 
     fn f32_to_z25(val: f32) -> u32 {
         let clamped = val.clamp(0.0, 1.0);
-        (clamped * 0x1FF_FFFFu32 as f32) as u32
+        let scaled = (clamped * 0x1FF_FFFFu32 as f32) as u32;
+        scaled.min(0x1FF_FFFF)
     }
 
     fn pack_position(x: f32, y: f32, z: f32) -> u64 {
