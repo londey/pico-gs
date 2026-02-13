@@ -148,7 +148,7 @@ Fill the screen with a solid color using a full-viewport triangle.
    - Triangle 2: (0,0), (639,479), (0,479)
 4. If clear_depth:
    a. Set FB_ZBUFFER compare to ALWAYS, Z_WRITE=1
-   b. Submit same 2 triangles with Z = 0x1FFFFFF (far plane)
+   b. Submit same 2 triangles with Z = 0xFFFF (far plane)
    c. Restore FB_ZBUFFER compare to LEQUAL
 
 **GPU writes**: 8 register writes for color clear, 16 for color+depth clear

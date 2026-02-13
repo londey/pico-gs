@@ -37,4 +37,7 @@ None
 
 ## Notes
 
-The implementation uses the `glam` crate for matrix and vector math with hardware FPU. Perspective divide guards against near-zero W values. Viewport mapping flips the Y axis (NDC +Y up to screen +Y down). The Z output is clamped to [0, 1] for the GPU's 25-bit depth buffer.
+The implementation uses the `glam` crate for matrix and vector math with hardware FPU.
+Perspective divide guards against near-zero W values.
+Viewport mapping flips the Y axis (NDC +Y up to screen +Y down).
+The Z output is clamped to [0, 1] for the GPU's 16-bit depth buffer per INT-010.

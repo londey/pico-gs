@@ -44,7 +44,7 @@ None
 
 - Fragment data to UNIT-006 (Pixel Pipeline):
   - Fragment position (x, y) in screen coordinates
-  - Interpolated Z depth (25-bit)
+  - Interpolated Z depth (16-bit)
   - Interpolated vertex color in 10.8 fixed-point (4× 18-bit channels: R, G, B, A)
   - Interpolated UV coordinates per enabled texture unit (up to 4 sets)
 

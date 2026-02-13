@@ -414,7 +414,7 @@ Pre-packed vertex data ready for GPU register writes.
 |-------|--------|-------------|
 | color_packed | u64: [31:24]=A, [23:16]=B, [15:8]=G, [7:0]=R | COLOR (0x00) |
 | uv_packed | u64: [47:32]=Q(1.15), [31:16]=VQ(1.15), [15:0]=UQ(1.15) | UV0 (0x01) |
-| position_packed | u64: [56:32]=Z(25), [31:16]=Y(12.4), [15:0]=X(12.4) | VERTEX (0x05) |
+| position_packed | u64: [47:32]=Z(16), [31:16]=Y(12.4), [15:0]=X(12.4) | VERTEX (0x06) |
 
 ---
 
