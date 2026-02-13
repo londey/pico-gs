@@ -34,35 +34,95 @@ Run the freshness check script:
 - Recommend re-running impact analysis if changes are significant
 - Proceed with caution if user confirms
 
-### Step 3: Load Affected Documents
+### Step 3: Delegate Change Drafting
 
-Load the full content of all documents marked as affected in the impact analysis.
+Use the Task tool to launch a subagent that reads the affected documents and drafts proposed changes. This keeps the full document contents out of your context window.
 
-### Step 4: Propose Changes
+Launch a `general-purpose` Task agent with this prompt (substitute the actual impact.md content for IMPACT_CONTENT below, and the proposed change description for PROPOSED_CHANGE):
 
-For each affected document, propose specific modifications:
+> You are drafting proposed specification changes based on a completed impact analysis.
+>
+> ## Proposed Change
+>
+> PROPOSED_CHANGE
+>
+> ## Impact Analysis
+>
+> IMPACT_CONTENT
+>
+> ## Instructions
+>
+> 1. Read each document listed as affected (DIRECT, INTERFACE, or DEPENDENT) in the impact analysis above. Read them from the `doc/` directories.
+>
+> 2. For each affected document, draft specific modifications:
+>    - Extract the relevant current content (the sections that need to change)
+>    - Write the proposed new content
+>    - Explain the rationale for the change
+>    - Note any ripple effects to other documents
+>
+> 3. For any proposed changes to requirement documents, validate each requirement statement:
+>    - **Format:** Must use the condition/response pattern: "When [condition], the system SHALL [observable behavior]." If a proposed requirement lacks a trigger condition, identify one and rewrite it.
+>    - **Appropriate Level:** If the proposed requirement specifies data layout, register fields, byte encoding, packet structure, or wire protocol details, flag this and recommend creating/updating an interface document instead, with the requirement referencing it.
+>    - **Singular:** If a proposed requirement addresses multiple capabilities, recommend splitting it.
+>    - **Verifiable:** The condition must define a clear test setup and the behavior a clear pass criterion.
+>    If any proposed requirement fails validation, include the quality issue in the Rationale section and present a corrected version alongside the original.
+>
+> 4. Return your draft in EXACTLY this structured format:
+>
+> PROPOSED_CHANGES_START
+>
+> ## Document: filename
+>
+> ### Current Content (relevant section)
+>
+> (paste the relevant current content here)
+>
+> ### Proposed Content
+>
+> (paste the proposed new content here)
+>
+> ### Rationale
+>
+> (why this change is needed)
+>
+> ### Ripple Effects
+>
+> - (any effects on other documents)
+>
+> ---
+>
+> ## Document: next filename
+>
+> (repeat for each affected document)
+>
+> ---
+>
+> ## Change Summary
+>
+> | Document | Type | Change Description |
+> |----------|------|-------------------|
+> | filename | Modify | brief description |
+>
+> ## Quality Warnings
+>
+> (list any requirement quality issues found, or "None.")
+>
+> PROPOSED_CHANGES_END
+>
+> Include all affected documents. If a document needs review but no content changes, note that in its Rationale section.
 
-1. Show the relevant current content
-2. Explain what needs to change and why
-3. Show the proposed new content
-4. Note any ripple effects to other documents
+### Step 4: Review Agent Draft
 
-### Step 4.5: Validate Requirement Quality
+After the subagent returns:
 
-For any proposed changes to requirement documents, validate each requirement statement against the quality criteria before including it in the proposal:
-
-1. **Format:** Each requirement must use the condition/response pattern: "When [condition], the system SHALL [observable behavior]." If a proposed requirement lacks a trigger condition, identify one and rewrite it.
-2. **Appropriate Level:** If the proposed requirement specifies data layout, register fields, byte encoding, packet structure, or wire protocol details, flag this and recommend:
-   - Create or update an interface document with the detailed specification
-   - Rewrite the requirement to reference the interface (e.g., "When X occurs, the system SHALL conform to INT-NNN")
-3. **Singular:** If a proposed requirement addresses multiple capabilities, recommend splitting it into separate requirements.
-4. **Verifiable:** The condition must define a clear test setup and the behavior a clear pass criterion. If a requirement is too vague to test, recommend making it more specific.
-
-If any proposed requirement fails validation, include the quality issue in the "Rationale" section of the proposal and present a corrected version alongside the original for user review.
+1. Extract the content between the `PROPOSED_CHANGES_START` and `PROPOSED_CHANGES_END` markers
+2. Review the draft for completeness — ensure all affected documents from the impact analysis are covered
+3. Review quality warnings and ensure requirement validation was thorough
+4. If the subagent failed or returned incomplete results, tell the user and offer to fall back to direct analysis
 
 ### Step 5: Write Proposed Changes
 
-Create/update `.syskit/analysis/<folder>/proposed_changes.md`:
+Create/update `.syskit/analysis/<folder>/proposed_changes.md` using the agent's draft:
 
 ```markdown
 # Proposed Changes: <change name>
@@ -127,3 +187,13 @@ Present a summary of all proposed changes and ask:
 - 'approve <filename>' to apply changes to a specific file
 - 'revise <filename>' to discuss modifications
 - 'reject' to discard this proposal"
+
+### Step 7: Next Step
+
+After applying approved changes, tell the user:
+
+"Proposed changes applied. Results saved to `.syskit/analysis/<folder>/proposed_changes.md`.
+
+Next step: run `/syskit-plan` to create an implementation task breakdown.
+
+Tip: Start a new conversation before running the next command to free up context."

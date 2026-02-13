@@ -23,20 +23,79 @@ Otherwise:
 
 Verify the status shows changes were approved. If not, prompt user to run `/syskit-propose` first.
 
-### Step 2: Load Current Specifications
+### Step 2: Delegate Scope Extraction
 
-Load all affected documents from `doc/` to understand the current state.
+Use the Task tool to launch a subagent that reads the affected documents and design units to extract implementation scope. This keeps the full document contents out of your context window.
 
-Also load relevant design unit documents to understand implementation structure.
+Launch a `general-purpose` Task agent with this prompt (substitute the actual proposed_changes.md content for PROPOSED_CHANGES_CONTENT below):
 
-### Step 3: Identify Implementation Scope
+> You are extracting implementation scope from approved specification changes.
+>
+> ## Proposed Changes
+>
+> PROPOSED_CHANGES_CONTENT
+>
+> ## Instructions
+>
+> 1. Read each specification document referenced in the proposed changes above. Read them from the `doc/` directories.
+>
+> 2. Read all design unit documents (`doc/design/unit_*.md`) to understand implementation structure. Focus especially on:
+>    - The `## Implementation` section (lists source files)
+>    - The `## Implements Requirements` section (links to REQ-NNN)
+>    - The `## Provides` and `## Consumes` sections (links to INT-NNN)
+>
+> 3. For each specification change in the proposed changes, identify:
+>    - Which source files need modification (from design unit Implementation sections)
+>    - Which test files need modification or creation
+>    - Dependencies between changes (what must be done first)
+>    - How to verify the change was implemented correctly
+>
+> 4. Return your analysis in EXACTLY this structured format:
+>
+> SCOPE_ANALYSIS_START
+>
+> ## Implementation Scope
+>
+> ### Change: brief description of first change
+>
+> **Affected Specs:** REQ-NNN, INT-NNN, UNIT-NNN
+> **Source Files to Modify:**
+> - `path/to/file`: what needs to change
+>
+> **Source Files to Create:**
+> - `path/to/file`: purpose
+>
+> **Test Files:**
+> - `path/to/test`: what to test
+>
+> **Dependencies:** description of what must be done first, or "None"
+> **Verification:** how to verify this change
+>
+> ### Change: brief description of next change
+>
+> (repeat for each distinct change)
+>
+> ## Suggested Task Sequence
+>
+> | # | Task | Dependencies | Est. Effort |
+> |---|------|--------------|-------------|
+> | 1 | task name | None | small/medium/large |
+> | 2 | task name | Task 1 | effort |
+>
+> ## Risks and Considerations
+>
+> - risk or consideration
+>
+> SCOPE_ANALYSIS_END
 
-For each specification change, identify:
+### Step 3: Review Scope Analysis
 
-1. Which source files need modification
-2. Which tests need modification or creation
-3. Dependencies between changes (what must be done first)
-4. Verification method for each change
+After the subagent returns:
+
+1. Extract the content between the `SCOPE_ANALYSIS_START` and `SCOPE_ANALYSIS_END` markers
+2. Review for completeness — ensure all changes from proposed_changes.md are covered
+3. Review the suggested task sequence for logical ordering and dependencies
+4. If the subagent failed or returned incomplete results, tell the user and offer to fall back to direct analysis
 
 ### Step 4: Create Task Folder
 
@@ -48,7 +107,7 @@ Create `.syskit/tasks/<date>_<change_name>/` with:
 
 ### Step 5: Write Implementation Plan
 
-Create `plan.md`:
+Create `plan.md` using the agent's scope analysis:
 
 ```markdown
 # Implementation Plan: <change name>
@@ -129,12 +188,10 @@ Specification References: <REQ-NNN, INT-NNN, UNIT-NNN>
 
 ### Step 7: Present Plan
 
-Output the implementation plan summary and ask:
+Output the implementation plan summary and tell the user:
 
-"Implementation plan created with <n> tasks. 
+"Implementation plan created with <n> tasks in `.syskit/tasks/<folder>/`.
 
-Ready to begin implementation?
-- 'start' to begin with Task 1
-- 'start <n>' to begin with a specific task
-- 'review <n>' to discuss a specific task
-- 'revise' to modify the plan"
+Next step: run `/syskit-implement` to begin working through the tasks.
+
+Tip: Start a new conversation before running the next command to free up context."

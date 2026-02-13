@@ -16,36 +16,120 @@ $ARGUMENTS.change
 
 ## Instructions
 
-### Step 1: Load All Documents
+### Step 1: Read Manifest
 
-Read all files in:
-- `doc/requirements/`
-- `doc/interfaces/`
-- `doc/design/`
+Read `.syskit/manifest.md` to get the current list of all specification documents and their hashes.
 
-Also read `.syskit/manifest.md` for current file hashes.
+Count the total number of specification documents listed (excluding any with `_000_template` in the name). You will use this count to validate the subagent's output.
 
-### Step 2: Analyze Each Document
+### Step 2: Delegate Document Analysis
 
-For each document, determine if it would be affected by the proposed change.
+Use the Task tool to launch a subagent that reads and analyzes all specification documents. This keeps the full document contents out of your context window.
 
-Categorize impacts as:
+Launch a `general-purpose` Task agent with this prompt (substitute the actual proposed change for PROPOSED_CHANGE below):
 
-- **DIRECT**: The document itself describes something being changed
-- **INTERFACE**: The document defines or uses an interface affected by the change
-- **DEPENDENT**: The document depends on something being changed (via REQ/INT/UNIT references)
-- **UNAFFECTED**: The document is not impacted (state why)
+> You are analyzing the impact of a proposed change on specification documents.
+>
+> ## Proposed Change
+>
+> PROPOSED_CHANGE
+>
+> ## Instructions
+>
+> 1. Read ALL markdown files in these directories:
+>    - `doc/requirements/`
+>    - `doc/interfaces/`
+>    - `doc/design/`
+>
+>    Skip any files with `_000_template` in the name.
+>
+> 2. For each document, extract:
+>    - The document ID (from the H1 heading, e.g., "REQ-001", "INT-003", "UNIT-007")
+>    - The document title (from the H1 heading after the ID)
+>    - All cross-references to other documents (REQ-NNN, INT-NNN, UNIT-NNN mentions)
+>    - A brief summary of what the document specifies (1-2 sentences)
+>
+> 3. Analyze each document against the proposed change. Categorize as:
+>    - **DIRECT**: The document itself describes something being changed
+>    - **INTERFACE**: The document defines or uses an interface affected by the change
+>    - **DEPENDENT**: The document depends on something being changed (via REQ/INT/UNIT references to a DIRECT or INTERFACE document)
+>    - **UNAFFECTED**: The document is not impacted
+>
+>    When tracing dependencies:
+>    - If a requirement is DIRECT, check which design units have it in "Implements Requirements" (those are DEPENDENT)
+>    - If a requirement is DIRECT, check which interfaces it lists under "Interfaces" (those are INTERFACE)
+>    - If an interface is DIRECT or INTERFACE, check which units list it under "Provides" or "Consumes" (those are DEPENDENT)
+>    - If a design unit is DIRECT, check which requirements it implements (review for DEPENDENT impact)
+>
+> 4. Return your analysis in EXACTLY this structured format:
+>
+> IMPACT_ANALYSIS_START
+>
+> ## Direct Impacts
+>
+> ### filename
+> - **ID:** REQ/INT/UNIT-NNN
+> - **Title:** document title
+> - **Impact:** what specifically is affected, 1-2 sentences
+> - **Action Required:** modify/review/no change
+> - **Key References:** cross-referenced IDs found in this document
+>
+> ## Interface Impacts
+>
+> ### filename
+> - **ID:** INT-NNN
+> - **Title:** document title
+> - **Impact:** what specifically is affected
+> - **Consumers:** UNIT-NNN that consume this interface
+> - **Providers:** UNIT-NNN that provide this interface
+> - **Action Required:** modify/review/no change
+>
+> ## Dependent Impacts
+>
+> ### filename
+> - **ID:** REQ/INT/UNIT-NNN
+> - **Title:** document title
+> - **Dependency:** what it depends on that is changing, with specific ID
+> - **Impact:** what specifically is affected
+> - **Action Required:** modify/review/no change
+>
+> ## Unaffected Documents
+>
+> | Document | ID | Reason Unaffected |
+> |----------|-----|-------------------|
+> | filename | ID | brief reason |
+>
+> ## Summary
+>
+> - **Total Documents:** n
+> - **Directly Affected:** n
+> - **Interface Affected:** n
+> - **Dependently Affected:** n
+> - **Unaffected:** n
+>
+> IMPACT_ANALYSIS_END
+>
+> If a category has no documents, include the heading with "None." underneath.
 
-### Step 3: Create Analysis Folder
+### Step 3: Validate Analysis
+
+After the subagent returns:
+
+1. Extract the structured analysis between the `IMPACT_ANALYSIS_START` and `IMPACT_ANALYSIS_END` markers
+2. Compare the "Total Documents" count from the subagent's summary against the count you computed from the manifest in Step 1
+3. If any documents are missing from the analysis, list them and warn the user
+4. If the subagent failed or returned incomplete results, tell the user and offer to fall back to direct analysis (read all documents yourself)
+
+### Step 4: Create Analysis Folder
 
 Create `.syskit/analysis/{{DATE}}_<change_name>/` with:
 
 1. `impact.md` — The impact report (format below)
 2. `snapshot.md` — Generated by running: `.syskit/scripts/manifest-snapshot.sh .syskit/analysis/{{DATE}}_<change_name>/`
 
-### Step 4: Output Impact Report
+### Step 5: Output Impact Report
 
-Use this format for `impact.md`:
+Use the subagent's structured analysis to write `impact.md` in this format:
 
 ```markdown
 # Impact Analysis: <brief change summary>
@@ -102,8 +186,12 @@ Status: Pending Review
 ...
 ```
 
-### Step 5: Ask for Confirmation
+### Step 6: Next Step
 
-After presenting the impact report, ask:
+After presenting the impact report, tell the user:
 
-"Shall I proceed with proposing specific modifications to the affected documents?"
+"Impact analysis complete. Results saved to `.syskit/analysis/<folder>/impact.md`.
+
+Next step: run `/syskit-propose` to propose specific changes to the affected documents.
+
+Tip: Start a new conversation before running the next command to free up context."

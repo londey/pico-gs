@@ -96,7 +96,14 @@ Add a completion summary:
 After completing the task:
 
 1. Check if there are more pending tasks
-2. If yes, ask: "Task <n> complete. Proceed to Task <next>?"
+2. If yes, tell the user:
+
+"Task <n> complete.
+
+Next: run `/syskit-implement` to continue with the next pending task.
+
+If context is getting large, start a new conversation — task progress is saved to disk."
+
 3. If no, report: "All tasks complete. Run `.syskit/scripts/manifest.sh` to update the manifest."
 
 Also remind to update any design documents if implementation details changed.
