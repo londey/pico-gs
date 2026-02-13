@@ -54,7 +54,17 @@ module rasterizer (
 
     // Configuration
     input  wire [31:12] fb_base_addr,   // Framebuffer base address
-    input  wire [31:12] zb_base_addr    // Z-buffer base address
+    input  wire [31:12] zb_base_addr,   // Z-buffer base address
+
+    // Rendering mode (from register file)
+    input  wire         mode_z_test,    // Z-test enabled (RENDER_MODE[2])
+    input  wire         mode_z_write,   // Z-write enabled (RENDER_MODE[3])
+    input  wire         mode_color_write, // Color buffer write enabled (RENDER_MODE[4])
+    input  wire [2:0]   z_compare,      // Z-test compare function (RENDER_MODE[15:13])
+
+    // Depth range clipping (from Z_RANGE register)
+    input  wire [15:0]  z_range_min,    // Z range minimum (inclusive)
+    input  wire [15:0]  z_range_max     // Z range maximum (inclusive)
 );
 
     // ========================================================================
@@ -83,7 +93,8 @@ module rasterizer (
         ZBUF_TEST       = 4'd8,  // Compare interpolated Z with Z-buffer
         WRITE_PIXEL     = 4'd9,  // Write to framebuffer and Z-buffer
         WRITE_WAIT      = 4'd10, // Wait for write completion
-        ITER_NEXT       = 4'd11  // Move to next pixel
+        ITER_NEXT       = 4'd11, // Move to next pixel
+        RANGE_TEST      = 4'd12  // Depth range + early Z bypass check
     } state_t;
 
     state_t state;
@@ -146,6 +157,26 @@ module rasterizer (
 
     // Z-buffer write data - 16-bit depth in lower half
     assign zb_wdata = {16'h0000, interp_z};
+
+    // ========================================================================
+    // Early Z Module
+    // ========================================================================
+
+    wire ez_range_pass;
+    wire ez_z_test_pass;
+    wire ez_z_bypass;
+
+    early_z u_early_z (
+        .fragment_z(interp_z),
+        .zbuffer_z(zbuf_value),
+        .z_range_min(z_range_min),
+        .z_range_max(z_range_max),
+        .z_test_en(mode_z_test),
+        .z_compare(z_compare),
+        .range_pass(ez_range_pass),
+        .z_test_pass(ez_z_test_pass),
+        .z_bypass(ez_z_bypass)
+    );
 
     // ========================================================================
     // Helper Functions
@@ -340,8 +371,21 @@ module rasterizer (
                     interp_b <= (sum_b[39:16] > 255) ? 8'd255 : sum_b[23:16];
                     interp_z <= (sum_z[39:16] > 65535) ? 16'hFFFF : sum_z[31:16];
 
-                    // Re-enable Z-buffering
-                    state <= ZBUF_READ;
+                    state <= RANGE_TEST;
+                end
+
+                RANGE_TEST: begin
+                    // Depth range test and early Z bypass decision
+                    if (!ez_range_pass) begin
+                        // Fragment outside depth range - discard
+                        state <= ITER_NEXT;
+                    end else if (ez_z_bypass) begin
+                        // Z-test disabled or ALWAYS - skip Z-buffer read
+                        state <= WRITE_PIXEL;
+                    end else begin
+                        // Proceed to Z-buffer read and test
+                        state <= ZBUF_READ;
+                    end
                 end
 
                 ZBUF_READ: begin
@@ -365,8 +409,8 @@ module rasterizer (
                 end
 
                 ZBUF_TEST: begin
-                    // Z-test: write if new Z is closer (smaller value)
-                    if (interp_z < zbuf_value) begin
+                    // Z-test using early_z compare result
+                    if (ez_z_test_pass) begin
                         state <= WRITE_PIXEL;
                     end else begin
                         // Failed Z-test - skip pixel
@@ -375,25 +419,30 @@ module rasterizer (
                 end
 
                 WRITE_PIXEL: begin
-                    // Write to framebuffer - R5G6B5 format (16-bit color)
-                    // Convert RGB888 to R5G6B5: [15:11]=R5, [10:5]=G6, [4:0]=B5
-                    fb_addr <= {fb_base_addr, 12'b0} + (curr_y * 10'd640 + curr_x);
-                    fb_wdata <= {16'h0000,                          // Upper 16 bits unused
-                                 interp_r[7:3],                     // R5
-                                 interp_g[7:2],                     // G6
-                                 interp_b[7:3]};                    // B5
-                    fb_req <= 1'b1;
+                    // Framebuffer write (gated by COLOR_WRITE_EN)
+                    if (mode_color_write) begin
+                        // Write to framebuffer - R5G6B5 format (16-bit color)
+                        fb_addr <= {fb_base_addr, 12'b0} + (curr_y * 10'd640 + curr_x);
+                        fb_wdata <= {16'h0000,                          // Upper 16 bits unused
+                                     interp_r[7:3],                     // R5
+                                     interp_g[7:2],                     // G6
+                                     interp_b[7:3]};                    // B5
+                        fb_req <= 1'b1;
+                    end
 
-                    // Write to Z-buffer - 16-bit depth in lower half
-                    zb_addr <= {zb_base_addr, 12'b0} + (curr_y * 10'd640 + curr_x);
-                    zb_we <= 1'b1;  // Write operation
-                    zb_req <= 1'b1;
+                    // Z-buffer write (gated by Z_WRITE_EN)
+                    if (mode_z_write) begin
+                        zb_addr <= {zb_base_addr, 12'b0} + (curr_y * 10'd640 + curr_x);
+                        zb_we <= 1'b1;  // Write operation
+                        zb_req <= 1'b1;
+                    end
 
                     state <= WRITE_WAIT;
                 end
 
                 WRITE_WAIT: begin
-                    if (fb_ack && zb_ack) begin  // Wait for both writes to complete
+                    // Wait for all active writes to complete
+                    if ((!fb_req || fb_ack) && (!zb_req || zb_ack)) begin
                         fb_req <= 1'b0;
                         zb_req <= 1'b0;
                         state <= ITER_NEXT;

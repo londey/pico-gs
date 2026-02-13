@@ -208,6 +208,184 @@ mod rgba_packing {
     }
 }
 
+/// Register address constants (INT-010).
+mod register_addresses {
+    use pico_gs_core::gpu::registers;
+
+    #[test]
+    fn render_mode_address() {
+        assert_eq!(registers::RENDER_MODE, 0x30);
+    }
+
+    #[test]
+    fn z_range_address() {
+        assert_eq!(registers::Z_RANGE, 0x31);
+    }
+
+    #[test]
+    fn tri_mode_alias() {
+        assert_eq!(registers::TRI_MODE, registers::RENDER_MODE);
+    }
+}
+
+/// RENDER_MODE bit field constants (INT-010 §0x30).
+mod render_mode_bits {
+    use pico_gs_core::gpu::registers;
+
+    #[test]
+    fn gouraud_bit_0() {
+        assert_eq!(registers::RENDER_MODE_GOURAUD, 1 << 0);
+    }
+
+    #[test]
+    fn z_test_bit_2() {
+        assert_eq!(registers::RENDER_MODE_Z_TEST, 1 << 2);
+    }
+
+    #[test]
+    fn z_write_bit_3() {
+        assert_eq!(registers::RENDER_MODE_Z_WRITE, 1 << 3);
+    }
+
+    #[test]
+    fn color_write_bit_4() {
+        assert_eq!(registers::RENDER_MODE_COLOR_WRITE, 0x10);
+    }
+
+    #[test]
+    fn z_compare_less_bits_15_13() {
+        assert_eq!(registers::Z_COMPARE_LESS, 0b000 << 13);
+    }
+
+    #[test]
+    fn z_compare_lequal() {
+        assert_eq!(registers::Z_COMPARE_LEQUAL, 0b001 << 13);
+    }
+
+    #[test]
+    fn z_compare_always() {
+        assert_eq!(registers::Z_COMPARE_ALWAYS, 0b110 << 13);
+    }
+}
+
+/// RenderFlags packing to RENDER_MODE register value.
+mod render_flags_packing {
+    use pico_gs_core::gpu::registers;
+    use pico_gs_core::render::RenderFlags;
+
+    #[test]
+    fn color_write_true_sets_bit4() {
+        let flags = RenderFlags {
+            gouraud: false,
+            textured: false,
+            z_test: false,
+            z_write: false,
+            color_write: true,
+        };
+        assert_ne!(
+            flags.to_render_mode() & registers::RENDER_MODE_COLOR_WRITE,
+            0
+        );
+    }
+
+    #[test]
+    fn color_write_false_clears_bit4() {
+        let flags = RenderFlags {
+            gouraud: false,
+            textured: false,
+            z_test: false,
+            z_write: false,
+            color_write: false,
+        };
+        assert_eq!(
+            flags.to_render_mode() & registers::RENDER_MODE_COLOR_WRITE,
+            0
+        );
+    }
+
+    #[test]
+    fn to_tri_mode_alias_matches() {
+        let flags = RenderFlags {
+            gouraud: true,
+            textured: false,
+            z_test: true,
+            z_write: true,
+            color_write: true,
+        };
+        assert_eq!(flags.to_tri_mode(), flags.to_render_mode());
+    }
+
+    #[test]
+    fn z_prepass_flags() {
+        // Z-prepass: Z-test + Z-write, no color write.
+        let flags = RenderFlags {
+            gouraud: false,
+            textured: false,
+            z_test: true,
+            z_write: true,
+            color_write: false,
+        };
+        let mode = flags.to_render_mode();
+        assert_ne!(mode & registers::RENDER_MODE_Z_TEST, 0);
+        assert_ne!(mode & registers::RENDER_MODE_Z_WRITE, 0);
+        assert_eq!(mode & registers::RENDER_MODE_COLOR_WRITE, 0);
+    }
+
+    #[test]
+    fn all_flags_set() {
+        let flags = RenderFlags {
+            gouraud: true,
+            textured: true,
+            z_test: true,
+            z_write: true,
+            color_write: true,
+        };
+        let mode = flags.to_render_mode();
+        // textured is not encoded in RENDER_MODE (it's in the vertex submission path)
+        let expected = registers::RENDER_MODE_GOURAUD
+            | registers::RENDER_MODE_Z_TEST
+            | registers::RENDER_MODE_Z_WRITE
+            | registers::RENDER_MODE_COLOR_WRITE;
+        assert_eq!(mode, expected);
+    }
+}
+
+/// Z_RANGE register packing.
+mod z_range_packing {
+    // Re-implement the packing logic from GpuDriver::set_z_range() for host testing.
+    fn pack_z_range(z_min: u16, z_max: u16) -> u64 {
+        ((z_max as u64) << 16) | (z_min as u64)
+    }
+
+    #[test]
+    fn full_range_disabled() {
+        assert_eq!(pack_z_range(0x0000, 0xFFFF), 0x0000_0000_FFFF_0000);
+    }
+
+    #[test]
+    fn restricted_range() {
+        assert_eq!(pack_z_range(0x1000, 0xF000), 0x0000_0000_F000_1000);
+    }
+
+    #[test]
+    fn min_field_in_lower_16() {
+        let packed = pack_z_range(0xABCD, 0x0000);
+        assert_eq!(packed & 0xFFFF, 0xABCD);
+    }
+
+    #[test]
+    fn max_field_in_bits_31_16() {
+        let packed = pack_z_range(0x0000, 0x1234);
+        assert_eq!((packed >> 16) & 0xFFFF, 0x1234);
+    }
+
+    #[test]
+    fn upper_32_bits_zero() {
+        let packed = pack_z_range(0xFFFF, 0xFFFF);
+        assert_eq!(packed >> 32, 0);
+    }
+}
+
 /// Vertex position packing.
 mod position_packing {
     fn f32_to_12_4(val: f32) -> u16 {

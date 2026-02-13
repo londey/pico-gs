@@ -127,6 +127,12 @@ module gpu_top (
     wire mode_textured;
     wire mode_z_test;
     wire mode_z_write;
+    wire mode_color_write;
+    wire [2:0] z_compare;
+
+    // Depth range clipping
+    wire [15:0] z_range_min;
+    wire [15:0] z_range_max;
 
     // Framebuffer configuration
     wire [31:12] fb_draw;
@@ -204,6 +210,10 @@ module gpu_top (
         .mode_textured(mode_textured),
         .mode_z_test(mode_z_test),
         .mode_z_write(mode_z_write),
+        .mode_color_write(mode_color_write),
+        .z_compare(z_compare),
+        .z_range_min(z_range_min),
+        .z_range_max(z_range_max),
         .fb_draw(fb_draw),
         .fb_display(fb_display),
         .clear_color(clear_color),
@@ -487,7 +497,17 @@ module gpu_top (
 
         // Configuration
         .fb_base_addr(fb_draw[31:12]),  // Draw framebuffer base
-        .zb_base_addr(20'h20000)        // Z-buffer at fixed address for now
+        .zb_base_addr(20'h20000),       // Z-buffer at fixed address for now
+
+        // Rendering mode
+        .mode_z_test(mode_z_test),
+        .mode_z_write(mode_z_write),
+        .mode_color_write(mode_color_write),
+        .z_compare(z_compare),
+
+        // Depth range clipping
+        .z_range_min(z_range_min),
+        .z_range_max(z_range_max)
     );
 
 endmodule

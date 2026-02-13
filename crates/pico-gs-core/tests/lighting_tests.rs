@@ -161,8 +161,8 @@ mod single_directional {
         let ambient = AmbientLight { color: Vec3::ZERO };
         let result = compute_lighting(Vec3::Y, [255, 255, 255, 255], &lights, &ambient);
         assert_eq!(result[0], 255); // Red channel lit
-        assert_eq!(result[1], 0);   // Green dark
-        assert_eq!(result[2], 0);   // Blue dark
+        assert_eq!(result[1], 0); // Green dark
+        assert_eq!(result[2], 0); // Blue dark
     }
 }
 

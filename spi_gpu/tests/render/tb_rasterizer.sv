@@ -47,6 +47,14 @@ module tb_rasterizer;
     reg [31:12] fb_base_addr;
     reg [31:12] zb_base_addr;
 
+    // Rendering mode
+    reg         mode_z_test;
+    reg         mode_z_write;
+    reg         mode_color_write;
+    reg  [2:0]  z_compare;
+    reg  [15:0] z_range_min;
+    reg  [15:0] z_range_max;
+
     // Instantiate DUT
     rasterizer dut (
         .clk(clk),
@@ -64,7 +72,13 @@ module tb_rasterizer;
         .zb_wdata(zb_wdata), .zb_rdata(zb_rdata),
         .zb_ack(zb_ack), .zb_ready(zb_ready),
         .fb_base_addr(fb_base_addr),
-        .zb_base_addr(zb_base_addr)
+        .zb_base_addr(zb_base_addr),
+        .mode_z_test(mode_z_test),
+        .mode_z_write(mode_z_write),
+        .mode_color_write(mode_color_write),
+        .z_compare(z_compare),
+        .z_range_min(z_range_min),
+        .z_range_max(z_range_max)
     );
 
     // Clock generation (100 MHz system clock)
@@ -96,6 +110,12 @@ module tb_rasterizer;
         zb_ready = 1;
         fb_base_addr = 20'h00000;  // Framebuffer at 0x00000000
         zb_base_addr = 20'h10000;  // Z-buffer at 0x10000000
+        mode_z_test = 1'b1;        // Enable Z-testing
+        mode_z_write = 1'b1;       // Enable Z-writes
+        mode_color_write = 1'b1;   // Enable color writes
+        z_compare = 3'b000;        // LESS compare function
+        z_range_min = 16'h0000;    // Full depth range (disabled)
+        z_range_max = 16'hFFFF;
 
         #100;
         rst_n = 1;

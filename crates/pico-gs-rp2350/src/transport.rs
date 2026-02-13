@@ -20,10 +20,14 @@ type SpiPins = (
 );
 
 pub type SpiBus = hal::spi::Spi<hal::spi::Enabled, hal::pac::SPI0, SpiPins, 8>;
-pub type CsPin = hal::gpio::Pin<hal::gpio::bank0::Gpio5, hal::gpio::FunctionSioOutput, hal::gpio::PullDown>;
-pub type CmdFullPin = hal::gpio::Pin<hal::gpio::bank0::Gpio6, hal::gpio::FunctionSioInput, hal::gpio::PullDown>;
-pub type CmdEmptyPin = hal::gpio::Pin<hal::gpio::bank0::Gpio7, hal::gpio::FunctionSioInput, hal::gpio::PullDown>;
-pub type VsyncPin = hal::gpio::Pin<hal::gpio::bank0::Gpio8, hal::gpio::FunctionSioInput, hal::gpio::PullDown>;
+pub type CsPin =
+    hal::gpio::Pin<hal::gpio::bank0::Gpio5, hal::gpio::FunctionSioOutput, hal::gpio::PullDown>;
+pub type CmdFullPin =
+    hal::gpio::Pin<hal::gpio::bank0::Gpio6, hal::gpio::FunctionSioInput, hal::gpio::PullDown>;
+pub type CmdEmptyPin =
+    hal::gpio::Pin<hal::gpio::bank0::Gpio7, hal::gpio::FunctionSioInput, hal::gpio::PullDown>;
+pub type VsyncPin =
+    hal::gpio::Pin<hal::gpio::bank0::Gpio8, hal::gpio::FunctionSioInput, hal::gpio::PullDown>;
 
 /// RP2350 hardware transport for GPU SPI communication.
 pub struct Rp2350Transport {

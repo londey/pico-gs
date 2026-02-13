@@ -8,15 +8,30 @@ use pico_gs_core::gpu::GpuDriver;
 use pico_gs_core::render::commands;
 use pico_gs_core::render::RenderCommand;
 
-use pico_gs_core::assets::textures::StaticTextureSource;
 use crate::queue::CommandConsumer;
 use crate::transport::Rp2350Transport;
+use pico_gs_core::assets::textures::StaticTextureSource;
 
 /// Number of frames between performance log outputs.
 const PERF_LOG_INTERVAL: u32 = 120;
 
+/// Log performance counters at regular intervals.
+fn log_perf(frame_count: u32, cmds_this_frame: u32, idle_spins: u32) {
+    if frame_count % PERF_LOG_INTERVAL == 0 {
+        defmt::info!(
+            "Core1: frame={}, cmds/frame={}, idle_spins={}",
+            frame_count,
+            cmds_this_frame,
+            idle_spins
+        );
+    }
+}
+
 /// Core 1 entry point. Owns the GPU driver and processes render commands.
-pub fn core1_main(mut gpu: GpuDriver<Rp2350Transport>, mut consumer: CommandConsumer<'static>) -> ! {
+pub fn core1_main(
+    mut gpu: GpuDriver<Rp2350Transport>,
+    mut consumer: CommandConsumer<'static>,
+) -> ! {
     // Configure Core 1's own MPU with stack guard regions.
     unsafe { crate::configure_stack_guards() };
 
@@ -39,15 +54,7 @@ pub fn core1_main(mut gpu: GpuDriver<Rp2350Transport>, mut consumer: CommandCons
             // Frame boundary: vsync marks end of frame.
             if is_vsync {
                 frame_count += 1;
-
-                if frame_count % PERF_LOG_INTERVAL == 0 {
-                    defmt::info!(
-                        "Core1: frame={}, cmds/frame={}, idle_spins={}",
-                        frame_count,
-                        cmds_this_frame,
-                        idle_spins
-                    );
-                }
+                log_perf(frame_count, cmds_this_frame, idle_spins);
                 cmds_this_frame = 0;
                 idle_spins = 0;
             }

@@ -12,6 +12,12 @@ pub struct Scene {
     pub needs_init: bool,
 }
 
+impl Default for Scene {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scene {
     /// Create a new scene with the default demo.
     pub fn new() -> Self {

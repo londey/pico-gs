@@ -1,7 +1,7 @@
-// Spec-ref: unit_022_gpu_driver_layer.md `5e572eefb73ff971` 2026-02-12
-//! GPU v2.0 register addresses and bit-field constants.
+// Spec-ref: unit_022_gpu_driver_layer.md `ae21a1cf39c446b2` 2026-02-13
+//! GPU register addresses and bit-field constants.
 //!
-//! Matches the ICEpi SPI GPU register map specification v2.0.
+//! Matches the ICEpi SPI GPU register map specification v10.0 (INT-010).
 
 // --- Vertex State (0x00-0x0F) ---
 
@@ -57,10 +57,12 @@ pub const TEX3_WRAP: u8 = 0x2C;
 
 // --- Rendering Configuration (0x30-0x3F) ---
 
-/// Triangle rendering mode: Gouraud, Z-test, Z-write.
-pub const TRI_MODE: u8 = 0x30;
-/// Alpha blending mode.
-pub const ALPHA_BLEND: u8 = 0x31;
+/// Unified rendering state register (v10.0).
+pub const RENDER_MODE: u8 = 0x30;
+/// Backward-compatible alias for `RENDER_MODE`.
+pub const TRI_MODE: u8 = RENDER_MODE;
+/// Depth range clipping (Z scissor) min/max register (v10.0).
+pub const Z_RANGE: u8 = 0x31;
 
 // --- Framebuffer & Z-Buffer (0x40-0x4F) ---
 
@@ -68,7 +70,7 @@ pub const ALPHA_BLEND: u8 = 0x31;
 pub const FB_DRAW: u8 = 0x40;
 /// Display scanout framebuffer address (4K aligned, takes effect at VSYNC).
 pub const FB_DISPLAY: u8 = 0x41;
-/// Z-buffer address + compare function.
+/// Z-buffer base address (v8.0: Z_COMPARE moved to RENDER_MODE).
 pub const FB_ZBUFFER: u8 = 0x42;
 
 // --- Status & Control (0x70-0x7F) ---
@@ -82,32 +84,89 @@ pub const STATUS: u8 = 0x7E;
 /// GPU identification register (read-only): VERSION + DEVICE_ID.
 pub const ID: u8 = 0x7F;
 
-// --- TRI_MODE bit fields ---
+// --- RENDER_MODE bit fields (see INT-010 §0x30) ---
 
 /// Gouraud shading enable (bit 0).
-pub const TRI_MODE_GOURAUD: u64 = 1 << 0;
+pub const RENDER_MODE_GOURAUD: u64 = 1 << 0;
 /// Depth testing enable (bit 2).
-pub const TRI_MODE_Z_TEST: u64 = 1 << 2;
+pub const RENDER_MODE_Z_TEST: u64 = 1 << 2;
 /// Depth write enable (bit 3).
-pub const TRI_MODE_Z_WRITE: u64 = 1 << 3;
+pub const RENDER_MODE_Z_WRITE: u64 = 1 << 3;
+/// Color buffer write enable (bit 4). 0 = Z-only pass.
+pub const RENDER_MODE_COLOR_WRITE: u64 = 1 << 4;
 
-// --- Z-Buffer compare functions (bits [34:32] of FB_ZBUFFER) ---
+// Backward-compatible aliases.
+pub const TRI_MODE_GOURAUD: u64 = RENDER_MODE_GOURAUD;
+pub const TRI_MODE_Z_TEST: u64 = RENDER_MODE_Z_TEST;
+pub const TRI_MODE_Z_WRITE: u64 = RENDER_MODE_Z_WRITE;
 
-pub const Z_COMPARE_LESS: u64 = 0b000 << 32;
-pub const Z_COMPARE_LEQUAL: u64 = 0b001 << 32;
-pub const Z_COMPARE_EQUAL: u64 = 0b010 << 32;
-pub const Z_COMPARE_GEQUAL: u64 = 0b011 << 32;
-pub const Z_COMPARE_GREATER: u64 = 0b100 << 32;
-pub const Z_COMPARE_NOTEQUAL: u64 = 0b101 << 32;
-pub const Z_COMPARE_ALWAYS: u64 = 0b110 << 32;
-pub const Z_COMPARE_NEVER: u64 = 0b111 << 32;
+// --- Z-Buffer compare functions (RENDER_MODE bits [15:13], v8.0: moved from FB_ZBUFFER) ---
 
-// --- Alpha blend modes ---
+pub const Z_COMPARE_LESS: u64 = 0b000 << 13;
+pub const Z_COMPARE_LEQUAL: u64 = 0b001 << 13;
+pub const Z_COMPARE_EQUAL: u64 = 0b010 << 13;
+pub const Z_COMPARE_GEQUAL: u64 = 0b011 << 13;
+pub const Z_COMPARE_GREATER: u64 = 0b100 << 13;
+pub const Z_COMPARE_NOTEQUAL: u64 = 0b101 << 13;
+pub const Z_COMPARE_ALWAYS: u64 = 0b110 << 13;
+pub const Z_COMPARE_NEVER: u64 = 0b111 << 13;
 
-pub const ALPHA_DISABLED: u64 = 0b00;
-pub const ALPHA_ADD: u64 = 0b01;
-pub const ALPHA_SUBTRACT: u64 = 0b10;
-pub const ALPHA_BLEND_MODE: u64 = 0b11;
+// --- Alpha blend modes (RENDER_MODE bits [9:7], v8.0: moved from ALPHA_BLEND register) ---
+
+pub const ALPHA_DISABLED: u64 = 0b000 << 7;
+pub const ALPHA_ADD: u64 = 0b001 << 7;
+pub const ALPHA_SUBTRACT: u64 = 0b010 << 7;
+pub const ALPHA_BLEND_MODE: u64 = 0b011 << 7;
+
+// --- RENDER_MODE enum types (see INT-010 §0x30, INT-020) ---
+
+/// Depth test comparison function (RENDER_MODE[15:13]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ZCompare {
+    /// Less than (<).
+    Less = 0b000,
+    /// Less than or equal (<=).
+    Lequal = 0b001,
+    /// Equal (=).
+    Equal = 0b010,
+    /// Greater than or equal (>=).
+    Gequal = 0b011,
+    /// Greater than (>).
+    Greater = 0b100,
+    /// Not equal (!=).
+    NotEqual = 0b101,
+    /// Always pass.
+    Always = 0b110,
+    /// Never pass.
+    Never = 0b111,
+}
+
+/// Alpha blending mode (RENDER_MODE[9:7]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AlphaBlend {
+    /// Disabled: overwrite destination.
+    Disabled = 0b000,
+    /// Additive: src + dst, saturate.
+    Add = 0b001,
+    /// Subtractive: src - dst, saturate.
+    Subtract = 0b010,
+    /// Alpha blend: src * a + dst * (1-a).
+    Blend = 0b011,
+}
+
+/// Backface culling mode (RENDER_MODE[6:5]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CullMode {
+    /// No culling.
+    None = 0b00,
+    /// Cull clockwise-wound triangles.
+    Cw = 0b01,
+    /// Cull counter-clockwise triangles.
+    Ccw = 0b10,
+}
 
 // --- Memory map addresses ---
 
@@ -130,5 +189,5 @@ pub const EXPECTED_DEVICE_ID: u16 = 0x6702;
 pub const SCREEN_WIDTH: u16 = 640;
 pub const SCREEN_HEIGHT: u16 = 480;
 
-/// Z far plane value (25-bit unsigned max).
-pub const Z_FAR: u32 = 0x1FF_FFFF;
+/// Z far plane value (16-bit unsigned max).
+pub const Z_FAR: u32 = 0xFFFF;

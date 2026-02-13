@@ -3,7 +3,9 @@
 //! Single-threaded application that communicates with the GPU via an FT232H
 //! USB-to-SPI adapter. Provides the same demo scenes as the RP2350 firmware.
 
+#[allow(dead_code)]
 mod input;
+#[allow(dead_code)]
 mod transport;
 
 fn main() {

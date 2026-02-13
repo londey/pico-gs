@@ -33,7 +33,7 @@ use pico_gs_core::scene::demos::{self, Demo};
 use pico_gs_core::scene::Scene;
 
 use input::KeyEvent;
-use queue::{CommandQueue, CommandProducer};
+use queue::{CommandProducer, CommandQueue};
 use transport::Rp2350Transport;
 
 /// Boot ROM image definition for Cortex-M33 secure mode.
@@ -261,11 +261,12 @@ fn main() -> ! {
                 );
                 enqueue_blocking(
                     &mut producer,
-                    RenderCommand::SetTriMode(RenderFlags {
+                    RenderCommand::SetRenderMode(RenderFlags {
                         gouraud: true,
                         textured: false,
                         z_test: false,
                         z_write: false,
+                        color_write: true,
                     }),
                 );
                 enqueue_blocking(
@@ -289,11 +290,12 @@ fn main() -> ! {
                 );
                 enqueue_blocking(
                     &mut producer,
-                    RenderCommand::SetTriMode(RenderFlags {
+                    RenderCommand::SetRenderMode(RenderFlags {
                         gouraud: false,
                         textured: true,
                         z_test: false,
                         z_write: false,
+                        color_write: true,
                     }),
                 );
                 enqueue_blocking(
@@ -321,11 +323,12 @@ fn main() -> ! {
                 );
                 enqueue_blocking(
                     &mut producer,
-                    RenderCommand::SetTriMode(RenderFlags {
+                    RenderCommand::SetRenderMode(RenderFlags {
                         gouraud: true,
                         textured: false,
                         z_test: true,
                         z_write: true,
+                        color_write: true,
                     }),
                 );
 
@@ -352,10 +355,7 @@ fn main() -> ! {
 }
 
 /// Enqueue a command with backpressure: spin until space is available.
-fn enqueue_blocking(
-    producer: &mut CommandProducer<'_>,
-    cmd: RenderCommand,
-) {
+fn enqueue_blocking(producer: &mut CommandProducer<'_>, cmd: RenderCommand) {
     loop {
         match producer.enqueue(cmd) {
             Ok(()) => return,

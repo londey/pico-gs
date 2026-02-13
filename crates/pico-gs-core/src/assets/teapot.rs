@@ -3,8 +3,8 @@
 //! Generates a low-poly teapot body (no spout/handle) suitable for the
 //! Gouraud-lit spinning demo. 146 vertices, 288 triangles.
 
-use glam::Vec3;
 use crate::render::mesh::MeshRef;
+use glam::Vec3;
 
 /// Segments around the Y axis.
 const SEGMENTS: usize = 16;

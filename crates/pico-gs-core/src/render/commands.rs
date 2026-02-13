@@ -8,9 +8,7 @@ use pico_gs_hal::{FlowControl, SpiTransport};
 use crate::gpu::driver::{GpuDriver, GpuError};
 use crate::gpu::registers;
 use crate::gpu::vertex::GpuVertex;
-use crate::render::{
-    ClearCommand, RenderCommand, ScreenTriangleCommand, UploadTextureCommand,
-};
+use crate::render::{ClearCommand, RenderCommand, ScreenTriangleCommand, UploadTextureCommand};
 
 /// Texture metadata for the command executor.
 pub struct TextureInfo<'a> {
@@ -36,9 +34,10 @@ pub fn execute<S: SpiTransport + FlowControl>(
         RenderCommand::ClearFramebuffer(clear) => execute_clear(gpu, clear),
         RenderCommand::WaitVsync => execute_vsync(gpu),
         RenderCommand::SubmitScreenTriangle(tri) => execute_screen_triangle(gpu, tri),
-        RenderCommand::SetTriMode(flags) => {
-            gpu.write(registers::TRI_MODE, flags.to_tri_mode())
+        RenderCommand::SetRenderMode(flags) => {
+            gpu.write(registers::RENDER_MODE, flags.to_render_mode())
         }
+        RenderCommand::SetZRange { z_min, z_max } => gpu.set_z_range(*z_min, *z_max),
         RenderCommand::UploadTexture(upload_cmd) => {
             execute_upload_texture(gpu, upload_cmd, textures)
         }
@@ -60,8 +59,8 @@ fn execute_clear<S: SpiTransport>(
 ) -> Result<(), GpuError<S::Error>> {
     let [r, g, b, a] = cmd.color;
 
-    // Flat shading, no texture, no depth for color clear.
-    gpu.write(registers::TRI_MODE, 0)?;
+    // Flat shading, color-write enabled, no depth.
+    gpu.write(registers::RENDER_MODE, registers::RENDER_MODE_COLOR_WRITE)?;
     gpu.write(registers::COLOR, crate::gpu::vertex::pack_color(r, g, b, a))?;
 
     // Two triangles covering 640x480 viewport.
@@ -74,14 +73,12 @@ fn execute_clear<S: SpiTransport>(
     gpu.submit_triangle(&v00, &v11, &v01, false)?;
 
     if cmd.clear_depth {
-        // Configure Z-buffer for ALWAYS compare, Z-write enabled.
+        // Z-only pass: ALWAYS compare, Z-write enabled, no color write.
         gpu.write(
-            registers::FB_ZBUFFER,
-            registers::Z_COMPARE_ALWAYS | registers::ZBUFFER_ADDR as u64,
-        )?;
-        gpu.write(
-            registers::TRI_MODE,
-            registers::TRI_MODE_Z_TEST | registers::TRI_MODE_Z_WRITE,
+            registers::RENDER_MODE,
+            registers::RENDER_MODE_Z_TEST
+                | registers::RENDER_MODE_Z_WRITE
+                | registers::Z_COMPARE_ALWAYS,
         )?;
 
         // Full-screen triangles at far plane depth.
@@ -92,12 +89,6 @@ fn execute_clear<S: SpiTransport>(
 
         gpu.submit_triangle(&far_v00, &far_v10, &far_v11, false)?;
         gpu.submit_triangle(&far_v00, &far_v11, &far_v01, false)?;
-
-        // Restore LEQUAL compare.
-        gpu.write(
-            registers::FB_ZBUFFER,
-            registers::Z_COMPARE_LEQUAL | registers::ZBUFFER_ADDR as u64,
-        )?;
     }
 
     Ok(())
@@ -121,11 +112,10 @@ fn execute_upload_texture<S: SpiTransport>(
     gpu.write(registers::TEX0_BASE, cmd.gpu_address as u64)?;
 
     // TEX0_FMT: swizzle=RGBA(0), height_log2, width_log2, not compressed, enabled.
-    let fmt: u64 = (0u64 << 16)
-        | ((tex.height_log2 as u64) << 8)
+    let fmt: u64 = ((tex.height_log2 as u64) << 8)
         | ((tex.width_log2 as u64) << 4)
-        | (0 << 1) // not compressed
-        | (1 << 0); // enabled
+        // bit 1 = 0 (not compressed), bit 0 = 1 (enabled)
+        | 1;
     gpu.write(registers::TEX0_FMT, fmt)?;
 
     // REPEAT wrapping on both axes.

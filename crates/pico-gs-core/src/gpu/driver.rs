@@ -5,7 +5,7 @@
 
 use pico_gs_hal::{FlowControl, SpiTransport};
 
-use super::registers;
+use super::registers::{self, AlphaBlend, CullMode, ZCompare};
 use super::vertex::GpuVertex;
 
 /// Error type for GPU driver operations, generic over transport errors.
@@ -105,6 +105,41 @@ impl<S: SpiTransport> GpuDriver<S> {
         self.write(registers::VERTEX, v2.position_packed)?;
 
         Ok(())
+    }
+
+    /// Configure per-material rendering state in a single RENDER_MODE register write.
+    ///
+    /// Packs all parameters into the unified RENDER_MODE register (0x30) per INT-010.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_render_mode(
+        &mut self,
+        gouraud: bool,
+        z_test: bool,
+        z_write: bool,
+        color_write: bool,
+        z_compare: ZCompare,
+        alpha_blend: AlphaBlend,
+        cull_mode: CullMode,
+        dither: bool,
+    ) -> Result<(), GpuError<S::Error>> {
+        let value = ((z_compare as u64) << 13)
+            | ((dither as u64) << 10)
+            | ((alpha_blend as u64) << 7)
+            | ((cull_mode as u64) << 5)
+            | ((color_write as u64) << 4)
+            | ((z_write as u64) << 3)
+            | ((z_test as u64) << 2)
+            | (gouraud as u64);
+        self.write(registers::RENDER_MODE, value)
+    }
+
+    /// Configure depth range clipping (Z scissor).
+    ///
+    /// Fragments with Z outside [z_min, z_max] are discarded before any SRAM access.
+    /// Default (disabled): z_min=0x0000, z_max=0xFFFF.
+    pub fn set_z_range(&mut self, z_min: u16, z_max: u16) -> Result<(), GpuError<S::Error>> {
+        let value = ((z_max as u64) << 16) | (z_min as u64);
+        self.write(registers::Z_RANGE, value)
     }
 
     /// Swap draw and display framebuffers.

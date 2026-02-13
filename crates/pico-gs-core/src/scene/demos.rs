@@ -7,19 +7,15 @@ use crate::render::{AmbientLight, DirectionalLight};
 use glam::Vec3;
 
 /// Active demo selection.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Demo {
+    #[default]
     GouraudTriangle,
     TexturedTriangle,
     SpinningTeapot,
 }
 
 impl Demo {
-    /// Default demo on boot.
-    pub fn default() -> Self {
-        Demo::GouraudTriangle
-    }
-
     /// Convert from a `u8` index (as used by `InputEvent::SelectDemo`).
     pub fn from_index(index: u8) -> Option<Self> {
         match index {

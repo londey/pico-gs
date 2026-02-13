@@ -1,4 +1,4 @@
-// Spec-ref: unit_022_gpu_driver_layer.md `5e572eefb73ff971` 2026-02-12
+// Spec-ref: unit_022_gpu_driver_layer.md `ae21a1cf39c446b2` 2026-02-13
 //! GpuVertex: pre-packed vertex data for GPU register writes.
 
 use crate::math::fixed;
@@ -25,10 +25,18 @@ impl GpuVertex {
     }
 
     /// Create a GpuVertex with color, position, and texture coordinates.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_full(
-        r: u8, g: u8, b: u8, a: u8,
-        x: f32, y: f32, z: f32,
-        u: f32, v: f32, w: f32,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+        x: f32,
+        y: f32,
+        z: f32,
+        u: f32,
+        v: f32,
+        w: f32,
     ) -> Self {
         Self {
             color_packed: pack_color(r, g, b, a),

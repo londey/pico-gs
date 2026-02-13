@@ -1,3 +1,4 @@
+// Spec-ref: unit_003_register_file.md `ca5e7479fdbd2cfb` 2026-02-13
 // Register File - GPU State and Vertex State Machine
 // Decodes register addresses and manages vertex submission
 // Implements the vertex state machine that triggers triangle rasterization
@@ -26,6 +27,12 @@ module register_file (
     output reg          mode_textured,  // Texture mapping enabled (deferred)
     output reg          mode_z_test,    // Z-test enabled
     output reg          mode_z_write,   // Z-write enabled
+    output reg          mode_color_write, // Color buffer write enabled (RENDER_MODE[4])
+    output reg  [2:0]   z_compare,      // Z-test compare function (RENDER_MODE[15:13])
+
+    // Depth range clipping (Z scissor)
+    output reg  [15:0]  z_range_min,    // Z range minimum (inclusive)
+    output reg  [15:0]  z_range_max,    // Z range maximum (inclusive)
 
     // Framebuffer configuration
     output reg  [31:12] fb_draw,        // Draw target address
@@ -57,6 +64,7 @@ module register_file (
     localparam ADDR_CLEAR_COLOR = 7'h0A;  // Clear color
     localparam ADDR_CLEAR       = 7'h0B;  // Clear trigger (write-only)
     localparam ADDR_STATUS      = 7'h10;  // Status register (read-only)
+    localparam ADDR_Z_RANGE     = 7'h31;  // Depth range clipping min/max (v10.0)
     localparam ADDR_ID          = 7'h7F;  // GPU ID (read-only)
 
     // GPU ID: 0x6702 (version 2.0, Gouraud implementation)
@@ -79,14 +87,23 @@ module register_file (
     // Writable Registers
     // ========================================================================
 
-    reg [7:0] tri_mode;             // Triangle mode flags
+    reg [15:0] tri_mode;            // RENDER_MODE bits [15:0]
+    reg [31:0] z_range;             // Depth range clipping {max[31:16], min[15:0]}
 
     // Assign mode outputs from tri_mode register
     always_comb begin
-        mode_gouraud  = tri_mode[0];
-        mode_textured = tri_mode[1];  // Not used in this implementation
-        mode_z_test   = tri_mode[2];
-        mode_z_write  = tri_mode[3];
+        mode_gouraud     = tri_mode[0];
+        mode_textured    = tri_mode[1];  // Not used in this implementation
+        mode_z_test      = tri_mode[2];
+        mode_z_write     = tri_mode[3];
+        mode_color_write = tri_mode[4];
+        z_compare        = tri_mode[15:13];
+    end
+
+    // Assign depth range clipping outputs
+    always_comb begin
+        z_range_min = z_range[15:0];
+        z_range_max = z_range[31:16];
     end
 
     // ========================================================================
@@ -98,7 +115,8 @@ module register_file (
             // Reset all registers
             current_color <= 32'hFFFFFFFF;  // White
             current_inv_area <= 16'hFFFF;   // Default to ~1.0 (0.16 fixed)
-            tri_mode <= 8'b0000;            // All modes disabled
+            tri_mode <= 16'h0010;           // COLOR_WRITE_EN=1 (bit 4), Z_COMPARE=LESS
+            z_range <= 32'hFFFF_0000;       // max=0xFFFF, min=0x0000 (all pass)
             fb_draw <= 20'h00000;           // Framebuffer A (address 0x000000)
             fb_display <= 20'h00000;
             clear_color <= 32'h00000000;    // Black
@@ -165,7 +183,7 @@ module register_file (
                     end
 
                     ADDR_TRI_MODE: begin
-                        tri_mode <= cmd_wdata[7:0];
+                        tri_mode <= cmd_wdata[15:0];
                     end
 
                     ADDR_FB_DRAW: begin
@@ -182,6 +200,10 @@ module register_file (
 
                     ADDR_CLEAR: begin
                         clear_trigger <= 1'b1;
+                    end
+
+                    ADDR_Z_RANGE: begin
+                        z_range <= cmd_wdata[31:0];
                     end
 
                     default: begin
@@ -201,10 +223,12 @@ module register_file (
 
         case (cmd_addr)
             ADDR_COLOR:       cmd_rdata = {32'b0, current_color};
-            ADDR_TRI_MODE:    cmd_rdata = {56'b0, tri_mode};
+            ADDR_TRI_MODE:    cmd_rdata = {48'b0, tri_mode};
             ADDR_FB_DRAW:     cmd_rdata = {32'b0, fb_draw, 12'b0};
             ADDR_FB_DISPLAY:  cmd_rdata = {32'b0, fb_display, 12'b0};
             ADDR_CLEAR_COLOR: cmd_rdata = {32'b0, clear_color};
+
+            ADDR_Z_RANGE:     cmd_rdata = {32'b0, z_range};
 
             ADDR_STATUS: begin
                 // Status[15:0] = {vblank, busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}

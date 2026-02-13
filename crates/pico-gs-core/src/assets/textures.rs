@@ -57,7 +57,7 @@ const CHECKERBOARD_64_DATA: [u32; 64 * 64] = {
             // 8x8 block checkerboard pattern.
             let block_x = x / 8;
             let block_y = y / 8;
-            let is_white = (block_x + block_y) % 2 == 0;
+            let is_white = (block_x + block_y).is_multiple_of(2);
             let color: u32 = if is_white {
                 0xFF_FF_FF_FF // White, opaque (ABGR: A=FF, B=FF, G=FF, R=FF)
             } else {

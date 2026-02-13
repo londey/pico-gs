@@ -55,22 +55,32 @@ pub struct RenderFlags {
     pub textured: bool,
     pub z_test: bool,
     pub z_write: bool,
+    /// Enable color buffer writes. False = Z-only prepass.
+    pub color_write: bool,
 }
 
 impl RenderFlags {
-    /// Convert to GPU TRI_MODE register value.
-    pub fn to_tri_mode(&self) -> u64 {
+    /// Convert to GPU RENDER_MODE register value.
+    pub fn to_render_mode(&self) -> u64 {
         let mut mode = 0u64;
         if self.gouraud {
-            mode |= crate::gpu::registers::TRI_MODE_GOURAUD;
+            mode |= crate::gpu::registers::RENDER_MODE_GOURAUD;
         }
         if self.z_test {
-            mode |= crate::gpu::registers::TRI_MODE_Z_TEST;
+            mode |= crate::gpu::registers::RENDER_MODE_Z_TEST;
         }
         if self.z_write {
-            mode |= crate::gpu::registers::TRI_MODE_Z_WRITE;
+            mode |= crate::gpu::registers::RENDER_MODE_Z_WRITE;
+        }
+        if self.color_write {
+            mode |= crate::gpu::registers::RENDER_MODE_COLOR_WRITE;
         }
         mode
+    }
+
+    /// Backward-compatible alias for `to_render_mode()`.
+    pub fn to_tri_mode(&self) -> u64 {
+        self.to_render_mode()
     }
 }
 
@@ -86,8 +96,15 @@ pub enum RenderCommand {
     WaitVsync,
     /// Clear the framebuffer to a solid color.
     ClearFramebuffer(ClearCommand),
-    /// Set the triangle rendering mode (TRI_MODE register).
-    SetTriMode(RenderFlags),
+    /// Set the rendering mode (RENDER_MODE register).
+    SetRenderMode(RenderFlags),
+    /// Set depth range clipping (Z_RANGE register).
+    SetZRange {
+        /// Minimum Z value (inclusive). Fragments with Z < min are discarded.
+        z_min: u16,
+        /// Maximum Z value (inclusive). Fragments with Z > max are discarded.
+        z_max: u16,
+    },
     /// Upload texture data to GPU memory (by texture ID).
     UploadTexture(UploadTextureCommand),
 }

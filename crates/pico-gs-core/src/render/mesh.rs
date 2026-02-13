@@ -56,7 +56,7 @@ pub fn render_mesh<F>(
     }; MAX_TRANSFORMED];
 
     let vert_count = mesh.positions.len().min(MAX_TRANSFORMED);
-    for i in 0..vert_count {
+    for (i, slot) in transformed.iter_mut().enumerate().take(vert_count) {
         let pos = mesh.positions[i];
         let norm = mesh.normals[i];
 
@@ -64,7 +64,7 @@ pub fn render_mesh<F>(
         let eye_normal = transform_normal(norm, mv);
         let color = compute_lighting(eye_normal, base_color, lights, ambient);
 
-        transformed[i] = TransformedVertex { screen, color };
+        *slot = TransformedVertex { screen, color };
     }
 
     // Phase 2: Submit front-facing triangles.
