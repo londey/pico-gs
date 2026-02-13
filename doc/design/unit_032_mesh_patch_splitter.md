@@ -36,11 +36,12 @@ None
 
 - `MeshAsset` containing:
   - `patches: Vec<MeshPatch>` — Ordered list of patches. Each `MeshPatch` contains:
-    - `vertices: Vec<VertexData>` — Local vertex data (copied from global list, deduplicated within patch).
-    - `indices: Vec<u8>` — Packed u8 strip commands (4-bit vertex idx + 2-bit kick + 2 spare bits).
-    - `aabb_min: [f32; 3]`, `aabb_max: [f32; 3]` — Patch AABB.
+    - `data: Vec<u8>` — Single contiguous SoA blob: quantized positions (u16), normals (i16 1:15), UVs (i16 1:2:13), and indices (u8 strip commands). Layout per INT-031.
+    - `aabb_min: [f32; 3]`, `aabb_max: [f32; 3]` — Patch AABB (model space, from original f32 positions).
+    - `vertex_count: usize` — Number of vertices (for SoA offset calculation).
+    - `entry_count: usize` — Number of strip command entries.
     - `patch_index: usize` — Zero-based sequential patch number.
-  - `aabb_min: [f32; 3]`, `aabb_max: [f32; 3]` — Overall mesh AABB.
+  - `aabb_min: [f32; 3]`, `aabb_max: [f32; 3]` — Overall mesh AABB (also serves as quantization coordinate system).
 
 ### Internal State
 
@@ -61,7 +62,15 @@ Greedy sequential triangle-packing algorithm:
 6. After all triangles are processed, finalize the last patch if non-empty.
 
 7. **Strip optimization**: After greedy packing, reorder triangles within each patch for strip connectivity; encode as u8 strip commands with alternating KICK_012/KICK_021 to maintain correct winding.
-8. **AABB computation**: Compute per-patch axis-aligned bounding box from vertex positions. After all patches, compute overall mesh AABB encompassing all patch AABBs.
+8. **AABB computation**: Compute per-patch axis-aligned bounding box from the original f32 vertex positions.
+   After all patches, compute overall mesh AABB encompassing all patch AABBs.
+9. **Quantization**: Using the mesh-wide AABB as the quantization coordinate system, convert all patch vertex data:
+   - Positions: f32 → u16 via `round((pos - aabb_min) / (aabb_max - aabb_min) * 65535.0)` per axis.
+   - Normals: f32 → i16 via `round(normal * 32767.0)`, clamped to [-32768, 32767].
+   - UVs: f32 → i16 via `round(uv * 8192.0)`, clamped to [-32768, 32767].
+10. **SoA packing**: Pack each patch's quantized vertex data into a contiguous blob in SoA order:
+    `[pos_x[0..N], pos_y[0..N], pos_z[0..N], norm_x[0..N], norm_y[0..N], norm_z[0..N], uv_u[0..N], uv_v[0..N], indices[0..M]]`.
+    All multi-byte values in little-endian byte order.
 
 Key properties:
 - Vertices shared between triangles within the same patch are deduplicated (stored once, referenced by multiple indices).

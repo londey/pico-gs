@@ -60,7 +60,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
 **Input**:
 | Field | Type | Description |
 |-------|------|-------------|
-| patch | &'static MeshPatchDescriptor | Reference to const patch data in flash (positions, normals, UVs, indices, AABB) |
+| patch | &'static MeshPatchDescriptor | Reference to const patch data in flash (single SoA blob of u16/i16 vertex data + u8 indices, AABB) |
 | mvp_matrix | Mat4x4 | Combined model-view-projection matrix |
 | mv_matrix | Mat4x4 | Model-view matrix (for normal/lighting transform) |
 | lights | [DirectionalLight; 4] | Directional light sources |
@@ -71,14 +71,16 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
 **Processing (Core 1)**:
 1. DMA-prefetch patch data from flash into SRAM input buffer (double-buffered: process one buffer while next patch DMA's in)
 2. For each vertex in patch:
-   a. Transform position by MVP matrix → clip space
-   b. Perspective divide → NDC
-   c. Viewport transform → screen space (12.4 fixed-point)
-   d. Compute Z as 16-bit unsigned
-   e. Transform normal by model-view matrix
-   f. Compute Gouraud lighting: `color = ambient + Σ(max(0, dot(N, L[i])) × light_color[i])`
-   g. If textured: compute U/W, V/W, 1/W in 1.15 fixed-point
-   h. Pack into GpuVertex format and store in clip-space vertex cache
+   a. Unpack vertex data from SoA blob: read u16 position components at offsets [0, N×2, N×4], i16 normal components at offsets [N×6, N×8, N×10], i16 UV components at offsets [N×12, N×14] (where N = vertex_count)
+   b. Convert position u16 → f32 (VCVT.F32.U16 on Cortex-M33). Note: quantization bias is already folded into the MVP matrix by Core 0
+   c. Transform position by MVP matrix → clip space
+   d. Perspective divide → NDC
+   e. Viewport transform → screen space (12.4 fixed-point)
+   f. Compute Z as 16-bit unsigned
+   g. Convert normal i16 → f32 (divide by 32767.0, then normalize). Transform by model-view matrix
+   h. Compute Gouraud lighting: `color = ambient + Σ(max(0, dot(N, L[i])) × light_color[i])`
+   i. If textured: convert UV i16 → f32 (divide by 8192.0). Compute U/W, V/W, 1/W in 1.15 fixed-point
+   j. Pack into GpuVertex format and store in clip-space vertex cache
 3. Configure GPU RENDER_MODE register based on flags
 4. For each index entry in the packed u8 strip command stream:
    a. Extract vertex index (bits [7:4]) and kick control (bits [3:2])
@@ -90,7 +92,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
 
 **Output**: GPU register writes via DMA/PIO SPI (RP2350) or SPI thread (PC)
 
-**Core 1 Working RAM per patch**: ~8 KB (see DD-016 for detailed breakdown)
+**Core 1 Working RAM per patch**: ~7.5 KB (see DD-016 for detailed breakdown; input buffers reduced from ~1,136 B to ~608 B due to u16/i16 vertex data)
 
 ---
 

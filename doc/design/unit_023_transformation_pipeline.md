@@ -79,4 +79,8 @@ None
 
 ## Design Notes
 
+**Note on quantized vertex positions**: When rendering meshes with u16-quantized positions (per INT-031), Core 0 pre-multiplies the model matrix with a quantization bias matrix (per REQ-104) before computing the MVP.
+This means `transform_vertex()` receives an MVP matrix that already maps u16 [0, 65535] values back to model space.
+The function itself is unchanged — it always receives a position Vec3 and an MVP Mat4, regardless of the original encoding.
+
 Migrated from speckit module specification.

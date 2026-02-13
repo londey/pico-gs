@@ -46,7 +46,7 @@ Asset pipeline entry point
 - `Result<Vec<GeneratedAsset>, AssetError>` — List of generated assets, each containing `module_name`, `identifier`, `rs_path`, and `source_path`.
 - **File-system side effects**:
   - Per-texture: `<id>.rs` (Rust wrapper with `include_bytes!`) + `<id>.bin` (raw RGBA8888).
-  - Per-mesh-patch: `<id>_patch<N>.rs` + `_pos.bin`, `_uv.bin`, `_norm.bin`, `_idx.bin`.
+  - Per-mesh-patch: `<id>_patch<N>.rs` + `_patch<N>.bin` (single SoA blob per INT-031).
   - Master `mod.rs` that `include!`s all generated `.rs` files (sorted for determinism).
 - Empty `mod.rs` (no `include!` lines) when no assets are found (per FR-040b).
 
@@ -66,7 +66,8 @@ Asset pipeline entry point
    a. Parse, triangulate, merge, split into patches.
    b. Strip optimization: reorder triangles, encode as u8 strip commands.
    c. AABB computation: per-patch and overall mesh bounding boxes.
-   d. Emit per-patch binaries (f32 positions/normals/UVs, u8 indices) and mesh descriptor.
+   d. Quantize vertex data using mesh-wide AABB (u16 positions, i16 normals, i16 UVs) and pack into SoA blobs per INT-031.
+   e. Emit per-patch binary blobs and mesh descriptor.
    Log vertex/triangle/patch statistics. Append returned `GeneratedAsset` entries.
 6. **Generate mod.rs**: Call `output_gen::write_mod_rs()` to emit the master include file.
 7. **Return** the accumulated `Vec<GeneratedAsset>`.

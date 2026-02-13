@@ -8,7 +8,7 @@
 
 ## Requirement
 
-When the render executor receives a RenderMeshPatch command, the system SHALL DMA-prefetch the referenced mesh patch data from flash, transform all patch vertices through the MVP matrix, compute per-vertex Gouraud lighting, perform back-face culling, optionally clip triangles against frustum planes indicated by the command's clip flags, and submit the resulting visible triangles to the GPU using the kicked vertex register protocol (VERTEX_NOKICK, VERTEX_KICK_012, VERTEX_KICK_021) as specified in INT-010.
+When the render executor receives a RenderMeshPatch command, the system SHALL DMA-prefetch the referenced mesh patch data from flash, unpack vertex attributes from the quantized SoA blob per INT-031 (u16 positions, i16 normals, i16 UVs), convert to f32 for processing, transform all patch vertices through the MVP matrix (which includes the quantization bias per REQ-104), compute per-vertex Gouraud lighting, perform back-face culling, optionally clip triangles against frustum planes indicated by the command's clip flags, and submit the resulting visible triangles to the GPU using the kicked vertex register protocol (VERTEX_NOKICK, VERTEX_KICK_012, VERTEX_KICK_021) as specified in INT-010.
 
 ## Rationale
 

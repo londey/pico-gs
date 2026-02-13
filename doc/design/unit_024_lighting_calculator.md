@@ -68,4 +68,7 @@ This implements standard Gouraud shading: per-vertex lighting with Lambertian di
 
 ## Design Notes
 
+**Note on quantized normals**: When mesh normals are stored as i16 1:15 fixed-point (per INT-031), the caller (Core 1 render executor) converts i16 → f32 by dividing by 32767.0 and normalizing before calling `compute_lighting()`.
+This conversion happens at the call site; `compute_lighting()` always receives a Vec3 f32 normal.
+
 Migrated from speckit module specification.

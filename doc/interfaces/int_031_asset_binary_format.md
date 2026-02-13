@@ -42,18 +42,12 @@ $OUT_DIR/assets/
 ├── textures_player_rgba4444.bin  # Binary RGBA4444 data
 ├── textures_enemy.rs
 ├── textures_enemy_bc1.bin     # Binary BC1 compressed data
-├── meshes_cube_patch0.rs      # Mesh patch 0
-├── meshes_cube_patch0_pos.bin # Positions
-├── meshes_cube_patch0_uv.bin  # UV coordinates
-├── meshes_cube_patch0_norm.bin# Normals
-├── meshes_cube_patch0_idx.bin # Indices
+├── meshes_cube_patch0.rs      # Mesh patch 0 Rust wrapper
+├── meshes_cube_patch0.bin     # Single SoA blob (u16 pos + i16 norm + i16 uv + u8 idx)
 ├── meshes_sphere_patch0.rs    # Multi-patch mesh
-├── meshes_sphere_patch0_pos.bin
-├── meshes_sphere_patch0_uv.bin
-├── meshes_sphere_patch0_norm.bin
-├── meshes_sphere_patch0_idx.bin
+├── meshes_sphere_patch0.bin   # Single SoA blob
 ├── meshes_sphere_patch1.rs
-├── meshes_sphere_patch1_pos.bin
+├── meshes_sphere_patch1.bin
 └── ...
 ```
 
@@ -103,10 +97,7 @@ host_app/assets/
 
 **Meshes** (per patch):
 - Rust wrapper: `{identifier_lowercase}_patch{n}.rs` (where n is 0-based)
-- Position data: `{identifier_lowercase}_patch{n}_pos.bin`
-- UV data: `{identifier_lowercase}_patch{n}_uv.bin`
-- Normal data: `{identifier_lowercase}_patch{n}_norm.bin`
-- Index data: `{identifier_lowercase}_patch{n}_idx.bin`
+- Patch data: `{identifier_lowercase}_patch{n}.bin` (single SoA blob)
 
 ---
 
@@ -337,16 +328,13 @@ File structure:
 // Generated from: {source_path} (patch {patch_index} of {total_patches})
 // Vertices: {vertex_count}, Entries: {entry_count}
 // Patch AABB: ({min_x}, {min_y}, {min_z}) to ({max_x}, {max_y}, {max_z})
+// Data size: {data_bytes} bytes (SoA blob: u16 pos + i16 norm + i16 uv + u8 idx)
 
 pub const {IDENTIFIER}_PATCH{n}_VERTEX_COUNT: usize = {vertex_count};
 pub const {IDENTIFIER}_PATCH{n}_ENTRY_COUNT: usize = {entry_count};
 pub const {IDENTIFIER}_PATCH{n}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];
 pub const {IDENTIFIER}_PATCH{n}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];
-
-pub const {IDENTIFIER}_PATCH{n}_POSITIONS: &[u8] = include_bytes!("{base_name}_pos.bin");
-pub const {IDENTIFIER}_PATCH{n}_UVS: &[u8] = include_bytes!("{base_name}_uv.bin");
-pub const {IDENTIFIER}_PATCH{n}_NORMALS: &[u8] = include_bytes!("{base_name}_norm.bin");
-pub const {IDENTIFIER}_PATCH{n}_INDICES: &[u8] = include_bytes!("{base_name}_idx.bin");
+pub const {IDENTIFIER}_PATCH{n}_DATA: &[u8] = include_bytes!("{base_name}_patch{n}.bin");
 ```
 
 **Field Descriptions**:
@@ -355,8 +343,9 @@ pub const {IDENTIFIER}_PATCH{n}_INDICES: &[u8] = include_bytes!("{base_name}_idx
 - `{total_patches}`: Total number of patches for this mesh
 - `{vertex_count}`: Number of vertices in this patch (≤16 by default)
 - `{entry_count}`: Number of strip command entries in this patch (≤48 by default)
-- `{min_x}`, `{min_y}`, `{min_z}`: Patch AABB minimum (model space)
-- `{max_x}`, `{max_y}`, `{max_z}`: Patch AABB maximum (model space)
+- `{data_bytes}`: Total blob size (vertex_count × 16 + entry_count bytes)
+- `{min_x}`, `{min_y}`, `{min_z}`: Patch AABB minimum (model space, from original f32 positions)
+- `{max_x}`, `{max_y}`, `{max_z}`: Patch AABB maximum (model space, from original f32 positions)
 - `{IDENTIFIER}`: Uppercase identifier
 - `{n}`: Patch index (0-based)
 - `{base_name}`: Lowercase base name for binary files
@@ -366,124 +355,84 @@ pub const {IDENTIFIER}_PATCH{n}_INDICES: &[u8] = include_bytes!("{base_name}_idx
 // Generated from: assets/meshes/cube.obj (patch 0 of 1)
 // Vertices: 16, Entries: 26
 // Patch AABB: (-1.0, -1.0, -1.0) to (1.0, 1.0, 1.0)
+// Data size: 282 bytes (SoA blob: u16 pos + i16 norm + i16 uv + u8 idx)
 
 pub const CUBE_PATCH0_VERTEX_COUNT: usize = 16;
 pub const CUBE_PATCH0_ENTRY_COUNT: usize = 26;
 pub const CUBE_PATCH0_AABB_MIN: [f32; 3] = [-1.0, -1.0, -1.0];
 pub const CUBE_PATCH0_AABB_MAX: [f32; 3] = [1.0, 1.0, 1.0];
-
-pub const CUBE_PATCH0_POSITIONS: &[u8] = include_bytes!("cube_patch0_pos.bin");
-pub const CUBE_PATCH0_UVS: &[u8] = include_bytes!("cube_patch0_uv.bin");
-pub const CUBE_PATCH0_NORMALS: &[u8] = include_bytes!("cube_patch0_norm.bin");
-pub const CUBE_PATCH0_INDICES: &[u8] = include_bytes!("cube_patch0_idx.bin");
+pub const CUBE_PATCH0_DATA: &[u8] = include_bytes!("cube_patch0.bin");
 ```
 
-### Position Binary (`_pos.bin`)
+### Patch Data Binary (`_patch{n}.bin`)
 
-**Format**: Raw f32 array, 3 components per vertex
+**Format**: Single contiguous SoA blob containing all vertex attributes and indices.
 
-**Layout**:
-```
-Offset (bytes) | Data
----------------|-------------------------------------
-0-3            | Vertex[0].x (f32, little-endian)
-4-7            | Vertex[0].y (f32, little-endian)
-8-11           | Vertex[0].z (f32, little-endian)
-12-15          | Vertex[1].x (f32, little-endian)
-16-19          | Vertex[1].y (f32, little-endian)
-20-23          | Vertex[1].z (f32, little-endian)
-...            | ...
-Total          | vertex_count × 3 × 4 bytes
-```
+For N vertices and M strip entries, the layout is:
 
-**Properties**:
-- Type: IEEE 754 single-precision float (f32)
+| Offset | Size | Content |
+|--------|------|---------|
+| 0 | N×2 | pos_x[0..N] (u16 little-endian) |
+| N×2 | N×2 | pos_y[0..N] (u16 little-endian) |
+| N×4 | N×2 | pos_z[0..N] (u16 little-endian) |
+| N×6 | N×2 | norm_x[0..N] (i16 little-endian) |
+| N×8 | N×2 | norm_y[0..N] (i16 little-endian) |
+| N×10 | N×2 | norm_z[0..N] (i16 little-endian) |
+| N×12 | N×2 | uv_u[0..N] (i16 little-endian) |
+| N×14 | N×2 | uv_v[0..N] (i16 little-endian) |
+| N×16 | M×1 | indices[0..M] (u8 strip commands) |
+
+**Total size**: N×16 + M bytes.
+**Example** (16 vertices, 48 entries): 16×16 + 48 = 304 bytes.
+
+#### Position encoding (u16)
+
+Mesh-wide AABB quantization grid.
+All patches in a mesh share one quantization coordinate system.
+Each axis maps the range [AABB_min, AABB_max] to [0, 65535].
+
+- Type: Unsigned 16-bit integer (u16)
 - Byte order: Little-endian
-- Components per vertex: 3 (x, y, z)
-- Coordinate system: Model space (transformation by host software)
+- Quantization: `u16_val = round((f32_pos - aabb_min) / (aabb_max - aabb_min) * 65535.0)`
+- Dequantization: Folded into model matrix via bias pre-multiplication (see REQ-104)
 
-**Size Examples**:
-- 1 vertex: 12 bytes
-- 16 vertices (default max): 192 bytes
+#### Normal encoding (i16 1:15 signed fixed-point)
 
-**Rust Conversion**:
-```rust
-let positions_bytes: &[u8] = include_bytes!("cube_patch0_pos.bin");
-let positions: &[f32] = bytemuck::cast_slice(positions_bytes);
-// positions = [x0, y0, z0, x1, y1, z1, ...]
-```
-
-### UV Binary (`_uv.bin`)
-
-**Format**: Raw f32 array, 2 components per vertex
-
-**Layout**:
-```
-Offset (bytes) | Data
----------------|-------------------------------------
-0-3            | Vertex[0].u (f32, little-endian)
-4-7            | Vertex[0].v (f32, little-endian)
-8-11           | Vertex[1].u (f32, little-endian)
-12-15          | Vertex[1].v (f32, little-endian)
-...            | ...
-Total          | vertex_count × 2 × 4 bytes
-```
-
-**Properties**:
-- Type: IEEE 754 single-precision float (f32)
+- Type: Signed 16-bit integer (i16)
 - Byte order: Little-endian
-- Components per vertex: 2 (u, v)
-- Typical range: 0.0 to 1.0 (but not enforced)
-- Default if missing: [0.0, 0.0]
+- Format: 1:15 signed fixed-point (1 sign bit, 15 fractional bits)
+- Range: [-1.0, +0.99997], resolution 1/32768
+- Encoding: `i16_val = round(f32_normal * 32767.0)`, clamped to [-32768, 32767]
+- Decoding (Core 1): `f32_normal = i16_val as f32 / 32767.0`, then normalize
 
-**Size Examples**:
-- 1 vertex: 8 bytes
-- 16 vertices (default max): 128 bytes
+#### UV encoding (i16 1:2:13 signed fixed-point)
 
-**Rust Conversion**:
-```rust
-let uvs_bytes: &[u8] = include_bytes!("cube_patch0_uv.bin");
-let uvs: &[f32] = bytemuck::cast_slice(uvs_bytes);
-// uvs = [u0, v0, u1, v1, ...]
-```
-
-### Normal Binary (`_norm.bin`)
-
-**Format**: Raw f32 array, 3 components per vertex
-
-**Layout**:
-```
-Offset (bytes) | Data
----------------|-------------------------------------
-0-3            | Vertex[0].nx (f32, little-endian)
-4-7            | Vertex[0].ny (f32, little-endian)
-8-11           | Vertex[0].nz (f32, little-endian)
-12-15          | Vertex[1].nx (f32, little-endian)
-16-19          | Vertex[1].ny (f32, little-endian)
-20-23          | Vertex[1].nz (f32, little-endian)
-...            | ...
-Total          | vertex_count × 3 × 4 bytes
-```
-
-**Properties**:
-- Type: IEEE 754 single-precision float (f32)
+- Type: Signed 16-bit integer (i16)
 - Byte order: Little-endian
-- Components per vertex: 3 (nx, ny, nz)
-- Not necessarily unit length (normalization by host software if needed)
-- Default if missing: [0.0, 0.0, 0.0]
+- Format: 1:2:13 (1 sign bit, 2 integer bits, 13 fractional bits)
+- Range: [-4.0, +3.9998], resolution 1/8192
+- Encoding: `i16_val = round(f32_uv * 8192.0)`, clamped to [-32768, 32767]
+- Decoding (Core 1): `f32_uv = i16_val as f32 / 8192.0`
+- Normalized 0.0–1.0 UV space (GPU handles wrapping and dimension scaling)
 
-**Size Examples**:
-- 1 vertex: 12 bytes
-- 16 vertices (default max): 192 bytes
-
-**Rust Conversion**:
+**Rust Conversion (SoA offset calculation)**:
 ```rust
-let normals_bytes: &[u8] = include_bytes!("cube_patch0_norm.bin");
-let normals: &[f32] = bytemuck::cast_slice(normals_bytes);
-// normals = [nx0, ny0, nz0, nx1, ny1, nz1, ...]
+let data: &[u8] = include_bytes!("cube_patch0.bin");
+let n = CUBE_PATCH0_VERTEX_COUNT;
+
+// SoA offsets (all u16/i16 little-endian, 2 bytes per element)
+let pos_x = &data[0..n*2];       // u16
+let pos_y = &data[n*2..n*4];     // u16
+let pos_z = &data[n*4..n*6];     // u16
+let norm_x = &data[n*6..n*8];    // i16
+let norm_y = &data[n*8..n*10];   // i16
+let norm_z = &data[n*10..n*12];  // i16
+let uv_u = &data[n*12..n*14];    // i16
+let uv_v = &data[n*14..n*16];    // i16
+let indices = &data[n*16..n*16 + CUBE_PATCH0_ENTRY_COUNT]; // u8
 ```
 
-### Index Binary (`_idx.bin`)
+### Index encoding (u8 strip commands)
 
 **Format**: Packed u8 strip command stream
 
@@ -526,7 +475,7 @@ Total          | entry_count × 1 byte
 
 **Rust Conversion**:
 ```rust
-let idx_bytes: &[u8] = include_bytes!("cube_patch0_idx.bin");
+let idx_bytes: &[u8] = &data[n*16..]; // indices are at end of SoA blob
 // Each byte: vertex_index = (byte >> 4) & 0x0F, kick = (byte >> 2) & 0x03
 for &entry in idx_bytes {
     let vertex_index = (entry >> 4) & 0x0F;
@@ -556,7 +505,8 @@ Total          | 24 bytes
 - Type: IEEE 754 single-precision float (f32)
 - Byte order: Little-endian
 - Coordinate system: Model space (same as vertex positions)
-- Computed at build time from all vertex positions in the patch (per-patch) or entire mesh (overall)
+- Computed at build time from original f32 vertex positions in the patch (per-patch) or entire mesh (overall)
+- The mesh-level AABB also serves as the quantization coordinate system for u16 position encoding
 
 ### Mesh Descriptor (Rust const format)
 
@@ -570,6 +520,7 @@ The mesh descriptor provides a compile-time manifest of all patches in a mesh, e
 // Total vertices: {total_vertices}, Total entries: {total_entries}
 
 /// Overall mesh bounding box (model space)
+/// Also serves as quantization AABB for u16 position encoding
 pub const {IDENTIFIER}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];
 pub const {IDENTIFIER}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];
 pub const {IDENTIFIER}_PATCH_COUNT: usize = {patch_count};
@@ -577,10 +528,7 @@ pub const {IDENTIFIER}_PATCH_COUNT: usize = {patch_count};
 /// Per-patch descriptors
 pub const {IDENTIFIER}_PATCHES: [MeshPatchDescriptor; {patch_count}] = [
     MeshPatchDescriptor {
-        positions: {IDENTIFIER}_PATCH0_POSITIONS,
-        normals: {IDENTIFIER}_PATCH0_NORMALS,
-        uvs: {IDENTIFIER}_PATCH0_UVS,
-        indices: {IDENTIFIER}_PATCH0_INDICES,
+        data: {IDENTIFIER}_PATCH0_DATA,
         aabb_min: [{p0_min_x}, {p0_min_y}, {p0_min_z}],
         aabb_max: [{p0_max_x}, {p0_max_y}, {p0_max_z}],
         vertex_count: {p0_vertex_count},
@@ -595,10 +543,7 @@ pub const {IDENTIFIER}_PATCHES: [MeshPatchDescriptor; {patch_count}] = [
 ```rust
 #[derive(Copy, Clone)]
 pub struct MeshPatchDescriptor {
-    pub positions: &'static [u8],
-    pub normals: &'static [u8],
-    pub uvs: &'static [u8],
-    pub indices: &'static [u8],
+    pub data: &'static [u8],
     pub aabb_min: [f32; 3],
     pub aabb_max: [f32; 3],
     pub vertex_count: usize,
@@ -626,13 +571,47 @@ All multi-byte values use **little-endian** encoding (least significant byte fir
 
 ### Rust Code Generation
 
-**Generating f32 binary data**:
+**Generating quantized SoA mesh blob**:
 ```rust
-let positions: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
-let bytes: Vec<u8> = positions.iter()
-    .flat_map(|&f| f.to_le_bytes())
-    .collect();
-std::fs::write("positions.bin", bytes)?;
+/// Pack a mesh patch into a single SoA blob (u16 pos, i16 norm, i16 uv, u8 idx)
+fn pack_soa_blob(
+    positions: &[[f32; 3]],   // N vertices
+    normals: &[[f32; 3]],     // N vertices
+    uvs: &[[f32; 2]],         // N vertices
+    indices: &[u8],           // M strip entries
+    aabb_min: [f32; 3],
+    aabb_max: [f32; 3],
+) -> Vec<u8> {
+    let n = positions.len();
+    let mut blob = Vec::with_capacity(n * 16 + indices.len());
+    let extent = [aabb_max[0] - aabb_min[0], aabb_max[1] - aabb_min[1], aabb_max[2] - aabb_min[2]];
+    // Positions: 3 arrays of u16 (SoA: all X, then all Y, then all Z)
+    for axis in 0..3 {
+        for v in positions {
+            let t = if extent[axis] > 0.0 { (v[axis] - aabb_min[axis]) / extent[axis] } else { 0.0 };
+            let q = (t * 65535.0).round().clamp(0.0, 65535.0) as u16;
+            blob.extend_from_slice(&q.to_le_bytes());
+        }
+    }
+    // Normals: 3 arrays of i16 1:15
+    for axis in 0..3 {
+        for v in normals {
+            let q = (v[axis] * 32767.0).round().clamp(-32768.0, 32767.0) as i16;
+            blob.extend_from_slice(&q.to_le_bytes());
+        }
+    }
+    // UVs: 2 arrays of i16 1:2:13
+    for axis in 0..2 {
+        for v in uvs {
+            let q = (v[axis] * 8192.0).round().clamp(-32768.0, 32767.0) as i16;
+            blob.extend_from_slice(&q.to_le_bytes());
+        }
+    }
+    // Indices: u8 strip commands (unchanged)
+    blob.extend_from_slice(indices);
+    blob
+}
+std::fs::write("cube_patch0.bin", &blob)?;
 ```
 
 **Generating u8 strip command data**:
@@ -697,10 +676,7 @@ pub enum TextureFormat {
 
 #[derive(Copy, Clone)]
 pub struct MeshPatchDescriptor {
-    pub positions: &'static [u8],
-    pub normals: &'static [u8],
-    pub uvs: &'static [u8],
-    pub indices: &'static [u8],
+    pub data: &'static [u8],
     pub aabb_min: [f32; 3],
     pub aabb_max: [f32; 3],
     pub vertex_count: usize,
@@ -747,37 +723,43 @@ gpu.set_texture(0,
 ```rust
 use crate::assets::*;
 
-// Cast byte slices to typed arrays
-let positions = bytemuck::cast_slice::<u8, f32>(MESHES_CUBE_PATCH0_POSITIONS);
-let uvs = bytemuck::cast_slice::<u8, f32>(MESHES_CUBE_PATCH0_UVS);
-let normals = bytemuck::cast_slice::<u8, f32>(MESHES_CUBE_PATCH0_NORMALS);
-let indices: &[u8] = MESHES_CUBE_PATCH0_INDICES;
+// Build quantization bias matrix from mesh-level AABB
+let aabb_min = MESHES_CUBE_AABB_MIN;
+let aabb_max = MESHES_CUBE_AABB_MAX;
+let extent = [aabb_max[0] - aabb_min[0], aabb_max[1] - aabb_min[1], aabb_max[2] - aabb_min[2]];
+let bias_matrix = Mat4::from_translation(Vec3::from(aabb_min))
+    * Mat4::from_scale(Vec3::new(extent[0] / 65535.0, extent[1] / 65535.0, extent[2] / 65535.0));
+let adjusted_model = model_matrix * bias_matrix;
+let mvp = projection * view * adjusted_model;
 
-// Verify counts
-assert_eq!(positions.len(), MESHES_CUBE_PATCH0_VERTEX_COUNT * 3);
-assert_eq!(uvs.len(), MESHES_CUBE_PATCH0_VERTEX_COUNT * 2);
-assert_eq!(normals.len(), MESHES_CUBE_PATCH0_VERTEX_COUNT * 3);
-assert_eq!(indices.len(), MESHES_CUBE_PATCH0_ENTRY_COUNT);
+// Access SoA blob via offset calculation
+let patch = &MESHES_CUBE_PATCHES[0];
+let n = patch.vertex_count;
+let data = patch.data;
 
-// Process strip command stream
-for &entry in indices {
-    let vertex_index = ((entry >> 4) & 0x0F) as usize;
-    let kick = (entry >> 2) & 0x03;
+// Read vertex i position (u16 → f32, bias is in MVP matrix)
+let pos_x = u16::from_le_bytes([data[i*2], data[i*2+1]]) as f32;
+let pos_y = u16::from_le_bytes([data[n*2 + i*2], data[n*2 + i*2+1]]) as f32;
+let pos_z = u16::from_le_bytes([data[n*4 + i*2], data[n*4 + i*2+1]]) as f32;
 
-    let pos = &positions[vertex_index * 3..vertex_index * 3 + 3];
-    match kick {
-        0 => gpu_write_vertex_nokick(pos),     // NOKICK: load vertex, no triangle
-        1 => gpu_write_vertex_kick_012(pos),   // KICK_012: load vertex, emit tri
-        2 => gpu_write_vertex_kick_021(pos),   // KICK_021: load vertex, emit tri (flipped)
-        _ => unreachable!(),
-    }
-}
+// Read vertex i normal (i16 1:15 → f32)
+let norm_x = i16::from_le_bytes([data[n*6 + i*2], data[n*6 + i*2+1]]) as f32 / 32767.0;
+let norm_y = i16::from_le_bytes([data[n*8 + i*2], data[n*8 + i*2+1]]) as f32 / 32767.0;
+let norm_z = i16::from_le_bytes([data[n*10 + i*2], data[n*10 + i*2+1]]) as f32 / 32767.0;
+
+// Indices are at offset n*16
+let indices = &data[n*16..n*16 + patch.entry_count];
 ```
 
 ### Multi-Patch Meshes
 
 ```rust
 use crate::assets::*;
+
+// Build bias matrix once per mesh (shared by all patches)
+let bias_matrix = build_quantization_bias(MESHES_SPHERE_AABB_MIN, MESHES_SPHERE_AABB_MAX);
+let adjusted_model = model_matrix * bias_matrix;
+let mvp = projection * view * adjusted_model;
 
 // Use the generated MeshPatchDescriptor array
 for patch in &MESHES_SPHERE_PATCHES {
@@ -786,21 +768,11 @@ for patch in &MESHES_SPHERE_PATCHES {
         continue;
     }
 
-    let positions = bytemuck::cast_slice::<u8, f32>(patch.positions);
+    // DMA prefetch single blob (~304 bytes per patch)
+    dma_prefetch(patch.data);
 
-    // Process strip command entries
-    for &entry in patch.indices {
-        let vertex_index = ((entry >> 4) & 0x0F) as usize;
-        let kick = (entry >> 2) & 0x03;
-
-        let pos = &positions[vertex_index * 3..vertex_index * 3 + 3];
-        match kick {
-            0 => gpu_write_vertex_nokick(pos),
-            1 => gpu_write_vertex_kick_012(pos),
-            2 => gpu_write_vertex_kick_021(pos),
-            _ => unreachable!(),
-        }
-    }
+    // Unpack SoA, convert u16/i16→f32, transform, light, submit
+    // (see RenderMeshPatch processing in INT-021)
 }
 ```
 
@@ -864,14 +836,16 @@ fn main() {
 
 ### Meshes (per patch)
 
-| Component | Size Formula | 16 vertices |
-|-----------|--------------|-------------|
-| Positions | vertices × 12 bytes | 192 bytes |
-| UVs | vertices × 8 bytes | 128 bytes |
-| Normals | vertices × 12 bytes | 192 bytes |
-| Indices (max) | entries × 1 byte | 48 bytes |
-| AABB | 6 × 4 bytes (in descriptor) | 24 bytes |
-| **Total per patch** | - | **584 bytes** |
+| Component | Size Formula | 16 vertices | Savings vs f32 |
+|-----------|--------------|-------------|----------------|
+| Positions (u16) | vertices × 3 × 2 bytes | 96 bytes | 50% |
+| Normals (i16) | vertices × 3 × 2 bytes | 96 bytes | 50% |
+| UVs (i16) | vertices × 2 × 2 bytes | 64 bytes | 50% |
+| Indices (u8) | entries × 1 byte | 48 bytes | 0% |
+| AABB | 6 × 4 bytes (in descriptor) | 24 bytes | 0% |
+| **Total per patch binary** | vertices × 16 + entries | **304 bytes** | **46%** |
+
+Plus mesh-level overhead: ~48 bytes for quantization AABB (6× f32, stored in Rust wrapper constants).
 
 ### Example Asset Set
 
@@ -879,9 +853,9 @@ fn main() {
 |-------|------|-------|----------|------------|
 | UI textures (RGBA4444) | 64x64 | 10 | 8 KB | 80 KB |
 | Character textures (RGBA4444) | 256x256 | 5 | 128 KB | 640 KB |
-| Environment meshes | Patches | 50 | 600 bytes | 30 KB |
-| Character meshes | Patches | 100 | 600 bytes | 60 KB |
-| **Total** | - | - | - | **~0.8 MB** |
+| Environment meshes | Patches | 50 | 304 bytes | 15 KB |
+| Character meshes | Patches | 100 | 304 bytes | 30 KB |
+| **Total** | - | - | - | **~0.76 MB** |
 
 With RGBA4444 (50% savings vs RGBA8) and BC1 (87.5% savings vs RGBA8), this fits very comfortably within RP2350's 4 MB flash budget, leaving ~3.2 MB for firmware code and other data.
 
@@ -919,16 +893,19 @@ When implementing output generation, ensure:
    - [ ] Format matches filename suffix (_rgba4444.bin or _bc1.bin)
 
 5. **Mesh binaries**:
-   - [ ] Positions: vertex_count × 3 × 4 bytes
-   - [ ] UVs: vertex_count × 2 × 4 bytes
-   - [ ] Normals: vertex_count × 3 × 4 bytes
-   - [ ] Indices: entry_count × 1 byte (u8 strip command stream)
+   - [ ] Patch blob total size: vertex_count × 16 + entry_count bytes
+   - [ ] Positions (u16): vertex_count × 3 × 2 bytes, values in [0, 65535]
+   - [ ] Normals (i16 1:15): vertex_count × 3 × 2 bytes, values in [-32768, 32767]
+   - [ ] UVs (i16 1:2:13): vertex_count × 2 × 2 bytes
+   - [ ] SoA ordering: pos_x, pos_y, pos_z, norm_x, norm_y, norm_z, uv_u, uv_v, indices
+   - [ ] Indices: entry_count × 1 byte (u8 strip command stream, unchanged)
    - [ ] All vertex indices (bits [7:4]) < vertex_count and ≤ 15
    - [ ] Kick control (bits [3:2]) is 0, 1, or 2 (no reserved value 3)
    - [ ] Spare bits [1:0] are zero in every entry
    - [ ] First 2 entries of each strip segment use NOKICK (kick = 0)
-   - [ ] AABB min ≤ AABB max for all three axes (per-patch and overall)
-   - [ ] Overall mesh AABB encloses all per-patch AABBs
+   - [ ] Mesh-level AABB encompasses all per-patch AABBs
+   - [ ] Per-patch AABBs computed from original f32 positions (not quantized u16)
+   - [ ] All patches in a mesh use the same quantization AABB (mesh-level)
 
 ---
 

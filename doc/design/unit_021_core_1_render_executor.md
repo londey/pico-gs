@@ -65,7 +65,7 @@ None
       - `SubmitScreenTriangle` -- writes COLOR, UV0 (if textured), and VERTEX registers for 3 vertices. Retained for simple triangle demos.
       - `RenderMeshPatch` -- **full vertex processing pipeline**:
         1. DMA prefetch patch data from flash into inactive input buffer (double-buffered).
-        2. Vertex processing: unpack, transform (MVP), perspective divide, viewport map, compute lighting, pack GpuVertex into 16-entry cache.
+        2. Vertex processing: unpack u16/i16 SoA blob (positions, normals, UVs), convert to f32 (positions via VCVT, normals divide by 32767.0, UVs divide by 8192.0), transform (MVP with quantization bias), perspective divide, viewport map, compute lighting, pack GpuVertex into 16-entry cache.
         3. Triangle submission: for each u8 strip entry, extract vertex_idx and kick, back-face cull, optionally clip, pack GPU register writes into active output buffer.
         4. SPI output: submit filled output buffer to BufferedSpiTransport. Swap buffers.
       - `UploadTexture` -- uploads texture data via MEM_ADDR/MEM_DATA and configures TEX0 registers.
@@ -89,14 +89,14 @@ None
 
 | Component | Size |
 |-----------|------|
-| Input buffers (x2) | 1,136 B |
+| Input buffers (x2) | 608 B |
 | Clip-space vertex cache | 640 B |
 | Triangle clip workspace | 280 B |
 | SPI output buffers (x2) | 1,620 B |
 | Matrices + lights | 224 B |
 | Core 1 stack | 4,096 B |
 | DMA descriptors + misc | 192 B |
-| **Total** | **~8.0 KB** (1.5% of 520 KB) |
+| **Total** | **~7.5 KB** (1.4% of 520 KB) |
 
 ## Design Notes
 

@@ -36,6 +36,79 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-017: 16-bit Fixed-Point Mesh Vertex Data with SoA Patch Layout
+
+**Date:** 2026-02-13
+**Status:** Accepted
+**Implementation:** RUST PENDING
+
+### Context
+
+The asset binary format (INT-031) stores mesh vertex data as f32 arrays: positions (3×f32 = 12 B/vertex), normals (3×f32 = 12 B/vertex), and UVs (2×f32 = 8 B/vertex), totaling 32 bytes per vertex plus indices.
+For 16-vertex patches this is ~560 bytes per patch.
+With ~50 patches per mesh and multiple meshes in flash, vertex data consumes significant flash and DMA bandwidth.
+
+Additionally, each patch uses four separate binary files (_pos.bin, _uv.bin, _norm.bin, _idx.bin), requiring four DMA transfers per patch.
+
+### Decision
+
+1. **Quantize vertex attributes to 16-bit fixed-point:**
+   - Positions: u16 with mesh-wide AABB quantization grid ([0, 65535] maps to [aabb_min, aabb_max] per axis)
+   - Normals: i16 1:15 signed fixed-point (range [-1.0, +0.99997])
+   - UVs: i16 1:2:13 signed fixed-point (range [-4.0, +3.9998])
+   - Indices: u8 strip commands (unchanged)
+
+2. **Single contiguous SoA blob per patch:**
+   - Layout: `[pos_x[], pos_y[], pos_z[], norm_x[], norm_y[], norm_z[], uv_u[], uv_v[], indices[]]`
+   - One file per patch instead of four
+
+3. **Quantization bias matrix:**
+   - Core 0 folds quantization parameters into the model matrix: `adjusted_model = model × translate(aabb_min) × scale(extent / 65535.0)`
+   - `transform_vertex()` is unchanged — receives MVP and position as before
+
+### Rationale
+
+- **46% flash savings**: 304 B vs 560 B per 16-vertex patch
+- **Single DMA transfer**: One 304 B read vs four separate reads (reduced DMA setup overhead)
+- **No precision loss in practice**: u16 positions give 1/65535 of the mesh AABB extent per axis — sub-millimeter for typical game meshes.
+  Normal 1:15 resolution (1/32768) exceeds Gouraud shading requirements.
+  UV 1:2:13 gives 1/16 texel precision at 512px (acceptable with bilinear filtering)
+- **Zero-cost conversion on Cortex-M33**: Single-cycle VCVT.F32.U16/VCVT.F32.S16 instructions
+- **Bias matrix approach**: Avoids changing `transform_vertex()` — all quantization is absorbed into the model matrix
+- **Mesh-wide quantization grid**: All patches share one coordinate system, preventing seam artifacts at patch boundaries
+
+### Alternatives Considered
+
+1. **Keep f32, merge into single blob**: Saves DMA setup but no size reduction.
+   Rejected — flash savings are the primary motivation.
+2. **Per-patch quantization AABBs**: Each patch has its own [0, 65535] range.
+   Rejected — causes seam artifacts where adjacent patches meet due to different quantization grids.
+3. **Half-float (f16)**: 16-bit IEEE 754.
+   Same size as u16/i16 but with non-uniform precision (more precision near zero, less at extremes).
+   Rejected — ARM Cortex-M33 lacks native f16 instructions, requiring software conversion.
+   u16/i16 with VCVT is simpler and faster.
+
+### Consequences
+
+- INT-031: Major revision to mesh binary format sections
+- UNIT-032: Quantization and SoA packing steps added to mesh splitter
+- UNIT-033: Codegen emits single blob files with quantized data
+- INT-021: RenderMeshPatch processing steps updated for unpack/convert
+- UNIT-021: Input buffer sizes reduced (~1,136 B → ~608 B), working RAM ~7.5 KB
+- REQ-104: Bias matrix requirement added
+- No GPU hardware changes required
+- Lights and matrices remain f32 (only vertex attributes are quantized)
+
+### References
+
+- INT-031: Asset Binary Format (primary spec)
+- INT-021: Render Command Format (RenderMeshPatch processing)
+- REQ-104: Matrix Transformation Pipeline (bias matrix)
+- DD-016: Mesh Pipeline Restructure (Core 1 vertex processing context)
+
+---
+
+
 ## DD-010: Per-Sampler Texture Cache Architecture
 
 **Date:** 2026-02-10

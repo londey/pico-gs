@@ -73,6 +73,8 @@ pub const {IDENTIFIER}_DATA: &[u8] = include_bytes!("{bin_filename}");
 // pub const {IDENTIFIER}_PATCH{n}_ENTRY_COUNT: usize = {entry_count};
 // pub const {IDENTIFIER}_PATCH{n}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];
 // pub const {IDENTIFIER}_PATCH{n}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];
+// pub const {IDENTIFIER}_PATCH{n}_DATA: &[u8] = include_bytes!("..._patch{n}.bin");
+// (single SoA blob: u16 pos + i16 norm + i16 uv + u8 idx per INT-031)
 
 // Usage in firmware:
 // gpu.set_texture(0, {IDENTIFIER}_WIDTH, {IDENTIFIER}_HEIGHT,
@@ -92,10 +94,7 @@ pub enum TextureFormat {
 }
 
 pub struct MeshPatchDescriptor {
-    pub positions: &'static [u8],
-    pub normals: &'static [u8],
-    pub uvs: &'static [u8],
-    pub indices: &'static [u8],
+    pub data: &'static [u8],
     pub aabb_min: [f32; 3],
     pub aabb_max: [f32; 3],
     pub vertex_count: usize,
