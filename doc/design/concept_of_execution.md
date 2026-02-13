@@ -4,7 +4,7 @@ This document describes the runtime behavior of the system: how it starts up, ho
 
 ## System Overview
 
-The pico-gs system is a two-chip 3D graphics pipeline. An RP2350 microcontroller (dual Cortex-M33, 150 MHz) acts as the host, performing scene management, vertex transformation, and lighting on Core 0, while Core 1 serializes render commands over a 25 MHz SPI bus to a Lattice ECP5 FPGA. The FPGA implements a fixed-function triangle rasterizer with Gouraud shading, Z-buffering, and texture sampling. It drives a 640x480 DVI output from a double-buffered framebuffer stored in 32 MB of external async SRAM. The host and GPU communicate through a register-write protocol: each SPI transaction is a 9-byte frame (1-byte address + 8-byte data) that writes to the GPU register file, which accumulates vertex data and triggers rasterization on every third vertex write.
+The pico-gs system is a two-chip 3D graphics pipeline. An RP2350 microcontroller (dual Cortex-M33, 150 MHz) acts as the host, Core 0 performs scene management and frustum culling, while Core 1 runs a DMA-pipelined vertex processing engine that transforms vertices, computes lighting, clips triangles, and drives the GPU over a 25 MHz SPI bus to a Lattice ECP5 FPGA. The FPGA implements a fixed-function triangle rasterizer with Gouraud shading, Z-buffering, and texture sampling. It drives a 640x480 DVI output from a double-buffered framebuffer stored in 32 MB of external async SRAM. The host and GPU communicate through a register-write protocol: each SPI transaction is a 9-byte frame (1-byte address + 8-byte data) that writes to the GPU register file, which accumulates vertex data and triggers rasterization on every third vertex write.
 
 ## Platform Variants
 
@@ -22,23 +22,21 @@ A secondary platform for GPU development and debugging. A standard PC running a 
 
 | Aspect | RP2350 | PC |
 |--------|--------|-----|
-| Threading | Dual-core (Core 0 + Core 1) | Single-threaded |
+| Threading | Dual-core (Core 0 + Core 1) | Three threads (main + render + SPI) |
 | SPI transport | rp235x-hal SPI0, 25 MHz | FT232H MPSSE SPI, configurable speed |
 | Inter-stage comm | Lock-free SPSC queue (64 entries) | Direct function calls (synchronous) |
 | Input | USB HID keyboard (TinyUSB) | Terminal keyboard (crossterm) |
 | Logging | defmt over RTT | tracing with file/console output |
 | Debug features | LED error indicator | Frame capture, command replay, full tracing |
 
-**PC execution flow:**
+**PC execution flow (3-thread model):**
 1. Initialize FT232H SPI adapter and GPIO pins
 2. Call `GpuDriver::new(ft232h_transport)` to verify GPU presence (ID register check)
 3. Initialize scene state (same code as RP2350 Core 0)
-4. Main loop (single-threaded):
-   a. Poll terminal keyboard input
-   b. Update scene state, generate render commands
-   c. Execute each render command immediately via GPU driver (no queue)
-   d. Wait for vsync (poll FT232H GPIO)
-   e. Swap framebuffers
+4. Spawn 3 threads:
+   - **Main thread** (scene/culling): Poll terminal keyboard input, update scene state, frustum cull mesh patches, enqueue RenderMeshPatch commands to a channel
+   - **Render thread** (vertex processing): Dequeue commands, transform vertices, compute lighting, cull/clip, pack GPU register writes into output buffer
+   - **SPI thread** (FT232H output): Consume packed register write buffers, send via FT232H SPI
 5. Log all GPU register writes with timestamps for post-analysis
 
 **Shared code path:** Scene management, vertex transformation, lighting calculation, GPU vertex packing, and render command generation are identical between platforms. Only the execution orchestration (threading, command dispatch, I/O) differs.
@@ -89,7 +87,7 @@ The boot sequence executes entirely on Core 0 before the render loop begins:
  └──────────────────────────────┘
 ```
 
-**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, transform and light vertices using `glam` matrix math, pack results into `GpuVertex` structs (fixed-point position, packed color, perspective-correct UVs), wrap them in `RenderCommand` enum variants, and enqueue them into the lock-free SPSC queue. **Core 1** dequeues commands and translates each into one or more GPU register writes via `GpuHandle::write()`. Each write is a 9-byte SPI transaction with manual CS toggle and CMD_FULL flow control. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 16). The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at 25.175 MHz pixel clock.
+**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 16). The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at 25.175 MHz pixel clock.
 
 ## Event Handling
 
@@ -142,6 +140,6 @@ The boot sequence executes entirely on Core 0 before the render loop begins:
 | Z-Buffer | `0x258000` | 1,228,800 bytes (640x480x4, padded) |
 | Texture Memory | `0x384000` | Remaining space |
 
-**RP2350 SRAM** (~520 KB total): The firmware is entirely `no_std` with no heap allocator. All state is statically allocated: the command queue is a 64-entry static `spsc::Queue` (~5 KB), Core 1 has a 4 KB stack, the teapot mesh data is generated into static buffers at startup, and texture data is stored in flash (linked into the firmware binary). The `GpuVertex` struct packs to ~24 bytes, and the largest `RenderCommand` variant (`ScreenTriangleCommand` with 3 vertices) is ~80 bytes.
+**RP2350 SRAM** (~520 KB total): The firmware is entirely `no_std` with no heap allocator. All state is statically allocated: the command queue is a 64-entry static `spsc::Queue` (~16.5 KB at ~264 bytes per RenderMeshPatch), Core 1 has a 4 KB stack plus ~8 KB working RAM (DMA input buffers, vertex cache, clip workspace, SPI output buffers), and mesh data is const flash data from the asset pipeline (no runtime mesh generation). Texture data is stored in flash (linked into the firmware binary). The `GpuVertex` struct packs to ~24 bytes.
 
 **FPGA resources**: The command FIFO is 16 entries deep (72 bits each). The SRAM arbiter has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1), Z-buffer read/write (port 2), texture read (port 3, lowest/unused). The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SRAM access latency.

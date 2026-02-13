@@ -89,6 +89,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
     c. For each of the 64 Green LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b01 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `green[index] & 0xFFFFFF`.
     d. For each of the 32 Blue LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b10 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `blue[index] & 0xFFFFFF`.
     e. Write COLOR_GRADE_CTRL with bit 1 set (SWAP_BANKS) to activate the new LUT data at the next vblank.
+11. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR, optionally UV0, then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on kick parameter (0/1/2).
+12. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
 
 ## Implementation
 

@@ -8,7 +8,7 @@
 
 ## Requirement
 
-When running on the RP2350 platform, the system SHALL implement dual-core architecture where Core 0 manages scene state and generates render commands, and Core 1 consumes and executes render commands against the GPU driver, as specified in REQ-100.
+When running on the RP2350 platform, the system SHALL implement dual-core architecture where Core 0 manages scene state and performs spatial culling to generate mesh patch render commands, and Core 1 consumes mesh patch commands, performs vertex transformation and lighting, and drives the GPU via a DMA-pipelined SPI output, as specified in REQ-100.
 
 ## Rationale
 

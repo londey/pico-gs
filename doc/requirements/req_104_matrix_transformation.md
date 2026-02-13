@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL implement a model-view-projection (MVP) transformation pipeline that transforms object-space vertex positions to screen-space pixel coordinates suitable for GPU register packing. The pipeline SHALL perform the following stages in order: MVP matrix multiplication (object space to clip space), perspective divide (clip space to normalized device coordinates), and viewport mapping (NDC to screen pixels for a 640x480 display). The system SHALL also provide normal vector transformation for lighting, back-face culling via screen-space winding order test, and construction functions for perspective projection, look-at view, and rotation matrices.
+The system SHALL implement a model-view-projection (MVP) transformation pipeline that transforms object-space vertex positions to screen-space pixel coordinates suitable for GPU register packing. The pipeline SHALL perform the following stages in order: MVP matrix multiplication (object space to clip space), perspective divide (clip space to normalized device coordinates), and viewport mapping (NDC to screen pixels for a 640x480 display). The system SHALL also provide: normal vector transformation for lighting, back-face culling via screen-space winding order test, construction functions for perspective projection, look-at view, and rotation matrices, frustum plane extraction from the MVP matrix, axis-aligned bounding box (AABB) frustum culling, per-patch clip plane classification, and triangle clipping against frustum planes (Sutherland-Hodgman).
 
 ## Rationale
 

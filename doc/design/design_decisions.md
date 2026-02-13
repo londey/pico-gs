@@ -521,31 +521,81 @@ Use the `tobj` crate (v4.0+) for OBJ file parsing.
 ---
 
 
-## DD-009: Greedy Sequential Triangle Packing
+## DD-009: Greedy Sequential Triangle Packing with Strip Optimization
 
-**Date:** 2026-02-08
+**Date:** 2026-02-08 (updated 2026-02-13)
 **Status:** Accepted
 
 ### Context
 
-Large meshes must be split into "patches" that fit within the GPU's per-draw vertex/index limits. A splitting algorithm is needed.
+Large meshes must be split into "patches" that fit within the GPU's per-draw vertex/index limits. A splitting algorithm is needed. Additionally, after splitting, triangles within each patch should be reordered for strip connectivity to reduce index data size and leverage the GPU's kicked vertex registers.
 
 ### Decision
 
-Implement greedy sequential triangle packing: fill each patch with triangles in order until the next triangle would exceed vertex or index limits, then start a new patch.
+Implement greedy sequential triangle packing: fill each patch with triangles in order until the next triangle would exceed vertex or index limits, then start a new patch. After splitting, perform strip optimization within each patch and encode indices as packed u8 strip commands.
 
 ### Rationale
 
-- O(n) time complexity
+- O(n) time complexity for initial packing
 - Deterministic output for the same input
 - Simple to implement, debug, and maintain
 - Accepts some vertex duplication at patch boundaries as an acceptable trade-off
+- Strip optimization reduces index data from 3N entries (triangle list) to ~N+2 (strip), halving index size per entry (u8 vs u16)
 
 ### Consequences
 
 - Vertex duplication at patch boundaries (~5-15% overhead for typical meshes)
-- Triangle ordering preserved within patches (important for transparency)
+- Strip-optimized triangle ordering within patches (original ordering not preserved)
 - No spatial optimization (adjacent triangles may land in different patches)
+- Packed u8 index format maps directly to GPU VERTEX_NOKICK/KICK_012/KICK_021 registers (INT-010)
+
+---
+
+
+## DD-016: Mesh Pipeline Restructure — Core 1 Vertex Processing with DMA Pipeline
+
+**Date:** 2026-02-13
+**Status:** Accepted
+**Implementation:** RUST PENDING
+
+### Context
+
+The original mesh pipeline had Core 0 performing all vertex transformation, lighting, back-face culling, and GPU vertex packing (~460 vertices × MVP multiply per frame), then enqueuing ~144 pre-transformed `SubmitScreenTriangle` commands for Core 1 to dispatch as register writes. This created a CPU bottleneck on Core 0 while Core 1 was largely idle between SPI transactions.
+
+### Decision
+
+Restructure the mesh pipeline so that:
+1. **Core 0** performs scene management and spatial culling only (AABB frustum tests, ~29 tests/frame)
+2. **Core 1** performs the full vertex processing pipeline: DMA-prefetch patch data from flash, transform (MVP), light (Gouraud), cull (back-face), clip (Sutherland-Hodgman), pack (GpuVertex), and submit to GPU
+3. **DMA double-buffering** on both sides: input (flash→SRAM prefetch) and output (SRAM→SPI via DMA/PIO)
+4. **Packed u8 index format**: Each byte encodes `[7:4]` vertex index, `[3:2]` kick control (NOKICK/KICK_012/KICK_021), `[1:0]` spare — mapping directly to GPU registers in INT-010
+5. **PC platform**: 3-thread model (main/scene + render/vertex + SPI/output)
+
+### Rationale
+
+- **Core 0 bottleneck eliminated**: ~460 vertex transforms → ~29 AABB tests (>10× reduction)
+- **Core 1 utilization**: DMA overlap hides flash read latency (~1µs per patch) and SPI write latency
+- **Memory efficiency**: 16-vertex patches × ~568 bytes = DMA-friendly sizes; working RAM ~8 KB (1.5% of 520 KB)
+- **Culling benefit**: Frustum culling eliminates ~30% of patches in typical teapot views
+- **u8 index format**: 50% size reduction vs u16; strip optimization gives ~N+2 entries for N triangles vs 3N; direct GPU register mapping (no lookup table)
+- **GPU registers exist**: INT-010 v8.0 already defines VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), VERTEX_KICK_021 (0x08) — no hardware change needed
+
+### Consequences
+
+- **Queue memory**: ~5 KB → ~16.5 KB (RenderMeshPatch ~264 bytes × 64 entries)
+- **Core 1 working RAM**: ~8 KB (input buffers 2×568B, vertex cache 640B, clip workspace 280B, output buffers 2×810B, matrices/lights 224B)
+- **New HAL traits**: DmaMemcpy, BufferedSpiTransport (INT-040)
+- **Asset pipeline changes**: Strip optimization, AABB computation, u8 index encoding, MeshPatchDescriptor generation
+- **Compile-time mesh data**: No runtime mesh generation; const flash data from asset pipeline
+- **PC 3-thread model**: More complex than single-threaded, but mirrors RP2350 dual-core behavior for testing
+
+### References
+
+- INT-010: GPU Register Map (VERTEX_NOKICK, VERTEX_KICK_012, VERTEX_KICK_021)
+- INT-021: Render Command Format (RenderMeshPatch)
+- INT-031: Asset Binary Format (packed u8 index, AABB, MeshPatchDescriptor)
+- INT-040: Host Platform HAL (DmaMemcpy, BufferedSpiTransport)
+- REQ-115: Render Mesh Patch (Core 1 vertex processing pipeline)
 
 ---
 

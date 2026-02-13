@@ -21,7 +21,7 @@ None
 
 ### Internal Interfaces
 
-- **`render::mesh`**: Called from `render_teapot()` per vertex after normal transformation to compute lit vertex colors.
+- **UNIT-021 (Core 1 Render Executor)**: Called from Core 1's RenderMeshPatch handler per vertex. Lighting parameters carried in the RenderMeshPatch command.
 - **UNIT-020 (Core 0 Scene Manager)**: Lighting parameters (`DirectionalLight` array, `AmbientLight`) are defined in `scene::demos` and passed through `render_teapot()`.
 
 ## Design Description

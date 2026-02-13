@@ -24,7 +24,8 @@ None
 
 - **UNIT-020 (Core 0 Scene Manager)**: Called from `main.rs` to build projection (`perspective()`), view (`look_at()`), and model (`rotate_y()`) matrices.
 - **UNIT-022 (GPU Driver Layer)**: Uses `gpu::registers::SCREEN_WIDTH` (640) and `SCREEN_HEIGHT` (480) for viewport mapping.
-- **`render::mesh`**: Called from `render_teapot()` for per-vertex transform (`transform_vertex()`), normal transform (`transform_normal()`), and back-face culling (`is_front_facing()`).
+- **UNIT-020 (Core 0 Scene Manager)**: Matrix builders and frustum culling functions (`extract_frustum_planes()`, `cull_aabb()`, `classify_patch_clip_planes()`).
+- **UNIT-021 (Core 1 Render Executor)**: Per-vertex transform (`transform_vertex()`), normal transform (`transform_normal()`), back-face culling (`is_front_facing()`), and triangle clipping (`clip_triangle()`).
 
 ## Design Description
 
@@ -59,6 +60,10 @@ None
 2. **`transform_normal()`**: Multiply normal (as `Vec4` with w=0) by the model-view matrix, extract xyz, normalize. This is correct for uniform-scale MV matrices.
 3. **`is_front_facing()`**: Compute 2D cross product of screen-space edge vectors `(v1-v0)` and `(v2-v0)`. Positive cross product indicates counter-clockwise winding (front-facing).
 4. **Matrix builders**: Delegate to `glam` library functions: `Mat4::perspective_rh()`, `Mat4::look_at_rh()`, `Mat4::from_rotation_y()`.
+5. **`extract_frustum_planes()`**: Extract 6 frustum planes from MVP (Gribb-Hartmann method). Returns `[Vec4; 6]`.
+6. **`cull_aabb()`**: Test 8 AABB corners against frustum planes. Returns Outside/Inside/Intersect.
+7. **`classify_patch_clip_planes()`**: Returns 6-bit bitmask of which frustum planes the AABB crosses.
+8. **`clip_triangle()`**: Sutherland-Hodgman polygon clipping against flagged frustum planes. Max 7 output vertices.
 
 ## Implementation
 

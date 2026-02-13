@@ -55,37 +55,42 @@ The render command queue is the inter-core communication channel between Core 0 
 
 ### RenderMeshPatch
 
-Transform a mesh patch from object space to screen space, compute lighting, and submit triangles to the GPU.
+Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, transforms vertices (MVP), computes Gouraud lighting, performs back-face culling, optionally clips triangles against frustum planes, and submits the resulting triangles to the GPU.
 
 **Input**:
 | Field | Type | Description |
 |-------|------|-------------|
-| vertices | [Vertex; ≤128] | Object-space vertices |
-| indices | [u16] | Triangle index list |
-| vertex_count | u8 | Number of vertices (1-128) |
-| index_count | u16 | Number of indices |
+| patch | &'static MeshPatchDescriptor | Reference to const patch data in flash (positions, normals, UVs, indices, AABB) |
 | mvp_matrix | Mat4x4 | Combined model-view-projection matrix |
-| mv_matrix | Mat4x4 | Model-view matrix (for normal transform) |
-| lights | [DirectionalLight; 4] | Light sources |
+| mv_matrix | Mat4x4 | Model-view matrix (for normal/lighting transform) |
+| lights | [DirectionalLight; 4] | Directional light sources |
 | ambient | AmbientColor | Ambient light level |
 | flags | RenderFlags | textured, z_test, z_write, gouraud |
+| clip_flags | u8 | 6-bit frustum plane crossing bitmask from Core 0 culling (bit per plane: left, right, bottom, top, near, far) |
 
 **Processing (Core 1)**:
-1. For each vertex in patch:
+1. DMA-prefetch patch data from flash into SRAM input buffer (double-buffered: process one buffer while next patch DMA's in)
+2. For each vertex in patch:
    a. Transform position by MVP matrix → clip space
    b. Perspective divide → NDC
    c. Viewport transform → screen space (12.4 fixed-point)
-   d. Compute Z as 25-bit unsigned
-   e. Transform normal by inverse-transpose of model-view
+   d. Compute Z as 16-bit unsigned
+   e. Transform normal by model-view matrix
    f. Compute Gouraud lighting: `color = ambient + Σ(max(0, dot(N, L[i])) × light_color[i])`
    g. If textured: compute U/W, V/W, 1/W in 1.15 fixed-point
-   h. Pack into GpuVertex format
-2. Configure GPU TRI_MODE register based on flags
-3. For each triangle (indices[i], indices[i+1], indices[i+2]):
-   a. Optional: back-face cull (cross product of screen-space edges)
-   b. Submit 3 packed vertices to GPU via triangle strip or individual triangles
+   h. Pack into GpuVertex format and store in clip-space vertex cache
+3. Configure GPU RENDER_MODE register based on flags
+4. For each index entry in the packed u8 strip command stream:
+   a. Extract vertex index (bits [7:4]) and kick control (bits [3:2])
+   b. Look up transformed vertex from cache
+   c. If kick != NOKICK: perform back-face cull (cross product of screen-space edges)
+   d. If clip_flags != 0 and triangle crosses a frustum plane: clip triangle (Sutherland-Hodgman)
+   e. Write COLOR, UV0 (if textured), then VERTEX register (NOKICK/KICK_012/KICK_021 based on kick bits)
+5. Output packed GPU register writes to double-buffered SPI output buffer (DMA/PIO sends one buffer while Core 1 fills the next)
 
-**Output**: GPU register writes via gpu_driver
+**Output**: GPU register writes via DMA/PIO SPI (RP2350) or SPI thread (PC)
+
+**Core 1 Working RAM per patch**: ~8 KB (see DD-016 for detailed breakdown)
 
 ---
 
@@ -150,18 +155,18 @@ Fill the screen with a solid color using a full-viewport triangle.
 
 ## Frame Sequence
 
-A typical frame rendered by Core 1 follows this command sequence:
+A typical frame follows this command sequence:
 
 ```
 1. ClearFramebuffer { color: bg_color, clear_depth: true }
-2. RenderMeshPatch { patch_0, transforms, lights, flags }
-3. RenderMeshPatch { patch_1, transforms, lights, flags }
-   ... (one per mesh patch in scene)
+2. RenderMeshPatch { patch: &mesh.patches[0], mvp, mv, lights, ambient, flags, clip_flags }
+3. RenderMeshPatch { patch: &mesh.patches[1], mvp, mv, lights, ambient, flags, clip_flags }
+   ... (one per visible mesh patch after Core 0 frustum culling)
 N. WaitVsync
 N+1. (implicit: swap framebuffers)
 ```
 
-Core 0 generates this sequence each frame and enqueues all commands before the render core finishes the previous frame (double-buffered pipeline).
+Core 0 performs frustum culling per frame: tests each model's overall AABB, then each patch's AABB against the view frustum. Only patches that pass culling are enqueued as `RenderMeshPatch` commands. Core 0 also computes a 6-bit clip_flags bitmask indicating which frustum planes each patch crosses, enabling Core 1 to skip triangle clipping for fully-inside patches.
 
 ---
 
@@ -169,12 +174,14 @@ Core 0 generates this sequence each frame and enqueues all commands before the r
 
 | Factor | Value |
 |--------|-------|
-| Utah Teapot patches | ~32 patches (estimated, ~500 vertices / 16 per patch) |
-| Commands per frame | ~34 (1 clear + 32 patches + 1 vsync) |
-| Command size | Variable (MeshPatch is largest, ~2-4 KB with 128 vertices) |
-| Queue depth | Must hold at least 1 full frame of commands |
+| Utah Teapot patches | ~29 patches (estimated, ~460 vertices / 16 per patch) |
+| Visible patches per frame | ~20-29 (after frustum culling) |
+| Commands per frame | ~22-32 (1 clear + 20-29 patches + 1 vsync) |
+| RenderMeshPatch size | ~264 bytes (2× Mat4 + lights + patch ref + flags) |
+| Queue depth | 64 entries (sufficient for ~32 commands/frame) |
+| Queue memory | 64 × ~264 bytes ≈ 16.5 KB |
 
-**Recommendation**: Queue depth of 64 commands or ring buffer with sufficient memory for command payloads.
+**Note**: RenderMeshPatch commands are larger than the previous SubmitScreenTriangle (~80 bytes) but there are far fewer per frame (~29 vs ~144). Consider sharing per-frame state (MVP matrix, lights) via a separate mechanism to reduce per-command size.
 
 
 ## Constraints

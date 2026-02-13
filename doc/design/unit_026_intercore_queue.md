@@ -37,7 +37,7 @@ None
 
 ### Internal State
 
-- **`COMMAND_QUEUE: CommandQueue`** (static mut): A `heapless::spsc::Queue<RenderCommand, 64>` allocated in BSS. Capacity of 64 entries (~5 KB SRAM at ~80 bytes per largest variant).
+- **`COMMAND_QUEUE: CommandQueue`** (static mut): A `heapless::spsc::Queue<RenderCommand, 64>` allocated in BSS. Capacity of 64 entries (~16.5 KB SRAM at ~264 bytes per largest variant `RenderMeshPatch`).
 - **Type aliases** defined in `render/mod.rs`:
   - `CommandQueue = spsc::Queue<RenderCommand, QUEUE_CAPACITY>`
   - `CommandProducer<'a> = spsc::Producer<'a, RenderCommand>`
@@ -51,7 +51,7 @@ None
 3. **Thread safety**: `heapless::spsc::Queue` uses atomic operations for the head and tail pointers, making `Producer` and `Consumer` safe to use from different cores without additional synchronization.
 4. **Enqueue (Core 0)**: `enqueue_blocking()` wraps `producer.enqueue()` in a retry loop with NOP spin-wait, implementing backpressure when the queue is full.
 5. **Dequeue (Core 1)**: `core1_main()` calls `consumer.dequeue()` each loop iteration. Returns `None` immediately when empty (non-blocking); Core 1 executes a NOP and retries.
-6. **Command variants**: `RenderCommand` is a `Copy` enum with variants: `SubmitScreenTriangle`, `WaitVsync`, `ClearFramebuffer`, `SetTriMode`, `UploadTexture`.
+6. **Command variants**: `RenderCommand` is a `Copy` enum with variants: `RenderMeshPatch` (~264 bytes: 2x Mat4 + lights + patch ref + flags + clip_flags, primary per-frame command), `SubmitScreenTriangle` (~80 bytes, retained for simple demos), `WaitVsync`, `ClearFramebuffer`, `SetTriMode`, `UploadTexture`.
 
 ## Implementation
 
@@ -65,7 +65,7 @@ None
 - **Queue full test**: Verify enqueue returns `Err` when 64 items are queued, and `enqueue_blocking()` retries until space is available.
 - **Queue empty test**: Verify dequeue returns `None` when the queue is empty.
 - **Ordering test**: Verify commands are dequeued in FIFO order.
-- **Memory layout test**: Verify `RenderCommand` size does not exceed expected bounds (~80 bytes for `ScreenTriangleCommand` variant).
+- **Memory layout test**: Verify `RenderCommand` size does not exceed expected bounds (~264 bytes for `RenderMeshPatch` variant).
 
 ## Design Notes
 

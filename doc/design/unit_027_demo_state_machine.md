@@ -59,7 +59,7 @@ None
 4. **Per-frame rendering**: The main loop matches on `active_demo` and generates the appropriate render commands:
    - `GouraudTriangle`: 1 triangle, Gouraud-shaded RGB.
    - `TexturedTriangle`: 1 triangle, textured with UV coordinates.
-   - `SpinningTeapot`: Full 3D mesh with MVP transform, Gouraud lighting, back-face culling (~144 visible triangles), incrementing rotation angle by `TEAPOT_ROTATION_SPEED` per frame.
+   - `SpinningTeapot`: Frustum cull pre-built teapot mesh (overall AABB then per-patch AABBs), enqueue ~20-29 RenderMeshPatch commands. Vertex processing done by Core 1. Rotation angle increments by `TEAPOT_ROTATION_SPEED` per frame.
 5. **Demo data**: Pre-built vertex arrays and lighting parameters are provided as pure functions and constants in `scene/demos.rs`, generated once at startup and reused each frame.
 
 ## Implementation

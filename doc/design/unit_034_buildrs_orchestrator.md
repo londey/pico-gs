@@ -62,7 +62,12 @@ Asset pipeline entry point
 2. **Discover sources**: Scan `source_dir/textures/` for `.png` files and `source_dir/meshes/` for `.obj` files (non-recursive, case-insensitive extension match). Sort each list for deterministic processing.
 3. **Collision check**: Compute Rust identifiers for all discovered files and verify uniqueness via `identifier::check_collisions()`. Fail early on collision.
 4. **Convert textures**: For each `.png`, call `png_converter::load_and_convert()` then `output_gen::write_texture_output()`. Append returned `GeneratedAsset` entries.
-5. **Convert meshes**: For each `.obj`, call `obj_converter::load_and_convert()` then `output_gen::write_mesh_output()`. Log vertex/triangle/patch statistics. Append returned `GeneratedAsset` entries.
+5. **Convert meshes**: For each `.obj`:
+   a. Parse, triangulate, merge, split into patches.
+   b. Strip optimization: reorder triangles, encode as u8 strip commands.
+   c. AABB computation: per-patch and overall mesh bounding boxes.
+   d. Emit per-patch binaries (f32 positions/normals/UVs, u8 indices) and mesh descriptor.
+   Log vertex/triangle/patch statistics. Append returned `GeneratedAsset` entries.
 6. **Generate mod.rs**: Call `output_gen::write_mod_rs()` to emit the master include file.
 7. **Return** the accumulated `Vec<GeneratedAsset>`.
 

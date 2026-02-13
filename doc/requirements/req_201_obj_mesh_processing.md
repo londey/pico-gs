@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL parse Wavefront OBJ files, triangulate all faces, merge multiple objects/groups into a unified vertex and index list, and split the resulting geometry into GPU-compatible patches. Each patch SHALL contain at most a configurable maximum number of vertices and indices (defaulting to 16 vertices and 32 indices). Vertex data SHALL include position (vec3), texture coordinates (vec2), and normal (vec3) attributes, with missing UVs or normals defaulting to zero. Patch indices SHALL use u16 values for GPU compatibility, and the splitting algorithm SHALL produce deterministic output for reproducible builds.
+The system SHALL parse Wavefront OBJ files, triangulate all faces, merge multiple objects/groups into a unified vertex and index list, and split the resulting geometry into GPU-compatible patches. Each patch SHALL contain at most a configurable maximum number of vertices and indices (defaulting to 16 vertices and 32 indices). Vertex data SHALL include position (vec3), texture coordinates (vec2), and normal (vec3) attributes, with missing UVs or normals defaulting to zero. The splitter SHALL perform triangle strip optimization and encode indices as packed u8 strip command entries (4-bit vertex index + 2-bit kick control mapping to INT-010 VERTEX registers + 2 spare bits). The splitter SHALL compute per-patch AABBs and an overall mesh AABB from vertex positions. The splitting algorithm SHALL produce deterministic output for reproducible builds.
 
 ## Rationale
 

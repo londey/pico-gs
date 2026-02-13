@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL implement a render command execution pipeline on Core 1 that dequeues render commands from the inter-core SPSC queue and dispatches each command to the GPU driver. The pipeline SHALL support the following command types: framebuffer clear (with optional depth clear), triangle rendering mode configuration, screen-space triangle submission, texture upload, and vsync synchronization with framebuffer swap. Frame boundaries SHALL be delineated by WaitVsync commands.
+The system SHALL implement a render command execution pipeline on Core 1 that dequeues render commands from the inter-core SPSC queue and dispatches each command to the GPU driver. The pipeline SHALL support the following command types: framebuffer clear (with optional depth clear), triangle rendering mode configuration, mesh patch rendering (vertex transformation, lighting, culling, clipping, and GPU submission), screen-space triangle submission (for simple demos), texture upload, and vsync synchronization with framebuffer swap. The primary per-frame command type SHALL be RenderMeshPatch. Frame boundaries SHALL be delineated by WaitVsync commands.
 
 ## Rationale
 

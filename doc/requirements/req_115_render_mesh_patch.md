@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL implement render mesh patch as specified in the functional requirements.
+When the render executor receives a RenderMeshPatch command, the system SHALL DMA-prefetch the referenced mesh patch data from flash, transform all patch vertices through the MVP matrix, compute per-vertex Gouraud lighting, perform back-face culling, optionally clip triangles against frustum planes indicated by the command's clip flags, and submit the resulting visible triangles to the GPU using the kicked vertex register protocol (VERTEX_NOKICK, VERTEX_KICK_012, VERTEX_KICK_021) as specified in INT-010.
 
 ## Rationale
 
@@ -32,7 +32,7 @@ None
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for render mesh patch.
+**Test:** Verify that a RenderMeshPatch command with known patch data produces the expected sequence of GPU register writes (COLOR, UV0, VERTEX_NOKICK/KICK_012/KICK_021) after transformation, lighting, and culling. Verify that clip_flags=0 skips triangle clipping, and non-zero clip_flags triggers Sutherland-Hodgman clipping against the indicated planes.
 
 ## Notes
 

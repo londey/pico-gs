@@ -36,6 +36,6 @@ None
 
 ## Notes
 
-The scene graph tracks an active demo enum (GouraudTriangle, TexturedTriangle, SpinningTeapot) and a `needs_init` flag. Demo-specific assets (vertex data, mesh geometry, lighting parameters) are pre-generated at startup and reused across frames. The default demo on boot is GouraudTriangle.
+The scene graph tracks an active demo enum (GouraudTriangle, TexturedTriangle, SpinningTeapot) and a `needs_init` flag. Demo-specific mesh data is pre-built at compile time via the asset pipeline (const flash data). Per-frame rendering for SpinningTeapot consists of frustum culling patch AABBs and enqueuing RenderMeshPatch commands; vertex transformation and lighting are performed by Core 1. The default demo on boot is GouraudTriangle.
 
 On the PC platform, scene management runs in a single thread (no Core 0/Core 1 distinction). The scene management logic itself is platform-agnostic and shared between platforms. See REQ-100 for the multi-platform architecture.

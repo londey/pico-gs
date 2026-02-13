@@ -85,6 +85,50 @@ pub trait FlowControl {
 
 ---
 
+## DMA Memory Copy Trait
+
+### `trait DmaMemcpy`
+
+Abstracts asynchronous copy from flash (XIP) to SRAM. Used by Core 1 for double-buffered mesh patch prefetch.
+
+```rust
+pub trait DmaMemcpy {
+    fn start_copy(&mut self, src: *const u8, dst: *mut u8, len: usize);
+    fn is_complete(&self) -> bool;
+    fn wait_complete(&self);
+}
+```
+
+| Platform | Hardware | Notes |
+|----------|----------|-------|
+| RP2350 | DMA channel | True async DMA from XIP flash to SRAM |
+| PC | memcpy | Synchronous; is_complete always returns true |
+
+---
+
+## Buffered SPI Output Trait
+
+### `trait BufferedSpiTransport`
+
+Abstracts double-buffered SPI output for DMA/PIO-driven GPU register writes.
+
+```rust
+pub trait BufferedSpiTransport {
+    type Error: core::fmt::Debug;
+    fn submit_buffer(&mut self, buffer: &[u8], len: usize) -> Result<(), Self::Error>;
+    fn is_send_complete(&self) -> bool;
+    fn wait_send_complete(&self);
+}
+```
+
+| Platform | Hardware | Notes |
+|----------|----------|-------|
+| RP2350 (ideal) | PIO + DMA | PIO handles CS toggle and 9-byte framing |
+| RP2350 (fallback) | DMA-chained SPI | Per-frame CS, software CMD_FULL check |
+| PC | SPI thread | Thread reads ring buffer, sends via FT232H |
+
+---
+
 ## Input Source Trait
 
 ### `trait InputSource`

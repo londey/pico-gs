@@ -34,10 +34,13 @@ None
 
 ### Outputs
 
-- `Vec<MeshPatch>` — Ordered list of patches. Each `MeshPatch` contains:
-  - `vertices: Vec<VertexData>` — Local vertex data (copied from global list, deduplicated within patch).
-  - `indices: Vec<u16>` — Local triangle indices (u16 for GPU compatibility), referencing the local vertex array.
-  - `patch_index: usize` — Zero-based sequential patch number.
+- `MeshAsset` containing:
+  - `patches: Vec<MeshPatch>` — Ordered list of patches. Each `MeshPatch` contains:
+    - `vertices: Vec<VertexData>` — Local vertex data (copied from global list, deduplicated within patch).
+    - `indices: Vec<u8>` — Packed u8 strip commands (4-bit vertex idx + 2-bit kick + 2 spare bits).
+    - `aabb_min: [f32; 3]`, `aabb_max: [f32; 3]` — Patch AABB.
+    - `patch_index: usize` — Zero-based sequential patch number.
+  - `aabb_min: [f32; 3]`, `aabb_max: [f32; 3]` — Overall mesh AABB.
 
 ### Internal State
 
@@ -57,11 +60,14 @@ Greedy sequential triangle-packing algorithm:
 5. **Add triangle**: For each of the 3 vertex indices, look up or insert into `vertex_map`. If new, copy the vertex from the global array into `current_verts` and assign the next local index. Push the local index into `current_indices`.
 6. After all triangles are processed, finalize the last patch if non-empty.
 
+7. **Strip optimization**: After greedy packing, reorder triangles within each patch for strip connectivity; encode as u8 strip commands with alternating KICK_012/KICK_021 to maintain correct winding.
+8. **AABB computation**: Compute per-patch axis-aligned bounding box from vertex positions. After all patches, compute overall mesh AABB encompassing all patch AABBs.
+
 Key properties:
 - Vertices shared between triangles within the same patch are deduplicated (stored once, referenced by multiple indices).
 - Vertices shared across patch boundaries are duplicated into each patch that uses them.
 - Output is deterministic for identical input (BTreeMap ordering).
-- Local indices are u16, supporting up to 65535 vertices per patch.
+- Local indices are packed u8 strip commands, supporting up to 16 vertices per patch (4-bit index).
 
 ## Implementation
 

@@ -39,6 +39,8 @@ None
 
 - **`consumer: CommandConsumer<'static>`**: Consumer end of the heapless SPSC queue, providing `RenderCommand` variants produced by Core 0.
 - **`gpu: GpuHandle`**: Opaque handle owning SPI bus, CS pin, and GPIO flow-control/vsync pins.
+- **`dma: D`** (DmaMemcpy): Asynchronous flash-to-SRAM copy for mesh patch prefetch (INT-040).
+- **`spi_out: B`** (BufferedSpiTransport): Double-buffered SPI output for GPU register writes (INT-040).
 
 ### Outputs
 
@@ -60,7 +62,12 @@ None
    b. **Dispatch**: On successful dequeue, call `render::commands::execute(&mut gpu, &cmd)` which pattern-matches the `RenderCommand` variant:
       - `ClearFramebuffer` -- renders two full-screen triangles for color clear; optionally clears depth buffer with two more triangles at far plane.
       - `SetTriMode` -- writes TRI_MODE register with gouraud/z_test/z_write flags.
-      - `SubmitScreenTriangle` -- writes COLOR, UV0 (if textured), and VERTEX registers for 3 vertices.
+      - `SubmitScreenTriangle` -- writes COLOR, UV0 (if textured), and VERTEX registers for 3 vertices. Retained for simple triangle demos.
+      - `RenderMeshPatch` -- **full vertex processing pipeline**:
+        1. DMA prefetch patch data from flash into inactive input buffer (double-buffered).
+        2. Vertex processing: unpack, transform (MVP), perspective divide, viewport map, compute lighting, pack GpuVertex into 16-entry cache.
+        3. Triangle submission: for each u8 strip entry, extract vertex_idx and kick, back-face cull, optionally clip, pack GPU register writes into active output buffer.
+        4. SPI output: submit filled output buffer to BufferedSpiTransport. Swap buffers.
       - `UploadTexture` -- uploads texture data via MEM_ADDR/MEM_DATA and configures TEX0 registers.
       - `WaitVsync` -- blocks on VSYNC pin edge, then swaps draw/display framebuffers.
    c. **Frame boundary**: After executing a `WaitVsync` command, increment `frame_count`, log performance stats every 120 frames, and reset per-frame counters.
@@ -77,6 +84,19 @@ None
 - **Frame boundary test**: Verify `WaitVsync` triggers vsync wait + buffer swap and resets per-frame counters.
 - **Idle spin test**: Verify the consumer increments `idle_spins` when the queue is empty and executes NOP.
 - **Performance logging test**: Verify stats are logged every `PERF_LOG_INTERVAL` frames.
+
+### Core 1 Working RAM
+
+| Component | Size |
+|-----------|------|
+| Input buffers (x2) | 1,136 B |
+| Clip-space vertex cache | 640 B |
+| Triangle clip workspace | 280 B |
+| SPI output buffers (x2) | 1,620 B |
+| Matrices + lights | 224 B |
+| Core 1 stack | 4,096 B |
+| DMA descriptors + misc | 192 B |
+| **Total** | **~8.0 KB** (1.5% of 520 KB) |
 
 ## Design Notes
 

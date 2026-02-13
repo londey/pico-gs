@@ -68,6 +68,12 @@ pub const {IDENTIFIER}_HEIGHT: u32 = {height};
 pub const {IDENTIFIER}_FORMAT: TextureFormat = TextureFormat::{format};
 pub const {IDENTIFIER}_DATA: &[u8] = include_bytes!("{bin_filename}");
 
+// Per-patch mesh wrapper adds:
+// pub const {IDENTIFIER}_PATCH{n}_VERTEX_COUNT: usize = {vertex_count};
+// pub const {IDENTIFIER}_PATCH{n}_ENTRY_COUNT: usize = {entry_count};
+// pub const {IDENTIFIER}_PATCH{n}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];
+// pub const {IDENTIFIER}_PATCH{n}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];
+
 // Usage in firmware:
 // gpu.set_texture(0, {IDENTIFIER}_WIDTH, {IDENTIFIER}_HEIGHT,
 //                  {IDENTIFIER}_FORMAT, {IDENTIFIER}_DATA);
@@ -85,6 +91,17 @@ pub enum TextureFormat {
     BC1,
 }
 
+pub struct MeshPatchDescriptor {
+    pub positions: &'static [u8],
+    pub normals: &'static [u8],
+    pub uvs: &'static [u8],
+    pub indices: &'static [u8],
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
+    pub vertex_count: usize,
+    pub entry_count: usize,
+}
+
 // Texture includes
 include!("textures_player.rs");
 include!("textures_enemy.rs");
@@ -93,6 +110,12 @@ include!("textures_enemy.rs");
 // Mesh includes
 include!("meshes_cube_patch0.rs");
 // ...
+
+// Per-mesh descriptors
+// pub const MESHES_CUBE_AABB_MIN: [f32; 3] = [...];
+// pub const MESHES_CUBE_AABB_MAX: [f32; 3] = [...];
+// pub const MESHES_CUBE_PATCH_COUNT: usize = N;
+// pub const MESHES_CUBE_PATCHES: [MeshPatchDescriptor; N] = [ ... ];
 ```
 
 ## Implementation

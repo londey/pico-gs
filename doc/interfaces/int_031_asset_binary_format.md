@@ -335,21 +335,18 @@ File structure:
 **Template**:
 ```rust
 // Generated from: {source_path} (patch {patch_index} of {total_patches})
-// Vertices: {vertex_count}, Indices: {index_count} ({triangle_count} triangles)
+// Vertices: {vertex_count}, Entries: {entry_count}
+// Patch AABB: ({min_x}, {min_y}, {min_z}) to ({max_x}, {max_y}, {max_z})
 
 pub const {IDENTIFIER}_PATCH{n}_VERTEX_COUNT: usize = {vertex_count};
-pub const {IDENTIFIER}_PATCH{n}_INDEX_COUNT: usize = {index_count};
+pub const {IDENTIFIER}_PATCH{n}_ENTRY_COUNT: usize = {entry_count};
+pub const {IDENTIFIER}_PATCH{n}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];
+pub const {IDENTIFIER}_PATCH{n}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];
 
 pub const {IDENTIFIER}_PATCH{n}_POSITIONS: &[u8] = include_bytes!("{base_name}_pos.bin");
 pub const {IDENTIFIER}_PATCH{n}_UVS: &[u8] = include_bytes!("{base_name}_uv.bin");
 pub const {IDENTIFIER}_PATCH{n}_NORMALS: &[u8] = include_bytes!("{base_name}_norm.bin");
 pub const {IDENTIFIER}_PATCH{n}_INDICES: &[u8] = include_bytes!("{base_name}_idx.bin");
-
-// Usage in firmware:
-// let positions = bytemuck::cast_slice::<u8, f32>({IDENTIFIER}_PATCH{n}_POSITIONS);
-// let uvs = bytemuck::cast_slice::<u8, f32>({IDENTIFIER}_PATCH{n}_UVS);
-// let normals = bytemuck::cast_slice::<u8, f32>({IDENTIFIER}_PATCH{n}_NORMALS);
-// let indices = bytemuck::cast_slice::<u8, u16>({IDENTIFIER}_PATCH{n}_INDICES);
 ```
 
 **Field Descriptions**:
@@ -357,8 +354,9 @@ pub const {IDENTIFIER}_PATCH{n}_INDICES: &[u8] = include_bytes!("{base_name}_idx
 - `{patch_index}`: 0-based patch index
 - `{total_patches}`: Total number of patches for this mesh
 - `{vertex_count}`: Number of vertices in this patch (≤16 by default)
-- `{index_count}`: Number of indices in this patch (≤32 by default)
-- `{triangle_count}`: Number of triangles = index_count / 3
+- `{entry_count}`: Number of strip command entries in this patch (≤48 by default)
+- `{min_x}`, `{min_y}`, `{min_z}`: Patch AABB minimum (model space)
+- `{max_x}`, `{max_y}`, `{max_z}`: Patch AABB maximum (model space)
 - `{IDENTIFIER}`: Uppercase identifier
 - `{n}`: Patch index (0-based)
 - `{base_name}`: Lowercase base name for binary files
@@ -366,21 +364,18 @@ pub const {IDENTIFIER}_PATCH{n}_INDICES: &[u8] = include_bytes!("{base_name}_idx
 **Example** (`cube_patch0.rs`):
 ```rust
 // Generated from: assets/meshes/cube.obj (patch 0 of 1)
-// Vertices: 24, Indices: 36 (12 triangles)
+// Vertices: 16, Entries: 26
+// Patch AABB: (-1.0, -1.0, -1.0) to (1.0, 1.0, 1.0)
 
-pub const CUBE_PATCH0_VERTEX_COUNT: usize = 24;
-pub const CUBE_PATCH0_INDEX_COUNT: usize = 36;
+pub const CUBE_PATCH0_VERTEX_COUNT: usize = 16;
+pub const CUBE_PATCH0_ENTRY_COUNT: usize = 26;
+pub const CUBE_PATCH0_AABB_MIN: [f32; 3] = [-1.0, -1.0, -1.0];
+pub const CUBE_PATCH0_AABB_MAX: [f32; 3] = [1.0, 1.0, 1.0];
 
 pub const CUBE_PATCH0_POSITIONS: &[u8] = include_bytes!("cube_patch0_pos.bin");
 pub const CUBE_PATCH0_UVS: &[u8] = include_bytes!("cube_patch0_uv.bin");
 pub const CUBE_PATCH0_NORMALS: &[u8] = include_bytes!("cube_patch0_norm.bin");
 pub const CUBE_PATCH0_INDICES: &[u8] = include_bytes!("cube_patch0_idx.bin");
-
-// Usage in firmware:
-// let positions = bytemuck::cast_slice::<u8, f32>(CUBE_PATCH0_POSITIONS);
-// let uvs = bytemuck::cast_slice::<u8, f32>(CUBE_PATCH0_UVS);
-// let normals = bytemuck::cast_slice::<u8, f32>(CUBE_PATCH0_NORMALS);
-// let indices = bytemuck::cast_slice::<u8, u16>(CUBE_PATCH0_INDICES);
 ```
 
 ### Position Binary (`_pos.bin`)
@@ -490,39 +485,125 @@ let normals: &[f32] = bytemuck::cast_slice(normals_bytes);
 
 ### Index Binary (`_idx.bin`)
 
-**Format**: Raw u16 array, triangle list
+**Format**: Packed u8 strip command stream
+
+Each entry is a single byte encoding a vertex reference with draw control:
+
+**Byte Layout**:
+```
+[7:4]  4-bit vertex index (0–15, indexing into the patch's local vertex array)
+[3:2]  2-bit kick control:
+         00 = NOKICK — push vertex data to GPU, no triangle emitted
+         01 = KICK_012 — push vertex and emit triangle (v[0], v[1], v[2])
+         10 = KICK_021 — push vertex and emit triangle (v[0], v[2], v[1])
+         11 = reserved (must be 0)
+[1:0]  2-bit spare (reserved, must be 0)
+```
+
+**Layout**:
+```
+Offset (bytes) | Data
+---------------|--------------------------------------------
+0              | Entry[0]: vertex_idx[7:4] | kick[3:2] | spare[1:0]
+1              | Entry[1]: vertex_idx[7:4] | kick[3:2] | spare[1:0]
+...            | ...
+Total          | entry_count × 1 byte
+```
+
+**Properties**:
+- Type: Unsigned 8-bit integer (u8)
+- Byte order: N/A (single byte per entry)
+- Vertex index range: 0 to 15 (4-bit, supports 16-vertex patches)
+- First 2 entries of each strip segment use NOKICK (accumulate vertices), subsequent entries use KICK_012 or KICK_021 to emit triangles
+- KICK_012 vs KICK_021 alternation maintains correct winding order for triangle strips
+- Maps directly to GPU registers: NOKICK→VERTEX_NOKICK (0x06), KICK_012→VERTEX_KICK_012 (0x07), KICK_021→VERTEX_KICK_021 (0x08)
+
+**Size Examples**:
+- 1 triangle (3 entries): 3 bytes
+- 10 triangles as strip (12 entries): 12 bytes
+- 10 triangles as independent (30 entries): 30 bytes
+- Max default (48 entries): 48 bytes
+
+**Rust Conversion**:
+```rust
+let idx_bytes: &[u8] = include_bytes!("cube_patch0_idx.bin");
+// Each byte: vertex_index = (byte >> 4) & 0x0F, kick = (byte >> 2) & 0x03
+for &entry in idx_bytes {
+    let vertex_index = (entry >> 4) & 0x0F;
+    let kick = (entry >> 2) & 0x03;
+    // kick: 0=NOKICK, 1=KICK_012, 2=KICK_021
+}
+```
+
+### Bounding Box (embedded in mesh descriptor)
+
+**Format**: Axis-aligned bounding box (AABB) as 6× f32
 
 **Layout**:
 ```
 Offset (bytes) | Data
 ---------------|-------------------------------------
-0-1            | Triangle[0].i0 (u16, little-endian)
-2-3            | Triangle[0].i1 (u16, little-endian)
-4-5            | Triangle[0].i2 (u16, little-endian)
-6-7            | Triangle[1].i0 (u16, little-endian)
-8-9            | Triangle[1].i1 (u16, little-endian)
-10-11          | Triangle[1].i2 (u16, little-endian)
-...            | ...
-Total          | index_count × 2 bytes
+0-3            | min_x (f32, little-endian)
+4-7            | min_y (f32, little-endian)
+8-11           | min_z (f32, little-endian)
+12-15          | max_x (f32, little-endian)
+16-19          | max_y (f32, little-endian)
+20-23          | max_z (f32, little-endian)
+Total          | 24 bytes
 ```
 
 **Properties**:
-- Type: Unsigned 16-bit integer (u16)
+- Type: IEEE 754 single-precision float (f32)
 - Byte order: Little-endian
-- Components per triangle: 3 indices
-- Index range: 0 to (vertex_count - 1)
-- Winding order: Preserved from OBJ file
+- Coordinate system: Model space (same as vertex positions)
+- Computed at build time from all vertex positions in the patch (per-patch) or entire mesh (overall)
 
-**Size Examples**:
-- 1 triangle: 6 bytes
-- 10 triangles (30 indices): 60 bytes
-- Max default (32 indices): 64 bytes
+### Mesh Descriptor (Rust const format)
 
-**Rust Conversion**:
+The mesh descriptor provides a compile-time manifest of all patches in a mesh, enabling Core 0 frustum culling and Core 1 DMA prefetch.
+
+**Generated Rust wrapper** (per mesh, in addition to per-patch wrappers):
+
 ```rust
-let indices_bytes: &[u8] = include_bytes!("cube_patch0_idx.bin");
-let indices: &[u16] = bytemuck::cast_slice(indices_bytes);
-// indices = [i0, i1, i2, i3, i4, i5, ...] (groups of 3)
+// Generated from: {source_path}
+// Patches: {patch_count}
+// Total vertices: {total_vertices}, Total entries: {total_entries}
+
+/// Overall mesh bounding box (model space)
+pub const {IDENTIFIER}_AABB_MIN: [f32; 3] = [{min_x}, {min_y}, {min_z}];
+pub const {IDENTIFIER}_AABB_MAX: [f32; 3] = [{max_x}, {max_y}, {max_z}];
+pub const {IDENTIFIER}_PATCH_COUNT: usize = {patch_count};
+
+/// Per-patch descriptors
+pub const {IDENTIFIER}_PATCHES: [MeshPatchDescriptor; {patch_count}] = [
+    MeshPatchDescriptor {
+        positions: {IDENTIFIER}_PATCH0_POSITIONS,
+        normals: {IDENTIFIER}_PATCH0_NORMALS,
+        uvs: {IDENTIFIER}_PATCH0_UVS,
+        indices: {IDENTIFIER}_PATCH0_INDICES,
+        aabb_min: [{p0_min_x}, {p0_min_y}, {p0_min_z}],
+        aabb_max: [{p0_max_x}, {p0_max_y}, {p0_max_z}],
+        vertex_count: {p0_vertex_count},
+        entry_count: {p0_entry_count},
+    },
+    // ... more patches
+];
+```
+
+**MeshPatchDescriptor struct** (generated in mod.rs):
+
+```rust
+#[derive(Copy, Clone)]
+pub struct MeshPatchDescriptor {
+    pub positions: &'static [u8],
+    pub normals: &'static [u8],
+    pub uvs: &'static [u8],
+    pub indices: &'static [u8],
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
+    pub vertex_count: usize,
+    pub entry_count: usize,
+}
 ```
 
 ---
@@ -554,13 +635,20 @@ let bytes: Vec<u8> = positions.iter()
 std::fs::write("positions.bin", bytes)?;
 ```
 
-**Generating u16 binary data**:
+**Generating u8 strip command data**:
 ```rust
-let indices: Vec<u16> = vec![0, 1, 2, 3, 4, 5];
-let bytes: Vec<u8> = indices.iter()
-    .flat_map(|&i| i.to_le_bytes())
-    .collect();
-std::fs::write("indices.bin", bytes)?;
+// Pack vertex index and kick control into a single byte
+fn pack_strip_entry(vertex_index: u8, kick: u8) -> u8 {
+    (vertex_index << 4) | (kick << 2)
+}
+
+let entries: Vec<u8> = vec![
+    pack_strip_entry(0, 0),  // NOKICK
+    pack_strip_entry(1, 0),  // NOKICK
+    pack_strip_entry(2, 1),  // KICK_012 → triangle (v0, v1, v2)
+    pack_strip_entry(3, 2),  // KICK_021 → triangle (v1, v3, v2)
+];
+std::fs::write("indices.bin", &entries)?;
 ```
 
 **Generating RGBA4444 binary data (from RGBA8)**:
@@ -607,14 +695,28 @@ pub enum TextureFormat {
     BC1,
 }
 
+#[derive(Copy, Clone)]
+pub struct MeshPatchDescriptor {
+    pub positions: &'static [u8],
+    pub normals: &'static [u8],
+    pub uvs: &'static [u8],
+    pub indices: &'static [u8],
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
+    pub vertex_count: usize,
+    pub entry_count: usize,
+}
+
 // Textures
 include!("textures_player.rs");
 include!("textures_enemy.rs");
 
-// Meshes
+// Meshes (per-patch data + mesh descriptors)
 include!("meshes_cube_patch0.rs");
+include!("meshes_cube.rs");
 include!("meshes_sphere_patch0.rs");
 include!("meshes_sphere_patch1.rs");
+include!("meshes_sphere.rs");
 ```
 
 ### Including in Firmware
@@ -649,43 +751,56 @@ use crate::assets::*;
 let positions = bytemuck::cast_slice::<u8, f32>(MESHES_CUBE_PATCH0_POSITIONS);
 let uvs = bytemuck::cast_slice::<u8, f32>(MESHES_CUBE_PATCH0_UVS);
 let normals = bytemuck::cast_slice::<u8, f32>(MESHES_CUBE_PATCH0_NORMALS);
-let indices = bytemuck::cast_slice::<u8, u16>(MESHES_CUBE_PATCH0_INDICES);
+let indices: &[u8] = MESHES_CUBE_PATCH0_INDICES;
 
 // Verify counts
 assert_eq!(positions.len(), MESHES_CUBE_PATCH0_VERTEX_COUNT * 3);
 assert_eq!(uvs.len(), MESHES_CUBE_PATCH0_VERTEX_COUNT * 2);
 assert_eq!(normals.len(), MESHES_CUBE_PATCH0_VERTEX_COUNT * 3);
-assert_eq!(indices.len(), MESHES_CUBE_PATCH0_INDEX_COUNT);
+assert_eq!(indices.len(), MESHES_CUBE_PATCH0_ENTRY_COUNT);
 
-// Use in rendering
-for i in (0..indices.len()).step_by(3) {
-    let idx0 = indices[i] as usize;
-    let idx1 = indices[i + 1] as usize;
-    let idx2 = indices[i + 2] as usize;
+// Process strip command stream
+for &entry in indices {
+    let vertex_index = ((entry >> 4) & 0x0F) as usize;
+    let kick = (entry >> 2) & 0x03;
 
-    let v0 = [positions[idx0*3], positions[idx0*3+1], positions[idx0*3+2]];
-    let v1 = [positions[idx1*3], positions[idx1*3+1], positions[idx1*3+2]];
-    let v2 = [positions[idx2*3], positions[idx2*3+1], positions[idx2*3+2]];
-
-    render_triangle(v0, v1, v2);
+    let pos = &positions[vertex_index * 3..vertex_index * 3 + 3];
+    match kick {
+        0 => gpu_write_vertex_nokick(pos),     // NOKICK: load vertex, no triangle
+        1 => gpu_write_vertex_kick_012(pos),   // KICK_012: load vertex, emit tri
+        2 => gpu_write_vertex_kick_021(pos),   // KICK_021: load vertex, emit tri (flipped)
+        _ => unreachable!(),
+    }
 }
 ```
 
 ### Multi-Patch Meshes
 
 ```rust
-// Render all patches of a mesh
-const SPHERE_PATCHES: &[(&[u8], &[u8], &[u8], &[u8], usize)] = &[
-    (MESHES_SPHERE_PATCH0_POSITIONS, MESHES_SPHERE_PATCH0_UVS, MESHES_SPHERE_PATCH0_NORMALS, MESHES_SPHERE_PATCH0_INDICES, MESHES_SPHERE_PATCH0_VERTEX_COUNT),
-    (MESHES_SPHERE_PATCH1_POSITIONS, MESHES_SPHERE_PATCH1_UVS, MESHES_SPHERE_PATCH1_NORMALS, MESHES_SPHERE_PATCH1_INDICES, MESHES_SPHERE_PATCH1_VERTEX_COUNT),
-    // ... more patches
-];
+use crate::assets::*;
 
-for (pos_bytes, uv_bytes, norm_bytes, idx_bytes, vertex_count) in SPHERE_PATCHES {
-    let positions = bytemuck::cast_slice::<u8, f32>(pos_bytes);
-    let indices = bytemuck::cast_slice::<u8, u16>(idx_bytes);
+// Use the generated MeshPatchDescriptor array
+for patch in &MESHES_SPHERE_PATCHES {
+    // Frustum cull using per-patch AABB
+    if !frustum.intersects_aabb(patch.aabb_min, patch.aabb_max) {
+        continue;
+    }
 
-    render_patch(positions, indices);
+    let positions = bytemuck::cast_slice::<u8, f32>(patch.positions);
+
+    // Process strip command entries
+    for &entry in patch.indices {
+        let vertex_index = ((entry >> 4) & 0x0F) as usize;
+        let kick = (entry >> 2) & 0x03;
+
+        let pos = &positions[vertex_index * 3..vertex_index * 3 + 3];
+        match kick {
+            0 => gpu_write_vertex_nokick(pos),
+            1 => gpu_write_vertex_kick_012(pos),
+            2 => gpu_write_vertex_kick_021(pos),
+            _ => unreachable!(),
+        }
+    }
 }
 ```
 
@@ -704,7 +819,7 @@ fn main() {
         source_dir: manifest_dir.join("assets"),
         out_dir: out_dir.join("assets"),
         patch_size: 16,
-        index_limit: 32,
+        entry_limit: 48,
     };
 
     println!("cargo:rerun-if-changed={}", config.source_dir.display());
@@ -749,13 +864,14 @@ fn main() {
 
 ### Meshes (per patch)
 
-| Component | Size Formula | 16 vertices | 24 vertices |
-|-----------|--------------|-------------|-------------|
-| Positions | vertices × 12 bytes | 192 bytes | 288 bytes |
-| UVs | vertices × 8 bytes | 128 bytes | 192 bytes |
-| Normals | vertices × 12 bytes | 192 bytes | 288 bytes |
-| Indices (max) | indices × 2 bytes | 64 bytes | 96 bytes |
-| **Total per patch** | - | **576 bytes** | **864 bytes** |
+| Component | Size Formula | 16 vertices |
+|-----------|--------------|-------------|
+| Positions | vertices × 12 bytes | 192 bytes |
+| UVs | vertices × 8 bytes | 128 bytes |
+| Normals | vertices × 12 bytes | 192 bytes |
+| Indices (max) | entries × 1 byte | 48 bytes |
+| AABB | 6 × 4 bytes (in descriptor) | 24 bytes |
+| **Total per patch** | - | **584 bytes** |
 
 ### Example Asset Set
 
@@ -790,7 +906,7 @@ When implementing output generation, ensure:
    - [ ] Export const declarations as `pub`
 
 3. **Binary files**:
-   - [ ] Use little-endian byte order for f32 and u16
+   - [ ] Use little-endian byte order for f32 and u16 (textures)
    - [ ] Use correct size (verify byte count matches expected)
    - [ ] Use raw data (no headers or padding)
 
@@ -806,8 +922,13 @@ When implementing output generation, ensure:
    - [ ] Positions: vertex_count × 3 × 4 bytes
    - [ ] UVs: vertex_count × 2 × 4 bytes
    - [ ] Normals: vertex_count × 3 × 4 bytes
-   - [ ] Indices: index_count × 2 bytes
-   - [ ] All indices < vertex_count
+   - [ ] Indices: entry_count × 1 byte (u8 strip command stream)
+   - [ ] All vertex indices (bits [7:4]) < vertex_count and ≤ 15
+   - [ ] Kick control (bits [3:2]) is 0, 1, or 2 (no reserved value 3)
+   - [ ] Spare bits [1:0] are zero in every entry
+   - [ ] First 2 entries of each strip segment use NOKICK (kick = 0)
+   - [ ] AABB min ≤ AABB max for all three axes (per-patch and overall)
+   - [ ] Overall mesh AABB encloses all per-patch AABBs
 
 ---
 

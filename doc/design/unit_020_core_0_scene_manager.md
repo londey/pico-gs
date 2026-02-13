@@ -31,14 +31,14 @@ None
 - **UNIT-025 (USB Keyboard Handler)**: Calls `input::poll_keyboard()` each frame to receive `KeyEvent::SelectDemo` events.
 - **UNIT-027 (Demo State Machine)**: Reads `Scene.active_demo` to determine per-frame rendering; calls `Scene::switch_demo()` on keyboard input.
 - **UNIT-023 (Transformation Pipeline)**: Calls `transform::perspective()`, `transform::look_at()`, `transform::rotate_y()` to build MVP matrices for the teapot demo.
-- **UNIT-024 (Lighting Calculator)**: Invoked indirectly through `render::mesh::render_teapot()` which calls `compute_lighting()` per vertex.
+- **UNIT-024 (Lighting Calculator)**: Lighting parameters are passed through RenderMeshPatch commands to Core 1, which calls `compute_lighting()` per vertex.
 
 ## Design Description
 
 ### Inputs
 
 - **USB keyboard events**: `input::poll_keyboard()` returns `Option<KeyEvent>` (keys 1/2/3 select demos).
-- **Static mesh data**: `TeapotMesh` generated at startup from compiled asset data (`assets::teapot`).
+- **Static mesh descriptors**: `MeshPatchDescriptor` arrays from const flash data. No runtime mesh generation.
 - **Pre-built demo vertices**: `gouraud_triangle_vertices()` and `textured_triangle_vertices()` return `[GpuVertex; 3]` arrays.
 
 ### Outputs
@@ -55,7 +55,7 @@ None
 - **`angle: f32`** -- current Y-axis rotation angle for the teapot demo (wraps at 2*pi).
 - **`projection: Mat4`, `view: Mat4`** -- camera matrices, computed once at startup.
 - **`lights: [DirectionalLight; 4]`, `ambient: AmbientLight`** -- lighting parameters, constant.
-- **`teapot_mesh: TeapotMesh`** -- vertex/index data generated once at startup.
+- **`frustum_planes: [Vec4; 6]`** -- frustum planes extracted from MVP each frame.
 - **`gouraud_verts`, `textured_verts`** -- pre-packed `[GpuVertex; 3]` for the simple triangle demos.
 
 ### Algorithm / Behavior
@@ -70,7 +70,12 @@ None
    c. **Per-frame rendering**: Match on `scene.active_demo`:
       - `GouraudTriangle`: Enqueue clear (black) + SetTriMode(gouraud) + 1 ScreenTriangle.
       - `TexturedTriangle`: Enqueue clear (black) + SetTriMode(textured) + 1 ScreenTriangle.
-      - `SpinningTeapot`: Build model/view/projection matrices from incrementing angle. Enqueue clear (dark blue, with depth clear) + SetTriMode(gouraud, z_test, z_write). Call `render_teapot()` which transforms, lights, culls, and enqueues ~144 front-facing triangles.
+      - `SpinningTeapot`: Build MVP from incrementing angle. Enqueue clear + SetTriMode. Call `submit_mesh_patches()` which:
+        1. Test overall mesh AABB against frustum; skip if outside.
+        2. For each patch: test patch AABB against frustum planes.
+           - Fully outside: skip.
+           - Partially inside: compute 6-bit clip_flags bitmask.
+        3. Enqueue `RenderMeshPatch { patch, mvp, mv, lights, ambient, flags, clip_flags }` per visible patch (~20-29 commands vs ~144 SubmitScreenTriangle previously).
    d. **End frame**: Enqueue `WaitVsync` to signal Core 1 to sync and swap buffers.
 3. **Backpressure**: `enqueue_blocking()` spins with NOP when the SPSC queue is full, providing flow control between Core 0 (producer) and Core 1 (consumer).
 

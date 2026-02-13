@@ -386,17 +386,23 @@ gpu_write(VERTEX, v2.position_packed)  // vertex_count → 3, triggers rasteriza
 
 ### Triangle Strip Submission
 
-For efficient mesh rendering, triangles are submitted as strips with strip restart.
+For efficient mesh rendering, triangles are submitted as strips using kicked vertex registers defined in INT-010 v8.0:
 
-**Requires GPU support**: Separate registers for "push vertex without draw" and "push vertex with draw" (see Dependencies in spec). This is a GPU register map extension not yet in the v2.0 spec.
+- `VERTEX_NOKICK (0x06)`: Push vertex, no triangle emitted
+- `VERTEX_KICK_012 (0x07)`: Push vertex, emit triangle (v[0], v[1], v[2])
+- `VERTEX_KICK_021 (0x08)`: Push vertex, emit triangle (v[0], v[2], v[1])
 
-**Proposed strip protocol**:
+The packed u8 index format's kick bits (bits [3:2]) select the register: 0=NOKICK, 1=KICK_012, 2=KICK_021.
+
+### Buffered SPI Output
+
+For DMA/PIO-driven SPI output on RP2350, the GPU driver supports a buffered write mode where register commands are packed into a SRAM buffer:
+
+```rust
+fn pack_register_write(buffer: &mut [u8], offset: usize, addr: u8, data: u64) -> usize
 ```
-VERTEX_NODRAW (0x06?): Push vertex to strip, advance counter, no triangle emitted
-VERTEX_DRAW (0x05):    Push vertex to strip, advance counter, emit triangle if ≥3 vertices
 
-Strip restart: Write to VERTEX_NODRAW resets strip
-```
+The output buffer is double-buffered: Core 1 fills one buffer while DMA/PIO sends the other. On PC, a dedicated SPI thread reads from the output buffer and sends via FT232H.
 
 ---
 
