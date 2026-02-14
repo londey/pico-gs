@@ -56,3 +56,6 @@ The Z-buffer write remains at the end of the pipeline regardless of early Z stat
 
 **Z-buffer timing**: Z-buffer reads and writes go through SRAM arbiter port 2 (UNIT-007).
 With the GPU core and SRAM in the same 100 MHz clock domain, Z-buffer read-compare-write sequences incur no CDC synchronizer delays, enabling the pixel pipeline to sustain higher fragment throughput in depth-intensive scenes.
+
+**Burst mode opportunity**: When fragments arrive in scanline order (sequential screen-space X positions from UNIT-005), Z-buffer reads and writes access sequential SRAM addresses.
+The SRAM arbiter (UNIT-007) can exploit burst mode for these sequential Z-buffer accesses, reducing per-fragment arbitration overhead and improving effective Z-buffer throughput for horizontally adjacent fragments.

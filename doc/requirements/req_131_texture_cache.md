@@ -22,8 +22,10 @@ A per-sampler cache architecture solves this by:
 
 **Performance Impact (at 100 MHz `clk_core`):**
 - **Cache hit:** 1 cycle / 10 ns for 4 bilinear texels (all 4 read in parallel from interleaved banks)
-- **Cache miss:** ~8-18 cycles to fetch and decompress block from SRAM (BC1: ~8 cycles / 80 ns, RGBA4444: ~18 cycles / 180 ns)
+- **Cache miss (with burst SRAM reads):** ~5-11 cycles to fetch and decompress block from SRAM (BC1: ~5 cycles / 50 ns, RGBA4444: ~11 cycles / 110 ns)
 - **Expected hit rate:** >85% for typical scenes (based on spatial locality of texture access)
+
+Cache miss latency is reduced by burst SRAM reads (see INT-032), which eliminate per-word address setup overhead during sequential block fetches.
 
 Note: The texture cache and SRAM controller share the same 100 MHz clock domain, so cache fill operations are synchronous single-domain transactions with no CDC overhead.
 
@@ -61,7 +63,7 @@ None
 - [ ] TEXn_FMT write invalidates sampler N's cache (next access is guaranteed miss)
 - [ ] Invalidating sampler N does not affect other samplers
 - [ ] Stale data never served after configuration change
-- [ ] Cache miss latency within target: BC1 ~8 cycles, RGBA4444 ~18 cycles
+- [ ] Cache miss latency within target: BC1 ≤5 cycles (50 ns), RGBA4444 ≤11 cycles (110 ns) using burst SRAM reads
 - [ ] Pseudo-LRU replacement avoids thrashing for sequential access patterns
 - [ ] XOR set indexing distributes adjacent blocks across different sets (no systematic aliasing)
 

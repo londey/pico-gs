@@ -57,3 +57,9 @@ Boot sequence framebuffer addresses must conform to the alignment and address ra
 **Arbitration timing**: The SRAM arbiter (UNIT-007) operates in the unified 100 MHz clock domain shared by the GPU core and SRAM.
 Display scanout (highest priority) and rasterizer writes (lower priority) are arbitrated without CDC overhead, enabling back-to-back SRAM grants on consecutive clock cycles.
 See INT-011 for bandwidth budget details.
+
+**SRAM Burst Read/Write Impact:**
+SRAM burst mode (UNIT-007 v11.0) improves concurrent access efficiency for both display reads and framebuffer writes.
+Display scanout burst reads reduce the number of arbitration cycles consumed by display prefetch, freeing more SRAM grant opportunities for the rasterizer's framebuffer writes on arbiter port 1.
+This improves effective write throughput during concurrent display scanout and rendering.
+See UNIT-008 for display burst prefetch and INT-011 for the updated bandwidth model.

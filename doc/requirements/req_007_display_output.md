@@ -44,3 +44,8 @@ None
 ## Notes
 
 User Story: As a user, I want to the GPU to output video to a standard monitor, so that I can see the rendered graphics
+
+**SRAM Burst Read Impact:**
+Display scanout is the highest-priority SRAM consumer at 74 MB/s (INT-011).
+UNIT-008 uses burst reads for sequential scanline prefetch, reducing per-word arbitration overhead and freeing SRAM bandwidth for lower-priority rendering operations (framebuffer writes, Z-buffer access, texture fetches).
+This improves display refresh stability under heavy draw load by reducing the fraction of SRAM time consumed by display reads.

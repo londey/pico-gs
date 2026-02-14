@@ -150,11 +150,12 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ### Fill Rate
 
-- **Theoretical Maximum:** 25 Mpixels/second (one pixel per 100 MHz core clock cycle, limited by SRAM write bandwidth)
+- **Theoretical Maximum:** 25 Mpixels/second (one pixel per 100 MHz core clock cycle, limited by SRAM write bandwidth under single-word access)
 - **Actual:** Content-dependent (varies with scene complexity, Z-buffer rejection rate)
 - **Measurement Method:** Count pixels written to framebuffer per frame
 - **References:** INT-011 (SRAM Memory Layout, bandwidth budget)
-- **Note:** Real-world fill rate typically lower due to triangle setup overhead and memory contention
+- **Note:** Real-world fill rate typically lower due to triangle setup overhead and memory contention.
+  SRAM burst mode (see UNIT-007) may improve effective fill rate by reducing per-pixel arbitration overhead for sequential scanline writes; the degree of improvement depends on average burst length achievable during rasterization.
 
 ### Frame Time
 

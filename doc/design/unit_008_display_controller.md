@@ -25,7 +25,7 @@ None
 
 ### Internal Interfaces
 
-- Reads framebuffer pixels from SRAM via UNIT-007 (SRAM Arbiter) display port (highest priority)
+- Reads framebuffer pixels from SRAM via UNIT-007 (SRAM Arbiter) display port (highest priority), using burst requests for sequential scanline reads
 - Receives display base address and buffer swap commands from UNIT-003 (Register File)
 - Receives color grading LUT data and control from UNIT-003
 - Drives UNIT-009 (DVI TMDS Encoder) with RGB888 pixel data and sync signals
@@ -48,6 +48,9 @@ None
 ### Internal State
 
 - Scanline FIFO (prefetch buffer for display scanout)
+- Scanline prefetch FSM state (PREFETCH_IDLE, PREFETCH_BURST, PREFETCH_DONE)
+- Burst read address register (auto-incrementing within scanline)
+- Burst remaining counter (16-bit words remaining in current burst)
 - Color grading LUT: 3 sub-LUTs in 1 EBR block (512×36 configuration), double-buffered
   - Red LUT: 32 entries × 24 bits (RGB888)
   - Green LUT: 64 entries × 24 bits (RGB888)
@@ -64,7 +67,7 @@ None
 
 **Display Scanout Pipeline:**
 
-1. **Framebuffer Read**: Fetch RGB565 pixels from SRAM at FB_DISPLAY address, buffered through scanline FIFO
+1. **Framebuffer Read**: Fetch RGB565 pixels from SRAM at FB_DISPLAY address via burst reads, buffered through scanline FIFO
 2. **Color Grading LUT** (if FB_DISPLAY[0] COLOR_GRADE_ENABLE=1):
    a. Extract RGB565 components: R5=pixel[15:11], G6=pixel[10:5], B5=pixel[4:0]
    b. Parallel LUT lookups (1 cycle EBR read):
@@ -78,6 +81,47 @@ None
 3. **Bypass Mode** (if FB_DISPLAY[0] COLOR_GRADE_ENABLE=0):
    - Standard RGB565→RGB888 expansion: `R8 = {R5, R5[4:2]}`, `G8 = {G6, G6[5:4]}`, `B8 = {B5, B5[4:2]}`
 4. **TMDS Output**: Send RGB888 to DVI encoder (UNIT-009)
+
+**Scanline Prefetch with Burst Reads (v11.0):**
+
+The scanline prefetch FSM reads framebuffer data from SRAM into the scanline FIFO.
+Each scanline of 640 RGB565 pixels requires 1280 bytes (640 × 16-bit words, or 320 × 32-bit SRAM words).
+The prefetch FSM issues burst read requests to UNIT-007 (SRAM Arbiter) to read multiple sequential 16-bit words per arbiter grant, reducing arbitration overhead.
+
+Prefetch FSM states:
+```
+PREFETCH_IDLE:
+  - Wait for scanline FIFO to fall below the refill threshold
+  - Latch next read address from current framebuffer base + scanline offset
+  - Transition to PREFETCH_BURST
+
+PREFETCH_BURST:
+  - Assert port0_req with port0_burst_len set to burst length (number of sequential 16-bit words)
+  - Address auto-increments within the SRAM controller for each beat of the burst
+  - On each port0_ack: push received data into scanline FIFO, decrement remaining burst count
+  - When burst completes (remaining count == 0):
+    * If scanline FIFO is full or scanline read complete: transition to PREFETCH_IDLE
+    * If more data needed and FIFO has space: issue next burst (remain in PREFETCH_BURST)
+
+PREFETCH_DONE:
+  - All pixels for current scanline have been prefetched
+  - Wait for next scanline boundary, then transition to PREFETCH_IDLE
+```
+
+The burst length is determined by the SRAM arbiter's maximum burst length (defined in UNIT-007 and INT-011).
+Because the display port has the highest arbiter priority, burst requests are never preempted mid-burst.
+The scanline FIFO depth must accommodate at least one full burst to prevent underrun; the synchronous 4:1 clock relationship between clk_core and clk_pixel provides 4 SRAM cycles per pixel consumed, giving substantial prefetch margin.
+
+**Burst vs. Single-Word Comparison:**
+- Single-word mode: each 32-bit SRAM read requires a full arbitration cycle (request, grant, 2-cycle SRAM access, ack) — minimum 3 cycles per 32-bit word
+- Burst mode: first word has the same setup cost, but subsequent words in the burst require only 1 cycle each (address auto-increments, no re-arbitration)
+- For a burst of N 16-bit words: burst mode completes in approximately (setup + N) cycles vs. single-word mode at (3 × ceil(N/2)) cycles
+- Display scanout at 640 pixels per line benefits substantially because the entire scanline is a sequential address range
+
+**LUT DMA Burst Support (v11.0):**
+
+The LUT DMA controller also uses burst reads when loading 384 bytes from SRAM during vblank.
+The 192 sequential 16-bit SRAM reads are issued as burst requests, reducing the DMA transfer time from ~1.92 us (single-word) to approximately ~1.0 us (burst), though the practical impact is minimal since the vblank period is ~1.43 ms.
 
 **LUT Auto-Load Protocol (v9.0):**
 1. Host prepares LUT data in SRAM (384 bytes at 4KiB-aligned address)
@@ -122,6 +166,7 @@ None
 - The unified 100 MHz GPU core/SRAM clock (`clk_core`) provides exactly 4 cycles per pixel period (synchronous 4:1 ratio)
 - The scanline FIFO between the SRAM arbiter (clk_core domain) and display output (clk_pixel domain) uses a **synchronous 4:1 clock domain crossing** rather than an asynchronous FIFO, since clk_pixel = clk_core / 4 (derived by integer division)
 - This synchronous relationship eliminates gray-code pointer CDC logic and simplifies timing closure
+- Burst reads reduce the average SRAM cycles per pixel for display scanout, freeing more bandwidth for rendering (framebuffer writes, Z-buffer access, texture fetches) on lower-priority arbiter ports
 - LUT adds 2 pipeline cycles (1 EBR read + 1 sum) — fits within pixel period
 
 ## Implementation
@@ -146,8 +191,18 @@ None
 - Testbench for saturation: verify summed outputs clamp to 8-bit max (255)
 - Timing verification: LUT adds ≤2 cycles scanout latency, within pixel period
 - **DMA priority verification** (v9.0): Verify SRAM arbiter grants MEDIUM priority to LUT DMA
+- **Scanline burst read verification** (v11.0):
+  - Verify prefetch FSM issues burst requests to SRAM arbiter port 0
+  - Verify address auto-increments correctly within burst (sequential 16-bit words)
+  - Verify burst read data is correctly pushed into scanline FIFO in order
+  - Verify prefetch FSM transitions to PREFETCH_IDLE when FIFO is full
+  - Verify no FIFO underrun during active display with burst reads enabled
+  - Verify burst reads do not cross scanline address boundaries
+- **LUT DMA burst read verification** (v11.0):
+  - Verify LUT DMA uses burst requests for the 192 sequential 16-bit SRAM reads
+  - Verify LUT DMA burst completes within vblank period
 
-**Estimated FPGA Resources (v9.0):**
+**Estimated FPGA Resources (v11.0):**
 - Color grading LUT: 1 EBR block (dual-bank, 128 entries × 24 bits per bank, 512×36 EBR config)
 - Summation + saturation logic: ~230 LUTs
 - **LUT DMA Controller** (v9.0):
@@ -155,7 +210,13 @@ None
   - Address counters + byte alignment: ~60 LUTs
   - SRAM request logic: ~40 LUTs
   - Total DMA addition: ~180 LUTs, ~80 FFs
-- **Total (v9.0)**: 1 EBR, ~450 LUTs, ~180 FFs
+- **Scanline prefetch burst support** (v11.0):
+  - Prefetch FSM state register: ~10 FFs
+  - Burst address counter: ~30 FFs
+  - Burst remaining counter: ~10 FFs
+  - Burst request logic: ~20 LUTs
+  - Total burst addition: ~70 LUTs, ~50 FFs
+- **Total (v11.0)**: 1 EBR, ~520 LUTs, ~230 FFs
 
 ## Design Notes
 
@@ -184,3 +245,9 @@ This is simpler and more reliable than the asynchronous CDC that would be requir
   - LUT DMA completes in ~2µs during 1.43ms vblank period
   - See DD-014 for rationale
 - v10.0: Documented boot screen timing interaction with pre-populated FIFO (DD-019)
+- v11.0: Added SRAM burst read support for scanline prefetch and LUT DMA
+  - Scanline prefetch FSM issues burst requests to SRAM arbiter for sequential pixel reads
+  - Reduces display scanout SRAM bandwidth consumption by eliminating per-word re-arbitration overhead
+  - Frees SRAM bandwidth for rendering operations on lower-priority arbiter ports
+  - LUT DMA also uses burst reads, reducing transfer time from ~1.92 us to ~1.0 us
+  - See INT-011 for burst timing model and UNIT-007 for arbiter burst grant protocol

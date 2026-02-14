@@ -98,9 +98,10 @@ Offset  | Data           | Description
 
 **LUT DMA Timing (at 100 MHz `clk_core`, same domain as SRAM):**
 - DMA transfer: 384 bytes = 192 × 16-bit SRAM reads at 100 MHz
-- Transfer time: ~1.92 µs
+- Single-word transfer time: ~1.92 µs (192 individual SRAM reads with per-word arbitration)
+- Burst transfer time: ~1.0 µs (192 reads issued as burst requests, eliminating per-word re-arbitration overhead; see UNIT-008 v11.0)
 - Vblank period: ~1.43 ms (640×480@60Hz)
-- Ample margin for LUT load during vblank
+- Ample margin for LUT load during vblank (burst mode provides ~2× speedup but practical impact is minimal since LUT DMA consumes <0.15% of vblank even in single-word mode)
 
 ### FR-133-4: Double-Buffering (Auto-Swap)
 

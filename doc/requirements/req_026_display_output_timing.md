@@ -66,3 +66,10 @@ None
 
 The pixel clock frequency changed from 25.175 MHz to 25.000 MHz as part of the unified 100 MHz clock domain architecture.
 This enables a synchronous 4:1 relationship between clk_core and clk_pixel, simplifying the display controller's scanline FIFO CDC.
+
+**SRAM Burst Read Impact:**
+The display timing requirements themselves are unchanged by SRAM burst mode.
+However, burst reads for scanline prefetch (UNIT-008 v11.0) allow the scanline FIFO to be filled more efficiently — multiple sequential pixels are read per arbiter grant without re-arbitrating between each word.
+This provides additional timing margin for the scanline FIFO, reducing the risk of FIFO underrun under heavy rendering load.
+The synchronous 4:1 clk_core/clk_pixel ratio (4 SRAM cycles per pixel consumed) combined with burst reads ensures ample prefetch headroom.
+See UNIT-008 for the scanline prefetch burst FSM details.

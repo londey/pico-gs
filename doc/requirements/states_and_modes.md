@@ -110,39 +110,75 @@ This document defines the operational states and modes of the pico-gs system, co
 - **Restrictions:** vertex_count resets to 0 immediately
 - **Source:** [spi_gpu/src/spi/register_file.sv:138-164](../../spi_gpu/src/spi/register_file.sv#L138-L164)
 
-### 4. SRAM Controller States (6-State FSM)
+### 4. SRAM Controller States (10-State FSM)
+
+The SRAM controller supports both single-word and burst access modes.
+Single-word access performs one 32-bit read or write (two 16-bit cycles).
+Burst access reads or writes multiple sequential 16-bit words without re-issuing addresses between each word, improving throughput for sequential access patterns.
 
 #### State: IDLE
 
-- **Description:** Ready for new memory request
+- **Description:** Ready for new memory request (single or burst)
 - **Entry Conditions:** Reset or DONE state complete
-- **Exit Conditions:** req signal asserted
-- **Capabilities:** ready=1; latches address and write data
+- **Exit Conditions:** req signal asserted (burst_len determines single vs. burst)
+- **Capabilities:** ready=1; latches address, write data, and burst_len
 - **Restrictions:** No memory access in progress
 - **Source:** [spi_gpu/src/memory/sram_controller.sv:30-110](../../spi_gpu/src/memory/sram_controller.sv#L30-L110)
 
-#### States: READ_LOW → READ_HIGH
+#### States: READ_LOW → READ_HIGH (Single-Word Read)
 
 - **Description:** Sequential 16-bit reads from async SRAM (converts 32-bit word to two cycles)
-- **Entry Conditions:** IDLE with req=1 and we=0
+- **Entry Conditions:** IDLE with req=1, we=0, burst_len=0
 - **Exit Conditions:** High word read complete
 - **Capabilities:** Assembles 32-bit read data from two 16-bit SRAM reads
 - **Restrictions:** Two-cycle latency for 32-bit reads
 - **Source:** [spi_gpu/src/memory/sram_controller.sv:151-170](../../spi_gpu/src/memory/sram_controller.sv#L151-L170)
 
-#### States: WRITE_LOW → WRITE_HIGH
+#### States: WRITE_LOW → WRITE_HIGH (Single-Word Write)
 
 - **Description:** Sequential 16-bit writes to async SRAM
-- **Entry Conditions:** IDLE with req=1 and we=1
+- **Entry Conditions:** IDLE with req=1, we=1, burst_len=0
 - **Exit Conditions:** High word write complete
 - **Capabilities:** Drives sram_data_oe=1 to output write data
 - **Restrictions:** Two cycles required for 32-bit write
 - **Source:** [spi_gpu/src/memory/sram_controller.sv:172-190](../../spi_gpu/src/memory/sram_controller.sv#L172-L190)
 
+#### State: BURST_READ_SETUP
+
+- **Description:** Initiates a burst read by driving the starting address onto the SRAM bus
+- **Entry Conditions:** IDLE with req=1, we=0, burst_len>0
+- **Exit Conditions:** Address setup time met (1 cycle)
+- **Capabilities:** Drives sram_addr, loads burst_count from burst_len
+- **Restrictions:** First data word not yet valid
+
+#### State: BURST_READ_NEXT
+
+- **Description:** Reads successive 16-bit words with auto-incremented address
+- **Entry Conditions:** BURST_READ_SETUP complete, or previous BURST_READ_NEXT with burst_count>0
+- **Exit Conditions:** burst_count reaches 0
+- **Capabilities:** Latches 16-bit data each cycle, auto-increments sram_addr; emits burst_data_valid pulse for each word
+- **Restrictions:** One 16-bit word per cycle; requestor must consume data at bus rate
+
+#### State: BURST_WRITE_SETUP
+
+- **Description:** Initiates a burst write by driving the starting address and first data word
+- **Entry Conditions:** IDLE with req=1, we=1, burst_len>0
+- **Exit Conditions:** First write cycle complete (1 cycle)
+- **Capabilities:** Drives sram_addr, sram_data_oe=1, loads burst_count from burst_len
+- **Restrictions:** Requestor must provide next wdata before next cycle
+
+#### State: BURST_WRITE_NEXT
+
+- **Description:** Writes successive 16-bit words with auto-incremented address
+- **Entry Conditions:** BURST_WRITE_SETUP complete, or previous BURST_WRITE_NEXT with burst_count>0
+- **Exit Conditions:** burst_count reaches 0
+- **Capabilities:** Drives data each cycle, auto-increments sram_addr; asserts burst_wdata_req for each word
+- **Restrictions:** One 16-bit word per cycle; requestor must supply data at bus rate
+
 #### State: DONE
 
 - **Description:** Acknowledge state (1 cycle)
-- **Entry Conditions:** READ_HIGH or WRITE_HIGH complete
+- **Entry Conditions:** READ_HIGH, WRITE_HIGH, BURST_READ_NEXT (burst_count=0), or BURST_WRITE_NEXT (burst_count=0) complete
 - **Exit Conditions:** Always transitions to IDLE
 - **Capabilities:** ack pulsed high to signal completion
 - **Restrictions:** Single-cycle state
@@ -829,12 +865,20 @@ Power-on
 | ITER_NEXT | end of bbox | IDLE | Triangle complete, tri_ready=1 |
 | ITER_NEXT | continue | EDGE_TEST | curr_x++, wrap to next scanline |
 | **SRAM Controller** |
-| IDLE | req=1, we=0 | READ_LOW | Latch address, issue low read |
-| IDLE | req=1, we=1 | WRITE_LOW | Latch address/data, write low |
+| IDLE | req=1, we=0, burst_len=0 | READ_LOW | Latch address, issue low read |
+| IDLE | req=1, we=1, burst_len=0 | WRITE_LOW | Latch address/data, write low |
+| IDLE | req=1, we=0, burst_len>0 | BURST_READ_SETUP | Latch address, load burst_count |
+| IDLE | req=1, we=1, burst_len>0 | BURST_WRITE_SETUP | Latch address/data, load burst_count |
 | READ_LOW | (always) | READ_HIGH | Read low word, issue high read |
 | READ_HIGH | (always) | DONE | Read high word, assemble 32-bit |
 | WRITE_LOW | (always) | WRITE_HIGH | Write low word |
 | WRITE_HIGH | (always) | DONE | Write high word |
+| BURST_READ_SETUP | (always) | BURST_READ_NEXT | Address setup complete |
+| BURST_READ_NEXT | burst_count > 0 | BURST_READ_NEXT | Latch word, auto-increment addr |
+| BURST_READ_NEXT | burst_count = 0 | DONE | Last word latched |
+| BURST_WRITE_SETUP | (always) | BURST_WRITE_NEXT | First word written |
+| BURST_WRITE_NEXT | burst_count > 0 | BURST_WRITE_NEXT | Write word, auto-increment addr |
+| BURST_WRITE_NEXT | burst_count = 0 | DONE | Last word written |
 | DONE | (always) | IDLE | Pulse ack, ready=1 |
 | **Display Controller** |
 | FETCH_IDLE | FIFO < 32 && y < 480 | FETCH_WAIT_ACK | Issue SRAM request |
@@ -916,7 +960,7 @@ Power-on
 - [spi_gpu/src/spi/spi_slave.sv](../../spi_gpu/src/spi/spi_slave.sv) — SPI transaction states
 - [spi_gpu/src/spi/register_file.sv](../../spi_gpu/src/spi/register_file.sv) — Vertex submission FSM
 - [spi_gpu/src/utils/async_fifo.sv](../../spi_gpu/src/utils/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
-- [spi_gpu/src/memory/sram_controller.sv](../../spi_gpu/src/memory/sram_controller.sv) — SRAM 6-state FSM
+- [spi_gpu/src/memory/sram_controller.sv](../../spi_gpu/src/memory/sram_controller.sv) — SRAM 10-state FSM
 - [spi_gpu/src/render/rasterizer.sv](../../spi_gpu/src/render/rasterizer.sv) — Rasterizer 12-state FSM
 - [spi_gpu/src/display/display_controller.sv](../../spi_gpu/src/display/display_controller.sv) — Display fetch FSM
 

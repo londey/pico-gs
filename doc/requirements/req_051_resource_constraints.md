@@ -67,3 +67,7 @@ EBR budget increased from 16 to 18 blocks to accommodate ordered dithering matri
 
 The command FIFO (UNIT-002) uses distributed RAM (LUTs) rather than EBR, so its depth increase from 16 to 32 entries does not affect the EBR budget.
 The 72-bit x 32-deep command FIFO consumes approximately 2,304 bits of distributed RAM, which is accounted for in the LUT budget rather than the EBR budget.
+
+**SRAM burst mode resource estimate (UNIT-007, SRAM controller):** The burst mode extensions add approximately 50-80 LUTs and 20-30 FFs for burst counters (8-bit burst_remaining, 8-bit burst_len), burst FSM states (4 additional states in SRAM controller), preemption logic (priority comparison, burst_cancel generation), and burst data routing (16-bit burst_rdata/burst_wdata muxes per port).
+No additional EBR or DSP resources are required.
+This is a modest increase relative to the existing arbiter and SRAM controller logic.

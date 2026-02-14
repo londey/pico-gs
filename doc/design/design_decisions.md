@@ -36,6 +36,103 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-020: SRAM Burst Read/Write Operations
+
+**Date:** 2026-02-14
+**Status:** Proposed
+**Implementation:** RTL PENDING
+
+### Context
+
+The SRAM controller currently uses a 6-state FSM (IDLE, READ_LOW, READ_HIGH, WRITE_LOW, WRITE_HIGH, DONE) to perform 32-bit accesses over the 16-bit external SRAM data bus.
+Each 32-bit access requires 2 bus cycles (low half, high half) plus address setup, and returns to IDLE between every access.
+For sequential access patterns -- display scanout (2560 bytes/scanline), framebuffer writes (sequential pixels), Z-buffer reads/writes (scanline-order fragments), and texture cache line fills (8-32 bytes/miss) -- the overhead of re-issuing addresses between each 16-bit word is significant.
+
+The icepi-zero's async SRAM supports burst mode, which allows reading or writing multiple sequential 16-bit words with automatic address increment, eliminating the address setup cycle between consecutive words in a burst.
+
+### Decision
+
+Add SRAM burst read and burst write support to the SRAM controller and arbiter:
+
+1. **Burst transfers**: After the initial address setup, consecutive 16-bit words at sequential addresses are transferred without returning to IDLE, saving one address-setup cycle per additional word in the burst.
+
+2. **Arbiter burst grants**: The SRAM arbiter (UNIT-007) extends its grant mechanism to support multi-word burst grants.
+   A requesting port specifies a burst length (or uses a burst-done signal), and the arbiter holds the grant for the duration of the burst.
+
+3. **Maximum burst length**: A configurable maximum burst length limits how long a single port can hold the SRAM bus, preventing higher-priority ports from being starved.
+   The display controller (port 0, highest priority) is never preempted mid-burst, but lower-priority ports have their burst length capped to maintain display timing margin.
+
+4. **Per-port burst behavior**:
+   - Port 0 (display scanout): Burst reads of consecutive scanline pixels into the scanline FIFO.
+     Burst length up to the remaining FIFO capacity.
+   - Port 1 (framebuffer write): Burst writes of consecutive rasterized pixels.
+     Burst length limited by the run of sequential fragment positions from the pixel pipeline.
+   - Port 2 (Z-buffer read/write): Burst reads or writes of consecutive depth values for scanline-order fragments.
+     Burst length limited by the sequential fragment run length.
+   - Port 3 (texture cache fill): Burst reads for cache line fills.
+     BC1: 4 sequential 16-bit reads (8 bytes). RGBA4444: 16 sequential 16-bit reads (32 bytes).
+
+5. **Fallback**: Single-word (non-burst) accesses remain supported for random access patterns.
+   The burst mechanism degrades gracefully to single-word mode when burst length is 1.
+
+### Rationale
+
+- **Display scanout**: Largest SRAM bandwidth consumer (74 MB/s).
+  Burst reads of ~640 words per scanline eliminate ~639 address-setup cycles per scanline, directly improving effective throughput and reducing arbiter contention for other ports.
+- **Texture cache fills**: Most latency-sensitive use case (pipeline stalls on cache miss).
+  BC1 bursts of 4 words and RGBA4444 bursts of 16 words reduce cache miss latency, improving textured rendering performance.
+- **Framebuffer and Z-buffer**: Sequential scanline writes/reads benefit from burst mode during rasterization of wide triangles with long horizontal spans.
+- **Minimal hardware cost**: Burst mode adds a burst counter and minor control logic to the SRAM controller FSM (~50-100 additional LUTs, ~20-30 FFs).
+  No additional BRAM or DSP consumption.
+- **No software-visible changes**: Burst mode is internal to the SRAM controller and arbiter.
+  No new registers or firmware changes are required.
+
+### Alternatives Considered
+
+1. **Wider SRAM data bus (32-bit)**: Would require a different SRAM part and PCB redesign.
+   Rejected -- hardware change is out of scope; burst mode achieves similar throughput improvement in RTL only.
+
+2. **Interleaved SRAM banks**: Two 16-bit SRAM chips accessed in alternation.
+   Rejected -- doubles SRAM chip count and pin usage; burst mode is simpler.
+
+3. **Cache-only optimization**: Improve texture cache hit rate to reduce SRAM accesses.
+   Rejected -- already implemented (DD-010). Burst mode is complementary, improving the throughput of remaining SRAM accesses.
+
+4. **DMA engine for bulk transfers**: A dedicated DMA controller for large block moves.
+   Rejected -- adds significant complexity; burst mode in the existing arbiter achieves the needed improvement for the identified access patterns.
+
+### Consequences
+
+**Hardware (RTL):**
+- UNIT-007: SRAM arbiter extended with burst grant logic, burst counter, and configurable maximum burst length per port (~50-100 LUTs, ~20-30 FFs)
+- SRAM controller FSM: New burst continuation states added alongside existing single-word states
+- INT-011: Bandwidth budget revised to reflect improved effective throughput for sequential access patterns
+- UNIT-008: Display controller scanline prefetch FSM updated to issue burst read requests
+- UNIT-006: Texture cache fill FSM updated to issue burst read requests for cache line fills
+
+**Firmware (Rust):**
+- No changes required.
+  Burst mode is entirely internal to the FPGA SRAM subsystem.
+
+**Performance:**
+- Positive: Improved effective SRAM throughput for all sequential access patterns
+- Positive: Reduced display scanout bandwidth contention, freeing cycles for rendering
+- Positive: Reduced texture cache miss latency
+- Neutral: Random access patterns (rare) see no improvement
+- Neutral: No change to peak SRAM clock frequency or bus width
+
+### References
+
+- UNIT-007: SRAM Arbiter (burst grant logic)
+- UNIT-008: Display Controller (burst scanout reads)
+- UNIT-006: Pixel Pipeline (burst texture cache fills)
+- INT-011: SRAM Memory Layout (bandwidth budget revision)
+- REQ-050: Performance Targets (fill rate, throughput)
+- DD-010: Per-Sampler Texture Cache Architecture (complementary optimization)
+
+---
+
+
 ## DD-019: Pre-Populated Command FIFO Boot Screen
 
 **Date:** 2026-02-14

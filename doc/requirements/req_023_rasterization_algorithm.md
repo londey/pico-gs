@@ -43,3 +43,6 @@ Functional requirements grouped from specification.
 **Throughput**: At 100 MHz core clock, the rasterizer (UNIT-005) evaluates one pixel per cycle in the inner loop.
 Effective fill rate is limited by SRAM bandwidth contention with display scanout and Z-buffer operations (see INT-011 bandwidth budget).
 The theoretical peak of 100 Mpixels/sec evaluations translates to approximately 25 Mpixels/sec sustained write throughput after arbitration overhead.
+
+**Burst-friendly output**: The edge-walking algorithm produces fragments in scanline order (left-to-right), which generates sequential SRAM addresses for framebuffer writes and Z-buffer accesses.
+When SRAM burst mode is available (see UNIT-007), runs of horizontally adjacent fragments can be written in burst transfers, reducing per-pixel SRAM arbitration overhead and improving effective fill rate beyond the single-word-access baseline.

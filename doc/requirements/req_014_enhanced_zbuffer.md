@@ -8,7 +8,11 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to configure z-buffer compare functions and depth range clipping, so that I can control depth testing behavior (reverse Z, equal test, always pass, Z scissor, early Z rejection, etc.)
+When the host configures the Z_COMPARE field in the RENDER_MODE register, the system SHALL use the specified comparison function (LESS, LEQUAL, EQUAL, GEQUAL, GREATER, NOTEQUAL, ALWAYS, or NEVER) for all subsequent depth tests against the Z-buffer.
+
+When the host writes Z_RANGE_MIN and Z_RANGE_MAX values to the Z_RANGE register, the system SHALL discard any fragment whose interpolated Z value falls outside the range [Z_RANGE_MIN, Z_RANGE_MAX] before performing the depth comparison.
+
+When Z_TEST_EN=1 and Z_COMPARE is not ALWAYS, the system SHALL perform the Z-buffer read and depth comparison before texture fetch (early Z), skipping texture and blending stages for fragments that fail the depth test.
 
 ## Rationale
 
@@ -81,3 +85,7 @@ When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF (the default), no fragments are c
 
 Early Z is a performance optimization only — it does not change functional results.
 The Z-buffer write remains at the end of the pipeline regardless of early Z status, ensuring correct behavior for all compare functions and write-enable combinations.
+
+**Burst mode interaction**: Early Z-buffer reads access SRAM arbiter port 2 (UNIT-007) at the start of the pixel pipeline.
+When fragments arrive in scanline order from the rasterizer (UNIT-005), early Z reads target sequential SRAM addresses and can benefit from SRAM burst read mode, reducing per-fragment arbitration overhead.
+Combined with early Z rejection, burst mode further reduces SRAM bandwidth consumption: rejected fragments skip texture fetch (no port 3 burst needed), and the early Z read itself completes faster via burst transfer for adjacent fragments.

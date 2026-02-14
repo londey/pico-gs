@@ -75,3 +75,9 @@ For alpha blending readback, the pixel pipeline SHALL promote RGB565 framebuffer
 Functional requirements grouped from specification.
 
 The framebuffer format remains RGB565 for SRAM efficiency. Internal pipeline processing uses 10.8 fixed-point (REQ-134) with ordered dithering (REQ-132) to minimize visible banding during the conversion to RGB565.
+
+**SRAM Burst Mode Compatibility:**
+The RGB565 format stores two pixels per 32-bit SRAM word (FR-025-1), and framebuffer pixels are laid out sequentially in SRAM (INT-011).
+This sequential layout is inherently burst-friendly: both display scanout reads (UNIT-008) and rasterizer framebuffer writes (UNIT-006 via arbiter port 1) access consecutive SRAM addresses along scanlines.
+SRAM burst mode (UNIT-007 v11.0) takes advantage of this sequential access pattern to improve throughput.
+No changes to the framebuffer format or pixel packing are required to support burst operations.

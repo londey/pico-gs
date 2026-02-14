@@ -107,21 +107,31 @@ A sampler's cache is fully invalidated (all valid bits cleared) when texture con
 On cache miss, the pixel pipeline stalls and executes the following cache fill sequence:
 
 1. **Stall Pipeline:** No pixel output until fill completes
-2. **SRAM Block Fetch:** Read 4×4 texel block from SRAM:
-   - **BC1 format:** 8 bytes (4 SRAM reads on 16-bit bus)
-   - **RGBA4444 format:** 32 bytes (16 SRAM reads on 16-bit bus)
+2. **SRAM Burst Read Request:** Issue a burst read to UNIT-007 (SRAM Arbiter) with:
+   - **Start address:** Computed block address in SRAM (from INT-014 layout)
+   - **Burst length (`burst_len`):** Number of sequential 16-bit words to read
+     - **BC1 format:** `burst_len=4` (8 bytes)
+     - **RGBA4444 format:** `burst_len=16` (32 bytes)
+   - The arbiter performs one address setup cycle, then streams `burst_len` sequential 16-bit data words on consecutive clock cycles without re-issuing addresses.
 3. **Decompression/Conversion:** Transform source format to RGBA5652:
    - BC1: Decompress 2 RGB565 colors + 2-bit indices → 16 RGBA5652 texels
    - RGBA4444: Convert 16 RGBA4444 texels → 16 RGBA5652 texels
+   - Decompression/conversion may overlap with the final data cycles of the burst read.
 4. **Bank Write:** Write 16 decompressed texels to 4 interleaved EBR banks
 5. **Replacement:** Select victim way using pseudo-LRU policy (per set)
 6. **Resume Pipeline:** Output requested texels and continue processing
 
 **Cache Fill Latency (at 100 MHz `clk_core`):**
-- BC1: ~8 cycles / 80 ns (4 SRAM reads + decompress + write)
-- RGBA4444: ~18 cycles / 180 ns (16 SRAM reads + convert + write)
+- BC1: ~5 cycles / 50 ns (1 address setup + 4 burst data cycles, decompress + write overlapped)
+- RGBA4444: ~11 cycles / 110 ns (1 address setup + 16 burst data cycles with pipelining, convert + write overlapped)
+
+**Comparison with non-burst access:**
+- BC1: reduced from ~8 cycles (80 ns) to ~5 cycles (50 ns) — ~37% improvement
+- RGBA4444: reduced from ~18 cycles (180 ns) to ~11 cycles (110 ns) — ~39% improvement
+- Improvement comes from eliminating per-word address setup overhead in sequential accesses.
 
 Note: The texture cache and SRAM controller share the same 100 MHz clock domain, so cache fill SRAM reads are synchronous single-domain transactions with no CDC overhead.
+The burst request interface to UNIT-007 consists of the start address, burst length, and a request strobe; the arbiter responds with a grant and streams data words with a valid strobe.
 
 **Replacement Policy:**
 - Pseudo-LRU per set (64 sets, each with 4 ways)

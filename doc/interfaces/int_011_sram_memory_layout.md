@@ -278,21 +278,33 @@ Each RGB888 entry: 3 bytes in order R[7:0], G[7:0], B[7:0]
 
 ```
 Priority: HIGHEST
-Pattern: Sequential read, one scanline at a time
+Pattern: Sequential burst read, one scanline at a time
 Bandwidth: 640 × 4 × 60 × 480 = 73.7 MB/s (32-bit words)
 Effective: 640 × 2 × 60 × 480 = 36.9 MB/s (RGB565 data only)
-Access: Burst read, 2560 bytes per scanline
+Access: Burst read, 2560 bytes per scanline (1280 × 16-bit burst reads)
 Timing: Must complete before next scanline starts
 ```
 
-**Note**: Bandwidth reflects 32-bit word reads, but only lower 16 bits contain RGB565 pixel data. Upper 16 bits are discarded. Effective bandwidth for pixel data is half of memory bandwidth.
+**Note**: Bandwidth reflects 32-bit word reads, but only lower 16 bits contain RGB565 pixel data.
+Upper 16 bits are discarded.
+Effective bandwidth for pixel data is half of memory bandwidth.
+
+**Burst Access**: Display scanout is the primary beneficiary of SRAM burst mode.
+Each scanline is 2560 bytes = 1280 sequential 16-bit SRAM reads.
+With burst mode, the initial address setup costs 1 cycle (BURST_READ_SETUP), then each subsequent 16-bit word is read in 1 cycle (BURST_READ_NEXT) with auto-incremented addressing.
+A full scanline burst of 1280 words costs 1 + 1280 = 1281 cycles.
+Without burst mode, each 32-bit word requires 3 cycles (READ_LOW + READ_HIGH + DONE), so 640 words cost 1920 cycles.
+Burst mode improves scanline fetch throughput by ~33% (1281 vs 1920 cycles), reducing display bandwidth pressure on the arbiter and freeing cycles for rendering.
+
+**Note**: The arbiter may preempt a display burst to service a higher-latency-sensitive request.
+The maximum burst length before preemption check is configurable (see UNIT-007).
 
 **Scanline Timing**:
 - Pixel clock: 25.000 MHz (derived as 4:1 divisor from 100 MHz core clock)
 - Pixels per line (total): 800
-- Time per line: 32.00 µs
-- Visible pixels: 640 (25.6 µs)
-- Blanking: 160 pixels (6.4 µs)
+- Time per line: 32.00 us
+- Visible pixels: 640 (25.6 us)
+- Blanking: 160 pixels (6.4 us)
 
 FIFO prefetch uses blanking time to stay ahead.
 
@@ -304,13 +316,14 @@ FIFO prefetch uses blanking time to stay ahead.
 Priority: LOW (yields to display)
 Pattern: Semi-sequential within triangle bbox
 Bandwidth: Variable, up to 200 MB/s burst (GPU core at 100 MHz)
-Access: Single pixel or short burst writes
+Access: Single pixel writes or short burst writes (burst_len up to 16)
 ```
 
-**Write Coalescing**:
+**Write Coalescing / Burst Writes**:
 - Rasterizer emits pixels in scanline order
-- Adjacent pixels can be combined into burst
-- Typical burst: 4-16 pixels (16-64 bytes)
+- Adjacent pixels within the same scanline can be combined into a burst write
+- Typical burst: 4-16 pixels (8-32 bytes on 16-bit bus)
+- Burst writes eliminate per-word DONE-to-IDLE-to-WRITE_LOW overhead, saving 1 cycle per additional word in the burst
 
 ---
 
@@ -320,12 +333,19 @@ Access: Single pixel or short burst writes
 Priority: MEDIUM
 Pattern: Burst block reads on cache miss (REQ-131)
 Bandwidth: ~5-15 MB/s average (with >85% cache hit rate)
-Access: BC1: 8 bytes per cache miss, RGBA4444: 32 bytes per cache miss
+Access: BC1: 8 bytes per cache miss (burst), RGBA4444: 32 bytes per cache miss (burst)
 ```
 
-**Texture Cache (REQ-131)**: Each sampler has an on-chip 4-way set-associative texture cache (4x1024x18-bit EBR banks). On cache hit, no SRAM access is needed. On cache miss, the full 4x4 block is fetched:
-- BC1: 8 bytes = 4 SRAM reads on 16-bit bus (~8 cycles)
-- RGBA4444: 32 bytes = 16 SRAM reads on 16-bit bus (~18 cycles)
+**Texture Cache (REQ-131)**: Each sampler has an on-chip 4-way set-associative texture cache (4x1024x18-bit EBR banks).
+On cache hit, no SRAM access is needed.
+On cache miss, the full 4x4 block is fetched using a burst read:
+- BC1: 8 bytes = 4 sequential 16-bit burst reads (1 setup + 4 data = ~5 cycles)
+- RGBA4444: 32 bytes = 16 sequential 16-bit burst reads (1 setup + 16 data = ~17 cycles)
+
+**Improvement over single-word access**: Without burst mode, BC1 required ~8 SRAM bus cycles (4 x 2-cycle 16-bit reads) and RGBA4444 required ~18 SRAM bus cycles (using interleaved address/data cycles).
+Burst mode reduces BC1 SRAM transfer time from ~8 to ~5 cycles (37% reduction) and RGBA4444 from ~18 to ~17 cycles (6% reduction).
+The BC1 improvement is proportionally larger because the per-burst setup overhead is amortized over fewer words.
+End-to-end cache fill latency (including decompression/conversion overlap) is lower; see INT-032 for pipeline-level cache miss latency figures.
 
 With >85% expected hit rate, average texture SRAM bandwidth is significantly reduced from a worst-case ~50 MB/s, freeing bandwidth for framebuffer and Z-buffer operations.
 
@@ -339,6 +359,11 @@ Pattern: Matches rasterization pattern
 Bandwidth: ~50 MB/s for read + write (max), reduced with early Z-test
 Access: Read-test (early, before texture) + write (late, after all processing)
 ```
+
+**Burst Applicability**: Z-buffer accesses follow the rasterization scan order.
+When the rasterizer processes consecutive pixels within a scanline, Z-buffer reads and writes can be issued as short bursts (typically 2-8 words).
+However, since Z reads and writes are interleaved with depth test decisions (pass/fail), burst lengths are shorter and less predictable than display scanout or texture cache fills.
+The primary benefit is eliminating per-word re-arbitration overhead for adjacent pixel Z accesses.
 
 **Z-Buffer Access Sequence** (with early Z-test, v10.0):
 1. **Stage 0 (Early)**: Read current Z at (x, y)
@@ -359,18 +384,25 @@ No changes to Z-buffer addresses, sizes, or data format.
 ### Theoretical Maximum
 
 ```
-16-bit × 100 MHz = 200 MB/s peak
+16-bit × 100 MHz = 200 MB/s peak (single-word access)
 ```
+
+With burst mode, effective throughput approaches the peak for sequential access patterns because burst transfers eliminate per-word address setup and DONE-state overhead.
+In single-word mode, a 32-bit access costs 3 cycles (READ_LOW + READ_HIGH + DONE), yielding an effective rate of ~133 MB/s for 32-bit words (66 MB/s for 16-bit payload due to RGB565 padding).
+In burst mode, after 1 setup cycle, each subsequent 16-bit word takes 1 cycle, approaching the full 200 MB/s bus rate for long bursts.
 
 ### Allocated Budget
 
-| Consumer | Bandwidth | % of Total | Notes |
-|----------|-----------|------------|-------|
-| Display scanout | 74 MB/s | 37% | Sequential, highest priority |
-| Framebuffer write | 50 MB/s | 25% | Rasterizer pixel output |
-| Z-buffer R/W | 40 MB/s | 20% | Read-test-write per pixel |
-| Texture fetch | ~10 MB/s | 5% | With texture cache (REQ-131), >85% hit rate |
-| **Headroom** | ~26 MB/s | 13% | Freed by texture cache |
+| Consumer | Bandwidth (single) | Bandwidth (burst) | % of Total (burst) | Notes |
+|----------|--------------------|--------------------|---------------------|-------|
+| Display scanout | 74 MB/s | ~50 MB/s | 25% | Burst reads reduce overhead by ~33% |
+| Framebuffer write | 50 MB/s | ~40 MB/s | 20% | Short burst writes (4-16 pixels) |
+| Z-buffer R/W | 40 MB/s | ~35 MB/s | 17.5% | Short bursts for adjacent pixels |
+| Texture fetch | ~10 MB/s | ~8 MB/s | 4% | Burst cache fills (REQ-131), >85% hit rate |
+| **Headroom** | ~26 MB/s | ~67 MB/s | 33.5% | Significantly increased by burst efficiency |
+
+**Burst mode impact summary**: Burst mode does not change the peak bus rate (200 MB/s), but it increases the *effective* throughput by reducing per-access overhead (address setup, DONE state, re-arbitration).
+The primary benefit is a larger headroom budget: burst mode frees ~41 MB/s of additional headroom compared to single-word mode, enabling higher fill rates and reducing arbiter contention.
 
 **Note**: Pre-cache texture fetch budget was 30 MB/s (15%).
 The per-sampler texture cache (REQ-131) reduces average texture SRAM bandwidth to ~5-15 MB/s depending on scene complexity and cache hit rate, freeing ~15-25 MB/s for other consumers.
@@ -404,13 +436,15 @@ For 640×480 @ 60 Hz (18.4 Mpixels/sec visible):
 
 ### Controller Implementation
 
+**Single-Word Access** (backward-compatible, burst_len=0):
+
 ```
 State machine (100 MHz, 10 ns cycle):
 
 READ:
   Cycle 0: Drive address, OE low
   Cycle 1: Data valid, latch data
-  
+
 WRITE:
   Cycle 0: Drive address and data, WE low
   Cycle 1: WE high (data latched on rising edge)
@@ -427,6 +461,36 @@ READ_32:
   Cycle 0: Read low 16 bits
   Cycle 1: Read high 16 bits
 ```
+
+**Burst Access** (burst_len>0):
+
+Burst mode reads or writes N sequential 16-bit words starting from a base address.
+The SRAM auto-increments the address internally after each access, eliminating per-word address setup overhead.
+
+```
+BURST_READ (N words):
+  Cycle 0: BURST_READ_SETUP — Drive base address, OE low
+  Cycle 1..N: BURST_READ_NEXT — Latch 16-bit word, address auto-increments
+  Cycle N+1: DONE — Pulse ack
+  Total: N+2 cycles for N×16-bit words
+
+BURST_WRITE (N words):
+  Cycle 0: BURST_WRITE_SETUP — Drive base address and first data word, WE low
+  Cycle 1..N-1: BURST_WRITE_NEXT — Drive next data word, address auto-increments
+  Cycle N: DONE — Pulse ack
+  Total: N+1 cycles for N×16-bit words
+```
+
+**Burst Length**: The burst_len signal specifies the number of 16-bit words to transfer (1-255).
+A burst_len of 0 selects single-word (legacy) mode.
+
+**Throughput Comparison** (reading 8 sequential 16-bit words):
+- Single-word mode: 8 words x 3 cycles/word = 24 cycles
+- Burst mode: 1 setup + 8 data + 1 done = 10 cycles (2.4x faster)
+
+**Preemption**: The arbiter (UNIT-007) may terminate a burst early by deasserting a grant signal.
+When preempted, the SRAM controller completes the current 16-bit transfer, transitions to DONE, and reports the number of words actually transferred.
+The requestor is responsible for re-issuing the remaining burst from the next address.
 
 ---
 
