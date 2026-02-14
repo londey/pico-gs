@@ -1123,8 +1123,8 @@ Cycles stalled waiting for vertex data or SRAM arbiter, **packed 2×32-bit**.
 ```
 
 **Increment Conditions**:
-- **Vertex stalls [31:0]**: Increments once per clk_50 cycle when rasterizer (UNIT-005) is idle waiting for tri_valid signal from register file.
-- **SRAM stalls [63:32]**: Increments once per clk_50 cycle when any rendering unit has a pending SRAM request not granted by arbiter (UNIT-007).
+- **Vertex stalls [31:0]**: Increments once per clk_core cycle when rasterizer (UNIT-005) is idle waiting for tri_valid signal from register file.
+- **SRAM stalls [63:32]**: Increments once per clk_core cycle when any rendering unit has a pending SRAM request not granted by arbiter (UNIT-007).
 
 **Use Cases**:
 - **Bottleneck Detection**: High vertex stalls indicate host not submitting triangles fast enough
@@ -1145,7 +1145,7 @@ Cycles stalled waiting for cache fill and triangles submitted, **packed 2×32-bi
 ```
 
 **Increment Conditions**:
-- **Cache stalls [31:0]**: Increments once per clk_50 cycle when pixel pipeline is stalled waiting for texture cache miss to complete (SRAM fetch + decompress + bank write).
+- **Cache stalls [31:0]**: Increments once per clk_core cycle when pixel pipeline is stalled waiting for texture cache miss to complete (SRAM fetch + decompress + bank write).
 - **Triangles [63:32]**: Increments once per tri_valid pulse from UNIT-003 when a triangle is submitted for rasterization (any VERTEX_KICK register write).
 
 **Cache Fill Latency** (per INT-032):
@@ -1898,7 +1898,7 @@ Active-high outputs from GPU to host.
 |--------|-------------|
 | CMD_FULL | FIFO depth ≥ (MAX - 2), host should pause writes |
 | CMD_EMPTY | FIFO depth = 0, safe to read STATUS register |
-| VSYNC | Pulses high for one clk_50 cycle at frame boundary |
+| VSYNC | Pulses high for one clk_core cycle at frame boundary |
 
 **Timing Notes**:
 - CMD_FULL has 2-slot slack: host may complete in-flight transaction
@@ -1911,7 +1911,7 @@ Active-high outputs from GPU to host.
 
 **Write Transaction** (72 bits @ 25 MHz SPI):
 - Duration: 2.88 µs
-- Latency: Command visible to GPU within 100 clk_50 cycles of CS rising
+- Latency: Command visible to GPU within 100 clk_core cycles of CS rising
 
 **Read Transaction** (72 bits @ 25 MHz SPI):
 - Duration: 2.88 µs

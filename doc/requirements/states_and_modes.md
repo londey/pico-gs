@@ -38,7 +38,7 @@ This document defines the operational states and modes of the pico-gs system, co
 - **Entry Conditions:** Reset synchronizers deassert (rst_n_sync=1 in all clock domains)
 - **Exit Conditions:** All pre-populated boot commands consumed (FIFO becomes empty)
 - **Capabilities:** Autonomous GPU register write processing: sets FB_DRAW, draws black screen-clear triangles, draws a Gouraud-shaded RGB triangle, and presents via FB_DISPLAY.
-  CMD_EMPTY will not assert until all boot commands are consumed (~18 commands at 50 MHz system clock, completing in microseconds).
+  CMD_EMPTY will not assert until all boot commands are consumed (~18 commands at 100 MHz core clock, completing in ~0.18 us).
 - **Restrictions:** No SPI transactions should be issued during this phase.
   The host's boot sequence (RP2350 PLL lock + peripheral init, ~100 ms) ensures the GPU boot commands complete well before the first SPI traffic.
 - **Source:** UNIT-002 (Command FIFO), see DD-019
@@ -600,7 +600,7 @@ Power-on
 │ Boot Command Processing  │  FIFO starts non-empty with ~18 pre-populated
 │ (rst_n_sync=1)           │  commands; register file drains autonomously
 └────────┬─────────────────┘
-         │ [~0.4 µs at 50 MHz; FIFO drains to empty]
+         │ [~0.18 µs at 100 MHz; FIFO drains to empty]
          ▼
 ┌──────────────────┐
 │ Ready            │  Boot screen visible on display;

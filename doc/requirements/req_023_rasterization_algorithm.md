@@ -8,11 +8,15 @@
 
 ## Requirement
 
-The system SHALL implement rasterization algorithm as specified in the functional requirements.
+When a triangle is submitted via the vertex registers and TRI_DRAW is written, the system SHALL compute edge function coefficients and a screen-clamped bounding box (UNIT-004), then iterate over all pixels within the bounding box using edge walking (UNIT-005), emitting fragments for pixels that pass the edge function inside test.
+
+When the rasterizer emits fragments at the 100 MHz core clock rate, the system SHALL sustain a peak throughput of one fragment evaluation per clock cycle, yielding up to 100 million fragment evaluations per second.
 
 ## Rationale
 
-This requirement defines the functional behavior of the rasterization algorithm subsystem.
+Edge-function rasterization with scanline-order edge walking provides deterministic traversal of the triangle bounding box.
+Operating at 100 MHz (unified GPU core clock), the rasterizer achieves double the throughput compared to a 50 MHz design, enabling higher fill rates for complex scenes.
+See UNIT-004 (Triangle Setup) and UNIT-005 (Rasterizer) for implementation details.
 
 ## Parent Requirements
 
@@ -35,3 +39,7 @@ None
 ## Notes
 
 Functional requirements grouped from specification.
+
+**Throughput**: At 100 MHz core clock, the rasterizer (UNIT-005) evaluates one pixel per cycle in the inner loop.
+Effective fill rate is limited by SRAM bandwidth contention with display scanout and Z-buffer operations (see INT-011 bandwidth budget).
+The theoretical peak of 100 Mpixels/sec evaluations translates to approximately 25 Mpixels/sec sustained write throughput after arbitration overhead.

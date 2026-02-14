@@ -48,6 +48,6 @@ Default register state additions: Z_RANGE is initialized to full range (Z_RANGE_
 RENDER_MODE is initialized with COLOR_WRITE_EN=1 ensuring color output is enabled by default.
 
 **Boot sequence interaction:** Prior to host initialization, the FPGA autonomously processes pre-populated command FIFO entries (REQ-021) that render a boot screen.
-The boot sequence (~18 commands at 50 MHz) completes in microseconds, well before the host firmware begins its initialization sequence (~100 ms after power-on).
+The boot sequence (~18 commands at 100 MHz) completes in microseconds, well before the host firmware begins its initialization sequence (~100 ms after power-on).
 The host initialization overwrites any register state set by the boot sequence, so the boot screen is replaced by the host's configured framebuffer content.
 The CMD_EMPTY GPIO signal (INT-013) may not be asserted when the host first checks it, since boot commands may still be draining; the host must tolerate this.

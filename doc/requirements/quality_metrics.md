@@ -150,7 +150,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ### Fill Rate
 
-- **Theoretical Maximum:** 12.5 Mpixels/second (derived from 50 MB/s framebuffer write bandwidth ÷ 4 bytes/pixel)
+- **Theoretical Maximum:** 25 Mpixels/second (one pixel per 100 MHz core clock cycle, limited by SRAM write bandwidth)
 - **Actual:** Content-dependent (varies with scene complexity, Z-buffer rejection rate)
 - **Measurement Method:** Count pixels written to framebuffer per frame
 - **References:** INT-011 (SRAM Memory Layout, bandwidth budget)
@@ -204,7 +204,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 | **Verification** | Req Coverage | 100% | 95% | All features verified |
 | | Test Pass Rate | 100% | 100% | No regressions |
 
-**Performance Observations** (not targets): Triangle throughput ~17k/s, fill rate ~12.5 Mpix/s (theoretical), frame time varies with content.
+**Performance Observations** (not targets): Triangle throughput ~17k/s, fill rate ~25 Mpix/s (theoretical), frame time varies with content.
 
 ---
 

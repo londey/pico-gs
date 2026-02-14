@@ -46,7 +46,7 @@ A secondary platform for GPU development and debugging. A standard PC running a 
 Reference: `doc/requirements/states_and_modes.md`
 
 The system operates in four phases at runtime.
-**FPGA Boot Screen** begins immediately after PLL lock: the command FIFO starts non-empty with ~18 pre-populated register writes baked into the bitstream (see DD-019), which the register file drains autonomously at the system clock rate (~0.4 us at 50 MHz).
+**FPGA Boot Screen** begins immediately after PLL lock: the command FIFO starts non-empty with ~18 pre-populated register writes baked into the bitstream (see DD-019), which the register file drains autonomously at the core clock rate (~0.18 us at 100 MHz).
 This draws a black screen-clear followed by a Gouraud-shaded RGB triangle and presents the result, producing a visible self-test boot screen before any SPI traffic arrives.
 **Host Initialization** covers clock/peripheral setup on the RP2350, GPU ID verification via SPI, framebuffer address configuration, and Core 1 spawn; by the time the host sends its first SPI transaction (~100 ms after power-on), the FPGA boot screen is already displayed.
 **Active Rendering** is the steady-state loop where Core 0 generates render commands for the current demo and Core 1 executes them against the GPU, synchronized to 60 Hz vsync.
@@ -62,7 +62,7 @@ The FPGA executes a self-test boot screen immediately after PLL lock, before any
 2. **Boot command drain**: The command FIFO (UNIT-002) starts non-empty with ~18 pre-populated register writes embedded in the bitstream memory initialization (see DD-019).
    The register file (UNIT-003) begins consuming these commands at the system clock rate, one entry per cycle.
 3. **Boot sequence content**: The pre-populated commands set FB_DRAW to Framebuffer A, draw two black screen-covering triangles (flat shading, screen clear), then set RENDER_MODE to Gouraud shading, draw a centered RGB triangle with red/green/blue vertex colors, and finally write FB_DISPLAY to present Framebuffer A.
-4. **Completion**: All ~18 boot commands are consumed in ~0.4 us at 50 MHz.
+4. **Completion**: All ~18 boot commands are consumed in ~0.18 us at 100 MHz (18 commands x 10 ns per cycle).
    CMD_EMPTY asserts, the boot screen is visible on the display output, and the GPU is ready for host SPI traffic.
 
 ### Host Boot Sequence (Core 0)
@@ -106,7 +106,7 @@ The host boot sequence executes entirely on Core 0 before the render loop begins
  └──────────────────────────────┘
 ```
 
-**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 32, custom soft FIFO backed by a regular memory array). At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstream that execute a self-test boot screen autonomously (see DD-019); during normal operation, only SPI-sourced commands flow through the FIFO. The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at 25.175 MHz pixel clock.
+**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 32, custom soft FIFO backed by a regular memory array). At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstream that execute a self-test boot screen autonomously (see DD-019); during normal operation, only SPI-sourced commands flow through the FIFO. The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at the 25 MHz pixel clock (synchronous 4:1 from the 100 MHz core clock).
 
 ## Event Handling
 
@@ -130,7 +130,7 @@ The host boot sequence executes entirely on Core 0 before the render loop begins
 
 ## Timing and Synchronization
 
-**Frame rate**: The display controller generates a 640x480 @ 60 Hz VGA timing signal (25.175 MHz pixel clock). VSYNC pulses define frame boundaries. Core 1 blocks on VSYNC at the end of each frame, naturally limiting the system to 60 FPS.
+**Frame rate**: The display controller generates a 640x480 @ 60 Hz VGA timing signal (25 MHz pixel clock, derived as a synchronous 4:1 divisor from the 100 MHz core clock). VSYNC pulses define frame boundaries. Core 1 blocks on VSYNC at the end of each frame, naturally limiting the system to 60 FPS.
 
 **Inter-core synchronization**: Core 0 and Core 1 communicate through a `heapless::spsc::Queue<RenderCommand, 64>`, a lock-free single-producer single-consumer ring buffer using atomic head/tail pointers. No mutexes or critical sections are used. When the queue is full, Core 0 spin-waits with `nop()` (backpressure). When the queue is empty, Core 1 spin-waits with `nop()`.
 

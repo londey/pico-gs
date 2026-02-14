@@ -117,9 +117,11 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
 5. **Replacement:** Select victim way using pseudo-LRU policy (per set)
 6. **Resume Pipeline:** Output requested texels and continue processing
 
-**Cache Fill Latency:**
-- BC1: ~8 cycles (4 SRAM reads + decompress + write)
-- RGBA4444: ~18 cycles (16 SRAM reads + convert + write)
+**Cache Fill Latency (at 100 MHz `clk_core`):**
+- BC1: ~8 cycles / 80 ns (4 SRAM reads + decompress + write)
+- RGBA4444: ~18 cycles / 180 ns (16 SRAM reads + convert + write)
+
+Note: The texture cache and SRAM controller share the same 100 MHz clock domain, so cache fill SRAM reads are synchronous single-domain transactions with no CDC overhead.
 
 **Replacement Policy:**
 - Pseudo-LRU per set (64 sets, each with 4 ways)

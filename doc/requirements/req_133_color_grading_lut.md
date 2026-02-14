@@ -96,10 +96,10 @@ Offset  | Data           | Description
 0x180   | (padding)      | Unused (pad to 4KiB boundary)
 ```
 
-**LUT DMA Timing:**
-- DMA transfer: 384 bytes = 192 × 16-bit SRAM reads at 100MHz
-- Transfer time: ~1.92µs
-- Vblank period: ~1.43ms (640×480@60Hz)
+**LUT DMA Timing (at 100 MHz `clk_core`, same domain as SRAM):**
+- DMA transfer: 384 bytes = 192 × 16-bit SRAM reads at 100 MHz
+- Transfer time: ~1.92 µs
+- Vblank period: ~1.43 ms (640×480@60Hz)
 - Ample margin for LUT load during vblank
 
 ### FR-133-4: Double-Buffering (Auto-Swap)

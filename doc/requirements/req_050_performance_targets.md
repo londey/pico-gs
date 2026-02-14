@@ -17,13 +17,14 @@ Performance is highly content-dependent (triangle count, overdraw, texture cache
 **Target Use Case:** Low-poly textured and lit animated models (e.g., skeletal animated T-Rex) at interactive frame rates (≥15 FPS).
 
 **Hardware Constraints:**
-- 50 MHz FPGA clock for GPU rendering pipeline
-- 100 MHz SRAM access (16-bit bus = 200 MB/s theoretical)
+- 100 MHz unified GPU core and SRAM clock (single clock domain for rendering pipeline and memory)
+- 16-bit SRAM bus at 100 MHz (200 MB/s theoretical)
+- 25 MHz pixel clock derived as a synchronous 4:1 divisor from the 100 MHz core clock
 - 25 MHz QSPI command interface (72-bit transactions = ~3 MB/s command bandwidth)
 
 **Actual Performance Observations** (tracked in quality_metrics.md):
 - Triangle throughput: ~17,000 triangles/second @ 60 fps (SpinningTeapot: 288 tri/frame)
-- Fill rate: ~12.5 Mpixels/second theoretical maximum (derived from SRAM bandwidth)
+- Fill rate: ~25 Mpixels/second theoretical maximum (one pixel per core clock cycle at 100 MHz, limited by SRAM bandwidth)
 - Frame time: Content-dependent (simple scenes may exceed 60 FPS, complex scenes may drop below)
 - Early Z rejection: Reduces effective fill cost for overdraw-heavy scenes by skipping texture and blending stages for occluded fragments (see REQ-014). Benefit scales with overdraw ratio; scenes with 2-3x overdraw may see 30-50% reduction in SRAM texture bandwidth.
 

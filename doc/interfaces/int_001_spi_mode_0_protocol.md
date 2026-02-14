@@ -58,7 +58,8 @@ The GPU asserts the `CMD_FULL` GPIO (GPIO6 on the RP2350) when the command FIFO 
 
 ### Clock Domain Crossing
 
-The FPGA SPI slave uses a double-register synchronizer to transfer the transaction-complete flag from the SPI clock domain (`spi_sck`) to the system clock domain (`sys_clk`).
+The FPGA SPI slave uses a double-register synchronizer to transfer the transaction-complete flag from the SPI clock domain (`spi_sck`) to the GPU core clock domain (`clk_core`, 100 MHz).
+The SPI-to-core crossing remains fully asynchronous because the SPI clock is independent of the core clock.
 
 ## Constraints
 

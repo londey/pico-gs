@@ -20,10 +20,12 @@ A per-sampler cache architecture solves this by:
 3. **Amortizing decompression cost:** BC1 blocks are decompressed once per cache fill rather than per pixel
 4. **Avoiding cross-sampler contention:** Independent caches for each of the 4 texture samplers eliminate stalls from multi-texture rendering
 
-**Performance Impact:**
-- **Cache hit:** 1 cycle for 4 bilinear texels (all 4 read in parallel from interleaved banks)
-- **Cache miss:** ~8-18 cycles to fetch and decompress block from SRAM (BC1: ~8 cycles, RGBA4444: ~18 cycles)
+**Performance Impact (at 100 MHz `clk_core`):**
+- **Cache hit:** 1 cycle / 10 ns for 4 bilinear texels (all 4 read in parallel from interleaved banks)
+- **Cache miss:** ~8-18 cycles to fetch and decompress block from SRAM (BC1: ~8 cycles / 80 ns, RGBA4444: ~18 cycles / 180 ns)
 - **Expected hit rate:** >85% for typical scenes (based on spatial locality of texture access)
+
+Note: The texture cache and SRAM controller share the same 100 MHz clock domain, so cache fill operations are synchronous single-domain transactions with no CDC overhead.
 
 **Resource Cost:**
 - 16 EBR blocks total (4 per sampler × 4 samplers) = 288 Kbits

@@ -38,7 +38,7 @@ None
 - Framebuffer pixel data (RGB565) from SRAM via scanline FIFO
 - Register state: FB_DISPLAY (includes framebuffer address, LUT address, color grading enable)
 - LUT data from SRAM (384 bytes via DMA at vsync trigger)
-- Display timing signals (hsync, vsync, pixel clock at 25.175 MHz)
+- Display timing signals (hsync, vsync, pixel clock at 25.000 MHz)
 
 ### Outputs
 
@@ -118,8 +118,10 @@ None
 - No explicit SWAP_BANKS control needed (implicit with auto-load)
 
 **Timing Budget:**
-- At 25.175 MHz pixel clock, each pixel period is ~39.7 ns
-- SRAM clock at 100 MHz provides 4 cycles per pixel period
+- At 25.000 MHz pixel clock, each pixel period is 40.0 ns
+- The unified 100 MHz GPU core/SRAM clock (`clk_core`) provides exactly 4 cycles per pixel period (synchronous 4:1 ratio)
+- The scanline FIFO between the SRAM arbiter (clk_core domain) and display output (clk_pixel domain) uses a **synchronous 4:1 clock domain crossing** rather than an asynchronous FIFO, since clk_pixel = clk_core / 4 (derived by integer division)
+- This synchronous relationship eliminates gray-code pointer CDC logic and simplifies timing closure
 - LUT adds 2 pipeline cycles (1 EBR read + 1 sum) — fits within pixel period
 
 ## Implementation
@@ -161,10 +163,18 @@ Migrated from speckit module specification.
 
 **Boot Screen Interaction (DD-019):**
 The display controller begins scanout immediately after PLL lock and reset release.
-The pre-populated command FIFO boot sequence (UNIT-002) sets FB_DISPLAY to Framebuffer A as its final command, completing in ~0.4 us at 50 MHz.
+The pre-populated command FIFO boot sequence (UNIT-002) sets FB_DISPLAY to Framebuffer A as its final command, completing in ~0.18 us at 100 MHz.
 Since the display controller's first full frame scanout begins after PLL lock and VGA timing initialization (~16.7 ms for the first vsync), the boot screen rendering completes well before the first frame is scanned out.
 This ensures the display shows the boot screen (black background with RGB triangle) rather than uninitialized SRAM contents.
 Note: the boot sequence rasterization of the screen-clear and RGB triangle takes additional time beyond the FIFO drain (dependent on triangle pixel count), but still completes within the first frame period.
+
+**Clock Domain Architecture:**
+The display controller operates across two synchronous clock domains:
+- `clk_core` (100 MHz): SRAM reads, scanline prefetch, LUT DMA, register interface
+- `clk_pixel` (25 MHz): VGA timing generation, pixel output to TMDS encoder (UNIT-009)
+
+Since clk_pixel = clk_core / 4 (synchronous integer division from the same PLL), the scanline FIFO uses a synchronous 4:1 clock domain crossing.
+This is simpler and more reliable than the asynchronous CDC that would be required if the clocks were from independent sources.
 
 **Version History:**
 - v5.0: Added color grading LUT with register-based upload (REQ-133)

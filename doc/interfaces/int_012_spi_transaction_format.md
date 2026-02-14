@@ -135,7 +135,7 @@ Three auxiliary GPIO signals provide asynchronous status from GPU to host.
 |--------|--------|-------------|
 | CMD_FULL | High | Command FIFO almost full (≤2 slots free) |
 | CMD_EMPTY | High | Command FIFO empty |
-| VSYNC | Pulse | Vertical sync (one clk_50 cycle at frame start) |
+| VSYNC | Pulse | Vertical sync (one clk_core cycle at frame start) |
 
 ### CMD_FULL Timing
 
@@ -185,11 +185,11 @@ CMD_EMPTY ──────────────────────┘
 VSYNC      ─────────────────────┐│┌─────────────────────
                                  └┘
                                  │
-                          ~20 clk_50 cycles
+                          ~20 clk_core cycles
 ```
 
 **Behavior**:
-- Pulses high for ~20 clk_50 cycles (~400 ns)
+- Pulses high for ~20 clk_core cycles (~200 ns)
 - Rising edge aligned with start of vertical blanking
 - Use for double-buffer swap synchronization
 - 60 Hz rate (every 16.67 ms)
@@ -211,7 +211,7 @@ Write transactions are queued in an internal FIFO for asynchronous execution.
 **Write Flow**:
 ```
 SPI Transaction → CDC Sync → FIFO Write → Command Execute
-    (spi_sck)    (async)    (clk_50)      (clk_50)
+    (spi_sck)    (async)    (clk_core)    (clk_core)
 ```
 
 **Overflow Protection**:
@@ -223,7 +223,7 @@ SPI Transaction → CDC Sync → FIFO Write → Command Execute
 - After power-on reset, the FIFO is not empty.
   It contains a pre-defined boot command sequence (~18 entries) initialized at synthesis time (see UNIT-002).
 - These commands execute autonomously without SPI input, rendering a self-test boot screen.
-- CMD_EMPTY will not assert immediately after reset; it asserts only after all boot commands have been consumed (~360 ns at 50 MHz plus rasterization time).
+- CMD_EMPTY will not assert immediately after reset; it asserts only after all boot commands have been consumed (~180 ns at 100 MHz plus rasterization time).
 - CMD_FULL will not assert after reset because the boot sequence (~18 entries) is well below the 30-entry threshold.
 - The host firmware should expect this behavior during initialization.
   By the time the host begins SPI communication (~100 ms after power-on), the boot commands will have completed and the FIFO will be empty.
@@ -249,18 +249,18 @@ The SPI interface operates in a separate clock domain from the GPU core.
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
 │   SPI Slave     │     │   Async FIFO     │     │  GPU Core   │
-│   (spi_sck)     │────▶│  (gray-coded)    │────▶│  (clk_50)   │
+│   (spi_sck)     │────▶│  (gray-coded)    │────▶│  (clk_core) │
 └─────────────────┘     └──────────────────┘     └─────────────┘
 ```
 
 **Synchronization**:
-- Write pointer synchronized to clk_50 with 2-FF synchronizer
+- Write pointer synchronized to clk_core with 2-FF synchronizer
 - Read pointer synchronized to spi_sck domain (for full detection)
 - Metastability resolved within 2 clock cycles
 
 **Latency**:
-- SPI transaction end (CS̄ rising) to command visible: ~4 clk_50 cycles
-- Total latency from start of SPI to command execution: ~100 clk_50 cycles max
+- SPI transaction end (CS̄ rising) to command visible: ~4 clk_core cycles
+- Total latency from start of SPI to command execution: ~100 clk_core cycles max
 
 ---
 
@@ -409,7 +409,7 @@ void gpu_write_burst(gpu_cmd_t *cmds, int count) {
 | Parameter | Value | Unit |
 |-----------|-------|------|
 | CMD_FULL/EMPTY update latency | ≤100 | ns |
-| VSYNC pulse width | ~400 | ns |
+| VSYNC pulse width | ~200 | ns |
 | VSYNC period | 16.67 | ms |
 
 

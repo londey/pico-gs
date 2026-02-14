@@ -36,7 +36,7 @@ None
 | `spi_sck` | 1 | SPI clock from host (Mode 0) |
 | `spi_mosi` | 1 | SPI data in (master-out-slave-in) |
 | `spi_cs_n` | 1 | SPI chip select, active-low |
-| `sys_clk` | 1 | System clock for CDC |
+| `sys_clk` | 1 | GPU core clock (clk_core, 100 MHz) for CDC |
 | `sys_rst_n` | 1 | System reset, active-low |
 | `rdata` | 64 | Read data from register file |
 
@@ -85,7 +85,7 @@ None
 - Verify 72-bit write transaction: clock in 72 MOSI bits, confirm valid/addr/wdata on sys_clk
 - Verify read transaction: confirm rdata appears MSB-first on MISO during first 64 SCK cycles
 - Verify CS deassertion mid-transaction resets bit_count and does not produce valid pulse
-- Verify CDC: valid pulse appears 2-3 sys_clk cycles after 72nd SPI clock edge
+- Verify CDC: valid pulse appears 2-3 clk_core cycles after 72nd SPI clock edge
 - Verify back-to-back transactions with varying CS gaps
 - Verify reset behavior: sys_rst_n clears all sys_clk domain registers
 

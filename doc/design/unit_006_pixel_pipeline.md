@@ -48,6 +48,15 @@ Depth range clipping, early Z-test, texture sampling, blending, framebuffer writ
 - Receives dither and blend mode configuration from UNIT-003
 - Outputs final RGB565 pixel + Z value to SRAM via UNIT-007
 
+## Clock Domain
+
+The pixel pipeline runs at 100 MHz (`clk_core`), in the same clock domain as the SRAM controller (UNIT-007).
+This eliminates all clock domain crossing logic for framebuffer reads/writes, Z-buffer reads/writes, and texture data fetches.
+All SRAM arbiter requests and responses are synchronous single-clock-domain transactions.
+
+The pixel clock (`clk_pixel`, 25 MHz) is derived as a synchronous 4:1 divisor from `clk_core`.
+The pipeline processes fragments at the full 100 MHz rate; scanout to the display operates at 25 MHz.
+
 ## Design Description
 
 ### Inputs
@@ -194,10 +203,10 @@ Per-Sampler Cache:
   Set index = block_x[5:0] ^ block_y[5:0]  (XOR-folded)
   Replacement: pseudo-LRU per set
 
-Cache Fill State Machine:
+Cache Fill State Machine (same clock domain as SRAM, no CDC):
   IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
-  - BC1:      4 SRAM reads (8 bytes) + decompress → ~8 cycles
-  - RGBA4444: 16 SRAM reads (32 bytes) + convert  → ~18 cycles
+  - BC1:      4 SRAM reads (8 bytes) + decompress → ~8 cycles (80 ns at 100 MHz)
+  - RGBA4444: 16 SRAM reads (32 bytes) + convert  → ~18 cycles (180 ns at 100 MHz)
 
 Invalidation:
   - TEXn_BASE or TEXn_FMT write → clear all valid bits for sampler N
@@ -211,7 +220,7 @@ Invalidation:
 - 10.8 blend/shade pipeline: ~8-12 DSP slices (18×18 multipliers), ~1500-2500 LUTs
 - Texel/FB promotion: ~200-400 LUTs (combinational)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
-- Total pipeline latency: ~13-16 cycles (fully pipelined, 1 pixel/cycle throughput)
+- Total pipeline latency: ~13-16 cycles at 100 MHz (130-160 ns), fully pipelined, 1 pixel/cycle throughput (100 Mpixels/sec peak)
 
 ## Implementation
 
@@ -243,5 +252,9 @@ Invalidation:
 - COLOR_WRITE_EN: verify Z-only prepass (Z writes without color writes)
 
 ## Design Notes
+
+The pipeline operates at 100 MHz in a unified clock domain with the SRAM controller.
+This eliminates CDC FIFOs and synchronizers for all memory transactions (framebuffer, Z-buffer, texture), simplifying the design and reducing latency.
+The early Z-test (Stage 0) reads the Z-buffer synchronously, and framebuffer writes (Stage 6) complete in the same domain, avoiding multi-cycle CDC handshakes.
 
 Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats (v3.0).

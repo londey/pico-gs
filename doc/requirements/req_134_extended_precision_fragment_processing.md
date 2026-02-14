@@ -103,7 +103,11 @@ The 10.8 fixed-point format SHALL be always enabled. There is no configurable mo
 
 ## Notes
 
-The 10.8 format matches ECP5 DSP slice capabilities (18x18 multipliers), enabling efficient hardware implementation. Total DSP usage is approximately 8-12 slices, within the 16-slice budget.
+The 10.8 format matches ECP5 DSP slice capabilities (18x18 multipliers), enabling efficient hardware implementation.
+Total DSP usage is approximately 8-12 slices, within the 16-slice budget.
+
+The pixel pipeline runs at 100 MHz (`clk_core`), providing a peak throughput of 100 million fragment operations per second.
+All SRAM accesses for framebuffer readback (alpha blending) and texture cache fills occur in the same clock domain, with no CDC overhead.
 
 Promotion from lower bit-depth formats uses MSB replication (e.g., R5→R10 = {R5, R5}) to ensure uniform distribution across the 10-bit range, avoiding bias from simple zero-padding.
 

@@ -10,7 +10,7 @@
 
 ### REQ-021.1: Command FIFO Buffering
 
-When the host submits a write transaction via SPI, the system SHALL enqueue the command into a 32-entry deep asynchronous FIFO that bridges the SPI clock domain to the GPU system clock domain, preserving strict submission order.
+When the host submits a write transaction via SPI, the system SHALL enqueue the command into a 32-entry deep asynchronous FIFO that bridges the SPI clock domain to the 100 MHz GPU core clock domain, preserving strict submission order.
 
 ### REQ-021.2: FIFO Full Flow Control
 
@@ -46,8 +46,10 @@ When the FPGA undergoes power-on reset, the pre-populated boot command entries i
 
 ## Rationale
 
-The command FIFO decouples the SPI clock domain from the GPU processing clock domain, allowing the host to submit commands without blocking on GPU execution.
+The command FIFO decouples the SPI clock domain from the GPU core clock domain (100 MHz), allowing the host to submit commands without blocking on GPU execution.
+The SPI-to-core clock domain crossing remains asynchronous since SPI clock frequency is independent of the GPU core clock.
 The boot pre-population feature provides a visual self-test confirming that the FPGA bitstream loaded correctly and the GPU rendering pipeline is functional, without requiring host firmware participation.
+At 100 MHz core clock, the ~18 boot commands drain from the FIFO in approximately 0.18 us, well before the first display frame (~16.7 ms after PLL lock).
 
 ## Parent Requirements
 
@@ -78,3 +80,5 @@ None
 ## Notes
 
 FIFO depth increased from 16 to 32 (v2.0) to accommodate the ~18-command boot sequence while retaining headroom for normal SPI command queueing.
+The FIFO read-side clock is the unified 100 MHz GPU core clock (clk_core).
+The FIFO write-side clock is the SPI clock domain; this crossing remains asynchronous.

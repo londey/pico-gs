@@ -16,13 +16,13 @@ Medium
 
 ## Overview
 
-The GPU shall support mipmap chains for textures, enabling proper filtering of textured surfaces at varying distances from the camera.
+The GPU SHALL support mipmap chains for textures, enabling proper filtering of textured surfaces at varying distances from the camera.
 
 ## Functional Requirements
 
 ### FR-130-1: Mipmap Chain Storage
 
-**Description**: The GPU shall support textures with mipmap chains consisting of the base level plus progressively downsampled levels down to 1×1 pixels.
+**Description**: The GPU SHALL support textures with mipmap chains consisting of the base level plus progressively downsampled levels down to 1x1 pixels.
 
 **Details**:
 - Mipmap levels stored sequentially in memory (base first, smallest last)
@@ -37,7 +37,7 @@ The GPU shall support mipmap chains for textures, enabling proper filtering of t
 
 ### FR-130-2: LOD Selection
 
-**Description**: The GPU shall automatically select the appropriate mipmap level (LOD - Level of Detail) based on screen-space texture coordinate derivatives.
+**Description**: The GPU SHALL automatically select the appropriate mipmap level (LOD - Level of Detail) based on screen-space texture coordinate derivatives.
 
 **Details**:
 - LOD = log₂(max(|du/dx|, |dv/dx|, |du/dy|, |dv/dy|))
@@ -46,12 +46,12 @@ The GPU shall support mipmap chains for textures, enabling proper filtering of t
 
 **Acceptance Criteria**:
 - LOD calculated per pixel based on derivatives
-- LOD selection completes within 2 clock cycles
+- LOD selection completes within 2 clock cycles (20 ns at 100 MHz `clk_core`)
 - LOD bias shifts selection by -4.0 to +3.99 levels
 
 ### FR-130-3: Mipmap Addressing
 
-**Description**: The GPU shall calculate the correct memory address for the selected mipmap level.
+**Description**: The GPU SHALL calculate the correct memory address for the selected mipmap level.
 
 **Details**:
 - Base address from TEXn_BASE register
@@ -65,7 +65,7 @@ The GPU shall support mipmap chains for textures, enabling proper filtering of t
 
 ### FR-130-4: Texture Filtering Modes
 
-**Description**: The GPU shall support nearest-mip sampling (single mipmap level sampled with bilinear filtering).
+**Description**: The GPU SHALL support nearest-mip sampling (single mipmap level sampled with bilinear filtering).
 
 **Details**:
 - LOD rounded to nearest integer (nearest mip)
@@ -80,8 +80,8 @@ The GPU shall support mipmap chains for textures, enabling proper filtering of t
 
 | Metric | Target |
 |--------|--------|
-| LOD calculation latency | <2 cycles |
-| Mipmap address calculation | <1 cycle |
+| LOD calculation latency | <2 cycles (20 ns at 100 MHz) |
+| Mipmap address calculation | <1 cycle (10 ns at 100 MHz) |
 | Memory overhead | ~33% per texture |
 
 ## Dependencies

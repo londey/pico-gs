@@ -74,7 +74,7 @@ Key implementation details:
 ### Rationale
 
 - **Visual self-test**: A colored triangle on screen immediately after PLL lock proves the FPGA bitstream is loaded, the rasterizer works, SRAM writes succeed, and the display controller scans out correctly -- all without any host involvement
-- **Deterministic boot screen**: The boot sequence completes in ~0.4 us at 50 MHz (18 commands x 1 cycle each), well before the host's first SPI transaction (~100 ms), so there is no race condition
+- **Deterministic boot screen**: The boot sequence completes in ~0.18 us at 100 MHz (18 commands x 10 ns each), well before the host's first SPI transaction (~100 ms), so there is no race condition
 - **Soft FIFO necessity**: Lattice EBR FIFO macros do not support memory initialization; a regular memory array with `initial`/`$readmemh` is the only way to pre-populate FIFO contents in the bitstream
 - **FIFO depth 32**: 18 boot commands in a 16-deep FIFO would leave no room for SPI commands; 32 entries provide 14 free slots after boot, sufficient for the SPI write rate (~2.88 us per command vs ~20 ns per FIFO read)
 - **No hardware cost increase**: 72-bit x 32-deep = 2,304 bits, well within distributed RAM budget; no additional EBR blocks consumed
@@ -114,7 +114,7 @@ Key implementation details:
 
 **Performance:**
 - Positive: Immediate visual feedback on power-up (vs ~100 ms delay)
-- Neutral: Boot command drain time (~0.4 us) is negligible
+- Neutral: Boot command drain time (~0.18 us) is negligible
 - Neutral: No steady-state performance impact (boot commands are consumed once)
 
 ### References
@@ -620,11 +620,11 @@ Use DVI TMDS output at 640×480@60Hz over an HDMI-compatible connector, using th
 
 ### Rationale
 
-DVI is electrically compatible with HDMI for video-only output. 640×480@60Hz requires a 25.175 MHz pixel clock, well within ECP5 PLL range. The ECP5 SERDES handles 10:1 serialization at 251.75 MHz (10× pixel clock). VGA was rejected due to requiring external DAC.
+DVI is electrically compatible with HDMI for video-only output. 640x480@60Hz uses a 25 MHz pixel clock (derived as a synchronous 4:1 divisor from the 100 MHz core clock; 0.7% deviation from the 25.175 MHz standard, acceptable for all common monitors). The ECP5 SERDES handles 10:1 serialization at 250 MHz (10x pixel clock). VGA was rejected due to requiring external DAC.
 
 ### Consequences
 
-- Requires PLL configuration for 25.175 MHz pixel clock and 251.75 MHz SERDES clock
+- Requires PLL configuration for 100 MHz core clock, 25 MHz pixel clock (4:1 divisor), and 250 MHz SERDES clock (10x pixel clock)
 - HDMI monitors accept DVI signals natively (video-only, no audio)
 - Resolution fixed at 640×480 to stay within SRAM bandwidth limits
 - 4 SERDES channels used (R, G, B, clock)

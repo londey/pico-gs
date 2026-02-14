@@ -70,7 +70,7 @@ The firmware SHALL be able to enable or disable dithering via the `DITHER_MODE` 
 - [ ] Smooth gradients visible in dithered RGB565 output (no banding)
 - [ ] Dithering can be disabled for pixel-perfect rendering
 - [ ] No visible tiling artifacts from 16x16 pattern at normal viewing distance
-- [ ] Dithering is fully pipelined (1 cycle EBR read, no throughput reduction)
+- [ ] Dithering is fully pipelined (1 cycle EBR read at 100 MHz / 10 ns, no throughput reduction)
 
 ## Notes
 

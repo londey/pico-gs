@@ -58,7 +58,7 @@ None
 
 | Signal | Width | Description |
 |--------|-------|-------------|
-| `clk` | 1 | System clock |
+| `clk` | 1 | Unified 100 MHz system clock (`clk_core`) |
 | `rst_n` | 1 | Active-low reset |
 
 ### Outputs
@@ -86,6 +86,12 @@ None
 - **grant_active** [1:0]: A grant is in progress, waiting for sram_ack
 
 ### Algorithm / Behavior
+
+**Single Clock Domain:**
+The arbiter, all requestor ports (display controller, pixel pipeline framebuffer, pixel pipeline Z-buffer, pixel pipeline texture), and the SRAM controller all operate in the unified 100 MHz `clk_core` domain.
+No clock domain crossing (CDC) logic is required between the GPU core and SRAM.
+The only asynchronous CDC boundary in the system is between the SPI slave interface and the GPU core (handled by UNIT-002).
+This single-domain design eliminates synchronizer latency on request/acknowledge paths, enabling back-to-back grants on consecutive clock cycles.
 
 **Fixed-Priority Arbitration:**
 Priority order: Port 0 (display) > Port 1 (framebuffer) > Port 2 (Z-buffer) > Port 3 (texture). This ensures display refresh never stalls.
@@ -139,3 +145,8 @@ Each lower-priority port is only ready when no higher-priority port is requestin
 ## Design Notes
 
 Migrated from speckit module specification.
+
+**v2.0 unified clock update:** With the GPU core clock unified to 100 MHz (matching the SRAM clock), the arbiter operates in a single clock domain.
+Previously, if the GPU core ran at a different frequency than the SRAM, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the SRAM controller.
+The unified 100 MHz clock eliminates this requirement entirely, reducing latency and simplifying timing analysis.
+All four requestor ports (UNIT-008 display read, UNIT-006 framebuffer write, UNIT-006 Z-buffer read/write, UNIT-006 texture read) are now synchronous to the same `clk_core` that drives the SRAM controller.

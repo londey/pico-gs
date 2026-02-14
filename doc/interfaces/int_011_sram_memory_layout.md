@@ -29,8 +29,8 @@ Internal
 ## Specification
 
 
-**Version**: 1.0  
-**Date**: January 2026
+**Version**: 2.0
+**Date**: February 2026
 
 ---
 
@@ -43,6 +43,11 @@ Internal
 | Clock Frequency | 100 MHz |
 | Address Range | 0x000000 - 0x1FFFFFF |
 | Peak Bandwidth | 200 MB/s |
+
+**Clock Domain Note**: The SRAM interface operates at 100 MHz, which is the same clock domain as the GPU core (`clk_core`).
+All SRAM requestors (rasterizer, pixel pipeline, display controller, texture cache) and the SRAM controller share this single 100 MHz clock domain.
+This eliminates the need for clock domain crossing (CDC) logic between the GPU core and SRAM, simplifying the arbiter and reducing access latency.
+The only remaining asynchronous CDC boundary is between the SPI slave interface and the GPU core.
 
 ---
 
@@ -283,10 +288,10 @@ Timing: Must complete before next scanline starts
 **Note**: Bandwidth reflects 32-bit word reads, but only lower 16 bits contain RGB565 pixel data. Upper 16 bits are discarded. Effective bandwidth for pixel data is half of memory bandwidth.
 
 **Scanline Timing**:
-- Pixel clock: 25.175 MHz
+- Pixel clock: 25.000 MHz (derived as 4:1 divisor from 100 MHz core clock)
 - Pixels per line (total): 800
-- Time per line: 31.78 µs
-- Visible pixels: 640 (25.4 µs)
+- Time per line: 32.00 µs
+- Visible pixels: 640 (25.6 µs)
 - Blanking: 160 pixels (6.4 µs)
 
 FIFO prefetch uses blanking time to stay ahead.
@@ -298,7 +303,7 @@ FIFO prefetch uses blanking time to stay ahead.
 ```
 Priority: LOW (yields to display)
 Pattern: Semi-sequential within triangle bbox
-Bandwidth: Variable, up to 100 MB/s burst
+Bandwidth: Variable, up to 200 MB/s burst (GPU core at 100 MHz)
 Access: Single pixel or short burst writes
 ```
 
@@ -367,18 +372,22 @@ No changes to Z-buffer addresses, sizes, or data format.
 | Texture fetch | ~10 MB/s | 5% | With texture cache (REQ-131), >85% hit rate |
 | **Headroom** | ~26 MB/s | 13% | Freed by texture cache |
 
-**Note**: Pre-cache texture fetch budget was 30 MB/s (15%). The per-sampler texture cache (REQ-131) reduces average texture SRAM bandwidth to ~5-15 MB/s depending on scene complexity and cache hit rate, freeing ~15-25 MB/s for other consumers.
+**Note**: Pre-cache texture fetch budget was 30 MB/s (15%).
+The per-sampler texture cache (REQ-131) reduces average texture SRAM bandwidth to ~5-15 MB/s depending on scene complexity and cache hit rate, freeing ~15-25 MB/s for other consumers.
+
+**Clock Domain Note**: Because the GPU core and SRAM now share the same 100 MHz clock domain, there is no CDC overhead on any arbiter port.
+All requestors (display controller, rasterizer, pixel pipeline, texture cache) issue requests synchronously, and the arbiter can grant access with single-cycle latency after an ack.
 
 ### Fill Rate Estimate
 
-At 50 MB/s write bandwidth:
+At 100 MB/s write bandwidth (GPU core and SRAM at 100 MHz):
 ```
-50 MB/s ÷ 4 bytes/pixel = 12.5 Mpixels/sec
+100 MB/s ÷ 4 bytes/pixel = 25 Mpixels/sec
 ```
 
 For 640×480 @ 60 Hz (18.4 Mpixels/sec visible):
-- Can fill ~68% of screen per frame
-- Sufficient for typical 3D scenes with occlusion
+- Can fill ~136% of screen per frame (>1× overdraw budget)
+- Sufficient for complex 3D scenes with moderate overdraw
 
 ---
 

@@ -25,10 +25,9 @@ None
 
 ### Internal Interfaces
 
-- Receives triangle vertex data from UNIT-003 (Register File) via tri_valid/tri_ready handshake
-- Writes framebuffer pixels to SRAM via UNIT-007 (SRAM Arbiter) port 1
-- Reads/writes Z-buffer via UNIT-007 (SRAM Arbiter) port 2
-- Receives framebuffer and Z-buffer base addresses from UNIT-003 configuration registers
+- Receives triangle setup data from UNIT-004 (Triangle Setup) via setup_valid/downstream_ready handshake
+- Outputs fragment data to UNIT-006 (Pixel Pipeline) for SRAM access
+- All internal interfaces operate in the unified 100 MHz `clk_core` domain (no CDC required)
 
 ## Design Description
 
@@ -83,3 +82,8 @@ None
 ## Design Notes
 
 Migrated from speckit module specification.
+
+**v2.0 unified clock update:** The rasterizer now operates at the unified 100 MHz `clk_core`, doubling pixel evaluation throughput compared to the previous 50 MHz design.
+At one fragment evaluation per clock cycle in the inner edge-walking loop, the rasterizer achieves a peak rate of 100 million fragment evaluations per second.
+Fragment output to the pixel pipeline (UNIT-006) is synchronous within the same 100 MHz clock domain, and downstream SRAM access through the arbiter (UNIT-007) incurs no CDC latency.
+Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM arbitration contention with display scanout, Z-buffer, and texture fetch (see INT-011 bandwidth budget).

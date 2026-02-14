@@ -36,7 +36,7 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 
 | Signal | Width | Description |
 |--------|-------|-------------|
-| `clk` | 1 | System clock |
+| `clk` | 1 | Unified 100 MHz system clock (`clk_core`) |
 | `rst_n` | 1 | Active-low reset |
 | `tri_valid` | 1 | Triangle ready to rasterize |
 | `v0_x`, `v0_y` | 16 each | Vertex 0 position (12.4 fixed point) |
@@ -96,7 +96,7 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 
 ### Algorithm / Behavior
 
-**SETUP State (1 cycle):**
+**SETUP State (1 cycle at 100 MHz = 10 ns):**
 Computes three edge function coefficient sets from the latched vertex positions:
 - Edge 0 (v1->v2): A = y1-y2, B = x2-x1, C = x1*y2 - x2*y1
 - Edge 1 (v2->v0): A = y2-y0, B = x0-x2, C = x2*y0 - x0*y2
@@ -133,3 +133,7 @@ These responsibilities have been split: UNIT-004 now performs only triangle setu
 The FSM was reduced from 12 states (4-bit) to 3 states (3-bit).
 SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
 See DD-015 for rationale.
+
+**v2.0 unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
+The 3-state FSM (IDLE, SETUP, EMIT) completes in 2-3 cycles (20-30 ns at 100 MHz), enabling a peak triangle setup rate of ~33-50 million triangles per second (limited by the SETUP+EMIT cycle count).
+In practice, throughput is limited by downstream rasterization and pixel pipeline stalls, not by setup computation.

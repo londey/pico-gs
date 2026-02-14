@@ -42,7 +42,7 @@ None
 
 | Signal | Width | Description |
 |--------|-------|-------------|
-| `rd_clk` | 1 | Read-side clock (GPU system clock) |
+| `rd_clk` | 1 | Read-side clock (GPU core clock, clk_core, 100 MHz) |
 | `rd_rst_n` | 1 | Read-side reset, active-low |
 | `rd_en` | 1 | Read enable |
 
@@ -109,12 +109,12 @@ This allows the synthesis tool to initialize the memory contents from the HDL so
 
 The pre-populated entries form a complete GPU command sequence that executes the following steps in order:
 
-1. **Set draw target:** Write FB_DRAW (0x08) with back-buffer base address per INT-011
-2. **Set render mode for flat shading:** Write RENDER_MODE (0x04) with mode_gouraud=0, mode_color_write=1
-3. **Clear screen via black triangles:** Write COLOR (0x00) with 0x000000FF (opaque black), then submit two screen-covering triangles via VERTEX (0x02) writes (6 vertex writes total) to fill the framebuffer with black
-4. **Set render mode for Gouraud shading:** Write RENDER_MODE (0x04) with mode_gouraud=1, mode_color_write=1
-5. **Draw RGB triangle:** Write COLOR (0x00) with red (0xFF0000FF), write VERTEX (0x02) for vertex 0; write COLOR with green (0x00FF00FF), write VERTEX for vertex 1; write COLOR with blue (0x0000FFFF), write VERTEX for vertex 2
-6. **Present:** Write FB_DISPLAY (0x09) with the same buffer address as FB_DRAW to display the rendered boot screen
+1. **Set draw target:** Write FB_DRAW (0x40) with back-buffer base address per INT-011
+2. **Set render mode for flat shading:** Write RENDER_MODE (0x30) with mode_gouraud=0, mode_color_write=1
+3. **Clear screen via black triangles:** Write COLOR (0x00) with 0x000000FF (opaque black), then submit two screen-covering triangles via VERTEX_KICK_012 (0x07) writes (6 vertex writes total) to fill the framebuffer with black
+4. **Set render mode for Gouraud shading:** Write RENDER_MODE (0x30) with mode_gouraud=1, mode_color_write=1
+5. **Draw RGB triangle:** Write COLOR (0x00) with red (0xFF0000FF), write VERTEX_KICK_012 (0x07) for vertex 0; write COLOR with green (0x00FF00FF), write VERTEX_KICK_012 for vertex 1; write COLOR with blue (0x0000FFFF), write VERTEX_KICK_012 for vertex 2
+6. **Present:** Write FB_DISPLAY (0x41) with the same buffer address as FB_DRAW to display the rendered boot screen
 
 The total boot sequence is approximately 18 commands, well within the 32-entry FIFO depth.
 
@@ -126,7 +126,7 @@ The FIFO wraps around using power-of-2 addressing, so the pre-populated region i
 
 **Timing:**
 
-At 50 MHz system clock, the ~18 boot commands execute in approximately 360 ns (assuming one command per clock cycle), completing well before the host firmware initializes SPI communication (~100 ms typical).
+At 100 MHz core clock (clk_core), the ~18 boot commands execute in approximately 180 ns (assuming one command per clock cycle), completing well before the host firmware initializes SPI communication (~100 ms typical).
 The boot screen rasterization (two clear triangles + one Gouraud triangle) completes within a few milliseconds, ensuring the display shows the boot image before the first frame scanout.
 
 ## Implementation

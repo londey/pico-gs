@@ -47,7 +47,7 @@ All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 - Early Z-test: reuses existing Z-buffer read port (0 additional cycles when bypassed; ~0 additional LUTs, reorders existing Z-test logic)
 - Texture format promotion: combinational (0 additional cycles)
 - Ordered dithering: 1 cycle EBR read (pipelined, no stall)
-- Color grading LUT: 2 cycle scanout latency (within pixel period at 100MHz)
+- Color grading LUT: 2 core clock cycle scanout latency (20 ns at 100 MHz, within the 40 ns pixel period)
 
 ## Verification Method
 
