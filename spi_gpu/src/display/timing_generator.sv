@@ -3,7 +3,7 @@
 // CEA-861 standard timing for VGA resolution
 
 module timing_generator (
-    input  wire         clk_pixel,      // 25.175 MHz pixel clock
+    input  wire         clk_pixel,      // 25.000 MHz pixel clock
     input  wire         rst_n,          // Active-low reset
 
     output wire         hsync,          // Horizontal sync
@@ -18,7 +18,7 @@ module timing_generator (
     // Timing Parameters for 640×480 @ 60Hz
     // ========================================================================
 
-    // Horizontal timing (pixel clock = 25.175 MHz)
+    // Horizontal timing (pixel clock = 25.000 MHz)
     localparam H_DISPLAY    = 640;      // Active video
     localparam H_FRONT      = 16;       // Front porch
     localparam H_SYNC       = 96;       // Sync pulse

@@ -1,55 +1,53 @@
 // PLL Core - Clock Generation for ICEpi GPU
 // Input: 50 MHz from board oscillator
-// Outputs: 100 MHz (SRAM), 25.175 MHz (pixel), 251.75 MHz (TMDS)
+// Outputs: 100 MHz unified GPU/SRAM core clock (clk_core),
+//          25.000 MHz pixel clock (clk_core / 4, synchronous),
+//          250.0 MHz TMDS bit clock (10x pixel clock)
 
 module pll_core (
     input  wire clk_50_in,      // 50 MHz input clock
     input  wire rst_n,          // Active-low reset
 
-    output wire clk_100,        // 100 MHz for SRAM controller
-    output wire clk_pixel,      // 25.175 MHz for display timing
-    output wire clk_tmds,       // 251.75 MHz for TMDS serializer
+    output wire clk_core,       // 100 MHz unified GPU core/SRAM clock
+    output wire clk_pixel,      // 25.000 MHz pixel clock (clk_core / 4)
+    output wire clk_tmds,       // 250.0 MHz TMDS bit clock (10x pixel clock)
     output wire pll_locked      // PLL lock indicator
 );
 
     // ECP5 EHXPLLL primitive instantiation
-    // The ECP5 PLL can generate multiple output clocks from a single input
-    // We'll use the following configuration:
-    //   - CLKOP: 100 MHz (primary output, divide by 1, multiply to get 100 from 50)
-    //   - CLKOS: 25.175 MHz (secondary output)
-    //   - CLKOS2: 251.75 MHz (tertiary output, 10x pixel clock for SERDES)
+    // Generates three synchronous clocks from 50 MHz board oscillator:
+    //   - CLKOP:  100.0 MHz (clk_core — unified GPU core/SRAM clock)
+    //   - CLKOS:   25.0 MHz (clk_pixel — clk_core / 4, synchronous)
+    //   - CLKOS2: 250.0 MHz (clk_tmds — 10x pixel clock for TMDS serializer)
 
-    wire clkop_w;   // 100 MHz
-    wire clkos_w;   // 25.175 MHz
-    wire clkos2_w;  // 251.75 MHz
+    wire clkop_w;   // 100 MHz (clk_core)
+    wire clkos_w;   // 25.000 MHz (clk_pixel)
+    wire clkos2_w;  // 250.0 MHz (clk_tmds)
     wire lock_w;
 
-    // ECP5 PLL primitive
-    // CLKI_DIV = 1, CLKFB_DIV = 1, CLKOP_DIV = 6 gives us flexibility
-    // Reference frequency: 50 MHz
-    // VCO frequency: should be in range 400-800 MHz
-    // For 25.175 MHz: VCO = 503.5 MHz (25.175 * 20)
-    // CLKOP = 503.5 / 5.035 ≈ 100 MHz
-    // CLKOS = 503.5 / 20 = 25.175 MHz
-    // CLKOS2 = 503.5 / 2 = 251.75 MHz
+    // ECP5 PLL with FEEDBK_PATH="CLKOP":
+    //   VCO = (CLKI / CLKI_DIV) * CLKFB_DIV * CLKOP_DIV  (per TN1263)
+    //       = (50 / 1) * 2 * 5 = 500 MHz (within 400-800 MHz range)
+    //   CLKOP  = VCO / CLKOP_DIV  = 500 / 5  = 100.0 MHz (clk_core)
+    //   CLKOS  = VCO / CLKOS_DIV  = 500 / 20 =  25.0 MHz (clk_pixel = clk_core / 4)
+    //   CLKOS2 = VCO / CLKOS2_DIV = 500 / 2  = 250.0 MHz (clk_tmds = 10x pixel)
 
     EHXPLLL #(
         .CLKI_DIV(1),           // Input divider
-        .CLKFB_DIV(1),          // Feedback divider
+        .CLKFB_DIV(2),          // Feedback divider (VCO = 50 * 2 * 5 = 500 MHz)
         .FEEDBK_PATH("CLKOP"),  // Feedback from CLKOP
 
-        // VCO = 50 MHz * CLKOP_DIV * (CLKFB_DIV / CLKI_DIV) = need ~504 MHz
-        .CLKOP_DIV(5),          // Primary output: 504/5 ≈ 100.8 MHz (close to 100)
+        .CLKOP_DIV(5),          // Primary output: 500/5 = 100 MHz (clk_core)
         .CLKOP_ENABLE("ENABLED"),
         .CLKOP_CPHASE(0),
         .CLKOP_FPHASE(0),
 
-        .CLKOS_DIV(20),         // Secondary output: 504/20 = 25.2 MHz (close to 25.175)
+        .CLKOS_DIV(20),         // Secondary output: 500/20 = 25.0 MHz (clk_pixel)
         .CLKOS_ENABLE("ENABLED"),
         .CLKOS_CPHASE(0),
         .CLKOS_FPHASE(0),
 
-        .CLKOS2_DIV(2),         // Tertiary output: 504/2 = 252 MHz (close to 251.75)
+        .CLKOS2_DIV(2),         // Tertiary output: 500/2 = 250.0 MHz (clk_tmds)
         .CLKOS2_ENABLE("ENABLED"),
         .CLKOS2_CPHASE(0),
         .CLKOS2_FPHASE(0),
@@ -97,7 +95,7 @@ module pll_core (
     );
 
     // Output assignments
-    assign clk_100 = clkop_w;
+    assign clk_core = clkop_w;
     assign clk_pixel = clkos_w;
     assign clk_tmds = clkos2_w;
     assign pll_locked = lock_w;

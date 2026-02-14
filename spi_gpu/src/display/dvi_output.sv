@@ -3,8 +3,8 @@
 // Outputs differential TMDS pairs for RGB data and clock
 
 module dvi_output (
-    input  wire       clk_pixel,        // 25.175 MHz pixel clock
-    input  wire       clk_tmds,         // 251.75 MHz TMDS bit clock (10× pixel clock)
+    input  wire       clk_pixel,        // 25.000 MHz pixel clock (clk_core / 4)
+    input  wire       clk_tmds,         // 250.0 MHz TMDS bit clock (10x pixel clock)
     input  wire       rst_n,            // Active-low reset
 
     // Pixel data inputs

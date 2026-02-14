@@ -13,7 +13,7 @@ module spi_slave (
     input  wire         spi_cs_n,       // SPI chip select (active-low)
 
     // Parallel interface (sync to system clock)
-    input  wire         sys_clk,        // System clock for CDC
+    input  wire         sys_clk,        // GPU core clock (clk_core, 100 MHz) for CDC
     input  wire         sys_rst_n,      // System reset (active-low)
 
     output reg          valid,          // Transaction complete pulse

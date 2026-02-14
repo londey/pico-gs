@@ -44,13 +44,13 @@ module gpu_top (
     // ========================================================================
 
     // Internal clock signals
-    wire clk_100;           // 100 MHz for SRAM controller
-    wire clk_pixel;         // 25.175 MHz for display timing
-    wire clk_tmds;          // 251.75 MHz for TMDS serializer
+    wire clk_core;          // 100 MHz unified GPU core/SRAM clock
+    wire clk_pixel;         // 25.000 MHz pixel clock (clk_core / 4)
+    wire clk_tmds;          // 250.0 MHz TMDS bit clock (10x pixel clock)
     wire pll_locked;        // PLL lock indicator
 
     // Synchronized reset signals for each clock domain
-    wire rst_n_100;         // Reset synchronized to clk_100
+    wire rst_n_core;        // Reset synchronized to clk_core
     wire rst_n_pixel;       // Reset synchronized to clk_pixel
     wire rst_n_tmds;        // Reset synchronized to clk_tmds
 
@@ -58,18 +58,18 @@ module gpu_top (
     pll_core u_pll (
         .clk_50_in(clk_50),
         .rst_n(rst_n),
-        .clk_100(clk_100),
+        .clk_core(clk_core),
         .clk_pixel(clk_pixel),
         .clk_tmds(clk_tmds),
         .pll_locked(pll_locked)
     );
 
     // Reset synchronizers for each clock domain
-    reset_sync u_reset_sync_100 (
-        .clk(clk_100),
+    reset_sync u_reset_sync_core (
+        .clk(clk_core),
         .rst_n_async(rst_n),
         .pll_locked(pll_locked),
-        .rst_n_sync(rst_n_100)
+        .rst_n_sync(rst_n_core)
     );
 
     reset_sync u_reset_sync_pixel (
@@ -152,8 +152,8 @@ module gpu_top (
         .spi_mosi(spi_mosi),
         .spi_miso(spi_miso),
         .spi_cs_n(spi_cs_n),
-        .sys_clk(clk_100),
-        .sys_rst_n(rst_n_100),
+        .sys_clk(clk_core),
+        .sys_rst_n(rst_n_core),
         .valid(spi_valid),
         .rw(spi_rw),
         .addr(spi_addr),
@@ -167,14 +167,14 @@ module gpu_top (
 
     // Command FIFO instantiation (with boot pre-population)
     command_fifo u_cmd_fifo (
-        .wr_clk(clk_100),
-        .wr_rst_n(rst_n_100),
+        .wr_clk(clk_core),
+        .wr_rst_n(rst_n_core),
         .wr_en(fifo_wr_en),
         .wr_data(fifo_wr_data),
         .wr_full(fifo_wr_full),
         .wr_almost_full(fifo_wr_almost_full),
-        .rd_clk(clk_100),
-        .rd_rst_n(rst_n_100),
+        .rd_clk(clk_core),
+        .rd_rst_n(rst_n_core),
         .rd_en(fifo_rd_en),
         .rd_data(fifo_rd_data),
         .rd_empty(fifo_rd_empty),
@@ -190,8 +190,8 @@ module gpu_top (
 
     // Register File instantiation
     register_file u_register_file (
-        .clk(clk_100),
-        .rst_n(rst_n_100),
+        .clk(clk_core),
+        .rst_n(rst_n_core),
         .cmd_valid(reg_cmd_valid),
         .cmd_rw(reg_cmd_rw),
         .cmd_addr(reg_cmd_addr),
@@ -276,8 +276,8 @@ module gpu_top (
 
     // SRAM Arbiter instantiation
     sram_arbiter u_sram_arbiter (
-        .clk(clk_100),
-        .rst_n(rst_n_100),
+        .clk(clk_core),
+        .rst_n(rst_n_core),
 
         // Port 0: Display Read (will be connected in Phase 4)
         .port0_req(arb_port0_req),
@@ -327,8 +327,8 @@ module gpu_top (
 
     // SRAM Controller instantiation
     sram_controller u_sram_controller (
-        .clk(clk_100),
-        .rst_n(rst_n_100),
+        .clk(clk_core),
+        .rst_n(rst_n_core),
 
         // From arbiter
         .req(sram_ctrl_req),
@@ -389,11 +389,11 @@ module gpu_top (
     );
 
     // Display Controller instantiation
+    // Operates entirely in clk_core domain; timing inputs from the
+    // timing generator (clk_pixel domain) are synchronized internally.
     display_controller u_display_ctrl (
-        .clk_sram(clk_100),
-        .rst_n_sram(rst_n_100),
-        .clk_pixel(clk_pixel),
-        .rst_n_pixel(rst_n_pixel),
+        .clk_sram(clk_core),
+        .rst_n_sram(rst_n_core),
         .display_enable(disp_enable),
         .pixel_x(disp_pixel_x),
         .pixel_y(disp_pixel_y),
@@ -446,8 +446,8 @@ module gpu_top (
     wire rast_ready;
 
     rasterizer u_rasterizer (
-        .clk(clk_100),
-        .rst_n(rst_n_100),
+        .clk(clk_core),
+        .rst_n(rst_n_core),
 
         // Triangle input from register file
         .tri_valid(tri_valid),

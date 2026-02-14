@@ -27,7 +27,9 @@ RTL_SOURCES = \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/display/dvi_output.sv \
 	$(RTL_DIR)/display/display_controller.sv \
-	$(RTL_DIR)/render/rasterizer.sv
+	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/utils/sync_fifo.sv
 
 # Constraint files
 LPF_FILE = $(CONSTRAINTS_DIR)/icepi_zero.lpf
@@ -45,9 +47,9 @@ NEXTPNR_FLAGS = --$(DEVICE) --package $(PACKAGE) --freq 100 --timing-allow-fail
 ECPPACK_FLAGS = --compress
 
 # Simulation flags
-VERILATOR_FLAGS = --cc --exe --build --trace
+VERILATOR_FLAGS = --cc --exe --build --trace --timing --main
 
-.PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo clean
+.PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo clean
 
 # Default target
 all: bitstream
@@ -89,6 +91,14 @@ test-command-fifo:
 		--top-module tb_command_fifo -o tb_command_fifo
 	./obj_dir/tb_command_fifo
 
+# Synchronous FIFO testbench
+test-sync-fifo:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/utils/sync_fifo.sv \
+		$(TB_DIR)/utils/tb_sync_fifo.sv \
+		--top-module tb_sync_fifo -o tb_sync_fifo
+	./obj_dir/tb_sync_fifo
+
 # Verilator simulation (placeholder for cocotb)
 sim:
 	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
@@ -112,5 +122,6 @@ help:
 	@echo "  sim              - Run simulation testbenches"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
+	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
 	@echo "  clean            - Remove build artifacts"
 	@echo "  help             - Show this message"

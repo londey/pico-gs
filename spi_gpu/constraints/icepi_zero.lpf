@@ -92,7 +92,7 @@ IOBUF PORT "sram_oe_n" IO_TYPE=LVCMOS33 DRIVE=8;
 IOBUF PORT "sram_ce_n" IO_TYPE=LVCMOS33 DRIVE=8;
 
 # ==============================================================================
-# DVI/HDMI Output (TMDS @ 251.75MHz)
+# DVI/HDMI Output (TMDS @ 250.0 MHz)
 # ==============================================================================
 # TMDS data channels (differential on ECP5)
 LOCATE COMP "tmds_data_p[0]" SITE "A16";  # Blue
