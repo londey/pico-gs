@@ -255,8 +255,8 @@ Reply with:
 
 ### Step 8: Handle Approval
 
-- **approve:** Changes stay. Proceed to Step 9.
-- **approve \<filename\>:** Revert all other files with `git checkout -- doc/<other files>`, keep the specified file(s). Proceed to Step 9.
+- **approve:** Update `Status: Pending Approval` to `Status: Approved` in `.syskit/analysis/<folder>/proposed_changes.md`. Proceed to Step 9.
+- **approve \<filename\>:** Revert all other files with `git checkout -- doc/<other files>`, keep the specified file(s). Update `Status: Pending Approval` to `Status: Approved` in `.syskit/analysis/<folder>/proposed_changes.md`. Proceed to Step 9.
 - **revise \<filename\>:** Discuss the specific file with the user, make adjustments, then re-present.
 - **reject:** Run `git checkout -- doc/` to revert all changes. Tell the user the proposal has been discarded.
 
