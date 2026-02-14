@@ -159,6 +159,13 @@ None
 
 Migrated from speckit module specification.
 
+**Boot Screen Interaction (DD-019):**
+The display controller begins scanout immediately after PLL lock and reset release.
+The pre-populated command FIFO boot sequence (UNIT-002) sets FB_DISPLAY to Framebuffer A as its final command, completing in ~0.4 us at 50 MHz.
+Since the display controller's first full frame scanout begins after PLL lock and VGA timing initialization (~16.7 ms for the first vsync), the boot screen rendering completes well before the first frame is scanned out.
+This ensures the display shows the boot screen (black background with RGB triangle) rather than uninitialized SRAM contents.
+Note: the boot sequence rasterization of the screen-clear and RGB triangle takes additional time beyond the FIFO drain (dependent on triangle pixel count), but still completes within the first frame period.
+
 **Version History:**
 - v5.0: Added color grading LUT with register-based upload (REQ-133)
 - v9.0: Replaced register-based LUT upload with SRAM-based auto-load DMA
@@ -166,3 +173,4 @@ Migrated from speckit module specification.
   - Enables atomic framebuffer + LUT switch
   - LUT DMA completes in ~2µs during 1.43ms vblank period
   - See DD-014 for rationale
+- v10.0: Documented boot screen timing interaction with pre-populated FIFO (DD-019)

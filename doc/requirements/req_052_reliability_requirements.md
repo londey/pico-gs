@@ -27,10 +27,23 @@ None
 - INT-010 (GPU Register Map)
 - INT-013 (GPIO Status Signals)
 
+## Functional Requirements
+
+### FR-052-1: Power-On Visual Self-Test
+
+When the FPGA completes configuration and the PLL locks, the system SHALL autonomously render a visible boot screen that displays a Gouraud-shaded triangle with distinct vertex colors, without requiring host SPI communication.
+
 ## Verification Method
 
 **Analysis:** Measure actual performance/resource usage against targets.
 
+- [ ] Boot screen is visible on display output within one frame period after PLL lock
+- [ ] Boot screen triangle displays correct Gouraud-shaded vertex colors (red, green, blue), confirming the pixel pipeline is functional
+- [ ] Boot screen renders without any SPI traffic from the host, confirming autonomous operation
+
 ## Notes
 
 Non-functional requirement. See specifications for specific numeric targets.
+
+The boot screen (FR-052-1) serves as a visual self-test: it exercises the full rendering pipeline (command FIFO, register file, triangle setup, rasterizer, pixel pipeline, SRAM arbiter, display controller) and provides immediate visual confirmation that the FPGA is functional.
+The boot screen is implemented via pre-populated command FIFO entries (UNIT-002); see REQ-021 for the command FIFO pre-population requirement.

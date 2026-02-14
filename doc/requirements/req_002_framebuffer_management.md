@@ -44,3 +44,7 @@ None
 ## Notes
 
 User Story: As a firmware developer, I want to configure draw target and display source addresses, so that I can implement double-buffering without tearing
+
+Framebuffer registers (FB_DRAW, FB_DISPLAY) may also be configured autonomously by the FPGA boot sequence (REQ-021) via pre-populated command FIFO entries, prior to any host SPI communication.
+The host initialization (REQ-110) will overwrite these boot-time values with its own framebuffer configuration.
+Boot sequence framebuffer addresses must conform to the alignment and address range constraints defined in INT-011 (SRAM Memory Layout).

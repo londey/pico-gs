@@ -70,6 +70,13 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 [63:0]    Register value (64 bits)
 ```
 
+**Command Sources:** Register writes arrive at the register file (UNIT-003) from the command FIFO (UNIT-002), which has two sources:
+1. **SPI transactions** from the host (primary, steady-state source)
+2. **Pre-populated boot commands** baked into the FIFO memory at bitstream generation time (autonomous, power-on only; see DD-019)
+
+The boot sequence uses registers COLOR (0x00), VERTEX_KICK_012 (0x07), RENDER_MODE (0x30), FB_DRAW (0x40), and FB_DISPLAY (0x41) to render a self-test screen.
+All register semantics are identical regardless of command source.
+
 **Major Features** (v8.0):
 - 4 independent texture units with separate UV coordinates
 - **DOT3 bump mapping with interpolated light direction (v8.0)**

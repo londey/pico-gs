@@ -45,15 +45,34 @@ A secondary platform for GPU development and debugging. A standard PC running a 
 
 Reference: `doc/requirements/states_and_modes.md`
 
-The system operates in three phases at runtime. **Initialization** covers PLL lock on the FPGA, clock/peripheral setup on the RP2350, GPU ID verification via SPI, framebuffer address configuration, and Core 1 spawn. **Active Rendering** is the steady-state loop where Core 0 generates render commands for the current demo and Core 1 executes them against the GPU, synchronized to 60 Hz vsync. **Demo Switching** occurs when a USB keyboard event selects a new demo (GouraudTriangle, TexturedTriangle, or SpinningTeapot); the scene sets `needs_init = true`, triggering one-time setup (e.g., texture upload) before the new demo's per-frame rendering begins.
+The system operates in four phases at runtime.
+**FPGA Boot Screen** begins immediately after PLL lock: the command FIFO starts non-empty with ~18 pre-populated register writes baked into the bitstream (see DD-019), which the register file drains autonomously at the system clock rate (~0.4 us at 50 MHz).
+This draws a black screen-clear followed by a Gouraud-shaded RGB triangle and presents the result, producing a visible self-test boot screen before any SPI traffic arrives.
+**Host Initialization** covers clock/peripheral setup on the RP2350, GPU ID verification via SPI, framebuffer address configuration, and Core 1 spawn; by the time the host sends its first SPI transaction (~100 ms after power-on), the FPGA boot screen is already displayed.
+**Active Rendering** is the steady-state loop where Core 0 generates render commands for the current demo and Core 1 executes them against the GPU, synchronized to 60 Hz vsync.
+**Demo Switching** occurs when a USB keyboard event selects a new demo (GouraudTriangle, TexturedTriangle, or SpinningTeapot); the scene sets `needs_init = true`, triggering one-time setup (e.g., texture upload) before the new demo's per-frame rendering begins.
 
 ## Startup Sequence
 
-The boot sequence executes entirely on Core 0 before the render loop begins:
+### FPGA Boot Screen (autonomous, no host involvement)
+
+The FPGA executes a self-test boot screen immediately after PLL lock, before any SPI traffic:
+
+1. **PLL lock and reset release**: The ECP5 PLL locks (50-500 ms after power-on) and reset synchronizers deassert across all clock domains.
+2. **Boot command drain**: The command FIFO (UNIT-002) starts non-empty with ~18 pre-populated register writes embedded in the bitstream memory initialization (see DD-019).
+   The register file (UNIT-003) begins consuming these commands at the system clock rate, one entry per cycle.
+3. **Boot sequence content**: The pre-populated commands set FB_DRAW to Framebuffer A, draw two black screen-covering triangles (flat shading, screen clear), then set RENDER_MODE to Gouraud shading, draw a centered RGB triangle with red/green/blue vertex colors, and finally write FB_DISPLAY to present Framebuffer A.
+4. **Completion**: All ~18 boot commands are consumed in ~0.4 us at 50 MHz.
+   CMD_EMPTY asserts, the boot screen is visible on the display output, and the GPU is ready for host SPI traffic.
+
+### Host Boot Sequence (Core 0)
+
+The host boot sequence executes entirely on Core 0 before the render loop begins:
 
 1. **Clock init**: Configure RP2350 system clocks from the 12 MHz crystal via PLL (`init_clocks_and_plls`).
 2. **GPIO and SPI setup**: Initialize GPIO bank, configure SPI0 pins (GP2/3/4) at 25 MHz MODE_0, set manual CS pin (GP5) high, configure flow-control inputs: CMD_FULL (GP6), CMD_EMPTY (GP7), VSYNC (GP8), and error LED (GP25).
 3. **GPU detection**: Call `gpu_init` which reads the ID register (addr `0x7F`) over SPI and verifies device ID `0x6702`. On mismatch, the system halts with a 100 ms LED blink loop. On success, it writes initial FB_DRAW (Framebuffer A at `0x000000`) and FB_DISPLAY (Framebuffer B at `0x12C000`).
+   Note: by this point (~100 ms after power-on), the FPGA boot screen has long since completed and is visible on the display.
 4. **Command queue split**: The statically-allocated 64-entry `heapless::spsc::Queue` is split into a `Producer` (for Core 0) and a `Consumer` (for Core 1). This is done exactly once before Core 1 starts.
 5. **Core 1 spawn**: Core 1 is launched with a 4 KB stack, taking ownership of the `GpuHandle` and the queue `Consumer`. It enters `core1_main` and begins polling for commands immediately.
 6. **Scene setup**: Core 0 initializes the `Scene` state machine (default demo: GouraudTriangle, `needs_init = true`), pre-generates mesh data (teapot vertices/triangles), sets up the projection and view matrices, and enters the main loop.
@@ -64,7 +83,7 @@ The boot sequence executes entirely on Core 0 before the render loop begins:
             RP2350 Host                                ECP5 FPGA GPU
  ┌─────────────────────────────┐          ┌──────────────────────────────────────┐
  │  Core 0 (Scene / Transform) │          │                                      │
- │                              │          │  SPI Slave ──► Command FIFO (16x72b) │
+ │                              │          │  SPI Slave ──► Command FIFO (32x72b) │
  │  Scene state                 │          │                    │                  │
  │    │                         │          │                    ▼                  │
  │    ▼                         │          │  Register File (vertex accumulator)  │
@@ -87,7 +106,7 @@ The boot sequence executes entirely on Core 0 before the render loop begins:
  └──────────────────────────────┘
 ```
 
-**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 16). The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at 25.175 MHz pixel clock.
+**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 32, custom soft FIFO backed by a regular memory array). At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstream that execute a self-test boot screen autonomously (see DD-019); during normal operation, only SPI-sourced commands flow through the FIFO. The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at 25.175 MHz pixel clock.
 
 ## Event Handling
 
@@ -142,4 +161,4 @@ The boot sequence executes entirely on Core 0 before the render loop begins:
 
 **RP2350 SRAM** (~520 KB total): The firmware is entirely `no_std` with no heap allocator. All state is statically allocated: the command queue is a 64-entry static `spsc::Queue` (~16.5 KB at ~264 bytes per RenderMeshPatch), Core 1 has a 4 KB stack plus ~8 KB working RAM (DMA input buffers, vertex cache, clip workspace, SPI output buffers), and mesh data is const flash data from the asset pipeline (no runtime mesh generation). Texture data is stored in flash (linked into the firmware binary). The `GpuVertex` struct packs to ~24 bytes.
 
-**FPGA resources**: The command FIFO is 16 entries deep (72 bits each). The SRAM arbiter has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1), Z-buffer read/write (port 2), texture read (port 3, lowest/unused). The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SRAM access latency.
+**FPGA resources**: The command FIFO is 32 entries deep (72 bits each), implemented as a custom soft FIFO backed by a regular memory array (not a Lattice EBR FIFO macro) so that the bitstream can pre-populate the memory with boot commands (see DD-019). The SRAM arbiter has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1), Z-buffer read/write (port 2), texture read (port 3, lowest/unused). The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SRAM access latency.

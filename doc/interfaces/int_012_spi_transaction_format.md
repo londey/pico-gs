@@ -150,10 +150,11 @@ CMD_FULL  ──────────────┘ ┌───────
 ```
 
 **Behavior**:
-- Asserts when FIFO has ≤2 free slots
+- Asserts when FIFO has ≤2 free slots (occupancy ≥30 of 32)
 - 2-slot slack allows host to complete in-flight SPI transaction
 - Host should poll this before starting new write
 - Deasserts when FIFO depth drops below threshold
+- After power-on reset, CMD_FULL is deasserted (boot sequence uses ~18 of 32 slots)
 
 ### CMD_EMPTY Timing
 
@@ -173,6 +174,7 @@ CMD_EMPTY ──────────────────────┘
 - Asserts when FIFO is completely empty AND no command executing
 - Safe to read STATUS or other registers when asserted
 - Reading during GPU activity may return stale/inconsistent data
+- After power-on reset, CMD_EMPTY is deasserted while pre-populated boot commands are being processed (see Boot Pre-Population under Command Queueing)
 
 ### VSYNC Timing
 
@@ -202,9 +204,9 @@ Write transactions are queued in an internal FIFO for asynchronous execution.
 
 | Parameter | Value |
 |-----------|-------|
-| Depth | 16 commands |
+| Depth | 32 commands |
 | Width | 71 bits (addr + data, R/W not stored) |
-| Almost Full | Depth ≥ 14 |
+| Almost Full | Depth ≥ 30 |
 
 **Write Flow**:
 ```
@@ -216,6 +218,15 @@ SPI Transaction → CDC Sync → FIFO Write → Command Execute
 - If host writes when FIFO is full, command is dropped
 - GPU does not NAK or signal error (SPI is unidirectional for writes)
 - Host must monitor CMD_FULL to prevent overflow
+
+**Boot Pre-Population**:
+- After power-on reset, the FIFO is not empty.
+  It contains a pre-defined boot command sequence (~18 entries) initialized at synthesis time (see UNIT-002).
+- These commands execute autonomously without SPI input, rendering a self-test boot screen.
+- CMD_EMPTY will not assert immediately after reset; it asserts only after all boot commands have been consumed (~360 ns at 50 MHz plus rasterization time).
+- CMD_FULL will not assert after reset because the boot sequence (~18 entries) is well below the 30-entry threshold.
+- The host firmware should expect this behavior during initialization.
+  By the time the host begins SPI communication (~100 ms after power-on), the boot commands will have completed and the FIFO will be empty.
 
 ### Execution Order
 

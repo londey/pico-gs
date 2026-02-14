@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Buffers GPU commands with flow control
+Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries.
 
 ## Implements Requirements
 
@@ -65,7 +65,7 @@ None
 
 ### Internal State
 
-- **mem** [DEPTH-1:0][WIDTH-1:0]: Dual-port register array storing FIFO entries
+- **mem** [DEPTH-1:0][WIDTH-1:0]: Regular memory array storing FIFO entries (not Lattice EBR FIFO macro; see Boot Pre-Population below)
 - **wr_ptr** [ADDR_WIDTH:0]: Binary write pointer (extra MSB for full detection)
 - **wr_ptr_gray** [ADDR_WIDTH:0]: Gray-coded write pointer for CDC
 - **rd_ptr** [ADDR_WIDTH:0]: Binary read pointer (extra MSB for empty detection)
@@ -91,24 +91,72 @@ None
 1. On rd_en && !rd_empty: read mem[rd_ptr] into rd_data_reg, increment rd_ptr, update rd_ptr_gray
 2. Empty detection: rd_count = wr_ptr_binary_sync - rd_ptr; empty when rd_count == 0
 
-**Parameters:** WIDTH=72 (SPI transaction width), DEPTH=16 (power of 2), ADDR_WIDTH=log2(DEPTH)
+**Parameters:** WIDTH=72 (SPI transaction width), DEPTH=32 (power of 2), ADDR_WIDTH=log2(DEPTH)=5, BOOT_COUNT (number of pre-populated entries, currently ~18)
+
+### Boot Pre-Population
+
+The FIFO memory array is implemented as a custom soft FIFO backed by a regular memory buffer (not a Lattice EBR FIFO macro).
+This allows the synthesis tool to initialize the memory contents from the HDL source, so pre-populated boot commands survive power-on reset.
+
+**Initialization:**
+
+- The `mem` array is initialized at synthesis time with BOOT_COUNT entries containing a GPU register write sequence that autonomously renders a boot screen.
+- The write pointer resets to `BOOT_COUNT` (binary) and `bin2gray(BOOT_COUNT)` (Gray-coded), reflecting the pre-populated entries.
+- The read pointer resets to 0 (both binary and Gray-coded), so all BOOT_COUNT entries are immediately available for consumption.
+- After reset, `rd_empty` is deasserted (`rd_count == BOOT_COUNT > 0`), causing UNIT-003 (Register File) to begin processing boot commands immediately.
+
+**Boot Command Sequence:**
+
+The pre-populated entries form a complete GPU command sequence that executes the following steps in order:
+
+1. **Set draw target:** Write FB_DRAW (0x08) with back-buffer base address per INT-011
+2. **Set render mode for flat shading:** Write RENDER_MODE (0x04) with mode_gouraud=0, mode_color_write=1
+3. **Clear screen via black triangles:** Write COLOR (0x00) with 0x000000FF (opaque black), then submit two screen-covering triangles via VERTEX (0x02) writes (6 vertex writes total) to fill the framebuffer with black
+4. **Set render mode for Gouraud shading:** Write RENDER_MODE (0x04) with mode_gouraud=1, mode_color_write=1
+5. **Draw RGB triangle:** Write COLOR (0x00) with red (0xFF0000FF), write VERTEX (0x02) for vertex 0; write COLOR with green (0x00FF00FF), write VERTEX for vertex 1; write COLOR with blue (0x0000FFFF), write VERTEX for vertex 2
+6. **Present:** Write FB_DISPLAY (0x09) with the same buffer address as FB_DRAW to display the rendered boot screen
+
+The total boot sequence is approximately 18 commands, well within the 32-entry FIFO depth.
+
+**Runtime Behavior After Boot:**
+
+Once the boot commands have been consumed by UNIT-003, the FIFO returns to its normal empty state and operates identically to a conventional async FIFO.
+Subsequent SPI write transactions from the host are enqueued starting at the current write pointer position.
+The FIFO wraps around using power-of-2 addressing, so the pre-populated region is reused for normal commands once both pointers have advanced past it.
+
+**Timing:**
+
+At 50 MHz system clock, the ~18 boot commands execute in approximately 360 ns (assuming one command per clock cycle), completing well before the host firmware initializes SPI communication (~100 ms typical).
+The boot screen rasterization (two clear triangles + one Gouraud triangle) completes within a few milliseconds, ensuring the display shows the boot image before the first frame scanout.
 
 ## Implementation
 
-- `spi_gpu/src/utils/async_fifo.sv`: Parameterized async FIFO (used as command FIFO)
-- `spi_gpu/src/spi/command_fifo.sv`: Wrapper/instantiation
+- `spi_gpu/src/utils/async_fifo.sv`: Custom soft FIFO with synthesis-time memory initialization (replaces previous Lattice EBR FIFO macro)
+- `spi_gpu/src/spi/command_fifo.sv`: Wrapper/instantiation with boot sequence parameters
 
 ## Verification
 
 - Verify write-then-read: single entry write followed by read across clock domains
-- Verify full flag: fill FIFO to DEPTH entries, confirm wr_full asserts and writes are suppressed
-- Verify almost_full flag: confirm assertion at DEPTH-2 threshold
+- Verify full flag: fill FIFO to DEPTH (32) entries, confirm wr_full asserts and writes are suppressed
+- Verify almost_full flag: confirm assertion at DEPTH-2 (30) threshold
 - Verify empty flag: read until empty, confirm rd_empty asserts and reads are suppressed
 - Verify Gray-code CDC: use unrelated write/read clocks with varying phase relationships
 - Verify rd_count accuracy: compare against expected occupancy across multiple operations
-- Verify reset: both wr_rst_n and rd_rst_n independently clear their respective pointers
+- Verify reset: both wr_rst_n and rd_rst_n independently clear their respective pointers; write pointer resets to BOOT_COUNT, read pointer resets to 0
 - Verify back-to-back operations: simultaneous read and write at full throughput
+- Verify boot pre-population: after reset, confirm rd_empty is deasserted and rd_count equals BOOT_COUNT
+- Verify boot command content: after reset, read all BOOT_COUNT entries and confirm each matches the expected register address and data values from the boot sequence
+- Verify boot-to-normal transition: after all boot commands are consumed, confirm FIFO reports empty; then perform normal SPI write/read operations and confirm correct behavior
+- Verify write pointer initialization: after reset, confirm the first SPI-originated write is stored at mem[BOOT_COUNT] (not mem[0])
 
 ## Design Notes
 
 Migrated from speckit module specification.
+
+**Version History:**
+- v1.0: Initial gray-coded async FIFO (Lattice EBR macro, WIDTH=72, DEPTH=16)
+- v2.0: Replaced Lattice EBR FIFO macro with custom soft FIFO backed by regular memory array.
+  FIFO depth increased from 16 to 32.
+  Added synthesis-time memory initialization with boot command sequence for autonomous power-on self-test/boot screen.
+  Write pointer resets to BOOT_COUNT instead of 0.
+  See DD-019 for rationale.

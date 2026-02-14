@@ -64,3 +64,6 @@ All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 Non-functional requirement. See specifications for specific numeric targets.
 
 EBR budget increased from 16 to 18 blocks to accommodate ordered dithering matrix (1 EBR, REQ-132) and color grading LUT (1 EBR, REQ-133). DSP budget added for 10.8 fixed-point multipliers (REQ-134).
+
+The command FIFO (UNIT-002) uses distributed RAM (LUTs) rather than EBR, so its depth increase from 16 to 32 entries does not affect the EBR budget.
+The 72-bit x 32-deep command FIFO consumes approximately 2,304 bits of distributed RAM, which is accounted for in the LUT budget rather than the EBR budget.

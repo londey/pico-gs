@@ -11,7 +11,7 @@ This document defines the operational states and modes of the pico-gs system, co
 
 ## GPU Hardware States
 
-### 1. PLL and Reset States
+### 1. PLL, Reset, and Boot States
 
 #### State: PLL Unlocked
 
@@ -30,6 +30,18 @@ This document defines the operational states and modes of the pico-gs system, co
 - **Capabilities:** Normal system operation with synchronized reset release
 - **Restrictions:** None
 - **Source:** [spi_gpu/src/core/reset_sync.sv:6-34](../../spi_gpu/src/core/reset_sync.sv#L6-L34)
+
+#### State: Boot Command Processing
+
+- **Description:** When reset deasserts with PLL locked, the command FIFO starts non-empty with pre-populated boot commands baked into the FPGA bitstream.
+  The register file begins consuming these commands immediately, executing a self-test boot screen sequence without any SPI traffic from the host.
+- **Entry Conditions:** Reset synchronizers deassert (rst_n_sync=1 in all clock domains)
+- **Exit Conditions:** All pre-populated boot commands consumed (FIFO becomes empty)
+- **Capabilities:** Autonomous GPU register write processing: sets FB_DRAW, draws black screen-clear triangles, draws a Gouraud-shaded RGB triangle, and presents via FB_DISPLAY.
+  CMD_EMPTY will not assert until all boot commands are consumed (~18 commands at 50 MHz system clock, completing in microseconds).
+- **Restrictions:** No SPI transactions should be issued during this phase.
+  The host's boot sequence (RP2350 PLL lock + peripheral init, ~100 ms) ensures the GPU boot commands complete well before the first SPI traffic.
+- **Source:** UNIT-002 (Command FIFO), see DD-019
 
 ### 2. SPI Transaction States
 
@@ -584,14 +596,20 @@ Power-on
 └────────┬─────────┘
          │ [Reset synchronizers deassert]
          ▼
+┌──────────────────────────┐
+│ Boot Command Processing  │  FIFO starts non-empty with ~18 pre-populated
+│ (rst_n_sync=1)           │  commands; register file drains autonomously
+└────────┬─────────────────┘
+         │ [~0.4 µs at 50 MHz; FIFO drains to empty]
+         ▼
 ┌──────────────────┐
-│ Ready            │  rst_n_sync=1 in all clock domains
-│ (rst_n_sync=1)   │
+│ Ready            │  Boot screen visible on display;
+│ (CMD_EMPTY=1)    │  FIFO empty, ready for SPI traffic
 └────────┬─────────┘
          │
          ▼
 ┌──────────────────┐
-│ Normal Operation │  All FSMs operational
+│ Normal Operation │  All FSMs operational; host SPI commands accepted
 └──────────────────┘
 ```
 
@@ -788,6 +806,12 @@ Power-on
 
 | Current State | Event / Condition | Next State | Actions |
 |---------------|-------------------|------------|---------|
+| **PLL / Reset / Boot** |
+| Reset Asserted | External reset release | PLL Locking | Begin PLL lock sequence |
+| PLL Locking | PLL lock achieved | PLL Locked | Clocks stable |
+| PLL Locked | Reset synchronizers deassert | Boot Command Processing | FIFO non-empty with boot commands |
+| Boot Command Processing | All boot commands consumed | Ready | CMD_EMPTY asserts; boot screen visible |
+| Ready | First SPI transaction | Normal Operation | Host communication begins |
 | **Rasterizer** |
 | IDLE | tri_valid=1 | SETUP | Latch 3 vertices |
 | SETUP | (always) | ITER_START | Compute edge functions, bbox |
@@ -891,6 +915,7 @@ Power-on
 - [spi_gpu/src/core/reset_sync.sv](../../spi_gpu/src/core/reset_sync.sv) — Reset synchronization
 - [spi_gpu/src/spi/spi_slave.sv](../../spi_gpu/src/spi/spi_slave.sv) — SPI transaction states
 - [spi_gpu/src/spi/register_file.sv](../../spi_gpu/src/spi/register_file.sv) — Vertex submission FSM
+- [spi_gpu/src/utils/async_fifo.sv](../../spi_gpu/src/utils/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
 - [spi_gpu/src/memory/sram_controller.sv](../../spi_gpu/src/memory/sram_controller.sv) — SRAM 6-state FSM
 - [spi_gpu/src/render/rasterizer.sv](../../spi_gpu/src/render/rasterizer.sv) — Rasterizer 12-state FSM
 - [spi_gpu/src/display/display_controller.sv](../../spi_gpu/src/display/display_controller.sv) — Display fetch FSM

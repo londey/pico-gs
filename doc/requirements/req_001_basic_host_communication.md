@@ -45,4 +45,10 @@ None
 
 ## Notes
 
-This is the foundational communication requirement. All other GPU functionality depends on the ability to write to registers via SPI transactions.
+This is the foundational communication requirement.
+All other GPU functionality depends on the ability to write to registers via SPI transactions.
+
+**Boot command pre-population (DD-019):** In addition to SPI-sourced register writes, the command FIFO (UNIT-002) contains pre-populated boot commands at power-on that execute autonomously before any SPI traffic.
+These boot commands use the same 72-bit format and flow through the same register file path as SPI transactions.
+This does not change the SPI communication requirement itself; the host SPI interface operates identically regardless of whether boot commands have been previously consumed.
+The host should observe that CMD_EMPTY=1 on first contact, indicating the boot commands have already been drained.

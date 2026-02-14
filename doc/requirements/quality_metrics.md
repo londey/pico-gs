@@ -35,13 +35,16 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - **Critical Threshold:** ≤ 907 Kbits (113 KB, 90%)
 - **Current Allocation:**
   - Display scanline FIFO: ~32 Kbits (4 KB, 1024 words × 32 bits)
-  - Async FIFOs (SPI, command): ~16 Kbits (2 KB)
+  - SPI receive FIFO: ~8 Kbits (1 KB, EBR)
+  - Command FIFO: distributed RAM (~2.3 Kbits, 72 bits × 32 entries, not EBR)
   - Texture cache (4 samplers × 4 banks): ~288 Kbits (36 KB, 16 EBR blocks) (REQ-131)
-  - **Total allocated:** ~336 Kbits (~42 KB)
-  - **Headroom:** ~420 Kbits (~53 KB) for future features
+  - **Total EBR allocated:** ~328 Kbits (~41 KB)
+  - **Headroom:** ~428 Kbits (~54 KB) for future features
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
 - **References:** REQ-051, REQ-131, UNIT-006, UNIT-008 (Display Controller)
-- **Rationale:** Texture cache is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches
+- **Rationale:** Texture cache is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches.
+  The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-021).
+  Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 
 ### Host Firmware Resources (RP2350)
 

@@ -36,6 +36,99 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-019: Pre-Populated Command FIFO Boot Screen
+
+**Date:** 2026-02-14
+**Status:** Proposed
+**Implementation:** RTL PENDING
+
+### Context
+
+After FPGA power-on and PLL lock, the display controller begins scanning out framebuffer data from SRAM immediately.
+Because SRAM contents are uninitialized, the display shows random noise until the host firmware completes its boot sequence (~100 ms) and sends the first frame of GPU commands over SPI.
+There is no visual indication that the FPGA is operational during this period, making it difficult to distinguish a functioning but uninitialized GPU from a non-functional one.
+
+The existing command FIFO (UNIT-002) uses a Lattice EBR FIFO macro (`async_fifo.sv`, WIDTH=72, DEPTH=16) which always resets empty on power-up, so there is no mechanism for the FPGA to execute GPU commands autonomously.
+
+### Decision
+
+Replace the Lattice EBR FIFO macro with a custom soft FIFO implementation backed by a regular memory array whose initial contents are baked into the FPGA bitstream.
+On power-up, the FIFO starts non-empty with ~18 pre-populated register write commands that execute a self-test boot screen:
+
+1. Write FB_DRAW to set the back buffer base address (Framebuffer A)
+2. Set RENDER_MODE to flat shading (Gouraud disabled)
+3. Write COLOR with black (0x000000FF diffuse) for screen clear
+4. Submit 6 VERTEX writes (2 screen-covering triangles) to clear the framebuffer to black
+5. Set RENDER_MODE to Gouraud shading enabled
+6. Write COLOR with red, green, and blue vertex colors (3 COLOR + 3 VERTEX_KICK writes) to draw a centered RGB triangle
+7. Write FB_DISPLAY to present Framebuffer A as the front buffer
+
+The FIFO depth increases from 16 to 32 entries to accommodate the boot sequence (~18 commands) while retaining sufficient free space for SPI-sourced commands during normal operation.
+
+Key implementation details:
+- The soft FIFO uses gray-coded CDC pointers for the async clock domain crossing (SPI write clock to system read clock), identical to the original design
+- The write pointer is initialized past the pre-populated entries (boot command count); the read pointer starts at zero
+- CMD_EMPTY will not assert until all boot commands are consumed
+- The memory array uses `initial` blocks or `$readmemh` for bitstream initialization, which standard synthesis tools (Yosys, Lattice Diamond) support for regular memory arrays but not for EBR FIFO macros
+
+### Rationale
+
+- **Visual self-test**: A colored triangle on screen immediately after PLL lock proves the FPGA bitstream is loaded, the rasterizer works, SRAM writes succeed, and the display controller scans out correctly -- all without any host involvement
+- **Deterministic boot screen**: The boot sequence completes in ~0.4 us at 50 MHz (18 commands x 1 cycle each), well before the host's first SPI transaction (~100 ms), so there is no race condition
+- **Soft FIFO necessity**: Lattice EBR FIFO macros do not support memory initialization; a regular memory array with `initial`/`$readmemh` is the only way to pre-populate FIFO contents in the bitstream
+- **FIFO depth 32**: 18 boot commands in a 16-deep FIFO would leave no room for SPI commands; 32 entries provide 14 free slots after boot, sufficient for the SPI write rate (~2.88 us per command vs ~20 ns per FIFO read)
+- **No hardware cost increase**: 72-bit x 32-deep = 2,304 bits, well within distributed RAM budget; no additional EBR blocks consumed
+
+### Alternatives Considered
+
+1. **Host-driven boot screen**: Have the RP2350 send a boot screen immediately after GPU detection.
+   Rejected -- adds ~100 ms delay before any visual output; does not prove FPGA is working independently of host.
+
+2. **Dedicated boot ROM FSM**: A separate RTL state machine that generates register writes at reset.
+   Rejected -- adds LUT/FF cost for a one-time operation; pre-populated FIFO achieves the same result with zero additional logic.
+
+3. **Keep Lattice FIFO macro, add separate boot command generator**: Feed boot commands through a mux into the existing FIFO.
+   Rejected -- more complex than replacing the FIFO; the mux and boot generator add logic; the soft FIFO is simpler and also enables future diagnostic command injection.
+
+4. **Keep FIFO depth at 16, shorten boot sequence**: Use fewer commands (e.g., skip the screen clear).
+   Rejected -- a 16-deep FIFO with 18 boot commands cannot work; even with a shorter sequence, minimal headroom increases the risk of overflow from early SPI traffic.
+
+### Consequences
+
+**Hardware (RTL):**
+- UNIT-002: `async_fifo.sv` replaced with custom soft FIFO module; same gray-coded CDC interface; memory array initialized via `$readmemh` or `initial` block
+- UNIT-002: FIFO depth increases from 16 to 32 (DEPTH parameter change)
+- Resource impact: 72-bit x 32-deep = 2,304 bits distributed RAM (no EBR change); ~50 additional LUTs for wider gray-code pointers (5-bit vs 4-bit)
+- INT-012: FIFO depth references updated from 16 to 32
+- INT-013: CMD_EMPTY behavior note added for boot state
+
+**Boot Screen Content:**
+- Framebuffer A cleared to black via two flat-shaded screen-covering triangles
+- Centered Gouraud-shaded triangle with red (top), green (bottom-left), blue (bottom-right) vertex colors
+- Framebuffer A presented as the display source
+
+**Firmware (Rust):**
+- No firmware changes required; the boot screen is entirely autonomous
+- Host `gpu_init` will observe CMD_EMPTY=1 (boot commands already drained) on first contact
+- The host's initial FB_DRAW/FB_DISPLAY writes overwrite the boot screen's framebuffer configuration, which is the expected behavior
+
+**Performance:**
+- Positive: Immediate visual feedback on power-up (vs ~100 ms delay)
+- Neutral: Boot command drain time (~0.4 us) is negligible
+- Neutral: No steady-state performance impact (boot commands are consumed once)
+
+### References
+
+- UNIT-002: Command FIFO (primary implementation target)
+- REQ-021: Command Buffer FIFO (functional requirement)
+- INT-012: SPI Transaction Format (FIFO depth references)
+- INT-013: GPIO Status Signals (CMD_EMPTY boot behavior)
+- INT-010: GPU Register Map (registers used by boot sequence)
+- states_and_modes.md: Boot Command Processing state
+
+---
+
+
 ## DD-018: Early Z-Test, Depth Range Clipping, and Per-Material Color Write Enable
 
 **Date:** 2026-02-13
