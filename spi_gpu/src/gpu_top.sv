@@ -105,7 +105,7 @@ module gpu_top (
     wire        fifo_rd_en;
     wire [71:0] fifo_rd_data;
     wire        fifo_rd_empty;
-    wire [4:0]  fifo_rd_count;
+    wire [5:0]  fifo_rd_count;
 
     // Register file signals
     wire        reg_cmd_valid;
@@ -165,11 +165,8 @@ module gpu_top (
     assign fifo_wr_en = spi_valid;
     assign fifo_wr_data = {spi_rw, spi_addr, spi_wdata};
 
-    // Command FIFO instantiation
-    async_fifo #(
-        .WIDTH(72),     // {rw(1), addr(7), data(64)}
-        .DEPTH(16)
-    ) u_cmd_fifo (
+    // Command FIFO instantiation (with boot pre-population)
+    command_fifo u_cmd_fifo (
         .wr_clk(clk_100),
         .wr_rst_n(rst_n_100),
         .wr_en(fifo_wr_en),
@@ -220,7 +217,7 @@ module gpu_top (
         .clear_trigger(clear_trigger),
         .gpu_busy(gpu_busy),
         .vblank(vblank),
-        .fifo_depth({3'b0, fifo_rd_count})
+        .fifo_depth({2'b0, fifo_rd_count})
     );
 
     // GPIO outputs

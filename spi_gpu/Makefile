@@ -20,6 +20,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/spi/spi_slave.sv \
 	$(RTL_DIR)/spi/register_file.sv \
 	$(RTL_DIR)/utils/async_fifo.sv \
+	$(RTL_DIR)/spi/command_fifo.sv \
 	$(RTL_DIR)/memory/sram_controller.sv \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
@@ -46,7 +47,7 @@ ECPPACK_FLAGS = --compress
 # Simulation flags
 VERILATOR_FLAGS = --cc --exe --build --trace
 
-.PHONY: all synth pnr bitstream program sim clean
+.PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo clean
 
 # Default target
 all: bitstream
@@ -71,6 +72,23 @@ bitstream: pnr
 program: bitstream
 	$(OPENFPGALOADER) -c ft2232 $(BUILD_DIR)/$(PROJECT).bit
 
+# Async FIFO testbench
+test-async-fifo:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/utils/async_fifo.sv \
+		$(TB_DIR)/utils/tb_async_fifo.sv \
+		--top-module tb_async_fifo -o tb_async_fifo
+	./obj_dir/tb_async_fifo
+
+# Command FIFO testbench
+test-command-fifo:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/utils/async_fifo.sv \
+		$(RTL_DIR)/spi/command_fifo.sv \
+		$(TB_DIR)/spi/tb_command_fifo.sv \
+		--top-module tb_command_fifo -o tb_command_fifo
+	./obj_dir/tb_command_fifo
+
 # Verilator simulation (placeholder for cocotb)
 sim:
 	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
@@ -86,11 +104,13 @@ help:
 	@echo "ICEpi SPI GPU Build System"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all       - Build complete bitstream (default)"
-	@echo "  synth     - Run synthesis only"
-	@echo "  pnr       - Run place-and-route only"
-	@echo "  bitstream - Generate bitstream"
-	@echo "  program   - Program FPGA via JTAG"
-	@echo "  sim       - Run simulation testbenches"
-	@echo "  clean     - Remove build artifacts"
-	@echo "  help      - Show this message"
+	@echo "  all              - Build complete bitstream (default)"
+	@echo "  synth            - Run synthesis only"
+	@echo "  pnr              - Run place-and-route only"
+	@echo "  bitstream        - Generate bitstream"
+	@echo "  program          - Program FPGA via JTAG"
+	@echo "  sim              - Run simulation testbenches"
+	@echo "  test-async-fifo  - Run async FIFO testbench"
+	@echo "  test-command-fifo - Run command FIFO testbench"
+	@echo "  clean            - Remove build artifacts"
+	@echo "  help             - Show this message"
