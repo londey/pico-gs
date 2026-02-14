@@ -23,174 +23,149 @@ Otherwise:
 
 Verify the status shows changes were approved. If not, prompt user to run `/syskit-propose` first.
 
+Note the analysis folder path — you will pass it to subagents.
+
 ### Step 2: Delegate Scope Extraction
 
 Use the Task tool to launch a subagent that reads the affected documents and design units to extract implementation scope. This keeps the full document contents out of your context window.
 
-Launch a `general-purpose` Task agent with this prompt (substitute the actual proposed_changes.md content for PROPOSED_CHANGES_CONTENT below):
+The subagent reads all needed files from disk — do NOT embed proposed_changes.md content in the prompt.
+
+Launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER with the actual path):
 
 > You are extracting implementation scope from approved specification changes.
 >
-> ## Proposed Changes
->
-> PROPOSED_CHANGES_CONTENT
->
 > ## Instructions
 >
-> 1. Read each specification document referenced in the proposed changes above. Read them from the `doc/` directories.
+> 1. Read the change summary from: `ANALYSIS_FOLDER/proposed_changes.md`
 >
-> 2. Read all design unit documents (`doc/design/unit_*.md`) to understand implementation structure. Focus especially on:
+> 2. Run `git diff doc/` to see the exact specification changes that were applied.
+>
+> 3. Read all design unit documents (`doc/design/unit_*.md`) to understand implementation structure. Focus especially on:
 >    - The `## Implementation` section (lists source files)
 >    - The `## Implements Requirements` section (links to REQ-NNN)
 >    - The `## Provides` and `## Consumes` sections (links to INT-NNN)
 >
-> 3. For each specification change in the proposed changes, identify:
+> 4. For each specification change, identify:
 >    - Which source files need modification (from design unit Implementation sections)
 >    - Which test files need modification or creation
 >    - Dependencies between changes (what must be done first)
 >    - How to verify the change was implemented correctly
 >
-> 4. Return your analysis in EXACTLY this structured format:
+> 5. Create the task folder: `.syskit/tasks/{{DATE}}_<change_name>/`
 >
-> SCOPE_ANALYSIS_START
+> 6. Write `plan.md` to the task folder:
 >
-> ## Implementation Scope
+>    ```markdown
+>    # Implementation Plan: <change name>
 >
-> ### Change: brief description of first change
+>    Based on: ../../.syskit/analysis/<folder>/proposed_changes.md
+>    Created: <timestamp>
+>    Status: In Progress
 >
-> **Affected Specs:** REQ-NNN, INT-NNN, UNIT-NNN
-> **Source Files to Modify:**
-> - `path/to/file`: what needs to change
+>    ## Overview
 >
-> **Source Files to Create:**
-> - `path/to/file`: purpose
+>    <Brief description of what is being implemented>
 >
-> **Test Files:**
-> - `path/to/test`: what to test
+>    ## Specification Changes Applied
 >
-> **Dependencies:** description of what must be done first, or "None"
-> **Verification:** how to verify this change
+>    | Document | Change Type | Summary |
+>    |----------|-------------|---------|
+>    | <doc> | Modified | <summary> |
 >
-> ### Change: brief description of next change
+>    ## Implementation Strategy
 >
-> (repeat for each distinct change)
+>    <High-level approach to implementing these changes>
 >
-> ## Suggested Task Sequence
+>    ## Task Sequence
 >
-> | # | Task | Dependencies | Est. Effort |
-> |---|------|--------------|-------------|
-> | 1 | task name | None | small/medium/large |
-> | 2 | task name | Task 1 | effort |
+>    | # | Task | Dependencies | Est. Effort |
+>    |---|------|--------------|-------------|
+>    | 1 | <task name> | None | <small/medium/large> |
+>    | 2 | <task name> | Task 1 | <effort> |
 >
-> ## Risks and Considerations
+>    ## Verification Approach
 >
-> - risk or consideration
+>    <How we will verify the implementation meets the specifications>
 >
-> SCOPE_ANALYSIS_END
+>    ## Risks and Considerations
+>
+>    - <risk or consideration>
+>    ```
+>
+> 7. Write individual task files `task_NNN_<name>.md` to the task folder:
+>
+>    ```markdown
+>    # Task NNN: <task name>
+>
+>    Status: Pending
+>    Dependencies: <list or "None">
+>    Specification References: <REQ-NNN, INT-NNN, UNIT-NNN>
+>
+>    ## Objective
+>
+>    <What this task accomplishes>
+>
+>    ## Files to Modify
+>
+>    - `<filepath>`: <what changes>
+>
+>    ## Files to Create
+>
+>    - `<filepath>`: <purpose>
+>
+>    ## Implementation Steps
+>
+>    1. <step>
+>    2. <step>
+>    3. <step>
+>
+>    ## Verification
+>
+>    - [ ] <verification criterion>
+>    - [ ] <verification criterion>
+>
+>    ## Notes
+>
+>    <Any additional context or considerations>
+>    ```
+>
+> 8. After writing all files, return ONLY this compact summary (nothing else):
+>
+>    PLAN_SUMMARY_START
+>    Task folder: <path to task folder>
+>    Tasks created: <n>
+>    Task sequence:
+>    1. <task name> (deps: None)
+>    2. <task name> (deps: Task 1)
+>    ...
+>    Source files to modify: <n>
+>    Source files to create: <n>
+>    Risks: <n>
+>    PLAN_SUMMARY_END
 
-### Step 3: Review Scope Analysis
+### Step 3: Validate Plan
 
 After the subagent returns:
 
-1. Extract the content between the `SCOPE_ANALYSIS_START` and `SCOPE_ANALYSIS_END` markers
-2. Review for completeness — ensure all changes from proposed_changes.md are covered
-3. Review the suggested task sequence for logical ordering and dependencies
-4. If the subagent failed or returned incomplete results, tell the user and offer to fall back to direct analysis
+1. Parse the summary to verify the task folder was created and tasks were written
+2. Verify the task count is reasonable for the scope of changes
+3. If the subagent failed or returned incomplete results, tell the user and offer to re-run
 
-### Step 4: Create Task Folder
+Do NOT read the full plan.md or task files into context. Use the summary to validate.
 
-Create `.syskit/tasks/<date>_<change_name>/` with:
+### Step 4: Generate Snapshot
 
-1. `plan.md` — Overall implementation strategy
-2. `snapshot.md` — Generated by running: `.syskit/scripts/manifest-snapshot.sh .syskit/tasks/<date>_<change_name>/`
-3. `task_001_<n>.md` through `task_NNN_<n>.md` — Individual tasks
+Run: `.syskit/scripts/manifest-snapshot.sh <task-folder-path>`
 
-### Step 5: Write Implementation Plan
+### Step 5: Present Plan
 
-Create `plan.md` using the agent's scope analysis:
+Present the task sequence from the subagent's summary and tell the user:
 
-```markdown
-# Implementation Plan: <change name>
+"Implementation plan created with <n> tasks in `<task-folder>`.
 
-Based on: ../.syskit/analysis/<folder>/proposed_changes.md
-Created: <timestamp>
-Status: In Progress
-
-## Overview
-
-<Brief description of what is being implemented>
-
-## Specification Changes Applied
-
-| Document | Change Type | Summary |
-|----------|-------------|---------|
-| <doc> | Modified | <summary> |
-
-## Implementation Strategy
-
-<High-level approach to implementing these changes>
-
-## Task Sequence
-
-| # | Task | Dependencies | Est. Effort |
-|---|------|--------------|-------------|
-| 1 | <task name> | None | <small/medium/large> |
-| 2 | <task name> | Task 1 | <effort> |
-
-## Verification Approach
-
-<How we will verify the implementation meets the specifications>
-
-## Risks and Considerations
-
-- <risk or consideration>
-```
-
-### Step 6: Write Individual Tasks
-
-For each task, create `task_NNN_<n>.md`:
-
-```markdown
-# Task NNN: <task name>
-
-Status: Pending
-Dependencies: <list or "None">
-Specification References: <REQ-NNN, INT-NNN, UNIT-NNN>
-
-## Objective
-
-<What this task accomplishes>
-
-## Files to Modify
-
-- `<filepath>`: <what changes>
-- `<filepath>`: <what changes>
-
-## Files to Create
-
-- `<filepath>`: <purpose>
-
-## Implementation Steps
-
-1. <step>
-2. <step>
-3. <step>
-
-## Verification
-
-- [ ] <verification criterion>
-- [ ] <verification criterion>
-
-## Notes
-
-<Any additional context or considerations>
-```
-
-### Step 7: Present Plan
-
-Output the implementation plan summary and tell the user:
-
-"Implementation plan created with <n> tasks in `.syskit/tasks/<folder>/`.
+**Task sequence:**
+<paste the task sequence from the summary>
 
 Next step: run `/syskit-implement` to begin working through the tasks.
 

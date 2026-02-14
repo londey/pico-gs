@@ -22,11 +22,17 @@ Read `.syskit/manifest.md` to get the current list of all specification document
 
 Count the total number of specification documents listed (excluding any with `_000_template` in the name). You will use this count to validate the subagent's output.
 
-### Step 2: Delegate Document Analysis
+### Step 2: Create Analysis Folder
+
+Create the analysis folder: `.syskit/analysis/{{DATE}}_<change_name>/`
+
+Also create a draft staging directory: `.syskit/analysis/_draft/`
+
+### Step 3: Delegate Document Analysis
 
 Use the Task tool to launch a subagent that reads and analyzes all specification documents. This keeps the full document contents out of your context window.
 
-Launch a `general-purpose` Task agent with this prompt (substitute the actual proposed change for PROPOSED_CHANGE below):
+Launch a `general-purpose` Task agent with this prompt (substitute the actual proposed change for PROPOSED_CHANGE below, and the analysis folder path for ANALYSIS_FOLDER):
 
 > You are analyzing the impact of a proposed change on specification documents.
 >
@@ -61,134 +67,103 @@ Launch a `general-purpose` Task agent with this prompt (substitute the actual pr
 >    - If an interface is DIRECT or INTERFACE, check which units list it under "Provides" or "Consumes" (those are DEPENDENT)
 >    - If a design unit is DIRECT, check which requirements it implements (review for DEPENDENT impact)
 >
-> 4. Return your analysis in EXACTLY this structured format:
+> 4. Write your complete analysis to `ANALYSIS_FOLDER/impact.md` in this format:
 >
-> IMPACT_ANALYSIS_START
+>    ```markdown
+>    # Impact Analysis: <brief change summary>
 >
-> ## Direct Impacts
+>    Created: <timestamp>
+>    Status: Pending Review
 >
-> ### filename
-> - **ID:** REQ/INT/UNIT-NNN
-> - **Title:** document title
-> - **Impact:** what specifically is affected, 1-2 sentences
-> - **Action Required:** modify/review/no change
-> - **Key References:** cross-referenced IDs found in this document
+>    ## Proposed Change
 >
-> ## Interface Impacts
+>    <detailed description of the change>
 >
-> ### filename
-> - **ID:** INT-NNN
-> - **Title:** document title
-> - **Impact:** what specifically is affected
-> - **Consumers:** UNIT-NNN that consume this interface
-> - **Providers:** UNIT-NNN that provide this interface
-> - **Action Required:** modify/review/no change
+>    ## Direct Impacts
 >
-> ## Dependent Impacts
+>    ### <filename>
+>    - **ID:** <REQ/INT/UNIT-NNN>
+>    - **Title:** <document title>
+>    - **Impact:** <what specifically is affected, 1-2 sentences>
+>    - **Action Required:** <modify/review/no change>
+>    - **Key References:** <cross-referenced IDs found in this document>
 >
-> ### filename
-> - **ID:** REQ/INT/UNIT-NNN
-> - **Title:** document title
-> - **Dependency:** what it depends on that is changing, with specific ID
-> - **Impact:** what specifically is affected
-> - **Action Required:** modify/review/no change
+>    ## Interface Impacts
 >
-> ## Unaffected Documents
+>    ### <filename>
+>    - **ID:** <INT-NNN>
+>    - **Title:** <document title>
+>    - **Impact:** <what specifically is affected>
+>    - **Consumers:** <UNIT-NNN that consume this interface>
+>    - **Providers:** <UNIT-NNN that provide this interface>
+>    - **Action Required:** <modify/review/no change>
 >
-> | Document | ID | Reason Unaffected |
-> |----------|-----|-------------------|
-> | filename | ID | brief reason |
+>    ## Dependent Impacts
 >
-> ## Summary
+>    ### <filename>
+>    - **ID:** <REQ/INT/UNIT-NNN>
+>    - **Title:** <document title>
+>    - **Dependency:** <what it depends on that is changing, with specific ID>
+>    - **Impact:** <what specifically is affected>
+>    - **Action Required:** <modify/review/no change>
 >
-> - **Total Documents:** n
-> - **Directly Affected:** n
-> - **Interface Affected:** n
-> - **Dependently Affected:** n
-> - **Unaffected:** n
+>    ## Unaffected Documents
 >
-> IMPACT_ANALYSIS_END
+>    | Document | ID | Reason Unaffected |
+>    |----------|-----|-------------------|
+>    | <filename> | <ID> | <brief reason> |
 >
-> If a category has no documents, include the heading with "None." underneath.
+>    ## Summary
+>
+>    - **Total Documents:** <n>
+>    - **Directly Affected:** <n>
+>    - **Interface Affected:** <n>
+>    - **Dependently Affected:** <n>
+>    - **Unaffected:** <n>
+>
+>    ## Recommended Next Steps
+>
+>    1. <first action>
+>    2. <second action>
+>    ```
+>
+>    If a category has no documents, include the heading with "None." underneath.
+>
+> 5. After writing the file, return ONLY this compact summary (nothing else):
+>
+>    IMPACT_SUMMARY_START
+>    Total: <n> documents analyzed
+>    Direct: <n> — <comma-separated filenames>
+>    Interface: <n> — <comma-separated filenames>
+>    Dependent: <n> — <comma-separated filenames>
+>    Unaffected: <n>
+>    Written to: ANALYSIS_FOLDER/impact.md
+>    IMPACT_SUMMARY_END
 
-### Step 3: Validate Analysis
+### Step 4: Validate Analysis
 
 After the subagent returns:
 
-1. Extract the structured analysis between the `IMPACT_ANALYSIS_START` and `IMPACT_ANALYSIS_END` markers
-2. Compare the "Total Documents" count from the subagent's summary against the count you computed from the manifest in Step 1
-3. If any documents are missing from the analysis, list them and warn the user
-4. If the subagent failed or returned incomplete results, tell the user and offer to fall back to direct analysis (read all documents yourself)
+1. Parse the summary counts from the `IMPACT_SUMMARY_START`/`IMPACT_SUMMARY_END` block
+2. Compare the "Total" count against the count you computed from the manifest in Step 1
+3. If any documents are missing, list them and warn the user
+4. If the subagent failed or returned incomplete results, tell the user and offer to re-run
 
-### Step 4: Create Analysis Folder
+Do NOT read the full `impact.md` into context. Use the summary to validate.
 
-Create `.syskit/analysis/{{DATE}}_<change_name>/` with:
+### Step 5: Generate Snapshot
 
-1. `impact.md` — The impact report (format below)
-2. `snapshot.md` — Generated by running: `.syskit/scripts/manifest-snapshot.sh .syskit/analysis/{{DATE}}_<change_name>/`
+Run: `.syskit/scripts/manifest-snapshot.sh .syskit/analysis/{{DATE}}_<change_name>/`
 
-### Step 5: Output Impact Report
+Clean up the draft staging directory:
 
-Use the subagent's structured analysis to write `impact.md` in this format:
-
-```markdown
-# Impact Analysis: <brief change summary>
-
-Created: <timestamp>
-Status: Pending Review
-
-## Proposed Change
-
-<detailed description of the change>
-
-## Direct Impacts
-
-### <filename>
-- **ID:** <REQ/INT/UNIT-NNN>
-- **Impact:** <what specifically is affected>
-- **Action Required:** <modify/review/no change>
-
-## Interface Impacts
-
-### <filename>
-- **ID:** <INT-NNN>
-- **Impact:** <what specifically is affected>
-- **Consumers:** <list of units that consume this interface>
-- **Providers:** <list of units that provide this interface>
-- **Action Required:** <modify/review/no change>
-
-## Dependent Impacts
-
-### <filename>
-- **ID:** <REQ/INT/UNIT-NNN>
-- **Dependency:** <what it depends on that is changing>
-- **Impact:** <what specifically is affected>
-- **Action Required:** <modify/review/no change>
-
-## Unaffected Documents
-
-| Document | ID | Reason Unaffected |
-|----------|-----|-------------------|
-| <filename> | <ID> | <brief reason> |
-
-## Summary
-
-- **Total Documents:** <n>
-- **Directly Affected:** <n>
-- **Interface Affected:** <n>
-- **Dependently Affected:** <n>
-- **Unaffected:** <n>
-
-## Recommended Next Steps
-
-1. <first action>
-2. <second action>
-...
+```bash
+rm -rf .syskit/analysis/_draft/
 ```
 
 ### Step 6: Next Step
 
-After presenting the impact report, tell the user:
+Present the summary counts to the user and tell them:
 
 "Impact analysis complete. Results saved to `.syskit/analysis/<folder>/impact.md`.
 
