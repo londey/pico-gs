@@ -27,6 +27,7 @@ Internal
 - REQ-122 (Default Demo Startup)
 - REQ-120 (Async Data Loading)
 - REQ-112 (Scene Graph Management)
+- REQ-106 (PC Debug Host)
 
 ## Specification
 

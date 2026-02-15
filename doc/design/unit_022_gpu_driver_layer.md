@@ -33,6 +33,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - INT-010 (GPU Register Map)
 - INT-012 (SPI Transaction Format)
 - INT-040 (Host Platform HAL)
+- INT-001 (SPI Mode 0 Protocol)
+- INT-013 (GPIO Status Signals)
 
 ### Internal Interfaces
 

@@ -1,5 +1,5 @@
-# ICEpi Zero Pin Constraints for ECP5-25K CABGA381
-# SPI GPU v2.0 - Pin assignments for SPI, GPIO, SRAM, and DVI interfaces
+# ICEpi Zero Pin Constraints for ECP5-25K CABGA256
+# SPI GPU v3.0 - Pin assignments for SPI, GPIO, SDRAM, and DVI interfaces
 
 # ==============================================================================
 # Clock Inputs
@@ -33,66 +33,76 @@ IOBUF PORT "gpio_cmd_empty" IO_TYPE=LVCMOS33;
 IOBUF PORT "gpio_vsync" IO_TYPE=LVCMOS33;
 
 # ==============================================================================
-# SRAM Interface (32MB, 16-bit async)
+# SDRAM Interface (W9825G6KH, 32MB, 16-bit synchronous)
+# Pin assignments from ICEpi Zero v1.3 board reference design
 # ==============================================================================
-# Address bus [23:0]
-LOCATE COMP "sram_addr[0]" SITE "D14";
-LOCATE COMP "sram_addr[1]" SITE "C14";
-LOCATE COMP "sram_addr[2]" SITE "B14";
-LOCATE COMP "sram_addr[3]" SITE "A14";
-LOCATE COMP "sram_addr[4]" SITE "D13";
-LOCATE COMP "sram_addr[5]" SITE "C13";
-LOCATE COMP "sram_addr[6]" SITE "B13";
-LOCATE COMP "sram_addr[7]" SITE "A13";
-LOCATE COMP "sram_addr[8]" SITE "D12";
-LOCATE COMP "sram_addr[9]" SITE "C12";
-LOCATE COMP "sram_addr[10]" SITE "B12";
-LOCATE COMP "sram_addr[11]" SITE "A12";
-LOCATE COMP "sram_addr[12]" SITE "D11";
-LOCATE COMP "sram_addr[13]" SITE "C11";
-LOCATE COMP "sram_addr[14]" SITE "B11";
-LOCATE COMP "sram_addr[15]" SITE "A11";
-LOCATE COMP "sram_addr[16]" SITE "D10";
-LOCATE COMP "sram_addr[17]" SITE "C10";
-LOCATE COMP "sram_addr[18]" SITE "B10";
-LOCATE COMP "sram_addr[19]" SITE "A10";
-LOCATE COMP "sram_addr[20]" SITE "D9";
-LOCATE COMP "sram_addr[21]" SITE "C9";
-LOCATE COMP "sram_addr[22]" SITE "B9";
-LOCATE COMP "sram_addr[23]" SITE "A9";
+# Address bus [12:0]
+LOCATE COMP "sdram_a[0]" SITE "B10";
+LOCATE COMP "sdram_a[1]" SITE "A9";
+LOCATE COMP "sdram_a[2]" SITE "B9";
+LOCATE COMP "sdram_a[3]" SITE "A8";
+LOCATE COMP "sdram_a[4]" SITE "B8";
+LOCATE COMP "sdram_a[5]" SITE "A7";
+LOCATE COMP "sdram_a[6]" SITE "B7";
+LOCATE COMP "sdram_a[7]" SITE "A6";
+LOCATE COMP "sdram_a[8]" SITE "B6";
+LOCATE COMP "sdram_a[9]" SITE "A5";
+LOCATE COMP "sdram_a[10]" SITE "A10";
+LOCATE COMP "sdram_a[11]" SITE "B5";
+LOCATE COMP "sdram_a[12]" SITE "A4";
 
-# Data bus [15:0]
-LOCATE COMP "sram_data[0]" SITE "E14";
-LOCATE COMP "sram_data[1]" SITE "F14";
-LOCATE COMP "sram_data[2]" SITE "G14";
-LOCATE COMP "sram_data[3]" SITE "H14";
-LOCATE COMP "sram_data[4]" SITE "E13";
-LOCATE COMP "sram_data[5]" SITE "F13";
-LOCATE COMP "sram_data[6]" SITE "G13";
-LOCATE COMP "sram_data[7]" SITE "H13";
-LOCATE COMP "sram_data[8]" SITE "E12";
-LOCATE COMP "sram_data[9]" SITE "F12";
-LOCATE COMP "sram_data[10]" SITE "G12";
-LOCATE COMP "sram_data[11]" SITE "H12";
-LOCATE COMP "sram_data[12]" SITE "E11";
-LOCATE COMP "sram_data[13]" SITE "F11";
-LOCATE COMP "sram_data[14]" SITE "G11";
-LOCATE COMP "sram_data[15]" SITE "H11";
+# Data bus [15:0] (bidirectional)
+LOCATE COMP "sdram_dq[0]" SITE "B16";
+LOCATE COMP "sdram_dq[1]" SITE "C14";
+LOCATE COMP "sdram_dq[2]" SITE "C16";
+LOCATE COMP "sdram_dq[3]" SITE "C15";
+LOCATE COMP "sdram_dq[4]" SITE "D16";
+LOCATE COMP "sdram_dq[5]" SITE "A15";
+LOCATE COMP "sdram_dq[6]" SITE "B15";
+LOCATE COMP "sdram_dq[7]" SITE "A14";
+LOCATE COMP "sdram_dq[8]" SITE "A2";
+LOCATE COMP "sdram_dq[9]" SITE "B2";
+LOCATE COMP "sdram_dq[10]" SITE "E2";
+LOCATE COMP "sdram_dq[11]" SITE "D1";
+LOCATE COMP "sdram_dq[12]" SITE "C2";
+LOCATE COMP "sdram_dq[13]" SITE "C1";
+LOCATE COMP "sdram_dq[14]" SITE "C3";
+LOCATE COMP "sdram_dq[15]" SITE "B1";
+
+# Bank address [1:0]
+LOCATE COMP "sdram_ba[0]" SITE "A11";
+LOCATE COMP "sdram_ba[1]" SITE "B11";
+
+# Data mask [1:0]
+LOCATE COMP "sdram_dqm[0]" SITE "B14";
+LOCATE COMP "sdram_dqm[1]" SITE "B3";
 
 # Control signals
-LOCATE COMP "sram_we_n" SITE "E10";
-LOCATE COMP "sram_oe_n" SITE "F10";
-LOCATE COMP "sram_ce_n" SITE "G10";
+LOCATE COMP "sdram_clk" SITE "A3";
+LOCATE COMP "sdram_cke" SITE "B4";
+LOCATE COMP "sdram_csn" SITE "B12";
+LOCATE COMP "sdram_rasn" SITE "A12";
+LOCATE COMP "sdram_casn" SITE "B13";
+LOCATE COMP "sdram_wen" SITE "A13";
 
-# I/O standards for SRAM
-IOBUF PORT "sram_addr[*]" IO_TYPE=LVCMOS33 DRIVE=8;
-IOBUF PORT "sram_data[*]" IO_TYPE=LVCMOS33 DRIVE=8;
-IOBUF PORT "sram_we_n" IO_TYPE=LVCMOS33 DRIVE=8;
-IOBUF PORT "sram_oe_n" IO_TYPE=LVCMOS33 DRIVE=8;
-IOBUF PORT "sram_ce_n" IO_TYPE=LVCMOS33 DRIVE=8;
+# I/O standards for SDRAM (LVCMOS33, 3.3V)
+IOBUF PORT "sdram_a[*]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_dq[*]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ba[*]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_dqm[*]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_clk" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_cke" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_csn" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_rasn" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_casn" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_wen" IO_TYPE=LVCMOS33 DRIVE=8;
 
 # ==============================================================================
 # DVI/HDMI Output (TMDS @ 250.0 MHz)
+# TODO: TMDS pin assignments below are placeholders from the original design
+# and conflict with SDRAM data pins (B16, A15, B15, C16, D16). These must be
+# updated to match the ICEpi Zero v1.3 GPDI pins (R13/T14, R15/T15, P16/R16,
+# R12/T13) in a separate task.
 # ==============================================================================
 # TMDS data channels (differential on ECP5)
 LOCATE COMP "tmds_data_p[0]" SITE "A16";  # Blue

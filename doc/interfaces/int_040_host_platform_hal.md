@@ -8,12 +8,16 @@ Internal
 
 - **Provider:** Platform-specific crates (pico-gs-rp2350, pico-gs-pc)
 - **Consumer:** pico-gs-core (GPU driver, command execution)
+- **Provider:** UNIT-036 (PC Input Handler)
+- **Provider:** UNIT-035 (PC SPI Driver (FT232H))
+- **Consumer:** UNIT-022 (GPU Driver Layer)
 
 ## Referenced By
 
 - REQ-100 (Host Firmware Architecture)
 - REQ-105 (GPU Communication Protocol)
 - REQ-106 (PC Debug Host)
+- REQ-103 (USB Keyboard Input)
 
 ## Specification
 

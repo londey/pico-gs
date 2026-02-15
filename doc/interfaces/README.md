@@ -47,7 +47,7 @@ Interface types:
 - [INT-004: Wavefront OBJ Format](int_004_wavefront_obj_format.md)
 - [INT-005: USB HID Keyboard](int_005_usb_hid_keyboard.md)
 - [INT-010: GPU Register Map](int_010_gpu_register_map.md)
-- [INT-011: SRAM Memory Layout](int_011_sram_memory_layout.md)
+- [INT-011: SDRAM Memory Layout](int_011_sram_memory_layout.md)
 - [INT-012: SPI Transaction Format](int_012_spi_transaction_format.md)
 - [INT-013: GPIO Status Signals](int_013_gpio_status_signals.md)
 - [INT-014: Texture Memory Layout](int_014_texture_memory_layout.md)

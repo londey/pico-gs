@@ -5,7 +5,7 @@
 // - Clock generation (PLL)
 // - Reset synchronization
 // - SPI interface
-// - Memory subsystem (SRAM controller and arbiter)
+// - Memory subsystem (SDRAM controller and arbiter)
 // - Display pipeline (timing, scanline FIFO, DVI output)
 // - Rendering pipeline (rasterizer, interpolator, Z-buffer)
 
@@ -25,12 +25,17 @@ module gpu_top (
     output wire         gpio_cmd_empty,     // Command buffer empty (safe to read STATUS)
     output wire         gpio_vsync,         // Vertical sync pulse
 
-    // ==== SRAM Interface (32MB, 16-bit async) ====
-    output wire [23:0]  sram_addr,          // Address bus
-    inout  wire [15:0]  sram_data,          // Bidirectional data bus
-    output wire         sram_we_n,          // Write enable (active-low)
-    output wire         sram_oe_n,          // Output enable (active-low)
-    output wire         sram_ce_n,          // Chip enable (active-low)
+    // ==== SDRAM Interface (32MB W9825G6KH-6, 16-bit synchronous) ====
+    output wire         sdram_clk,          // 100 MHz clock, 90-degree phase shift from clk_core
+    output wire         sdram_cke,          // Clock enable (active high)
+    output wire         sdram_csn,          // Chip select (active low)
+    output wire         sdram_rasn,         // Row address strobe (active low)
+    output wire         sdram_casn,         // Column address strobe (active low)
+    output wire         sdram_wen,          // Write enable (active low)
+    output wire [1:0]   sdram_ba,           // Bank address
+    output wire [12:0]  sdram_a,            // Address bus (row: A[12:0], column: A[8:0])
+    inout  wire [15:0]  sdram_dq,           // Bidirectional data bus
+    output wire [1:0]   sdram_dqm,          // Data mask (upper/lower byte)
 
     // ==== DVI/HDMI Output (TMDS differential) ====
     output wire [2:0]   tmds_data_p,        // TMDS data channels (positive)
@@ -44,9 +49,10 @@ module gpu_top (
     // ========================================================================
 
     // Internal clock signals
-    wire clk_core;          // 100 MHz unified GPU core/SRAM clock
+    wire clk_core;          // 100 MHz unified GPU core/SDRAM clock
     wire clk_pixel;         // 25.000 MHz pixel clock (clk_core / 4)
     wire clk_tmds;          // 250.0 MHz TMDS bit clock (10x pixel clock)
+    wire clk_sdram;         // 100 MHz SDRAM chip clock, 90-degree phase shift
     wire pll_locked;        // PLL lock indicator
 
     // Synchronized reset signals for each clock domain
@@ -61,8 +67,12 @@ module gpu_top (
         .clk_core(clk_core),
         .clk_pixel(clk_pixel),
         .clk_tmds(clk_tmds),
+        .clk_sdram(clk_sdram),
         .pll_locked(pll_locked)
     );
+
+    // Route SDRAM clock directly from PLL to top-level output
+    assign sdram_clk = clk_sdram;
 
     // Reset synchronizers for each clock domain
     reset_sync u_reset_sync_core (
@@ -229,7 +239,7 @@ module gpu_top (
     // vblank is assigned from display timing generator (see display section)
 
     // ========================================================================
-    // Memory Subsystem (Phase 3 - Implemented)
+    // Memory Subsystem (Phase 3 - SDRAM)
     // ========================================================================
 
     // Arbiter port signals
@@ -284,25 +294,25 @@ module gpu_top (
     wire        arb_port3_ack;
     wire        arb_port3_ready;
 
-    // SRAM controller signals (single-word)
-    wire        sram_ctrl_req;
-    wire        sram_ctrl_we;
-    wire [23:0] sram_ctrl_addr;
-    wire [31:0] sram_ctrl_wdata;
-    wire [31:0] sram_ctrl_rdata;
-    wire        sram_ctrl_ack;
-    wire        sram_ctrl_ready;
+    // Memory controller signals (single-word)
+    wire        mem_ctrl_req;
+    wire        mem_ctrl_we;
+    wire [23:0] mem_ctrl_addr;
+    wire [31:0] mem_ctrl_wdata;
+    wire [31:0] mem_ctrl_rdata;
+    wire        mem_ctrl_ack;
+    wire        mem_ctrl_ready;
 
-    // SRAM controller signals (burst)
-    wire [7:0]  sram_ctrl_burst_len;
-    wire [15:0] sram_ctrl_burst_wdata;
-    wire        sram_ctrl_burst_cancel;
-    wire        sram_ctrl_burst_data_valid;
-    wire        sram_ctrl_burst_wdata_req;
-    wire        sram_ctrl_burst_done;
-    wire [15:0] sram_ctrl_rdata_16;
+    // Memory controller signals (burst)
+    wire [7:0]  mem_ctrl_burst_len;
+    wire [15:0] mem_ctrl_burst_wdata;
+    wire        mem_ctrl_burst_cancel;
+    wire        mem_ctrl_burst_data_valid;
+    wire        mem_ctrl_burst_wdata_req;
+    wire        mem_ctrl_burst_done;
+    wire [15:0] mem_ctrl_rdata_16;
 
-    // SRAM Arbiter instantiation
+    // Memory Arbiter instantiation
     sram_arbiter u_sram_arbiter (
         .clk(clk_core),
         .rst_n(rst_n_core),
@@ -362,54 +372,58 @@ module gpu_top (
         .port3_ack(arb_port3_ack),
         .port3_ready(arb_port3_ready),
 
-        // To SRAM controller — single-word
-        .sram_req(sram_ctrl_req),
-        .sram_we(sram_ctrl_we),
-        .sram_addr(sram_ctrl_addr),
-        .sram_wdata(sram_ctrl_wdata),
-        .sram_rdata(sram_ctrl_rdata),
-        .sram_ack(sram_ctrl_ack),
-        .sram_ready(sram_ctrl_ready),
+        // To memory controller — single-word
+        .mem_req(mem_ctrl_req),
+        .mem_we(mem_ctrl_we),
+        .mem_addr(mem_ctrl_addr),
+        .mem_wdata(mem_ctrl_wdata),
+        .mem_rdata(mem_ctrl_rdata),
+        .mem_ack(mem_ctrl_ack),
+        .mem_ready(mem_ctrl_ready),
 
-        // To SRAM controller — burst
-        .sram_burst_len(sram_ctrl_burst_len),
-        .sram_burst_wdata(sram_ctrl_burst_wdata),
-        .sram_burst_cancel(sram_ctrl_burst_cancel),
-        .sram_burst_data_valid(sram_ctrl_burst_data_valid),
-        .sram_burst_wdata_req(sram_ctrl_burst_wdata_req),
-        .sram_burst_done(sram_ctrl_burst_done),
-        .sram_rdata_16(sram_ctrl_rdata_16)
+        // To memory controller — burst
+        .mem_burst_len(mem_ctrl_burst_len),
+        .mem_burst_wdata(mem_ctrl_burst_wdata),
+        .mem_burst_cancel(mem_ctrl_burst_cancel),
+        .mem_burst_data_valid(mem_ctrl_burst_data_valid),
+        .mem_burst_wdata_req(mem_ctrl_burst_wdata_req),
+        .mem_burst_done(mem_ctrl_burst_done),
+        .mem_rdata_16(mem_ctrl_rdata_16)
     );
 
-    // SRAM Controller instantiation
-    sram_controller u_sram_controller (
+    // SDRAM Controller instantiation
+    sdram_controller u_sdram_controller (
         .clk(clk_core),
         .rst_n(rst_n_core),
 
         // From arbiter — single-word
-        .req(sram_ctrl_req),
-        .we(sram_ctrl_we),
-        .addr(sram_ctrl_addr),
-        .wdata(sram_ctrl_wdata),
-        .rdata(sram_ctrl_rdata),
-        .ack(sram_ctrl_ack),
-        .ready(sram_ctrl_ready),
+        .req(mem_ctrl_req),
+        .we(mem_ctrl_we),
+        .addr(mem_ctrl_addr),
+        .wdata(mem_ctrl_wdata),
+        .rdata(mem_ctrl_rdata),
+        .ack(mem_ctrl_ack),
+        .ready(mem_ctrl_ready),
 
         // From arbiter — burst
-        .burst_len(sram_ctrl_burst_len),
-        .burst_wdata_16(sram_ctrl_burst_wdata),
-        .burst_cancel(sram_ctrl_burst_cancel),
-        .burst_data_valid(sram_ctrl_burst_data_valid),
-        .burst_wdata_req(sram_ctrl_burst_wdata_req),
-        .burst_done(sram_ctrl_burst_done),
-        .rdata_16(sram_ctrl_rdata_16),
+        .burst_len(mem_ctrl_burst_len),
+        .burst_wdata_16(mem_ctrl_burst_wdata),
+        .burst_cancel(mem_ctrl_burst_cancel),
+        .burst_data_valid(mem_ctrl_burst_data_valid),
+        .burst_wdata_req(mem_ctrl_burst_wdata_req),
+        .burst_done(mem_ctrl_burst_done),
+        .rdata_16(mem_ctrl_rdata_16),
 
-        // To external SRAM
-        .sram_addr(sram_addr),
-        .sram_data(sram_data),
-        .sram_we_n(sram_we_n),
-        .sram_oe_n(sram_oe_n),
-        .sram_ce_n(sram_ce_n)
+        // To external SDRAM (sdram_clk driven directly from PLL output)
+        .sdram_cke(sdram_cke),
+        .sdram_csn(sdram_csn),
+        .sdram_rasn(sdram_rasn),
+        .sdram_casn(sdram_casn),
+        .sdram_wen(sdram_wen),
+        .sdram_ba(sdram_ba),
+        .sdram_a(sdram_a),
+        .sdram_dq(sdram_dq),
+        .sdram_dqm(sdram_dqm)
     );
 
     // Temporary port assignments
@@ -472,7 +486,7 @@ module gpu_top (
         .pixel_y(disp_pixel_y),
         .frame_start(disp_frame_start),
         .fb_display_base(fb_display),
-        // SRAM interface — single-word
+        // Memory interface — single-word (display controller port names preserved)
         .sram_req(arb_port0_req),
         .sram_we(arb_port0_we),
         .sram_addr(arb_port0_addr),
@@ -480,7 +494,7 @@ module gpu_top (
         .sram_rdata(arb_port0_rdata),
         .sram_ack(arb_port0_ack),
         .sram_ready(arb_port0_ready),
-        // SRAM interface — burst
+        // Memory interface — burst (display controller port names preserved)
         .sram_burst_len(arb_port0_burst_len),
         .sram_burst_rdata(arb_port0_burst_rdata),
         .sram_burst_data_valid(arb_port0_burst_data_valid),
@@ -553,7 +567,7 @@ module gpu_top (
         // Barycentric interpolation
         .inv_area(tri_inv_area),
 
-        // Framebuffer write (SRAM arbiter port 1)
+        // Framebuffer write (memory arbiter port 1)
         .fb_req(arb_port1_req),
         .fb_we(arb_port1_we),
         .fb_addr(arb_port1_addr),
@@ -562,7 +576,7 @@ module gpu_top (
         .fb_ack(arb_port1_ack),
         .fb_ready(arb_port1_ready),
 
-        // Z-buffer (SRAM arbiter port 2)
+        // Z-buffer (memory arbiter port 2)
         .zb_req(arb_port2_req),
         .zb_we(arb_port2_we),
         .zb_addr(arb_port2_addr),

@@ -1,16 +1,16 @@
 `default_nettype none
 
-// SRAM Arbiter - 4-Port Fixed Priority Memory Arbiter with Burst Support
+// Memory Arbiter - 4-Port Fixed Priority Memory Arbiter with Burst Support
 // Priority: Display (Port 0) > Framebuffer Write (Port 1) > Z-Buffer (Port 2) > Texture (Port 3)
 // Ensures display refresh never stalls (highest priority)
 //
 // 3-state grant FSM:
 //   Idle            — no active grant, priority encoder selects next port
-//   Active Single   — grant_active && !burst_active, waiting for sram_ack
+//   Active Single   — grant_active && !burst_active, waiting for mem_ack
 //   Active Burst    — grant_active && burst_active, streaming burst data
 //
-// Burst preemption: higher-priority port request during burst asserts sram_burst_cancel.
-// SRAM controller completes current 16-bit word then transitions to DONE.
+// Burst preemption: higher-priority port request during burst asserts mem_burst_cancel.
+// SDRAM controller completes current 16-bit word then transitions to DONE.
 // Preempted port receives portN_ack; it must re-request remaining words.
 
 module sram_arbiter (
@@ -81,29 +81,29 @@ module sram_arbiter (
     output wire         port3_ready,
 
     // ====================================================================
-    // SRAM Controller Interface — Single-Word
+    // Memory Controller Interface — Single-Word
     // ====================================================================
-    output reg          sram_req,
-    output reg          sram_we,
-    output reg  [23:0]  sram_addr,
-    output reg  [31:0]  sram_wdata,
-    input  wire [31:0]  sram_rdata,
-    input  wire         sram_ack,
-    input  wire         sram_ready,
+    output reg          mem_req,
+    output reg          mem_we,
+    output reg  [23:0]  mem_addr,
+    output reg  [31:0]  mem_wdata,
+    input  wire [31:0]  mem_rdata,
+    input  wire         mem_ack,
+    input  wire         mem_ready,
 
     // ====================================================================
-    // SRAM Controller Interface — Burst
+    // Memory Controller Interface — Burst
     // ====================================================================
-    output reg  [7:0]   sram_burst_len,
-    output wire [15:0]  sram_burst_wdata,
-    output reg          sram_burst_cancel,
-    input  wire         sram_burst_data_valid,
-    input  wire         sram_burst_wdata_req,
-    input  wire         sram_burst_done,       // coincides with sram_ack for burst; kept for interface symmetry
-    input  wire [15:0]  sram_rdata_16
+    output reg  [7:0]   mem_burst_len,
+    output wire [15:0]  mem_burst_wdata,
+    output reg          mem_burst_cancel,
+    input  wire         mem_burst_data_valid,
+    input  wire         mem_burst_wdata_req,
+    input  wire         mem_burst_done,       // coincides with mem_ack for burst; kept for interface symmetry
+    input  wire [15:0]  mem_rdata_16
 );
     /* verilator lint_off UNUSEDSIGNAL */
-    wire _unused_burst_done = sram_burst_done; // arbiter uses sram_ack for both single and burst completion
+    wire _unused_burst_done = mem_burst_done; // arbiter uses mem_ack for both single and burst completion
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
@@ -176,10 +176,10 @@ module sram_arbiter (
     // Burst write data: combinational mux from granted port (no pipeline delay).
     // Uses granted_port which is valid after the grant posedge (same cycle the
     // controller starts BURST_WRITE_SETUP).
-    assign sram_burst_wdata = (granted_port == 2'd1) ? port1_burst_wdata :
-                              (granted_port == 2'd2) ? port2_burst_wdata :
-                              (granted_port == 2'd3) ? port3_burst_wdata :
-                                                       16'b0;
+    assign mem_burst_wdata = (granted_port == 2'd1) ? port1_burst_wdata :
+                             (granted_port == 2'd2) ? port2_burst_wdata :
+                             (granted_port == 2'd3) ? port3_burst_wdata :
+                                                      16'b0;
 
     // Mux for initial grant — select burst_len from next_grant (before granted_port is latched)
     reg [7:0] init_burst_len;
@@ -200,60 +200,60 @@ module sram_arbiter (
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            granted_port      <= 2'd0;
-            grant_active      <= 1'b0;
-            burst_active      <= 1'b0;
-            sram_req          <= 1'b0;
-            sram_we           <= 1'b0;
-            sram_addr         <= 24'b0;
-            sram_wdata        <= 32'b0;
-            sram_burst_len    <= 8'b0;
-            sram_burst_cancel <= 1'b0;
+            granted_port     <= 2'd0;
+            grant_active     <= 1'b0;
+            burst_active     <= 1'b0;
+            mem_req          <= 1'b0;
+            mem_we           <= 1'b0;
+            mem_addr         <= 24'b0;
+            mem_wdata        <= 32'b0;
+            mem_burst_len    <= 8'b0;
+            mem_burst_cancel <= 1'b0;
 
         end else begin
             // Default: deassert cancel after one cycle
-            sram_burst_cancel <= 1'b0;
+            mem_burst_cancel <= 1'b0;
 
             if (!grant_active) begin
                 // --------------------------------------------------------
                 // IDLE: Select highest-priority requesting port
                 // --------------------------------------------------------
-                if (grant_valid && sram_ready) begin
+                if (grant_valid && mem_ready) begin
                     granted_port <= next_grant;
                     grant_active <= 1'b1;
-                    sram_req     <= 1'b1;
+                    mem_req      <= 1'b1;
 
                     // Multiplex address, data, and control from selected port
                     case (next_grant)
                         2'd0: begin
-                            sram_addr  <= port0_addr;
-                            sram_wdata <= port0_wdata;
-                            sram_we    <= port0_we;
+                            mem_addr  <= port0_addr;
+                            mem_wdata <= port0_wdata;
+                            mem_we    <= port0_we;
                         end
                         2'd1: begin
-                            sram_addr  <= port1_addr;
-                            sram_wdata <= port1_wdata;
-                            sram_we    <= port1_we;
+                            mem_addr  <= port1_addr;
+                            mem_wdata <= port1_wdata;
+                            mem_we    <= port1_we;
                         end
                         2'd2: begin
-                            sram_addr  <= port2_addr;
-                            sram_wdata <= port2_wdata;
-                            sram_we    <= port2_we;
+                            mem_addr  <= port2_addr;
+                            mem_wdata <= port2_wdata;
+                            mem_we    <= port2_we;
                         end
                         2'd3: begin
-                            sram_addr  <= port3_addr;
-                            sram_wdata <= port3_wdata;
-                            sram_we    <= port3_we;
+                            mem_addr  <= port3_addr;
+                            mem_wdata <= port3_wdata;
+                            mem_we    <= port3_we;
                         end
                         default: begin
-                            sram_addr  <= 24'b0;
-                            sram_wdata <= 32'b0;
-                            sram_we    <= 1'b0;
+                            mem_addr  <= 24'b0;
+                            mem_wdata <= 32'b0;
+                            mem_we    <= 1'b0;
                         end
                     endcase
 
                     // Set burst length (burst_wdata is combinational via mux)
-                    sram_burst_len <= init_burst_len;
+                    mem_burst_len <= init_burst_len;
 
                     // Determine if this is a burst or single-word
                     if (init_burst_len > 8'd0) begin
@@ -265,29 +265,29 @@ module sram_arbiter (
 
             end else if (grant_active && !burst_active) begin
                 // --------------------------------------------------------
-                // ACTIVE SINGLE-WORD: Wait for sram_ack
+                // ACTIVE SINGLE-WORD: Wait for mem_ack
                 // --------------------------------------------------------
-                if (sram_ack) begin
+                if (mem_ack) begin
                     grant_active <= 1'b0;
-                    sram_req     <= 1'b0;
+                    mem_req      <= 1'b0;
                 end
 
             end else begin
                 // --------------------------------------------------------
                 // ACTIVE BURST: Handle preemption and completion
-                // (burst_wdata routed combinationally via sram_burst_wdata assign)
+                // (burst_wdata routed combinationally via mem_burst_wdata assign)
                 // --------------------------------------------------------
 
                 // Preemption: if higher-priority port requests, cancel burst
                 if (higher_priority_req) begin
-                    sram_burst_cancel <= 1'b1;
+                    mem_burst_cancel <= 1'b1;
                 end
 
                 // Burst completion (natural or preempted)
-                if (sram_ack) begin
+                if (mem_ack) begin
                     grant_active  <= 1'b0;
                     burst_active  <= 1'b0;
-                    sram_req      <= 1'b0;
+                    mem_req       <= 1'b0;
                 end
             end
         end
@@ -303,13 +303,13 @@ module sram_arbiter (
             port1_rdata <= 32'b0;
             port2_rdata <= 32'b0;
             port3_rdata <= 32'b0;
-        end else if (sram_ack && !burst_active) begin
+        end else if (mem_ack && !burst_active) begin
             // Route read data to granted port (single-word mode only)
             case (granted_port)
-                2'd0: port0_rdata <= sram_rdata;
-                2'd1: port1_rdata <= sram_rdata;
-                2'd2: port2_rdata <= sram_rdata;
-                2'd3: port3_rdata <= sram_rdata;
+                2'd0: port0_rdata <= mem_rdata;
+                2'd1: port1_rdata <= mem_rdata;
+                2'd2: port2_rdata <= mem_rdata;
+                2'd3: port3_rdata <= mem_rdata;
                 default: begin end
             endcase
         end
@@ -320,42 +320,42 @@ module sram_arbiter (
     // ====================================================================
 
     // Route burst read data only to the granted port
-    assign port0_burst_rdata = sram_rdata_16;
-    assign port1_burst_rdata = sram_rdata_16;
-    assign port2_burst_rdata = sram_rdata_16;
-    assign port3_burst_rdata = sram_rdata_16;
+    assign port0_burst_rdata = mem_rdata_16;
+    assign port1_burst_rdata = mem_rdata_16;
+    assign port2_burst_rdata = mem_rdata_16;
+    assign port3_burst_rdata = mem_rdata_16;
 
     // burst_data_valid is pulsed only on the granted port
-    assign port0_burst_data_valid = burst_active && (granted_port == 2'd0) && sram_burst_data_valid;
-    assign port1_burst_data_valid = burst_active && (granted_port == 2'd1) && sram_burst_data_valid;
-    assign port2_burst_data_valid = burst_active && (granted_port == 2'd2) && sram_burst_data_valid;
-    assign port3_burst_data_valid = burst_active && (granted_port == 2'd3) && sram_burst_data_valid;
+    assign port0_burst_data_valid = burst_active && (granted_port == 2'd0) && mem_burst_data_valid;
+    assign port1_burst_data_valid = burst_active && (granted_port == 2'd1) && mem_burst_data_valid;
+    assign port2_burst_data_valid = burst_active && (granted_port == 2'd2) && mem_burst_data_valid;
+    assign port3_burst_data_valid = burst_active && (granted_port == 2'd3) && mem_burst_data_valid;
 
     // burst_wdata_req is routed only to the granted port
-    assign port0_burst_wdata_req = burst_active && (granted_port == 2'd0) && sram_burst_wdata_req;
-    assign port1_burst_wdata_req = burst_active && (granted_port == 2'd1) && sram_burst_wdata_req;
-    assign port2_burst_wdata_req = burst_active && (granted_port == 2'd2) && sram_burst_wdata_req;
-    assign port3_burst_wdata_req = burst_active && (granted_port == 2'd3) && sram_burst_wdata_req;
+    assign port0_burst_wdata_req = burst_active && (granted_port == 2'd0) && mem_burst_wdata_req;
+    assign port1_burst_wdata_req = burst_active && (granted_port == 2'd1) && mem_burst_wdata_req;
+    assign port2_burst_wdata_req = burst_active && (granted_port == 2'd2) && mem_burst_wdata_req;
+    assign port3_burst_wdata_req = burst_active && (granted_port == 2'd3) && mem_burst_wdata_req;
 
     // ====================================================================
     // Port Acknowledge Signals
     // ====================================================================
 
-    // portN_ack fires on sram_ack for both single-word and burst completion
-    assign port0_ack = (granted_port == 2'd0) && sram_ack;
-    assign port1_ack = (granted_port == 2'd1) && sram_ack;
-    assign port2_ack = (granted_port == 2'd2) && sram_ack;
-    assign port3_ack = (granted_port == 2'd3) && sram_ack;
+    // portN_ack fires on mem_ack for both single-word and burst completion
+    assign port0_ack = (granted_port == 2'd0) && mem_ack;
+    assign port1_ack = (granted_port == 2'd1) && mem_ack;
+    assign port2_ack = (granted_port == 2'd2) && mem_ack;
+    assign port3_ack = (granted_port == 2'd3) && mem_ack;
 
     // ====================================================================
     // Port Ready Signals (combinational)
     // ====================================================================
 
-    // Port is ready if no grant is active, SRAM is ready, and this port
+    // Port is ready if no grant is active, memory controller is ready, and this port
     // has the highest priority among all current requestors
-    assign port0_ready = !grant_active && sram_ready;
-    assign port1_ready = !grant_active && sram_ready && !port0_req;
-    assign port2_ready = !grant_active && sram_ready && !port0_req && !port1_req;
-    assign port3_ready = !grant_active && sram_ready && !port0_req && !port1_req && !port2_req;
+    assign port0_ready = !grant_active && mem_ready;
+    assign port1_ready = !grant_active && mem_ready && !port0_req;
+    assign port2_ready = !grant_active && mem_ready && !port0_req && !port1_req;
+    assign port3_ready = !grant_active && mem_ready && !port0_req && !port1_req && !port2_req;
 
 endmodule

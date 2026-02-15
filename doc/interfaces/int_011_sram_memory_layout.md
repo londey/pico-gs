@@ -25,6 +25,7 @@ Internal
 - REQ-027 (Z-Buffer Operations)
 - REQ-024 (Texture Sampling)
 - REQ-023 (Rasterization Algorithm)
+- REQ-133 (Color Grading LUT)
 
 ## Specification
 

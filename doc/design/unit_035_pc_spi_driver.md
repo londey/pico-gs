@@ -8,6 +8,7 @@ SPI transport implementation for PC platform via Adafruit FT232H breakout board
 
 - REQ-105 (GPU Communication Protocol)
 - REQ-106 (PC Debug Host)
+- REQ-100 (Host Firmware Architecture)
 
 ## Interfaces
 

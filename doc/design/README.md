@@ -49,7 +49,7 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-004: Triangle Setup](unit_004_triangle_setup.md)
 - [UNIT-005: Rasterizer](unit_005_rasterizer.md)
 - [UNIT-006: Pixel Pipeline](unit_006_pixel_pipeline.md)
-- [UNIT-007: SRAM Arbiter](unit_007_sram_arbiter.md)
+- [UNIT-007: Memory Arbiter](unit_007_sram_arbiter.md)
 - [UNIT-008: Display Controller](unit_008_display_controller.md)
 - [UNIT-009: DVI TMDS Encoder](unit_009_dvi_tmds_encoder.md)
 - [UNIT-020: Core 0 Scene Manager](unit_020_core_0_scene_manager.md)

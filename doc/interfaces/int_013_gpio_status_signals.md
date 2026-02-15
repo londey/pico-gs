@@ -14,12 +14,14 @@ External Standard
 - **Provider:** External
 - **Consumer:** UNIT-020 (Core 0 Scene Manager), Host firmware
 - **Consumer:** UNIT-022 (GPU Driver Layer)
+- **Consumer:** UNIT-035 (PC SPI Driver (FT232H))
 
 ## Referenced By
 
 - REQ-117 (VSync Synchronization)
 - REQ-119 (GPU Flow Control)
 - REQ-052 (Reliability Requirements)
+- REQ-021 (Command Buffer FIFO)
 
 ## Specification
 

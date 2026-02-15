@@ -1,8 +1,8 @@
 `default_nettype none
 
-// Integration Testbench: SRAM Controller + Arbiter Burst Data Path
+// Integration Testbench: SDRAM Controller + Arbiter Burst Data Path
 // Verifies end-to-end burst transfers across the full memory subsystem:
-//   Behavioral SRAM model ↔ sram_controller ↔ sram_arbiter ↔ port stubs
+//   Behavioral SDRAM model ↔ sdram_controller ↔ sram_arbiter ↔ port stubs
 //
 // Test scenarios:
 //   1. Single-port burst read (display, port 0)
@@ -35,27 +35,180 @@ module tb_burst_integration;
     end
 
     // ========================================================================
-    // Behavioral SRAM Model — 64K x 16-bit
+    // Behavioral SDRAM Model — W9825G6KH-6
     // ========================================================================
+    // Reduced memory for simulation: 4 banks x 16 rows x 512 columns x 16 bits
+    // Commands decoded from {csn, rasn, casn, wen}
 
-    reg [15:0] sram_mem [0:65535];
+    localparam [3:0] SCMD_NOP          = 4'b0111;
+    localparam [3:0] SCMD_ACTIVATE     = 4'b0011;
+    localparam [3:0] SCMD_READ         = 4'b0101;
+    localparam [3:0] SCMD_WRITE        = 4'b0100;
+    localparam [3:0] SCMD_PRECHARGE    = 4'b0010;
+    localparam [3:0] SCMD_AUTO_REFRESH = 4'b0001;
+    localparam [3:0] SCMD_LOAD_MODE    = 4'b0000;
 
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire [23:0] sram_addr;
-    /* verilator lint_on UNUSEDSIGNAL */
-    wire [15:0] sram_data;
-    wire        sram_we_n;
-    wire        sram_oe_n;
-    wire        sram_ce_n;
+    reg [15:0] sdram_mem [0:3][0:15][0:511];
 
-    // Drive sram_data from model during reads (CE=0, OE=0, WE=1)
-    wire sram_reading = !sram_ce_n && !sram_oe_n && sram_we_n;
-    assign sram_data = sram_reading ? sram_mem[sram_addr[15:0]] : 16'bz;
+    reg        bank_active          [0:3];
+    reg [12:0] bank_active_row      [0:3];
+    integer    bank_activate_cycle  [0:3];
+    integer    bank_precharge_cycle [0:3];
+    integer    bank_last_write_cycle[0:3];
 
-    // Capture writes to model
+    reg        mode_reg_set;
+    reg        sdram_initialized;
+
+    localparam PIPE_DEPTH = 8;
+    reg [15:0] read_pipe_data  [0:PIPE_DEPTH-1];
+    reg        read_pipe_valid [0:PIPE_DEPTH-1];
+
+    reg        sdram_model_dq_oe;
+    reg [15:0] sdram_model_dq_out;
+    integer    dq_hold_count;
+
+    // External SDRAM interface wires
+    wire         sdram_cke;
+    wire         sdram_csn;
+    wire         sdram_rasn;
+    wire         sdram_casn;
+    wire         sdram_wen;
+    wire [1:0]   sdram_ba;
+    wire [12:0]  sdram_a;
+    wire [15:0]  sdram_dq;
+    wire [1:0]   sdram_dqm;
+
+    assign sdram_dq = sdram_model_dq_oe ? sdram_model_dq_out : 16'bz;
+
+    integer sdram_cycle;
+    wire [3:0] sdram_cmd = {sdram_csn, sdram_rasn, sdram_casn, sdram_wen};
+
+    integer bi, ri, ci;
+    initial begin
+        sdram_initialized    = 0;
+        mode_reg_set         = 0;
+        sdram_cycle          = 0;
+        sdram_model_dq_oe    = 0;
+        sdram_model_dq_out   = 16'h0;
+        dq_hold_count        = 0;
+
+        for (bi = 0; bi < 4; bi = bi + 1) begin
+            bank_active[bi]           = 0;
+            bank_active_row[bi]       = 13'd0;
+            bank_activate_cycle[bi]   = -100;
+            bank_precharge_cycle[bi]  = -100;
+            bank_last_write_cycle[bi] = -100;
+        end
+
+        for (ri = 0; ri < PIPE_DEPTH; ri = ri + 1) begin
+            read_pipe_data[ri]  = 16'h0;
+            read_pipe_valid[ri] = 0;
+        end
+
+        for (bi = 0; bi < 4; bi = bi + 1) begin
+            for (ri = 0; ri < 16; ri = ri + 1) begin
+                for (ci = 0; ci < 512; ci = ci + 1) begin
+                    sdram_mem[bi][ri][ci] = 16'h0;
+                end
+            end
+        end
+    end
+
     always @(posedge clk) begin
-        if (!sram_ce_n && !sram_we_n) begin
-            sram_mem[sram_addr[15:0]] <= sram_data;
+        sdram_cycle <= sdram_cycle + 1;
+
+        if (read_pipe_valid[0]) begin
+            sdram_model_dq_oe  <= 1;
+            sdram_model_dq_out <= read_pipe_data[0];
+            dq_hold_count      <= 2;
+        end else if (dq_hold_count > 0) begin
+            dq_hold_count <= dq_hold_count - 1;
+        end else begin
+            sdram_model_dq_oe <= 0;
+        end
+
+        for (ri = 0; ri < PIPE_DEPTH - 1; ri = ri + 1) begin
+            read_pipe_data[ri]  <= read_pipe_data[ri + 1];
+            read_pipe_valid[ri] <= read_pipe_valid[ri + 1];
+        end
+        read_pipe_data[PIPE_DEPTH-1]  <= 16'h0;
+        read_pipe_valid[PIPE_DEPTH-1] <= 0;
+
+        if (!rst_n) begin
+            sdram_initialized    <= 0;
+            mode_reg_set         <= 0;
+            sdram_model_dq_oe    <= 0;
+            sdram_model_dq_out   <= 16'h0;
+            dq_hold_count        <= 0;
+            for (bi = 0; bi < 4; bi = bi + 1) begin
+                bank_active[bi]           <= 0;
+                bank_activate_cycle[bi]   <= -100;
+                bank_precharge_cycle[bi]  <= -100;
+                bank_last_write_cycle[bi] <= -100;
+            end
+            for (ri = 0; ri < PIPE_DEPTH; ri = ri + 1) begin
+                read_pipe_data[ri]  <= 16'h0;
+                read_pipe_valid[ri] <= 0;
+            end
+        end else begin
+            case (sdram_cmd)
+                SCMD_NOP: begin
+                end
+
+                SCMD_ACTIVATE: begin
+                    bank_active[sdram_ba]         <= 1;
+                    bank_active_row[sdram_ba]     <= sdram_a;
+                    bank_activate_cycle[sdram_ba] <= sdram_cycle;
+                end
+
+                SCMD_READ: begin
+                    begin
+                        /* verilator lint_off WIDTHEXPAND */
+                        automatic logic [12:0] active_row = bank_active_row[sdram_ba];
+                        /* verilator lint_on WIDTHEXPAND */
+                        automatic logic [8:0]  col = sdram_a[8:0];
+                        automatic logic [3:0]  row_idx = active_row[3:0];
+                        read_pipe_data[0]  <= sdram_mem[sdram_ba][row_idx][col];
+                        read_pipe_valid[0] <= 1;
+                    end
+                end
+
+                SCMD_WRITE: begin
+                    begin
+                        /* verilator lint_off WIDTHEXPAND */
+                        automatic logic [12:0] active_row = bank_active_row[sdram_ba];
+                        /* verilator lint_on WIDTHEXPAND */
+                        automatic logic [8:0]  col = sdram_a[8:0];
+                        automatic logic [3:0]  row_idx = active_row[3:0];
+                        sdram_mem[sdram_ba][row_idx][col] <= sdram_dq;
+                    end
+                    bank_last_write_cycle[sdram_ba] <= sdram_cycle;
+                end
+
+                SCMD_PRECHARGE: begin
+                    if (sdram_a[10]) begin
+                        for (bi = 0; bi < 4; bi = bi + 1) begin
+                            bank_active[bi]          <= 0;
+                            bank_precharge_cycle[bi] <= sdram_cycle;
+                        end
+                    end else begin
+                        bank_active[sdram_ba]          <= 0;
+                        bank_precharge_cycle[sdram_ba] <= sdram_cycle;
+                    end
+                end
+
+                SCMD_AUTO_REFRESH: begin
+                    // Model accepts auto-refresh; no data action
+                end
+
+                SCMD_LOAD_MODE: begin
+                    mode_reg_set      <= 1;
+                    sdram_initialized <= 1;
+                end
+
+                default: begin
+                end
+            endcase
         end
     end
 
@@ -167,10 +320,10 @@ module tb_burst_integration;
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ========================================================================
-    // DUT: SRAM Controller
+    // DUT: SDRAM Controller
     // ========================================================================
 
-    sram_controller u_ctrl (
+    sdram_controller u_ctrl (
         .clk              (clk),
         .rst_n            (rst_n),
         .req              (ctrl_req),
@@ -187,15 +340,19 @@ module tb_burst_integration;
         .burst_wdata_req  (ctrl_burst_wdata_req),
         .burst_done       (ctrl_burst_done),
         .rdata_16         (ctrl_rdata_16),
-        .sram_addr        (sram_addr),
-        .sram_data        (sram_data),
-        .sram_we_n        (sram_we_n),
-        .sram_oe_n        (sram_oe_n),
-        .sram_ce_n        (sram_ce_n)
+        .sdram_cke        (sdram_cke),
+        .sdram_csn        (sdram_csn),
+        .sdram_rasn       (sdram_rasn),
+        .sdram_casn       (sdram_casn),
+        .sdram_wen        (sdram_wen),
+        .sdram_ba         (sdram_ba),
+        .sdram_a          (sdram_a),
+        .sdram_dq         (sdram_dq),
+        .sdram_dqm        (sdram_dqm)
     );
 
     // ========================================================================
-    // DUT: SRAM Arbiter
+    // DUT: SRAM Arbiter (connects to SDRAM controller via mem_* interface)
     // ========================================================================
 
     sram_arbiter u_arb (
@@ -257,23 +414,23 @@ module tb_burst_integration;
         .port3_ack              (p3_ack),
         .port3_ready            (p3_ready),
 
-        // SRAM Controller Interface — Single-Word
-        .sram_req               (ctrl_req),
-        .sram_we                (ctrl_we),
-        .sram_addr              (ctrl_addr),
-        .sram_wdata             (ctrl_wdata),
-        .sram_rdata             (ctrl_rdata),
-        .sram_ack               (ctrl_ack),
-        .sram_ready             (ctrl_ready),
+        // SDRAM Controller Interface — Single-Word
+        .mem_req               (ctrl_req),
+        .mem_we                (ctrl_we),
+        .mem_addr              (ctrl_addr),
+        .mem_wdata             (ctrl_wdata),
+        .mem_rdata             (ctrl_rdata),
+        .mem_ack               (ctrl_ack),
+        .mem_ready             (ctrl_ready),
 
-        // SRAM Controller Interface — Burst
-        .sram_burst_len         (ctrl_burst_len),
-        .sram_burst_wdata       (ctrl_burst_wdata),
-        .sram_burst_cancel      (ctrl_burst_cancel),
-        .sram_burst_data_valid  (ctrl_burst_data_valid),
-        .sram_burst_wdata_req   (ctrl_burst_wdata_req),
-        .sram_burst_done        (ctrl_burst_done),
-        .sram_rdata_16          (ctrl_rdata_16)
+        // SDRAM Controller Interface — Burst
+        .mem_burst_len         (ctrl_burst_len),
+        .mem_burst_wdata       (ctrl_burst_wdata),
+        .mem_burst_cancel      (ctrl_burst_cancel),
+        .mem_burst_data_valid  (ctrl_burst_data_valid),
+        .mem_burst_wdata_req   (ctrl_burst_wdata_req),
+        .mem_burst_done        (ctrl_burst_done),
+        .mem_rdata_16          (ctrl_rdata_16)
     );
 
     // ========================================================================
@@ -355,6 +512,27 @@ module tb_burst_integration;
     endtask
 
     // ========================================================================
+    // Helper: wait for SDRAM initialization to complete
+    // ========================================================================
+
+    task wait_init_complete(input integer max_cycles);
+        integer cyc;
+        begin
+            cyc = 0;
+            while (!ctrl_ready && cyc < max_cycles) begin
+                @(posedge clk); #1;
+                cyc = cyc + 1;
+            end
+            if (cyc >= max_cycles) begin
+                $display("FAIL: SDRAM init timeout after %0d cycles @ %0t", max_cycles, $time);
+                fail_count = fail_count + 1;
+            end else begin
+                $display("  SDRAM initialization complete after %0d cycles", cyc);
+            end
+        end
+    endtask
+
+    // ========================================================================
     // Storage for burst read captures
     // ========================================================================
 
@@ -374,22 +552,27 @@ module tb_burst_integration;
 
         do_reset();
 
-        $display("=== Integration Testbench: Burst Data Path ===\n");
+        // Wait for SDRAM initialization to complete (~20000 cycles)
+        $display("=== Waiting for SDRAM initialization ===");
+        wait_init_complete(25000);
+
+        $display("=== Integration Testbench: Burst Data Path (SDRAM Backend) ===\n");
 
         // ============================================================
         // Test 1: Display burst read only (port 0, burst_len=8)
         // ============================================================
         $display("--- Scenario 1: Display burst read only ---");
 
-        // Pre-load SRAM with sequential pixel data at address 0x1000
+        // Pre-load SDRAM with sequential pixel data
+        // addr = 24'h000020 -> bank=0, row=0, col={addr[8:1],0}={16,0}=32
         for (i = 0; i < 8; i = i + 1) begin
-            sram_mem[16'h1000 + i[15:0]] = 16'hD000 + i[15:0];
+            sdram_mem[0][0][32 + i] = 16'hD000 + i[15:0];
         end
 
         // Issue burst read on port 0
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h001000;
+        p0_addr      = 24'h000020;
         p0_burst_len = 8'd8;
         @(posedge clk); #1;
         p0_req = 1'b0;
@@ -397,7 +580,7 @@ module tb_burst_integration;
         // Capture burst data from port 0
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -429,23 +612,24 @@ module tb_burst_integration;
         // ============================================================
         $display("--- Scenario 2: Texture burst read only ---");
 
-        // Pre-load BC1 block data at address 0x2000
-        sram_mem[16'h2000] = 16'hF800;  // color0 = red
-        sram_mem[16'h2001] = 16'h07E0;  // color1 = green
-        sram_mem[16'h2002] = 16'h5555;  // indices low
-        sram_mem[16'h2003] = 16'hAAAA;  // indices high
+        // Pre-load BC1 block data
+        // addr = 24'h000040 -> col={32,0}=64
+        sdram_mem[0][0][64] = 16'hF800;  // color0 = red
+        sdram_mem[0][0][65] = 16'h07E0;  // color1 = green
+        sdram_mem[0][0][66] = 16'h5555;  // indices low
+        sdram_mem[0][0][67] = 16'hAAAA;  // indices high
 
         // Issue BC1 burst read on port 3
         p3_req       = 1'b1;
         p3_we        = 1'b0;
-        p3_addr      = 24'h002000;
+        p3_addr      = 24'h000040;
         p3_burst_len = 8'd4;
         @(posedge clk); #1;
         p3_req = 1'b0;
 
         cap_p3_count = 0;
         cycle_count  = 0;
-        while (!p3_ack && cycle_count < 50) begin
+        while (!p3_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p3_burst_data_valid) begin
@@ -472,22 +656,23 @@ module tb_burst_integration;
         // Now test RGBA4444 burst (burst_len=16)
         $display("  Testing RGBA4444 burst (16 words)...");
 
+        // addr = 24'h000060 -> col={48,0}=96
         for (i = 0; i < 16; i = i + 1) begin
-            sram_mem[16'h3000 + i[15:0]] = 16'hA000 + i[15:0];
+            sdram_mem[0][0][96 + i] = 16'hA000 + i[15:0];
         end
 
         @(posedge clk); #1;
 
         p3_req       = 1'b1;
         p3_we        = 1'b0;
-        p3_addr      = 24'h003000;
+        p3_addr      = 24'h000060;
         p3_burst_len = 8'd16;
         @(posedge clk); #1;
         p3_req = 1'b0;
 
         cap_p3_count = 0;
         cycle_count  = 0;
-        while (!p3_ack && cycle_count < 50) begin
+        while (!p3_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p3_burst_data_valid) begin
@@ -511,24 +696,25 @@ module tb_burst_integration;
         // ============================================================
         $display("--- Scenario 3: Concurrent burst requests — priority ---");
 
-        // Pre-load display data
+        // Pre-load display data at col 128-131
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'h4000 + i[15:0]] = 16'hDD00 + i[15:0];
+            sdram_mem[0][0][128 + i] = 16'hDD00 + i[15:0];
         end
-        // Pre-load texture data
+        // Pre-load texture data at col 160-163
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'h5000 + i[15:0]] = 16'h5000 + i[15:0];
+            sdram_mem[0][0][160 + i] = 16'h5000 + i[15:0];
         end
 
         // Both ports request simultaneously
+        // addr = 24'h000080 -> col=128, addr = 24'h0000A0 -> col=160
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h004000;
+        p0_addr      = 24'h000080;
         p0_burst_len = 8'd4;
 
         p3_req       = 1'b1;
         p3_we        = 1'b0;
-        p3_addr      = 24'h005000;
+        p3_addr      = 24'h0000A0;
         p3_burst_len = 8'd4;
         @(posedge clk); #1;
         // Deassert port 0 req after one cycle (arbiter latches it)
@@ -538,7 +724,7 @@ module tb_burst_integration;
         // Capture port 0 burst data first (higher priority)
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -560,7 +746,7 @@ module tb_burst_integration;
 
         cap_p3_count = 0;
         cycle_count  = 0;
-        while (!p3_ack && cycle_count < 50) begin
+        while (!p3_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p3_burst_data_valid) begin
@@ -585,19 +771,20 @@ module tb_burst_integration;
         // ============================================================
         $display("--- Scenario 4: Burst preemption ---");
 
-        // Pre-load texture region (port 3 will read this)
+        // Pre-load texture region (port 3 will read this) at col 192-207
         for (i = 0; i < 16; i = i + 1) begin
-            sram_mem[16'h6000 + i[15:0]] = 16'hEE00 + i[15:0];
+            sdram_mem[0][0][192 + i] = 16'hEE00 + i[15:0];
         end
-        // Pre-load display region (port 0 will preempt with this)
+        // Pre-load display region (port 0 will preempt with this) at col 224-227
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'h7000 + i[15:0]] = 16'hFF00 + i[15:0];
+            sdram_mem[0][0][224 + i] = 16'hFF00 + i[15:0];
         end
 
         // Start texture burst (port 3, burst_len=16)
+        // addr = 24'h0000C0 -> col={96,0}=192
         p3_req       = 1'b1;
         p3_we        = 1'b0;
-        p3_addr      = 24'h006000;
+        p3_addr      = 24'h0000C0;
         p3_burst_len = 8'd16;
         @(posedge clk); #1;
         p3_req = 1'b0;
@@ -605,7 +792,7 @@ module tb_burst_integration;
         // Wait for a few data words, then preempt with display port
         cap_p3_count = 0;
         cycle_count  = 0;
-        while (cap_p3_count < 5 && cycle_count < 50) begin
+        while (cap_p3_count < 5 && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p3_burst_data_valid) begin
@@ -623,13 +810,14 @@ module tb_burst_integration;
         end
 
         // Assert display port request to trigger preemption
+        // addr = 24'h0000E0 -> col={112,0}=224
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h007000;
+        p0_addr      = 24'h0000E0;
         p0_burst_len = 8'd4;
 
         // Wait for port 3 ack (preempted burst completion)
-        while (!p3_ack && cycle_count < 100) begin
+        while (!p3_ack && cycle_count < 400) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p3_burst_data_valid) begin
@@ -641,14 +829,10 @@ module tb_burst_integration;
         check_bit("S4: port3 preempted (ack)", p3_ack, 1'b1);
         $display("  Port 3 preempted after %0d total words", cap_p3_count);
 
-        // Keep p0_req asserted — arbiter needs 2 cycles to re-grant:
-        //   Cycle 1: arbiter clears grant_active (processes sram_ack)
-        //   Cycle 2: arbiter sees p0_req=1 in IDLE → grants port 0
-
         // Now port 0 should be served (keep p0_req=1 until burst completes)
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -673,26 +857,28 @@ module tb_burst_integration;
         // ============================================================
         $display("--- Scenario 5: Burst write + burst read interleaving ---");
 
-        // Pre-load display read data
+        // Pre-load display read data at col 256-259
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'h8000 + i[15:0]] = 16'hAA00 + i[15:0];
+            sdram_mem[0][0][256 + i] = 16'hAA00 + i[15:0];
         end
 
-        // Clear framebuffer write region
+        // Clear framebuffer write region at col 288-291
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'h9000 + i[15:0]] = 16'h0000;
+            sdram_mem[0][0][288 + i] = 16'h0000;
         end
 
         // Issue display burst read (port 0, highest priority)
+        // addr = 24'h000100 -> col={128,0}=256
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h008000;
+        p0_addr      = 24'h000100;
         p0_burst_len = 8'd4;
 
         // Issue framebuffer burst write (port 1) simultaneously
+        // addr = 24'h000120 -> col={144,0}=288
         p1_req          = 1'b1;
         p1_we           = 1'b1;
-        p1_addr         = 24'h009000;
+        p1_addr         = 24'h000120;
         p1_burst_len    = 8'd4;
         p1_burst_wdata  = 16'hBB00;
         @(posedge clk); #1;
@@ -702,7 +888,7 @@ module tb_burst_integration;
         // Port 0 should be served first (higher priority)
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -723,7 +909,7 @@ module tb_burst_integration;
 
         cycle_count = 0;
         i = 1;
-        while (!p1_ack && cycle_count < 50) begin
+        while (!p1_ack && cycle_count < 200) begin
             if (p1_burst_wdata_req) begin
                 p1_burst_wdata = 16'hBB00 + i[15:0];
                 i = i + 1;
@@ -736,13 +922,14 @@ module tb_burst_integration;
         check_bit("S5: port1 write ack", p1_ack, 1'b1);
         $display("  Port 1 burst write completed: %0d cycles", cycle_count);
 
-        // Wait for write to settle, then verify SRAM contents
+        // Wait for write to settle, then verify SDRAM contents
+        @(posedge clk); #1;
         @(posedge clk); #1;
 
-        check_val16("S5: p1 write word 0", sram_mem[16'h9000], 16'hBB00);
-        check_val16("S5: p1 write word 1", sram_mem[16'h9001], 16'hBB01);
-        check_val16("S5: p1 write word 2", sram_mem[16'h9002], 16'hBB02);
-        check_val16("S5: p1 write word 3", sram_mem[16'h9003], 16'hBB03);
+        check_val16("S5: p1 write word 0", sdram_mem[0][0][288], 16'hBB00);
+        check_val16("S5: p1 write word 1", sdram_mem[0][0][289], 16'hBB01);
+        check_val16("S5: p1 write word 2", sdram_mem[0][0][290], 16'hBB02);
+        check_val16("S5: p1 write word 3", sdram_mem[0][0][291], 16'hBB03);
 
         @(posedge clk); #1;
 
@@ -751,26 +938,27 @@ module tb_burst_integration;
         // ============================================================
         $display("--- Scenario 6: Mixed burst and single-word ---");
 
-        // Pre-load display burst data
+        // Pre-load display burst data at col 320-323
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'hA000 + i[15:0]] = 16'hCC00 + i[15:0];
+            sdram_mem[0][0][320 + i] = 16'hCC00 + i[15:0];
         end
 
-        // Pre-load Z-buffer single-word data (32-bit word at address 0x500)
-        // Low 16 bits at SRAM addr 0xA00, high at 0xA01
-        sram_mem[16'h0A00] = 16'h1234;
-        sram_mem[16'h0A01] = 16'h5678;
+        // Pre-load Z-buffer single-word data at col 4/5
+        sdram_mem[0][0][4] = 16'h1234;
+        sdram_mem[0][0][5] = 16'h5678;
 
         // Issue display burst read (port 0)
+        // addr = 24'h000140 -> col={160,0}=320
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h00A000;
+        p0_addr      = 24'h000140;
         p0_burst_len = 8'd4;
 
         // Simultaneously issue Z-buffer single-word read (port 2, burst_len=0)
+        // addr = 24'h000004 -> col=4/5
         p2_req       = 1'b1;
         p2_we        = 1'b0;
-        p2_addr      = 24'h000500;
+        p2_addr      = 24'h000004;
         p2_burst_len = 8'd0;
         p2_wdata     = 32'b0;
         @(posedge clk); #1;
@@ -780,7 +968,7 @@ module tb_burst_integration;
         // Port 0 burst served first
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -800,7 +988,7 @@ module tb_burst_integration;
         @(posedge clk); #1;  // DONE→IDLE
 
         cycle_count = 0;
-        while (!p2_ack && cycle_count < 50) begin
+        while (!p2_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
         end
@@ -819,26 +1007,27 @@ module tb_burst_integration;
         // ============================================================
         $display("--- Scenario 7: Back-to-back bursts ---");
 
-        // Pre-load first burst data
+        // Pre-load first burst data at col 352-355
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'hB000 + i[15:0]] = 16'h1100 + i[15:0];
+            sdram_mem[0][0][352 + i] = 16'h1100 + i[15:0];
         end
-        // Pre-load second burst data
+        // Pre-load second burst data at col 384-387
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'hC000 + i[15:0]] = 16'h2200 + i[15:0];
+            sdram_mem[0][0][384 + i] = 16'h2200 + i[15:0];
         end
 
         // First burst read (port 0)
+        // addr = 24'h000160 -> col={176,0}=352
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h00B000;
+        p0_addr      = 24'h000160;
         p0_burst_len = 8'd4;
         @(posedge clk); #1;
         p0_req = 1'b0;
 
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -859,15 +1048,16 @@ module tb_burst_integration;
         check_bit("S7: ready between bursts", p0_ready, 1'b1);
 
         // Second burst — immediately after ready
+        // addr = 24'h000180 -> col={192,0}=384
         p0_req       = 1'b1;
-        p0_addr      = 24'h00C000;
+        p0_addr      = 24'h000180;
         p0_burst_len = 8'd4;
         @(posedge clk); #1;
         p0_req = 1'b0;
 
         cap_p0_count = 0;
         cycle_count  = 0;
-        while (!p0_ack && cycle_count < 50) begin
+        while (!p0_ack && cycle_count < 200) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
             if (p0_burst_data_valid) begin
@@ -892,15 +1082,17 @@ module tb_burst_integration;
         // ============================================================
         $display("\n--- Cycle Count Verification ---");
 
-        // Burst read: N+2 cycles (IDLE→SETUP + N*NEXT + DONE)
-        // Test with burst_len=4: expected 4+2 = 6 cycles from req to after ack
+        // Burst read with SDRAM: ACTIVATE(tRCD=2) + pipelined READs(N+CL) + PRECHARGE(tRP=2) + DONE
+        // For burst_len=4: expected ~12-18 cycles from req to ack
+        // (SDRAM has higher latency than async SRAM)
         for (i = 0; i < 4; i = i + 1) begin
-            sram_mem[16'hD000 + i[15:0]] = 16'h0000 + i[15:0];
+            sdram_mem[0][0][416 + i] = 16'h0000 + i[15:0];
         end
 
+        // addr = 24'h0001A0 -> col={208,0}=416
         p0_req       = 1'b1;
         p0_we        = 1'b0;
-        p0_addr      = 24'h00D000;
+        p0_addr      = 24'h0001A0;
         p0_burst_len = 8'd4;
         @(posedge clk); #1;
         p0_req = 1'b0;
@@ -911,17 +1103,16 @@ module tb_burst_integration;
             cycle_count = cycle_count + 1;
         end
 
-        // Cycles from req deassert to ack: SETUP(1) + 4*NEXT(4) + DONE(1) = 6
-        // But the arbiter adds 1 cycle for grant latching, total = 6 after req deassert
-        $display("  Burst read (len=4) cycle count: %0d (expected ~6)", cycle_count);
+        // With SDRAM: ACTIVATE(2+1 cmd) + READ pipelining(4+CL=7) + PRECHARGE(2) + DONE(1)
+        // Plus arbiter grant overhead (~1 cycle). Total ~ 12-18 cycles.
+        $display("  Burst read (len=4) cycle count: %0d (expected ~12-18 for SDRAM)", cycle_count);
 
-        // Verify cycle count is reasonable (INT-011: N+2 for controller,
-        // arbiter adds 1 cycle for grant = N+3 total)
-        if (cycle_count <= 8 && cycle_count >= 5) begin
+        // Verify cycle count is reasonable for SDRAM timing
+        if (cycle_count <= 25 && cycle_count >= 8) begin
             pass_count = pass_count + 1;
-            $display("  Cycle count within expected range");
+            $display("  Cycle count within expected range for SDRAM");
         end else begin
-            $display("FAIL: burst read cycle count %0d outside expected range 5-8", cycle_count);
+            $display("FAIL: burst read cycle count %0d outside expected range 8-25", cycle_count);
             fail_count = fail_count + 1;
         end
 
@@ -940,9 +1131,9 @@ module tb_burst_integration;
         $finish;
     end
 
-    // Timeout watchdog
+    // Timeout watchdog (increased for SDRAM init + re-init)
     initial begin
-        #2000000;
+        #10000000;
         $display("\nERROR: Timeout — simulation ran too long");
         $finish;
     end

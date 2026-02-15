@@ -1,28 +1,32 @@
 // PLL Core - Clock Generation for ICEpi GPU
 // Input: 50 MHz from board oscillator
-// Outputs: 100 MHz unified GPU/SRAM core clock (clk_core),
+// Outputs: 100 MHz unified GPU/SDRAM core clock (clk_core),
 //          25.000 MHz pixel clock (clk_core / 4, synchronous),
-//          250.0 MHz TMDS bit clock (10x pixel clock)
+//          250.0 MHz TMDS bit clock (10x pixel clock),
+//          100 MHz SDRAM chip clock with 90-degree phase shift (clk_sdram)
 
 module pll_core (
     input  wire clk_50_in,      // 50 MHz input clock
     input  wire rst_n,          // Active-low reset
 
-    output wire clk_core,       // 100 MHz unified GPU core/SRAM clock
+    output wire clk_core,       // 100 MHz unified GPU core/SDRAM clock
     output wire clk_pixel,      // 25.000 MHz pixel clock (clk_core / 4)
     output wire clk_tmds,       // 250.0 MHz TMDS bit clock (10x pixel clock)
+    output wire clk_sdram,      // 100 MHz SDRAM chip clock, 90-degree phase shift
     output wire pll_locked      // PLL lock indicator
 );
 
     // ECP5 EHXPLLL primitive instantiation
-    // Generates three synchronous clocks from 50 MHz board oscillator:
-    //   - CLKOP:  100.0 MHz (clk_core — unified GPU core/SRAM clock)
+    // Generates four synchronous clocks from 50 MHz board oscillator:
+    //   - CLKOP:  100.0 MHz (clk_core — unified GPU core/SDRAM clock)
     //   - CLKOS:   25.0 MHz (clk_pixel — clk_core / 4, synchronous)
     //   - CLKOS2: 250.0 MHz (clk_tmds — 10x pixel clock for TMDS serializer)
+    //   - CLKOS3: 100.0 MHz (clk_sdram — 90-degree phase shift for SDRAM chip clock)
 
     wire clkop_w;   // 100 MHz (clk_core)
     wire clkos_w;   // 25.000 MHz (clk_pixel)
     wire clkos2_w;  // 250.0 MHz (clk_tmds)
+    wire clkos3_w;  // 100 MHz, 90-degree phase shift (clk_sdram)
     wire lock_w;
 
     // ECP5 PLL with FEEDBK_PATH="CLKOP":
@@ -52,8 +56,10 @@ module pll_core (
         .CLKOS2_CPHASE(0),
         .CLKOS2_FPHASE(0),
 
-        .CLKOS3_DIV(1),
-        .CLKOS3_ENABLE("DISABLED"),
+        .CLKOS3_DIV(5),             // Quaternary output: 500/5 = 100 MHz (clk_sdram)
+        .CLKOS3_ENABLE("ENABLED"),
+        .CLKOS3_CPHASE(1),         // 90-degree phase shift: CPHASE=1 (1 VCO cycle = 2 ns)
+        .CLKOS3_FPHASE(2),         // + FPHASE=2 (2 × 0.25 ns = 0.5 ns) = 2.5 ns total = 90°
 
         .CLKOP_TRIM_POL("FALLING"),
         .CLKOP_TRIM_DELAY(0),
@@ -88,7 +94,7 @@ module pll_core (
         .CLKOP(clkop_w),
         .CLKOS(clkos_w),
         .CLKOS2(clkos2_w),
-        .CLKOS3(),
+        .CLKOS3(clkos3_w),
         .LOCK(lock_w),
         .INTLOCK(),
         .CLKINTFB()
@@ -98,6 +104,7 @@ module pll_core (
     assign clk_core = clkop_w;
     assign clk_pixel = clkos_w;
     assign clk_tmds = clkos2_w;
+    assign clk_sdram = clkos3_w;
     assign pll_locked = lock_w;
 
 endmodule

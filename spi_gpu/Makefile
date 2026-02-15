@@ -4,7 +4,7 @@
 PROJECT = gpu_top
 TOP_MODULE = gpu_top
 DEVICE = 25k
-PACKAGE = CABGA381
+PACKAGE = CABGA256
 
 # Directories
 RTL_DIR = src
@@ -21,7 +21,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/spi/register_file.sv \
 	$(RTL_DIR)/utils/async_fifo.sv \
 	$(RTL_DIR)/spi/command_fifo.sv \
-	$(RTL_DIR)/memory/sram_controller.sv \
+	$(RTL_DIR)/memory/sdram_controller.sv \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/tmds_encoder.sv \
@@ -50,7 +50,7 @@ ECPPACK_FLAGS = --compress
 VERILATOR_FLAGS = --cc --exe --build --trace --timing --main
 
 .PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
-	test-sram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
+	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all lint-memory clean
 
 # Default target
@@ -101,18 +101,18 @@ test-sync-fifo:
 		--top-module tb_sync_fifo -o tb_sync_fifo
 	./obj_dir/tb_sync_fifo
 
-# SRAM controller testbench (burst read/write, cancel, backward compat)
-test-sram-controller:
+# SDRAM controller testbench (init sequence, read/write, refresh, burst)
+test-sdram-controller:
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(RTL_DIR)/memory/sram_controller.sv \
-		$(TB_DIR)/memory/tb_sram_controller.sv \
-		--top-module tb_sram_controller -o tb_sram_controller
-	./obj_dir/tb_sram_controller
+		$(RTL_DIR)/memory/sdram_controller.sv \
+		$(TB_DIR)/memory/tb_sdram_controller.sv \
+		--top-module tb_sdram_controller -o tb_sdram_controller
+	./obj_dir/tb_sdram_controller
 
 # SRAM arbiter testbench (burst grant, preemption, data routing)
 test-sram-arbiter:
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(RTL_DIR)/memory/sram_controller.sv \
+		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv \
 		$(TB_DIR)/memory/tb_sram_arbiter.sv \
 		--top-module tb_sram_arbiter -o tb_sram_arbiter
@@ -138,19 +138,19 @@ test-texture-cache-burst:
 # Integration testbench: controller + arbiter burst data path
 test-burst-integration:
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(RTL_DIR)/memory/sram_controller.sv \
+		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv \
 		$(TB_DIR)/memory/tb_burst_integration.sv \
 		--top-module tb_burst_integration -o tb_burst_integration
 	./obj_dir/tb_burst_integration
 
 # Run all burst-related testbenches
-test-burst-all: test-sram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
+test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
 
 # Lint memory subsystem RTL
 lint-memory:
 	$(VERILATOR) --lint-only -Wall -Wno-MULTITOP \
-		$(RTL_DIR)/memory/sram_controller.sv \
+		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv
 
 # Verilator simulation (placeholder for cocotb)
@@ -177,7 +177,7 @@ help:
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
-	@echo "  test-sram-controller - Run SRAM controller burst testbench"
+	@echo "  test-sdram-controller - Run SDRAM controller testbench"
 	@echo "  test-sram-arbiter    - Run SRAM arbiter burst testbench"
 	@echo "  test-display-burst   - Run display controller burst testbench"
 	@echo "  test-texture-cache-burst - Run texture cache burst testbench"
