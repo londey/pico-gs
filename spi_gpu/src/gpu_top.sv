@@ -237,7 +237,11 @@ module gpu_top (
     wire        arb_port0_we;
     wire [23:0] arb_port0_addr;
     wire [31:0] arb_port0_wdata;
+    wire [7:0]  arb_port0_burst_len;
     wire [31:0] arb_port0_rdata;
+    wire [15:0] arb_port0_burst_rdata;
+    wire        arb_port0_burst_data_valid;
+    wire        arb_port0_burst_wdata_req;
     wire        arb_port0_ack;
     wire        arb_port0_ready;
 
@@ -245,7 +249,12 @@ module gpu_top (
     wire        arb_port1_we;
     wire [23:0] arb_port1_addr;
     wire [31:0] arb_port1_wdata;
+    wire [7:0]  arb_port1_burst_len;
+    wire [15:0] arb_port1_burst_wdata;
     wire [31:0] arb_port1_rdata;
+    wire [15:0] arb_port1_burst_rdata;
+    wire        arb_port1_burst_data_valid;
+    wire        arb_port1_burst_wdata_req;
     wire        arb_port1_ack;
     wire        arb_port1_ready;
 
@@ -253,7 +262,12 @@ module gpu_top (
     wire        arb_port2_we;
     wire [23:0] arb_port2_addr;
     wire [31:0] arb_port2_wdata;
+    wire [7:0]  arb_port2_burst_len;
+    wire [15:0] arb_port2_burst_wdata;
     wire [31:0] arb_port2_rdata;
+    wire [15:0] arb_port2_burst_rdata;
+    wire        arb_port2_burst_data_valid;
+    wire        arb_port2_burst_wdata_req;
     wire        arb_port2_ack;
     wire        arb_port2_ready;
 
@@ -261,11 +275,16 @@ module gpu_top (
     wire        arb_port3_we;
     wire [23:0] arb_port3_addr;
     wire [31:0] arb_port3_wdata;
+    wire [7:0]  arb_port3_burst_len;
+    wire [15:0] arb_port3_burst_wdata;
     wire [31:0] arb_port3_rdata;
+    wire [15:0] arb_port3_burst_rdata;
+    wire        arb_port3_burst_data_valid;
+    wire        arb_port3_burst_wdata_req;
     wire        arb_port3_ack;
     wire        arb_port3_ready;
 
-    // SRAM controller signals
+    // SRAM controller signals (single-word)
     wire        sram_ctrl_req;
     wire        sram_ctrl_we;
     wire [23:0] sram_ctrl_addr;
@@ -274,55 +293,92 @@ module gpu_top (
     wire        sram_ctrl_ack;
     wire        sram_ctrl_ready;
 
+    // SRAM controller signals (burst)
+    wire [7:0]  sram_ctrl_burst_len;
+    wire [15:0] sram_ctrl_burst_wdata;
+    wire        sram_ctrl_burst_cancel;
+    wire        sram_ctrl_burst_data_valid;
+    wire        sram_ctrl_burst_wdata_req;
+    wire        sram_ctrl_burst_done;
+    wire [15:0] sram_ctrl_rdata_16;
+
     // SRAM Arbiter instantiation
     sram_arbiter u_sram_arbiter (
         .clk(clk_core),
         .rst_n(rst_n_core),
 
-        // Port 0: Display Read (will be connected in Phase 4)
+        // Port 0: Display Read
         .port0_req(arb_port0_req),
         .port0_we(arb_port0_we),
         .port0_addr(arb_port0_addr),
         .port0_wdata(arb_port0_wdata),
+        .port0_burst_len(arb_port0_burst_len),
         .port0_rdata(arb_port0_rdata),
+        .port0_burst_rdata(arb_port0_burst_rdata),
+        .port0_burst_data_valid(arb_port0_burst_data_valid),
+        .port0_burst_wdata_req(arb_port0_burst_wdata_req),
         .port0_ack(arb_port0_ack),
         .port0_ready(arb_port0_ready),
 
-        // Port 1: Framebuffer Write (will be connected in Phase 5/6)
+        // Port 1: Framebuffer Write
         .port1_req(arb_port1_req),
         .port1_we(arb_port1_we),
         .port1_addr(arb_port1_addr),
         .port1_wdata(arb_port1_wdata),
+        .port1_burst_len(arb_port1_burst_len),
+        .port1_burst_wdata(arb_port1_burst_wdata),
         .port1_rdata(arb_port1_rdata),
+        .port1_burst_rdata(arb_port1_burst_rdata),
+        .port1_burst_data_valid(arb_port1_burst_data_valid),
+        .port1_burst_wdata_req(arb_port1_burst_wdata_req),
         .port1_ack(arb_port1_ack),
         .port1_ready(arb_port1_ready),
 
-        // Port 2: Z-Buffer Read/Write (will be connected in Phase 7)
+        // Port 2: Z-Buffer Read/Write
         .port2_req(arb_port2_req),
         .port2_we(arb_port2_we),
         .port2_addr(arb_port2_addr),
         .port2_wdata(arb_port2_wdata),
+        .port2_burst_len(arb_port2_burst_len),
+        .port2_burst_wdata(arb_port2_burst_wdata),
         .port2_rdata(arb_port2_rdata),
+        .port2_burst_rdata(arb_port2_burst_rdata),
+        .port2_burst_data_valid(arb_port2_burst_data_valid),
+        .port2_burst_wdata_req(arb_port2_burst_wdata_req),
         .port2_ack(arb_port2_ack),
         .port2_ready(arb_port2_ready),
 
-        // Port 3: Texture Read (deferred to future phase)
+        // Port 3: Texture Read
         .port3_req(arb_port3_req),
         .port3_we(arb_port3_we),
         .port3_addr(arb_port3_addr),
         .port3_wdata(arb_port3_wdata),
+        .port3_burst_len(arb_port3_burst_len),
+        .port3_burst_wdata(arb_port3_burst_wdata),
         .port3_rdata(arb_port3_rdata),
+        .port3_burst_rdata(arb_port3_burst_rdata),
+        .port3_burst_data_valid(arb_port3_burst_data_valid),
+        .port3_burst_wdata_req(arb_port3_burst_wdata_req),
         .port3_ack(arb_port3_ack),
         .port3_ready(arb_port3_ready),
 
-        // To SRAM controller
+        // To SRAM controller — single-word
         .sram_req(sram_ctrl_req),
         .sram_we(sram_ctrl_we),
         .sram_addr(sram_ctrl_addr),
         .sram_wdata(sram_ctrl_wdata),
         .sram_rdata(sram_ctrl_rdata),
         .sram_ack(sram_ctrl_ack),
-        .sram_ready(sram_ctrl_ready)
+        .sram_ready(sram_ctrl_ready),
+
+        // To SRAM controller — burst
+        .sram_burst_len(sram_ctrl_burst_len),
+        .sram_burst_wdata(sram_ctrl_burst_wdata),
+        .sram_burst_cancel(sram_ctrl_burst_cancel),
+        .sram_burst_data_valid(sram_ctrl_burst_data_valid),
+        .sram_burst_wdata_req(sram_ctrl_burst_wdata_req),
+        .sram_burst_done(sram_ctrl_burst_done),
+        .sram_rdata_16(sram_ctrl_rdata_16)
     );
 
     // SRAM Controller instantiation
@@ -330,7 +386,7 @@ module gpu_top (
         .clk(clk_core),
         .rst_n(rst_n_core),
 
-        // From arbiter
+        // From arbiter — single-word
         .req(sram_ctrl_req),
         .we(sram_ctrl_we),
         .addr(sram_ctrl_addr),
@@ -338,6 +394,15 @@ module gpu_top (
         .rdata(sram_ctrl_rdata),
         .ack(sram_ctrl_ack),
         .ready(sram_ctrl_ready),
+
+        // From arbiter — burst
+        .burst_len(sram_ctrl_burst_len),
+        .burst_wdata_16(sram_ctrl_burst_wdata),
+        .burst_cancel(sram_ctrl_burst_cancel),
+        .burst_data_valid(sram_ctrl_burst_data_valid),
+        .burst_wdata_req(sram_ctrl_burst_wdata_req),
+        .burst_done(sram_ctrl_burst_done),
+        .rdata_16(sram_ctrl_rdata_16),
 
         // To external SRAM
         .sram_addr(sram_addr),
@@ -348,15 +413,23 @@ module gpu_top (
     );
 
     // Temporary port assignments
-    // Port 0: Display controller (connected)
-    // Port 1: Rasterizer framebuffer (connected)
-    // Port 2: Rasterizer Z-buffer (connected)
-    // Port 3: Texture (not used yet)
+    // Port 0: Display controller burst signals now driven by u_display_ctrl
 
+    // Port 1: Rasterizer framebuffer (connected, burst support deferred to Task 4)
+    assign arb_port1_burst_len = 8'b0;
+    assign arb_port1_burst_wdata = 16'b0;
+
+    // Port 2: Rasterizer Z-buffer (connected, burst support deferred to Task 4)
+    assign arb_port2_burst_len = 8'b0;
+    assign arb_port2_burst_wdata = 16'b0;
+
+    // Port 3: Texture (not used yet)
     assign arb_port3_req = 1'b0;
     assign arb_port3_we = 1'b0;
     assign arb_port3_addr = 24'b0;
     assign arb_port3_wdata = 32'b0;
+    assign arb_port3_burst_len = 8'b0;
+    assign arb_port3_burst_wdata = 16'b0;
 
     // ========================================================================
     // Display Pipeline (Phase 4 - Implemented)
@@ -399,6 +472,7 @@ module gpu_top (
         .pixel_y(disp_pixel_y),
         .frame_start(disp_frame_start),
         .fb_display_base(fb_display),
+        // SRAM interface — single-word
         .sram_req(arb_port0_req),
         .sram_we(arb_port0_we),
         .sram_addr(arb_port0_addr),
@@ -406,6 +480,11 @@ module gpu_top (
         .sram_rdata(arb_port0_rdata),
         .sram_ack(arb_port0_ack),
         .sram_ready(arb_port0_ready),
+        // SRAM interface — burst
+        .sram_burst_len(arb_port0_burst_len),
+        .sram_burst_rdata(arb_port0_burst_rdata),
+        .sram_burst_data_valid(arb_port0_burst_data_valid),
+        // Pixel output
         .pixel_red(disp_pixel_red),
         .pixel_green(disp_pixel_green),
         .pixel_blue(disp_pixel_blue),

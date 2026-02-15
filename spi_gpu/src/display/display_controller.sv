@@ -1,9 +1,16 @@
 `default_nettype none
 
-// Display Controller - Framebuffer Scanout with Prefetch
-// Fetches pixels from SRAM and feeds them to the display via scanline FIFO
-// Operates entirely in the clk_core (100 MHz) domain with pixel_tick enable
-// for 4:1 synchronous clock ratio to pixel clock
+// Display Controller - Framebuffer Scanout with Burst Prefetch
+// Fetches pixels from SRAM using burst reads and feeds them to the display
+// via scanline FIFO.  Operates entirely in the clk_core (100 MHz) domain
+// with pixel_tick enable for 4:1 synchronous clock ratio to pixel clock.
+//
+// Burst mode: the prefetch FSM issues burst read requests (128 x 16-bit SRAM
+// words per burst = 64 pixels) to the arbiter.  Since framebuffer pixels are
+// stored as RGB565 in the lower 16 bits of 32-bit SRAM words, each 32-bit word
+// occupies two sequential 16-bit SRAM addresses.  The FSM filters out the
+// unused upper-half words using a toggle bit, pushing only pixel data to the
+// scanline FIFO.
 
 module display_controller (
     // Core clock domain (clk_core, 100 MHz)
@@ -13,14 +20,19 @@ module display_controller (
     // Timing inputs (from timing generator, clk_pixel domain)
     // Synchronized internally since clk_pixel = clk_core / 4
     input  wire         display_enable,
+    /* verilator lint_off UNUSEDSIGNAL */
     input  wire [9:0]   pixel_x,        // Reserved for future use (color grading LUT)
     input  wire [9:0]   pixel_y,        // Reserved for future use (color grading LUT)
+    /* verilator lint_on UNUSEDSIGNAL */
     input  wire         frame_start,
 
     // Framebuffer configuration (core clock domain)
+    // Only bits [22:12] used — upper bits exceed 24-bit SRAM address space
+    /* verilator lint_off UNUSEDSIGNAL */
     input  wire [31:12] fb_display_base,    // Display framebuffer base address
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    // SRAM interface (core clock domain)
+    // SRAM interface — single-word (core clock domain)
     output reg          sram_req,
     output wire         sram_we,        // Always 0 (read-only)
     output reg  [23:0]  sram_addr,
@@ -28,6 +40,11 @@ module display_controller (
     input  wire [31:0]  sram_rdata,
     input  wire         sram_ack,
     input  wire         sram_ready,
+
+    // SRAM interface — burst (core clock domain)
+    output reg  [7:0]   sram_burst_len,
+    input  wire [15:0]  sram_burst_rdata,
+    input  wire         sram_burst_data_valid,
 
     // Pixel output (core clock domain, stable for 4 clk_core cycles)
     output reg  [7:0]   pixel_red,
@@ -43,6 +60,7 @@ module display_controller (
     localparam H_DISPLAY = 640;
     localparam V_DISPLAY = 480;
     localparam PREFETCH_THRESHOLD = 32;     // Start prefetch when FIFO has <32 words
+    localparam [7:0] BURST_MAX = 8'd128;   // 16-bit SRAM words per burst (yields 64 pixels)
 
     // ========================================================================
     // Pixel Tick Generation (4:1 clock enable)
@@ -84,6 +102,21 @@ module display_controller (
     end
 
     // ========================================================================
+    // Frame Start Edge Detector
+    // ========================================================================
+
+    reg frame_start_prev;
+    wire frame_start_edge = frame_start_sync && !frame_start_prev;
+
+    always_ff @(posedge clk_sram or negedge rst_n_sram) begin
+        if (!rst_n_sram) begin
+            frame_start_prev <= 1'b0;
+        end else if (pixel_tick) begin
+            frame_start_prev <= frame_start_sync;
+        end
+    end
+
+    // ========================================================================
     // Scanline FIFO (synchronous, single clock domain)
     // ========================================================================
 
@@ -114,22 +147,21 @@ module display_controller (
     );
 
     // ========================================================================
-    // SRAM Fetch State Machine (core clock domain)
+    // SRAM Burst Prefetch State Machine (core clock domain)
     // ========================================================================
 
     typedef enum logic [1:0] {
-        FETCH_IDLE,
-        FETCH_WAIT_ACK,
-        FETCH_STORE
-    } fetch_state_t;
+        PREFETCH_IDLE,
+        PREFETCH_BURST,
+        PREFETCH_DONE
+    } prefetch_state_t;
 
-    fetch_state_t fetch_state;
+    prefetch_state_t prefetch_state;
 
-    reg [23:0] fetch_addr;      // Current fetch address (word-aligned)
-    reg [23:0] fetch_line_end;  // End address of current line
-    reg [9:0]  fetch_y;         // Current Y line being fetched
+    reg [9:0]  pixels_fetched;      // Pixels fetched on current scanline (0..640)
+    reg [9:0]  fetch_y;             // Current Y line being fetched (0..479)
+    reg        burst_word_toggle;   // 0=pixel data (even SRAM addr), 1=padding (odd)
 
-    // SRAM request logic
     // Display controller never writes to SRAM
     assign sram_we = 1'b0;
 
@@ -137,78 +169,106 @@ module display_controller (
     // (This value is never used since we is always 0)
     assign sram_wdata = sram_rdata;
 
+    // Pixels remaining on current scanline
+    wire [9:0] pixels_left = H_DISPLAY[9:0] - pixels_fetched;
+
+    // Burst length for next request: 128 (64 pixels) or 2*remaining if fewer left
+    // burst_len is in 16-bit SRAM words; 2 words per pixel (low=data, high=padding)
+    wire [7:0] next_burst_len = (pixels_left >= 10'd64)
+                               ? BURST_MAX
+                               : {pixels_left[6:0], 1'b0};
+
+    // Number of pixels the current burst will produce (registered burst_len / 2)
+    wire [9:0] burst_pixels = {3'b0, sram_burst_len[7:1]};
+
+    // 32-bit word address for the next burst start
+    // base + y*640 + pixels already fetched on this line
+    // Only 23 bits needed: {fetch_word_addr, 1'b0} produces the 24-bit SRAM address
+    wire [22:0] fetch_word_addr = {fb_display_base[22:12], 12'b0}
+                                + ({13'b0, fetch_y} * 23'd640)
+                                + {13'b0, pixels_fetched};
+
     always_ff @(posedge clk_sram or negedge rst_n_sram) begin
         if (!rst_n_sram) begin
-            fetch_state <= FETCH_IDLE;
-            sram_req <= 1'b0;
-            sram_addr <= 24'b0;
-            fetch_addr <= 24'b0;
-            fetch_line_end <= 24'b0;
-            fetch_y <= 10'b0;
+            prefetch_state    <= PREFETCH_IDLE;
+            sram_req          <= 1'b0;
+            sram_addr         <= 24'b0;
+            sram_burst_len    <= 8'b0;
+            pixels_fetched    <= 10'b0;
+            fetch_y           <= 10'b0;
+            burst_word_toggle <= 1'b0;
 
         end else begin
-            case (fetch_state)
-                FETCH_IDLE: begin
-                    // Check if we need to fetch more data
-                    // fifo_rd_count is in same clock domain (no CDC delay)
-                    if (fifo_rd_count < PREFETCH_THRESHOLD && fetch_y < V_DISPLAY && sram_ready) begin
-                        // Calculate address: base + (y * 640) pixels
-                        // RGB565 stored in lower 16 bits of 32-bit words (upper 16 bits unused)
-                        // Address = base + y * 640 (in 32-bit words, 1 pixel per word)
-                        fetch_addr <= {fb_display_base, 12'b0} + (fetch_y * 10'd640);
-                        fetch_line_end <= {fb_display_base, 12'b0} + (fetch_y * 10'd640) + 10'd640;
+            case (prefetch_state)
+                PREFETCH_IDLE: begin
+                    sram_req       <= 1'b0;
+                    sram_burst_len <= 8'b0;
 
-                        // Issue read request
-                        sram_req <= 1'b1;
-                        sram_addr <= {fb_display_base, 12'b0} + (fetch_y * 10'd640);
+                    if (frame_start_edge) begin
+                        // New frame: reset scanline counter
+                        fetch_y        <= 10'd0;
+                        pixels_fetched <= 10'd0;
 
-                        fetch_state <= FETCH_WAIT_ACK;
+                    end else if (fifo_rd_count < PREFETCH_THRESHOLD &&
+                                 fetch_y < V_DISPLAY &&
+                                 pixels_left > 10'd0 &&
+                                 sram_ready) begin
+                        // Issue burst read request
+                        // Convert 32-bit word addr to 16-bit SRAM addr (<<1)
+                        sram_addr         <= {fetch_word_addr[22:0], 1'b0};
+                        sram_burst_len    <= next_burst_len;
+                        sram_req          <= 1'b1;
+                        burst_word_toggle <= 1'b0;
+                        prefetch_state    <= PREFETCH_BURST;
                     end
                 end
 
-                FETCH_WAIT_ACK: begin
+                PREFETCH_BURST: begin
+                    // Toggle even/odd tracking on each burst data beat
+                    if (sram_burst_data_valid) begin
+                        burst_word_toggle <= ~burst_word_toggle;
+                    end
+
+                    // Burst complete (ack from arbiter)
                     if (sram_ack) begin
-                        sram_req <= 1'b0;
-                        fetch_state <= FETCH_STORE;
+                        sram_req       <= 1'b0;
+                        sram_burst_len <= 8'b0;
+
+                        // Update pixel count for this scanline
+                        pixels_fetched <= pixels_fetched + burst_pixels;
+
+                        if (pixels_fetched + burst_pixels >= H_DISPLAY[9:0]) begin
+                            // Scanline complete
+                            prefetch_state <= PREFETCH_DONE;
+                        end else begin
+                            // More pixels needed — return to idle for next burst
+                            prefetch_state <= PREFETCH_IDLE;
+                        end
                     end
                 end
 
-                FETCH_STORE: begin
-                    // Store read data in FIFO
-                    fetch_addr <= fetch_addr + 24'd1;
-
-                    if (fetch_addr + 24'd1 >= fetch_line_end) begin
-                        // Finished this line
-                        fetch_y <= fetch_y + 10'd1;
-                        fetch_state <= FETCH_IDLE;
-                    end else if (!fifo_wr_full && sram_ready) begin
-                        // Continue fetching this line
-                        sram_req <= 1'b1;
-                        sram_addr <= fetch_addr + 24'd1;
-                        fetch_state <= FETCH_WAIT_ACK;
-                    end else begin
-                        // FIFO full or SRAM busy - wait
-                        fetch_state <= FETCH_IDLE;
-                    end
+                PREFETCH_DONE: begin
+                    // Advance to next scanline
+                    fetch_y        <= fetch_y + 10'd1;
+                    pixels_fetched <= 10'd0;
+                    prefetch_state <= PREFETCH_IDLE;
                 end
 
                 default: begin
-                    fetch_state <= FETCH_IDLE;
+                    prefetch_state <= PREFETCH_IDLE;
                 end
             endcase
-
-            // Reset fetch address at frame start
-            // This signal needs to be synchronized to SRAM clock domain
-            // For now, we'll reset when fetch_y reaches end
-            if (fetch_y >= V_DISPLAY) begin
-                fetch_y <= 10'd0;
-            end
         end
     end
 
-    // FIFO write enable
-    assign fifo_wr_en = (fetch_state == FETCH_STORE);
-    assign fifo_wr_data = sram_rdata[15:0];
+    // FIFO write: push pixel data on even-addressed burst beats only
+    // Even SRAM address = low 16 bits of 32-bit word = RGB565 pixel data
+    // Odd SRAM address = high 16 bits of 32-bit word = unused padding
+    assign fifo_wr_en = sram_burst_data_valid
+                        && !burst_word_toggle
+                        && (prefetch_state == PREFETCH_BURST)
+                        && !fifo_wr_full;
+    assign fifo_wr_data = sram_burst_rdata;
 
     // ========================================================================
     // Pixel Output (core clock domain, gated by pixel_tick)
@@ -242,6 +302,16 @@ module display_controller (
 
     // VSYNC output for GPIO (synchronized to core clock domain)
     assign vsync_out = frame_start_sync;
+
+    // ========================================================================
+    // LUT DMA Controller (future)
+    // ========================================================================
+    // When color_grade_lut.sv and LUT DMA are implemented (UNIT-008 v9.0+),
+    // the DMA controller should issue burst reads with burst_len=192 for the
+    // 384-byte (192 x 16-bit word) LUT transfer during vblank.  This replaces
+    // 192 individual single-word SRAM requests with a single burst request,
+    // reducing transfer time from ~1.92 us to ~1.0 us.
+    // See UNIT-008 "LUT DMA Burst Support (v11.0)" for the full protocol.
 
 endmodule
 

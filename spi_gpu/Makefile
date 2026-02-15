@@ -49,7 +49,9 @@ ECPPACK_FLAGS = --compress
 # Simulation flags
 VERILATOR_FLAGS = --cc --exe --build --trace --timing --main
 
-.PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo clean
+.PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
+	test-sram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
+	test-burst-integration test-burst-all lint-memory clean
 
 # Default target
 all: bitstream
@@ -99,6 +101,58 @@ test-sync-fifo:
 		--top-module tb_sync_fifo -o tb_sync_fifo
 	./obj_dir/tb_sync_fifo
 
+# SRAM controller testbench (burst read/write, cancel, backward compat)
+test-sram-controller:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/memory/sram_controller.sv \
+		$(TB_DIR)/memory/tb_sram_controller.sv \
+		--top-module tb_sram_controller -o tb_sram_controller
+	./obj_dir/tb_sram_controller
+
+# SRAM arbiter testbench (burst grant, preemption, data routing)
+test-sram-arbiter:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/memory/sram_controller.sv \
+		$(RTL_DIR)/memory/sram_arbiter.sv \
+		$(TB_DIR)/memory/tb_sram_arbiter.sv \
+		--top-module tb_sram_arbiter -o tb_sram_arbiter
+	./obj_dir/tb_sram_arbiter
+
+# Display controller burst testbench (scanline prefetch, burst reads)
+test-display-burst:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/utils/sync_fifo.sv \
+		$(RTL_DIR)/display/display_controller.sv \
+		$(TB_DIR)/display/tb_display_burst.sv \
+		--top-module tb_display_burst -o tb_display_burst
+	./obj_dir/tb_display_burst
+
+# Texture cache burst testbench (cache fill via burst SRAM reads)
+test-texture-cache-burst:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/texture_cache.sv \
+		$(TB_DIR)/render/tb_texture_cache_burst.sv \
+		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
+	./obj_dir/tb_texture_cache_burst
+
+# Integration testbench: controller + arbiter burst data path
+test-burst-integration:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/memory/sram_controller.sv \
+		$(RTL_DIR)/memory/sram_arbiter.sv \
+		$(TB_DIR)/memory/tb_burst_integration.sv \
+		--top-module tb_burst_integration -o tb_burst_integration
+	./obj_dir/tb_burst_integration
+
+# Run all burst-related testbenches
+test-burst-all: test-sram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
+
+# Lint memory subsystem RTL
+lint-memory:
+	$(VERILATOR) --lint-only -Wall -Wno-MULTITOP \
+		$(RTL_DIR)/memory/sram_controller.sv \
+		$(RTL_DIR)/memory/sram_arbiter.sv
+
 # Verilator simulation (placeholder for cocotb)
 sim:
 	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
@@ -123,5 +177,12 @@ help:
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
+	@echo "  test-sram-controller - Run SRAM controller burst testbench"
+	@echo "  test-sram-arbiter    - Run SRAM arbiter burst testbench"
+	@echo "  test-display-burst   - Run display controller burst testbench"
+	@echo "  test-texture-cache-burst - Run texture cache burst testbench"
+	@echo "  test-burst-integration   - Run burst integration testbench"
+	@echo "  test-burst-all   - Run all burst testbenches"
+	@echo "  lint-memory      - Lint memory subsystem RTL"
 	@echo "  clean            - Remove build artifacts"
 	@echo "  help             - Show this message"
