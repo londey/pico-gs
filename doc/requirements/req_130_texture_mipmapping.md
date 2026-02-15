@@ -31,7 +31,7 @@ The GPU SHALL support mipmap chains for textures, enabling proper filtering of t
 - Maximum mipmap levels: 11 (for 1024×1024 down to 1×1)
 
 **Acceptance Criteria**:
-- Textures with 1-11 mipmap levels can be uploaded to GPU SRAM
+- Textures with 1-11 mipmap levels can be uploaded to GPU SDRAM
 - Memory layout follows sequential organization per INT-014
 - Firmware API supports mipmap count specification
 

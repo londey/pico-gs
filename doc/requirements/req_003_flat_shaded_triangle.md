@@ -23,7 +23,7 @@ None
 - UNIT-004 (Triangle Setup)
 - UNIT-005 (Rasterizer)
 - UNIT-006 (Pixel Pipeline)
-- UNIT-007 (SRAM Arbiter)
+- UNIT-007 (Memory Arbiter)
 
 ## Interfaces
 

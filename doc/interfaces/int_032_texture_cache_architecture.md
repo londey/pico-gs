@@ -19,7 +19,7 @@ Internal
 
 ### Overview
 
-The texture cache is a per-sampler cache architecture that stores decompressed 4x4 texel blocks in a common intermediate format (RGBA5652) to enable single-cycle bilinear filtering and reduce SRAM bandwidth. Each of the 4 texture samplers maintains an independent cache to avoid inter-sampler contention.
+The texture cache is a per-sampler cache architecture that stores decompressed 4x4 texel blocks in a common intermediate format (RGBA5652) to enable single-cycle bilinear filtering and reduce SDRAM bandwidth. Each of the 4 texture samplers maintains an independent cache to avoid inter-sampler contention.
 
 ### Details
 
@@ -107,12 +107,12 @@ A sampler's cache is fully invalidated (all valid bits cleared) when texture con
 On cache miss, the pixel pipeline stalls and executes the following cache fill sequence:
 
 1. **Stall Pipeline:** No pixel output until fill completes
-2. **SRAM Burst Read Request:** Issue a burst read to UNIT-007 (SRAM Arbiter) with:
-   - **Start address:** Computed block address in SRAM (from INT-014 layout)
+2. **SDRAM Burst Read Request:** Issue a burst read to UNIT-007 (Memory Arbiter) with:
+   - **Start address:** Computed block address in SDRAM (from INT-014 layout)
    - **Burst length (`burst_len`):** Number of sequential 16-bit words to read
      - **BC1 format:** `burst_len=4` (8 bytes)
      - **RGBA4444 format:** `burst_len=16` (32 bytes)
-   - The arbiter performs one address setup cycle, then streams `burst_len` sequential 16-bit data words on consecutive clock cycles without re-issuing addresses.
+   - The arbiter issues an ACTIVATE command to open the SDRAM row, then a READ command. After the CAS latency (CL=3 at 100 MHz), the SDRAM streams `burst_len` sequential 16-bit data words on consecutive clock cycles.
 3. **Decompression/Conversion:** Transform source format to RGBA5652:
    - BC1: Decompress 2 RGB565 colors + 2-bit indices → 16 RGBA5652 texels
    - RGBA4444: Convert 16 RGBA4444 texels → 16 RGBA5652 texels
@@ -122,15 +122,15 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
 6. **Resume Pipeline:** Output requested texels and continue processing
 
 **Cache Fill Latency (at 100 MHz `clk_core`):**
-- BC1: ~5 cycles / 50 ns (1 address setup + 4 burst data cycles, decompress + write overlapped)
-- RGBA4444: ~11 cycles / 110 ns (1 address setup + 16 burst data cycles with pipelining, convert + write overlapped)
+- BC1: ~11 cycles / 110 ns (ACTIVATE + tRCD + READ + CL=3 latency + 4 burst data cycles, decompress + write overlapped)
+- RGBA4444: ~23 cycles / 230 ns (ACTIVATE + tRCD + READ + CL=3 latency + 16 burst data cycles, convert + write overlapped)
 
-**Comparison with non-burst access:**
-- BC1: reduced from ~8 cycles (80 ns) to ~5 cycles (50 ns) — ~37% improvement
-- RGBA4444: reduced from ~18 cycles (180 ns) to ~11 cycles (110 ns) — ~39% improvement
-- Improvement comes from eliminating per-word address setup overhead in sequential accesses.
+**Note on SDRAM burst latency:**
+SDRAM cache fills incur additional latency compared to async SRAM due to the row activation (tRCD) and CAS latency (CL=3) overhead before the first data word arrives.
+However, once the burst begins, data streams at one word per clock cycle, matching async SRAM burst throughput.
+When consecutive cache fills target the same SDRAM row (common for spatially adjacent texture blocks), the row activation can be skipped, reducing fill latency to near the async SRAM baseline.
 
-Note: The texture cache and SRAM controller share the same 100 MHz clock domain, so cache fill SRAM reads are synchronous single-domain transactions with no CDC overhead.
+Note: The texture cache and SDRAM controller share the same 100 MHz clock domain, so cache fill SDRAM reads are synchronous single-domain transactions with no CDC overhead.
 The burst request interface to UNIT-007 consists of the start address, burst length, and a request strobe; the arbiter responds with a grant and streams data words with a valid strobe.
 
 **Replacement Policy:**
@@ -186,7 +186,7 @@ Each cache line is identified by:
 
 ### XOR Set Indexing
 
-XOR set indexing is a hardware-only optimization; no physical texture memory layout change is required in SRAM. The linear 4×4 block layout in SRAM (INT-014) remains unchanged.
+XOR set indexing is a hardware-only optimization; no physical texture memory layout change is required in SDRAM. The linear 4×4 block layout in SDRAM (INT-014) remains unchanged.
 
 ### Alpha Precision Loss
 
@@ -197,7 +197,7 @@ RGBA4444 textures lose 2 bits of alpha precision in cache (4-bit → 2-bit). Thi
 
 ### Cache Coherency
 
-The cache is non-coherent: texture data is read-only from the GPU's perspective. If firmware modifies texture data in SRAM via `MEM_DATA` writes, it must invalidate the affected sampler's cache by writing to `TEXn_BASE` or `TEXn_FMT` (even if the value doesn't change).
+The cache is non-coherent: texture data is read-only from the GPU's perspective. If firmware modifies texture data in SDRAM via `MEM_DATA` writes, it must invalidate the affected sampler's cache by writing to `TEXn_BASE` or `TEXn_FMT` (even if the value doesn't change).
 
 ### Design Rationale
 
@@ -206,7 +206,7 @@ See DD-010 in [design_decisions.md](../design/design_decisions.md) for architect
 ### References
 
 - **INT-010 (GPU Register Map):** TEXn_BASE, TEXn_FMT register definitions
-- **INT-014 (Texture Memory Layout):** Source texture block addressing in SRAM
+- **INT-014 (Texture Memory Layout):** Source texture block addressing in SDRAM
 - **UNIT-006 (Pixel Pipeline):** Cache implementation details (4-way set associative, pseudo-LRU, EBR usage)
 - **REQ-024 (Texture Sampling):** Cache-aware sampling pipeline behavior
 - **REQ-130 (Texture Mipmapping):** Cache handles mip-level blocks with distinct tags

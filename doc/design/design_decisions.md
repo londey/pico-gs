@@ -36,11 +36,91 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-021: SDRAM Controller Architecture for W9825G6KH
+
+**Date:** 2026-02-15
+**Status:** Proposed
+**Implementation:** RTL PENDING
+
+### Context
+
+The original GPU design used an async SRAM controller (sram_controller.sv) with a fictional SRAM part.
+The target hardware, the ICEpi Zero board, actually has a Winbond W9825G6KH-6 synchronous DRAM (32 MB, 16-bit data bus) instead of async SRAM.
+The FPGA package is CABGA256 (not CABGA381 as previously specified).
+The async SRAM controller's FSM, pin constraints, and timing assumptions are all incorrect for the actual hardware.
+
+### Decision
+
+Replace the async SRAM controller with a synchronous DRAM controller for the W9825G6KH:
+
+1. **SDRAM controller FSM**: An 8-state FSM (INIT, IDLE, ACTIVATE, READ, WRITE, PRECHARGE, REFRESH, DONE) handles the full SDRAM command protocol including initialization, auto-refresh, row activation, CAS latency management, and precharge timing.
+
+2. **PLL configuration**: Add a 90-degree phase-shifted 100 MHz clock output from the PLL for the SDRAM chip clock (sdram_clk).
+   The phase shift ensures data is valid and centered relative to the internal clock edge, compensating for PCB trace delays.
+
+3. **Pin constraints**: Replace fictional SRAM pin assignments with real SDRAM pins from the ICEpi Zero board reference LPF file.
+   Signals: sdram_a[12:0], sdram_dq[15:0], sdram_ba[1:0], sdram_dqm[1:0], sdram_csn, sdram_cke, sdram_clk, sdram_wen, sdram_casn, sdram_rasn.
+
+4. **FPGA package**: Correct from CABGA381 to CABGA256 in the Makefile and synthesis scripts.
+
+5. **Preserved arbiter interface**: The existing arbiter interface (req/we/addr/wdata/rdata/ack/ready/burst) is preserved.
+   The SDRAM controller internally decomposes byte addresses into bank/row/column, manages row activation and precharge, and handles CAS latency.
+   The arbiter and all upstream requestors are unchanged.
+
+6. **Auto-refresh scheduling**: The SDRAM controller maintains a refresh timer and inserts AUTO REFRESH commands at the required rate (8192 refreshes per 64 ms = one every 781 cycles at 100 MHz).
+   When refresh is due, mem_ready deasserts to block new arbiter grants.
+
+### Rationale
+
+- **Correct hardware target**: The ICEpi Zero board has SDRAM, not SRAM. The previous design was based on a fictional part.
+- **Preserved interface**: By keeping the arbiter interface unchanged, all upstream modules (display controller, pixel pipeline, texture cache) require no modification.
+- **PLL phase shift**: Industry-standard technique for SDRAM interfacing on FPGAs. The 90-degree shift provides optimal data sampling margin.
+- **CAS latency 3**: The W9825G6KH-6 supports CL=2 or CL=3 at 100 MHz. CL=3 is selected for reliable timing with margin.
+
+### Alternatives Considered
+
+1. **Keep async SRAM design with a different board**: Rejected -- the ICEpi Zero is the target hardware.
+2. **Use SDRAM burst mode (hardware auto-increment)**: Rejected -- controller-managed sequential access (issuing individual READ/WRITE commands to consecutive columns) provides more flexibility for preemption and row boundary handling. The SDRAM mode register is set to burst length 1.
+3. **CAS latency 2**: Rejected -- CL=2 at 100 MHz leaves minimal timing margin. CL=3 provides a safer margin with only ~6 cycle overhead per access sequence (negligible for long sequential transfers).
+
+### Consequences
+
+**Hardware (RTL):**
+- sram_controller.sv replaced by sdram_controller.sv with 8-state FSM
+- gpu_top.sv updated to wire SDRAM signals instead of SRAM signals
+- PLL configuration extended with 90-degree phase-shifted output for sdram_clk
+- Pin constraints rewritten for ICEpi Zero board SDRAM pins
+- Makefile updated for CABGA256 package
+- SDRAM controller uses ~200-300 LUTs, ~100-150 FFs (larger than the ~150 LUT async SRAM controller, but includes initialization, refresh timer, and full command sequencing)
+- One additional PLL output used (from 3 to 4 outputs)
+
+**Firmware (Rust):**
+- No changes required. SDRAM management is entirely internal to the FPGA.
+
+**Performance:**
+- Positive: Correct hardware interface means the design actually works on real hardware
+- Neutral: Sequential access throughput is similar to async SRAM burst mode (1 word/cycle after initial overhead)
+- Negative: Single random-access reads are slower (~12 cycles vs ~3 cycles) due to ACTIVATE + tRCD + CAS latency
+- Negative: Auto-refresh consumes ~0.8% of bandwidth (negligible)
+- Negative: SDRAM contents are volatile (lost on power loss), unlike SRAM
+
+### References
+
+- INT-011: SDRAM Memory Layout (timing specs, bandwidth budget)
+- UNIT-007: Memory Arbiter (preserved interface)
+- INT-002: DVI TMDS Output (PLL configuration update)
+- REQ-050: Performance Targets (bandwidth recalculation)
+- REQ-051: Resource Constraints (SDRAM controller resource estimate)
+- DD-020: SRAM Burst Read/Write Operations (superseded)
+
+---
+
+
 ## DD-020: SRAM Burst Read/Write Operations
 
 **Date:** 2026-02-14
-**Status:** Proposed
-**Implementation:** RTL PENDING
+**Status:** Superseded by DD-021
+**Implementation:** N/A (superseded)
 
 ### Context
 
@@ -52,83 +132,22 @@ The icepi-zero's async SRAM supports burst mode, which allows reading or writing
 
 ### Decision
 
-Add SRAM burst read and burst write support to the SRAM controller and arbiter:
-
-1. **Burst transfers**: After the initial address setup, consecutive 16-bit words at sequential addresses are transferred without returning to IDLE, saving one address-setup cycle per additional word in the burst.
-
-2. **Arbiter burst grants**: The SRAM arbiter (UNIT-007) extends its grant mechanism to support multi-word burst grants.
-   A requesting port specifies a burst length (or uses a burst-done signal), and the arbiter holds the grant for the duration of the burst.
-
-3. **Maximum burst length**: A configurable maximum burst length limits how long a single port can hold the SRAM bus, preventing higher-priority ports from being starved.
-   The display controller (port 0, highest priority) is never preempted mid-burst, but lower-priority ports have their burst length capped to maintain display timing margin.
-
-4. **Per-port burst behavior**:
-   - Port 0 (display scanout): Burst reads of consecutive scanline pixels into the scanline FIFO.
-     Burst length up to the remaining FIFO capacity.
-   - Port 1 (framebuffer write): Burst writes of consecutive rasterized pixels.
-     Burst length limited by the run of sequential fragment positions from the pixel pipeline.
-   - Port 2 (Z-buffer read/write): Burst reads or writes of consecutive depth values for scanline-order fragments.
-     Burst length limited by the sequential fragment run length.
-   - Port 3 (texture cache fill): Burst reads for cache line fills.
-     BC1: 4 sequential 16-bit reads (8 bytes). RGBA4444: 16 sequential 16-bit reads (32 bytes).
-
-5. **Fallback**: Single-word (non-burst) accesses remain supported for random access patterns.
-   The burst mechanism degrades gracefully to single-word mode when burst length is 1.
+**SUPERSEDED**: This decision described burst mode for an async SRAM controller.
+The target hardware (ICEpi Zero) uses SDRAM (W9825G6KH), not async SRAM.
+See DD-021 for the replacement SDRAM controller architecture, which achieves similar sequential access throughput through SDRAM column auto-increment within active rows.
 
 ### Rationale
 
-- **Display scanout**: Largest SRAM bandwidth consumer (74 MB/s).
-  Burst reads of ~640 words per scanline eliminate ~639 address-setup cycles per scanline, directly improving effective throughput and reducing arbiter contention for other ports.
-- **Texture cache fills**: Most latency-sensitive use case (pipeline stalls on cache miss).
-  BC1 bursts of 4 words and RGBA4444 bursts of 16 words reduce cache miss latency, improving textured rendering performance.
-- **Framebuffer and Z-buffer**: Sequential scanline writes/reads benefit from burst mode during rasterization of wide triangles with long horizontal spans.
-- **Minimal hardware cost**: Burst mode adds a burst counter and minor control logic to the SRAM controller FSM (~50-100 additional LUTs, ~20-30 FFs).
-  No additional BRAM or DSP consumption.
-- **No software-visible changes**: Burst mode is internal to the SRAM controller and arbiter.
-  No new registers or firmware changes are required.
-
-### Alternatives Considered
-
-1. **Wider SRAM data bus (32-bit)**: Would require a different SRAM part and PCB redesign.
-   Rejected -- hardware change is out of scope; burst mode achieves similar throughput improvement in RTL only.
-
-2. **Interleaved SRAM banks**: Two 16-bit SRAM chips accessed in alternation.
-   Rejected -- doubles SRAM chip count and pin usage; burst mode is simpler.
-
-3. **Cache-only optimization**: Improve texture cache hit rate to reduce SRAM accesses.
-   Rejected -- already implemented (DD-010). Burst mode is complementary, improving the throughput of remaining SRAM accesses.
-
-4. **DMA engine for bulk transfers**: A dedicated DMA controller for large block moves.
-   Rejected -- adds significant complexity; burst mode in the existing arbiter achieves the needed improvement for the identified access patterns.
+See DD-021.
 
 ### Consequences
 
-**Hardware (RTL):**
-- UNIT-007: SRAM arbiter extended with burst grant logic, burst counter, and configurable maximum burst length per port (~50-100 LUTs, ~20-30 FFs)
-- SRAM controller FSM: New burst continuation states added alongside existing single-word states
-- INT-011: Bandwidth budget revised to reflect improved effective throughput for sequential access patterns
-- UNIT-008: Display controller scanline prefetch FSM updated to issue burst read requests
-- UNIT-006: Texture cache fill FSM updated to issue burst read requests for cache line fills
-
-**Firmware (Rust):**
-- No changes required.
-  Burst mode is entirely internal to the FPGA SRAM subsystem.
-
-**Performance:**
-- Positive: Improved effective SRAM throughput for all sequential access patterns
-- Positive: Reduced display scanout bandwidth contention, freeing cycles for rendering
-- Positive: Reduced texture cache miss latency
-- Neutral: Random access patterns (rare) see no improvement
-- Neutral: No change to peak SRAM clock frequency or bus width
+Superseded by DD-021.
+The sequential access concepts (arbiter burst grants, per-port burst behavior, preemption policy) carry forward to the SDRAM controller design, adapted for SDRAM timing (CAS latency, row activation, auto-refresh).
 
 ### References
 
-- UNIT-007: SRAM Arbiter (burst grant logic)
-- UNIT-008: Display Controller (burst scanout reads)
-- UNIT-006: Pixel Pipeline (burst texture cache fills)
-- INT-011: SRAM Memory Layout (bandwidth budget revision)
-- REQ-050: Performance Targets (fill rate, throughput)
-- DD-010: Per-Sampler Texture Cache Architecture (complementary optimization)
+- DD-021: SDRAM Controller Architecture for W9825G6KH (replacement)
 
 ---
 

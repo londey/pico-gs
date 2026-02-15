@@ -110,79 +110,80 @@ This document defines the operational states and modes of the pico-gs system, co
 - **Restrictions:** vertex_count resets to 0 immediately
 - **Source:** [spi_gpu/src/spi/register_file.sv:138-164](../../spi_gpu/src/spi/register_file.sv#L138-L164)
 
-### 4. SRAM Controller States (10-State FSM)
+### 4. SDRAM Controller States (8-State FSM)
 
-The SRAM controller supports both single-word and burst access modes.
-Single-word access performs one 32-bit read or write (two 16-bit cycles).
-Burst access reads or writes multiple sequential 16-bit words without re-issuing addresses between each word, improving throughput for sequential access patterns.
+The SDRAM controller manages access to the external W9825G6KH synchronous DRAM.
+It handles initialization, auto-refresh scheduling, row activation, CAS latency, and precharge timing.
+The controller supports both single-word and sequential (burst) access modes.
+Single-word access performs one 32-bit read or write (ACTIVATE + two column accesses + PRECHARGE).
+Sequential access reads or writes multiple 16-bit words within an active row, improving throughput for sequential access patterns.
+
+#### State: INIT
+
+- **Description:** Power-on initialization sequence for SDRAM
+- **Entry Conditions:** PLL lock achieved, reset deasserted
+- **Exit Conditions:** Initialization sequence complete (~20,016 cycles at 100 MHz)
+- **Capabilities:** Executes: 200 us wait, PRECHARGE ALL, 2x AUTO REFRESH, LOAD MODE REGISTER (CL=3, burst length=1)
+- **Restrictions:** No memory access permitted; ready=0 throughout initialization
+- **Source:** [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv)
 
 #### State: IDLE
 
-- **Description:** Ready for new memory request (single or burst)
-- **Entry Conditions:** Reset or DONE state complete
-- **Exit Conditions:** req signal asserted (burst_len determines single vs. burst)
-- **Capabilities:** ready=1; latches address, write data, and burst_len
-- **Restrictions:** No memory access in progress
-- **Source:** [spi_gpu/src/memory/sram_controller.sv:30-110](../../spi_gpu/src/memory/sram_controller.sv#L30-L110)
+- **Description:** Ready for new memory request or auto-refresh
+- **Entry Conditions:** INIT complete, DONE state complete, or REFRESH complete
+- **Exit Conditions:** req asserted (burst_len determines single vs. sequential), or refresh timer expires
+- **Capabilities:** ready=1; latches address, write data, and burst_len; decomposes byte address into bank, row, and column
+- **Restrictions:** No memory access in progress; all banks precharged
+- **Source:** [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv)
 
-#### States: READ_LOW → READ_HIGH (Single-Word Read)
+#### State: ACTIVATE
 
-- **Description:** Sequential 16-bit reads from async SRAM (converts 32-bit word to two cycles)
-- **Entry Conditions:** IDLE with req=1, we=0, burst_len=0
-- **Exit Conditions:** High word read complete
-- **Capabilities:** Assembles 32-bit read data from two 16-bit SRAM reads
-- **Restrictions:** Two-cycle latency for 32-bit reads
-- **Source:** [spi_gpu/src/memory/sram_controller.sv:151-170](../../spi_gpu/src/memory/sram_controller.sv#L151-L170)
+- **Description:** Opens a row in the target SDRAM bank
+- **Entry Conditions:** IDLE with req=1
+- **Exit Conditions:** tRCD (2 cycles) elapsed
+- **Capabilities:** Drives ACTIVATE command with bank and row address on sdram_ba and sdram_a
+- **Restrictions:** Must wait tRCD before issuing READ or WRITE command
 
-#### States: WRITE_LOW → WRITE_HIGH (Single-Word Write)
+#### State: READ
 
-- **Description:** Sequential 16-bit writes to async SRAM
-- **Entry Conditions:** IDLE with req=1, we=1, burst_len=0
-- **Exit Conditions:** High word write complete
-- **Capabilities:** Drives sram_data_oe=1 to output write data
-- **Restrictions:** Two cycles required for 32-bit write
-- **Source:** [spi_gpu/src/memory/sram_controller.sv:172-190](../../spi_gpu/src/memory/sram_controller.sv#L172-L190)
+- **Description:** Issues READ command(s) for column access; waits for CAS latency before data is valid
+- **Entry Conditions:** ACTIVATE with tRCD met, we=0
+- **Exit Conditions:** All requested data words received (single-word: 2 words for 32-bit; sequential: burst_len words)
+- **Capabilities:** Drives READ command with column address; latches data after CL=3 cycles; for sequential access, issues pipelined READ commands to consecutive columns (1 per cycle) and captures data at 1 word per cycle after initial CL delay
+- **Restrictions:** CAS latency of 3 cycles before first data word; row boundary crossing requires transition to PRECHARGE
 
-#### State: BURST_READ_SETUP
+#### State: WRITE
 
-- **Description:** Initiates a burst read by driving the starting address onto the SRAM bus
-- **Entry Conditions:** IDLE with req=1, we=0, burst_len>0
-- **Exit Conditions:** Address setup time met (1 cycle)
-- **Capabilities:** Drives sram_addr, loads burst_count from burst_len
-- **Restrictions:** First data word not yet valid
+- **Description:** Issues WRITE command(s) for column access; data is presented simultaneously with command
+- **Entry Conditions:** ACTIVATE with tRCD met, we=1
+- **Exit Conditions:** All requested data words written (single-word: 2 words for 32-bit; sequential: burst_len words)
+- **Capabilities:** Drives WRITE command with column address and data; no CAS latency for writes (data accepted immediately); for sequential access, issues pipelined WRITE commands to consecutive columns (1 per cycle)
+- **Restrictions:** Must wait tWR (2 cycles) after last write before PRECHARGE; row boundary crossing requires transition to PRECHARGE
 
-#### State: BURST_READ_NEXT
+#### State: PRECHARGE
 
-- **Description:** Reads successive 16-bit words with auto-incremented address
-- **Entry Conditions:** BURST_READ_SETUP complete, or previous BURST_READ_NEXT with burst_count>0
-- **Exit Conditions:** burst_count reaches 0
-- **Capabilities:** Latches 16-bit data each cycle, auto-increments sram_addr; emits burst_data_valid pulse for each word
-- **Restrictions:** One 16-bit word per cycle; requestor must consume data at bus rate
+- **Description:** Closes the active row in the current bank (or all banks)
+- **Entry Conditions:** READ or WRITE complete, or preemption/refresh required
+- **Exit Conditions:** tRP (2 cycles) elapsed
+- **Capabilities:** Drives PRECHARGE command; A10=1 for all-bank precharge (used before refresh), A10=0 for single-bank precharge
+- **Restrictions:** Must wait tRP before next ACTIVATE or AUTO REFRESH
 
-#### State: BURST_WRITE_SETUP
+#### State: REFRESH
 
-- **Description:** Initiates a burst write by driving the starting address and first data word
-- **Entry Conditions:** IDLE with req=1, we=1, burst_len>0
-- **Exit Conditions:** First write cycle complete (1 cycle)
-- **Capabilities:** Drives sram_addr, sram_data_oe=1, loads burst_count from burst_len
-- **Restrictions:** Requestor must provide next wdata before next cycle
-
-#### State: BURST_WRITE_NEXT
-
-- **Description:** Writes successive 16-bit words with auto-incremented address
-- **Entry Conditions:** BURST_WRITE_SETUP complete, or previous BURST_WRITE_NEXT with burst_count>0
-- **Exit Conditions:** burst_count reaches 0
-- **Capabilities:** Drives data each cycle, auto-increments sram_addr; asserts burst_wdata_req for each word
-- **Restrictions:** One 16-bit word per cycle; requestor must supply data at bus rate
+- **Description:** Executes one AUTO REFRESH cycle
+- **Entry Conditions:** IDLE when refresh timer has expired, or PRECHARGE complete when refresh is urgent
+- **Exit Conditions:** tRC (6 cycles) elapsed
+- **Capabilities:** Drives AUTO REFRESH command; all banks must be precharged before entry
+- **Restrictions:** ready=0 during refresh; refresh must occur at least every 781 cycles (64 ms / 8192 rows at 100 MHz)
 
 #### State: DONE
 
 - **Description:** Acknowledge state (1 cycle)
-- **Entry Conditions:** READ_HIGH, WRITE_HIGH, BURST_READ_NEXT (burst_count=0), or BURST_WRITE_NEXT (burst_count=0) complete
+- **Entry Conditions:** PRECHARGE complete after a read or write access
 - **Exit Conditions:** Always transitions to IDLE
-- **Capabilities:** ack pulsed high to signal completion
+- **Capabilities:** ack pulsed high to signal completion; for sequential access, burst_done also asserted
 - **Restrictions:** Single-cycle state
-- **Source:** [spi_gpu/src/memory/sram_controller.sv:192-203](../../spi_gpu/src/memory/sram_controller.sv#L192-L203)
+- **Source:** [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv)
 
 ### 5. Display Controller Fetch States (3-State FSM)
 
@@ -191,17 +192,17 @@ Burst access reads or writes multiple sequential 16-bit words without re-issuing
 - **Description:** Waiting or idle; monitors FIFO level
 - **Entry Conditions:** Reset or scanline fetch complete
 - **Exit Conditions:** FIFO level < 32 words AND fetch_y < 480
-- **Capabilities:** Issues SRAM request for current scanline
+- **Capabilities:** Issues SDRAM request for current scanline
 - **Restrictions:** Prefetch threshold prevents underrun
 - **Source:** [spi_gpu/src/display/display_controller.sv:82-168](../../spi_gpu/src/display/display_controller.sv#L82-L168)
 
 #### State: FETCH_WAIT_ACK
 
-- **Description:** Waiting for SRAM acknowledge
-- **Entry Conditions:** SRAM request issued
+- **Description:** Waiting for SDRAM acknowledge
+- **Entry Conditions:** SDRAM request issued
 - **Exit Conditions:** sram_ack received
 - **Capabilities:** Prepares to store read data
-- **Restrictions:** Blocked until SRAM controller responds
+- **Restrictions:** Blocked until SDRAM controller responds
 - **Source:** [spi_gpu/src/display/display_controller.sv:82-168](../../spi_gpu/src/display/display_controller.sv#L82-L168)
 
 #### State: FETCH_STORE
@@ -856,32 +857,30 @@ Power-on
 | BARY_CALC | pixel inside | INTERPOLATE | Compute barycentric weights |
 | BARY_CALC | pixel outside | ITER_NEXT | Skip pixel |
 | INTERPOLATE | (always) | ZBUF_READ | Calculate interp_z, interp_rgb |
-| ZBUF_READ | (always) | ZBUF_WAIT | Issue SRAM read |
+| ZBUF_READ | (always) | ZBUF_WAIT | Issue SDRAM read |
 | ZBUF_WAIT | sram_ack | ZBUF_TEST | Latch Z-buffer value |
 | ZBUF_TEST | Z-test pass | WRITE_PIXEL | Prepare framebuffer/Z writes |
 | ZBUF_TEST | Z-test fail | ITER_NEXT | Discard pixel |
-| WRITE_PIXEL | (always) | WRITE_WAIT | Issue SRAM writes |
+| WRITE_PIXEL | (always) | WRITE_WAIT | Issue SDRAM writes |
 | WRITE_WAIT | sram_ack | ITER_NEXT | Writes complete |
 | ITER_NEXT | end of bbox | IDLE | Triangle complete, tri_ready=1 |
 | ITER_NEXT | continue | EDGE_TEST | curr_x++, wrap to next scanline |
-| **SRAM Controller** |
-| IDLE | req=1, we=0, burst_len=0 | READ_LOW | Latch address, issue low read |
-| IDLE | req=1, we=1, burst_len=0 | WRITE_LOW | Latch address/data, write low |
-| IDLE | req=1, we=0, burst_len>0 | BURST_READ_SETUP | Latch address, load burst_count |
-| IDLE | req=1, we=1, burst_len>0 | BURST_WRITE_SETUP | Latch address/data, load burst_count |
-| READ_LOW | (always) | READ_HIGH | Read low word, issue high read |
-| READ_HIGH | (always) | DONE | Read high word, assemble 32-bit |
-| WRITE_LOW | (always) | WRITE_HIGH | Write low word |
-| WRITE_HIGH | (always) | DONE | Write high word |
-| BURST_READ_SETUP | (always) | BURST_READ_NEXT | Address setup complete |
-| BURST_READ_NEXT | burst_count > 0 | BURST_READ_NEXT | Latch word, auto-increment addr |
-| BURST_READ_NEXT | burst_count = 0 | DONE | Last word latched |
-| BURST_WRITE_SETUP | (always) | BURST_WRITE_NEXT | First word written |
-| BURST_WRITE_NEXT | burst_count > 0 | BURST_WRITE_NEXT | Write word, auto-increment addr |
-| BURST_WRITE_NEXT | burst_count = 0 | DONE | Last word written |
+| **SDRAM Controller** |
+| INIT | initialization complete | IDLE | SDRAM ready for access |
+| IDLE | req=1 | ACTIVATE | Decompose address, open row |
+| IDLE | refresh timer expired | REFRESH | All banks precharged, refresh |
+| ACTIVATE | tRCD elapsed, we=0 | READ | Issue READ command(s) |
+| ACTIVATE | tRCD elapsed, we=1 | WRITE | Issue WRITE command(s) |
+| READ | all data received | PRECHARGE | Close row |
+| READ | row boundary or preempt | PRECHARGE | Close row, partial completion |
+| WRITE | all data written | PRECHARGE | Close row (after tWR) |
+| WRITE | row boundary or preempt | PRECHARGE | Close row, partial completion |
+| PRECHARGE | tRP elapsed, refresh due | REFRESH | Execute auto-refresh |
+| PRECHARGE | tRP elapsed, access done | DONE | Signal completion |
+| REFRESH | tRC elapsed | IDLE | Refresh complete, ready=1 |
 | DONE | (always) | IDLE | Pulse ack, ready=1 |
 | **Display Controller** |
-| FETCH_IDLE | FIFO < 32 && y < 480 | FETCH_WAIT_ACK | Issue SRAM request |
+| FETCH_IDLE | FIFO < 32 && y < 480 | FETCH_WAIT_ACK | Issue SDRAM request |
 | FETCH_WAIT_ACK | sram_ack | FETCH_STORE | Latch scanline data |
 | FETCH_STORE | end of line | FETCH_IDLE | fetch_y++, restart prefetch |
 | FETCH_STORE | FIFO not full | (stay) | Continue scanline fetch |
@@ -960,7 +959,7 @@ Power-on
 - [spi_gpu/src/spi/spi_slave.sv](../../spi_gpu/src/spi/spi_slave.sv) — SPI transaction states
 - [spi_gpu/src/spi/register_file.sv](../../spi_gpu/src/spi/register_file.sv) — Vertex submission FSM
 - [spi_gpu/src/utils/async_fifo.sv](../../spi_gpu/src/utils/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
-- [spi_gpu/src/memory/sram_controller.sv](../../spi_gpu/src/memory/sram_controller.sv) — SRAM 10-state FSM
+- [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv) — SDRAM 8-state FSM
 - [spi_gpu/src/render/rasterizer.sv](../../spi_gpu/src/render/rasterizer.sv) — Rasterizer 12-state FSM
 - [spi_gpu/src/display/display_controller.sv](../../spi_gpu/src/display/display_controller.sv) — Display fetch FSM
 

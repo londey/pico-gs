@@ -35,24 +35,24 @@ Depth range clipping, early Z-test, texture sampling, blending, framebuffer writ
 ### Consumes
 
 - INT-010 (GPU Register Map)
-- INT-011 (SRAM Memory Layout)
+- INT-011 (SDRAM Memory Layout)
 - INT-014 (Texture Memory Layout)
 - INT-032 (Texture Cache Architecture)
 
 ### Internal Interfaces
 
 - Receives fragment data (position, UV, color, Z) from UNIT-005 (Rasterizer)
-- Reads texture data from SRAM via UNIT-007 (SRAM Arbiter) texture port
+- Reads texture data from SDRAM via UNIT-007 (Memory Arbiter) texture port
 - Reads/writes framebuffer for alpha blending via UNIT-007
 - Receives texture configuration (base address, format, dimensions) from UNIT-003 (Register File)
 - Receives dither and blend mode configuration from UNIT-003
-- Outputs final RGB565 pixel + Z value to SRAM via UNIT-007
+- Outputs final RGB565 pixel + Z value to SDRAM via UNIT-007
 
 ## Clock Domain
 
-The pixel pipeline runs at 100 MHz (`clk_core`), in the same clock domain as the SRAM controller (UNIT-007).
+The pixel pipeline runs at 100 MHz (`clk_core`), in the same clock domain as the SDRAM controller and memory arbiter (UNIT-007).
 This eliminates all clock domain crossing logic for framebuffer reads/writes, Z-buffer reads/writes, and texture data fetches.
-All SRAM arbiter requests and responses are synchronous single-clock-domain transactions.
+All memory arbiter requests and responses are synchronous single-clock-domain transactions.
 
 The pixel clock (`clk_pixel`, 25 MHz) is derived as a synchronous 4:1 divisor from `clk_core`.
 The pipeline processes fragments at the full 100 MHz rate; scanout to the display operates at 25 MHz.
@@ -69,7 +69,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 
 ### Outputs
 
-- Pixel color (RGB565) to framebuffer via SRAM arbiter (if COLOR_WRITE_EN=1)
+- Pixel color (RGB565) to framebuffer via Memory Arbiter (if COLOR_WRITE_EN=1)
 - Z value to Z-buffer (if Z_WRITE_EN=1)
 
 ### Pipeline Data Format
@@ -84,8 +84,8 @@ All internal fragment processing uses **10.8 fixed-point format** (18 bits per c
 - Texture decode pipeline registers
 - Per-sampler texture cache (4 caches, each with 4x1024x18-bit EBR banks)
 - Cache tags, valid bits, and pseudo-LRU replacement state per sampler
-- Cache fill state machine (burst SRAM read + decompress + bank write)
-- Burst length register (4 for BC1, 16 for RGBA4444) driven to UNIT-007 SRAM arbiter
+- Cache fill state machine (burst SDRAM read + decompress + bank write)
+- Burst length register (4 for BC1, 16 for RGBA4444) driven to UNIT-007 memory arbiter
 
 ### Algorithm / Behavior
 
@@ -94,10 +94,10 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
 **Stage 0: Depth Range Test + Early Z-Test:**
 - **Depth Range Test** (Z Scissor): Compare fragment Z against Z_RANGE register (0x31):
   - If `fragment_z < Z_RANGE_MIN` or `fragment_z > Z_RANGE_MAX`: discard fragment immediately
-  - No SRAM access required (register comparison only)
+  - No SDRAM access required (register comparison only)
   - When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF: all fragments pass (effectively disabled)
 - **Early Z-Test** (REQ-027, RENDER_MODE.Z_COMPARE):
-  - Read Z-buffer value at fragment (x, y) from SRAM
+  - Read Z-buffer value at fragment (x, y) from SDRAM
   - Compare fragment Z against Z-buffer using Z_COMPARE function
   - If test fails: discard fragment, skip all subsequent stages (no texture fetch, no FB write)
   - If test passes: continue to Stage 1
@@ -116,9 +116,9 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
 
 **Stage 2: Texture Sampling (per enabled texture unit):**
 - On cache hit: read decompressed RGBA5652 texels directly from cache banks
-- On cache miss: fetch 4x4 block from SRAM via burst read, decompress, fill cache line:
-  - FORMAT=00 (RGBA4444): Burst read 32 bytes from SRAM (burst_len=16), convert to RGBA5652
-  - FORMAT=01 (BC1): Burst read 8 bytes from SRAM (burst_len=4), decompress to RGBA5652
+- On cache miss: fetch 4x4 block from SDRAM via burst read, decompress, fill cache line:
+  - FORMAT=00 (RGBA4444): Burst read 32 bytes from SDRAM (burst_len=16), convert to RGBA5652
+  - FORMAT=01 (BC1): Burst read 8 bytes from SDRAM (burst_len=4), decompress to RGBA5652
 - Apply swizzle pattern (REQ-011, TEXn_FMT.SWIZZLE)
 
 **Stage 3: Format Promotion (RGBA5652 → 10.8):**
@@ -177,7 +177,7 @@ wire [7:0] a8 = {a4, a4};
 
 **BC1 Decoder (High-Level Design):**
 - Implement 4-stage pipeline:
-  1. **Block fetch:** Read 8 bytes from SRAM via burst read (burst_len=4 on 16-bit bus)
+  1. **Block fetch:** Read 8 bytes from SDRAM via burst read (burst_len=4 on 16-bit bus)
   2. **Color palette generation:** RGB565 decode + interpolation
   3. **Index extraction:** 2-bit lookup from 32-bit index word
   4. **Color output:** Select palette entry, apply alpha
@@ -204,16 +204,16 @@ Per-Sampler Cache:
   Set index = block_x[5:0] ^ block_y[5:0]  (XOR-folded)
   Replacement: pseudo-LRU per set
 
-Cache Fill State Machine (same clock domain as SRAM, no CDC):
+Cache Fill State Machine (same clock domain as SDRAM controller, no CDC):
   IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
-  - FETCH issues a burst SRAM read request to UNIT-007 with the required
+  - FETCH issues a burst SDRAM read request to UNIT-007 with the required
     transfer length (burst_len), eliminating per-word address setup overhead.
     The arbiter streams sequential 16-bit words back on consecutive cycles
-    after an initial address setup cycle.
-  - BC1:      burst_len=4 (8 bytes) → ~5 cycles (50 ns at 100 MHz)
-             (1 address + 4 data cycles, plus decompress + write)
-  - RGBA4444: burst_len=16 (32 bytes) → ~11 cycles (110 ns at 100 MHz)
-             (1 address + 16 data cycles, reduced by burst pipelining,
+    after an initial CAS latency delay.
+  - BC1:      burst_len=4 (8 bytes) → ~11 cycles (110 ns at 100 MHz)
+             (ACTIVATE + tRCD + READ + CL=3 + 4 data cycles, plus decompress + write)
+  - RGBA4444: burst_len=16 (32 bytes) → ~23 cycles (230 ns at 100 MHz)
+             (ACTIVATE + tRCD + READ + CL=3 + 16 data cycles,
               plus convert + write overlapped with final data cycles)
 
 Invalidation:
@@ -252,9 +252,9 @@ Invalidation:
 - Cache invalidation test: verify TEXn_BASE/TEXn_FMT writes invalidate cache
 - Bilinear interleaving test: verify 2x2 quad reads from 4 different banks
 - XOR set indexing test: verify adjacent blocks map to different sets
-- Cache fill test: verify burst SRAM read + decompress + bank write pipeline
+- Cache fill test: verify burst SDRAM read + decompress + bank write pipeline
 - Burst read test: verify correct burst_len issued for BC1 (4) and RGBA4444 (16)
-- Burst latency test: verify cache fill completes within ~5 cycles (BC1) and ~11 cycles (RGBA4444)
+- Burst latency test: verify cache fill completes within expected SDRAM latency (accounting for row activate + CAS delay)
 - Early Z-test: verify discard before texture fetch when Z-test fails
 - Early Z-test bypass: verify passthrough when Z_TEST_EN=0 or Z_COMPARE=ALWAYS
 - Depth range test: verify discard when fragment Z outside [Z_RANGE_MIN, Z_RANGE_MAX]
@@ -263,12 +263,13 @@ Invalidation:
 
 ## Design Notes
 
-The pipeline operates at 100 MHz in a unified clock domain with the SRAM controller.
+The pipeline operates at 100 MHz in a unified clock domain with the SDRAM controller.
 This eliminates CDC FIFOs and synchronizers for all memory transactions (framebuffer, Z-buffer, texture), simplifying the design and reducing latency.
 The early Z-test (Stage 0) reads the Z-buffer synchronously, and framebuffer writes (Stage 6) complete in the same domain, avoiding multi-cycle CDC handshakes.
 
-The cache fill FSM issues burst SRAM read requests to UNIT-007, specifying a burst length equal to the number of 16-bit words needed for the texture block (4 for BC1, 16 for RGBA4444).
-Burst reads eliminate the per-word address setup overhead present in single-word SRAM accesses, reducing cache miss latency by approximately 37% for BC1 and 39% for RGBA4444.
+The cache fill FSM issues burst SDRAM read requests to UNIT-007, specifying a burst length equal to the number of 16-bit words needed for the texture block (4 for BC1, 16 for RGBA4444).
+Burst reads eliminate the per-word address setup overhead present in single-word accesses, though SDRAM introduces additional latency from row activation and CAS delay compared to async SRAM.
 The burst length is determined by the texture format register (TEXn_FMT) and does not change during a cache fill operation.
+Cache miss latency is higher than with async SRAM due to SDRAM row activate and CAS latency overhead, but burst throughput is comparable once the first word arrives.
 
-Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats (v3.0). Updated for SRAM burst read support (v3.1).
+Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats (v3.0). Updated for SDRAM burst read support (v3.2).

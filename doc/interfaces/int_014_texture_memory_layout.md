@@ -18,7 +18,7 @@ Internal
 - REQ-010 (Compressed Textures)
 - REQ-011 (Swizzle Patterns)
 - REQ-024 (Texture Sampling)
-- INT-011 (SRAM Memory Layout - overall memory allocation)
+- INT-011 (SDRAM Memory Layout - overall memory allocation)
 - REQ-131 (Texture Cache)
 
 ## Specification
@@ -30,7 +30,7 @@ Internal
 
 ## Overview
 
-This document specifies the in-memory layout of texture data in GPU SRAM.
+This document specifies the in-memory layout of texture data in GPU SDRAM.
 All textures are organized into 4x4 texel blocks, stored in left-to-right,
 top-to-bottom order.
 
@@ -203,7 +203,7 @@ See INT-010 for swizzle pattern encoding (16 predefined patterns).
 
 ## Maximum Texture Sizes
 
-Given SRAM constraints (INT-011: 768 KB texture region):
+Given SDRAM constraints (INT-011: 768 KB texture region):
 
 **RGBA4444:**
 - 1024x1024 = 2 MB (does not fit in default region)
@@ -362,13 +362,13 @@ mip_base_addr = texture_base + mip_offsets[selected_mip];
 
 ## Texture Cache Considerations (REQ-131)
 
-The pixel pipeline uses an on-chip texture cache (REQ-131) to reduce SRAM bandwidth. The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
+The pixel pipeline uses an on-chip texture cache (REQ-131) to reduce SDRAM bandwidth. The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
 
 ```
 set = (block_x[5:0] ^ block_y[5:0])  // 64 sets
 ```
 
-This is a **hardware-only optimization** — the physical memory layout in SRAM is unchanged. Textures remain stored in linear left-to-right, top-to-bottom block order as specified above. The XOR indexing prevents systematic cache aliasing where vertically adjacent block rows would map to the same cache sets under linear indexing.
+This is a **hardware-only optimization** — the physical memory layout in SDRAM is unchanged. Textures remain stored in linear left-to-right, top-to-bottom block order as specified above. The XOR indexing prevents systematic cache aliasing where vertically adjacent block rows would map to the same cache sets under linear indexing.
 
 **Note**: If future profiling reveals persistent cache thrashing, a Morton/Z-order physical layout could be considered. This would require changes to the asset pipeline (UNIT-030, INT-031) and is not currently planned.
 

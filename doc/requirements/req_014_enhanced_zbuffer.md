@@ -20,7 +20,7 @@ This requirement enables the user story described above.
 
 Configurable compare functions allow reverse-Z rendering (GEQUAL), decal passes (EQUAL), skybox last (ALWAYS), and other standard depth-testing patterns.
 Depth range clipping (Z scissor) allows the firmware to discard fragments outside a configurable [Z_RANGE_MIN, Z_RANGE_MAX] sub-range, enabling depth-based effects such as clip planes and layered rendering without CPU-side geometry clipping.
-Early Z-test moves the depth comparison before texture fetch, so fragments that would fail the depth test skip texture and blending stages entirely, reducing SRAM bandwidth for overdraw-heavy scenes.
+Early Z-test moves the depth comparison before texture fetch, so fragments that would fail the depth test skip texture and blending stages entirely, reducing SDRAM bandwidth for overdraw-heavy scenes.
 
 ## Parent Requirements
 
@@ -29,12 +29,12 @@ None
 ## Allocated To
 
 - UNIT-006 (Pixel Pipeline)
-- UNIT-007 (SRAM Arbiter)
+- UNIT-007 (Memory Arbiter)
 
 ## Interfaces
 
 - INT-010 (GPU Register Map)
-- INT-011 (SRAM Memory Layout)
+- INT-011 (SDRAM Memory Layout)
 
 ## Verification Method
 
@@ -86,6 +86,6 @@ When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF (the default), no fragments are c
 Early Z is a performance optimization only — it does not change functional results.
 The Z-buffer write remains at the end of the pipeline regardless of early Z status, ensuring correct behavior for all compare functions and write-enable combinations.
 
-**Burst mode interaction**: Early Z-buffer reads access SRAM arbiter port 2 (UNIT-007) at the start of the pixel pipeline.
-When fragments arrive in scanline order from the rasterizer (UNIT-005), early Z reads target sequential SRAM addresses and can benefit from SRAM burst read mode, reducing per-fragment arbitration overhead.
-Combined with early Z rejection, burst mode further reduces SRAM bandwidth consumption: rejected fragments skip texture fetch (no port 3 burst needed), and the early Z read itself completes faster via burst transfer for adjacent fragments.
+**Burst mode interaction**: Early Z-buffer reads access SDRAM arbiter port 2 (UNIT-007) at the start of the pixel pipeline.
+When fragments arrive in scanline order from the rasterizer (UNIT-005), early Z reads target sequential SDRAM addresses within the same row, benefiting from SDRAM burst read mode which amortizes row activation and CAS latency across multiple fragments.
+Combined with early Z rejection, burst mode further reduces SDRAM bandwidth consumption: rejected fragments skip texture fetch (no port 3 burst needed), and the early Z read itself completes faster via burst transfer for adjacent fragments.

@@ -55,7 +55,7 @@ Internal
 
 **Version**: 9.0
 **Date**: February 2026
-**Status**: SRAM-Based Color Grading LUT Auto-Load (Pre-1.0)
+**Status**: SDRAM-Based Color Grading LUT Auto-Load (Pre-1.0)
 
 ---
 
@@ -172,7 +172,7 @@ All register semantics are identical regardless of command source.
 | 0x53 | PERF_TEX3 | R | TEX3 hits + misses (v8.0: PACKED) |
 | 0x54 | PERF_PIXELS | R | Pixels written[31:0] + fragments passed[63:32] (v8.0: PACKED) |
 | 0x55 | PERF_FRAGMENTS | R | Fragments failed[31:0] + reserved[63:32] (v8.0: PACKED) |
-| 0x56 | PERF_STALL_VS | R | Vertex stalls[31:0] + SRAM stalls[63:32] (v8.0: PACKED) |
+| 0x56 | PERF_STALL_VS | R | Vertex stalls[31:0] + SDRAM stalls[63:32] (v8.0: PACKED) |
 | 0x57 | PERF_STALL_CT | R | Cache stalls[31:0] + triangles[63:32] (v8.0: PACKED) |
 | 0x58-0x6F | - | - | Reserved (v8.0: FREED, 24 registers freed) |
 | **Status & Control** ||||
@@ -459,7 +459,7 @@ Each texture unit has 8 registers (0x10-0x17 for unit 0, 0x18-0x1F for unit 1, e
 
 ### TEXn_BASE (0x10, 0x18, 0x20, 0x28)
 
-Base address of texture in SRAM. Must be 4K aligned.
+Base address of texture in SDRAM. Must be 4K aligned.
 
 ```
 [63:32]   Reserved (write as 0)
@@ -468,7 +468,7 @@ Base address of texture in SRAM. Must be 4K aligned.
 ```
 
 **Example**:
-- Texture at SRAM address 0x340000
+- Texture at SDRAM address 0x340000
 - Write value: 0x00000000_00340000
 - Effective address: 0x340000
 
@@ -751,7 +751,7 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
 
 ### 0x31: Z_RANGE (Depth Range Clipping)
 
-Depth range clipping register (Z scissor). Fragments whose Z value falls outside [Z_RANGE_MIN, Z_RANGE_MAX] are discarded before any SRAM access.
+Depth range clipping register (Z scissor). Fragments whose Z value falls outside [Z_RANGE_MIN, Z_RANGE_MAX] are discarded before any SDRAM access.
 
 ```
 [63:32]   Reserved (write as 0)
@@ -762,7 +762,7 @@ Depth range clipping register (Z scissor). Fragments whose Z value falls outside
 **Depth Range Test**:
 ```
 if fragment_z < Z_RANGE_MIN or fragment_z > Z_RANGE_MAX:
-    discard fragment (no SRAM access, no Z-test, no color write)
+    discard fragment (no SDRAM access, no Z-test, no color write)
 ```
 
 **Use Cases**:
@@ -820,7 +820,7 @@ Display scanout framebuffer address with optional color grading LUT auto-load. N
 ```
 [63:32]   Reserved (write as 0)
 [31:19]   FB_ADDR: Framebuffer base address >> 12 (4KiB aligned, 13 bits)
-          Effective address range: 0x000000 - 0x1FFF000 (32 MB SRAM)
+          Effective address range: 0x000000 - 0x1FFF000 (32 MB SDRAM)
 [18:6]    LUT_ADDR: Color grading LUT base address >> 12 (4KiB aligned, 13 bits)
           Effective address range: 0x000000 - 0x1FFF000
           Special value: 0x0000 = skip LUT auto-load, keep current LUT
@@ -831,11 +831,11 @@ Display scanout framebuffer address with optional color grading LUT auto-load. N
 **Behavior**:
 - Write returns immediately (non-blocking)
 - Framebuffer switch and LUT auto-load (if enabled) take effect at next vsync
-- If `LUT_ADDR != 0`: Hardware auto-loads 384-byte LUT from SRAM to inactive EBR bank during vblank, then swaps banks atomically with framebuffer switch
+- If `LUT_ADDR != 0`: Hardware auto-loads 384-byte LUT from SDRAM to inactive EBR bank during vblank, then swaps banks atomically with framebuffer switch
 - If `LUT_ADDR == 0`: Skip LUT auto-load, only switch framebuffer
 - Non-blocking allows firmware to continue work during frame rendering
 
-**SRAM LUT Format** (384 bytes at LUT_ADDR):
+**SDRAM LUT Format** (384 bytes at LUT_ADDR):
 ```
 Offset  | Data    | Description
 --------|---------|----------------------------------
@@ -855,7 +855,7 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 
 **Notes**:
 - Replaces v8.0 COLOR_GRADE_CTRL/ADDR/DATA register-based LUT upload (v9.0 change)
-- LUT data must be prepared in SRAM by firmware before write (see REQ-133)
+- LUT data must be prepared in SDRAM by firmware before write (see REQ-133)
 - Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
@@ -946,7 +946,7 @@ Display scanout framebuffer address with optional color grading LUT auto-load. *
 ```
 [63:32]   Reserved (write as 0)
 [31:19]   FB_ADDR: Framebuffer base address >> 12 (4KiB aligned, 13 bits)
-          Effective address range: 0x000000 - 0x1FFF000 (32 MB SRAM)
+          Effective address range: 0x000000 - 0x1FFF000 (32 MB SDRAM)
 [18:6]    LUT_ADDR: Color grading LUT base address >> 12 (4KiB aligned, 13 bits)
           Effective address range: 0x000000 - 0x1FFF000
           Special value: 0x0000 = skip LUT auto-load, keep current LUT
@@ -958,11 +958,11 @@ Display scanout framebuffer address with optional color grading LUT auto-load. *
 - **Write blocks** until next vsync edge (SPI CS remains asserted)
 - Framebuffer switch and LUT auto-load (if enabled) happen atomically at vsync
 - SPI transaction completes only after vsync trigger and updates applied
-- If `LUT_ADDR != 0`: Hardware auto-loads 384-byte LUT from SRAM to inactive EBR bank during vblank, then swaps banks atomically with framebuffer switch
+- If `LUT_ADDR != 0`: Hardware auto-loads 384-byte LUT from SDRAM to inactive EBR bank during vblank, then swaps banks atomically with framebuffer switch
 - If `LUT_ADDR == 0`: Skip LUT auto-load, only switch framebuffer
 - Blocking write ties up SPI bus for 0-16.67ms (max one frame period)
 
-**SRAM LUT Format** (384 bytes at LUT_ADDR):
+**SDRAM LUT Format** (384 bytes at LUT_ADDR):
 ```
 Offset  | Data    | Description
 --------|---------|----------------------------------
@@ -993,7 +993,7 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 
 **Notes**:
 - Same register format as FB_DISPLAY (0x41), only difference is blocking behavior
-- LUT data must be prepared in SRAM by firmware before write (see REQ-133)
+- LUT data must be prepared in SDRAM by firmware before write (see REQ-133)
 - Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
@@ -1113,22 +1113,22 @@ Fragments that failed Z-test (early-Z rejection), **packed with reserved counter
 
 ---
 
-### 0x56: PERF_STALL_VS (Packed Vertex/SRAM Stalls)
+### 0x56: PERF_STALL_VS (Packed Vertex/SDRAM Stalls)
 
-Cycles stalled waiting for vertex data or SRAM arbiter, **packed 2×32-bit**.
+Cycles stalled waiting for vertex data or SDRAM arbiter, **packed 2×32-bit**.
 
 ```
-[63:32]   SRAM stall cycles (32-bit unsigned)
+[63:32]   SDRAM stall cycles (32-bit unsigned)
 [31:0]    Vertex stall cycles (32-bit unsigned)
 ```
 
 **Increment Conditions**:
 - **Vertex stalls [31:0]**: Increments once per clk_core cycle when rasterizer (UNIT-005) is idle waiting for tri_valid signal from register file.
-- **SRAM stalls [63:32]**: Increments once per clk_core cycle when any rendering unit has a pending SRAM request not granted by arbiter (UNIT-007).
+- **SDRAM stalls [63:32]**: Increments once per clk_core cycle when any rendering unit has a pending SDRAM request not granted by arbiter (UNIT-007).
 
 **Use Cases**:
 - **Bottleneck Detection**: High vertex stalls indicate host not submitting triangles fast enough
-- **Memory Bandwidth Analysis**: High SRAM stalls indicate memory contention
+- **Memory Bandwidth Analysis**: High SDRAM stalls indicate memory contention
 - **SPI Bandwidth**: Correlate vertex stalls with triangle submission rate
 
 **Reset Value**: 0 (clears on read)
@@ -1145,7 +1145,7 @@ Cycles stalled waiting for cache fill and triangles submitted, **packed 2×32-bi
 ```
 
 **Increment Conditions**:
-- **Cache stalls [31:0]**: Increments once per clk_core cycle when pixel pipeline is stalled waiting for texture cache miss to complete (SRAM fetch + decompress + bank write).
+- **Cache stalls [31:0]**: Increments once per clk_core cycle when pixel pipeline is stalled waiting for texture cache miss to complete (SDRAM fetch + decompress + bank write).
 - **Triangles [63:32]**: Increments once per tri_valid pulse from UNIT-003 when a triangle is submitted for rasterization (any VERTEX_KICK register write).
 
 **Cache Fill Latency** (per INT-032):
@@ -1172,7 +1172,7 @@ Reserved for future performance counters. **v8.0: 24 registers freed** from old 
 - PERF_VERTICES_SUBMITTED (vertex write count)
 - PERF_TRIANGLES_CULLED (backface + degenerate count)
 - PERF_CACHE_EVICTIONS (cache line replacements)
-- PERF_DMA_TRANSFERS (SPI→SRAM bulk uploads)
+- PERF_DMA_TRANSFERS (SPI→SDRAM bulk uploads)
 
 ---
 
@@ -1184,7 +1184,7 @@ Memory address pointer for bulk data transfer.
 
 ```
 [63:32]   Reserved (write as 0)
-[31:0]    SRAM address pointer
+[31:0]    SDRAM address pointer
 ```
 
 **Usage**: Set this register before reading/writing MEM_DATA. The address is used for bulk uploads of textures, lookup tables, or other GPU memory.
@@ -1203,12 +1203,12 @@ Memory data register with auto-increment.
 ```
 
 **Write Behavior**:
-- Writes 32-bit value to SRAM at MEM_ADDR
+- Writes 32-bit value to SDRAM at MEM_ADDR
 - Auto-increments MEM_ADDR by 4
 - Allows host to upload textures via SPI
 
 **Read Behavior**:
-- Reads 32-bit value from SRAM at MEM_ADDR
+- Reads 32-bit value from SDRAM at MEM_ADDR
 - Auto-increments MEM_ADDR by 4
 - Allows host to verify memory contents
 
@@ -1436,7 +1436,7 @@ gpu_write(REG_FB_ZBUFFER, (0x001 << 32) | 0x258000);  // LEQUAL
 | 0x58 PERF_PIXELS_WRITTEN | **0x54 PERF_PIXELS** | **Packed**: pixels[31:0] + frag_passed[63:32] |
 | 0x59 PERF_FRAGMENTS_PASSED | ^^^ | ^^^ |
 | 0x5A PERF_FRAGMENTS_FAILED | **0x55 PERF_FRAGMENTS** | **Packed**: failed[31:0] + reserved[63:32] |
-| 0x5B PERF_STALL_VERTEX | **0x56 PERF_STALL_VS** | **Packed**: vertex[31:0] + sram[63:32] |
+| 0x5B PERF_STALL_VERTEX | **0x56 PERF_STALL_VS** | **Packed**: vertex[31:0] + sdram[63:32] |
 | 0x5C PERF_STALL_SRAM | ^^^ | ^^^ |
 | 0x5D PERF_STALL_CACHE | **0x57 PERF_STALL_CT** | **Packed**: cache[31:0] + triangles[63:32] |
 | 0x5E PERF_TRIANGLES | ^^^ | ^^^ |
@@ -1679,7 +1679,7 @@ See INT-014 for full BC1 decompression algorithm.
 **Invalid Memory Addresses**: The hardware does not validate texture addresses. If TEXn_BASE points to invalid or unmapped memory:
 - Behavior is undefined (may return garbage, zeros, or hang)
 - Software must ensure all texture addresses are valid
-- Textures must fit within SRAM bounds (0x000000-0x1FFFFFF)
+- Textures must fit within SDRAM bounds (0x000000-0x1FFFFFF)
 
 ---
 
@@ -1745,7 +1745,7 @@ gpu_write(REG_VERTEX, PACK_XYZ(x2, y2, z2));  // Triggers draw
 ### Example 2: BC1 Compressed Texture Setup
 
 ```c
-// Upload BC1-compressed texture to SRAM at 0x404000
+// Upload BC1-compressed texture to SDRAM at 0x404000
 // For 128x128 texture: (128/4) x (128/4) = 1024 blocks x 8 bytes = 8192 bytes
 gpu_write(REG_MEM_ADDR, 0x404000);
 for (int i = 0; i < 8192 / 4; i++) {
@@ -1932,21 +1932,21 @@ Active-high outputs from GPU to host.
 
 **Version 9.0** (February 2026):
 - **BREAKING CHANGE**: FB_DISPLAY (0x41) register expanded to include LUT control
-  - Now includes framebuffer address (13 bits), LUT SRAM address (13 bits), and COLOR_GRADE_ENABLE flag
+  - Now includes framebuffer address (13 bits), LUT SDRAM address (13 bits), and COLOR_GRADE_ENABLE flag
   - Non-blocking write (returns immediately)
   - Change takes effect at next vsync
-  - LUT auto-load from SRAM if LUT_ADDR != 0 (384 bytes DMA during vblank)
+  - LUT auto-load from SDRAM if LUT_ADDR != 0 (384 bytes DMA during vblank)
 - **NEW**: FB_DISPLAY_SYNC (0x47) blocking variant of FB_DISPLAY
   - Same register format as FB_DISPLAY
   - Write blocks until vsync (SPI CS held asserted)
   - Framebuffer switch and LUT auto-load happen atomically at vsync
   - Enables single-operation frame flip + color grading update
 - **REMOVED**: COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
-  - Register-based LUT upload replaced with SRAM-based auto-load
+  - Register-based LUT upload replaced with SDRAM-based auto-load
   - Reduces SPI traffic from 128+ register writes to 1 register write (1000× reduction)
-  - Firmware must prepare LUT data in SRAM before switching (see REQ-133)
+  - Firmware must prepare LUT data in SDRAM before switching (see REQ-133)
   - Freed addresses 0x44-0x46 (3 registers) for future features
-- **Migration**: Firmware must pre-upload LUT data to SRAM via MEM_ADDR/MEM_DATA or other bulk transfer
+- **Migration**: Firmware must pre-upload LUT data to SDRAM via MEM_ADDR/MEM_DATA or other bulk transfer
 - **Benefit**: Atomic framebuffer + LUT switch, simplified synchronization, vastly reduced SPI traffic
 - **ID register version**: 0x0000090000006702 (v9.0)
 
@@ -1999,7 +1999,7 @@ Active-high outputs from GPU to host.
 - Added 15 performance counter registers (0x50-0x5E) with clear-on-read behavior:
   - 8 texture cache hit/miss counters (4 samplers × 2)
   - Pixel/fragment counters (pixels written, Z-test passed/failed)
-  - Pipeline stall counters (vertex, SRAM, cache)
+  - Pipeline stall counters (vertex, SDRAM, cache)
   - Triangle submission counter
 - Freed registers 0x03-0x04 for future vertex attributes (normals, tangents, etc.)
 - All changes maintain backward compatibility via register aliasing and default modes
@@ -2042,7 +2042,7 @@ See specification details above.
 
 ## Texture Cache Interaction (REQ-131)
 
-Writing to **TEXn_BASE** or **TEXn_FMT** registers implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SRAM.
+Writing to **TEXn_BASE** or **TEXn_FMT** registers implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SDRAM.
 
 **Performance Counters** (v6.0): Cache hit/miss statistics are now available via performance counter registers (0x50-0x57). Read these counters to measure cache efficiency and validate the >85% hit rate target from REQ-131.
 

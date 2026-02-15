@@ -26,7 +26,7 @@ None
 ## Interfaces
 
 - INT-010 (GPU Register Map)
-- INT-011 (SRAM Memory Layout)
+- INT-011 (SDRAM Memory Layout)
 - INT-014 (Texture Memory Layout)
 
 ## Verification Method
@@ -34,7 +34,7 @@ None
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
 - - [ ] Set TRI_MODE with TEXTURED=1
-- [ ] Set TEX_BASE to texture address in SRAM
+- [ ] Set TEX_BASE to texture address in SDRAM
 - [ ] Set TEX_FMT with texture dimensions (power-of-two, log2 encoded)
 - [ ] Set UV register (U/W, V/W, 1/W) before each VERTEX write
 - [ ] Texture sampling is perspective-correct (no affine warping)

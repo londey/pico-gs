@@ -8,26 +8,27 @@
 
 ## Requirement
 
-When the pixel pipeline samples textures during rendering, the system SHALL cache decompressed texel data to reduce external SRAM bandwidth and enable single-cycle bilinear texture filtering.
+When the pixel pipeline samples textures during rendering, the system SHALL cache decompressed texel data to reduce external SDRAM bandwidth and enable single-cycle bilinear texture filtering.
 
 ## Rationale
 
-Texture sampling is memory-intensive. Without caching, every pixel requiring bilinear filtering would perform 4 SRAM reads (one per texel), plus decompression overhead for BC1 textures. This creates severe SRAM bandwidth bottlenecks that limit fill rate.
+Texture sampling is memory-intensive. Without caching, every pixel requiring bilinear filtering would perform 4 SDRAM reads (one per texel), plus decompression overhead for BC1 textures. This creates severe SDRAM bandwidth bottlenecks that limit fill rate.
 
 A per-sampler cache architecture solves this by:
-1. **Reducing SRAM bandwidth:** Spatial locality means adjacent pixels often sample the same 4×4 block, achieving >85% cache hit rates
-2. **Enabling single-cycle bilinear filtering:** All 4 texels for a 2×2 bilinear quad can be read in parallel from interleaved banks
+1. **Reducing SDRAM bandwidth:** Spatial locality means adjacent pixels often sample the same 4x4 block, achieving >85% cache hit rates
+2. **Enabling single-cycle bilinear filtering:** All 4 texels for a 2x2 bilinear quad can be read in parallel from interleaved banks
 3. **Amortizing decompression cost:** BC1 blocks are decompressed once per cache fill rather than per pixel
 4. **Avoiding cross-sampler contention:** Independent caches for each of the 4 texture samplers eliminate stalls from multi-texture rendering
 
 **Performance Impact (at 100 MHz `clk_core`):**
 - **Cache hit:** 1 cycle / 10 ns for 4 bilinear texels (all 4 read in parallel from interleaved banks)
-- **Cache miss (with burst SRAM reads):** ~5-11 cycles to fetch and decompress block from SRAM (BC1: ~5 cycles / 50 ns, RGBA4444: ~11 cycles / 110 ns)
+- **Cache miss (with SDRAM burst reads):** ~11-23 cycles to fetch and decompress block from SDRAM (BC1: ~11 cycles / 110 ns, RGBA4444: ~23 cycles / 230 ns), including CAS latency (CL=3) and row activation overhead
 - **Expected hit rate:** >85% for typical scenes (based on spatial locality of texture access)
 
-Cache miss latency is reduced by burst SRAM reads (see INT-032), which eliminate per-word address setup overhead during sequential block fetches.
+Cache miss latency includes SDRAM row activation (tRCD = 18 ns) and CAS latency (CL=3, 30 ns) before the first data word, followed by burst data at one word per cycle.
+Burst SDRAM reads (see INT-032) amortize the row activation and CAS latency overhead across the full block fetch.
 
-Note: The texture cache and SRAM controller share the same 100 MHz clock domain, so cache fill operations are synchronous single-domain transactions with no CDC overhead.
+Note: The texture cache and SDRAM controller share the same 100 MHz clock domain, so cache fill operations are synchronous single-domain transactions with no CDC overhead.
 
 **Resource Cost:**
 - 16 EBR blocks total (4 per sampler × 4 samplers) = 288 Kbits
@@ -63,7 +64,7 @@ None
 - [ ] TEXn_FMT write invalidates sampler N's cache (next access is guaranteed miss)
 - [ ] Invalidating sampler N does not affect other samplers
 - [ ] Stale data never served after configuration change
-- [ ] Cache miss latency within target: BC1 ≤5 cycles (50 ns), RGBA4444 ≤11 cycles (110 ns) using burst SRAM reads
+- [ ] Cache miss latency within target: BC1 ≤11 cycles (110 ns), RGBA4444 ≤23 cycles (230 ns) using SDRAM burst reads
 - [ ] Pseudo-LRU replacement avoids thrashing for sequential access patterns
 - [ ] XOR set indexing distributes adjacent blocks across different sets (no systematic aliasing)
 

@@ -45,5 +45,6 @@ When the FPGA completes configuration and the PLL locks, the system SHALL autono
 
 Non-functional requirement. See specifications for specific numeric targets.
 
-The boot screen (FR-052-1) serves as a visual self-test: it exercises the full rendering pipeline (command FIFO, register file, triangle setup, rasterizer, pixel pipeline, SRAM arbiter, display controller) and provides immediate visual confirmation that the FPGA is functional.
+The boot screen (FR-052-1) serves as a visual self-test: it exercises the full rendering pipeline (command FIFO, register file, triangle setup, rasterizer, pixel pipeline, memory arbiter, SDRAM controller, display controller) and provides immediate visual confirmation that the FPGA is functional.
+Because the boot screen writes to and reads from external SDRAM, a successful boot screen display also confirms that the SDRAM initialization sequence (mode register programming, initial precharge, and auto-refresh cycles) completed correctly.
 The boot screen is implemented via pre-populated command FIFO entries (UNIT-002); see REQ-021 for the command FIFO pre-population requirement.

@@ -25,7 +25,7 @@ None
 ## Interfaces
 
 - INT-010 (GPU Register Map) - TEXn_FMT register (format, dimensions, swizzle)
-- INT-011 (SRAM Memory Layout) - Texture memory region
+- INT-011 (SDRAM Memory Layout) - Texture memory region
 - INT-014 (Texture Memory Layout) - Format specifications and addressing
 - INT-032 (Texture Cache Architecture)
 
@@ -106,7 +106,7 @@ Texture sampling SHALL first check the per-sampler texture cache (REQ-131):
 1. Apply UV wrapping (FR-024-4) and compute texel coordinates
 2. Compute cache set index using XOR-folded addressing and compare tags
 3. On cache hit: read decompressed RGBA5652 texels directly from interleaved banks (1 cycle for 2x2 bilinear quad)
-4. On cache miss: stall pipeline, fetch 4x4 block from SRAM, decompress to RGBA5652, fill cache line, then resume sampling
+4. On cache miss: stall pipeline, fetch 4x4 block from SDRAM (CAS latency + burst transfer), decompress to RGBA5652, fill cache line, then resume sampling
 5. Apply swizzle pattern (FR-024-3) after reading from cache
 6. Bilinear filtering operates on 4 texels read in parallel from the 4 interleaved banks
 
@@ -136,7 +136,7 @@ See REQ-134 for 10.8 fixed-point format details.
 - [ ] Swizzle patterns apply correctly to decoded RGBA values
 - [ ] UV wrapping modes work correctly with block-organized textures
 - [ ] Texture cache hit returns correct RGBA5652 texels
-- [ ] Texture cache miss triggers SRAM fetch and correct cache fill
+- [ ] Texture cache miss triggers SDRAM fetch and correct cache fill
 - [ ] Bilinear 2x2 quad reads from 4 banks simultaneously on cache hit
 - [ ] Cache invalidation on TEXn_BASE/TEXn_FMT write prevents stale data
 - [ ] RGBA5652→10.8 promotion produces correct values for all component ranges

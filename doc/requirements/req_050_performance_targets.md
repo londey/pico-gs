@@ -17,17 +17,18 @@ Performance is highly content-dependent (triangle count, overdraw, texture cache
 **Target Use Case:** Low-poly textured and lit animated models (e.g., skeletal animated T-Rex) at interactive frame rates (≥15 FPS).
 
 **Hardware Constraints:**
-- 100 MHz unified GPU core and SRAM clock (single clock domain for rendering pipeline and memory)
-- 16-bit SRAM bus at 100 MHz (200 MB/s theoretical)
+- 100 MHz unified GPU core and SDRAM controller clock (single clock domain for rendering pipeline and memory controller)
+- 16-bit SDRAM bus (W9825G6KH) at 100 MHz (200 MB/s peak bus rate; effective throughput reduced by CAS latency, row activation, and auto-refresh overhead)
+- 90-degree phase-shifted 100 MHz SDRAM clock output from PLL
 - 25 MHz pixel clock derived as a synchronous 4:1 divisor from the 100 MHz core clock
 - 25 MHz QSPI command interface (72-bit transactions = ~3 MB/s command bandwidth)
 
 **Actual Performance Observations** (tracked in quality_metrics.md):
 - Triangle throughput: ~17,000 triangles/second @ 60 fps (SpinningTeapot: 288 tri/frame)
-- Fill rate: ~25 Mpixels/second theoretical maximum (one pixel per core clock cycle at 100 MHz, limited by SRAM bandwidth)
+- Fill rate: ~22.5 Mpixels/second theoretical maximum (limited by SDRAM write bandwidth accounting for row activation overhead on typical rasterization patterns)
 - Frame time: Content-dependent (simple scenes may exceed 60 FPS, complex scenes may drop below)
-- Early Z rejection: Reduces effective fill cost for overdraw-heavy scenes by skipping texture and blending stages for occluded fragments (see REQ-014). Benefit scales with overdraw ratio; scenes with 2-3x overdraw may see 30-50% reduction in SRAM texture bandwidth.
-- SRAM burst mode: Improves effective SRAM throughput for sequential access patterns (display scanout, texture cache fills, framebuffer writes) by eliminating per-word address setup and re-arbitration overhead. See INT-011 for revised bandwidth budget.
+- Early Z rejection: Reduces effective fill cost for overdraw-heavy scenes by skipping texture and blending stages for occluded fragments (see REQ-014). Benefit scales with overdraw ratio; scenes with 2-3x overdraw may see 30-50% reduction in SDRAM texture bandwidth.
+- SDRAM sequential access: Improves effective SDRAM throughput for sequential access patterns (display scanout, texture cache fills, framebuffer writes) by amortizing row activation and CAS latency overhead across multiple column accesses. See INT-011 for SDRAM bandwidth budget.
 
 These performance characteristics place the system in the PSX-to-N64 capability range given the hardware constraints.
 
@@ -42,7 +43,7 @@ None
 ## Interfaces
 
 - INT-010 (GPU Register Map)
-- INT-011 (SRAM Memory Layout)
+- INT-011 (SDRAM Memory Layout)
 
 ## Verification Method
 

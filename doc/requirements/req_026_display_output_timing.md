@@ -35,7 +35,7 @@ When the display controller generates horizontal and vertical sync pulses, the s
 ## Rationale
 
 This requirement defines the functional behavior of the display output timing subsystem.
-The 25.000 MHz pixel clock is derived as clk_core / 4 from the unified 100 MHz GPU/SRAM clock, giving a synchronous 4:1 relationship that eliminates async CDC between the GPU core and display domains.
+The 25.000 MHz pixel clock is derived as clk_core / 4 from the unified 100 MHz GPU/SDRAM clock, giving a synchronous 4:1 relationship that eliminates async CDC between the GPU core and display domains.
 The 0.7% deviation from the 25.175 MHz VGA standard pixel clock is within the tolerance of virtually all monitors.
 
 ## Parent Requirements
@@ -67,9 +67,9 @@ None
 The pixel clock frequency changed from 25.175 MHz to 25.000 MHz as part of the unified 100 MHz clock domain architecture.
 This enables a synchronous 4:1 relationship between clk_core and clk_pixel, simplifying the display controller's scanline FIFO CDC.
 
-**SRAM Burst Read Impact:**
-The display timing requirements themselves are unchanged by SRAM burst mode.
-However, burst reads for scanline prefetch (UNIT-008 v11.0) allow the scanline FIFO to be filled more efficiently — multiple sequential pixels are read per arbiter grant without re-arbitrating between each word.
+**SDRAM Burst Read Impact:**
+The display timing requirements themselves are unchanged by the use of SDRAM.
+However, SDRAM burst reads for scanline prefetch (UNIT-008) allow the scanline FIFO to be filled more efficiently -- once a row is activated, multiple sequential pixels are read per arbiter grant without re-arbitrating between each word.
 This provides additional timing margin for the scanline FIFO, reducing the risk of FIFO underrun under heavy rendering load.
-The synchronous 4:1 clk_core/clk_pixel ratio (4 SRAM cycles per pixel consumed) combined with burst reads ensures ample prefetch headroom.
+The synchronous 4:1 clk_core/clk_pixel ratio (4 SDRAM cycles per pixel consumed) combined with burst reads ensures ample prefetch headroom, even accounting for SDRAM CAS latency (CL=3 at 100 MHz, 30 ns) and periodic auto-refresh pauses (~60 ns every 7.8 us).
 See UNIT-008 for the scanline prefetch burst FSM details.

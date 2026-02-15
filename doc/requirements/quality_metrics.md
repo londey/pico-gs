@@ -115,7 +115,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - **Target:** ≥ 80% toggle coverage, ≥ 60% FSM state coverage
 - **Minimum Acceptable:** ≥ 60% toggle, ≥ 40% FSM state
 - **Measurement Method:** Verilator coverage analysis
-- **Scope:** Critical modules (rasterizer, SRAM controller, display controller)
+- **Scope:** Critical modules (rasterizer, SDRAM controller, display controller)
 - **References:** Internal quality goal
 - **Rationale:** Focus coverage efforts on complex state machines and critical data paths
 
@@ -150,12 +150,12 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ### Fill Rate
 
-- **Theoretical Maximum:** 25 Mpixels/second (one pixel per 100 MHz core clock cycle, limited by SRAM write bandwidth under single-word access)
+- **Theoretical Maximum:** ~22.5 Mpixels/second (limited by SDRAM write bandwidth accounting for row activation overhead)
 - **Actual:** Content-dependent (varies with scene complexity, Z-buffer rejection rate)
 - **Measurement Method:** Count pixels written to framebuffer per frame
 - **References:** INT-011 (SRAM Memory Layout, bandwidth budget)
 - **Note:** Real-world fill rate typically lower due to triangle setup overhead and memory contention.
-  SRAM burst mode (see UNIT-007) may improve effective fill rate by reducing per-pixel arbitration overhead for sequential scanline writes; the degree of improvement depends on average burst length achievable during rasterization.
+  SDRAM sequential access (see UNIT-007) improves effective fill rate by amortizing row activation overhead across multiple column writes; the degree of improvement depends on average sequential run length achievable during rasterization.
 
 ### Frame Time
 
@@ -205,7 +205,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 | **Verification** | Req Coverage | 100% | 95% | All features verified |
 | | Test Pass Rate | 100% | 100% | No regressions |
 
-**Performance Observations** (not targets): Triangle throughput ~17k/s, fill rate ~25 Mpix/s (theoretical), frame time varies with content.
+**Performance Observations** (not targets): Triangle throughput ~17k/s, fill rate ~22.5 Mpix/s (theoretical), frame time varies with content.
 
 ---
 
@@ -214,7 +214,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 ### FPGA Synthesis and Analysis
 - **Yosys:** Logic synthesis, generates RTL utilization estimates
 - **nextpnr-ecp5:** Place-and-route, final resource utilization and timing analysis
-  - Command: `nextpnr-ecp5 --25k --package CABGA381 --freq 100 --timing-allow-fail`
+  - Command: `nextpnr-ecp5 --25k --package CABGA256 --freq 100 --timing-allow-fail`
 - **Verilator:** RTL simulation and coverage analysis
 
 ### Host Firmware
@@ -234,7 +234,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - [REQ-050: Performance Targets](req_050_performance_targets.md)
 - [REQ-051: Resource Constraints](req_051_resource_constraints.md)
 - [REQ-052: Reliability Requirements](req_052_reliability_requirements.md)
-- [INT-011: SRAM Memory Layout](../interfaces/int_011_sram_memory_layout.md) (bandwidth budget)
+- [INT-011: SDRAM Memory Layout](../interfaces/int_011_sram_memory_layout.md) (bandwidth budget)
 - [UNIT-005: Rasterizer](../design/unit_005_rasterizer.md)
 - [UNIT-008: Display Controller](../design/unit_008_display_controller.md)
 - [UNIT-021: Core 1 Render Executor](../design/unit_021_core_1_render_executor.md)

@@ -45,5 +45,5 @@ None
 User Story: As a firmware developer, I want to clear framebuffer and z-buffer by rendering full-screen triangles, so that I have more flexible clearing with pattern fills and partial clears.
 
 **Burst mode benefit for clears**: Full-screen triangle clears produce maximally sequential framebuffer and Z-buffer writes (entire scanlines of constant-color pixels).
-This is the ideal access pattern for SRAM burst write mode (see UNIT-007): each scanline produces 640 consecutive 16-bit framebuffer writes and 640 consecutive 16-bit Z-buffer writes.
-When burst mode is available, clear throughput improves because each burst transfer eliminates per-word address setup overhead, reducing the total time for a full-screen clear.
+This is the ideal access pattern for SDRAM burst write mode (see UNIT-007): each scanline produces 640 consecutive 16-bit framebuffer writes and 640 consecutive 16-bit Z-buffer writes.
+When burst mode is available, clear throughput improves because each burst transfer amortizes SDRAM row activation and CAS latency overhead across multiple words, reducing the total time for a full-screen clear.

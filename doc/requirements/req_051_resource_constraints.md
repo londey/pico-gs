@@ -25,7 +25,7 @@ None
 ## Interfaces
 
 - INT-010 (GPU Register Map)
-- INT-011 (SRAM Memory Layout)
+- INT-011 (SDRAM Memory Layout)
 
 ## Functional Requirements
 
@@ -68,6 +68,11 @@ EBR budget increased from 16 to 18 blocks to accommodate ordered dithering matri
 The command FIFO (UNIT-002) uses distributed RAM (LUTs) rather than EBR, so its depth increase from 16 to 32 entries does not affect the EBR budget.
 The 72-bit x 32-deep command FIFO consumes approximately 2,304 bits of distributed RAM, which is accounted for in the LUT budget rather than the EBR budget.
 
-**SRAM burst mode resource estimate (UNIT-007, SRAM controller):** The burst mode extensions add approximately 50-80 LUTs and 20-30 FFs for burst counters (8-bit burst_remaining, 8-bit burst_len), burst FSM states (4 additional states in SRAM controller), preemption logic (priority comparison, burst_cancel generation), and burst data routing (16-bit burst_rdata/burst_wdata muxes per port).
+**SDRAM controller resource estimate (UNIT-007, SDRAM controller):** The SDRAM controller (sdram_controller.sv) requires approximately 200-300 LUTs and 100-150 FFs for the 8-state FSM (INIT, IDLE, ACTIVATE, READ, WRITE, PRECHARGE, REFRESH, DONE), address decomposition (byte address to bank/row/column), CAS latency pipeline (3-stage shift register), refresh timer (14-bit counter for 781-cycle interval), initialization sequence counter (15-bit for 200 us wait), burst counter (8-bit burst_remaining), preemption logic, and data routing.
+This is larger than the original ~150 LUT async SRAM controller because SDRAM requires initialization, auto-refresh, and explicit row activation/precharge management.
 No additional EBR or DSP resources are required.
-This is a modest increase relative to the existing arbiter and SRAM controller logic.
+
+**PLL resource note:** The SDRAM controller requires a 90-degree phase-shifted 100 MHz clock output from the ECP5 PLL.
+The ECP5 EHXPLLL primitive supports up to 4 clock outputs with configurable phase shift.
+The existing PLL already uses 3 outputs (clk_core 100 MHz, clk_pixel 25 MHz, clk_tmds 250 MHz).
+Adding the SDRAM clock as the 4th output consumes the last available PLL output but requires no additional PLL primitives.
