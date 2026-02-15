@@ -117,6 +117,80 @@ cargo build -p asset-prep
 ./target/debug/asset-prep mesh host_app/assets/meshes/model.obj -o assets/compiled/meshes
 ```
 
+## Installing onto Hardware
+
+pico-gs requires two boards: an **ICEpi Zero** (ECP5 FPGA) for the GPU and a **Raspberry Pi Pico 2** (RP2350) as the host controller.
+
+### Prerequisites
+
+In addition to the build prerequisites above:
+
+- [openFPGALoader](https://trabucayre.github.io/openFPGALoader/) for FPGA programming
+- [probe-rs](https://probe.rs/) for RP2350 flashing (via a debug probe such as the Raspberry Pi Debug Probe or another CMSIS-DAP adapter)
+
+### Step 1: Build in release mode
+
+```bash
+./build.sh --release
+```
+
+This produces:
+- FPGA bitstream: `build/gpu_top.bit`
+- Firmware ELF: `build/pico-gs-rp2350.elf`
+
+### Step 2: Flash the ICEpi Zero
+
+Connect the ICEpi Zero via USB (the on-board FT231X provides JTAG).
+
+**Volatile load** (bitstream lost on power-off — useful for development):
+```bash
+openFPGALoader -b icepi-zero build/gpu_top.bit
+```
+
+**Persistent flash** (bitstream survives power cycles):
+```bash
+openFPGALoader -b icepi-zero --write-flash build/gpu_top.bit
+```
+
+> **Note:** If you have an older version of openFPGALoader that does not recognise the `-b icepi-zero` flag, use `-cft231X --pins=7:3:5:6` instead.
+
+### Step 3: Flash the Pico 2
+
+#### Option A: Debug probe (probe-rs)
+
+Connect a CMSIS-DAP debug probe (e.g. Raspberry Pi Debug Probe) to the Pico 2's SWD pins, then run:
+
+```bash
+probe-rs run --chip RP2350 build/pico-gs-rp2350.elf
+```
+
+Or use the cargo runner shortcut (configured in `.cargo/config.toml`):
+
+```bash
+cargo run --release -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
+```
+
+#### Option B: UF2 drag-and-drop (no debug probe required)
+
+1. Hold the **BOOTSEL** button on the Pico 2 while connecting it via USB.
+   It mounts as a USB mass-storage device.
+2. Convert the ELF to UF2:
+   ```bash
+   elf2uf2-rs build/pico-gs-rp2350.elf build/pico-gs-rp2350.uf2
+   ```
+3. Copy the `.uf2` file to the mounted drive.
+   The Pico 2 reboots and runs the firmware automatically.
+
+> Install the conversion tool with `cargo install elf2uf2-rs` if you don't have it.
+
+### One-step build and flash
+
+The build script can build and flash both targets in one go:
+
+```bash
+./build.sh --release --flash-fpga --flash-firmware
+```
+
 ## Development
 
 See [CLAUDE.md](CLAUDE.md) for development guidelines and project conventions.
