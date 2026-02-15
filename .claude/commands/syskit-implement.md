@@ -8,22 +8,27 @@ arguments:
 
 # Implement Task
 
-You are implementing tasks from the current implementation plan.
+You are orchestrating implementation of tasks from the current implementation plan. The actual implementation work is delegated to a subagent to keep your context lean.
 
 ## Instructions
 
-### Step 1: Load Task Plan
+### Step 0: Context Check
 
-Find the most recent folder in `.syskit/tasks/` and load:
-- `plan.md` — Overall plan
-- `snapshot.md` — Document state at planning time
+If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, or IMPLEMENT_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
 
-If `$ARGUMENTS.task` is provided:
-- Load `task_$ARGUMENTS.task_*.md` (matching the number prefix)
+"This conversation already has syskit command history in context. Start a fresh conversation to run `/syskit-implement` — all progress is saved to disk and will be picked up automatically."
 
-Otherwise:
-- Find the first task with Status: Pending
-- Or if all complete, report completion
+If the user explicitly included `--continue` in their command, skip this check and proceed.
+
+### Step 1: Find Task Folder and Identify Current Task
+
+Find the most recent folder in `.syskit/tasks/`.
+
+Read ONLY the `## Task Sequence` table from `plan.md` (use a targeted read of the first ~30 lines — do NOT load the full file).
+
+If `$ARGUMENTS.task` is provided, identify the matching task file: `task_$ARGUMENTS.task_*.md`
+
+Otherwise, scan task file headers (first 5 lines of each) to find the first task with `Status: Pending`. If all are complete, report completion and stop.
 
 ### Step 2: Check Freshness
 
@@ -34,75 +39,73 @@ Run the freshness check script:
 ```
 
 - If referenced specifications changed (exit code 1), warn user
-- Changes to specs may invalidate the task plan
 - Recommend re-running `/syskit-plan` if changes are significant
 
 ### Step 3: Check Dependencies
 
-Verify all dependency tasks are complete:
+Read only the `Dependencies:` line from the current task file (first 5 lines).
 
-- If dependencies are pending, prompt user to complete them first
-- Or offer to implement the dependency task instead
+If dependencies exist, read only the `Status:` line from each dependency task file. If any dependency is not complete, prompt the user to complete it first or offer to implement the dependency instead.
 
-### Step 4: Load Context
+### Step 4: Delegate Implementation
 
-Load all files listed in the task's "Files to Modify" and "Specification References" sections.
+Launch a `general-purpose` Task agent with this prompt (substitute TASK_FILE with the full path to the task file, TASK_FOLDER with the task folder path, and TIMESTAMP with the current date/time):
 
-Understand:
-- What the specification requires
-- What the current implementation looks like
-- What changes are needed
+> Read your full instructions from `.syskit/prompts/implement-task.md`.
+>
+> Your assignment:
+> - Task file: TASK_FILE
+> - Task folder: TASK_FOLDER
+> - Timestamp: TIMESTAMP
+>
+> In the prompt file, replace `{{TASK_FILE}}` with your task file path, `{{TASK_FOLDER}}` with the task folder path, and `{{TIMESTAMP}}` with the timestamp.
+>
+> Follow the instructions in the prompt file. Return ONLY the compact summary described at the end.
 
-### Step 5: Implement
+### Step 5: Validate Results
 
-Follow the task's implementation steps:
+After the subagent returns:
 
-1. Make the changes described
-2. Explain each change as you make it
-3. Ensure changes align with referenced specifications
+1. Parse the `IMPLEMENT_SUMMARY_START`/`IMPLEMENT_SUMMARY_END` block
+2. Check that all verification criteria passed
+3. If the subagent failed or returned incomplete results, tell the user and offer to re-run
 
-### Step 6: Verify
+If any verification criteria failed, tell the user which ones and ask how to proceed.
 
-Work through the task's verification checklist:
+### Step 6: Post-Implementation Scripts
 
-1. For each verification criterion, confirm it is met
-2. If a criterion cannot be verified, note why
-3. Run any specified tests
+Run these scripts to verify consistency:
 
-### Step 7: Update Task Status
-
-Update the task file:
-
-```markdown
-Status: Complete
-Completed: <timestamp>
+```bash
+.syskit/scripts/trace-sync.sh
 ```
 
-Add a completion summary:
+If trace-sync reports issues, run `.syskit/scripts/trace-sync.sh --fix` and report what was fixed.
 
-```markdown
-## Completion Notes
+For each design unit referenced by the task, update Spec-ref hashes:
 
-<What was actually done, any deviations from plan>
-
-## Verification Results
-
-- [x] <criterion> — <result>
-- [x] <criterion> — <result>
+```bash
+.syskit/scripts/impl-stamp.sh UNIT-NNN
 ```
 
-### Step 8: Next Steps
+Then verify implementation freshness:
+
+```bash
+.syskit/scripts/impl-check.sh
+```
+
+Report any issues from these scripts to the user.
+
+### Step 7: Next Steps
 
 After completing the task:
 
-1. Check if there are more pending tasks
+1. Check if there are more pending tasks (scan task file headers for `Status: Pending`)
 2. If yes, tell the user:
 
 "Task <n> complete.
 
-Next: run `/syskit-implement` to continue with the next pending task.
-
-If context is getting large, start a new conversation — task progress is saved to disk."
+Next: run `/syskit-implement` in a new conversation to continue with the next pending task."
 
 3. If no, report: "All tasks complete. Run `.syskit/scripts/manifest.sh` to update the manifest."
 

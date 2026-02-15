@@ -12,6 +12,14 @@ You are proposing specific modifications to specifications based on a completed 
 
 ## Instructions
 
+### Step 0: Context Check
+
+If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, or IMPLEMENT_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
+
+"This conversation already has syskit command history in context. Start a fresh conversation to run `/syskit-propose` — all progress is saved to disk and will be picked up automatically."
+
+If the user explicitly included `--continue` in their command, skip this check and proceed.
+
 ### Step 1: Check Git Status
 
 Run `git status -- doc/` to check for uncommitted changes in the doc directory.
@@ -23,12 +31,16 @@ If there are uncommitted changes in `doc/`, **stop and tell the user:**
 ### Step 2: Load the Impact Analysis
 
 If `$ARGUMENTS.analysis` is provided:
-- Load `.syskit/analysis/$ARGUMENTS.analysis/impact.md`
-- Load `.syskit/analysis/$ARGUMENTS.analysis/snapshot.md`
+
+- Find the analysis folder: `.syskit/analysis/$ARGUMENTS.analysis/`
 
 Otherwise:
+
 - Find the most recent folder in `.syskit/analysis/`
-- Load `impact.md` and `snapshot.md` from that folder
+
+Read ONLY the `## Summary` section from `impact.md` (the last ~15 lines) to get document counts and the list of affected filenames. Do NOT load the full impact.md into context.
+
+Also note the proposed change description from the first few lines of impact.md.
 
 Note the analysis folder path — you will pass it to subagents.
 
@@ -46,9 +58,7 @@ Run the freshness check script:
 
 ### Step 4: Count Affected Documents
 
-From the impact analysis, count the number of documents with Action Required of "modify" or "review" (across Direct, Interface, and Dependent categories).
-
-Note the list of affected filenames — you will use this to determine the delegation strategy.
+From the summary counts, determine the number of documents with Action Required of "modify" or "review" (across Direct, Interface, and Dependent categories).
 
 ### Step 5: Delegate Change Drafting
 
@@ -59,142 +69,33 @@ Choose the delegation strategy based on the count of affected documents:
 
 #### Step 5a: Single Subagent
 
-Launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER with the actual path, and PROPOSED_CHANGE with the proposed change description from the impact analysis):
+Launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER and PROPOSED_CHANGE):
 
-> You are drafting and applying proposed specification changes based on a completed impact analysis.
+> Read your full instructions from `.syskit/prompts/propose-single.md`.
 >
-> ## Proposed Change
+> Use these values for placeholders in the prompt file:
+> - `{{PROPOSED_CHANGE}}`: PROPOSED_CHANGE
+> - `{{ANALYSIS_FOLDER}}`: ANALYSIS_FOLDER
 >
-> PROPOSED_CHANGE
->
-> ## Instructions
->
-> 1. Read the impact analysis from: `ANALYSIS_FOLDER/impact.md`
->
-> 2. Read each document listed as affected (DIRECT, INTERFACE, or DEPENDENT with Action Required of "modify" or "review"). Read them from the `doc/` directories.
->
-> 3. For each affected document, **edit the file directly** with the proposed changes:
->    - Make the specific modifications needed to address the proposed change
->    - Ensure all cross-references (REQ-NNN, INT-NNN, UNIT-NNN) remain consistent
->    - For requirement documents, ensure every requirement uses the condition/response pattern: "When [condition], the system SHALL [observable behavior]."
->
-> 4. While editing, validate each requirement you modify or create:
->    - **Format:** Must use condition/response pattern. If it lacks a trigger condition, add one.
->    - **Appropriate Level:** If it specifies data layout, register fields, byte encoding, packet structure, or wire protocol details, flag this — that detail belongs in an interface document.
->    - **Singular:** If it addresses multiple capabilities, split it into separate requirements.
->    - **Verifiable:** The condition must define a clear test setup and the behavior a clear pass criterion.
->
-> 5. Write a change summary to `ANALYSIS_FOLDER/proposed_changes.md` in this format:
->
->    ```markdown
->    # Proposed Changes: <change name>
->
->    Based on: impact.md
->    Created: <timestamp>
->    Status: Pending Approval
->
->    ## Change Summary
->
->    | Document | Type | Change Description |
->    |----------|------|-------------------|
->    | <filename> | Modify | <brief description> |
->
->    ## Document: <filename>
->
->    ### Rationale
->
->    <why this change is needed>
->
->    ### Changes Made
->
->    <brief description of what was modified — the actual diff is in git>
->
->    ### Ripple Effects
->
->    - <any effects on other documents>
->
->    ---
->
->    (repeat for each affected document)
->
->    ## Quality Warnings
->
->    <list any requirement quality issues found, or "None.">
->    ```
->
-> 6. After editing all documents and writing the summary, return ONLY this compact response (nothing else):
->
->    PROPOSE_SUMMARY_START
->    Documents edited: <n>
->    Files: <comma-separated filenames>
->    Quality warnings: <n> (<brief list or "None">)
->    Summary written to: ANALYSIS_FOLDER/proposed_changes.md
->    PROPOSE_SUMMARY_END
+> Follow the instructions in the prompt file. Return ONLY the compact summary described at the end.
+
+The subagent will return a summary in `PROPOSE_SUMMARY_START`/`PROPOSE_SUMMARY_END` format.
 
 #### Step 5b: Chunked Subagents
 
-Split the affected documents into groups of at most 8, keeping related documents together (e.g., a requirement and the interface it references in the same group). Use the cross-references from the impact analysis to determine grouping.
+Split the affected documents into groups of at most 8, keeping related documents together (e.g., a requirement and the interface it references in the same group).
 
 For each chunk, launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER, PROPOSED_CHANGE, CHUNK_NUMBER, and ASSIGNED_FILES):
 
-> You are drafting and applying proposed specification changes for a subset of affected documents.
+> Read your full instructions from `.syskit/prompts/propose-chunk.md`.
 >
-> ## Proposed Change
+> Use these values for placeholders in the prompt file:
+> - `{{PROPOSED_CHANGE}}`: PROPOSED_CHANGE
+> - `{{ANALYSIS_FOLDER}}`: ANALYSIS_FOLDER
+> - `{{CHUNK_NUMBER}}`: CHUNK_NUMBER
+> - `{{ASSIGNED_FILES}}`: ASSIGNED_FILES
 >
-> PROPOSED_CHANGE
->
-> ## Your Assigned Documents
->
-> ASSIGNED_FILES
->
-> ## Instructions
->
-> 1. Read the impact analysis from: `ANALYSIS_FOLDER/impact.md`
->
-> 2. Read ONLY the documents assigned to you (listed above) from the `doc/` directories.
->
-> 3. For each assigned document, **edit the file directly** with the proposed changes:
->    - Make the specific modifications needed to address the proposed change
->    - Ensure all cross-references (REQ-NNN, INT-NNN, UNIT-NNN) remain consistent
->    - For requirement documents, ensure every requirement uses the condition/response pattern: "When [condition], the system SHALL [observable behavior]."
->
-> 4. While editing, validate each requirement you modify or create:
->    - **Format:** Must use condition/response pattern. If it lacks a trigger condition, add one.
->    - **Appropriate Level:** If it specifies data layout, register fields, byte encoding, packet structure, or wire protocol details, flag this — that detail belongs in an interface document.
->    - **Singular:** If it addresses multiple capabilities, split it into separate requirements.
->    - **Verifiable:** The condition must define a clear test setup and the behavior a clear pass criterion.
->
-> 5. Write a chunk summary to `ANALYSIS_FOLDER/chunk_CHUNK_NUMBER.md` in this format:
->
->    ```markdown
->    ## Document: <filename>
->
->    ### Rationale
->
->    <why this change is needed>
->
->    ### Changes Made
->
->    <brief description of what was modified — the actual diff is in git>
->
->    ### Ripple Effects
->
->    - <any effects on other documents>
->
->    ---
->
->    (repeat for each assigned document)
->    ```
->
-> 6. After editing all assigned documents and writing the chunk summary, return ONLY this compact response (nothing else):
->
->    CHUNK_SUMMARY_START
->    Chunk: CHUNK_NUMBER
->    Documents edited: <n>
->    Files: <comma-separated filenames>
->    Quality warnings: <n> (<brief list or "None">)
->    Written to: ANALYSIS_FOLDER/chunk_CHUNK_NUMBER.md
->    CHUNK_SUMMARY_END
+> Follow the instructions in the prompt file. Return ONLY the compact summary described at the end.
 
 Launch all chunk agents in parallel where possible.
 
@@ -214,27 +115,14 @@ After the subagent(s) return:
 
 If the change set affects 5 or more documents, launch a validation Task agent:
 
-> You are reviewing proposed specification changes for quality.
+> Read your full instructions from `.syskit/prompts/propose-validate.md`.
 >
-> Read all modified files listed in `ANALYSIS_FOLDER/proposed_changes.md` from the `doc/` directories.
+> Use this value for placeholders in the prompt file:
+> - `{{ANALYSIS_FOLDER}}`: ANALYSIS_FOLDER
 >
-> Check each modified document for:
-> 1. Requirement statements use condition/response format ("When X, the system SHALL Y")
-> 2. No implementation details in requirements (data layouts, register fields belong in interfaces)
-> 3. Each requirement is singular (not compound)
-> 4. Cross-references (REQ-NNN, INT-NNN, UNIT-NNN) are valid and consistent
-> 5. Changes align with the rationale described in proposed_changes.md
->
-> If you find fixable issues, edit the doc files directly to correct them.
->
-> Return ONLY this summary:
->
-> VALIDATION_SUMMARY_START
-> Documents reviewed: <n>
-> Issues found: <n>
-> Issues corrected: <n>
-> Issues requiring human review: <n> — <brief descriptions if any>
-> VALIDATION_SUMMARY_END
+> Follow the instructions in the prompt file. Return ONLY the compact summary described at the end.
+
+The subagent will return a summary in `VALIDATION_SUMMARY_START`/`VALIDATION_SUMMARY_END` format.
 
 ### Step 7: Present Changes for Review
 
@@ -243,7 +131,7 @@ Tell the user:
 "Proposed changes have been applied directly to the doc files. Review the changes using `git diff doc/` or the VSCode source control panel.
 
 **Summary:**
-<paste the change summary table from proposed_changes.md or from the chunk summaries>
+<paste the change summary table from the subagent's returned summary>
 
 **Quality warnings:** <list any, or 'None'>
 
