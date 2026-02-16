@@ -35,9 +35,6 @@ module spi_slave (
     // Bit counter (0-71)
     reg [6:0] bit_count;
 
-    // Previous CS state for edge detection
-    reg cs_n_prev;
-
     // Transaction complete flag in SPI domain
     reg transaction_done_spi;
 

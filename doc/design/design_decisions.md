@@ -48,13 +48,13 @@ The `CLAUDE.md` project guidelines define nine SystemVerilog code style rules co
 An audit of all 19 RTL files in `spi_gpu/src/` revealed that 10 files are missing the required `` `default_nettype none `` directive, 3 files have structural violations (combined FSMs, incorrect signal types), and several files use implicit literal widths, verilator lint pragmas, or `'0` shorthand instead of explicit-width zeros.
 
 The most severe violations are in `rasterizer.sv` (UNIT-005), which has a combined FSM with `reg` declarations inside `always_ff`, and `tmds_encoder.sv` (UNIT-009), which assigns to a `wire` inside `always_comb`.
-Medium-severity violations include combined FSMs in `display_controller.sv` (UNIT-008) and `divider.sv`.
+Medium-severity violations include a combined FSM in `display_controller.sv` (UNIT-008).
 
 ### Decision
 
-Perform a systematic style conformance remediation across all 19 RTL files:
+Perform a systematic style conformance remediation across all 18 RTL files (`divider.sv` removed as unused dead code):
 
-1. **Add `` `default_nettype none ``** to the 10 files that are missing it: `gpu_top.sv`, `spi_slave.sv`, `register_file.sv`, `pll_core.sv`, `reset_sync.sv`, `async_fifo.sv`, `divider.sv`, `timing_generator.sv`, `dvi_output.sv`, `tmds_encoder.sv`.
+1. **Add `` `default_nettype none ``** to the 9 files that are missing it: `gpu_top.sv`, `spi_slave.sv`, `register_file.sv`, `pll_core.sv`, `reset_sync.sv`, `async_fifo.sv`, `timing_generator.sv`, `dvi_output.sv`, `tmds_encoder.sv`.
 
 2. **Refactor `rasterizer.sv` FSM** (UNIT-005): Split the combined `always_ff` into separate state register, next-state `always_comb`, and datapath `always_ff` blocks.
    Remove `reg` declarations from inside `always_ff` (move to module scope).
@@ -62,19 +62,17 @@ Perform a systematic style conformance remediation across all 19 RTL files:
 
 3. **Refactor `display_controller.sv` prefetch FSM** (UNIT-008): Split the prefetch state machine into separate state register, next-state logic, and datapath blocks.
 
-4. **Refactor `divider.sv` FSM**: Separate state from datapath.
-
-5. **Fix `tmds_encoder.sv`** (UNIT-009): Change `wire [9:0] stage2` to `logic [9:0] stage2`.
+4. **Fix `tmds_encoder.sv`** (UNIT-009): Change `wire [9:0] stage2` to `logic [9:0] stage2`.
    Add `default` case to `control_symbol` case statement.
 
-6. **Replace `'0` shorthand** with explicit-width zeros in `async_fifo.sv`.
+5. **Replace `'0` shorthand** with explicit-width zeros in `async_fifo.sv`.
 
-7. **Remove verilator lint pragmas** from `display_controller.sv`, `texture_cache.sv`, and `sram_arbiter.sv`.
+6. **Remove verilator lint pragmas** from `display_controller.sv`, `texture_cache.sv`, and `sram_arbiter.sv`.
    Replace with named unused-wire patterns (e.g., `wire _unused_x = signal;`) where signals are intentionally unused.
 
-8. **Add explicit bit widths** to localparam literals in `timing_generator.sv` and `register_file.sv`.
+7. **Add explicit bit widths** to localparam literals in `timing_generator.sv` and `register_file.sv`.
 
-9. **Verify** all files pass `verilator --lint-only -Wall` with zero warnings after fixes.
+8. **Verify** all files pass `verilator --lint-only -Wall` with zero warnings after fixes.
 
 ### Rationale
 
@@ -98,10 +96,9 @@ Perform a systematic style conformance remediation across all 19 RTL files:
 ### Consequences
 
 **Hardware (RTL):**
-- All 19 RTL files updated to conform to CLAUDE.md style rules
+- All 18 RTL files updated to conform to CLAUDE.md style rules (unused `divider.sv` removed)
 - `rasterizer.sv`: Major restructure (3 `always` blocks → separate state/next-state/datapath); functional behavior unchanged
 - `display_controller.sv`: Prefetch FSM restructured; functional behavior unchanged
-- `divider.sv`: FSM restructured; functional behavior unchanged
 - `tmds_encoder.sv`: `wire` → `logic` type fix, `default` case added; functional behavior unchanged
 - All files pass `verilator --lint-only -Wall` without pragmas
 

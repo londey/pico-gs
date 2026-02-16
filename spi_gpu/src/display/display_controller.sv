@@ -20,17 +20,13 @@ module display_controller (
     // Timing inputs (from timing generator, clk_pixel domain)
     // Synchronized internally since clk_pixel = clk_core / 4
     input  wire         display_enable,
-    /* verilator lint_off UNUSEDSIGNAL */
     input  wire [9:0]   pixel_x,        // Reserved for future use (color grading LUT)
     input  wire [9:0]   pixel_y,        // Reserved for future use (color grading LUT)
-    /* verilator lint_on UNUSEDSIGNAL */
     input  wire         frame_start,
 
     // Framebuffer configuration (core clock domain)
     // Only bits [22:12] used — upper bits exceed 24-bit SRAM address space
-    /* verilator lint_off UNUSEDSIGNAL */
     input  wire [31:12] fb_display_base,    // Display framebuffer base address
-    /* verilator lint_on UNUSEDSIGNAL */
 
     // SRAM interface — single-word (core clock domain)
     output reg          sram_req,
@@ -52,6 +48,17 @@ module display_controller (
     output reg  [7:0]   pixel_blue,
     output wire         vsync_out           // VSYNC output for GPIO
 );
+
+    // ========================================================================
+    // Unused Signal Declarations
+    // ========================================================================
+
+    // pixel_x and pixel_y reserved for future color grading LUT
+    wire _unused_pixel_x = |pixel_x;
+    wire _unused_pixel_y = |pixel_y;
+
+    // fb_display_base bits [31:23] exceed 24-bit SRAM address space
+    wire [8:0] _unused_fb_display_base_high = fb_display_base[31:23];
 
     // ========================================================================
     // Constants
@@ -157,6 +164,7 @@ module display_controller (
     } prefetch_state_t;
 
     prefetch_state_t prefetch_state;
+    prefetch_state_t next_prefetch_state;
 
     reg [9:0]  pixels_fetched;      // Pixels fetched on current scanline (0..640)
     reg [9:0]  fetch_y;             // Current Y line being fetched (0..479)
@@ -188,9 +196,60 @@ module display_controller (
                                 + ({13'b0, fetch_y} * 23'd640)
                                 + {13'b0, pixels_fetched};
 
+    // Prefetch FSM — state register (always_ff)
     always_ff @(posedge clk_sram or negedge rst_n_sram) begin
         if (!rst_n_sram) begin
-            prefetch_state    <= PREFETCH_IDLE;
+            prefetch_state <= PREFETCH_IDLE;
+        end else begin
+            prefetch_state <= next_prefetch_state;
+        end
+    end
+
+    // Prefetch FSM — next-state logic (always_comb)
+    always_comb begin
+        // Default: hold current state
+        next_prefetch_state = prefetch_state;
+
+        case (prefetch_state)
+            PREFETCH_IDLE: begin
+                if (frame_start_edge) begin
+                    // New frame: stay IDLE while counters reset
+                    next_prefetch_state = PREFETCH_IDLE;
+                end else if (fifo_rd_count < PREFETCH_THRESHOLD &&
+                             fetch_y < V_DISPLAY &&
+                             pixels_left > 10'd0 &&
+                             sram_ready) begin
+                    // FIFO low and pixels remaining — issue burst
+                    next_prefetch_state = PREFETCH_BURST;
+                end
+            end
+
+            PREFETCH_BURST: begin
+                if (sram_ack) begin
+                    if (pixels_fetched + burst_pixels >= H_DISPLAY[9:0]) begin
+                        // Scanline complete
+                        next_prefetch_state = PREFETCH_DONE;
+                    end else begin
+                        // More pixels needed — return to idle for next burst
+                        next_prefetch_state = PREFETCH_IDLE;
+                    end
+                end
+            end
+
+            PREFETCH_DONE: begin
+                // Advance to next scanline
+                next_prefetch_state = PREFETCH_IDLE;
+            end
+
+            default: begin
+                next_prefetch_state = PREFETCH_IDLE;
+            end
+        endcase
+    end
+
+    // Prefetch FSM — datapath (always_ff)
+    always_ff @(posedge clk_sram or negedge rst_n_sram) begin
+        if (!rst_n_sram) begin
             sram_req          <= 1'b0;
             sram_addr         <= 24'b0;
             sram_burst_len    <= 8'b0;
@@ -219,7 +278,6 @@ module display_controller (
                         sram_burst_len    <= next_burst_len;
                         sram_req          <= 1'b1;
                         burst_word_toggle <= 1'b0;
-                        prefetch_state    <= PREFETCH_BURST;
                     end
                 end
 
@@ -236,14 +294,6 @@ module display_controller (
 
                         // Update pixel count for this scanline
                         pixels_fetched <= pixels_fetched + burst_pixels;
-
-                        if (pixels_fetched + burst_pixels >= H_DISPLAY[9:0]) begin
-                            // Scanline complete
-                            prefetch_state <= PREFETCH_DONE;
-                        end else begin
-                            // More pixels needed — return to idle for next burst
-                            prefetch_state <= PREFETCH_IDLE;
-                        end
                     end
                 end
 
@@ -251,11 +301,10 @@ module display_controller (
                     // Advance to next scanline
                     fetch_y        <= fetch_y + 10'd1;
                     pixels_fetched <= 10'd0;
-                    prefetch_state <= PREFETCH_IDLE;
                 end
 
                 default: begin
-                    prefetch_state <= PREFETCH_IDLE;
+                    // No datapath updates in default state
                 end
             endcase
         end

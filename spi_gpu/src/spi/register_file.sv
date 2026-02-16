@@ -62,6 +62,14 @@ module register_file (
     localparam ADDR_TEX_BASE    = 7'h05;  // Texture base address (deferred)
     localparam ADDR_TEX_FMT     = 7'h06;  // Texture format (deferred)
     localparam ADDR_FB_DRAW     = 7'h08;  // Draw target framebuffer
+
+    // Suppress unused-parameter warnings for deferred register addresses
+    wire [6:0] _unused_addr_uv       = ADDR_UV;
+    wire [6:0] _unused_addr_tex_base = ADDR_TEX_BASE;
+    wire [6:0] _unused_addr_tex_fmt  = ADDR_TEX_FMT;
+
+    // cmd_wdata[63:57] are unused — register writes use at most bits [56:0]
+    wire [6:0] _unused_cmd_wdata_high = cmd_wdata[63:57];
     localparam ADDR_FB_DISPLAY  = 7'h09;  // Display source framebuffer
     localparam ADDR_CLEAR_COLOR = 7'h0A;  // Clear color
     localparam ADDR_CLEAR       = 7'h0B;  // Clear trigger (write-only)

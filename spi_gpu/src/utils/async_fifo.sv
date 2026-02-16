@@ -78,8 +78,8 @@ module async_fifo #(
     // Synchronize read pointer into write domain
     always_ff @(posedge wr_clk or negedge wr_rst_n) begin
         if (!wr_rst_n) begin
-            rd_ptr_gray_sync1 <= '0;
-            rd_ptr_gray_sync2 <= '0;
+            rd_ptr_gray_sync1 <= {(ADDR_WIDTH+1){1'b0}};
+            rd_ptr_gray_sync2 <= {(ADDR_WIDTH+1){1'b0}};
         end else begin
             rd_ptr_gray_sync1 <= rd_ptr_gray;
             rd_ptr_gray_sync2 <= rd_ptr_gray_sync1;
@@ -95,10 +95,13 @@ module async_fifo #(
     endgenerate
 
     // Full and almost_full flags
+    localparam [ADDR_WIDTH:0] DEPTH_FULL  = DEPTH[ADDR_WIDTH:0];
+    localparam [ADDR_WIDTH:0] DEPTH_ALMST = DEPTH[ADDR_WIDTH:0] - (ADDR_WIDTH+1)'(2);
+
     wire [ADDR_WIDTH:0] wr_count;
     assign wr_count = wr_ptr - rd_ptr_binary_sync;
-    assign wr_full = (wr_count == DEPTH);
-    assign wr_almost_full = (wr_count >= (DEPTH - 2));
+    assign wr_full = (wr_count == DEPTH_FULL);
+    assign wr_almost_full = (wr_count >= DEPTH_ALMST);
 
     // ========================================================================
     // Read Clock Domain
@@ -115,9 +118,9 @@ module async_fifo #(
     // Read logic
     always_ff @(posedge rd_clk or negedge rd_rst_n) begin
         if (!rd_rst_n) begin
-            rd_ptr <= '0;
-            rd_ptr_gray <= '0;
-            rd_data_reg <= '0;
+            rd_ptr <= {(ADDR_WIDTH+1){1'b0}};
+            rd_ptr_gray <= {(ADDR_WIDTH+1){1'b0}};
+            rd_data_reg <= {WIDTH{1'b0}};
         end else if (rd_en && !rd_empty) begin
             rd_data_reg <= mem[rd_ptr[ADDR_WIDTH-1:0]];
             rd_ptr <= rd_ptr + 1'b1;
@@ -149,7 +152,7 @@ module async_fifo #(
 
     // Empty flag and count
     assign rd_count = wr_ptr_binary_sync - rd_ptr;
-    assign rd_empty = (rd_count == '0);
+    assign rd_empty = (rd_count == {(ADDR_WIDTH+1){1'b0}});
 
 endmodule
 

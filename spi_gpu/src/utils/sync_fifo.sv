@@ -45,7 +45,7 @@ module sync_fifo #(
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            wr_ptr <= '0;
+            wr_ptr <= {(ADDR_WIDTH+1){1'b0}};
         end else if (wr_en && !wr_full) begin
             mem[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
             wr_ptr <= wr_ptr + 1'b1;
@@ -60,8 +60,8 @@ module sync_fifo #(
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            rd_ptr <= '0;
-            rd_data_reg <= '0;
+            rd_ptr <= {(ADDR_WIDTH+1){1'b0}};
+            rd_data_reg <= {WIDTH{1'b0}};
         end else if (rd_en && !rd_empty) begin
             rd_data_reg <= mem[rd_ptr[ADDR_WIDTH-1:0]];
             rd_ptr <= rd_ptr + 1'b1;

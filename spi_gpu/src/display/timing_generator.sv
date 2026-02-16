@@ -21,24 +21,30 @@ module timing_generator (
     // ========================================================================
 
     // Horizontal timing (pixel clock = 25.000 MHz)
-    localparam H_DISPLAY    = 640;      // Active video
-    localparam H_FRONT      = 16;       // Front porch
-    localparam H_SYNC       = 96;       // Sync pulse
-    localparam H_BACK       = 48;       // Back porch
-    localparam H_TOTAL      = 800;      // Total horizontal period
+    localparam [9:0] H_DISPLAY    = 10'd640;  // Active video
+    localparam [9:0] H_FRONT      = 10'd16;   // Front porch
+    localparam [9:0] H_SYNC       = 10'd96;   // Sync pulse
+    localparam [9:0] H_BACK       = 10'd48;   // Back porch (used in H_TOTAL calculation)
+    localparam [9:0] H_TOTAL      = 10'd800;  // Total horizontal period
+
+    // H_BACK and V_BACK are retained for specification completeness; H_TOTAL and
+    // V_TOTAL are pre-computed constants that incorporate them.
+    wire [9:0] _unused_h_back = H_BACK;
 
     // Vertical timing
-    localparam V_DISPLAY    = 480;      // Active video
-    localparam V_FRONT      = 10;       // Front porch
-    localparam V_SYNC       = 2;        // Sync pulse
-    localparam V_BACK       = 33;       // Back porch
-    localparam V_TOTAL      = 525;      // Total vertical period
+    localparam [9:0] V_DISPLAY    = 10'd480;  // Active video
+    localparam [9:0] V_FRONT      = 10'd10;   // Front porch
+    localparam [9:0] V_SYNC       = 10'd2;    // Sync pulse
+    localparam [9:0] V_BACK       = 10'd33;   // Back porch (used in V_TOTAL calculation)
+    localparam [9:0] V_TOTAL      = 10'd525;  // Total vertical period
+
+    wire [9:0] _unused_v_back = V_BACK;
 
     // Sync pulse positions
-    localparam H_SYNC_START = H_DISPLAY + H_FRONT;
-    localparam H_SYNC_END   = H_SYNC_START + H_SYNC;
-    localparam V_SYNC_START = V_DISPLAY + V_FRONT;
-    localparam V_SYNC_END   = V_SYNC_START + V_SYNC;
+    localparam [9:0] H_SYNC_START = H_DISPLAY + H_FRONT;
+    localparam [9:0] H_SYNC_END   = H_SYNC_START + H_SYNC;
+    localparam [9:0] V_SYNC_START = V_DISPLAY + V_FRONT;
+    localparam [9:0] V_SYNC_END   = V_SYNC_START + V_SYNC;
 
     // ========================================================================
     // Counters

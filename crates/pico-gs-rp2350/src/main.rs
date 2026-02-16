@@ -1,4 +1,4 @@
-// Spec-ref: unit_020_core_0_scene_manager.md `37762bd3934e6c65` 2026-02-12
+// Spec-ref: unit_020_core_0_scene_manager.md `8543d7a68539faa9` 2026-02-16
 // Spec-ref: unit_026_intercore_queue.md `b6e2e8bae3f95390` 2026-02-12
 //! RP2350 Host Firmware for ICEpi SPI GPU
 //!

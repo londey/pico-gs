@@ -153,14 +153,56 @@ lint-memory:
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv
 
-# Lint all RTL sources (excludes PLL which is vendor IP)
+# All leaf RTL files that can be linted individually (no sub-module instantiations).
+# Excludes gpu_top.sv (instantiates everything), pll_core.sv (vendor EHXPLLL),
+# command_fifo.sv (instantiates async_fifo), display_controller.sv (instantiates
+# sync_fifo), dvi_output.sv (instantiates tmds_encoder), rasterizer.sv (instantiates
+# early_z).
+LEAF_LINT_FILES = \
+	$(RTL_DIR)/core/reset_sync.sv \
+	$(RTL_DIR)/spi/spi_slave.sv \
+	$(RTL_DIR)/spi/register_file.sv \
+	$(RTL_DIR)/utils/async_fifo.sv \
+	$(RTL_DIR)/utils/sync_fifo.sv \
+	$(RTL_DIR)/memory/sdram_controller.sv \
+	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/sram_controller.sv \
+	$(RTL_DIR)/display/timing_generator.sv \
+	$(RTL_DIR)/display/tmds_encoder.sv \
+	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/render/texture_cache.sv
+
+# Lint all RTL sources. Leaf modules linted individually for precise diagnostics.
+# Modules with sub-instances linted with their dependencies.
+# gpu_top.sv excluded (integration-level unused signals are expected).
+# pll_core.sv excluded (vendor EHXPLLL primitive unavailable to Verilator).
 lint:
-	@echo "Linting all RTL sources..."
+	@echo "Linting leaf modules..."
 	@fail=0; \
-	for f in $(filter-out $(RTL_DIR)/core/pll_core.sv, $(RTL_SOURCES)); do \
+	for f in $(LEAF_LINT_FILES); do \
 		echo "  $$f"; \
 		$(VERILATOR) --lint-only -Wall $$f 2>&1 || fail=1; \
 	done; \
+	echo "Linting command_fifo.sv (with async_fifo)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/utils/async_fifo.sv \
+		$(RTL_DIR)/spi/command_fifo.sv \
+		--top-module command_fifo 2>&1 || fail=1; \
+	echo "Linting display_controller.sv (with sync_fifo)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/utils/sync_fifo.sv \
+		$(RTL_DIR)/display/display_controller.sv \
+		--top-module display_controller 2>&1 || fail=1; \
+	echo "Linting dvi_output.sv (with tmds_encoder)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/display/tmds_encoder.sv \
+		$(RTL_DIR)/display/dvi_output.sv \
+		--top-module dvi_output 2>&1 || fail=1; \
+	echo "Linting rasterizer.sv (with early_z)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/render/early_z.sv \
+		$(RTL_DIR)/render/rasterizer.sv \
+		--top-module rasterizer 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
 	echo "Lint passed."
 

@@ -102,9 +102,7 @@ module sram_arbiter (
     input  wire         mem_burst_done,       // coincides with mem_ack for burst; kept for interface symmetry
     input  wire [15:0]  mem_rdata_16
 );
-    /* verilator lint_off UNUSEDSIGNAL */
     wire _unused_burst_done = mem_burst_done; // arbiter uses mem_ack for both single and burst completion
-    /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
     // Burst Preemption Policy (UNIT-007)

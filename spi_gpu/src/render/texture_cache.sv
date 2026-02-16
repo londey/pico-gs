@@ -23,10 +23,8 @@ module texture_cache (
     // Cache Lookup Request (from pixel pipeline Stage 1)
     // ====================================================================
     input  wire         lookup_req,     // Cache lookup request
-    /* verilator lint_off UNUSEDSIGNAL */
     input  wire [9:0]   pixel_x,        // Pixel X coordinate (for block/set calculation)
     input  wire [9:0]   pixel_y,        // Pixel Y coordinate (for block/set calculation)
-    /* verilator lint_on UNUSEDSIGNAL */
     input  wire [23:0]  tex_base_addr,  // Texture base address in SRAM (from TEXn_BASE)
     input  wire [1:0]   tex_format,     // Texture format: 00=RGBA4444, 01=BC1
     input  wire [7:0]   tex_width_log2, // Texture width as log2 (e.g., 8 for 256)
@@ -64,6 +62,14 @@ module texture_cache (
     // Texture port is read-only
     assign sram_we    = 1'b0;
     assign sram_wdata = 32'b0;
+
+    // ====================================================================
+    // Unused Signal Declarations
+    // ====================================================================
+
+    // pixel_x/pixel_y: only bits [9:2] used for block coordinates
+    wire [1:0] _unused_pixel_x_low = pixel_x[1:0];
+    wire [1:0] _unused_pixel_y_low = pixel_y[1:0];
 
     // ====================================================================
     // Constants
@@ -206,9 +212,8 @@ module texture_cache (
 
     // Block index = block_y * (tex_width / 4) + block_x
     // tex_width / 4 = 1 << (tex_width_log2 - 2)
-    /* verilator lint_off UNUSEDSIGNAL */
     wire [7:0] blocks_per_row_log2 = tex_width_log2 - 8'd2;
-    /* verilator lint_on UNUSEDSIGNAL */
+    wire [3:0] _unused_bpr_high = blocks_per_row_log2[7:4]; // only [3:0] used for shift amount
     wire [15:0] block_index = ({8'b0, block_y} << blocks_per_row_log2[3:0]) + {8'b0, block_x};
 
     // SRAM byte address depends on format:
@@ -262,12 +267,13 @@ module texture_cache (
     // One texel at a time, called from decompress logic
     // ====================================================================
 
-    /* verilator lint_off UNUSEDSIGNAL */
     function automatic [17:0] rgba4444_to_rgba5652(input [15:0] pixel);
         // RGBA4444: [15:12]=R4 [11:8]=G4 [7:4]=B4 [3:0]=A4
         // R4→R5: {R4, R4[3]}, G4→G6: {G4, G4[3:2]}, B4→B5: {B4, B4[3]}, A4→A2: A4[3:2]
         // pixel[1:0] intentionally unused (sub-nibble alpha bits discarded per INT-032)
+        logic [1:0] _unused_alpha_low;
         begin
+            _unused_alpha_low = pixel[1:0];
             rgba4444_to_rgba5652 = {
                 pixel[15:12], pixel[15],      // R5
                 pixel[11:8],  pixel[11:10],   // G6
@@ -276,7 +282,6 @@ module texture_cache (
             };
         end
     endfunction
-    /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
     // BC1 → RGBA5652 Decompression (combinational for all 16 texels)
@@ -285,21 +290,13 @@ module texture_cache (
     //   words 2-3: 32-bit index word (2 bits per texel, 16 texels)
     // ====================================================================
 
-    /* verilator lint_off UNUSEDSIGNAL */
-
     // BC1 color interpolation: (2*c0 + c1 + 1) / 3 per RGB565 channel
     function automatic [15:0] bc1_interp_2_1(input [15:0] c0, input [15:0] c1);
-        logic [6:0] r_sum, b_sum;
-        logic [7:0] g_sum;
         begin
-            r_sum = ({2'b0, c0[15:11]} + {2'b0, c0[15:11]} + {2'b0, c1[15:11]} + 7'd1);
-            g_sum = ({2'b0, c0[10:5]} + {2'b0, c0[10:5]} + {2'b0, c1[10:5]} + 8'd1);
-            b_sum = ({2'b0, c0[4:0]} + {2'b0, c0[4:0]} + {2'b0, c1[4:0]} + 7'd1);
-
             bc1_interp_2_1 = {
-                5'(r_sum / 7'd3),
-                6'(g_sum / 8'd3),
-                5'(b_sum / 7'd3)
+                5'(({2'b0, c0[15:11]} + {2'b0, c0[15:11]} + {2'b0, c1[15:11]} + 7'd1) / 7'd3),
+                6'(({2'b0, c0[10:5]}  + {2'b0, c0[10:5]}  + {2'b0, c1[10:5]}  + 8'd1) / 8'd3),
+                5'(({2'b0, c0[4:0]}   + {2'b0, c0[4:0]}   + {2'b0, c1[4:0]}   + 7'd1) / 7'd3)
             };
         end
     endfunction
@@ -315,14 +312,7 @@ module texture_cache (
         end
     endfunction
 
-    // Convert RGB565 to RGBA5652 (opaque, alpha=11)
-    function automatic [17:0] rgb565_to_rgba5652(input [15:0] color);
-        begin
-            rgb565_to_rgba5652 = {color, 2'b11};
-        end
-    endfunction
-
-    /* verilator lint_on UNUSEDSIGNAL */
+    // rgb565_to_rgba5652 conversion inlined at call site: {color, 2'b11}
 
     // ====================================================================
     // Decompress Registers
@@ -546,7 +536,7 @@ module texture_cache (
                             decomp_texels[t] = 18'b0;
                         end else begin
                             // Opaque: convert palette entry to RGBA5652
-                            decomp_texels[t] = rgb565_to_rgba5652(bc1_palette[bc1_indices[t*2 +: 2]]);
+                            decomp_texels[t] = {bc1_palette[bc1_indices[t*2 +: 2]], 2'b11};
                         end
                     end
                 end

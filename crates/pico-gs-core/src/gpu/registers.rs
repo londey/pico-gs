@@ -1,4 +1,4 @@
-// Spec-ref: unit_022_gpu_driver_layer.md `ae21a1cf39c446b2` 2026-02-13
+// Spec-ref: unit_022_gpu_driver_layer.md `4aaa3e4c37e70deb` 2026-02-16
 //! GPU register addresses and bit-field constants.
 //!
 //! Matches the ICEpi SPI GPU register map specification v10.0 (INT-010).

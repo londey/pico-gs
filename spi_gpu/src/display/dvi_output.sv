@@ -81,7 +81,7 @@ module dvi_output (
     reg [9:0] shift_red;
     reg [9:0] shift_green;
     reg [9:0] shift_blue;
-    reg [2:0] bit_count;
+    reg [3:0] bit_count;
 
     // Simplified serialization (WARNING: This may not meet timing on real hardware)
     // Replace with proper SERDES instantiation for production
@@ -90,20 +90,20 @@ module dvi_output (
             shift_red <= 10'b0;
             shift_green <= 10'b0;
             shift_blue <= 10'b0;
-            bit_count <= 3'd0;
+            bit_count <= 4'd0;
         end else begin
-            if (bit_count == 3'd0) begin
+            if (bit_count == 4'd0) begin
                 // Load new data
                 shift_red <= tmds_red;
                 shift_green <= tmds_green;
                 shift_blue <= tmds_blue;
-                bit_count <= 3'd9;
+                bit_count <= 4'd9;
             end else begin
                 // Shift out MSB
                 shift_red <= {shift_red[8:0], 1'b0};
                 shift_green <= {shift_green[8:0], 1'b0};
                 shift_blue <= {shift_blue[8:0], 1'b0};
-                bit_count <= bit_count - 3'd1;
+                bit_count <= bit_count - 4'd1;
             end
         end
     end
