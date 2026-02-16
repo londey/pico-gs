@@ -1,3 +1,5 @@
+`default_nettype none
+
 // TMDS Encoder - 8b/10b Encoding for DVI/HDMI
 // Implements standard TMDS encoding with DC balancing
 // Converts 8-bit pixel data to 10-bit TMDS symbols
@@ -125,3 +127,5 @@ module tmds_encoder (
     end
 
 endmodule
+
+`default_nettype wire

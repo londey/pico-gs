@@ -1,3 +1,5 @@
+`default_nettype none
+
 // ICEpi SPI GPU - Top Level Module
 // Version 2.0 - Gouraud Shading Implementation (Texture support deferred)
 //
@@ -601,3 +603,5 @@ module gpu_top (
     );
 
 endmodule
+
+`default_nettype wire

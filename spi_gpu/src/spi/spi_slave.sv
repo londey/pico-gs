@@ -1,3 +1,5 @@
+`default_nettype none
+
 // SPI Slave - 72-bit Transaction Handler
 // Mode 0 (CPOL=0, CPHA=0): Data sampled on rising edge of SCK
 // Transaction format: [R/W̄(1)] [ADDR(7)] [DATA(64)]
@@ -118,3 +120,5 @@ module spi_slave (
     end
 
 endmodule
+
+`default_nettype wire

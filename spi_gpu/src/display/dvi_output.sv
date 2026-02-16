@@ -1,3 +1,5 @@
+`default_nettype none
+
 // DVI Output - TMDS Serialization using ECP5 SERDES
 // Uses ECP5 ODDRX2F primitives for 10:1 serialization
 // Outputs differential TMDS pairs for RGB data and clock
@@ -128,3 +130,5 @@ module dvi_output (
     assign tmds_clk_n = ~clk_pixel;
 
 endmodule
+
+`default_nettype wire

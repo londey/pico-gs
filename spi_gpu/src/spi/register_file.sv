@@ -1,3 +1,5 @@
+`default_nettype none
+
 // Spec-ref: unit_003_register_file.md `ca5e7479fdbd2cfb` 2026-02-13
 // Register File - GPU State and Vertex State Machine
 // Decodes register addresses and manages vertex submission
@@ -246,3 +248,5 @@ module register_file (
     end
 
 endmodule
+
+`default_nettype wire

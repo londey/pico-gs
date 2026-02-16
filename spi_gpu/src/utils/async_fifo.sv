@@ -1,3 +1,5 @@
+`default_nettype none
+
 // Asynchronous FIFO with Gray-Code Pointers
 // Safely crosses clock domains for command buffering
 // Parameterized depth and width
@@ -150,3 +152,5 @@ module async_fifo #(
     assign rd_empty = (rd_count == '0);
 
 endmodule
+
+`default_nettype wire

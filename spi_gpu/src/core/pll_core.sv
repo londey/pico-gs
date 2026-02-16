@@ -1,3 +1,5 @@
+`default_nettype none
+
 // PLL Core - Clock Generation for ICEpi GPU
 // Input: 50 MHz from board oscillator
 // Outputs: 100 MHz unified GPU/SDRAM core clock (clk_core),
@@ -108,3 +110,5 @@ module pll_core (
     assign pll_locked = lock_w;
 
 endmodule
+
+`default_nettype wire

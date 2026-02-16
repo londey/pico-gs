@@ -1,3 +1,5 @@
+`default_nettype none
+
 // Timing Generator - 640×480 @ 60Hz Video Timing
 // Generates horizontal and vertical sync signals and pixel coordinates
 // CEA-861 standard timing for VGA resolution
@@ -120,3 +122,5 @@ module timing_generator (
     assign frame_start = (h_count == 10'd0) && (v_count == 10'd0);
 
 endmodule
+
+`default_nettype wire

@@ -1,3 +1,5 @@
+`default_nettype none
+
 // Reset Synchronizer - Multi-Clock Domain Reset Management
 // Synchronizes external reset to each clock domain
 // Holds reset asserted until PLL is locked
@@ -34,3 +36,5 @@ module reset_sync (
     assign rst_n_sync = rst_sync_stage2;
 
 endmodule
+
+`default_nettype wire

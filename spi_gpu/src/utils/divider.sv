@@ -1,3 +1,5 @@
+`default_nettype none
+
 // Simple Fixed-Point Divider
 // Implements N-cycle non-restoring division for barycentric interpolation
 // Optimized for small denominators (triangle area)
@@ -98,3 +100,5 @@ module divider #(
     end
 
 endmodule
+
+`default_nettype wire
