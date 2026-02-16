@@ -4,9 +4,9 @@
 RTL_DIR = ../src
 BUILD_DIR = sim_build
 
-# Verilator settings
+# Verilator settings (shared flags in ../verilator.f)
 VERILATOR = verilator
-VERILATOR_FLAGS = --binary --trace --top-module tb_timing_generator -Wno-fatal
+VERILATOR_FLAGS = --binary -f ../verilator.f
 
 .PHONY: all test_timing test_rasterizer test_early_z test_register_file clean
 
@@ -20,7 +20,7 @@ test_timing: obj_dir/Vtb_timing_generator
 
 # Build timing generator testbench
 obj_dir/Vtb_timing_generator: display/tb_timing_generator.sv $(RTL_DIR)/display/timing_generator.sv
-	$(VERILATOR) $(VERILATOR_FLAGS) -o Vtb_timing_generator \
+	$(VERILATOR) $(VERILATOR_FLAGS) --top-module tb_timing_generator -o Vtb_timing_generator \
 		-I$(RTL_DIR)/display \
 		display/tb_timing_generator.sv \
 		$(RTL_DIR)/display/timing_generator.sv
@@ -32,7 +32,7 @@ test_rasterizer: obj_dir/Vtb_rasterizer
 
 # Build rasterizer testbench
 obj_dir/Vtb_rasterizer: render/tb_rasterizer.sv $(RTL_DIR)/render/rasterizer.sv $(RTL_DIR)/render/early_z.sv
-	$(VERILATOR) --binary --trace --top-module tb_rasterizer -Wno-fatal \
+	$(VERILATOR) $(VERILATOR_FLAGS) --top-module tb_rasterizer \
 		-o Vtb_rasterizer \
 		-I$(RTL_DIR)/render \
 		render/tb_rasterizer.sv \
@@ -46,7 +46,7 @@ test_early_z: obj_dir/Vtb_early_z
 
 # Build early_z testbench
 obj_dir/Vtb_early_z: render/tb_early_z.sv $(RTL_DIR)/render/early_z.sv
-	$(VERILATOR) --binary --trace --top-module tb_early_z -Wno-fatal \
+	$(VERILATOR) $(VERILATOR_FLAGS) --top-module tb_early_z \
 		-o Vtb_early_z \
 		-I$(RTL_DIR)/render \
 		render/tb_early_z.sv \
@@ -59,7 +59,7 @@ test_register_file: obj_dir/Vtb_register_file
 
 # Build register_file testbench
 obj_dir/Vtb_register_file: spi/tb_register_file.sv $(RTL_DIR)/spi/register_file.sv
-	$(VERILATOR) --binary --trace --top-module tb_register_file -Wno-fatal \
+	$(VERILATOR) $(VERILATOR_FLAGS) --top-module tb_register_file \
 		-o Vtb_register_file \
 		-I$(RTL_DIR)/spi \
 		spi/tb_register_file.sv \
@@ -68,7 +68,7 @@ obj_dir/Vtb_register_file: spi/tb_register_file.sv $(RTL_DIR)/spi/register_file.
 # Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR)/ obj_dir/
-	rm -f *.vcd
+	rm -f *.vcd *.fst
 
 # Help
 help:

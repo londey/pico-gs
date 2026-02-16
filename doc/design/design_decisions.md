@@ -36,6 +36,96 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-022: SystemVerilog Code Style Conformance Remediation
+
+**Date:** 2026-02-16
+**Status:** Proposed
+**Implementation:** RTL PENDING
+
+### Context
+
+The `CLAUDE.md` project guidelines define nine SystemVerilog code style rules covering net type directives, signal comments, `always_ff`/`always_comb` usage, declaration style, FSM structure, module organization, CDC patterns, and verilator lint policy.
+An audit of all 19 RTL files in `spi_gpu/src/` revealed that 10 files are missing the required `` `default_nettype none `` directive, 3 files have structural violations (combined FSMs, incorrect signal types), and several files use implicit literal widths, verilator lint pragmas, or `'0` shorthand instead of explicit-width zeros.
+
+The most severe violations are in `rasterizer.sv` (UNIT-005), which has a combined FSM with `reg` declarations inside `always_ff`, and `tmds_encoder.sv` (UNIT-009), which assigns to a `wire` inside `always_comb`.
+Medium-severity violations include combined FSMs in `display_controller.sv` (UNIT-008) and `divider.sv`.
+
+### Decision
+
+Perform a systematic style conformance remediation across all 19 RTL files:
+
+1. **Add `` `default_nettype none ``** to the 10 files that are missing it: `gpu_top.sv`, `spi_slave.sv`, `register_file.sv`, `pll_core.sv`, `reset_sync.sv`, `async_fifo.sv`, `divider.sv`, `timing_generator.sv`, `dvi_output.sv`, `tmds_encoder.sv`.
+
+2. **Refactor `rasterizer.sv` FSM** (UNIT-005): Split the combined `always_ff` into separate state register, next-state `always_comb`, and datapath `always_ff` blocks.
+   Remove `reg` declarations from inside `always_ff` (move to module scope).
+   Replace implicit literal widths with explicit sizes (e.g., `curr_x + 10'd1`).
+
+3. **Refactor `display_controller.sv` prefetch FSM** (UNIT-008): Split the prefetch state machine into separate state register, next-state logic, and datapath blocks.
+
+4. **Refactor `divider.sv` FSM**: Separate state from datapath.
+
+5. **Fix `tmds_encoder.sv`** (UNIT-009): Change `wire [9:0] stage2` to `logic [9:0] stage2`.
+   Add `default` case to `control_symbol` case statement.
+
+6. **Replace `'0` shorthand** with explicit-width zeros in `async_fifo.sv`.
+
+7. **Remove verilator lint pragmas** from `display_controller.sv`, `texture_cache.sv`, and `sram_arbiter.sv`.
+   Replace with named unused-wire patterns (e.g., `wire _unused_x = signal;`) where signals are intentionally unused.
+
+8. **Add explicit bit widths** to localparam literals in `timing_generator.sv` and `register_file.sv`.
+
+9. **Verify** all files pass `verilator --lint-only -Wall` with zero warnings after fixes.
+
+### Rationale
+
+- **Consistency**: A codebase with uniform style is easier to review, maintain, and onboard new contributors to
+- **Safety**: `` `default_nettype none `` catches undeclared nets at compile time, preventing subtle synthesis bugs
+- **Maintainability**: Separated FSMs (state register + next-state logic + datapath) make state transitions explicit and simplify formal verification
+- **Lint hygiene**: Fixing all verilator warnings without pragmas ensures the lint tool remains useful as a regression gate
+- **No functional changes**: All remediation is structural/stylistic; module interfaces and behavior are preserved
+
+### Alternatives Considered
+
+1. **Partial remediation (critical only)**: Fix only `rasterizer.sv` and `tmds_encoder.sv`.
+   Rejected -- leaves 10 files without `` `default_nettype none ``, which is the most widespread and highest-risk violation.
+
+2. **Incremental per-feature remediation**: Fix style issues only when modifying a file for other reasons.
+   Rejected -- leaves the codebase in an inconsistent state indefinitely; style violations accumulate.
+
+3. **Automated formatting tool**: Use a SystemVerilog formatter to fix style.
+   Rejected -- no mature tool handles FSM restructuring or semantic changes (e.g., wire→logic, adding default cases).
+
+### Consequences
+
+**Hardware (RTL):**
+- All 19 RTL files updated to conform to CLAUDE.md style rules
+- `rasterizer.sv`: Major restructure (3 `always` blocks → separate state/next-state/datapath); functional behavior unchanged
+- `display_controller.sv`: Prefetch FSM restructured; functional behavior unchanged
+- `divider.sv`: FSM restructured; functional behavior unchanged
+- `tmds_encoder.sv`: `wire` → `logic` type fix, `default` case added; functional behavior unchanged
+- All files pass `verilator --lint-only -Wall` without pragmas
+
+**Testing:**
+- All existing testbenches must pass after remediation (no functional changes)
+- Recommended: run full regression suite after each file is modified
+
+**Risk:**
+- Low: All changes are structural/stylistic with no behavioral modification
+- FSM restructuring preserves identical state transition graphs
+- Verilator lint verification provides regression safety
+
+### References
+
+- CLAUDE.md: SystemVerilog Code Style section
+- UNIT-005: Rasterizer (primary FSM refactoring target)
+- UNIT-008: Display Controller (prefetch FSM refactoring)
+- UNIT-009: DVI TMDS Encoder (type fix, default case)
+- UNIT-006: Pixel Pipeline (upstream dependency on rasterizer interface)
+- UNIT-007: Memory Arbiter (lint pragma removal)
+
+---
+
+
 ## DD-021: SDRAM Controller Architecture for W9825G6KH
 
 **Date:** 2026-02-15

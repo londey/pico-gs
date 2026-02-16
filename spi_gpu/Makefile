@@ -46,12 +46,12 @@ YOSYS_FLAGS = -q -l $(BUILD_DIR)/yosys.log
 NEXTPNR_FLAGS = --$(DEVICE) --package $(PACKAGE) --freq 100 --timing-allow-fail
 ECPPACK_FLAGS = --compress
 
-# Simulation flags
-VERILATOR_FLAGS = --cc --exe --build --trace --timing --main
+# Simulation flags (shared flags in verilator.f)
+VERILATOR_FLAGS = --binary -f verilator.f
 
 .PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
-	test-burst-integration test-burst-all lint-memory clean
+	test-burst-integration test-burst-all lint-memory lint clean
 
 # Default target
 all: bitstream
@@ -153,6 +153,17 @@ lint-memory:
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv
 
+# Lint all RTL sources (excludes PLL which is vendor IP)
+lint:
+	@echo "Linting all RTL sources..."
+	@fail=0; \
+	for f in $(filter-out $(RTL_DIR)/core/pll_core.sv, $(RTL_SOURCES)); do \
+		echo "  $$f"; \
+		$(VERILATOR) --lint-only -Wall $$f 2>&1 || fail=1; \
+	done; \
+	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
+	echo "Lint passed."
+
 # Verilator simulation (placeholder for cocotb)
 sim:
 	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
@@ -160,8 +171,8 @@ sim:
 
 # Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -f *.vcd
+	rm -rf $(BUILD_DIR) obj_dir
+	rm -f *.vcd *.fst
 
 # Help
 help:
@@ -184,5 +195,6 @@ help:
 	@echo "  test-burst-integration   - Run burst integration testbench"
 	@echo "  test-burst-all   - Run all burst testbenches"
 	@echo "  lint-memory      - Lint memory subsystem RTL"
+	@echo "  lint             - Lint all RTL sources"
 	@echo "  clean            - Remove build artifacts"
 	@echo "  help             - Show this message"
