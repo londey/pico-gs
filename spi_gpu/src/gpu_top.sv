@@ -232,6 +232,9 @@ module gpu_top (
         .fifo_depth({2'b0, fifo_rd_count})
     );
 
+    // Route register file read data back to SPI slave for read transactions
+    assign spi_rdata = reg_cmd_rdata;
+
     // GPIO outputs
     assign gpio_cmd_full = fifo_wr_almost_full;
     assign gpio_cmd_empty = fifo_rd_empty;
