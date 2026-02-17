@@ -16,7 +16,8 @@ module async_fifo #(
     parameter WIDTH = 72,       // Data width in bits
     parameter DEPTH = 32,       // FIFO depth (must be power of 2)
     parameter ADDR_WIDTH = $clog2(DEPTH),
-    parameter BOOT_COUNT = 0    // Number of pre-populated entries (0 = none)
+    parameter BOOT_COUNT = 0,   // Number of pre-populated entries (0 = none)
+    parameter INIT_FILE = ""    // Hex file for memory initialization (empty = none)
 ) (
     // Write clock domain
     input  wire                 wr_clk,
@@ -49,6 +50,15 @@ module async_fifo #(
     // ========================================================================
 
     reg [WIDTH-1:0] mem [0:DEPTH-1];
+
+    // Memory initialization from hex file (synthesis-time)
+    generate
+        if (INIT_FILE != "") begin : g_mem_init
+            initial begin
+                $readmemh(INIT_FILE, mem);
+            end
+        end
+    endgenerate
 
     // ========================================================================
     // Write Clock Domain

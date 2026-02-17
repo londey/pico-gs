@@ -1,0 +1,32 @@
+// Boot command sequence for GPU initialization (72-bit entries)
+// Format: {rw[71], addr[70:64], data[63:0]}
+// See command_fifo.sv and DD-019/UNIT-002 for design rationale.
+//
+// Step 1: Set draw target to Framebuffer A
+080000000000000000
+// Step 2: Set flat shading mode (for screen clear)
+040000000000000010
+// Step 3: Clear screen with opaque black triangles
+//   Triangle 1: top-left, top-right, bottom-left
+0000000000000000FF
+020000000000000000
+020000000000002800
+02000000001E000000
+//   Triangle 2: top-right, bottom-right, bottom-left
+020000000000002800
+02000000001E002800
+02000000001E000000
+// Step 4: Set Gouraud shading mode (for RGB triangle)
+040000000000000011
+// Step 5: Draw RGB Gouraud-shaded triangle
+//   Vertex 0: red, top-center
+0000000000FF0000FF
+020000000006401400
+//   Vertex 1: green, bottom-left
+000000000000FF00FF
+020000000017C00A00
+//   Vertex 2: blue, bottom-right
+00000000000000FFFF
+020000000017C01E00
+// Step 6: Present boot screen
+090000000000000000
