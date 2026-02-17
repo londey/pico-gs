@@ -1,36 +1,37 @@
 # ICEpi Zero Pin Constraints for ECP5-25K CABGA256
 # SPI GPU v3.0 - Pin assignments for SPI, GPIO, SDRAM, and DVI interfaces
+# Reference: external/icepi-zero/firmware/v1.3/icepi-zero-v1_3.lpf
 
 # ==============================================================================
-# Clock Inputs
+# Clock Input (50 MHz oscillator)
 # ==============================================================================
-LOCATE COMP "clk_50" SITE "P3";
-IOBUF PORT "clk_50" IO_TYPE=LVCMOS33;
+LOCATE COMP "clk_50" SITE "M1";
+IOBUF PORT "clk_50" IO_TYPE=LVCMOS33 PULLMODE=NONE;
 FREQUENCY PORT "clk_50" 50 MHZ;
 
 # ==============================================================================
-# SPI Interface (from RP2350)
+# SPI Interface (from RP2350 via Raspberry Pi header SPI0 pins)
 # ==============================================================================
-LOCATE COMP "spi_sck" SITE "B19";
-LOCATE COMP "spi_mosi" SITE "A18";
-LOCATE COMP "spi_miso" SITE "B18";
-LOCATE COMP "spi_cs_n" SITE "A19";
+LOCATE COMP "spi_sck" SITE "G2";       # pi_sclk, gpio[11], header pin 23
+LOCATE COMP "spi_mosi" SITE "L2";      # pi_mosi, gpio[10], header pin 19
+LOCATE COMP "spi_miso" SITE "J1";      # pi_miso, gpio[9],  header pin 21
+LOCATE COMP "spi_cs_n" SITE "H2";      # pi_ce0,  gpio[8],  header pin 24
 
-IOBUF PORT "spi_sck" IO_TYPE=LVCMOS33;
-IOBUF PORT "spi_mosi" IO_TYPE=LVCMOS33;
-IOBUF PORT "spi_miso" IO_TYPE=LVCMOS33;
-IOBUF PORT "spi_cs_n" IO_TYPE=LVCMOS33;
+IOBUF PORT "spi_sck" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
+IOBUF PORT "spi_mosi" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
+IOBUF PORT "spi_miso" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
+IOBUF PORT "spi_cs_n" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
 
 # ==============================================================================
 # GPIO Status Outputs (to RP2350)
 # ==============================================================================
-LOCATE COMP "gpio_cmd_full" SITE "C19";
-LOCATE COMP "gpio_cmd_empty" SITE "D19";
-LOCATE COMP "gpio_vsync" SITE "E19";
+LOCATE COMP "gpio_cmd_full" SITE "J2";  # pi_nirq, gpio[25], header pin 22
+LOCATE COMP "gpio_cmd_empty" SITE "G3"; # gpio[0],  header pin 27
+LOCATE COMP "gpio_vsync" SITE "K3";     # gpio[1],  header pin 28
 
-IOBUF PORT "gpio_cmd_full" IO_TYPE=LVCMOS33;
-IOBUF PORT "gpio_cmd_empty" IO_TYPE=LVCMOS33;
-IOBUF PORT "gpio_vsync" IO_TYPE=LVCMOS33;
+IOBUF PORT "gpio_cmd_full" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
+IOBUF PORT "gpio_cmd_empty" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
+IOBUF PORT "gpio_vsync" IO_TYPE=LVCMOS33 PULLMODE=DOWN;
 
 # ==============================================================================
 # SDRAM Interface (W9825G6KH, 32MB, 16-bit synchronous)
@@ -123,5 +124,5 @@ IOBUF PORT "tmds_clk_n" IO_TYPE=LVCMOS33D DRIVE=4;
 # ==============================================================================
 # Reset (active-low)
 # ==============================================================================
-LOCATE COMP "rst_n" SITE "P4";
-IOBUF PORT "rst_n" IO_TYPE=LVCMOS33;
+LOCATE COMP "rst_n" SITE "C4";         # button[0], active-low pushbutton
+IOBUF PORT "rst_n" IO_TYPE=LVCMOS33 PULLMODE=UP;

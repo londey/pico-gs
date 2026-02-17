@@ -123,6 +123,35 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 - Use semantic line breaks: start each sentence on its own line.
   Adjacent lines render as a single paragraph in HTML, but one-sentence-per-line produces cleaner diffs and easier code review.
 
+## ICEpi Zero Board Documentation
+
+The ICEpi Zero v1.3 board documentation lives locally at `external/icepi-zero/`.
+**Always consult this directory before searching the web for ICEpi Zero pinouts, schematics, or constraints.**
+
+Key files:
+- `external/icepi-zero/firmware/v1.3/icepi-zero-v1_3.lpf` — Official v1.3 pin constraints (canonical source of truth for all ball assignments)
+- `external/icepi-zero/hardware/v1.3/` — KiCad schematics and PCB files
+- `external/icepi-zero/documentation/manual.pdf` — Board manual
+- `external/icepi-zero/firmware/icepi-zero.lpf` — Symlink pointing to v1.3 LPF
+
+The board uses an **ECP5-25K in CABGA256** package.
+All valid ball coordinates use columns A–T (no column >16 for rows; columns are letters A–T and rows are numbers 1–16).
+Pins like B19, A18, A19, C19, D19, E19 do **not** exist in CABGA256 and must not be used.
+
+GPIO header pins available for SPI from an external MCU (from the official LPF):
+
+| Signal       | Ball | Header pin # | Notes                  |
+|--------------|------|--------------|------------------------|
+| pi_miso      | J1   | 21           | gpio[9]                |
+| pi_mosi      | L2   | 19           | gpio[10]               |
+| pi_sclk      | G2   | 23           | gpio[11]               |
+| pi_ce0       | H2   | 24           | gpio[8]                |
+| pi_nirq      | J2   | 22           | gpio[25] (IRQ/flow ctrl)|
+| pi_rx (UART) | N1   | 10           | gpio[15]               |
+| pi_tx (UART) | P1   | 8            | gpio[14]               |
+
+All GPIO header balls (gpio[0]–gpio[27]) use LVCMOS33 at 3.3 V.
+
 <!-- MANUAL ADDITIONS END -->
 
 ## syskit
