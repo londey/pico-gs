@@ -3,6 +3,7 @@
 // Asynchronous FIFO with Gray-Code Pointers
 // Safely crosses clock domains for command buffering
 // Parameterized depth and width
+// Read data register uses synchronous-only path (no async reset) for BRAM inference
 //
 // Boot Pre-Population (BOOT_COUNT > 0):
 //   When BOOT_COUNT is non-zero, the write pointer resets to BOOT_COUNT
@@ -73,15 +74,21 @@ module async_fifo #(
     // Genvar for gray-to-binary conversion generate blocks
     genvar gi;
 
-    // Write logic
+    // Write pointer logic (async reset for proper CDC initialization)
     always_ff @(posedge wr_clk or negedge wr_rst_n) begin
         if (!wr_rst_n) begin
             wr_ptr <= BOOT_COUNT[ADDR_WIDTH:0];
             wr_ptr_gray <= BOOT_COUNT_GRAY;
         end else if (wr_en && !wr_full) begin
-            mem[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
             wr_ptr <= wr_ptr + 1'b1;
             wr_ptr_gray <= (wr_ptr + 1'b1) ^ ((wr_ptr + 1'b1) >> 1);
+        end
+    end
+
+    // Memory write — no async reset to enable BRAM inference pattern
+    always_ff @(posedge wr_clk) begin
+        if (wr_en && !wr_full) begin
+            mem[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
         end
     end
 
@@ -125,16 +132,21 @@ module async_fifo #(
 
     reg [WIDTH-1:0] rd_data_reg;
 
-    // Read logic
+    // Read pointer logic (async reset for proper CDC initialization)
     always_ff @(posedge rd_clk or negedge rd_rst_n) begin
         if (!rd_rst_n) begin
             rd_ptr <= {(ADDR_WIDTH+1){1'b0}};
             rd_ptr_gray <= {(ADDR_WIDTH+1){1'b0}};
-            rd_data_reg <= {WIDTH{1'b0}};
         end else if (rd_en && !rd_empty) begin
-            rd_data_reg <= mem[rd_ptr[ADDR_WIDTH-1:0]];
             rd_ptr <= rd_ptr + 1'b1;
             rd_ptr_gray <= (rd_ptr + 1'b1) ^ ((rd_ptr + 1'b1) >> 1);
+        end
+    end
+
+    // Read data register (synchronous only, no async reset — BRAM inference friendly)
+    always_ff @(posedge rd_clk) begin
+        if (rd_en && !rd_empty) begin
+            rd_data_reg <= mem[rd_ptr[ADDR_WIDTH-1:0]];
         end
     end
 

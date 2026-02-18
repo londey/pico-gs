@@ -35,7 +35,7 @@ The GPU design SHALL fit within the following ECP5-25K resource budget:
 
 | Resource | Budget | Allocation |
 |----------|--------|------------|
-| EBR (9kb blocks) | ≤18 of 56 (32.1%) | 16 texture cache + 1 dither matrix + 1 color grade LUT |
+| EBR (9kb blocks) | ≤19 of 56 (33.9%) | 16 texture cache + 1 dither matrix + 1 color grade LUT + 1 scanline FIFO |
 | DSP slices (18x18) | ≤16 of 28 (57%) | 10.8 multipliers for texture blend, Gouraud shade, alpha blend |
 | SERDES channels | 4 of 4 | DVI TMDS (3 data + 1 clock) |
 
@@ -53,7 +53,7 @@ All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 
 **Analysis:** Measure actual performance/resource usage against targets.
 
-- [ ] EBR usage ≤18 blocks after synthesis
+- [ ] EBR usage ≤19 blocks after synthesis
 - [ ] DSP slice usage ≤16 after synthesis
 - [ ] SERDES usage = 4 channels
 - [ ] No pipeline throughput reduction from dithering or 10.8 math
@@ -63,7 +63,9 @@ All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 
 Non-functional requirement. See specifications for specific numeric targets.
 
-EBR budget increased from 16 to 18 blocks to accommodate ordered dithering matrix (1 EBR, REQ-132) and color grading LUT (1 EBR, REQ-133). DSP budget added for 10.8 fixed-point multipliers (REQ-134).
+EBR budget increased from 16 to 19 blocks to accommodate ordered dithering matrix (1 EBR, REQ-132), color grading LUT (1 EBR, REQ-133), and the display controller scanline FIFO (1 EBR, UNIT-008).
+The scanline FIFO (1024x16 sync_fifo) infers as a DP16KD block RAM now that memory reads are separated from the async reset path.
+DSP budget added for 10.8 fixed-point multipliers (REQ-134).
 
 The command FIFO (UNIT-002) uses distributed RAM (LUTs) rather than EBR, so its depth increase from 16 to 32 entries does not affect the EBR budget.
 The 72-bit x 32-deep command FIFO consumes approximately 2,304 bits of distributed RAM, which is accounted for in the LUT budget rather than the EBR budget.

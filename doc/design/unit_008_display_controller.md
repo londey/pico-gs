@@ -216,7 +216,8 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
   - Burst remaining counter: ~10 FFs
   - Burst request logic: ~20 LUTs
   - Total burst addition: ~70 LUTs, ~50 FFs
-- **Total (v11.0)**: 1 EBR, ~520 LUTs, ~230 FFs
+- Scanline FIFO: 1 EBR block (1024×16, inferred as DP16KD)
+- **Total (v11.0)**: 2 EBR, ~520 LUTs, ~230 FFs
 
 ## Design Notes
 

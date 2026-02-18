@@ -43,12 +43,19 @@ module sync_fifo #(
     // Write Logic
     // ========================================================================
 
+    // Write pointer with async reset
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             wr_ptr <= {(ADDR_WIDTH+1){1'b0}};
         end else if (wr_en && !wr_full) begin
-            mem[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
             wr_ptr <= wr_ptr + 1'b1;
+        end
+    end
+
+    // Memory write — no async reset to enable DP16KD block RAM inference
+    always_ff @(posedge clk) begin
+        if (wr_en && !wr_full) begin
+            mem[wr_ptr[ADDR_WIDTH-1:0]] <= wr_data;
         end
     end
 
@@ -58,13 +65,19 @@ module sync_fifo #(
 
     reg [WIDTH-1:0] rd_data_reg;
 
+    // Read pointer with async reset
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rd_ptr <= {(ADDR_WIDTH+1){1'b0}};
-            rd_data_reg <= {WIDTH{1'b0}};
         end else if (rd_en && !rd_empty) begin
-            rd_data_reg <= mem[rd_ptr[ADDR_WIDTH-1:0]];
             rd_ptr <= rd_ptr + 1'b1;
+        end
+    end
+
+    // Read data register — no async reset to enable DP16KD block RAM inference
+    always_ff @(posedge clk) begin
+        if (rd_en && !rd_empty) begin
+            rd_data_reg <= mem[rd_ptr[ADDR_WIDTH-1:0]];
         end
     end
 

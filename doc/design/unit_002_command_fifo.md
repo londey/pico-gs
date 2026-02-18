@@ -72,7 +72,7 @@ None
 - **rd_ptr_gray** [ADDR_WIDTH:0]: Gray-coded read pointer for CDC
 - **rd_ptr_gray_sync1/2**: 2-stage synchronizer for rd_ptr_gray into write domain
 - **wr_ptr_gray_sync1/2**: 2-stage synchronizer for wr_ptr_gray into read domain
-- **rd_data_reg** [WIDTH-1:0]: Registered read data output
+- **rd_data_reg** [WIDTH-1:0]: Registered read data output (synchronous read, not in async reset path)
 
 ### Algorithm / Behavior
 
