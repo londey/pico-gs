@@ -154,37 +154,33 @@ All GPIO header balls (gpio[0]–gpio[27]) use LVCMOS33 at 3.3 V.
 
 <!-- MANUAL ADDITIONS END -->
 
+<!-- syskit-start -->
 ## syskit
 
-This project uses syskit for specification-driven development.
+This project uses **syskit** for specification-driven development. Specifications in `doc/` define what the system must do, how components interact, and how the design is structured. Implementation follows from specs. When creating new specifications, define interfaces and requirements before design — understand the contracts and constraints before deciding how to build.
 
-**Before any syskit workflow, read `.syskit/AGENTS.md` for full instructions.**
+### Working with code
 
-Quick reference:
-- `/syskit-guide` — Interactive onboarding (start here if new)
-- `/syskit-impact <change>` — Analyze impact of a proposed change
-- `/syskit-propose` — Propose spec modifications based on impact analysis
-- `/syskit-plan` — Create implementation task breakdown
-- `/syskit-implement` — Execute planned tasks
+- Source files may contain `Spec-ref:` comments linking to design units — **preserve these; never edit the hash manually**.
+- Before modifying code, check `doc/design/` for a relevant design unit (`unit_NNN_*.md`) that describes the component's intended behavior.
+- After code changes, run `.syskit/scripts/impl-check.sh` to verify spec-to-implementation freshness.
+- After spec changes, run `.syskit/scripts/impl-stamp.sh UNIT-NNN` to update Spec-ref hashes in source files.
 
-**Specifications** live in `doc/`:
-- `doc/requirements/` — REQ-NNN documents (what the system must do)
-- `doc/interfaces/` — INT-NNN documents (contracts between components)
-- `doc/design/` — UNIT-NNN documents (how components implement requirements)
+### Making changes
 
-**Key documents**:
-- [INT-010](doc/interfaces/int_010_gpu_register_map.md) — GPU Register Map (primary hardware/software interface)
-- [INT-011](doc/interfaces/int_011_sram_memory_layout.md) — SRAM Memory Layout
-- [INT-020](doc/interfaces/int_020_gpu_driver_api.md) — GPU Driver API (host firmware)
-- [INT-021](doc/interfaces/int_021_render_command_format.md) — Render Command Format
-- [REQ-050](doc/requirements/req_050_performance_targets.md) — Performance Targets
-- [doc/design/design_decisions.md](doc/design/design_decisions.md) — Architecture Decision Records (ADRs)
-- [doc/design/concept_of_execution.md](doc/design/concept_of_execution.md) — Runtime behavior
+For non-trivial changes affecting system behavior, use the syskit workflow:
 
-Working documents live in `.syskit/` (analysis, tasks, manifest).
+1. `/syskit-impact <change>` — Analyze what specifications are affected
+2. `/syskit-propose` — Propose specification updates
+3. `/syskit-plan` — Break into implementation tasks
+4. `/syskit-implement` — Execute with traceability
 
-# Scripts and tools
+New to syskit? Run `/syskit-guide` for an interactive walkthrough.
 
-* Prefer to use pre-created .sh files when available
-* Prefer to use common bash commands
-* Python is not available
+### Reference
+
+- Specifications: `doc/requirements/`, `doc/interfaces/`, `doc/design/`
+- Working documents: `.syskit/analysis/`, `.syskit/tasks/`
+- Scripts: `.syskit/scripts/`
+- Full instructions: `.syskit/AGENTS.md` (read on demand, not auto-loaded)
+<!-- syskit-end -->
