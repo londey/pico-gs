@@ -52,18 +52,19 @@ None
 ### Internal State
 
 - Edge-walking state machine registers
-- Barycentric coordinate accumulators (8.8 fixed-point per channel)
+- Edge function accumulators (e0, e1, e2) and row-start registers (e0_row, e1_row, e2_row) for incremental stepping
+- Barycentric weight registers (17-bit, 1.16 fixed point)
 - Current scanline and span tracking
 
 ### Algorithm / Behavior
 
-1. **Edge Setup**: Compute edge slopes and initial values from triangle vertices
-2. **Edge Walking**: Walk left and right edges scanline by scanline
-3. **Span Interpolation**: For each pixel in the span:
-   a. Interpolate RGBA8 vertex colors using barycentric coordinates with 8.8 fixed-point accumulators
-   b. Promote interpolated values to 10.8 format: 8-bit integer values placed in [17:8], fractional bits from interpolation preserved in [7:0]
-   c. Interpolate Z depth and UV coordinates
-   d. Output fragment to pixel pipeline (UNIT-006)
+1. **Edge Setup** (SETUP, 1 cycle): Compute edge coefficients A (11-bit), B (11-bit), C (21-bit) and bounding box
+2. **Initial Evaluation** (ITER_START, 1 cycle): Evaluate edge functions at bounding box origin using multiplies (cold path, once per triangle); latch into e0/e1/e2 and row-start registers
+3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); if inside, compute 17-bit barycentric weights (1.16 fixed point) from edge values × inv_area
+4. **Interpolation** (INTERPOLATE, per inside pixel): Compute vertex color (RGB888) and Z depth from barycentric weights using 17×8 and 17×16 multiplies (each fits in a single MULT18X18D)
+5. **Pixel Advance** (ITER_NEXT): Step to next pixel using **incremental addition only** — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
+   No multiplies are needed in the per-pixel inner loop.
+6. **Memory Address**: Framebuffer and Z-buffer addresses use shift-add for y×640 (640 = 512 + 128) instead of multiplication
 
 ## Implementation
 
@@ -90,3 +91,8 @@ Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM
 
 **Burst-friendly access patterns:** The edge-walking algorithm emits fragments in scanline order (left-to-right within each row of the bounding box), producing sequential screen-space positions.
 This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM arbiter (UNIT-007) to exploit SRAM burst write mode for framebuffer writes and burst read/write mode for Z-buffer accesses, improving effective SRAM throughput for runs of horizontally adjacent fragments.
+
+**Incremental edge stepping (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
+The rasterizer exploits this by computing edge values at the bounding box origin once per triangle (using multiplies in ITER_START), then stepping incrementally with pure addition in the per-pixel loop.
+Barycentric weights are truncated to 17-bit (1.16 fixed point) so that downstream interpolation multiplies (17×8 for color, 17×16 for Z) each fit in a single ECP5 MULT18X18D block.
+This reduces total DSP usage from 47 to 27 MULT18X18D blocks (ECP5-25K has 28 available).

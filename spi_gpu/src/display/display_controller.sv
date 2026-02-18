@@ -192,8 +192,10 @@ module display_controller (
     // 32-bit word address for the next burst start
     // base + y*640 + pixels already fetched on this line
     // Only 23 bits needed: {fetch_word_addr, 1'b0} produces the 24-bit SRAM address
+    // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids hardware multiplier
+    wire [22:0] y_times_640 = {3'b0, fetch_y, 9'b0} + {5'b0, fetch_y, 7'b0};
     wire [22:0] fetch_word_addr = {fb_display_base[22:12], 12'b0}
-                                + ({13'b0, fetch_y} * 23'd640)
+                                + y_times_640
                                 + {13'b0, pixels_fetched};
 
     // Prefetch FSM — state register (always_ff)

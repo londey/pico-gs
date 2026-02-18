@@ -59,9 +59,12 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 |--------|-------|-------------|
 | `tri_ready` | 1 | Ready to accept new triangle |
 | `setup_valid` | 1 | One-cycle pulse: setup data is ready for UNIT-005 |
-| `setup_edge0_A/B/C` | 3x21 signed | Edge 0 coefficients |
-| `setup_edge1_A/B/C` | 3x21 signed | Edge 1 coefficients |
-| `setup_edge2_A/B/C` | 3x21 signed | Edge 2 coefficients |
+| `setup_edge0_A/B` | 2x11 signed | Edge 0 A/B coefficients (differences of 10-bit coords) |
+| `setup_edge0_C` | 21 signed | Edge 0 C coefficient (product of 10-bit coords) |
+| `setup_edge1_A/B` | 2x11 signed | Edge 1 A/B coefficients |
+| `setup_edge1_C` | 21 signed | Edge 1 C coefficient |
+| `setup_edge2_A/B` | 2x11 signed | Edge 2 A/B coefficients |
+| `setup_edge2_C` | 21 signed | Edge 2 C coefficient |
 | `setup_bbox_min_x` | 10 | Bounding box minimum X |
 | `setup_bbox_max_x` | 10 | Bounding box maximum X |
 | `setup_bbox_min_y` | 10 | Bounding box minimum Y |
@@ -86,7 +89,8 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 - r0..r2, g0..g2, b0..b2 [7:0]: Per-vertex RGB components
 
 **Edge Function Coefficients:**
-- edge0_A/B/C, edge1_A/B/C, edge2_A/B/C [20:0 signed]: E(x,y) = A*x + B*y + C
+- edge0_A/B, edge1_A/B, edge2_A/B [10:0 signed]: Edge slopes (11-bit, differences of 10-bit coords)
+- edge0_C, edge1_C, edge2_C [20:0 signed]: Edge constants (21-bit, products of 10-bit coords)
 
 **Bounding Box:**
 - bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y [9:0]: Screen-clamped bounding box

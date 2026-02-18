@@ -147,13 +147,14 @@ module rasterizer (
 
     // Edge function coefficients
     // Edge equation: E(x,y) = A*x + B*y + C
-    reg signed [20:0] edge0_A, edge0_B, edge0_C;
-    reg signed [20:0] edge1_A, edge1_B, edge1_C;
-    reg signed [20:0] edge2_A, edge2_B, edge2_C;
-
-    // Triangle area (for barycentric normalization — reserved for future use)
-    reg signed [31:0] tri_area_x2;  // 2 * triangle area
-    wire _unused_tri_area_x2 = |tri_area_x2;
+    // A/B are differences of 10-bit coords → 11-bit signed (fits single MULT18X18D)
+    // C is product of 10-bit coords → 21-bit signed
+    reg signed [10:0] edge0_A, edge0_B;
+    reg signed [20:0] edge0_C;
+    reg signed [10:0] edge1_A, edge1_B;
+    reg signed [20:0] edge1_C;
+    reg signed [10:0] edge2_A, edge2_B;
+    reg signed [20:0] edge2_C;
 
     // ========================================================================
     // Iteration Registers
@@ -164,8 +165,13 @@ module rasterizer (
     // Edge function values at current pixel
     reg signed [31:0] e0, e1, e2;
 
-    // Barycentric weights (32-bit: edge_value * inv_area, unnormalized)
-    reg [31:0] w0, w1, w2;
+    // Edge function values at start of current row (for incremental Y stepping)
+    reg signed [31:0] e0_row, e1_row, e2_row;
+
+    // Barycentric weights (1.16 fixed point: 1 integer bit + 16 fractional bits)
+    // 17-bit unsigned ensures each w*attr multiply fits in a single MULT18X18D
+    // (17-bit unsigned → 18-bit signed input, paired with 8-bit color or 16-bit Z).
+    reg [16:0] w0, w1, w2;
 
     // Interpolated values
     reg [15:0] interp_z;
@@ -180,11 +186,45 @@ module rasterizer (
     reg [15:0] zbuf_value;  // 16-bit Z for current pixel
 
     // ========================================================================
+    // Initial Edge Value Computation (combinational, used once per triangle)
+    // ========================================================================
+
+    // Compute edge function values at bounding box origin.
+    // These wires are read only in ITER_START (cold path — once per triangle).
+    wire signed [31:0] e0_init = $signed(edge0_A) * $signed({1'b0, bbox_min_x}) +
+                                 $signed(edge0_B) * $signed({1'b0, bbox_min_y}) +
+                                 32'($signed(edge0_C));
+    wire signed [31:0] e1_init = $signed(edge1_A) * $signed({1'b0, bbox_min_x}) +
+                                 $signed(edge1_B) * $signed({1'b0, bbox_min_y}) +
+                                 32'($signed(edge1_C));
+    wire signed [31:0] e2_init = $signed(edge2_A) * $signed({1'b0, bbox_min_x}) +
+                                 $signed(edge2_B) * $signed({1'b0, bbox_min_y}) +
+                                 32'($signed(edge2_C));
+
+    // ========================================================================
+    // Barycentric Weight Computation (combinational, latched in EDGE_TEST)
+    // ========================================================================
+
+    // Full 16×16 products in 16.16 format; truncated to [16:0] (1.16 fixed point)
+    // when latched into w0/w1/w2 registers.
+    wire [31:0] w0_full = e0[15:0] * inv_area_reg;
+    wire [31:0] w1_full = e1[15:0] * inv_area_reg;
+    wire [31:0] w2_full = e2[15:0] * inv_area_reg;
+
+    // Upper bits [31:17] discarded during 1.16 truncation
+    wire [14:0] _unused_w0_hi = w0_full[31:17];
+    wire [14:0] _unused_w1_hi = w1_full[31:17];
+    wire [14:0] _unused_w2_hi = w2_full[31:17];
+
+    // ========================================================================
     // Interpolation Combinational Logic
     // ========================================================================
 
-    // Intermediates for barycentric interpolation (moved from INTERPOLATE state)
-    logic [39:0] sum_r, sum_g, sum_b, sum_z;  // 40-bit to hold sum
+    // Intermediates for barycentric interpolation
+    // With 17-bit weights (1.16): color products are 25-bit (9.16), Z products are 33-bit (17.16)
+    // Sum of 3 color terms: 27-bit; sum of 3 Z terms: 35-bit
+    logic [26:0] sum_r, sum_g, sum_b;  // 17-bit weight × 8-bit color, sum of 3
+    logic [34:0] sum_z;                // 17-bit weight × 16-bit depth, sum of 3
     logic [7:0]  next_interp_r, next_interp_g, next_interp_b;
     logic [15:0] next_interp_z;
 
@@ -200,11 +240,13 @@ module rasterizer (
         sum_b = w0 * b0 + w1 * b1 + w2 * b2;
         sum_z = w0 * z0 + w1 * z1 + w2 * z2;
 
-        // Shift and saturate
-        next_interp_r = (sum_r[39:16] > 24'd255) ? 8'd255 : sum_r[23:16];
-        next_interp_g = (sum_g[39:16] > 24'd255) ? 8'd255 : sum_g[23:16];
-        next_interp_b = (sum_b[39:16] > 24'd255) ? 8'd255 : sum_b[23:16];
-        next_interp_z = (sum_z[39:16] > 24'd65535) ? 16'hFFFF : sum_z[31:16];
+        // Shift right by 16 (remove fractional bits) and saturate
+        // Color: [26:16] is integer part, valid range [0, 255]
+        next_interp_r = (sum_r[26:24] != 3'b0) ? 8'd255 : sum_r[23:16];
+        next_interp_g = (sum_g[26:24] != 3'b0) ? 8'd255 : sum_g[23:16];
+        next_interp_b = (sum_b[26:24] != 3'b0) ? 8'd255 : sum_b[23:16];
+        // Z: [34:16] is integer part, valid range [0, 65535]
+        next_interp_z = (sum_z[34:32] != 3'b0) ? 16'hFFFF : sum_z[31:16];
     end
 
     // ========================================================================
@@ -318,17 +360,18 @@ module rasterizer (
             end
 
             EDGE_TEST: begin
-                next_state = BARY_CALC;
-            end
-
-            BARY_CALC: begin
-                // Check if pixel is inside triangle (all edge functions >= 0)
+                // Edge values already computed — check inside and branch directly
                 if (e0 >= 32'sd0 && e1 >= 32'sd0 && e2 >= 32'sd0) begin
                     next_state = INTERPOLATE;
                 end else begin
                     // Outside triangle - skip to next pixel
                     next_state = ITER_NEXT;
                 end
+            end
+
+            BARY_CALC: begin
+                // Unused — kept for enum stability
+                next_state = IDLE;
             end
 
             INTERPOLATE: begin
@@ -450,22 +493,23 @@ module rasterizer (
 
                 SETUP: begin
                     // Calculate edge function coefficients
-                    // Widen 10-bit coords to 21-bit signed for coefficient computation
+                    // A/B are 11-bit signed (difference of 10-bit unsigned coords)
+                    // C is 21-bit signed (difference of 10×10 products)
                     // Edge 0: v1 -> v2
-                    edge0_A <= $signed({11'b0, y1}) - $signed({11'b0, y2});
-                    edge0_B <= $signed({11'b0, x2}) - $signed({11'b0, x1});
+                    edge0_A <= $signed({1'b0, y1}) - $signed({1'b0, y2});
+                    edge0_B <= $signed({1'b0, x2}) - $signed({1'b0, x1});
                     edge0_C <= $signed({11'b0, x1}) * $signed({11'b0, y2}) -
                                $signed({11'b0, x2}) * $signed({11'b0, y1});
 
                     // Edge 1: v2 -> v0
-                    edge1_A <= $signed({11'b0, y2}) - $signed({11'b0, y0});
-                    edge1_B <= $signed({11'b0, x0}) - $signed({11'b0, x2});
+                    edge1_A <= $signed({1'b0, y2}) - $signed({1'b0, y0});
+                    edge1_B <= $signed({1'b0, x0}) - $signed({1'b0, x2});
                     edge1_C <= $signed({11'b0, x2}) * $signed({11'b0, y0}) -
                                $signed({11'b0, x0}) * $signed({11'b0, y2});
 
                     // Edge 2: v0 -> v1
-                    edge2_A <= $signed({11'b0, y0}) - $signed({11'b0, y1});
-                    edge2_B <= $signed({11'b0, x1}) - $signed({11'b0, x0});
+                    edge2_A <= $signed({1'b0, y0}) - $signed({1'b0, y1});
+                    edge2_B <= $signed({1'b0, x1}) - $signed({1'b0, x0});
                     edge2_C <= $signed({11'b0, x0}) * $signed({11'b0, y1}) -
                                $signed({11'b0, x1}) * $signed({11'b0, y0});
 
@@ -481,39 +525,32 @@ module rasterizer (
                     curr_x <= bbox_min_x;
                     curr_y <= bbox_min_y;
 
-                    // Calculate triangle area (2x) using edge function at opposing vertex
-                    // Area = edge0 evaluated at v0
-                    // Sign-extend edge_C (21-bit) to 32-bit for addition with products
-                    tri_area_x2 <= edge0_A * $signed({11'b0, x0}) +
-                                   edge0_B * $signed({11'b0, y0}) +
-                                   32'($signed(edge0_C));
+                    // Latch initial edge values at bbox origin (from combinational wires)
+                    e0     <= e0_init;
+                    e0_row <= e0_init;
+                    e1     <= e1_init;
+                    e1_row <= e1_init;
+                    e2     <= e2_init;
+                    e2_row <= e2_init;
                 end
 
                 EDGE_TEST: begin
-                    // Evaluate edge functions at current pixel
-                    // Sign-extend edge_C (21-bit) to 32-bit for addition with products
-                    e0 <= edge0_A * $signed({11'b0, curr_x}) +
-                          edge0_B * $signed({11'b0, curr_y}) +
-                          32'($signed(edge0_C));
-
-                    e1 <= edge1_A * $signed({11'b0, curr_x}) +
-                          edge1_B * $signed({11'b0, curr_y}) +
-                          32'($signed(edge1_C));
-
-                    e2 <= edge2_A * $signed({11'b0, curr_x}) +
-                          edge2_B * $signed({11'b0, curr_y}) +
-                          32'($signed(edge2_C));
+                    // Edge values e0/e1/e2 are already valid from ITER_START or
+                    // ITER_NEXT (incremental stepping — no multiplies needed here).
+                    // Check inside and compute barycentric weights in one cycle.
+                    if (e0 >= 32'sd0 && e1 >= 32'sd0 && e2 >= 32'sd0) begin
+                        // Inside triangle - latch barycentric weights (1.16 fixed)
+                        // Truncate 32-bit product to 17-bit so downstream interpolation
+                        // multiplies (17×8 color, 17×16 Z) fit in single MULT18X18D.
+                        w0 <= w0_full[16:0];
+                        w1 <= w1_full[16:0];
+                        w2 <= w2_full[16:0];
+                    end
                 end
 
                 BARY_CALC: begin
-                    // Check if pixel is inside triangle (all edge functions >= 0)
-                    if (e0 >= 32'sd0 && e1 >= 32'sd0 && e2 >= 32'sd0) begin
-                        // Inside triangle - calculate barycentric weights
-                        // Simplified: 16x16 multiply, result is unnormalized weight
-                        w0 <= e0[15:0] * inv_area_reg;
-                        w1 <= e1[15:0] * inv_area_reg;
-                        w2 <= e2[15:0] * inv_area_reg;
-                    end
+                    // Unused — EDGE_TEST now handles inside check and weight
+                    // computation directly. State retained for enum stability.
                 end
 
                 INTERPOLATE: begin
@@ -532,7 +569,8 @@ module rasterizer (
                 ZBUF_READ: begin
                     // Read Z-buffer - direct 16-bit read (one value per 32-bit word)
                     // Only bits [23:12] of base address are relevant for 24-bit SRAM space
-                    zb_addr <= {zb_base_addr[23:12], 12'b0} + 24'({14'd0, curr_y} * 20'd640) + {14'd0, curr_x};
+                    // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids multiplier
+                    zb_addr <= {zb_base_addr[23:12], 12'b0} + {5'b0, curr_y, 9'b0} + {7'b0, curr_y, 7'b0} + {14'd0, curr_x};
                     zb_we <= 1'b0;  // Read operation
                     zb_req <= 1'b1;
                 end
@@ -554,7 +592,8 @@ module rasterizer (
                     // Framebuffer write (gated by COLOR_WRITE_EN)
                     if (mode_color_write) begin
                         // Write to framebuffer - R5G6B5 format (16-bit color)
-                        fb_addr <= {fb_base_addr[23:12], 12'b0} + 24'({14'd0, curr_y} * 20'd640) + {14'd0, curr_x};
+                        // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids multiplier
+                        fb_addr <= {fb_base_addr[23:12], 12'b0} + {5'b0, curr_y, 9'b0} + {7'b0, curr_y, 7'b0} + {14'd0, curr_x};
                         fb_wdata <= {16'h0000,                          // Upper 16 bits unused
                                      interp_r[7:3],                     // R5
                                      interp_g[7:2],                     // G6
@@ -564,7 +603,8 @@ module rasterizer (
 
                     // Z-buffer write (gated by Z_WRITE_EN)
                     if (mode_z_write) begin
-                        zb_addr <= {zb_base_addr[23:12], 12'b0} + 24'({14'd0, curr_y} * 20'd640) + {14'd0, curr_x};
+                        // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids multiplier
+                        zb_addr <= {zb_base_addr[23:12], 12'b0} + {5'b0, curr_y, 9'b0} + {7'b0, curr_y, 7'b0} + {14'd0, curr_x};
                         zb_we <= 1'b1;  // Write operation
                         zb_req <= 1'b1;
                     end
@@ -579,12 +619,25 @@ module rasterizer (
                 end
 
                 ITER_NEXT: begin
-                    // Move to next pixel in bounding box
+                    // Move to next pixel in bounding box with incremental edge updates.
+                    // Edge functions are linear: E(x+1,y) = E(x,y) + A,
+                    // E(x,y+1) = E(x,y) + B. Pure addition — no multiplies.
                     if (curr_x < bbox_max_x) begin
+                        // Step right: add A coefficients
                         curr_x <= curr_x + 10'd1;
+                        e0 <= e0 + 32'($signed(edge0_A));
+                        e1 <= e1 + 32'($signed(edge1_A));
+                        e2 <= e2 + 32'($signed(edge2_A));
                     end else if (curr_y < bbox_max_y) begin
+                        // New row: step row-start values by B, reset X to row start
                         curr_x <= bbox_min_x;
                         curr_y <= curr_y + 10'd1;
+                        e0_row <= e0_row + 32'($signed(edge0_B));
+                        e1_row <= e1_row + 32'($signed(edge1_B));
+                        e2_row <= e2_row + 32'($signed(edge2_B));
+                        e0 <= e0_row + 32'($signed(edge0_B));
+                        e1 <= e1_row + 32'($signed(edge1_B));
+                        e2 <= e2_row + 32'($signed(edge2_B));
                     end
                 end
 
