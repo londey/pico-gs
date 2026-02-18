@@ -58,8 +58,8 @@ None
 
 ### Algorithm / Behavior
 
-1. **Edge Setup** (SETUP, 1 cycle): Compute edge coefficients A (11-bit), B (11-bit), C (21-bit) and bounding box
-2. **Initial Evaluation** (ITER_START, 1 cycle): Evaluate edge functions at bounding box origin using multiplies (cold path, once per triangle); latch into e0/e1/e2 and row-start registers
+1. **Edge Setup** (SETUP → SETUP_2 → SETUP_3, 3 cycles): Compute edge coefficients A (11-bit), B (11-bit) in cycle 1; compute edge C coefficients (21-bit) serialized over 3 cycles using a shared pair of 11×11 multipliers; compute bounding box
+2. **Initial Evaluation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at bounding box origin serialized over 3 cycles using the same shared multiplier pair (cold path, once per triangle); latch into e0/e1/e2 and row-start registers
 3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); if inside, compute 17-bit barycentric weights (1.16 fixed point) from edge values × inv_area
 4. **Interpolation** (INTERPOLATE, per inside pixel): Compute vertex color (RGB888) and Z depth from barycentric weights using 17×8 and 17×16 multiplies (each fits in a single MULT18X18D)
 5. **Pixel Advance** (ITER_NEXT): Step to next pixel using **incremental addition only** — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
@@ -95,4 +95,6 @@ This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM
 **Incremental edge stepping (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
 The rasterizer exploits this by computing edge values at the bounding box origin once per triangle (using multiplies in ITER_START), then stepping incrementally with pure addition in the per-pixel loop.
 Barycentric weights are truncated to 17-bit (1.16 fixed point) so that downstream interpolation multiplies (17×8 for color, 17×16 for Z) each fit in a single ECP5 MULT18X18D block.
-This reduces total DSP usage from 47 to 27 MULT18X18D blocks (ECP5-25K has 28 available).
+Additionally, the 12 cold-path setup multipliers (6 for edge C coefficients, 6 for initial edge evaluation) are serialized through a shared pair of 11×11 multipliers over 6 cycles total (3 for setup, 3 for initial evaluation).
+Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum, the extra 4 setup cycles have zero impact on sustained performance.
+This reduces total DSP usage from 47 to 17 MULT18X18D blocks (ECP5-25K has 28 available), leaving 11 blocks free for future texture sampling.

@@ -75,10 +75,13 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 
 ### Internal State
 
-**FSM States (3-bit):**
+**FSM States (4-bit, setup-relevant subset):**
 - IDLE (0): Waiting for tri_valid, tri_ready asserted
-- SETUP (1): Compute edge function coefficients and bounding box (1 cycle)
-- EMIT (2): Assert setup_valid for one cycle, output all setup data to UNIT-005
+- SETUP (1): Compute edge A/B coefficients and bounding box; compute edge0_C via shared multiplier pair (1 cycle)
+- SETUP_2 (13): Compute edge1_C via shared multiplier pair (1 cycle)
+- SETUP_3 (14): Compute edge2_C via shared multiplier pair (1 cycle)
+
+The 6 edge C multiplications (2 per edge × 3 edges) are serialized through a shared pair of 11×11 multipliers over 3 cycles, using only 2 physical MULT18X18D blocks instead of 6.
 
 **Note:** Legacy states ITER_START through ITER_NEXT (states 2-11 in previous versions) have been removed.
 Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstream by UNIT-005 (Edge Walker) and UNIT-006 (Pixel Pipeline).
@@ -100,11 +103,14 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 
 ### Algorithm / Behavior
 
-**SETUP State (1 cycle at 100 MHz = 10 ns):**
+**SETUP States (3 cycles at 100 MHz = 30 ns):**
 Computes three edge function coefficient sets from the latched vertex positions:
-- Edge 0 (v1->v2): A = y1-y2, B = x2-x1, C = x1*y2 - x2*y1
-- Edge 1 (v2->v0): A = y2-y0, B = x0-x2, C = x2*y0 - x0*y2
-- Edge 2 (v0->v1): A = y0-y1, B = x1-x0, C = x0*y1 - x1*y0
+- Edge 0 (v1→v2): A = y1-y2, B = x2-x1, C = x1*y2 - x2*y1
+- Edge 1 (v2→v0): A = y2-y0, B = x0-x2, C = x2*y0 - x0*y2
+- Edge 2 (v0→v1): A = y0-y1, B = x1-x0, C = x0*y1 - x1*y0
+
+A and B coefficients (differences) are computed combinationally in SETUP.
+C coefficients (products) are serialized one per cycle through a shared multiplier pair: edge0_C in SETUP, edge1_C in SETUP_2, edge2_C in SETUP_3.
 
 Computes bounding box as min/max of vertex coordinates clamped to screen (640x480).
 
@@ -139,5 +145,7 @@ SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
 See DD-015 for rationale.
 
 **v2.0 unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
-The 3-state FSM (IDLE, SETUP, EMIT) completes in 2-3 cycles (20-30 ns at 100 MHz), enabling a peak triangle setup rate of ~33-50 million triangles per second (limited by the SETUP+EMIT cycle count).
-In practice, throughput is limited by downstream rasterization and pixel pipeline stalls, not by setup computation.
+The setup FSM (IDLE → SETUP → SETUP_2 → SETUP_3) completes edge coefficient computation in 3 cycles (30 ns at 100 MHz) using a shared pair of 11×11 multipliers.
+Combined with the 3-cycle initial edge evaluation (ITER_START → INIT_E1 → INIT_E2), total triangle setup is 6 cycles (60 ns).
+Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum (4-bit QSPI @ 25 MHz), the serialized setup has zero impact on sustained performance.
+This serialization reduces setup multiplier usage from 12 to 2 MULT18X18D blocks, contributing to the overall reduction from 47 to 17 blocks.

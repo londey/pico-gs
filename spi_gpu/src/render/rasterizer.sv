@@ -7,6 +7,12 @@
 //
 // Format: R5G6B5 framebuffer (16-bit color) + 16-bit Z-buffer
 // Memory: 32-bit words with 16-bit data in lower half (upper half unused/padding)
+//
+// Multiplier strategy:
+//   Setup uses a shared pair of 11×11 multipliers, sequenced over 6 cycles
+//   (edge C coefficients + initial edge evaluation). Per-pixel interpolation
+//   uses 15 dedicated multipliers (3 bary weights + 9 color + 3 Z).
+//   Total: 2 (shared setup) + 15 (per-pixel) = 17 MULT18X18D.
 
 module rasterizer (
     input  wire         clk,
@@ -106,10 +112,13 @@ module rasterizer (
 
     typedef enum logic [3:0] {
         IDLE            = 4'd0,
-        SETUP           = 4'd1,  // Calculate edge functions and bounds
-        ITER_START      = 4'd2,  // Start iterating through bounding box
-        EDGE_TEST       = 4'd3,  // Test if pixel is inside triangle
-        BARY_CALC       = 4'd4,  // Calculate barycentric coordinates
+        SETUP           = 4'd1,  // Edge A/B/bbox + edge0_C (shared mul)
+        SETUP_2         = 4'd13, // edge1_C (shared mul)
+        SETUP_3         = 4'd14, // edge2_C (shared mul)
+        ITER_START      = 4'd2,  // e0_init (shared mul) + set curr_x/curr_y
+        INIT_E1         = 4'd4,  // e1_init (shared mul)
+        INIT_E2         = 4'd15, // e2_init (shared mul)
+        EDGE_TEST       = 4'd3,  // Inside test + barycentric weights
         INTERPOLATE     = 4'd5,  // Interpolate Z and color
         ZBUF_READ       = 4'd6,  // Read Z-buffer value
         ZBUF_WAIT       = 4'd7,  // Wait for Z-buffer read
@@ -186,20 +195,54 @@ module rasterizer (
     reg [15:0] zbuf_value;  // 16-bit Z for current pixel
 
     // ========================================================================
-    // Initial Edge Value Computation (combinational, used once per triangle)
+    // Shared Setup Multiplier (2 × 11×11 signed, muxed across 6 setup phases)
     // ========================================================================
+    //
+    // Phases 0-2 (SETUP, SETUP_2, SETUP_3): compute edge C = a1*b1 - a2*b2
+    // Phases 3-5 (ITER_START, INIT_E1, INIT_E2): compute e_init = a1*b1 + a2*b2 + C
 
-    // Compute edge function values at bounding box origin.
-    // These wires are read only in ITER_START (cold path — once per triangle).
-    wire signed [31:0] e0_init = $signed(edge0_A) * $signed({1'b0, bbox_min_x}) +
-                                 $signed(edge0_B) * $signed({1'b0, bbox_min_y}) +
-                                 32'($signed(edge0_C));
-    wire signed [31:0] e1_init = $signed(edge1_A) * $signed({1'b0, bbox_min_x}) +
-                                 $signed(edge1_B) * $signed({1'b0, bbox_min_y}) +
-                                 32'($signed(edge1_C));
-    wire signed [31:0] e2_init = $signed(edge2_A) * $signed({1'b0, bbox_min_x}) +
-                                 $signed(edge2_B) * $signed({1'b0, bbox_min_y}) +
-                                 32'($signed(edge2_C));
+    logic signed [10:0] smul_a1, smul_b1;
+    logic signed [10:0] smul_a2, smul_b2;
+    wire  signed [21:0] smul_p1 = smul_a1 * smul_b1;
+    wire  signed [21:0] smul_p2 = smul_a2 * smul_b2;
+
+    always_comb begin
+        // Default: zero inputs (no latches)
+        smul_a1 = 11'sd0;
+        smul_b1 = 11'sd0;
+        smul_a2 = 11'sd0;
+        smul_b2 = 11'sd0;
+
+        case (state)
+            // Edge C coefficients: C = x_a * y_b - x_c * y_d
+            SETUP: begin
+                smul_a1 = $signed({1'b0, x1}); smul_b1 = $signed({1'b0, y2});
+                smul_a2 = $signed({1'b0, x2}); smul_b2 = $signed({1'b0, y1});
+            end
+            SETUP_2: begin
+                smul_a1 = $signed({1'b0, x2}); smul_b1 = $signed({1'b0, y0});
+                smul_a2 = $signed({1'b0, x0}); smul_b2 = $signed({1'b0, y2});
+            end
+            SETUP_3: begin
+                smul_a1 = $signed({1'b0, x0}); smul_b1 = $signed({1'b0, y1});
+                smul_a2 = $signed({1'b0, x1}); smul_b2 = $signed({1'b0, y0});
+            end
+            // Initial edge values: e_init = A*min_x + B*min_y + C
+            ITER_START: begin
+                smul_a1 = edge0_A; smul_b1 = $signed({1'b0, bbox_min_x});
+                smul_a2 = edge0_B; smul_b2 = $signed({1'b0, bbox_min_y});
+            end
+            INIT_E1: begin
+                smul_a1 = edge1_A; smul_b1 = $signed({1'b0, bbox_min_x});
+                smul_a2 = edge1_B; smul_b2 = $signed({1'b0, bbox_min_y});
+            end
+            INIT_E2: begin
+                smul_a1 = edge2_A; smul_b1 = $signed({1'b0, bbox_min_x});
+                smul_a2 = edge2_B; smul_b2 = $signed({1'b0, bbox_min_y});
+            end
+            default: begin end
+        endcase
+    end
 
     // ========================================================================
     // Barycentric Weight Computation (combinational, latched in EDGE_TEST)
@@ -351,13 +394,13 @@ module rasterizer (
                 end
             end
 
-            SETUP: begin
-                next_state = ITER_START;
-            end
-
-            ITER_START: begin
-                next_state = EDGE_TEST;
-            end
+            // Serialized setup: 3 cycles for edge C, 3 cycles for e_init
+            SETUP:      next_state = SETUP_2;
+            SETUP_2:    next_state = SETUP_3;
+            SETUP_3:    next_state = ITER_START;
+            ITER_START: next_state = INIT_E1;
+            INIT_E1:    next_state = INIT_E2;
+            INIT_E2:    next_state = EDGE_TEST;
 
             EDGE_TEST: begin
                 // Edge values already computed — check inside and branch directly
@@ -367,11 +410,6 @@ module rasterizer (
                     // Outside triangle - skip to next pixel
                     next_state = ITER_NEXT;
                 end
-            end
-
-            BARY_CALC: begin
-                // Unused — kept for enum stability
-                next_state = IDLE;
             end
 
             INTERPOLATE: begin
@@ -492,26 +530,16 @@ module rasterizer (
                 end
 
                 SETUP: begin
-                    // Calculate edge function coefficients
-                    // A/B are 11-bit signed (difference of 10-bit unsigned coords)
-                    // C is 21-bit signed (difference of 10×10 products)
-                    // Edge 0: v1 -> v2
+                    // Phase 0: All edge A/B (subtractions) + bbox + edge0_C (shared mul)
                     edge0_A <= $signed({1'b0, y1}) - $signed({1'b0, y2});
                     edge0_B <= $signed({1'b0, x2}) - $signed({1'b0, x1});
-                    edge0_C <= $signed({11'b0, x1}) * $signed({11'b0, y2}) -
-                               $signed({11'b0, x2}) * $signed({11'b0, y1});
+                    edge0_C <= 21'(smul_p1 - smul_p2);
 
-                    // Edge 1: v2 -> v0
                     edge1_A <= $signed({1'b0, y2}) - $signed({1'b0, y0});
                     edge1_B <= $signed({1'b0, x0}) - $signed({1'b0, x2});
-                    edge1_C <= $signed({11'b0, x2}) * $signed({11'b0, y0}) -
-                               $signed({11'b0, x0}) * $signed({11'b0, y2});
 
-                    // Edge 2: v0 -> v1
                     edge2_A <= $signed({1'b0, y0}) - $signed({1'b0, y1});
                     edge2_B <= $signed({1'b0, x1}) - $signed({1'b0, x0});
-                    edge2_C <= $signed({11'b0, x0}) * $signed({11'b0, y1}) -
-                               $signed({11'b0, x1}) * $signed({11'b0, y0});
 
                     // Calculate bounding box (from latched registers, clamped to screen)
                     bbox_min_x <= clamped_min_x;
@@ -520,22 +548,39 @@ module rasterizer (
                     bbox_max_y <= clamped_max_y;
                 end
 
+                SETUP_2: begin
+                    // Phase 1: edge1_C (shared mul)
+                    edge1_C <= 21'(smul_p1 - smul_p2);
+                end
+
+                SETUP_3: begin
+                    // Phase 2: edge2_C (shared mul)
+                    edge2_C <= 21'(smul_p1 - smul_p2);
+                end
+
                 ITER_START: begin
-                    // Start at top-left of bounding box
+                    // Phase 3: e0_init (shared mul) + set iteration start
                     curr_x <= bbox_min_x;
                     curr_y <= bbox_min_y;
 
-                    // Latch initial edge values at bbox origin (from combinational wires)
-                    e0     <= e0_init;
-                    e0_row <= e0_init;
-                    e1     <= e1_init;
-                    e1_row <= e1_init;
-                    e2     <= e2_init;
-                    e2_row <= e2_init;
+                    e0     <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
+                    e0_row <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
+                end
+
+                INIT_E1: begin
+                    // Phase 4: e1_init (shared mul)
+                    e1     <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
+                    e1_row <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
+                end
+
+                INIT_E2: begin
+                    // Phase 5: e2_init (shared mul)
+                    e2     <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
+                    e2_row <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
                 end
 
                 EDGE_TEST: begin
-                    // Edge values e0/e1/e2 are already valid from ITER_START or
+                    // Edge values e0/e1/e2 are already valid from INIT_E2 or
                     // ITER_NEXT (incremental stepping — no multiplies needed here).
                     // Check inside and compute barycentric weights in one cycle.
                     if (e0 >= 32'sd0 && e1 >= 32'sd0 && e2 >= 32'sd0) begin
@@ -546,11 +591,6 @@ module rasterizer (
                         w1 <= w1_full[16:0];
                         w2 <= w2_full[16:0];
                     end
-                end
-
-                BARY_CALC: begin
-                    // Unused — EDGE_TEST now handles inside check and weight
-                    // computation directly. State retained for enum stability.
                 end
 
                 INTERPOLATE: begin
