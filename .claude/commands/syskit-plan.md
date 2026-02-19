@@ -40,7 +40,7 @@ Use the Task tool to launch a subagent that reads the affected documents and des
 
 The subagent reads all needed files from disk — do NOT embed proposed_changes.md content in the prompt.
 
-Launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER and TASK_FOLDER):
+Launch a `general-purpose` Task agent with **model: sonnet** and this prompt (substitute ANALYSIS_FOLDER and TASK_FOLDER):
 
 > Read your full instructions from `.syskit/prompts/plan-extract.md`.
 >

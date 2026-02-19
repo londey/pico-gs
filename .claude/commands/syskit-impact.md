@@ -40,7 +40,7 @@ Also create a draft staging directory: `.syskit/analysis/_draft/`
 
 Use the Task tool to launch a subagent that reads and analyzes all specification documents. This keeps the full document contents out of your context window.
 
-Launch a `general-purpose` Task agent with this prompt (substitute the actual proposed change for PROPOSED_CHANGE, and the analysis folder path for ANALYSIS_FOLDER):
+Launch a `general-purpose` Task agent with **model: sonnet** and this prompt (substitute the actual proposed change for PROPOSED_CHANGE, and the analysis folder path for ANALYSIS_FOLDER):
 
 > Read your full instructions from `.syskit/prompts/impact-analysis.md`.
 >

@@ -69,7 +69,7 @@ Choose the delegation strategy based on the count of affected documents:
 
 #### Step 5a: Single Subagent
 
-Launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER and PROPOSED_CHANGE):
+Launch a `general-purpose` Task agent with **model: sonnet** and this prompt (substitute ANALYSIS_FOLDER and PROPOSED_CHANGE):
 
 > Read your full instructions from `.syskit/prompts/propose-single.md`.
 >
@@ -85,7 +85,7 @@ The subagent will return a summary in `PROPOSE_SUMMARY_START`/`PROPOSE_SUMMARY_E
 
 Split the affected documents into groups of at most 8, keeping related documents together (e.g., a requirement and the interface it references in the same group).
 
-For each chunk, launch a `general-purpose` Task agent with this prompt (substitute ANALYSIS_FOLDER, PROPOSED_CHANGE, CHUNK_NUMBER, and ASSIGNED_FILES):
+For each chunk, launch a `general-purpose` Task agent with **model: sonnet** and this prompt (substitute ANALYSIS_FOLDER, PROPOSED_CHANGE, CHUNK_NUMBER, and ASSIGNED_FILES):
 
 > Read your full instructions from `.syskit/prompts/propose-chunk.md`.
 >
@@ -113,7 +113,7 @@ After the subagent(s) return:
 2. Note any quality warnings reported
 3. If the subagent failed or returned incomplete results, tell the user and offer to re-run
 
-If the change set affects 5 or more documents, launch a validation Task agent:
+If the change set affects 5 or more documents, launch a validation Task agent with **model: haiku**:
 
 > Read your full instructions from `.syskit/prompts/propose-validate.md`.
 >
