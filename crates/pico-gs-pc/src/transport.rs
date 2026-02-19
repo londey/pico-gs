@@ -1,4 +1,4 @@
-// Spec-ref: unit_035_pc_spi_driver.md `6ee2a1d14eeb9355` 2026-02-12
+// Spec-ref: unit_035_pc_spi_driver.md `016586a1c90ed1d5` 2026-02-19
 //! FT232H SPI transport for PC debug host (stub).
 //!
 //! This module will implement SpiTransport + FlowControl using an FT232H

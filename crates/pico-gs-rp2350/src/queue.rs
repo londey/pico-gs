@@ -1,4 +1,4 @@
-// Spec-ref: unit_026_intercore_queue.md `b6e2e8bae3f95390` 2026-02-12
+// Spec-ref: unit_026_intercore_queue.md `254452866b60d251` 2026-02-19
 //! Inter-core SPSC command queue types (RP2350-specific).
 
 use pico_gs_core::render::RenderCommand;

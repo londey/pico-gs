@@ -23,6 +23,7 @@ When the GPU pixel pipeline processes a fragment through blending, shading, or t
 - UNIT-005 (Rasterizer) — RGBA8 interpolation output promotion to 10.8
 - UNIT-006 (Pixel Pipeline) — All blend operations in 10.8 format
 - UNIT-022 (GPU Driver Layer)
+- UNIT-010 (Color Combiner)
 
 ## Interfaces
 

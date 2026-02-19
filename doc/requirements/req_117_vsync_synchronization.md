@@ -23,6 +23,7 @@ Gating frame submission on the vsync signal couples the render loop to the displ
 ## Allocated To
 
 - UNIT-022 (GPU Driver Layer)
+- UNIT-021 (Core 1 Render Executor)
 
 ## Interfaces
 

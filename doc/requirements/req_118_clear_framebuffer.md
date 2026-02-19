@@ -23,6 +23,7 @@ Clearing the back-buffer (not the displayed front-buffer) prevents visible teari
 ## Allocated To
 
 - UNIT-022 (GPU Driver Layer)
+- UNIT-021 (Core 1 Render Executor)
 
 ## Interfaces
 

@@ -22,6 +22,7 @@ By accepting multiple input types (texture, vertex, material, depth-derived), th
 ## Allocated To
 
 - UNIT-006 (Pixel Pipeline)
+- UNIT-010 (Color Combiner)
 
 ## Interfaces
 

@@ -1,4 +1,4 @@
-// Spec-ref: unit_026_intercore_queue.md `b6e2e8bae3f95390` 2026-02-12
+// Spec-ref: unit_026_intercore_queue.md `254452866b60d251` 2026-02-19
 //! Render command types and data structures.
 //!
 //! Platform-agnostic render types. The inter-core SPSC queue (RP2350-specific)

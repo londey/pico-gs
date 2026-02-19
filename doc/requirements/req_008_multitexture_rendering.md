@@ -23,6 +23,7 @@ REQ-TBD-TEXTURE-SAMPLERS
 ## Allocated To
 
 - UNIT-006 (Pixel Pipeline)
+- UNIT-010 (Color Combiner)
 
 ## Interfaces
 

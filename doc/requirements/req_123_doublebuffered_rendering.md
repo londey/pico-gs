@@ -22,6 +22,7 @@ Swapping on a vsync boundary guarantees the transition occurs during the blankin
 ## Allocated To
 
 - UNIT-022 (GPU Driver Layer)
+- UNIT-021 (Core 1 Render Executor)
 
 ## Interfaces
 

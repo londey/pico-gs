@@ -13,6 +13,7 @@ Internal
 - **Consumer:** UNIT-006 (Pixel Pipeline)
 - **Consumer:** UNIT-008 (Display Controller)
 - **Consumer:** UNIT-022 (GPU Driver Layer)
+- **Consumer:** UNIT-010 (Color Combiner)
 
 ## Serves Requirement Areas
 

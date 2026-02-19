@@ -1,5 +1,5 @@
-// Spec-ref: unit_020_core_0_scene_manager.md `8543d7a68539faa9` 2026-02-16
-// Spec-ref: unit_026_intercore_queue.md `b6e2e8bae3f95390` 2026-02-12
+// Spec-ref: unit_020_core_0_scene_manager.md `01153ba84472e246` 2026-02-19
+// Spec-ref: unit_026_intercore_queue.md `254452866b60d251` 2026-02-19
 //! RP2350 Host Firmware for ICEpi SPI GPU
 //!
 //! Core 0: Scene graph management, USB keyboard input, render command generation.

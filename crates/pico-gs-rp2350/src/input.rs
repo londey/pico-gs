@@ -1,4 +1,4 @@
-// Spec-ref: unit_025_usb_keyboard_handler.md `cc607c87aa46749d` 2026-02-12
+// Spec-ref: unit_025_usb_keyboard_handler.md `7ff92ec726df2c50` 2026-02-19
 //! USB keyboard input handling.
 //!
 //! When the `usb-host` feature is enabled, uses TinyUSB C FFI for USB HID.

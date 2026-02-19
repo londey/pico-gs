@@ -1,4 +1,4 @@
-// Spec-ref: unit_023_transformation_pipeline.md `eec29f9d919d2b06` 2026-02-12
+// Spec-ref: unit_023_transformation_pipeline.md `79342a599e2d2d7a` 2026-02-19
 //! MVP transform pipeline: matrix transforms, viewport mapping, perspective divide.
 
 use crate::gpu::registers;
