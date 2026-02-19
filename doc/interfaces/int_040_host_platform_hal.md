@@ -18,9 +18,9 @@ Internal
 
 ## Referenced By
 
-- REQ-103 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
-- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-106 (PC Debug Host) — Area 10: GPU Debug GUI
+- REQ-009.01 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
+- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-010.01 (PC Debug Host) — Area 10: GPU Debug GUI
 
 Note: REQ-100 (Host Firmware Architecture) is retired; its reference has been removed.
 

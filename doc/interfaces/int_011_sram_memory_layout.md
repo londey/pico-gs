@@ -13,19 +13,19 @@ Internal
 
 ## Referenced By
 
-- REQ-002 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
-- REQ-005 (Depth Tested Triangle) — area 5: Blend/Frame Buffer Store
-- REQ-006 (Textured Triangle) — area 3: Texture Samplers
-- REQ-014 (Enhanced Z-Buffer) — area 5: Blend/Frame Buffer Store
-- REQ-025 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
+- REQ-005.01 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
+- REQ-005.02 (Depth Tested Triangle) — area 5: Blend/Frame Buffer Store
+- REQ-003.01 (Textured Triangle) — area 3: Texture Samplers
+- REQ-005.04 (Enhanced Z-Buffer) — area 5: Blend/Frame Buffer Store
+- REQ-005.06 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
 - INT-014 (Texture Memory Layout)
-- REQ-123 (Double-Buffered Rendering) — area 5: Blend/Frame Buffer Store
-- REQ-050 (Performance Targets) — area 11: System Constraints
-- REQ-051 (Resource Constraints) — area 11: System Constraints
-- REQ-027 (Z-Buffer Operations) — area 5: Blend/Frame Buffer Store
-- REQ-024 (Texture Sampling) — area 3: Texture Samplers
-- REQ-023 (Rasterization Algorithm) — area 2: Rasterizer
-- REQ-133 (Color Grading LUT) — area 6: Screen Scan Out
+- REQ-005.09 (Double-Buffered Rendering) — area 5: Blend/Frame Buffer Store
+- REQ-011.01 (Performance Targets) — area 11: System Constraints
+- REQ-011.02 (Resource Constraints) — area 11: System Constraints
+- REQ-005.07 (Z-Buffer Operations) — area 5: Blend/Frame Buffer Store
+- REQ-003.06 (Texture Sampling) — area 3: Texture Samplers
+- REQ-002.03 (Rasterization Algorithm) — area 2: Rasterizer
+- REQ-006.03 (Color Grading LUT) — area 6: Screen Scan Out
 
 ## Specification
 
@@ -380,12 +380,12 @@ Access: Single pixel writes or short burst writes (burst_len up to 16)
 
 ```
 Priority: MEDIUM
-Pattern: Burst block reads on cache miss (REQ-131)
+Pattern: Burst block reads on cache miss (REQ-003.08)
 Bandwidth: ~5-15 MB/s average (with >85% cache hit rate)
 Access: BC1: 8 bytes per cache miss (burst), RGBA4444: 32 bytes per cache miss (burst)
 ```
 
-**Texture Cache (REQ-131)**: Each of the 2 texture samplers (v10.0: reduced from 4) has an on-chip 4-way set-associative texture cache with 16,384 texels (v10.0: increased from 4,096).
+**Texture Cache (REQ-003.08)**: Each of the 2 texture samplers (v10.0: reduced from 4) has an on-chip 4-way set-associative texture cache with 16,384 texels (v10.0: increased from 4,096).
 On cache hit, no SDRAM access is needed.
 On cache miss, the full 4x4 block is fetched using a sequential read from SDRAM:
 - BC1: 8 bytes = 4 sequential 16-bit reads.
@@ -459,7 +459,7 @@ Typical GPU access patterns are semi-sequential, yielding effective throughput b
 | Display scanout | — | ~50 MB/s | 25% | Long sequential reads, ~2 row changes per scanline |
 | Framebuffer write | — | ~40 MB/s | 20% | Short sequential writes (4-16 pixels per row) |
 | Z-buffer R/W | ~30 MB/s | ~35 MB/s | 17.5% | Short sequential within rows, some row changes |
-| Texture fetch | ~5 MB/s | ~5 MB/s | 2.5% | Sequential cache fills (REQ-131), >90% hit rate (v10.0: 2 samplers, 16K cache) |
+| Texture fetch | ~5 MB/s | ~5 MB/s | 2.5% | Sequential cache fills (REQ-003.08), >90% hit rate (v10.0: 2 samplers, 16K cache) |
 | Auto-refresh | ~1.6 MB/s | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
 | **Headroom** | — | ~68 MB/s | 34.2% | Available for higher fill rates |
 
@@ -469,7 +469,7 @@ For random access patterns (Z-buffer with scattered fragments), the per-access o
 Auto-refresh consumes a small but non-negotiable fraction of bandwidth.
 
 **Note**: Pre-cache texture fetch budget was 30 MB/s (15%).
-The per-sampler texture cache (REQ-131) with 16K texels per sampler (v10.0) reduces average texture SDRAM bandwidth to ~3-8 MB/s depending on scene complexity and cache hit rate, freeing ~22-27 MB/s for other consumers.
+The per-sampler texture cache (REQ-003.08) with 16K texels per sampler (v10.0) reduces average texture SDRAM bandwidth to ~3-8 MB/s depending on scene complexity and cache hit rate, freeing ~22-27 MB/s for other consumers.
 With only 2 texture samplers (v10.0), peak simultaneous cache miss bandwidth is halved compared to the 4-sampler configuration.
 
 **Clock Domain Note**: Because the GPU core and SDRAM controller share the same 100 MHz clock domain, there is no CDC overhead on any arbiter port.

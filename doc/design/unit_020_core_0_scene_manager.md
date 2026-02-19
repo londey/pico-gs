@@ -10,10 +10,10 @@ Scene graph management and animation
 
 ## Implements Requirements
 
-- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-104 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
-- REQ-112 (Scene Graph Management) — Area 8: Scene Graph/ECS
+- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-007.01 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
+- REQ-008.03 (Scene Graph Management) — Area 8: Scene Graph/ECS
 
 Note: REQ-100 (Host Firmware Architecture), REQ-111 (Dual-Core Architecture), and REQ-120 (Async Data Loading) are retired; their references have been removed.
 Note: This unit's name reflects its RP2350 dual-core origin. In a future change it may be merged with UNIT-021 into a single-threaded execution unit; for now it is re-parented under Area 8 without functional change.

@@ -6,11 +6,11 @@ Scanline FIFO and display pipeline
 
 ## Implements Requirements
 
-- REQ-002 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
-- REQ-007 (Display Output) — area 6: Screen Scan Out
-- REQ-025 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
-- REQ-026 (Display Output Timing) — area 6: Screen Scan Out
-- REQ-133 (Color Grading LUT) — area 6: Screen Scan Out
+- REQ-005.01 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
+- REQ-006.01 (Display Output) — area 6: Screen Scan Out
+- REQ-005.06 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
+- REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
+- REQ-006.03 (Color Grading LUT) — area 6: Screen Scan Out
 
 ## Interfaces
 
@@ -172,7 +172,7 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
 ## Implementation
 
 - `spi_gpu/src/display/display_controller.sv`: Main implementation
-- `spi_gpu/src/display/color_grade_lut.sv`: Color grading LUT module (REQ-133)
+- `spi_gpu/src/display/color_grade_lut.sv`: Color grading LUT module (REQ-006.03)
 
 ## Verification
 
@@ -239,7 +239,7 @@ Since clk_pixel = clk_core / 4 (synchronous integer division from the same PLL),
 This is simpler and more reliable than the asynchronous CDC that would be required if the clocks were from independent sources.
 
 **Version History:**
-- v5.0: Added color grading LUT with register-based upload (REQ-133)
+- v5.0: Added color grading LUT with register-based upload (REQ-006.03)
 - v9.0: Replaced register-based LUT upload with memory-based auto-load DMA
   - Reduces SPI traffic from 128+ register writes to 1 register write
   - Enables atomic framebuffer + LUT switch

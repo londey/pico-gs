@@ -6,8 +6,8 @@ Internal
 
 ## Serves Requirement Areas
 
-- Area 7: Vertex Transformation (REQ-115, REQ-116)
-- Area 8: Scene Graph/ECS (REQ-101, REQ-102, REQ-112, REQ-114, REQ-122)
+- Area 7: Vertex Transformation (REQ-007.02, REQ-013.02)
+- Area 8: Scene Graph/ECS (REQ-008.01, REQ-008.02, REQ-008.03, REQ-008.04, REQ-008.05)
 
 ## Parties
 
@@ -16,20 +16,20 @@ Internal
 
 ## Referenced By
 
-- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-106 (PC Debug Host) — Area 10: GPU Debug GUI
-- REQ-112 (Scene Graph Management) — Area 8: Scene Graph/ECS
-- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
-- REQ-116 (Upload Texture) — Area 1: GPU SPI Controller
-- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
-- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
-- REQ-119 (GPU Flow Control) — Area 1: GPU SPI Controller
-- REQ-122 (Default Demo Startup) — Area 8: Scene Graph/ECS
-- REQ-132 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
-- REQ-133 (Color Grading LUT) — Area 6: Screen Scan Out
-- REQ-134 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-010.01 (PC Debug Host) — Area 10: GPU Debug GUI
+- REQ-008.03 (Scene Graph Management) — Area 8: Scene Graph/ECS
+- REQ-007.02 (Render Mesh Patch) — Area 7: Vertex Transformation
+- REQ-013.02 (Upload Texture) — Area 1: GPU SPI Controller
+- REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-001.06 (GPU Flow Control) — Area 1: GPU SPI Controller
+- REQ-008.05 (Default Demo Startup) — Area 8: Scene Graph/ECS
+- REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
+- REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
+- REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
 
 Note: REQ-100 (Host Firmware Architecture) and REQ-110 (GPU Initialization) and REQ-120 (Async Data Loading) are retired; their references have been removed.
 

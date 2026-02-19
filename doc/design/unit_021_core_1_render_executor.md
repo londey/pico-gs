@@ -10,14 +10,14 @@ Render command queue consumer
 
 ## Implements Requirements
 
-- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-104 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
-- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
-- REQ-116 (Upload Texture) — Area 1: GPU SPI Controller
-- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
-- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
-- REQ-123 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
+- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-007.01 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
+- REQ-007.02 (Render Mesh Patch) — Area 7: Vertex Transformation
+- REQ-013.02 (Upload Texture) — Area 1: GPU SPI Controller
+- REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
 
 Note: REQ-100 (Host Firmware Architecture) and REQ-111 (Dual-Core Architecture) are retired; their references have been removed.
 Note: This unit's name reflects its RP2350 dual-core origin. In a future change it may be merged with UNIT-020 into a single-threaded execution unit; for now it is re-parented under Area 8 without functional change.

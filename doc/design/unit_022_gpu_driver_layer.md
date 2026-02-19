@@ -10,18 +10,18 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 
 ## Implements Requirements
 
-- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
-- REQ-116 (Upload Texture) — Area 1: GPU SPI Controller
-- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
-- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
-- REQ-119 (GPU Flow Control) — Area 1: GPU SPI Controller
-- REQ-123 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
-- REQ-132 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
-- REQ-133 (Color Grading LUT) — Area 6: Screen Scan Out
-- REQ-134 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-007.02 (Render Mesh Patch) — Area 7: Vertex Transformation
+- REQ-013.02 (Upload Texture) — Area 1: GPU SPI Controller
+- REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-001.06 (GPU Flow Control) — Area 1: GPU SPI Controller
+- REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
+- REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
+- REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
+- REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
 
 Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and REQ-121 (Async SPI Transmission) are retired; their references have been removed.
 

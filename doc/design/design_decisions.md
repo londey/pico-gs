@@ -196,8 +196,8 @@ Replace the async SRAM controller with a synchronous DRAM controller for the W98
 - INT-011: SDRAM Memory Layout (timing specs, bandwidth budget)
 - UNIT-007: Memory Arbiter (preserved interface)
 - INT-002: DVI TMDS Output (PLL configuration update)
-- REQ-050: Performance Targets (bandwidth recalculation)
-- REQ-051: Resource Constraints (SDRAM controller resource estimate)
+- REQ-011.01: Performance Targets (bandwidth recalculation)
+- REQ-011.02: Resource Constraints (SDRAM controller resource estimate)
 - DD-020: SRAM Burst Read/Write Operations (superseded)
 
 ---
@@ -323,7 +323,7 @@ Key implementation details:
 ### References
 
 - UNIT-002: Command FIFO (primary implementation target)
-- REQ-021: Command Buffer FIFO (functional requirement)
+- REQ-001.04: Command Buffer FIFO (functional requirement)
 - INT-012: SPI Transaction Format (FIFO depth references)
 - INT-013: GPIO Status Signals (CMD_EMPTY boot behavior)
 - INT-010: GPU Register Map (registers used by boot sequence)
@@ -405,7 +405,7 @@ Three related changes to the pixel pipeline and register layout:
 
 ### References
 
-- INT-010, INT-011, INT-020, INT-021, UNIT-006, REQ-027
+- INT-010, INT-011, INT-020, INT-021, UNIT-006, REQ-005.07
 
 ---
 
@@ -469,7 +469,7 @@ Additionally, each patch uses four separate binary files (_pos.bin, _uv.bin, _no
 - UNIT-033: Codegen emits single blob files with quantized data
 - INT-021: RenderMeshPatch processing steps updated for unpack/convert
 - UNIT-021: Input buffer sizes reduced (~1,136 B → ~608 B), working RAM ~7.5 KB
-- REQ-104: Bias matrix requirement added
+- REQ-007.01: Bias matrix requirement added
 - No GPU hardware changes required
 - Lights and matrices remain f32 (only vertex attributes are quantized)
 
@@ -477,7 +477,7 @@ Additionally, each patch uses four separate binary files (_pos.bin, _uv.bin, _no
 
 - INT-031: Asset Binary Format (primary spec)
 - INT-021: Render Command Format (RenderMeshPatch processing)
-- REQ-104: Matrix Transformation Pipeline (bias matrix)
+- REQ-007.01: Matrix Transformation Pipeline (bias matrix)
 - DD-016: Mesh Pipeline Restructure (Core 1 vertex processing context)
 
 ---
@@ -552,7 +552,7 @@ Use always-on 10.8 fixed-point format (18 bits per channel) for all internal fra
 - +~1500-2500 LUTs for wider datapaths and saturation logic
 - Eliminates visible banding in multi-stage blend chains
 - Vertex color input (ABGR8888 register) promoted to 10.8 on entry: `value_10_8 = {2'b0, value_8, 8'b0}`
-- See REQ-134 for full specification
+- See REQ-004.02 for full specification
 
 ---
 
@@ -590,7 +590,7 @@ Use a 16×16 blue noise dither pattern stored in 1 EBR block:
 - +1 pipeline cycle latency (EBR read, fully pipelined — no throughput reduction)
 - +~100-200 LUTs for dither scaling and addition
 - Smooth gradients in RGB565 output even with large flat-shaded or textured surfaces
-- See REQ-132 for full specification
+- See REQ-005.10 for full specification
 
 ---
 
@@ -633,7 +633,7 @@ Place 3× 1D color grading LUTs at display scanout in the display controller (UN
 - +~230 LUTs for summation and saturation (8-bit adders)
 - +~100 FFs for control FSM (upload, bank swap)
 - Real-time gamma correction, color temperature, artistic grading with no render overhead
-- See REQ-133 for full specification
+- See REQ-006.03 for full specification
 
 ---
 
@@ -747,7 +747,7 @@ Replace register-based LUT upload with SRAM-based auto-load DMA (v9.0):
 ### References
 
 - INT-010 v9.0: GPU Register Map (FB_DISPLAY, FB_DISPLAY_SYNC)
-- REQ-133: Color Grading LUT (updated upload protocol)
+- REQ-006.03: Color Grading LUT (updated upload protocol)
 - INT-011: SRAM Memory Layout (recommended LUT region)
 - UNIT-008: Display Controller (LUT DMA controller)
 - UNIT-003: Register File (FB_DISPLAY_SYNC blocking logic)
@@ -1042,7 +1042,7 @@ Restructure the mesh pipeline so that:
 - INT-021: Render Command Format (RenderMeshPatch)
 - INT-031: Asset Binary Format (packed u8 index, AABB, MeshPatchDescriptor)
 - INT-040: Host Platform HAL (DmaMemcpy, BufferedSpiTransport)
-- REQ-115: Render Mesh Patch (Core 1 vertex processing pipeline)
+- REQ-007.02: Render Mesh Patch (Core 1 vertex processing pipeline)
 
 ---
 
@@ -1121,7 +1121,7 @@ Key design principles:
 
 - INT-040: Host Platform HAL (trait definitions)
 - REQ-100: Host Firmware Architecture (multi-platform)
-- REQ-106: PC Debug Host (PC-specific requirements)
+- REQ-010.01: PC Debug Host (PC-specific requirements)
 - UNIT-035: PC SPI Driver (FT232H implementation)
 
 ---

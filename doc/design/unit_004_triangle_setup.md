@@ -6,13 +6,13 @@ Prepares triangle for rasterization
 
 ## Parent Requirements
 
-- REQ-TBD-RASTERIZER (Rasterizer)
+- REQ-002 (Rasterizer)
 
 ## Implements Requirements
 
-- REQ-003 (Flat Shaded Triangle)
-- REQ-004 (Gouraud Shaded Triangle)
-- REQ-023 (Rasterization Algorithm)
+- REQ-002.01 (Flat Shaded Triangle)
+- REQ-002.02 (Gouraud Shaded Triangle)
+- REQ-002.03 (Rasterization Algorithm)
 
 ## Interfaces
 

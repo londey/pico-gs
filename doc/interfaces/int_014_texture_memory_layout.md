@@ -13,14 +13,14 @@ Internal
 
 ## Referenced By
 
-- REQ-TBD-TEXTURE-SAMPLERS (Texture Samplers — top-level area 3 requirement, not yet created)
-- REQ-006 (Textured Triangle — sub-requirement under area 3)
-- REQ-008 (Multi-Texture Rendering — sub-requirement under area 3)
-- REQ-010 (Compressed Textures — sub-requirement under area 3)
-- REQ-011 (Swizzle Patterns — sub-requirement under area 3)
-- REQ-024 (Texture Sampling — sub-requirement under area 3)
+- REQ-003 (Texture Samplers — top-level area 3 requirement, not yet created)
+- REQ-003.01 (Textured Triangle — sub-requirement under area 3)
+- REQ-003.02 (Multi-Texture Rendering — sub-requirement under area 3)
+- REQ-003.03 (Compressed Textures — sub-requirement under area 3)
+- REQ-003.04 (Swizzle Patterns — sub-requirement under area 3)
+- REQ-003.06 (Texture Sampling — sub-requirement under area 3)
 - INT-011 (SDRAM Memory Layout - overall memory allocation)
-- REQ-131 (Texture Cache — sub-requirement under area 3)
+- REQ-003.08 (Texture Cache — sub-requirement under area 3)
 
 ## Specification
 
@@ -360,9 +360,9 @@ mip_base_addr = texture_base + mip_offsets[selected_mip];
 - BC1 textures must have dimensions that are multiples of 4
 - Base address must be 4K aligned
 
-## Texture Cache Considerations (REQ-131)
+## Texture Cache Considerations (REQ-003.08)
 
-The pixel pipeline uses an on-chip texture cache (REQ-131) with 2 independent per-sampler caches (v10.0: reduced from 4 samplers) to reduce SDRAM bandwidth.
+The pixel pipeline uses an on-chip texture cache (REQ-003.08) with 2 independent per-sampler caches (v10.0: reduced from 4 samplers) to reduce SDRAM bandwidth.
 Each sampler cache holds 16,384 texels (v10.0: increased from 4,096) in a 4-way set-associative configuration with 256 sets.
 The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
 

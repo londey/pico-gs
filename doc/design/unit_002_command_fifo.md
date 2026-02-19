@@ -6,12 +6,12 @@ Buffers GPU commands with flow control and provides autonomous boot-time command
 
 ## Parent Area
 
-- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
+- REQ-001 (GPU SPI Controller)
 
 ## Implements Requirements
 
-- REQ-001 (Basic Host Communication)
-- REQ-021 (Command Buffer FIFO)
+- REQ-001.01 (Basic Host Communication)
+- REQ-001.04 (Command Buffer FIFO)
 
 ## Interfaces
 

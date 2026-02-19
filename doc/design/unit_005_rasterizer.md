@@ -6,16 +6,16 @@ Edge-walking rasterization engine
 
 ## Parent Requirements
 
-- REQ-TBD-RASTERIZER (Rasterizer)
+- REQ-002 (Rasterizer)
 
 ## Implements Requirements
 
-- REQ-003 (Flat Shaded Triangle)
-- REQ-004 (Gouraud Shaded Triangle)
-- REQ-005 (Depth Tested Triangle)
-- REQ-006 (Textured Triangle)
-- REQ-023 (Rasterization Algorithm)
-- REQ-134 (Extended Precision Fragment Processing) — RGBA8 interpolation output promotion to 10.8
+- REQ-002.01 (Flat Shaded Triangle)
+- REQ-002.02 (Gouraud Shaded Triangle)
+- REQ-005.02 (Depth Tested Triangle)
+- REQ-003.01 (Textured Triangle)
+- REQ-002.03 (Rasterization Algorithm)
+- REQ-004.02 (Extended Precision Fragment Processing) — RGBA8 interpolation output promotion to 10.8
 
 ## Interfaces
 

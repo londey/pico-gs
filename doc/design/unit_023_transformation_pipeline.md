@@ -10,9 +10,9 @@ MVP matrix transforms
 
 ## Implements Requirements
 
-- REQ-102 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
-- REQ-115 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
-- REQ-104 (Matrix Transformation Pipeline) — parent area 7 (Vertex Transformation)
+- REQ-008.02 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
+- REQ-007.02 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
+- REQ-007.01 (Matrix Transformation Pipeline) — parent area 7 (Vertex Transformation)
 
 ## Interfaces
 
@@ -83,7 +83,7 @@ None
 
 ## Design Notes
 
-**Note on quantized vertex positions**: When rendering meshes with u16-quantized positions (per INT-031), Core 0 pre-multiplies the model matrix with a quantization bias matrix (per REQ-104) before computing the MVP.
+**Note on quantized vertex positions**: When rendering meshes with u16-quantized positions (per INT-031), Core 0 pre-multiplies the model matrix with a quantization bias matrix (per REQ-007.01) before computing the MVP.
 This means `transform_vertex()` receives an MVP matrix that already maps u16 [0, 65535] values back to model space.
 The function itself is unchanged — it always receives a position Vec3 and an MVP Mat4, regardless of the original encoding.
 

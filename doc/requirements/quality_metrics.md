@@ -16,7 +16,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - **Target:** ≤ 18,000 LUTs (75% utilization)
 - **Critical Threshold:** ≤ 21,600 LUTs (90% - routing difficulty increases beyond this)
 - **Measurement Method:** Yosys synthesis report + nextpnr-ecp5 utilization report
-- **References:** REQ-051 (Resource Constraints)
+- **References:** REQ-011.02 (Resource Constraints)
 - **Rationale:** Leaves headroom for future features and ensures reliable place-and-route
 
 #### Flip-Flop Utilization
@@ -25,7 +25,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - **Target:** ≤ 9,000 flip-flops (75% utilization)
 - **Critical Threshold:** ≤ 10,800 flip-flops (90%)
 - **Measurement Method:** nextpnr-ecp5 utilization report
-- **References:** REQ-051
+- **References:** REQ-011.02
 - **Rationale:** Adequate headroom for design changes
 
 #### Embedded Memory (BRAM)
@@ -37,13 +37,13 @@ This document defines quality attributes and metrics for the pico-gs system, foc
   - Display scanline FIFO: ~32 Kbits (4 KB, 1024 words × 32 bits)
   - SPI receive FIFO: ~8 Kbits (1 KB, EBR)
   - Command FIFO: distributed RAM (~2.3 Kbits, 72 bits × 32 entries, not EBR)
-  - Texture cache (4 samplers × 4 banks): ~288 Kbits (36 KB, 16 EBR blocks) (REQ-131)
+  - Texture cache (4 samplers × 4 banks): ~288 Kbits (36 KB, 16 EBR blocks) (REQ-003.08)
   - **Total EBR allocated:** ~328 Kbits (~41 KB)
   - **Headroom:** ~428 Kbits (~54 KB) for future features
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
-- **References:** REQ-051, REQ-131, UNIT-006, UNIT-008 (Display Controller)
+- **References:** REQ-011.02, REQ-003.08, UNIT-006, UNIT-008 (Display Controller)
 - **Rationale:** Texture cache is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches.
-  The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-021).
+  The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-001.04).
   Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 
 ### Host Firmware Resources (RP2350)
@@ -60,7 +60,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
   - Runtime data: ~100 KB
   - **Headroom:** ~140 KB
 - **Measurement Method:** `cargo size` output, linker memory map analysis
-- **References:** REQ-051, REQ-111 (Dual-Core Architecture)
+- **References:** REQ-011.02, REQ-111 (Dual-Core Architecture)
 - **Rationale:** Sufficient space for larger scenes and asset data
 
 #### Flash Usage
@@ -73,7 +73,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
   - Compiled assets (meshes, textures): ~2 MB
   - **Headroom:** ~1.5 MB
 - **Measurement Method:** Binary size after linking + compiled asset data size
-- **References:** REQ-051, UNIT-030 through UNIT-034 (Asset Build Tool)
+- **References:** REQ-011.02, UNIT-030 through UNIT-034 (Asset Build Tool)
 - **Rationale:** Space for additional demos and assets
 
 ---
@@ -86,7 +86,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 - **Target:** ≥ 0.5 ns positive slack on critical paths
 - **Minimum Acceptable:** ≥ 0.0 ns (no negative slack)
 - **Analysis Method:** nextpnr-ecp5 static timing analysis report
-- **References:** REQ-050 (Performance Targets), INT-011 (SRAM Memory Layout)
+- **References:** REQ-011.01 (Performance Targets), INT-011 (SRAM Memory Layout)
 - **Rationale:** Ensures reliable operation at target frequency; 0.5 ns margin provides safety buffer for PVT variations
 - **Note:** This is verification that the design meets the fixed 100 MHz clock requirement, not a metric to optimize
 
@@ -94,7 +94,7 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 - **Target:** ≤ 9.5 ns (allows 0.5 ns slack @ 100 MHz)
 - **Measurement Method:** Longest combinational path delay from nextpnr timing report
-- **References:** REQ-050
+- **References:** REQ-011.01
 - **Rationale:** Identifies bottlenecks for optimization if timing fails
 
 ---
@@ -231,9 +231,9 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ## References
 
-- [REQ-050: Performance Targets](req_050_performance_targets.md)
-- [REQ-051: Resource Constraints](req_051_resource_constraints.md)
-- [REQ-052: Reliability Requirements](req_052_reliability_requirements.md)
+- [REQ-011.01: Performance Targets](req_050_performance_targets.md)
+- [REQ-011.02: Resource Constraints](req_051_resource_constraints.md)
+- [REQ-011.03: Reliability Requirements](req_052_reliability_requirements.md)
 - [INT-011: SDRAM Memory Layout](../interfaces/int_011_sram_memory_layout.md) (bandwidth budget)
 - [UNIT-005: Rasterizer](../design/unit_005_rasterizer.md)
 - [UNIT-008: Display Controller](../design/unit_008_display_controller.md)

@@ -6,8 +6,8 @@ Internal
 
 ## Serves Requirement Areas
 
-- Area 7: Vertex Transformation (REQ-104, REQ-115)
-- Area 8: Scene Graph/ECS (REQ-101, REQ-102, REQ-112, REQ-114)
+- Area 7: Vertex Transformation (REQ-007.01, REQ-007.02)
+- Area 8: Scene Graph/ECS (REQ-008.01, REQ-008.02, REQ-008.03, REQ-008.04)
 
 ## Parties
 
@@ -18,13 +18,13 @@ Internal
 
 ## Referenced By
 
-- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-103 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
-- REQ-104 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
-- REQ-112 (Scene Graph Management) — Area 8: Scene Graph/ECS
-- REQ-114 (Render Command Queue) — Area 8: Scene Graph/ECS
-- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
+- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-009.01 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
+- REQ-007.01 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
+- REQ-008.03 (Scene Graph Management) — Area 8: Scene Graph/ECS
+- REQ-008.04 (Render Command Queue) — Area 8: Scene Graph/ECS
+- REQ-007.02 (Render Mesh Patch) — Area 7: Vertex Transformation
 
 Note: REQ-111 (Dual-Core Architecture) is retired; its reference has been removed.
 

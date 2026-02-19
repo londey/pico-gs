@@ -10,8 +10,8 @@ Gouraud shading calculations
 
 ## Implements Requirements
 
-- REQ-102 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
-- REQ-115 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
+- REQ-008.02 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
+- REQ-007.02 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
 
 ## Interfaces
 

@@ -12,9 +12,9 @@ Internal
 
 ## Referenced By
 
-- REQ-200 (PNG Asset Processing) — area 13: Game Data Preparation/Import
-- REQ-201 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
-- REQ-202 (Asset Build Orchestration) — area 13: Game Data Preparation/Import
+- REQ-012.01 (PNG Asset Processing) — area 13: Game Data Preparation/Import
+- REQ-012.02 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
+- REQ-012.03 (Asset Build Orchestration) — area 13: Game Data Preparation/Import
 
 ## Specification
 
@@ -394,7 +394,7 @@ Each axis maps the range [AABB_min, AABB_max] to [0, 65535].
 - Type: Unsigned 16-bit integer (u16)
 - Byte order: Little-endian
 - Quantization: `u16_val = round((f32_pos - aabb_min) / (aabb_max - aabb_min) * 65535.0)`
-- Dequantization: Folded into model matrix via bias pre-multiplication (see REQ-104)
+- Dequantization: Folded into model matrix via bias pre-multiplication (see REQ-007.01)
 
 #### Normal encoding (i16 1:15 signed fixed-point)
 

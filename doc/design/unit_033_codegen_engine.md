@@ -10,9 +10,9 @@ Rust source and binary data generation for compiled assets
 
 ## Implements Requirements
 
-- REQ-200 (PNG Asset Processing)
-- REQ-201 (OBJ Mesh Processing)
-- REQ-202 (Asset Build Orchestration)
+- REQ-012.01 (PNG Asset Processing)
+- REQ-012.02 (OBJ Mesh Processing)
+- REQ-012.03 (Asset Build Orchestration)
 
 ## Interfaces
 

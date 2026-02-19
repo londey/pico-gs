@@ -12,9 +12,9 @@ It is connected to both via FIFOs of fragment data, allowing each stage to stall
 
 ## Implements Requirements
 
-- REQ-008 (Multi-Texture Rendering — dual-texture color combining; sub-requirement under area 3: Texture Samplers)
-- REQ-009 (Color Combiner — programmable combiner equation; sub-requirement under area 4: Fragment Processor/Color Combiner)
-- REQ-134 (Extended Precision Fragment Processing — 10.8 fixed-point arithmetic; sub-requirement under area 4: Fragment Processor/Color Combiner)
+- REQ-003.02 (Multi-Texture Rendering — dual-texture color combining; sub-requirement under area 3: Texture Samplers)
+- REQ-004.01 (Color Combiner — programmable combiner equation; sub-requirement under area 4: Fragment Processor/Color Combiner)
+- REQ-004.02 (Extended Precision Fragment Processing — 10.8 fixed-point arithmetic; sub-requirement under area 4: Fragment Processor/Color Combiner)
 
 ## Interfaces
 
@@ -83,7 +83,7 @@ The combiner has access to these color inputs (all in 10.8 fixed-point):
 **TBD — the exact combiner equation and pipeline stages are under design.**
 
 Known design constraints:
-- All arithmetic in 10.8 fixed-point (18-bit values, REQ-134)
+- All arithmetic in 10.8 fixed-point (18-bit values, REQ-004.02)
 - RGB and Alpha channels may use independent equations (separate input selectors)
 - Must support common effects:
   - Modulate: `TEX0 * VER_COLOR0` (diffuse textured)

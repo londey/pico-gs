@@ -17,46 +17,46 @@ Internal
 
 ## Serves Requirement Areas
 
-- Area 1: GPU SPI Controller (REQ-001, REQ-015, REQ-022, REQ-105)
-- Area 2: Rasterizer (REQ-003, REQ-004, REQ-023)
-- Area 3: Texture Samplers (REQ-006, REQ-008, REQ-010, REQ-011, REQ-012, REQ-024, REQ-131)
-- Area 4: Fragment Processor/Color Combiner (REQ-009, REQ-134)
-- Area 5: Blend/Frame Buffer Store (REQ-002, REQ-005, REQ-014, REQ-016, REQ-025, REQ-027, REQ-118, REQ-123, REQ-132)
-- Area 6: Screen Scan Out (REQ-026, REQ-133)
-- Area 11: System Constraints (REQ-050, REQ-051, REQ-052)
+- Area 1: GPU SPI Controller (REQ-001.01, REQ-001.02, REQ-001.05, REQ-013.01)
+- Area 2: Rasterizer (REQ-002.01, REQ-002.02, REQ-002.03)
+- Area 3: Texture Samplers (REQ-003.01, REQ-003.02, REQ-003.03, REQ-003.04, REQ-003.05, REQ-003.06, REQ-003.08)
+- Area 4: Fragment Processor/Color Combiner (REQ-004.01, REQ-004.02)
+- Area 5: Blend/Frame Buffer Store (REQ-005.01, REQ-005.02, REQ-005.04, REQ-005.05, REQ-005.06, REQ-005.07, REQ-005.08, REQ-005.09, REQ-005.10)
+- Area 6: Screen Scan Out (REQ-006.02, REQ-006.03)
+- Area 11: System Constraints (REQ-011.01, REQ-011.02, REQ-011.03)
 
 ## Referenced By
 
-- REQ-001 (Basic Host Communication) — Area 1: GPU SPI Controller
-- REQ-002 (Framebuffer Management) — Area 5: Blend/Frame Buffer Store
-- REQ-003 (Flat Shaded Triangle) — Area 2: Rasterizer
-- REQ-004 (Gouraud Shaded Triangle) — Area 2: Rasterizer
-- REQ-005 (Depth Tested Triangle) — Area 5: Blend/Frame Buffer Store
-- REQ-006 (Textured Triangle) — Area 3: Texture Samplers
-- REQ-008 (Multi-Texture Rendering) — Area 3: Texture Samplers
-- REQ-009 (Texture Blend Modes) — Area 4: Fragment Processor/Color Combiner
-- REQ-010 (Compressed Textures) — Area 3: Texture Samplers
-- REQ-011 (Swizzle Patterns) — Area 3: Texture Samplers
-- REQ-012 (UV Wrapping Modes) — Area 3: Texture Samplers
-- REQ-013 (Alpha Blending) — Area 5: Blend/Frame Buffer Store
-- REQ-014 (Enhanced Z-Buffer) — Area 5: Blend/Frame Buffer Store
-- REQ-015 (Memory Upload Interface) — Area 1: GPU SPI Controller
-- REQ-016 (Triangle-Based Clearing) — Area 5: Blend/Frame Buffer Store
-- REQ-022 (Vertex Submission Protocol) — Area 1: GPU SPI Controller
-- REQ-023 (Rasterization Algorithm) — Area 2: Rasterizer
-- REQ-024 (Texture Sampling) — Area 3: Texture Samplers
-- REQ-026 (Display Output Timing) — Area 6: Screen Scan Out
-- REQ-027 (Z-Buffer Operations) — Area 5: Blend/Frame Buffer Store
-- REQ-050 (Performance Targets) — Area 11: System Constraints
-- REQ-051 (Resource Constraints) — Area 11: System Constraints
-- REQ-052 (Reliability Requirements) — Area 11: System Constraints
-- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
-- REQ-123 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
-- REQ-131 (Texture Cache) — Area 3: Texture Samplers
-- REQ-132 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
-- REQ-133 (Color Grading LUT) — Area 6: Screen Scan Out
-- REQ-134 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+- REQ-001.01 (Basic Host Communication) — Area 1: GPU SPI Controller
+- REQ-005.01 (Framebuffer Management) — Area 5: Blend/Frame Buffer Store
+- REQ-002.01 (Flat Shaded Triangle) — Area 2: Rasterizer
+- REQ-002.02 (Gouraud Shaded Triangle) — Area 2: Rasterizer
+- REQ-005.02 (Depth Tested Triangle) — Area 5: Blend/Frame Buffer Store
+- REQ-003.01 (Textured Triangle) — Area 3: Texture Samplers
+- REQ-003.02 (Multi-Texture Rendering) — Area 3: Texture Samplers
+- REQ-004.01 (Texture Blend Modes) — Area 4: Fragment Processor/Color Combiner
+- REQ-003.03 (Compressed Textures) — Area 3: Texture Samplers
+- REQ-003.04 (Swizzle Patterns) — Area 3: Texture Samplers
+- REQ-003.05 (UV Wrapping Modes) — Area 3: Texture Samplers
+- REQ-005.03 (Alpha Blending) — Area 5: Blend/Frame Buffer Store
+- REQ-005.04 (Enhanced Z-Buffer) — Area 5: Blend/Frame Buffer Store
+- REQ-001.02 (Memory Upload Interface) — Area 1: GPU SPI Controller
+- REQ-005.05 (Triangle-Based Clearing) — Area 5: Blend/Frame Buffer Store
+- REQ-001.05 (Vertex Submission Protocol) — Area 1: GPU SPI Controller
+- REQ-002.03 (Rasterization Algorithm) — Area 2: Rasterizer
+- REQ-003.06 (Texture Sampling) — Area 3: Texture Samplers
+- REQ-006.02 (Display Output Timing) — Area 6: Screen Scan Out
+- REQ-005.07 (Z-Buffer Operations) — Area 5: Blend/Frame Buffer Store
+- REQ-011.01 (Performance Targets) — Area 11: System Constraints
+- REQ-011.02 (Resource Constraints) — Area 11: System Constraints
+- REQ-011.03 (Reliability Requirements) — Area 11: System Constraints
+- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
+- REQ-003.08 (Texture Cache) — Area 3: Texture Samplers
+- REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
+- REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
+- REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
 
 Note: REQ-110 (GPU Initialization) and REQ-028 (Alpha Blending, duplicate) and REQ-029 (Memory Upload Interface, duplicate) are retired; their references have been removed.
 
@@ -711,7 +711,7 @@ result = (A - B) × C + D
 | Material color only | MAT0 | ZERO | ONE | ZERO | `MAT_COLOR0` |
 
 **Notes**:
-- All operations are performed in 10.8 fixed-point format (REQ-134)
+- All operations are performed in 10.8 fixed-point format (REQ-004.02)
 - DOT3 bump mapping: configure TEX0 as normal map, use CC_MODE to select DOT3 operation via the LIGHT_DIR register interaction (computed in pixel pipeline before combiner)
 - Z_COLOR is computed as `interpolated_Z[15:8]` (high byte), providing 256-level fog granularity
 - The combiner equation `(A - B) × C + D` can express multiply, add, subtract, lerp, and fog operations
@@ -977,7 +977,7 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 
 **Notes**:
 - Replaces v8.0 COLOR_GRADE_CTRL/ADDR/DATA register-based LUT upload (v9.0 change)
-- LUT data must be prepared in SDRAM by firmware before write (see REQ-133)
+- LUT data must be prepared in SDRAM by firmware before write (see REQ-006.03)
 - Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
@@ -1115,7 +1115,7 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 
 **Notes**:
 - Same register format as FB_DISPLAY (0x41), only difference is blocking behavior
-- LUT data must be prepared in SDRAM by firmware before write (see REQ-133)
+- LUT data must be prepared in SDRAM by firmware before write (see REQ-006.03)
 - Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT address must be 4KiB aligned (bits [11:0] assumed 0)
 - LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
@@ -1186,7 +1186,7 @@ let hit_rate = if total > 0 { (hits as f32 / total as f32) * 100.0 } else { 0.0 
 println!("Texture 0 cache hit rate: {:.1}%", hit_rate);
 ```
 
-**Expected Performance** (per REQ-131):
+**Expected Performance** (per REQ-003.08):
 - Typical scenes: >85% hit rate due to spatial locality
 - Cache miss causes stall (tracked by PERF_STALL_CT register)
 
@@ -2084,7 +2084,7 @@ Active-high outputs from GPU to host.
 - **REMOVED**: COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
   - Register-based LUT upload replaced with SDRAM-based auto-load
   - Reduces SPI traffic from 128+ register writes to 1 register write (1000× reduction)
-  - Firmware must prepare LUT data in SDRAM before switching (see REQ-133)
+  - Firmware must prepare LUT data in SDRAM before switching (see REQ-006.03)
   - Freed addresses 0x44-0x46 (3 registers) for future features
 - **Migration**: Firmware must pre-upload LUT data to SDRAM via MEM_ADDR/MEM_DATA or other bulk transfer
 - **Benefit**: Atomic framebuffer + LUT switch, simplified synchronization, vastly reduced SPI traffic
@@ -2180,11 +2180,11 @@ Active-high outputs from GPU to host.
 
 See specification details above.
 
-## Texture Cache Interaction (REQ-131)
+## Texture Cache Interaction (REQ-003.08)
 
 Writing to **TEXn_BASE** or **TEXn_FMT** registers (n=0,1) implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SDRAM.
 
-**Performance Counters** (v10.0): Cache hit/miss statistics are available via performance counter registers (0x50-0x51) for the 2 texture samplers. PERF_TEX2/PERF_TEX3 have been removed. Read these counters to measure cache efficiency and validate the >85% hit rate target from REQ-131.
+**Performance Counters** (v10.0): Cache hit/miss statistics are available via performance counter registers (0x50-0x51) for the 2 texture samplers. PERF_TEX2/PERF_TEX3 have been removed. Read these counters to measure cache efficiency and validate the >85% hit rate target from REQ-003.08.
 
 No explicit cache control registers are defined beyond the performance counters. Future versions may add a `CACHE_CTRL` register for explicit flush/invalidate commands.
 

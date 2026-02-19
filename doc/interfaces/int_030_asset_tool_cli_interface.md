@@ -10,9 +10,9 @@ Internal
 
 ## Referenced By
 
-- REQ-200 (PNG Asset Processing) — area 13: Game Data Preparation/Import
-- REQ-201 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
-- REQ-202 (Asset Build Orchestration) — area 13: Game Data Preparation/Import
+- REQ-012.01 (PNG Asset Processing) — area 13: Game Data Preparation/Import
+- REQ-012.02 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
+- REQ-012.03 (Asset Build Orchestration) — area 13: Game Data Preparation/Import
 
 ## Specification
 

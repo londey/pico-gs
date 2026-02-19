@@ -10,7 +10,7 @@ Asset pipeline entry point
 
 ## Implements Requirements
 
-- REQ-202 (Asset Build Orchestration)
+- REQ-012.03 (Asset Build Orchestration)
 
 ## Interfaces
 

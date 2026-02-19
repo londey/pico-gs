@@ -10,7 +10,7 @@ OBJ file parsing and geometry extraction
 
 ## Implements Requirements
 
-- REQ-201 (OBJ Mesh Processing)
+- REQ-012.02 (OBJ Mesh Processing)
 
 ## Interfaces
 

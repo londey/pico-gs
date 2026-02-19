@@ -3,7 +3,7 @@
 // Combinational module for Stage 0 of the pixel pipeline (UNIT-006).
 // Performs depth range test (Z scissor) and Z-buffer comparison.
 //
-// Spec-ref: REQ-014, UNIT-006 Stage 0, INT-010 §0x30 (RENDER_MODE), §0x31 (Z_RANGE)
+// Spec-ref: REQ-005.04, UNIT-006 Stage 0, INT-010 §0x30 (RENDER_MODE), §0x31 (Z_RANGE)
 
 `default_nettype none
 

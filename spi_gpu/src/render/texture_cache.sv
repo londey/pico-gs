@@ -13,7 +13,7 @@
 //   - WRITE_BANKS stores texels to 4 interleaved EBR banks
 //
 // See: INT-032 (Texture Cache Architecture), UNIT-006 (Pixel Pipeline),
-//      INT-014 (Texture Memory Layout), REQ-131 (Texture Cache)
+//      INT-014 (Texture Memory Layout), REQ-003.08 (Texture Cache)
 
 module texture_cache (
     input  wire         clk,            // 100 MHz core clock

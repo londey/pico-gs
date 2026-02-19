@@ -18,12 +18,12 @@ External Standard
 
 ## Parent Area
 
-- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
+- REQ-001 (GPU SPI Controller)
 
 ## Referenced By
 
-- REQ-001 (Basic Host Communication)
-- REQ-020 (SPI Electrical Interface)
+- REQ-001.01 (Basic Host Communication)
+- REQ-001.03 (SPI Electrical Interface)
 
 ## Specification
 

@@ -22,10 +22,10 @@ External Standard
 
 ## Referenced By
 
-- REQ-021 (Command Buffer FIFO) — Area 1: GPU SPI Controller
-- REQ-052 (Reliability Requirements) — Area 11: System Constraints
-- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
-- REQ-119 (GPU Flow Control) — Area 1: GPU SPI Controller
+- REQ-001.04 (Command Buffer FIFO) — Area 1: GPU SPI Controller
+- REQ-011.03 (Reliability Requirements) — Area 11: System Constraints
+- REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-001.06 (GPU Flow Control) — Area 1: GPU SPI Controller
 
 ## Specification
 

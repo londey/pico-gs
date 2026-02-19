@@ -17,8 +17,8 @@ External Standard
 
 ## Referenced By
 
-- REQ-007 (Display Output) — area 6: Screen Scan Out
-- REQ-026 (Display Output Timing) — area 6: Screen Scan Out
+- REQ-006.01 (Display Output) — area 6: Screen Scan Out
+- REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
 
 ## Specification
 

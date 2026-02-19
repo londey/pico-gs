@@ -10,7 +10,7 @@ USB HID keyboard input processing
 
 ## Implements Requirements
 
-- REQ-103 (USB Keyboard Input) — canonical requirement; REQ-113 retired and merged into REQ-103
+- REQ-009.01 (USB Keyboard Input) — canonical requirement; REQ-113 retired and merged into REQ-009.01
 
 ## Interfaces
 

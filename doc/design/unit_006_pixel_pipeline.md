@@ -6,24 +6,24 @@ Depth range clipping, early Z-test, texture sampling, blending, framebuffer writ
 
 ## Implements Requirements
 
-- REQ-003 (Flat Shaded Triangle)
-- REQ-004 (Gouraud Shaded Triangle)
-- REQ-005 (Depth Tested Triangle)
-- REQ-006 (Textured Triangle)
-- REQ-008 (Multi-Texture Rendering — dual-texture per pass)
-- REQ-009 (Color Combiner)
-- REQ-010 (Compressed Textures)
-- REQ-011 (Swizzle Patterns)
-- REQ-012 (UV Wrapping Modes)
-- REQ-013 (Alpha Blending)
-- REQ-014 (Enhanced Z-Buffer)
-- REQ-016 (Triangle-Based Clearing)
-- REQ-024 (Texture Sampling)
-- REQ-027 (Z-Buffer Operations)
-- REQ-131 (Texture Cache)
-- REQ-132 (Ordered Dithering)
-- REQ-134 (Extended Precision Fragment Processing)
-- REQ-025 (Framebuffer Format)
+- REQ-002.01 (Flat Shaded Triangle)
+- REQ-002.02 (Gouraud Shaded Triangle)
+- REQ-005.02 (Depth Tested Triangle)
+- REQ-003.01 (Textured Triangle)
+- REQ-003.02 (Multi-Texture Rendering — dual-texture per pass)
+- REQ-004.01 (Color Combiner)
+- REQ-003.03 (Compressed Textures)
+- REQ-003.04 (Swizzle Patterns)
+- REQ-003.05 (UV Wrapping Modes)
+- REQ-005.03 (Alpha Blending)
+- REQ-005.04 (Enhanced Z-Buffer)
+- REQ-005.05 (Triangle-Based Clearing)
+- REQ-003.06 (Texture Sampling)
+- REQ-005.07 (Z-Buffer Operations)
+- REQ-003.08 (Texture Cache)
+- REQ-005.10 (Ordered Dithering)
+- REQ-004.02 (Extended Precision Fragment Processing)
+- REQ-005.06 (Framebuffer Format)
 
 ## Interfaces
 
@@ -89,14 +89,14 @@ All internal fragment processing uses **10.8 fixed-point format** (18 bits per c
 
 ### Algorithm / Behavior
 
-The pixel pipeline processes rasterized fragments through a 7-stage pipeline. All color operations use 10.8 fixed-point format (REQ-134).
+The pixel pipeline processes rasterized fragments through a 7-stage pipeline. All color operations use 10.8 fixed-point format (REQ-004.02).
 
 **Stage 0: Depth Range Test + Early Z-Test:**
 - **Depth Range Test** (Z Scissor): Compare fragment Z against Z_RANGE register (0x31):
   - If `fragment_z < Z_RANGE_MIN` or `fragment_z > Z_RANGE_MAX`: discard fragment immediately
   - No SDRAM access required (register comparison only)
   - When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF: all fragments pass (effectively disabled)
-- **Early Z-Test** (REQ-027, RENDER_MODE.Z_COMPARE):
+- **Early Z-Test** (REQ-005.07, RENDER_MODE.Z_COMPARE):
   - Read Z-buffer value at fragment (x, y) from SDRAM
   - Compare fragment Z against Z-buffer using Z_COMPARE function
   - If test fails: discard fragment, skip all subsequent stages (no texture fetch, no FB write)
@@ -106,8 +106,8 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
     - RENDER_MODE.Z_COMPARE = ALWAYS (110)
   - Z-buffer write deferred to Stage 6 (ensures only visible fragments update Z)
 
-**Stage 1: Texture Cache Lookup (per enabled texture unit, up to 2, REQ-131):**
-- Apply UV wrapping mode (REQ-012, TEXn_WRAP) for TEX0 and TEX1
+**Stage 1: Texture Cache Lookup (per enabled texture unit, up to 2, REQ-003.08):**
+- Apply UV wrapping mode (REQ-003.05, TEXn_WRAP) for TEX0 and TEX1
 - Compute block_x = pixel_x / 4, block_y = pixel_y / 4
 - Compute cache set = (block_x[7:0] ^ block_y[7:0]) (XOR set indexing, 8-bit for 256 sets)
 - Compare tags across 4 ways in the sampler's cache
@@ -119,7 +119,7 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
 - On cache miss: fetch 4x4 block from SDRAM via burst read, decompress, fill cache line:
   - FORMAT=00 (RGBA4444): Burst read 32 bytes from SDRAM (burst_len=16), convert to RGBA5652
   - FORMAT=01 (BC1): Burst read 8 bytes from SDRAM (burst_len=4), decompress to RGBA5652
-- Apply swizzle pattern (REQ-011, TEXn_FMT.SWIZZLE)
+- Apply swizzle pattern (REQ-003.04, TEXn_FMT.SWIZZLE)
 
 **Stage 3: Format Promotion (RGBA5652 → 10.8):**
 - Promote texture data to 10.8 fixed-point via `texel_promote.sv` (combinational):
@@ -130,7 +130,7 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
 - Fractional bits are zero after promotion
 - Also compute Z_COLOR: extract fragment Z high byte [15:8], promote to 10.8 (used for fog/depth-based effects in the color combiner)
 
-**Stage 4: Color Combiner (10.8 precision, REQ-009):**
+**Stage 4: Color Combiner (10.8 precision, REQ-004.01):**
 - The color combiner replaces the previous sequential 4-texture blend stage.
 - It accepts up to 7 color inputs, each in 10.8 format:
   - **TEX_COLOR0**: Output from texture unit 0 (or white if TEX0 disabled)
@@ -155,7 +155,7 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
   - **SUBTRACT:** `result = saturate(a - b)` at 0
 
 **Stage 5: Alpha Blending (10.8 precision):**
-- For alpha blending (REQ-013):
+- For alpha blending (REQ-005.03):
   1. Read destination pixel from framebuffer (RGB565)
   2. Promote to 10.8 via `fb_promote.sv`: same MSB replication as texture promotion, alpha defaults to 1023
   3. Blend in 10.8: `result = (src * alpha + dst * (1023 - alpha)) >> 8`
@@ -163,7 +163,7 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
   The alpha value used for framebuffer blending comes from the combiner alpha output.
 
 **Stage 6: Ordered Dithering + Framebuffer Write + Z Write:**
-- If DITHER_MODE.ENABLE=1 (REQ-132):
+- If DITHER_MODE.ENABLE=1 (REQ-005.10):
   1. Read dither matrix entry indexed by `{screen_y[3:0], screen_x[3:0]}` from EBR
   2. Scale 6-bit dither values per channel: top 3 bits for R/B (8→5 loss), top 2 bits for G (8→6 loss)
   3. Add scaled dither to fractional bits below RGB565 threshold
@@ -201,7 +201,7 @@ wire [7:0] a8 = {a4, a4};
 - Color interpolation using fixed-point dividers (divide-by-3 or divide-by-2)
 - Alpha mode detection: compare color0 vs color1 as u16
 
-**Texture Cache Architecture (REQ-131):**
+**Texture Cache Architecture (REQ-003.08):**
 
 Each of the 2 samplers has an independent 4-way set-associative texture cache with 16384 texels (16K) capacity:
 
@@ -258,12 +258,12 @@ This is a significant increase from the previous 16 EBR (4 samplers × 4 EBR), b
 - `spi_gpu/src/render/pixel_pipeline.sv`: Main implementation
 - `spi_gpu/src/render/texture_rgba4444.sv`: RGBA4444 decoder
 - `spi_gpu/src/render/texture_bc1.sv`: BC1 decoder
-- `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (REQ-131)
-- `spi_gpu/src/render/texel_promote.sv`: RGBA5652→10.8 promotion (REQ-134)
-- `spi_gpu/src/render/fb_promote.sv`: RGB565→10.8 framebuffer readback promotion (REQ-134)
-- `spi_gpu/src/render/color_combiner.sv`: Programmable color combiner with (A-B)*C+D equation (REQ-009, REQ-134)
-- `spi_gpu/src/render/alpha_blend.sv`: 10.8 alpha blend operations (REQ-134)
-- `spi_gpu/src/render/dither.sv`: Ordered dithering with blue noise EBR (REQ-132)
+- `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (REQ-003.08)
+- `spi_gpu/src/render/texel_promote.sv`: RGBA5652→10.8 promotion (REQ-004.02)
+- `spi_gpu/src/render/fb_promote.sv`: RGB565→10.8 framebuffer readback promotion (REQ-004.02)
+- `spi_gpu/src/render/color_combiner.sv`: Programmable color combiner with (A-B)*C+D equation (REQ-004.01, REQ-004.02)
+- `spi_gpu/src/render/alpha_blend.sv`: 10.8 alpha blend operations (REQ-004.02)
+- `spi_gpu/src/render/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
 - `spi_gpu/src/render/early_z.sv`: Depth range test + early Z-test logic
 
 ## Verification

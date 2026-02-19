@@ -11,10 +11,10 @@ Internal
 
 ## Referenced By
 
-- REQ-TBD-TEXTURE-SAMPLERS (Texture Samplers — top-level area 3 requirement, not yet created)
-- REQ-131 (Texture Cache — sub-requirement under area 3)
-- REQ-024 (Texture Sampling — sub-requirement under area 3)
-- REQ-130 (Texture Mipmapping — sub-requirement under area 3)
+- REQ-003 (Texture Samplers — top-level area 3 requirement, not yet created)
+- REQ-003.08 (Texture Cache — sub-requirement under area 3)
+- REQ-003.06 (Texture Sampling — sub-requirement under area 3)
+- REQ-003.07 (Texture Mipmapping — sub-requirement under area 3)
 
 ## Specification
 
@@ -178,7 +178,7 @@ Each cache line is identified by:
 - Each sampler: 4 bilinear banks × 4 EBR blocks = 16 EBR blocks per sampler
 - 2 samplers × 16 EBR = 32 EBR blocks total
 
-**EBR Budget Note**: The ECP5-25K provides 56 EBR blocks total. The texture cache allocation of 32 EBR (2 samplers × 16 EBR) consumes 57% of available EBR. Combined with other EBR consumers (1 dither, 1 LUT, 1 scanline FIFO, 2 command FIFO = 5 EBR), the total is 37 EBR out of 56, leaving 19 EBR for other uses. See REQ-051 for the complete resource budget.
+**EBR Budget Note**: The ECP5-25K provides 56 EBR blocks total. The texture cache allocation of 32 EBR (2 samplers × 16 EBR) consumes 57% of available EBR. Combined with other EBR consumers (1 dither, 1 LUT, 1 scanline FIFO, 2 command FIFO = 5 EBR), the total is 37 EBR out of 56, leaving 19 EBR for other uses. See REQ-011.02 for the complete resource budget.
 
 ## Constraints
 
@@ -216,5 +216,5 @@ See DD-010 in [design_decisions.md](../design/design_decisions.md) for architect
 - **INT-010 (GPU Register Map):** TEXn_BASE, TEXn_FMT register definitions
 - **INT-014 (Texture Memory Layout):** Source texture block addressing in SDRAM
 - **UNIT-006 (Pixel Pipeline):** Cache implementation details (4-way set associative, pseudo-LRU, EBR usage)
-- **REQ-024 (Texture Sampling):** Cache-aware sampling pipeline behavior
-- **REQ-130 (Texture Mipmapping):** Cache handles mip-level blocks with distinct tags
+- **REQ-003.06 (Texture Sampling):** Cache-aware sampling pipeline behavior
+- **REQ-003.07 (Texture Mipmapping):** Cache handles mip-level blocks with distinct tags

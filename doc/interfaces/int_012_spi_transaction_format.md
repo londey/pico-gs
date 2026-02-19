@@ -13,14 +13,14 @@ Internal
 
 ## Parent Area
 
-- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
+- REQ-001 (GPU SPI Controller)
 
 ## Referenced By
 
-- REQ-001 (Basic Host Communication)
-- REQ-020 (SPI Electrical Interface)
-- REQ-105 (GPU Communication Protocol)
-- REQ-021 (Command Buffer FIFO)
+- REQ-001.01 (Basic Host Communication)
+- REQ-001.03 (SPI Electrical Interface)
+- REQ-013.01 (GPU Communication Protocol)
+- REQ-001.04 (Command Buffer FIFO)
 - REQ-121 (Async SPI Transmission)
 
 ## Specification
