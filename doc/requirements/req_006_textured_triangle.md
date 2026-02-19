@@ -46,4 +46,5 @@ None
 
 ## Notes
 
-Texture mapping requires both geometric data (vertices) and UV coordinates. The GPU supports up to 4 simultaneous texture units (REQ-008) with various blend modes (REQ-009).
+Texture mapping requires both geometric data (vertices) and UV coordinates.
+The GPU supports up to 2 simultaneous texture units (REQ-008) with a programmable color combiner (REQ-009).

@@ -53,9 +53,9 @@ Internal
 ## Specification
 
 
-**Version**: 9.0
+**Version**: 10.0
 **Date**: February 2026
-**Status**: SDRAM-Based Color Grading LUT Auto-Load (Pre-1.0)
+**Status**: Dual-Texture Color Combiner Architecture (Pre-1.0)
 
 ---
 
@@ -77,10 +77,11 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 The boot sequence uses registers COLOR (0x00), VERTEX_KICK_012 (0x07), RENDER_MODE (0x30), FB_DRAW (0x40), and FB_DISPLAY (0x41) to render a self-test screen.
 All register semantics are identical regardless of command source.
 
-**Major Features** (v8.0):
-- 4 independent texture units with separate UV coordinates
+**Major Features** (v10.0):
+- **2 independent texture units with separate UV coordinates (v10.0: reduced from 4)**
+- **Dedicated color combiner module with programmable input selection (v10.0: NEW)**
 - **DOT3 bump mapping with interpolated light direction (v8.0)**
-- **Dual vertex colors: diffuse (multiply) + specular (add) (v8.0)**
+- **Dual vertex colors: diffuse (VER_COLOR0) + specular (VER_COLOR1) (v8.0)**
 - **Trilinear texture filtering for smooth LOD transitions (v8.0)**
 - RGBA4444 and BC1 block-compressed texture formats (see INT-014)
 - Swizzle patterns for channel reordering
@@ -92,15 +93,16 @@ All register semantics are identical regardless of command source.
 - Integrated triangle kick mode control (v6.0)
 - **Packed performance counters: 2×32-bit per register (v8.0)**
 - Backface culling based on winding order (v6.0)
-- **Optimized register packing: 53 → 46 active registers (v8.0)**
+- **Material colors (MAT_COLOR0, MAT_COLOR1) and fog via Z_COLOR (v10.0: NEW)**
 
 ---
 
 ## Address Space Organization
 
 ```
-0x00-0x0F: Vertex State (COLOR, UV0_UV1, UV2_UV3, LIGHT_DIR, VERTEX variants)
-0x10-0x1F: Texture Configuration (4 units × 4 registers each, TIGHTLY PACKED)
+0x00-0x0F: Vertex State (COLOR, UV0_UV1, LIGHT_DIR, VERTEX variants)
+0x10-0x17: Texture Configuration (2 units × 4 registers each)
+0x18-0x1F: Color Combiner (CC_MODE, MAT_COLOR0, MAT_COLOR1, FOG_COLOR, reserved)
 0x20-0x2F: Reserved (freed from old texture registers)
 0x30-0x3F: Rendering Configuration (RENDER_MODE consolidated)
 0x40-0x4F: Framebuffer, Z-Buffer, Scissor, Color Grading
@@ -109,11 +111,11 @@ All register semantics are identical regardless of command source.
 0x70-0x7F: Status & Control (MEM_ADDR, MEM_DATA, STATUS, ID)
 ```
 
-**Key Optimizations** (v8.0):
-- Register count reduced from 53 to 46 active registers (13% reduction)
-- Texture units compressed from 5 to 4 registers each (eliminates TEXn_BLEND)
-- Performance counters packed from 15 to 8 registers (2×32-bit pairs)
-- 33+ registers freed for future features (0x20-0x2F, 0x58-0x6F)
+**Key Optimizations** (v10.0):
+- Texture units reduced from 4 to 2, with 4x larger per-unit cache (16K texels)
+- Color combiner replaces sequential 4-texture blend with flexible N64/GeForce2-style combining
+- UV2_UV3 register eliminated (0x02 freed), texture registers 0x18-0x1F repurposed for color combiner
+- Performance counter registers for TEX2/TEX3 freed (0x52-0x53 now reserved)
 
 ---
 
@@ -124,7 +126,7 @@ All register semantics are identical regardless of command source.
 | **Vertex State** ||||
 | 0x00 | COLOR | W | Diffuse[63:32] + Specular[31:0] vertex colors (v8.0: CHANGED) |
 | 0x01 | UV0_UV1 | W | Texture units 0+1 coordinates (packed) |
-| 0x02 | UV2_UV3 | W | Texture units 2+3 coordinates (packed) |
+| 0x02 | - | - | Reserved (v10.0: FREED, was UV2_UV3) |
 | 0x03 | LIGHT_DIR | W | Light direction XYZ for DOT3 (X8Y8Z8) (v8.0: NEW) |
 | 0x04-0x05 | - | - | Reserved (future vertex attributes) |
 | 0x06 | VERTEX_NOKICK | W | Vertex position + 1/W, no triangle draw |
@@ -141,16 +143,12 @@ All register semantics are identical regardless of command source.
 | 0x15 | TEX1_FMT | R/W | Format, dimensions, swizzle, blend, filter (v8.0: MOVED+CHANGED) |
 | 0x16 | TEX1_MIP_BIAS | R/W | Mipmap LOD bias (v8.0: MOVED from 0x1B) |
 | 0x17 | TEX1_WRAP | R/W | UV wrapping mode (v8.0: MOVED from 0x1C) |
-| **Texture Unit 2** ||||
-| 0x18 | TEX2_BASE | R/W | Texture 2 base address (v8.0: MOVED from 0x20) |
-| 0x19 | TEX2_FMT | R/W | Format, dimensions, swizzle, blend, filter (v8.0: MOVED+CHANGED) |
-| 0x1A | TEX2_MIP_BIAS | R/W | Mipmap LOD bias (v8.0: MOVED from 0x23) |
-| 0x1B | TEX2_WRAP | R/W | UV wrapping mode (v8.0: MOVED from 0x24) |
-| **Texture Unit 3** ||||
-| 0x1C | TEX3_BASE | R/W | Texture 3 base address (v8.0: MOVED from 0x28) |
-| 0x1D | TEX3_FMT | R/W | Format, dimensions, swizzle, blend, filter (v8.0: MOVED+CHANGED) |
-| 0x1E | TEX3_MIP_BIAS | R/W | Mipmap LOD bias (v8.0: MOVED from 0x2B) |
-| 0x1F | TEX3_WRAP | R/W | UV wrapping mode (v8.0: MOVED from 0x2C) |
+| **Color Combiner** (v10.0: NEW, replaces Texture Units 2-3) ||||
+| 0x18 | CC_MODE | R/W | Color combiner mode and input selection (v10.0: NEW) |
+| 0x19 | MAT_COLOR0 | R/W | Material color 0 (RGBA8888) (v10.0: NEW) |
+| 0x1A | MAT_COLOR1 | R/W | Material color 1 (RGBA8888) (v10.0: NEW) |
+| 0x1B | FOG_COLOR | R/W | Fog color (RGBA8888) (v10.0: NEW) |
+| 0x1C-0x1F | - | - | Reserved (v10.0: FREED from TEX2/TEX3) |
 | 0x20-0x2F | - | - | Reserved (v8.0: FREED from texture registers) |
 | **Rendering Config** ||||
 | 0x30 | RENDER_MODE | R/W | **Unified rendering state** (v10.0: CHANGED, added COLOR_WRITE_EN) |
@@ -168,8 +166,8 @@ All register semantics are identical regardless of command source.
 | **Performance Counters** ||||
 | 0x50 | PERF_TEX0 | R | **TEX0 hits[31:0] + misses[63:32]** (v8.0: PACKED) |
 | 0x51 | PERF_TEX1 | R | TEX1 hits + misses (v8.0: PACKED) |
-| 0x52 | PERF_TEX2 | R | TEX2 hits + misses (v8.0: PACKED) |
-| 0x53 | PERF_TEX3 | R | TEX3 hits + misses (v8.0: PACKED) |
+| 0x52 | - | - | Reserved (v10.0: FREED, was PERF_TEX2) |
+| 0x53 | - | - | Reserved (v10.0: FREED, was PERF_TEX3) |
 | 0x54 | PERF_PIXELS | R | Pixels written[31:0] + fragments passed[63:32] (v8.0: PACKED) |
 | 0x55 | PERF_FRAGMENTS | R | Fragments failed[31:0] + reserved[63:32] (v8.0: PACKED) |
 | 0x56 | PERF_STALL_VS | R | Vertex stalls[31:0] + SDRAM stalls[63:32] (v8.0: PACKED) |
@@ -201,17 +199,18 @@ Latches RGBA colors for the next vertex push. Now holds both diffuse and specula
 [7:0]     Specular Red (8 bits)
 ```
 
-**Blending Pipeline**:
+**Blending Pipeline** (v10.0: Color Combiner):
 ```
-Step 1: Sample textures and blend sequentially (TEX0 → TEX1 → TEX2 → TEX3)
-Step 2: Multiply by diffuse color: result = texture_result × diffuse_rgba
-Step 3: Add specular color: result = result + specular_rgba (clamped to [0, 1])
-Step 4: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
+Step 1: Sample TEX0, TEX1 (2 texture units max)
+Step 2: Color combiner combines inputs per CC_MODE equation:
+        Inputs: VER_COLOR0 (diffuse), VER_COLOR1 (specular), TEX_COLOR0, TEX_COLOR1,
+                MAT_COLOR0, MAT_COLOR1, Z_COLOR (fog)
+Step 3: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 ```
 
 **Notes**:
-- Diffuse multiplies with texture output (tints and modulates lighting)
-- Specular adds after texture blending (creates highlights independent of textures)
+- VER_COLOR0 (diffuse) and VER_COLOR1 (specular) are the two vertex colors
+- The color combiner (CC_MODE register 0x18) controls how these inputs are combined
 - In flat shading mode (GOURAUD=0), only vertex 0's colors are used
 - Values are 0-255, where 255 = full intensity
 - Color is associated with the next VERTEX write
@@ -247,23 +246,11 @@ Latches texture coordinates for texture units 0 and 1. Values are pre-divided by
 
 ---
 
-### 0x02: UV2_UV3
+### 0x02: UV2_UV3 (REMOVED in v10.0)
 
-Latches texture coordinates for texture units 2 and 3. Values are pre-divided by W for perspective correction.
+**v9.0**: Texture coordinates for texture units 2 and 3.
 
-```
-[63:48]   UV3_VQ = V3/W (1.15 signed fixed-point)
-[47:32]   UV3_UQ = U3/W (1.15 signed fixed-point)
-[31:16]   UV2_VQ = V2/W (1.15 signed fixed-point)
-[15:0]    UV2_UQ = U2/W (1.15 signed fixed-point)
-```
-
-**Notes**:
-- Same format as UV0_UV1
-- Only required when using 3 or 4 texture units simultaneously
-- If only UV2 is used, write UV3 fields as 0
-
-**Reset Value**: 0x0000000000000000
+**v10.0 CHANGE**: Removed. With only 2 texture units, UV0_UV1 (0x01) provides all needed texture coordinates. This address is now reserved.
 
 ---
 
@@ -342,7 +329,7 @@ Latches vertex position and 1/W, then triggers vertex push based on **RENDER_MOD
 **Vertex Push Behavior**:
 ```
 Write to VERTEX:
-  vertex[vertex_count] = {current_COLOR, current_UV0-UV3, X, Y, Z}
+  vertex[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z}
   vertex_count++
   if vertex_count == 3:
     submit_triangle(vertex[0], vertex[1], vertex[2])
@@ -367,7 +354,7 @@ Latches vertex position and 1/W without triggering triangle rasterization. Used 
 **Behavior**:
 ```
 Write to VERTEX_NOKICK:
-  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, current_UV2_UV3, X, Y, Z, Q}
+  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z, Q}
   vertex_count = (vertex_count + 1) % 3  // Wrap at 3
   // No triangle submission
 ```
@@ -395,7 +382,7 @@ Latches vertex position and 1/W, then triggers triangle rasterization with verte
 **Behavior**:
 ```
 Write to VERTEX_KICK_012:
-  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, current_UV2_UV3, X, Y, Z, Q}
+  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z, Q}
   vertex_count = (vertex_count + 1) % 3
   submit_triangle(vertex_buffer[0], vertex_buffer[1], vertex_buffer[2])  // CW winding
 ```
@@ -425,7 +412,7 @@ Latches vertex position and 1/W, then triggers triangle rasterization with **rev
 **Behavior**:
 ```
 Write to VERTEX_KICK_021:
-  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, current_UV2_UV3, X, Y, Z, Q}
+  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z, Q}
   vertex_count = (vertex_count + 1) % 3
   submit_triangle(vertex_buffer[0], vertex_buffer[2], vertex_buffer[1])  // Reversed
 ```
@@ -453,11 +440,11 @@ gpu_write(COLOR, color4); gpu_write(UV0_UV1, uv4); gpu_write(VERTEX_KICK_012, v4
 
 ---
 
-## Texture Configuration Registers (0x10-0x2F)
+## Texture Configuration Registers (0x10-0x17)
 
-Each texture unit has 8 registers (0x10-0x17 for unit 0, 0x18-0x1F for unit 1, etc.). The register layout is identical for all 4 units.
+Each texture unit has 4 registers (0x10-0x13 for unit 0, 0x14-0x17 for unit 1). The register layout is identical for both units. v10.0: Reduced from 4 texture units to 2.
 
-### TEXn_BASE (0x10, 0x18, 0x20, 0x28)
+### TEXn_BASE (0x10, 0x14)
 
 Base address of texture in SDRAM. Must be 4K aligned.
 
@@ -476,19 +463,13 @@ Base address of texture in SDRAM. Must be 4K aligned.
 
 ---
 
-### TEXn_FMT (0x11, 0x15, 0x19, 0x1D) - Expanded
+### TEXn_FMT (0x11, 0x15) - Expanded
 
 Texture format, dimensions, swizzle, **blend mode**, **filtering**, and mipmap levels.
 
 ```
 [63:27]   Reserved (write as 0)
-[26:24]   BLEND: Texture blend function (3 bits) - v8.0 NEW
-          000 = MULTIPLY (component-wise: result = prev × current)
-          001 = ADD (component-wise: result = prev + current, saturate)
-          010 = SUBTRACT (component-wise: result = prev - current, saturate)
-          011 = INVERSE_SUBTRACT (component-wise: result = current - prev, saturate)
-          100 = DOT3 (dot product for bump mapping, see below)
-          101-111 = Reserved
+[26:24]   Reserved (v10.0: was BLEND, now handled by CC_MODE color combiner register)
 [23:20]   MIP_LEVELS: Number of mipmap levels (0-15)
           0000 = No mipmaps (disabled, single level only)
           0001 = Base level only (equivalent to 0, backward compatible)
@@ -514,21 +495,9 @@ Texture format, dimensions, swizzle, **blend mode**, **filtering**, and mipmap l
 [0]       ENABLE: 0=disabled, 1=enabled
 ```
 
-**BLEND Mode Details** (v8.0 NEW):
+**BLEND Mode** (REMOVED in v10.0):
 
-- **MULTIPLY** (000): `result = prev × current` (default, modulates colors)
-- **ADD** (001): `result = prev + current` (brightens, saturates at 1.0)
-- **SUBTRACT** (010): `result = prev - current` (darkens, clamps at 0.0)
-- **INVERSE_SUBTRACT** (011): `result = current - prev` (reversed subtract)
-- **DOT3** (100): **Bump mapping mode**
-  ```
-  normal_xyz = current_texture.rgb × 2.0 - 1.0    // Map [0,1] to [-1,+1]
-  light_xyz = interpolated LIGHT_DIR vector
-  dot3 = clamp(dot(normal_xyz, light_xyz), 0, 1)
-  result.rgb = prev.rgb × dot3                     // Modulate by lighting
-  result.a = prev.a                                // Alpha unchanged
-  ```
-  **Note**: DOT3 expects normal map in texture RGB channels (typically tangent-space normals).
+TEXn_FMT.BLEND has been removed. Texture blending is now handled by the color combiner (CC_MODE register 0x18). DOT3 bump mapping is configured via CC_MODE input selection.
 
 **FILTER Mode Details** (v8.0 NEW):
 
@@ -536,18 +505,15 @@ Texture format, dimensions, swizzle, **blend mode**, **filtering**, and mipmap l
 - **BILINEAR** (01): 2×2 texel interpolation within a mip level. Smooth, moderate cost.
 - **TRILINEAR** (10): Bilinear + blend between two mip levels. Smoothest, highest cost. Falls back to BILINEAR if MIP_LEVELS ≤ 1.
 
-**Texture Blend Order**: Textures evaluated sequentially (0→1→2→3):
+**Texture Sampling** (v10.0): Textures are sampled independently and passed to the color combiner:
 ```
-Step 1: Sample TEX0, filter → color = tex0_rgba
-Step 2: Sample TEX1, filter, blend: color = blend(color, tex1_rgba, TEX1_FMT.BLEND)
-Step 3: Sample TEX2, filter, blend: color = blend(color, tex2_rgba, TEX2_FMT.BLEND)
-Step 4: Sample TEX3, filter, blend: color = blend(color, tex3_rgba, TEX3_FMT.BLEND)
-Step 5: Multiply by diffuse color: color = color × COLOR.diffuse
-Step 6: Add specular color: color = color + COLOR.specular
-Step 7: Apply alpha blend with framebuffer if ALPHA_BLEND mode enabled
+Step 1: Sample TEX0, filter → TEX_COLOR0
+Step 2: Sample TEX1, filter → TEX_COLOR1 (if enabled)
+Step 3: Color combiner combines all inputs per CC_MODE equation (see 0x18)
+Step 4: Apply alpha blend with framebuffer if ALPHA_BLEND mode enabled
 ```
 
-**Note**: TEX0_FMT.BLEND is ignored (no previous texture to blend with).
+**Note**: Sequential texture blending (v8.0) has been replaced by the color combiner. See CC_MODE (0x18) for combining equations.
 
 **Format Notes**:
 - BC1 textures (FORMAT=01) require width and height to be multiples of 4
@@ -616,7 +582,7 @@ These addresses are now used for TEXn_MIP_BIAS (v8.0 reorganization).
 
 ---
 
-### TEXn_MIP_BIAS (0x13, 0x1B, 0x23, 0x2B)
+### TEXn_MIP_BIAS (0x12, 0x16)
 
 Mipmap LOD (Level of Detail) bias for artistic control.
 
@@ -652,7 +618,7 @@ mip_level = round(final_lod)  // Nearest-mip mode
 
 ---
 
-### TEXn_WRAP (0x14, 0x1C, 0x24, 0x2C)
+### TEXn_WRAP (0x13, 0x17)
 
 UV coordinate wrapping mode.
 
@@ -673,6 +639,152 @@ UV coordinate wrapping mode.
 - **MIRROR**: Reflect at boundaries (0→1→0→1...), reduces tiling
 
 **Reset Value**: 0x0000000000000000 (repeat on both axes)
+
+---
+
+## Color Combiner Registers (0x18-0x1F) — v10.0 NEW
+
+> **Status: Preliminary.**
+> The exact register layout, combiner equation parameters, and input source encoding below are provisional.
+> The color combiner will be defined as its own design unit (UNIT-010) with a detailed data flow diagram.
+> Addresses 0x18–0x1F are reserved for color combiner registers; final field definitions will be determined by UNIT-010.
+
+The color combiner replaces the sequential 4-texture blending pipeline (v8.0) with a programmable combiner inspired by N64 RDP and GeForce2 register combiners.
+It takes up to 7 input sources and produces a final color via a configurable equation.
+
+### 0x18: CC_MODE (Color Combiner Mode)
+
+Selects the combiner equation and input mapping.
+
+```
+[63:32]   Reserved (write as 0)
+[31:28]   CC_D_SOURCE: Input D source select (4 bits, see source table)
+[27:24]   CC_C_SOURCE: Input C source select (4 bits)
+[23:20]   CC_B_SOURCE: Input B source select (4 bits)
+[19:16]   CC_A_SOURCE: Input A source select (4 bits)
+[15:12]   CC_ALPHA_D: Alpha input D source (4 bits)
+[11:8]    CC_ALPHA_C: Alpha input C source (4 bits)
+[7:4]     CC_ALPHA_B: Alpha input B source (4 bits)
+[3:0]     CC_ALPHA_A: Alpha input A source (4 bits)
+```
+
+**Combiner Equation** (applied independently to RGB and Alpha):
+```
+result = (A - B) × C + D
+```
+
+**Source Select Encoding** (4 bits):
+
+| Code | Source | Description |
+|------|--------|-------------|
+| 0x0 | TEX_COLOR0 | Sampled+filtered output from texture unit 0 |
+| 0x1 | TEX_COLOR1 | Sampled+filtered output from texture unit 1 |
+| 0x2 | VER_COLOR0 | Interpolated vertex color 0 (diffuse) |
+| 0x3 | VER_COLOR1 | Interpolated vertex color 1 (specular) |
+| 0x4 | MAT_COLOR0 | Material color 0 (from register 0x19) |
+| 0x5 | MAT_COLOR1 | Material color 1 (from register 0x1A) |
+| 0x6 | Z_COLOR | Derived from high byte of interpolated Z (fog factor) |
+| 0x7 | ZERO | Constant zero (0, 0, 0, 0) |
+| 0x8 | ONE | Constant one (1, 1, 1, 1) |
+| 0x9 | ONE_MINUS_A | 1 - input A (computed, only valid for C source) |
+| 0xA-0xF | Reserved | Defaults to ZERO |
+
+**Common Combiner Presets**:
+
+| Use Case | A | B | C | D | Equation |
+|----------|---|---|---|---|----------|
+| Texture × Diffuse | TEX0 | ZERO | VER0 | ZERO | `TEX0 × VER_COLOR0` |
+| Dual-texture modulate | TEX0 | ZERO | TEX1 | ZERO | `TEX0 × TEX1` |
+| Diffuse + Specular | TEX0 | ZERO | VER0 | VER1 | `TEX0 × VER_COLOR0 + VER_COLOR1` |
+| Fog blend | TEX0 | FOG | Z_COLOR | FOG | `(TEX0 - FOG_COLOR) × Z_COLOR + FOG_COLOR` |
+| Lightmap (TEX0 × TEX1 × Diffuse) | TEX0 | ZERO | TEX1 | ZERO | First pass; chain with diffuse in alpha |
+| Material color only | MAT0 | ZERO | ONE | ZERO | `MAT_COLOR0` |
+
+**Notes**:
+- All operations are performed in 10.8 fixed-point format (REQ-134)
+- DOT3 bump mapping: configure TEX0 as normal map, use CC_MODE to select DOT3 operation via the LIGHT_DIR register interaction (computed in pixel pipeline before combiner)
+- Z_COLOR is computed as `interpolated_Z[15:8]` (high byte), providing 256-level fog granularity
+- The combiner equation `(A - B) × C + D` can express multiply, add, subtract, lerp, and fog operations
+
+**Reset Value**: 0x0000000000720020 (A=TEX0, B=ZERO, C=VER0, D=ZERO → `TEX0 × VER_COLOR0`, default textured Gouraud)
+
+---
+
+### 0x19: MAT_COLOR0 (Material Color 0)
+
+Per-material constant color for use in the color combiner.
+
+```
+[63:32]   Reserved (write as 0)
+[31:24]   Alpha (8 bits)
+[23:16]   Blue (8 bits)
+[15:8]    Green (8 bits)
+[7:0]     Red (8 bits)
+```
+
+**Use Cases**:
+- Constant diffuse tint (environment color)
+- Fog color (when used as D input with Z_COLOR as C)
+- Material-specific flat color
+
+**Reset Value**: 0x00000000FFFFFFFF (opaque white)
+
+---
+
+### 0x1A: MAT_COLOR1 (Material Color 1)
+
+Second per-material constant color for use in the color combiner.
+
+```
+[63:32]   Reserved (write as 0)
+[31:24]   Alpha (8 bits)
+[23:16]   Blue (8 bits)
+[15:8]    Green (8 bits)
+[7:0]     Red (8 bits)
+```
+
+**Use Cases**:
+- Secondary material color (e.g., highlight color, rim light color)
+- Blend target for material transitions
+
+**Reset Value**: 0x0000000000000000 (transparent black)
+
+---
+
+### 0x1B: FOG_COLOR
+
+Fog color for distance-based fogging. Used as a combiner input source (Z_COLOR selects fog intensity from interpolated Z depth).
+
+```
+[63:32]   Reserved (write as 0)
+[31:24]   Alpha (8 bits)
+[23:16]   Blue (8 bits)
+[15:8]    Green (8 bits)
+[7:0]     Red (8 bits)
+```
+
+**Fog Implementation**:
+```
+Z_COLOR = interpolated_Z[15:8] / 255.0  // 0.0 (near) to 1.0 (far)
+fog_result = (fragment_color - FOG_COLOR) × (1 - Z_COLOR) + FOG_COLOR
+           = lerp(FOG_COLOR, fragment_color, 1 - Z_COLOR)
+```
+
+To achieve fog, configure CC_MODE: A=computed_color, B=FOG_COLOR, C=ONE_MINUS_Z_COLOR, D=FOG_COLOR.
+
+**Notes**:
+- Z_COLOR derives from the high byte of interpolated Z (0-255 → 0.0-1.0)
+- For non-linear fog curves, a fog LUT could be added in future (using reserved address space)
+
+**Reset Value**: 0x0000000000000000 (transparent black, no fog)
+
+---
+
+### 0x1C-0x1F: Reserved
+
+Reserved for future color combiner expansion (additional combiner stages, fog LUT pointer, etc.).
+
+**Reset Value**: N/A (reserved)
 
 ---
 
@@ -1037,9 +1149,9 @@ uint32_t misses = (value >> 32) & 0xFFFFFFFF;
 
 ---
 
-### 0x50-0x53: PERF_TEXn (Packed Hit/Miss Counters)
+### 0x50-0x51: PERF_TEXn (Packed Hit/Miss Counters)
 
-Texture cache hit/miss counters for each of the 4 texture samplers, **packed 2×32-bit per register**.
+Texture cache hit/miss counters for each of the 2 texture samplers (v10.0: reduced from 4), **packed 2×32-bit per register**.
 
 **Register Layout**:
 
@@ -1047,8 +1159,8 @@ Texture cache hit/miss counters for each of the 4 texture samplers, **packed 2×
 |------|------|------------------|-------------------|
 | 0x50 | PERF_TEX0 | TEX0 cache hits | TEX0 cache misses |
 | 0x51 | PERF_TEX1 | TEX1 cache hits | TEX1 cache misses |
-| 0x52 | PERF_TEX2 | TEX2 cache hits | TEX2 cache misses |
-| 0x53 | PERF_TEX3 | TEX3 cache hits | TEX3 cache misses |
+| 0x52 | - | Reserved (v10.0: was PERF_TEX2) | Reserved |
+| 0x53 | - | Reserved (v10.0: was PERF_TEX3) | Reserved |
 
 **Increment Conditions**:
 - **Hits [31:0]**: Increments when pixel pipeline requests texel from sampler N and the 4×4 block is already cached
@@ -1254,9 +1366,9 @@ GPU identification (read-only).
 [15:0]    DEVICE_ID: 0x6702 ("gp" + version 2)
 ```
 
-**Example**: Version 9.0 → reads as 0x00000900_00006702
+**Example**: Version 10.0 → reads as 0x00000A00_00006702
 
-**Reset Value**: 0x0000090000006702 (version 9.0)
+**Reset Value**: 0x00000A0000006702 (version 9.0)
 
 ---
 
@@ -1620,19 +1732,18 @@ Behavior is controlled by TEXn_WRAP register:
 - **CLAMP_TO_ZERO** (10): Out of bounds samples return RGBA=(0,0,0,0)
 - **MIRROR** (11): Reflect at boundaries (0→1→0→1...), reduces tiling artifacts
 
-### Texture Blend Operation Order
+### Color Combiner Operation (v10.0)
 
-Textures are evaluated sequentially in ascending order (0→1→2→3):
+Textures are sampled independently, then combined via the color combiner:
 ```
-Step 1: Sample TEX0 → color = tex0_rgba
-Step 2: Sample TEX1, blend with TEX1_BLEND: color = blend(color, tex1_rgba)
-Step 3: Sample TEX2, blend with TEX2_BLEND: color = blend(color, tex2_rgba)
-Step 4: Sample TEX3, blend with TEX3_BLEND: color = blend(color, tex3_rgba)
-Step 5: Multiply by vertex color if GOURAUD enabled
-Step 6: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
+Step 1: Sample TEX0 → TEX_COLOR0
+Step 2: Sample TEX1 → TEX_COLOR1 (if enabled)
+Step 3: Color combiner: result = (A - B) × C + D (per CC_MODE register)
+Step 4: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 ```
 
-TEX0_BLEND is ignored since there's no previous texture to blend with.
+The combiner inputs (A, B, C, D) are selected from: TEX_COLOR0, TEX_COLOR1, VER_COLOR0, VER_COLOR1, MAT_COLOR0, MAT_COLOR1, Z_COLOR, ZERO, ONE.
+See CC_MODE (0x18) for details.
 
 ### Invalid Swizzle Patterns
 
@@ -1862,22 +1973,26 @@ After hardware reset or power-on (v8.0):
 |----------|-------------|-------------|
 | COLOR | 0x00000000_00000000 | Both diffuse and specular transparent black (v8.0) |
 | UV0_UV1 | 0x0000000000000000 | Zero coordinates |
-| UV2_UV3 | 0x0000000000000000 | Zero coordinates |
+| UV2_UV3 | N/A | Removed in v10.0 |
 | LIGHT_DIR | 0x0000000000000000 | Zero vector (v8.0 NEW) |
 | VERTEX_NOKICK | N/A | Write-only trigger |
 | VERTEX_KICK_012 | N/A | Write-only trigger |
 | VERTEX_KICK_021 | N/A | Write-only trigger |
-| TEX0-TEX3 BASE | 0x0000000000000000 | Address 0x000000 |
-| TEX0-TEX3 FMT | 0x0000000000000000 | Disabled, RGBA4444, nearest, multiply, 8×8 (v8.0) |
-| TEX0-TEX3 MIP_BIAS | 0x0000000000000000 | No bias |
-| TEX0-TEX3 WRAP | 0x0000000000000000 | REPEAT both axes |
+| TEX0-TEX1 BASE | 0x0000000000000000 | Address 0x000000 |
+| TEX0-TEX1 FMT | 0x0000000000000000 | Disabled, RGBA4444, nearest, 8×8 (v10.0) |
+| TEX0-TEX1 MIP_BIAS | 0x0000000000000000 | No bias |
+| TEX0-TEX1 WRAP | 0x0000000000000000 | REPEAT both axes |
+| CC_MODE | 0x0000000000720020 | TEX0 × VER_COLOR0 (default textured Gouraud) (v10.0 NEW) |
+| MAT_COLOR0 | 0x00000000FFFFFFFF | Opaque white (v10.0 NEW) |
+| MAT_COLOR1 | 0x0000000000000000 | Transparent black (v10.0 NEW) |
+| FOG_COLOR | 0x0000000000000000 | Transparent black (v10.0 NEW) |
 | RENDER_MODE | 0x0000000000000401 | GOURAUD=1, DITHER_EN=1, Z_COMPARE=LEQUAL, all else 0 (v8.0) |
 | FB_DRAW | 0x0000000000000000 | Address 0x000000 |
 | FB_DISPLAY | 0x0000000000000000 | FB=0x000000, LUT=0x0, color grading disabled (v9.0: CHANGED) |
 | FB_ZBUFFER | 0x0000000000000000 | Address 0x000000 (v8.0: Z_COMPARE moved to RENDER_MODE) |
 | FB_CONTROL | 0x00000000_3FF003FF | Full screen scissor 1024×1024, all writes enabled (v8.0 NEW) |
 | FB_DISPLAY_SYNC | N/A | Write-only blocking register (v9.0: NEW) |
-| PERF_TEX0-3 | 0x0000000000000000 | Both hits and misses zero (v8.0 packed) |
+| PERF_TEX0-1 | 0x0000000000000000 | Both hits and misses zero (v10.0: 2 samplers) |
 | PERF_PIXELS | 0x0000000000000000 | Both counters zero (v8.0 packed) |
 | PERF_FRAGMENTS | 0x0000000000000000 | Both counters zero (v8.0 packed) |
 | PERF_STALL_VS | 0x0000000000000000 | Both counters zero (v8.0 packed) |
@@ -1885,7 +2000,7 @@ After hardware reset or power-on (v8.0):
 | MEM_ADDR | 0x0000000000000000 | Address 0x000000 |
 | MEM_DATA | N/A | Depends on memory |
 | STATUS | 0x0000000000000000 | Idle, FIFO empty |
-| ID | 0x0000090000006702 | **Version 9.0**, device 0x6702 (v9.0) |
+| ID | 0x00000A0000006702 | **Version 9.0**, device 0x6702 (v9.0) |
 | vertex_count | 0 | Internal state counter |
 
 ---
@@ -1920,15 +2035,30 @@ Active-high outputs from GPU to host.
 
 **Triangle Submission** (typical multi-texture):
 - Minimum: 3 VERTEX writes = 8.64 µs
-- Typical (1 texture): TRI_MODE + 3×(COLOR + UV0 + VERTEX) = 28.8 µs
-- Multi-texture (2 textures): TRI_MODE + 3×(COLOR + UV0 + UV1 + VERTEX) = 37.44 µs
-- Max (4 textures): TRI_MODE + 3×(COLOR + UV0-UV3 + VERTEX) = 54.72 µs
-- Theoretical max (1 texture): ~35,000 triangles/second
-- Theoretical max (4 textures): ~18,000 triangles/second
+- Typical (1 texture): RENDER_MODE + 3×(COLOR + UV0_UV1 + VERTEX) = 28.8 µs
+- Max (2 textures): RENDER_MODE + 3×(COLOR + UV0_UV1 + VERTEX) = 28.8 µs (same, UV0_UV1 holds both)
+- Theoretical max: ~35,000 triangles/second
 
 ---
 
 ## Version History
+
+**Version 10.0** (February 2026):
+- **BREAKING CHANGE**: Texture units reduced from 4 to 2 (TEX0, TEX1 only)
+  - TEX2/TEX3 registers (0x18-0x1F) removed, addresses repurposed for color combiner
+  - UV2_UV3 register (0x02) removed (UV0_UV1 provides both UV sets)
+  - PERF_TEX2/PERF_TEX3 (0x52-0x53) removed (now reserved)
+  - Per-unit texture cache increased from 4096 to 16384 texels (16K) for higher hit rates
+- **BREAKING CHANGE**: Sequential 4-texture blending replaced by dedicated color combiner
+  - TEXn_FMT.BLEND field (bits [26:24]) removed (now reserved)
+  - New CC_MODE register (0x18): programmable `(A - B) × C + D` equation
+  - 7 input sources: TEX_COLOR0, TEX_COLOR1, VER_COLOR0, VER_COLOR1, MAT_COLOR0, MAT_COLOR1, Z_COLOR
+  - Supports fog, multi-texture modulation, specular add, material colors
+- **NEW**: MAT_COLOR0 (0x19), MAT_COLOR1 (0x1A) — per-material constant colors
+- **NEW**: FOG_COLOR (0x1B) — fog color for Z-based distance fogging
+- **NEW**: Z_COLOR combiner input — derived from interpolated Z high byte for fog effects
+- **ID register version**: 0x00000A0000006702 (v10.0)
+- Aligns GPU with N64/GeForce2 MX-era dual-texture + color combiner architecture
 
 **Version 9.0** (February 2026):
 - **BREAKING CHANGE**: FB_DISPLAY (0x41) register expanded to include LUT control
@@ -1948,7 +2078,7 @@ Active-high outputs from GPU to host.
   - Freed addresses 0x44-0x46 (3 registers) for future features
 - **Migration**: Firmware must pre-upload LUT data to SDRAM via MEM_ADDR/MEM_DATA or other bulk transfer
 - **Benefit**: Atomic framebuffer + LUT switch, simplified synchronization, vastly reduced SPI traffic
-- **ID register version**: 0x0000090000006702 (v9.0)
+- **ID register version**: 0x00000A0000006702 (v9.0)
 
 **Version 8.0** (February 2026):
 - **BREAKING CHANGE**: COLOR register format changed to pack diffuse[63:32] + specular[31:0]
@@ -2042,9 +2172,9 @@ See specification details above.
 
 ## Texture Cache Interaction (REQ-131)
 
-Writing to **TEXn_BASE** or **TEXn_FMT** registers implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SDRAM.
+Writing to **TEXn_BASE** or **TEXn_FMT** registers (n=0,1) implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SDRAM.
 
-**Performance Counters** (v6.0): Cache hit/miss statistics are now available via performance counter registers (0x50-0x57). Read these counters to measure cache efficiency and validate the >85% hit rate target from REQ-131.
+**Performance Counters** (v10.0): Cache hit/miss statistics are available via performance counter registers (0x50-0x51) for the 2 texture samplers. PERF_TEX2/PERF_TEX3 have been removed. Read these counters to measure cache efficiency and validate the >85% hit rate target from REQ-131.
 
 No explicit cache control registers are defined beyond the performance counters. Future versions may add a `CACHE_CTRL` register for explicit flush/invalidate commands.
 

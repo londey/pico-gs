@@ -30,7 +30,9 @@ Performance is highly content-dependent (triangle count, overdraw, texture cache
 - Early Z rejection: Reduces effective fill cost for overdraw-heavy scenes by skipping texture and blending stages for occluded fragments (see REQ-014). Benefit scales with overdraw ratio; scenes with 2-3x overdraw may see 30-50% reduction in SDRAM texture bandwidth.
 - SDRAM sequential access: Improves effective SDRAM throughput for sequential access patterns (display scanout, texture cache fills, framebuffer writes) by amortizing row activation and CAS latency overhead across multiple column accesses. See INT-011 for SDRAM bandwidth budget.
 
-These performance characteristics place the system in the PSX-to-N64 capability range given the hardware constraints.
+These performance characteristics place the system in the N64-era capability range given the hardware constraints.
+The dual-texture architecture with a dedicated color combiner aligns with N64/GeForce2 MX-era dual-texture-per-pass capabilities.
+Larger per-unit texture caches (16K texels per sampler vs. the previous 4K) improve cache hit rates, reducing effective SDRAM texture bandwidth consumption.
 
 ## Parent Requirements
 

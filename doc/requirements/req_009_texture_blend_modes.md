@@ -1,18 +1,19 @@
-# REQ-009: Texture Blend Modes
+# REQ-009: Color Combiner
 
 ## Classification
 
 - **Priority:** Important
-- **Stability:** Stable
+- **Stability:** Draft
 - **Verification:** Demonstration
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to control how multiple textures combine together, so that I can achieve effects like modulated lighting, additive glow, and subtractive masking
+When the pixel pipeline produces fragment data during rasterization, the system SHALL combine multiple color inputs through a programmable color combiner stage that accepts texture colors, vertex colors, material colors, and depth-derived colors as inputs.
 
 ## Rationale
 
-This requirement enables the user story described above.
+A dedicated color combiner replaces the previous sequential 4-texture blending model with a more flexible architecture inspired by N64 RDP and GeForce2 register combiners.
+By accepting multiple input types (texture, vertex, material, depth-derived), the combiner enables a wide range of effects including multi-texture blending, fog, per-vertex lighting modulation, and environment mapping -- all in a single pass.
 
 ## Parent Requirements
 
@@ -26,25 +27,73 @@ None
 
 - INT-010 (GPU Register Map)
 
+## Functional Requirements
+
+### FR-009-1: Color Combiner Inputs
+
+When the color combiner stage executes, the system SHALL accept the following inputs:
+
+- **TEX_COLOR0:** Sampled and decoded color from texture unit 0 (REQ-008)
+- **TEX_COLOR1:** Sampled and decoded color from texture unit 1 (REQ-008)
+- **VER_COLOR0:** Primary interpolated vertex color from the rasterizer
+- **VER_COLOR1:** Secondary interpolated vertex color from the rasterizer
+- **MAT_COLOR0:** Material-wide constant color 0 (from register, per-material)
+- **MAT_COLOR1:** Material-wide constant color 1 (from register, per-material)
+- **Z_COLOR:** Color derived from the high byte of interpolated Z depth (for fog and depth-cueing effects)
+
+### FR-009-2: Combiner Mode Selection
+
+When the firmware writes the color combiner mode register, the system SHALL select a combining equation that determines how the inputs from FR-009-1 are combined to produce a final fragment color.
+
+### FR-009-3: Per-Component Operation
+
+When the color combiner evaluates its equation, the system SHALL perform all operations independently per color component (R, G, B, A).
+
+### FR-009-4: Internal Precision
+
+When the color combiner performs arithmetic, the system SHALL use 10.8 fixed-point format (10 integer bits, 8 fractional bits) for all intermediate and output values, with saturation to the valid range [0, 1023] in the integer portion.
+
+### FR-009-5: Z_COLOR Derivation
+
+When the system computes Z_COLOR, it SHALL derive the color from the high byte of the interpolated Z value for the current fragment.
+The Z_COLOR value MAY optionally pass through a color lookup table to enable non-linear fog curves.
+
+### FR-009-6: Predefined Combiner Modes
+
+When the firmware selects a combiner mode, the system SHALL support at minimum the following modes:
+
+- **MODULATE:** `output = TEX_COLOR0 * VER_COLOR0` (basic textured lighting)
+- **DECAL:** `output = TEX_COLOR0` (unlit texture)
+- **BLEND_TEXTURES:** `output = lerp(TEX_COLOR0, TEX_COLOR1, TEX_COLOR1.a)` (dual-texture blending)
+- **MODULATE_ADD:** `output = TEX_COLOR0 * VER_COLOR0 + TEX_COLOR1` (diffuse + lightmap)
+- **FOG:** `output = lerp(TEX_COLOR0 * VER_COLOR0, MAT_COLOR0, Z_COLOR.r)` (depth fog)
+
+Additional combiner modes MAY be defined in INT-010.
+
 ## Verification Method
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- [ ] Set TEXn_BLEND register for each texture unit (except TEX0)
-- [ ] Support MULTIPLY blend mode (texture × previous result)
-- [ ] Support ADD blend mode (texture + previous result, saturate)
-- [ ] Support SUBTRACT blend mode (previous - texture, saturate)
-- [ ] Support INVERSE_SUBTRACT blend mode (texture - previous, saturate)
-- [ ] Blend operations apply per-component (R, G, B, A independently)
-- [ ] Textures evaluate sequentially (TEX0 → TEX1 → TEX2 → TEX3)
+- [ ] Configure color combiner mode register via INT-010
+- [ ] TEX_COLOR0 and TEX_COLOR1 inputs correctly sourced from texture units
+- [ ] VER_COLOR0 and VER_COLOR1 inputs correctly sourced from rasterizer interpolation
+- [ ] MAT_COLOR0 and MAT_COLOR1 correctly loaded from material registers
+- [ ] Z_COLOR correctly derived from interpolated Z high byte
+- [ ] MODULATE mode produces correct `TEX_COLOR0 * VER_COLOR0` result
+- [ ] DECAL mode passes TEX_COLOR0 through unchanged
+- [ ] BLEND_TEXTURES mode interpolates between two texture colors
+- [ ] MODULATE_ADD mode produces correct `TEX_COLOR0 * VER_COLOR0 + TEX_COLOR1`
+- [ ] FOG mode blends lit color toward fog color based on depth
+- [ ] Operations apply per-component (R, G, B, A independently)
 - [ ] Saturation occurs at 10-bit integer range (0-1023) in 10.8 internal format
 - [ ] Verify mathematical correctness with test patterns
 
----
-
-
 ## Notes
 
-User Story: As a firmware developer, I want to control how multiple textures combine together, so that I can achieve effects like modulated lighting, additive glow, and subtractive masking
+This requirement supersedes the previous sequential texture blend model (TEX0 -> TEX1 -> TEX2 -> TEX3 with per-unit BLEND modes).
+The color combiner absorbs both the old texture blending and vertex color modulation stages into a single programmable stage.
 
-All texture blend operations are performed in 10.8 fixed-point format (10 integer bits, 8 fractional bits). See REQ-134 for format details.
+All color combiner operations are performed in 10.8 fixed-point format (10 integer bits, 8 fractional bits).
+See REQ-134 for format details.
+
+The specific register encoding for combiner modes and the full list of available modes are defined in INT-010 (GPU Register Map).

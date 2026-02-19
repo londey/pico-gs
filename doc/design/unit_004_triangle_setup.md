@@ -41,13 +41,16 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `tri_valid` | 1 | Triangle ready to rasterize |
 | `v0_x`, `v0_y` | 16 each | Vertex 0 position (12.4 fixed point) |
 | `v0_z` | 16 | Vertex 0 depth |
-| `v0_color` | 24 | Vertex 0 RGB888 color |
+| `v0_color0` | 24 | Vertex 0 primary RGB888 color (diffuse) |
+| `v0_color1` | 24 | Vertex 0 secondary RGB888 color (specular/emissive) |
 | `v1_x`, `v1_y` | 16 each | Vertex 1 position (12.4 fixed point) |
 | `v1_z` | 16 | Vertex 1 depth |
-| `v1_color` | 24 | Vertex 1 RGB888 color |
+| `v1_color0` | 24 | Vertex 1 primary RGB888 color (diffuse) |
+| `v1_color1` | 24 | Vertex 1 secondary RGB888 color (specular/emissive) |
 | `v2_x`, `v2_y` | 16 each | Vertex 2 position (12.4 fixed point) |
 | `v2_z` | 16 | Vertex 2 depth |
-| `v2_color` | 24 | Vertex 2 RGB888 color |
+| `v2_color0` | 24 | Vertex 2 primary RGB888 color (diffuse) |
+| `v2_color1` | 24 | Vertex 2 secondary RGB888 color (specular/emissive) |
 | `inv_area` | 16 | 1/area (0.16 fixed point) from CPU |
 | `fb_base_addr` | 20 | Framebuffer base address [31:12] |
 | `zb_base_addr` | 20 | Z-buffer base address [31:12] |
@@ -70,7 +73,8 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `setup_bbox_min_y` | 10 | Bounding box minimum Y |
 | `setup_bbox_max_y` | 10 | Bounding box maximum Y |
 | `setup_v0_z`, `setup_v1_z`, `setup_v2_z` | 3x16 | Vertex Z depths |
-| `setup_v0_color`, `setup_v1_color`, `setup_v2_color` | 3x24 | Vertex RGB888 colors |
+| `setup_v0_color0`, `setup_v1_color0`, `setup_v2_color0` | 3x24 | Vertex primary RGB888 colors (diffuse) |
+| `setup_v0_color1`, `setup_v1_color1`, `setup_v2_color1` | 3x24 | Vertex secondary RGB888 colors (specular/emissive) |
 | `setup_inv_area` | 16 | 1/area (0.16 fixed point) passed through |
 
 ### Internal State
@@ -89,7 +93,8 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 **Vertex Registers:**
 - x0..x2, y0..y2 [9:0]: Integer pixel coordinates (converted from 12.4 by dropping fractional bits)
 - z0..z2 [15:0]: Depth values
-- r0..r2, g0..g2, b0..b2 [7:0]: Per-vertex RGB components
+- r0_0..r2_0, g0_0..g2_0, b0_0..b2_0 [7:0]: Per-vertex primary RGB components (color0, diffuse)
+- r0_1..r2_1, g0_1..g2_1, b0_1..b2_1 [7:0]: Per-vertex secondary RGB components (color1, specular/emissive)
 
 **Edge Function Coefficients:**
 - edge0_A/B, edge1_A/B, edge2_A/B [10:0 signed]: Edge slopes (11-bit, differences of 10-bit coords)
@@ -143,6 +148,10 @@ These responsibilities have been split: UNIT-004 now performs only triangle setu
 The FSM was reduced from 12 states (4-bit) to 3 states (3-bit).
 SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
 See DD-015 for rationale.
+
+**v10.0 dual-texture + color combiner update:** Triangle setup now passes through two vertex colors (color0 and color1) per vertex instead of one.
+UV passthrough is reduced from up to 4 sets to up to 2 sets (UV0, UV1 only; UV2_UV3 register removed).
+The second vertex color (color1) supports the color combiner's VER_COLOR1 input for specular highlights, emissive terms, or blend factors.
 
 **v2.0 unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
 The setup FSM (IDLE → SETUP → SETUP_2 → SETUP_3) completes edge coefficient computation in 3 cycles (30 ns at 100 MHz) using a shared pair of 11×11 multipliers.

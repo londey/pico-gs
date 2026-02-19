@@ -55,7 +55,7 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - [REQ-006: Textured Triangle](req_006_textured_triangle.md)
 - [REQ-007: Display Output](req_007_display_output.md)
 - [REQ-008: Multi-Texture Rendering](req_008_multitexture_rendering.md)
-- [REQ-009: Texture Blend Modes](req_009_texture_blend_modes.md)
+- [REQ-009: Color Combiner](req_009_texture_blend_modes.md)
 - [REQ-010: Compressed Textures](req_010_compressed_textures.md)
 - [REQ-011: Swizzle Patterns](req_011_swizzle_patterns.md)
 - [REQ-012: UV Wrapping Modes](req_012_uv_wrapping_modes.md)

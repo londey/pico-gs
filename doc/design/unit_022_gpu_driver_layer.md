@@ -56,6 +56,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - **`gpu_set_dither_mode()` parameters**: `enabled: bool` -- enable or disable ordered dithering.
 - **`gpu_set_color_grade_enable()` parameters**: `enabled: bool` -- enable or disable color grading LUT at scanout.
 - **`gpu_upload_color_lut()` parameters**: `red: &[u32; 32]` (Red LUT, 32 RGB888 entries), `green: &[u32; 64]` (Green LUT, 64 RGB888 entries), `blue: &[u32; 32]` (Blue LUT, 32 RGB888 entries).
+- **`gpu_set_combiner_mode()` parameters**: `rgb_a: u8, rgb_b: u8, rgb_c: u8, rgb_d: u8, alpha_a: u8, alpha_b: u8, alpha_c: u8, alpha_d: u8` -- configure the color combiner equation `(A-B)*C+D` input selectors for RGB and Alpha channels. Each selector is a 4-bit value choosing from: 0=TEX_COLOR0, 1=TEX_COLOR1, 2=VER_COLOR0, 3=VER_COLOR1, 4=MAT_COLOR0, 5=MAT_COLOR1, 6=Z_COLOR, 7=ONE, 8=ZERO.
+- **`gpu_set_material_color()` parameters**: `slot: u8` (0 or 1), `color: u32` (RGBA8888) -- write MAT_COLOR0 or MAT_COLOR1 register.
 
 ### Outputs
 
@@ -65,6 +67,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - **`gpu_set_dither_mode()` return**: None. Writes DITHER_MODE register (0x32) with 0x01 (enabled) or 0x00 (disabled).
 - **`gpu_set_color_grade_enable()` return**: None. Writes COLOR_GRADE_CTRL register (0x44) with 0x01 (enabled) or 0x00 (disabled).
 - **`gpu_upload_color_lut()` return**: None. Performs 260 SPI register writes (1 reset + 128 addr/data pairs + 1 swap) to upload all three LUT channels and activate at next vblank.
+- **`gpu_set_combiner_mode()` return**: None. Writes COMBINER_RGB (0x33) and COMBINER_ALPHA (0x34) registers with packed input selectors.
+- **`gpu_set_material_color()` return**: None. Writes MAT_COLOR0 (0x35) or MAT_COLOR1 (0x36) register.
 
 ### Internal State
 
@@ -95,13 +99,19 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
     c. For each of the 64 Green LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b01 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `green[index] & 0xFFFFFF`.
     d. For each of the 32 Blue LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b10 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `blue[index] & 0xFFFFFF`.
     e. Write COLOR_GRADE_CTRL with bit 1 set (SWAP_BANKS) to activate the new LUT data at the next vblank.
-13. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR, optionally UV0, then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on kick parameter (0/1/2).
+13. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR, optionally COLOR1 (if dual vertex colors enabled), optionally UV0, then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on kick parameter (0/1/2).
 14. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
+15. **Combiner mode** (`gpu_set_combiner_mode(rgb_a, rgb_b, rgb_c, rgb_d, alpha_a, alpha_b, alpha_c, alpha_d)`): Pack RGB selectors into COMBINER_RGB register (0x33) as `{rgb_d[3:0], rgb_c[3:0], rgb_b[3:0], rgb_a[3:0]}` in the lower 16 bits, and write. Pack Alpha selectors into COMBINER_ALPHA register (0x34) similarly.
+    Common presets:
+    - **Modulate:** rgb = (TEX0, ZERO, VER0, ZERO) → `TEX0 * VER0`
+    - **Decal:** rgb = (TEX0, ZERO, ONE, ZERO) → `TEX0`
+    - **Add specular:** rgb = (TEX0, ZERO, VER0, VER1) → `TEX0 * VER0 + VER1`
+16. **Material color** (`gpu_set_material_color(slot, color)`): Write MAT_COLOR0 (0x35) if slot=0, MAT_COLOR1 (0x36) if slot=1.
 
 ## Implementation
 
 - `crates/pico-gs-core/src/gpu/mod.rs`: Platform-agnostic GPU driver (generic over `SpiTransport`)
-- `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants (includes `Z_RANGE = 0x31`, `RENDER_MODE = 0x30`, `RENDER_MODE_COLOR_WRITE = 1 << 4`)
+- `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants (includes `Z_RANGE = 0x31`, `RENDER_MODE = 0x30`, `RENDER_MODE_COLOR_WRITE = 1 << 4`, `COMBINER_RGB = 0x33`, `COMBINER_ALPHA = 0x34`, `MAT_COLOR0 = 0x35`, `MAT_COLOR1 = 0x36`)
 - `crates/pico-gs-core/src/gpu/vertex.rs`: Vertex packing
 
 ## Verification
@@ -118,6 +128,8 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - **Color LUT upload test**: Verify `gpu_upload_color_lut()` performs the correct sequence: reset addr, 32 red entries (addr + data writes), 64 green entries, 32 blue entries, then swap banks. Total: 260 SPI transactions.
 - **Render mode test**: Verify `gpu_set_render_mode(true, true, true, true)` writes 0x1D to RENDER_MODE (0x30) (bits 0,2,3,4 set), and `gpu_set_render_mode(false, false, false, false)` writes 0x00. Verify `color_write=false` produces a value with bit 4 clear.
 - **Z range test**: Verify `gpu_set_z_range(0, 0xFFFF)` writes 0x0000_FFFF_0000_0000 to Z_RANGE (0x31). Verify `gpu_set_z_range(0x100, 0xFF00)` writes the correct packed value.
+- **Combiner mode test**: Verify `gpu_set_combiner_mode()` writes correct packed selectors to COMBINER_RGB (0x33) and COMBINER_ALPHA (0x34). Verify modulate preset produces expected register values.
+- **Material color test**: Verify `gpu_set_material_color(0, 0xFF0000FF)` writes to MAT_COLOR0 (0x35), and `gpu_set_material_color(1, 0x00FF00FF)` writes to MAT_COLOR1 (0x36).
 
 ## Design Notes
 
@@ -126,4 +138,10 @@ Migrated from speckit module specification.
 API functions `gpu_set_dither_mode()`, `gpu_set_color_grade_enable()`, and `gpu_upload_color_lut()` were added per INT-020 and are now reflected in the Inputs, Outputs, and Algorithm/Behavior sections above. These wrap register writes to DITHER_MODE (0x32) and COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46).
 
 **Note:** This document describes v8.0 register-based LUT upload. v9.0 migrates to SRAM-based auto-load (see DD-014, INT-010 v9.0).
+
+**v10.0 dual-texture + color combiner update:** Added `gpu_set_combiner_mode()` and `gpu_set_material_color()` API functions.
+Texture slot range reduced from 0-3 to 0-1 (2 texture units per pass).
+The `submit_triangle()` function no longer writes UV2_UV3; only UV0_UV1 is written when textured.
+A second vertex color (COLOR1) register write is added to the vertex submission sequence when the color combiner uses VER_COLOR1.
+Register constants in `registers.rs` updated: TEX2/TEX3 constants removed; COMBINER_RGB, COMBINER_ALPHA, MAT_COLOR0, MAT_COLOR1 added.
 

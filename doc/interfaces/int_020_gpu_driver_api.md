@@ -136,7 +136,7 @@ Upload a single-level texture to GPU SRAM and configure texture unit registers.
 4. Write TEXn_FMT register (width_log2, height_log2, format, enable, mip_levels=1)
 
 **Parameters**:
-- `slot`: Texture unit index (0-3)
+- `slot`: Texture unit index (0-1) (v10.0: reduced from 0-3)
 - `width`, `height`: Texture dimensions (power-of-2, 8-1024)
 - `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
 - `data`: Texture pixel data (size must match format and dimensions)
@@ -161,7 +161,7 @@ Upload a texture with mipmap chain to GPU SRAM and configure texture unit regist
 6. Write TEXn_MIP_BIAS register (default: 0, no bias)
 
 **Parameters**:
-- `slot`: Texture unit index (0-3)
+- `slot`: Texture unit index (0-1) (v10.0: reduced from 0-3)
 - `width`, `height`: Base level dimensions (power-of-2, 8-1024)
 - `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
 - `mip_levels`: Number of mipmap levels (1-11)
@@ -237,6 +237,68 @@ Configure depth range clipping (Z scissor). Fragments outside [z_min, z_max] are
 - Default (disabled): z_min=0x0000, z_max=0xFFFF (passes all fragments)
 - Depth range test is independent of RENDER_MODE.Z_TEST_EN
 - Depth range test occurs before early Z-test in the pixel pipeline (Stage 0)
+
+---
+
+## Color Combiner Configuration (v10.0 NEW)
+
+### `gpu_set_combiner_mode(handle: &GpuHandle, rgb_a: CcSource, rgb_b: CcSource, rgb_c: CcSource, rgb_d: CcSource, alpha_a: CcSource, alpha_b: CcSource, alpha_c: CcSource, alpha_d: CcSource)`
+
+Configure the color combiner equation `(A - B) × C + D` for both RGB and alpha channels.
+
+**Sequence**:
+1. Build CC_MODE register value from parameters:
+   ```rust
+   let value = ((rgb_d as u64) << 28)
+             | ((rgb_c as u64) << 24)
+             | ((rgb_b as u64) << 20)
+             | ((rgb_a as u64) << 16)
+             | ((alpha_d as u64) << 12)
+             | ((alpha_c as u64) << 8)
+             | ((alpha_b as u64) << 4)
+             | (alpha_a as u64);
+   ```
+2. `gpu_write(CC_MODE, value)`
+
+**Parameters** (`CcSource` enum):
+- `TexColor0` (0x0): Texture unit 0 output
+- `TexColor1` (0x1): Texture unit 1 output
+- `VerColor0` (0x2): Vertex color 0 (diffuse)
+- `VerColor1` (0x3): Vertex color 1 (specular)
+- `MatColor0` (0x4): Material color 0
+- `MatColor1` (0x5): Material color 1
+- `ZColor` (0x6): Z-based fog factor
+- `Zero` (0x7): Constant 0
+- `One` (0x8): Constant 1
+
+### `gpu_set_material_color(handle: &GpuHandle, slot: u8, color: RGBA8)`
+
+Set a material-wide constant color for use in the color combiner.
+
+**Sequence**:
+1. `gpu_write(MAT_COLOR0 + slot, color.to_u32() as u64)` where slot is 0 or 1
+
+**Parameters**:
+- `slot`: Material color index (0 or 1)
+- `color`: RGBA8888 color value
+
+### `gpu_set_fog_color(handle: &GpuHandle, color: RGBA8)`
+
+Set the fog color for Z-based distance fogging.
+
+**Sequence**:
+1. `gpu_write(FOG_COLOR, color.to_u32() as u64)`
+
+**Example** (fog setup):
+```rust
+// Configure fog: lerp between scene color and fog color based on depth
+gpu_set_fog_color(&gpu, RGBA8::new(180, 180, 200, 255));  // Blue-gray fog
+gpu_set_combiner_mode(
+    &gpu,
+    CcSource::TexColor0, CcSource::MatColor0, CcSource::ZColor, CcSource::MatColor0,  // RGB: (TEX0 - FOG) * Z + FOG
+    CcSource::One, CcSource::Zero, CcSource::One, CcSource::Zero,                      // Alpha: 1.0
+);
+```
 
 ---
 

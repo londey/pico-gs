@@ -108,9 +108,10 @@ Texture sampling SHALL first check the per-sampler texture cache (REQ-131):
 3. On cache hit: read decompressed RGBA5652 texels directly from interleaved banks (1 cycle for 2x2 bilinear quad)
 4. On cache miss: stall pipeline, fetch 4x4 block from SDRAM (CAS latency + burst transfer), decompress to RGBA5652, fill cache line, then resume sampling
 5. Apply swizzle pattern (FR-024-3) after reading from cache
-6. Bilinear filtering operates on 4 texels read in parallel from the 4 interleaved banks
+6. Bilinear filtering operates on 4 texels read in parallel from the interleaved banks within each sampler's cache
 
 **Note**: The cache stores decompressed RGBA5652 texels, so format-specific decoding (FR-024-1, FR-024-2) occurs only on cache miss during the fill operation, not on every texel access.
+Each of the 2 texture samplers has its own independent cache (REQ-131).
 
 ### FR-024-6: Texture Format Promotion to 10.8
 
@@ -137,11 +138,15 @@ See REQ-134 for 10.8 fixed-point format details.
 - [ ] UV wrapping modes work correctly with block-organized textures
 - [ ] Texture cache hit returns correct RGBA5652 texels
 - [ ] Texture cache miss triggers SDRAM fetch and correct cache fill
-- [ ] Bilinear 2x2 quad reads from 4 banks simultaneously on cache hit
+- [ ] Bilinear 2x2 quad reads from interleaved banks simultaneously on cache hit
 - [ ] Cache invalidation on TEXn_BASE/TEXn_FMT write prevents stale data
 - [ ] RGBA5652→10.8 promotion produces correct values for all component ranges
 - [ ] A2 expansion produces correct 10-bit alpha values (0, 341, 682, 1023)
 
 ## Notes
 
-Functional requirements grouped from specification. See INT-014 for detailed format specifications.
+Functional requirements grouped from specification.
+See INT-014 for detailed format specifications.
+
+The system supports 2 texture samplers (TEX0, TEX1), each with an independent cache (REQ-131).
+Texture colors produced by sampling feed into the color combiner stage (REQ-009).

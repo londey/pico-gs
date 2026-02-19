@@ -30,7 +30,7 @@ None
 - Port 0 (highest priority): UNIT-008 (Display Controller) display read
 - Port 1: UNIT-006 (Pixel Pipeline) framebuffer write
 - Port 2: UNIT-006 (Pixel Pipeline) Z-buffer read/write
-- Port 3 (lowest priority): UNIT-006 (Pixel Pipeline) texture read
+- Port 3 (lowest priority): UNIT-006 (Pixel Pipeline) texture read (up to 2 samplers)
 - Downstream: connects to SDRAM controller via req/ack handshake
 
 ## Design Description
@@ -217,7 +217,7 @@ Migrated from speckit module specification.
 **v2.0 unified clock update:** With the GPU core clock unified to 100 MHz (matching the SDRAM controller clock), the arbiter operates in a single clock domain.
 Previously, if the GPU core ran at a different frequency than the memory, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the memory controller.
 The unified 100 MHz clock eliminates this requirement entirely, reducing latency and simplifying timing analysis.
-All four requestor ports (UNIT-008 display read, UNIT-006 framebuffer write, UNIT-006 Z-buffer read/write, UNIT-006 texture read) are now synchronous to the same `clk_core` that drives the SDRAM controller.
+All four requestor ports (UNIT-008 display read, UNIT-006 framebuffer write, UNIT-006 Z-buffer read/write, UNIT-006 texture read for up to 2 samplers) are now synchronous to the same `clk_core` that drives the SDRAM controller.
 
 **v3.0 SDRAM update:** The downstream interface connects to an SDRAM controller (W9825G6KH) instead of an async SRAM controller.
 Key behavioral differences:
@@ -225,3 +225,8 @@ Key behavioral differences:
 - Sequential access within an active row is efficient (1 word/cycle after CL), but row changes incur ~5 cycle overhead (PRECHARGE + ACTIVATE + tRCD)
 - Auto-refresh interrupts normal access at a rate of ~1 per 781 cycles; the arbiter must tolerate mem_ready deassertion during refresh
 - The arbiter interface (req/we/addr/wdata/rdata/ack/ready/burst) is preserved; the SDRAM controller internally manages row activation, CAS latency, precharge, and refresh
+
+**v10.0 dual-texture + color combiner update:** Port 3 texture traffic now comes from at most 2 texture samplers (reduced from 4).
+With 16K texels per sampler cache (4× larger than before), cache miss rates are substantially lower, reducing Port 3 bandwidth demands.
+The arbiter architecture, priority scheme, and burst preemption logic are unchanged.
+The max burst length for Port 3 (16 words) remains appropriate since individual cache fills are still 4-word (BC1) or 16-word (RGBA4444) bursts.

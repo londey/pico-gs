@@ -66,6 +66,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
 | lights | [DirectionalLight; 4] | Directional light sources |
 | ambient | AmbientColor | Ambient light level |
 | flags | RenderFlags | textured, z_test, z_write, gouraud, color_write |
+| combiner_mode | u32 | Color combiner configuration (CC_MODE register value, v10.0: NEW) |
 | clip_flags | u8 | 6-bit frustum plane crossing bitmask from Core 0 culling (bit per plane: left, right, bottom, top, near, far) |
 
 **Processing (Core 1)**:
@@ -82,12 +83,13 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
    i. If textured: convert UV i16 → f32 (divide by 8192.0). Compute U/W, V/W, 1/W in 1.15 fixed-point
    j. Pack into GpuVertex format and store in clip-space vertex cache
 3. Configure GPU RENDER_MODE register based on flags (includes GOURAUD, Z_TEST_EN, Z_WRITE_EN, COLOR_WRITE_EN, Z_COMPARE, ALPHA_BLEND, CULL_MODE)
+3a. Configure GPU CC_MODE register from combiner_mode (v10.0: color combiner setup)
 4. For each index entry in the packed u8 strip command stream:
    a. Extract vertex index (bits [7:4]) and kick control (bits [3:2])
    b. Look up transformed vertex from cache
    c. If kick != NOKICK: perform back-face cull (cross product of screen-space edges)
    d. If clip_flags != 0 and triangle crosses a frustum plane: clip triangle (Sutherland-Hodgman)
-   e. Write COLOR, UV0 (if textured), then VERTEX register (NOKICK/KICK_012/KICK_021 based on kick bits)
+   e. Write COLOR, UV0_UV1 (if textured, holds UV for up to 2 texture units), then VERTEX register (NOKICK/KICK_012/KICK_021 based on kick bits)
 5. Output packed GPU register writes to double-buffered SPI output buffer (DMA/PIO sends one buffer while Core 1 fills the next)
 
 **Output**: GPU register writes via DMA/PIO SPI (RP2350) or SPI thread (PC)
@@ -179,7 +181,7 @@ Core 0 performs frustum culling per frame: tests each model's overall AABB, then
 | Utah Teapot patches | ~29 patches (estimated, ~460 vertices / 16 per patch) |
 | Visible patches per frame | ~20-29 (after frustum culling) |
 | Commands per frame | ~22-32 (1 clear + 20-29 patches + 1 vsync) |
-| RenderMeshPatch size | ~264 bytes (2× Mat4 + lights + patch ref + flags) |
+| RenderMeshPatch size | ~268 bytes (2× Mat4 + lights + patch ref + flags + combiner_mode) |
 | Queue depth | 64 entries (sufficient for ~32 commands/frame) |
 | Queue memory | 64 × ~264 bytes ≈ 16.5 KB |
 

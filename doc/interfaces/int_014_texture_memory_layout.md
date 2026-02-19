@@ -188,14 +188,13 @@ block_addr = texture_base + block_index * 8
 
 ## Swizzle Pattern Application
 
-Swizzle patterns (defined in INT-010 GPU Register Map, TEXn_FMT.SWIZZLE field)
-are applied **after texture decode**, before blending.
+Swizzle patterns (defined in INT-010 GPU Register Map, TEXn_FMT.SWIZZLE field, n=0,1)
+are applied **after texture decode**, before the color combiner stage.
 
 Process:
 1. Decode texture to RGBA8 (from RGBA4444 or BC1)
 2. Apply swizzle pattern (reorder/replicate channels)
-3. Apply texture blend modes
-4. Multiply by vertex color (if Gouraud shading enabled)
+3. Pass to color combiner as TEX_COLOR0 or TEX_COLOR1 (see INT-010 CC_MODE register)
 
 See INT-010 for swizzle pattern encoding (16 predefined patterns).
 
@@ -362,15 +361,17 @@ mip_base_addr = texture_base + mip_offsets[selected_mip];
 
 ## Texture Cache Considerations (REQ-131)
 
-The pixel pipeline uses an on-chip texture cache (REQ-131) to reduce SDRAM bandwidth. The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
+The pixel pipeline uses an on-chip texture cache (REQ-131) with 2 independent per-sampler caches (v10.0: reduced from 4 samplers) to reduce SDRAM bandwidth.
+Each sampler cache holds 16,384 texels (v10.0: increased from 4,096) in a 4-way set-associative configuration with 256 sets.
+The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
 
 ```
-set = (block_x[5:0] ^ block_y[5:0])  // 64 sets
+set = (block_x[7:0] ^ block_y[7:0])  // 256 sets (v10.0: increased from 64)
 ```
 
 This is a **hardware-only optimization** — the physical memory layout in SDRAM is unchanged. Textures remain stored in linear left-to-right, top-to-bottom block order as specified above. The XOR indexing prevents systematic cache aliasing where vertically adjacent block rows would map to the same cache sets under linear indexing.
 
-**Note**: If future profiling reveals persistent cache thrashing, a Morton/Z-order physical layout could be considered. This would require changes to the asset pipeline (UNIT-030, INT-031) and is not currently planned.
+**Note**: The larger 16K-texel cache per sampler significantly reduces cache thrashing for 256×256 and larger textures, as the cache can hold the equivalent of a 128×128 texel working set per sampler.
 
 ## Notes
 

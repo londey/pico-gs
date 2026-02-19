@@ -52,6 +52,7 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-007: Memory Arbiter](unit_007_sram_arbiter.md)
 - [UNIT-008: Display Controller](unit_008_display_controller.md)
 - [UNIT-009: DVI TMDS Encoder](unit_009_dvi_tmds_encoder.md)
+- [UNIT-010: Color Combiner](unit_010_color_combiner.md)
 - [UNIT-020: Core 0 Scene Manager](unit_020_core_0_scene_manager.md)
 - [UNIT-021: Core 1 Render Executor](unit_021_core_1_render_executor.md)
 - [UNIT-022: GPU Driver Layer](unit_022_gpu_driver_layer.md)

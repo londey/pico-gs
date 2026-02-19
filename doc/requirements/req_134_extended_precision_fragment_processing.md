@@ -54,15 +54,18 @@ The rasterizer SHALL output interpolated vertex colors in 10.8 format:
 1. Interpolate per-vertex RGBA8 colors using barycentric coordinates with 8.8 fixed-point accumulators
 2. Promote interpolated values to 10.8 by bit-width extension (8-bit values placed in integer part, fractional bits from interpolation preserved)
 
-### FR-134-4: Texture Blending Precision
+### FR-134-4: Color Combiner Precision
 
-All texture blend operations SHALL be performed in 10.8 format:
+All color combiner operations SHALL be performed in 10.8 format.
+When the color combiner receives inputs (VER_COLOR0, VER_COLOR1, TEX_COLOR0, TEX_COLOR1, MAT_COLOR0, MAT_COLOR1, Z_COLOR), the following arithmetic operations SHALL use 10.8 precision:
 
 - **MULTIPLY:** `result = (a * b) >> 8` using 18x18 DSP multiplier
 - **ADD:** `result = saturate(a + b)` with saturation at 10-bit integer max (1023)
 - **SUBTRACT:** `result = saturate(a - b)` with saturation at 0
 - **INVERSE_SUBTRACT:** `result = saturate(b - a)` with saturation at 0
-- Blending applies per-component (R, G, B, A independently)
+- **LERP:** `result = (a * factor + b * (1023 - factor)) >> 8` for fog and blending effects
+- All operations apply per-component (R, G, B, A independently)
+- The color combiner replaces the previous sequential 4-texture blend pipeline with a programmable combining stage
 
 ### FR-134-5: Alpha Blending Precision
 
@@ -97,7 +100,7 @@ The 10.8 fixed-point format SHALL be always enabled. There is no configurable mo
 - [ ] MULTIPLY blend of two RGBA8 values matches reference (error < 1 LSB at 8-bit)
 - [ ] ADD blend saturates correctly at 10-bit integer max (1023)
 - [ ] Alpha blend at alpha=128 produces correct 50% mix
-- [ ] Multi-stage blend chain (4 textures + Gouraud + alpha) maintains precision
+- [ ] Color combiner chain (2 textures + vertex colors + material colors + alpha) maintains precision
 - [ ] Final RGB565 output matches reference within dithering tolerance
 - [ ] Framebuffer readback promotion (RGB565→10.8) produces correct values
 

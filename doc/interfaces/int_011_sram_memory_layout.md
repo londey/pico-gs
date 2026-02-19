@@ -385,7 +385,7 @@ Bandwidth: ~5-15 MB/s average (with >85% cache hit rate)
 Access: BC1: 8 bytes per cache miss (burst), RGBA4444: 32 bytes per cache miss (burst)
 ```
 
-**Texture Cache (REQ-131)**: Each sampler has an on-chip 4-way set-associative texture cache (4x1024x18-bit EBR banks).
+**Texture Cache (REQ-131)**: Each of the 2 texture samplers (v10.0: reduced from 4) has an on-chip 4-way set-associative texture cache with 16,384 texels (v10.0: increased from 4,096).
 On cache hit, no SDRAM access is needed.
 On cache miss, the full 4x4 block is fetched using a sequential read from SDRAM:
 - BC1: 8 bytes = 4 sequential 16-bit reads.
@@ -399,7 +399,9 @@ The net increase is ~6 cycles per cache miss for the ACTIVATE + tRCD + CL pipeli
 For long bursts (RGBA4444, 16 words), this overhead is amortized and the effective throughput approaches the peak bus rate.
 End-to-end cache fill latency (including decompression/conversion overlap) is documented in INT-032.
 
-With >85% expected hit rate, average texture SDRAM bandwidth is significantly reduced from a worst-case ~50 MB/s, freeing bandwidth for framebuffer and Z-buffer operations.
+With the larger 16K-texel per-sampler cache (v10.0), expected hit rates increase to >90% for typical scenes, further reducing average texture SDRAM bandwidth from a worst-case ~50 MB/s.
+Fewer samplers (2 vs 4) also reduces peak texture bandwidth demand.
+The net effect frees additional bandwidth for framebuffer and Z-buffer operations.
 
 ---
 
@@ -457,9 +459,9 @@ Typical GPU access patterns are semi-sequential, yielding effective throughput b
 | Display scanout | — | ~50 MB/s | 25% | Long sequential reads, ~2 row changes per scanline |
 | Framebuffer write | — | ~40 MB/s | 20% | Short sequential writes (4-16 pixels per row) |
 | Z-buffer R/W | ~30 MB/s | ~35 MB/s | 17.5% | Short sequential within rows, some row changes |
-| Texture fetch | ~8 MB/s | ~8 MB/s | 4% | Sequential cache fills (REQ-131), >85% hit rate |
+| Texture fetch | ~5 MB/s | ~5 MB/s | 2.5% | Sequential cache fills (REQ-131), >90% hit rate (v10.0: 2 samplers, 16K cache) |
 | Auto-refresh | ~1.6 MB/s | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
-| **Headroom** | — | ~65 MB/s | 32.7% | Available for higher fill rates |
+| **Headroom** | — | ~68 MB/s | 34.2% | Available for higher fill rates |
 
 **SDRAM overhead summary**: Compared to async SRAM, SDRAM adds CAS latency (CL=3) and row activation overhead (tRCD=2) per access.
 For sequential access patterns (display scanout, cache fills), the overhead is amortized over many words and effective throughput is similar to async SRAM burst mode.
@@ -467,7 +469,8 @@ For random access patterns (Z-buffer with scattered fragments), the per-access o
 Auto-refresh consumes a small but non-negotiable fraction of bandwidth.
 
 **Note**: Pre-cache texture fetch budget was 30 MB/s (15%).
-The per-sampler texture cache (REQ-131) reduces average texture SDRAM bandwidth to ~5-15 MB/s depending on scene complexity and cache hit rate, freeing ~15-25 MB/s for other consumers.
+The per-sampler texture cache (REQ-131) with 16K texels per sampler (v10.0) reduces average texture SDRAM bandwidth to ~3-8 MB/s depending on scene complexity and cache hit rate, freeing ~22-27 MB/s for other consumers.
+With only 2 texture samplers (v10.0), peak simultaneous cache miss bandwidth is halved compared to the 4-sampler configuration.
 
 **Clock Domain Note**: Because the GPU core and SDRAM controller share the same 100 MHz clock domain, there is no CDC overhead on any arbiter port.
 All requestors (display controller, rasterizer, pixel pipeline, texture cache) issue requests synchronously, and the arbiter can grant access with single-cycle latency after an ack.

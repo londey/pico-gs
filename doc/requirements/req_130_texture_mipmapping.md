@@ -42,7 +42,7 @@ The GPU SHALL support mipmap chains for textures, enabling proper filtering of t
 **Details**:
 - LOD = log₂(max(|du/dx|, |dv/dx|, |du/dy|, |dv/dy|))
 - LOD clamped to range [0, mip_levels-1]
-- LOD bias adjustable per texture unit via TEXn_MIP_BIAS register
+- LOD bias adjustable per texture unit (TEX0, TEX1) via TEXn_MIP_BIAS register
 
 **Acceptance Criteria**:
 - LOD calculated per pixel based on derivatives
@@ -94,3 +94,6 @@ The GPU SHALL support mipmap chains for textures, enabling proper filtering of t
 ## Notes
 
 Mipmaps improve both visual quality (reduced aliasing) and performance (better cache locality for distant objects). The ~33% memory overhead is standard in GPU texturing.
+
+Mipmapping applies to both texture units (TEX0 and TEX1) in the dual-texture architecture.
+The larger per-unit texture cache (16K texels per sampler) improves mipmap cache locality since multiple mip levels for the same texture are more likely to remain resident.

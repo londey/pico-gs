@@ -28,6 +28,7 @@ None
 - Outputs framebuffer configuration (fb_draw, fb_display) to UNIT-007 (SRAM Arbiter) and UNIT-008 (Display Controller)
 - Outputs mode flags (gouraud, textured, z_test, z_write, color_write) to rasterizer pipeline
 - Outputs Z range clipping parameters (z_range_min, z_range_max) to pixel pipeline (UNIT-006)
+- Outputs color combiner configuration to color combiner (UNIT-010) — register layout preliminary, pending UNIT-010 design
 - Outputs clear_trigger/clear_color to framebuffer clear logic
 - Outputs dither_enable/dither_pattern to UNIT-006 (Pixel Pipeline) for ordered dithering control
 - Outputs fb_display_sync/lut_dma_trigger signals to UNIT-008 (Display Controller) for LUT auto-load DMA (v9.0)
@@ -76,6 +77,9 @@ None
 | `fb_lut_addr` | 13 | LUT SRAM base address (FB_DISPLAY[18:6]) (v9.0) |
 | `color_grade_enable` | 1 | Color grading LUT enabled (FB_DISPLAY[0]) (v9.0) |
 | `lut_dma_trigger` | 1 | One-cycle pulse at vsync when LUT_ADDR != 0 (v9.0) |
+| `combiner_cfg` | TBD | Color combiner configuration — field layout pending UNIT-010 design |
+| `mat_color0` | 32 | Material color 0 (RGBA8888) for color combiner |
+| `mat_color1` | 32 | Material color 1 (RGBA8888) for color combiner |
 | `spi_cs_hold` | 1 | Keep SPI CS asserted for blocking write (FB_DISPLAY_SYNC) (v9.0) |
 | `vsync_edge` | 1 | Input: vsync rising edge detector (v9.0) |
 
@@ -88,6 +92,9 @@ None
 - **current_inv_area** [15:0]: 1/area value to apply when triangle emitted
 - **tri_mode** [7:0]: Mode flags register (bits [3:0] decoded to gouraud/textured/z_test/z_write)
 - **dither_mode** [7:0]: Dither control register (bit 0 = enable, bits [3:2] = pattern)
+- **combiner_cfg**: Color combiner configuration — exact field layout pending UNIT-010 design; addresses 0x18–0x1F reserved per INT-010
+- **mat_color0** [31:0]: Material color 0 (RGBA8888), used as a color combiner input
+- **mat_color1** [31:0]: Material color 1 (RGBA8888), used as a color combiner input
 - **fb_display** [31:0]: Framebuffer display address + LUT control (v9.0)
   - [31:19]: FB address >> 12 (4KiB aligned)
   - [18:6]: LUT address >> 12 (4KiB aligned, 0 = no LUT load)
@@ -111,6 +118,7 @@ None
 | 0x10 | STATUS | R (busy, vblank, fifo_depth, vertex_count) |
 | 0x31 | Z_RANGE | R/W (z_range_min, z_range_max) |
 | 0x32 | DITHER_MODE | R/W (enable, pattern) |
+| 0x18–0x1F | Color Combiner | R/W (reserved block — layout per INT-010 / UNIT-010, preliminary) |
 | 0x47 | FB_DISPLAY_SYNC | W |
 | 0x7F | ID | R (0x6702) |
 
@@ -128,6 +136,10 @@ None
 - CLEAR register (0x0B) generates a one-cycle clear_trigger pulse
 - tri_valid and clear_trigger are self-clearing (deasserted next cycle)
 - DITHER_MODE (0x32): Stores dither_mode register; outputs dither_enable (bit 0) and dither_pattern (bits [3:2]) to UNIT-006 (Pixel Pipeline). Reset value: 0x01 (enabled, blue noise pattern)
+- Color Combiner registers (0x18–0x1F): Reserved address block for color combiner configuration.
+  Exact register layout (field widths, reset values, input selector encoding) pending UNIT-010 design.
+  MAT_COLOR0 and MAT_COLOR1 (RGBA8888 material colors) are within this block; other registers TBD.
+  Outputs combiner configuration to UNIT-010 (Color Combiner).
 - **FB_DISPLAY (0x09, v9.0)**: Stores fb_display register (non-blocking):
   - [31:19]: Framebuffer address >> 12
   - [18:6]: LUT SRAM address >> 12 (0 = no LUT load)
@@ -145,6 +157,7 @@ None
 **Register Read Logic (combinational):**
 - STATUS register packs: {vblank, gpu_busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}
 - DITHER_MODE returns: {56'b0, dither_mode[7:0]}
+- Color Combiner registers (0x18–0x1F): Read-back behavior per UNIT-010 design (TBD)
 - FB_DISPLAY returns: {32'b0, fb_display[31:0]} (v9.0)
 - FB_DISPLAY_SYNC: Write-only (blocking register, no read value)
 - ID register returns constant 0x00000900_00006702 (v9.0: version 9.0)
@@ -173,6 +186,7 @@ None
 - Verify Z_RANGE: write then read back, confirm z_range_min and z_range_max outputs match written value
 - Verify Z_RANGE reset: confirm reset value is 0x0000FFFF (min=0, max=0xFFFF)
 - Verify mode_color_write output: write RENDER_MODE with bit 4 set/clear, confirm mode_color_write output tracks
+- Verify color combiner registers (0x18–0x1F): write/read-back — specific test cases pending UNIT-010 design
 - Verify reset: all registers return to defaults (white color, address 0, modes disabled, dither enabled)
 
 ## Design Notes
@@ -188,4 +202,8 @@ Migrated from speckit module specification.
   - Added SPI CS hold mechanism for blocking mode
   - LUT DMA trigger generated at vsync when LUT_ADDR != 0
   - See DD-014 for rationale
+- v10.0: Reserved color combiner register block (0x18–0x1F) for UNIT-010 (Color Combiner)
+  - Exact register layout pending UNIT-010 design; INT-010 contains preliminary definitions
+  - Texture units reduced from 4 to 2; TEX2/TEX3 registers freed, addresses repurposed for color combiner
+  - UV2_UV3 register (0x02) is removed; replaced by COLOR1 for second vertex color
 

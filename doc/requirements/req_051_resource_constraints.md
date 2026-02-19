@@ -35,8 +35,8 @@ The GPU design SHALL fit within the following ECP5-25K resource budget:
 
 | Resource | Budget | Allocation |
 |----------|--------|------------|
-| EBR (9kb blocks) | ≤19 of 56 (33.9%) | 16 texture cache + 1 dither matrix + 1 color grade LUT + 1 scanline FIFO |
-| DSP slices (18x18) | ≤16 of 28 (57%) | 10.8 multipliers for texture blend, Gouraud shade, alpha blend |
+| EBR (9kb blocks) | ≤35 of 56 (62.5%) | 32 texture cache (16 per sampler × 2 samplers) + 1 dither matrix + 1 color grade LUT + 1 scanline FIFO |
+| DSP slices (18x18) | ≤16 of 28 (57%) | 10.8 multipliers for color combiner, Gouraud shade, alpha blend |
 | SERDES channels | 4 of 4 | DVI TMDS (3 data + 1 clock) |
 
 ### FR-051-2: Pipeline Timing
@@ -53,7 +53,7 @@ All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 
 **Analysis:** Measure actual performance/resource usage against targets.
 
-- [ ] EBR usage ≤19 blocks after synthesis
+- [ ] EBR usage ≤35 blocks after synthesis
 - [ ] DSP slice usage ≤16 after synthesis
 - [ ] SERDES usage = 4 channels
 - [ ] No pipeline throughput reduction from dithering or 10.8 math
@@ -63,9 +63,15 @@ All pixel pipeline stages SHALL be fully pipelined with no throughput reduction:
 
 Non-functional requirement. See specifications for specific numeric targets.
 
-EBR budget increased from 16 to 19 blocks to accommodate ordered dithering matrix (1 EBR, REQ-132), color grading LUT (1 EBR, REQ-133), and the display controller scanline FIFO (1 EBR, UNIT-008).
+EBR budget increased from 16 to 35 blocks to accommodate the larger per-sampler texture caches (32 EBR), ordered dithering matrix (1 EBR, REQ-132), color grading LUT (1 EBR, REQ-133), and the display controller scanline FIFO (1 EBR, UNIT-008).
 The scanline FIFO (1024x16 sync_fifo) infers as a DP16KD block RAM now that memory reads are separated from the async reset path.
 DSP budget added for 10.8 fixed-point multipliers (REQ-134).
+
+**Texture cache EBR allocation (2 samplers):** Each texture sampler cache uses 16 EBR (4 interleaved banks × 4 EBR per bank, each 1024×18-bit), providing 16,384 texels (16K) per sampler.
+Two samplers × 16 EBR = 32 EBR total for texture cache.
+This is a significant increase from the previous 4-sampler configuration (4 EBR per sampler × 4 samplers = 16 EBR for 4096 texels per sampler), but the 4× larger per-sampler cache substantially improves hit rates and reduces SDRAM bandwidth pressure for dual-texture rendering workloads.
+The 4-bank interleaved arrangement allows all 4 bilinear sampling texels to be read in a single cycle.
+The color combiner module replaces the previous sequential texture blend logic and reuses the same DSP slices; no additional DSP resources are required.
 
 The command FIFO (UNIT-002) uses distributed RAM (LUTs) rather than EBR, so its depth increase from 16 to 32 entries does not affect the EBR budget.
 The 72-bit x 32-deep command FIFO consumes approximately 2,304 bits of distributed RAM, which is accounted for in the LUT budget rather than the EBR budget.
