@@ -1,13 +1,17 @@
 # UNIT-024: Lighting Calculator
 
+## Parent Area
+
+7. Vertex Transformation (Pico Software)
+
 ## Purpose
 
 Gouraud shading calculations
 
 ## Implements Requirements
 
-- REQ-102 (Unknown)
-- REQ-115 (Render Mesh Patch)
+- REQ-102 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
+- REQ-115 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
 
 ## Interfaces
 

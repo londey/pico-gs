@@ -16,7 +16,7 @@ Texture mapping is essential for realistic rendering, allowing surface detail wi
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 

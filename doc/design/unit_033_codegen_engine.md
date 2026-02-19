@@ -4,10 +4,14 @@
 
 Rust source and binary data generation for compiled assets
 
+## Parent Area
+
+- Area 13: Game Data Preparation/Import
+
 ## Implements Requirements
 
-- REQ-200 (Unknown)
-- REQ-201 (Unknown)
+- REQ-200 (PNG Asset Processing)
+- REQ-201 (OBJ Mesh Processing)
 - REQ-202 (Asset Build Orchestration)
 
 ## Interfaces

@@ -8,15 +8,16 @@
 
 ## Requirement
 
-The system SHALL implement default demo startup as specified in the functional requirements.
+When the system completes hardware initialization without receiving any user input, the system SHALL automatically launch the default demo scene within one second of power-on, rendering at least one complete frame to the display via INT-020 before waiting for input.
 
 ## Rationale
 
-This requirement defines the functional behavior of the default demo startup subsystem.
+Requiring an explicit user action to start any rendering would leave the display blank after power-on, which is undesirable for a demonstration device.
+A default demo startup ensures the hardware is exercised immediately and gives the user a visual confirmation that the system is operational.
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SCENE-GRAPH (Scene Graph/ECS)
 
 ## Allocated To
 
@@ -28,8 +29,11 @@ None
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for default demo startup.
+**Test:** Power on the system without providing any keyboard input.
+Verify that a complete frame is rendered and displayed within one second of power-on.
+Verify that the rendered scene matches the designated default demo.
 
 ## Notes
 
-Functional requirements grouped from specification.
+The default demo is the first entry in the demo selection list (demo index 0).
+The one-second deadline covers GPU initialization, asset loading, and the first frame submission.

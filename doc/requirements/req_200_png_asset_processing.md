@@ -6,9 +6,13 @@
 - **Stability:** Stable
 - **Verification:** Test
 
-## Requirement
+## Requirements
 
-The system SHALL load PNG image files and convert them to RGBA8888 pixel data suitable for GPU texture upload. The system SHALL validate that texture dimensions are power-of-two, within the range 8x8 to 1024x1024, and reject inputs that violate these constraints with descriptive error messages. The system SHALL generate a sanitized Rust identifier from the source file path (including the immediate parent directory) to uniquely name each texture asset.
+**REQ-200.1:** When the asset build tool is given a PNG image file as input, it SHALL decode the image and convert all pixel data to RGBA8888 format suitable for GPU texture upload.
+
+**REQ-200.2:** When the asset build tool decodes a PNG file, it SHALL validate that the image dimensions are power-of-two values in the range 8 to 1024 pixels on each axis, and SHALL reject inputs that violate these constraints with a descriptive error message identifying the invalid dimensions.
+
+**REQ-200.3:** When the asset build tool processes a PNG file, it SHALL generate a sanitized Rust identifier derived from the source file path (using the immediate parent directory name and filename stem) to uniquely name the resulting texture asset.
 
 ## Rationale
 
@@ -16,7 +20,7 @@ The GPU hardware requires power-of-two texture dimensions and imposes minimum (8
 
 ## Parent Requirements
 
-None
+- REQ-TBD-GAME-DATA (Game Data Preparation/Import)
 
 ## Allocated To
 

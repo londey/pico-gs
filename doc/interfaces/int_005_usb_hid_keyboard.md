@@ -1,5 +1,9 @@
 # INT-005: USB HID Keyboard
 
+## Parent Area
+
+9. Keyboard and Controller Input (Pico Software)
+
 ## Type
 
 External Standard
@@ -16,8 +20,7 @@ External Standard
 
 ## Referenced By
 
-- REQ-103 (Unknown)
-- REQ-113 (USB Keyboard Input)
+- REQ-103 (USB Keyboard Input) — canonical requirement; REQ-113 retired and merged into REQ-103
 
 ## Specification
 

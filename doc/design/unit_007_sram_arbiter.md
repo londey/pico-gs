@@ -13,7 +13,6 @@ Arbitrates SDRAM access between display and render
 - REQ-015 (Memory Upload Interface)
 - REQ-025 (Framebuffer Format)
 - REQ-027 (Z-Buffer Operations)
-- REQ-029 (Memory Upload Interface)
 
 ## Interfaces
 

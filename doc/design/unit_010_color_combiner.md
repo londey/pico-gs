@@ -12,9 +12,9 @@ It is connected to both via FIFOs of fragment data, allowing each stage to stall
 
 ## Implements Requirements
 
-- REQ-008 (Multi-Texture Rendering — dual-texture color combining)
-- REQ-009 (Texture Blend Modes — programmable combiner equation)
-- REQ-134 (Extended Precision Fragment Processing — 10.8 fixed-point arithmetic)
+- REQ-008 (Multi-Texture Rendering — dual-texture color combining; sub-requirement under area 3: Texture Samplers)
+- REQ-009 (Color Combiner — programmable combiner equation; sub-requirement under area 4: Fragment Processor/Color Combiner)
+- REQ-134 (Extended Precision Fragment Processing — 10.8 fixed-point arithmetic; sub-requirement under area 4: Fragment Processor/Color Combiner)
 
 ## Interfaces
 

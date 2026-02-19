@@ -16,7 +16,7 @@ The RP2350 host must communicate with the FPGA GPU over a wired interface. SPI w
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
 
 ## Allocated To
 

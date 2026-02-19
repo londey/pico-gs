@@ -36,7 +36,7 @@ Larger per-unit texture caches (16K texels per sampler vs. the previous 4K) impr
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SYSTEM-CONSTRAINTS (System Constraints)
 
 ## Allocated To
 

@@ -1,35 +1,32 @@
-# REQ-113: USB Keyboard Input
+# REQ-113: USB Keyboard Input (RETIRED)
 
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Stable
-- **Verification:** Test
+- **Stability:** Retired
+- **Verification:** N/A
 
-## Requirement
+## Status
 
-The system SHALL implement usb keyboard input as specified in the functional requirements.
+**RETIRED** — This requirement is superseded by REQ-103 (USB Keyboard Input).
+REQ-113 was a stub duplicate of REQ-103 and carried no unique content.
+All references to REQ-113 should be updated to REQ-103.
 
-## Rationale
+## Retirement Rationale
 
-This requirement defines the functional behavior of the usb keyboard input subsystem.
+REQ-103 and REQ-113 both specified USB keyboard input behavior.
+REQ-103 contains the fuller, cross-platform specification covering RP2350 (TinyUSB HID), the no-op stub build variant, and the PC terminal input path.
+REQ-113 was a minimal stub with no additional requirements beyond what REQ-103 already captures.
+Retaining both would create a maintenance burden and risk divergence; REQ-103 is the canonical requirement.
 
-## Parent Requirements
+## Previously Allocated To
 
-None
+- UNIT-025 (USB Keyboard Handler) — now references REQ-103 only
 
-## Allocated To
+## Previously Referenced Interfaces
 
-- UNIT-025 (USB Keyboard Handler)
+- INT-005 (USB HID Keyboard) — now referenced from REQ-103 only
 
-## Interfaces
+## Superseded By
 
-- INT-005 (USB HID Keyboard)
-
-## Verification Method
-
-**Test:** Execute relevant test suite for usb keyboard input.
-
-## Notes
-
-Functional requirements grouped from specification.
+- REQ-103 (USB Keyboard Input)

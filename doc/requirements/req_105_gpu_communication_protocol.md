@@ -8,7 +8,13 @@
 
 ## Requirement
 
-The system SHALL implement SPI-based communication with the GPU using a 9-byte transaction format where the first byte encodes the register address (bit 7 = read/write flag, bits 6:0 = 7-bit register address) and the remaining 8 bytes carry a 64-bit data payload in MSB-first order, conforming to INT-012. The SPI transport SHALL be abstracted behind the `SpiTransport` trait defined in INT-040, enabling the same GPU driver logic to operate over platform-specific SPI implementations. Register writes SHALL block until the GPU command FIFO has space, as indicated by the CMD_FULL signal being deasserted. The system SHALL support register read, register write, bulk memory upload via MEM_ADDR/MEM_DATA auto-increment, triangle submission via sequential COLOR/UV0/VERTEX register writes, color combiner configuration via combiner mode and material color registers, vsync synchronization via VSYNC signal edge detection, and double-buffered framebuffer swap via FB_DRAW/FB_DISPLAY register updates.
+When sending any GPU register access, the system SHALL use a 9-byte SPI transaction format where the first byte encodes the register address (bit 7 = read/write flag, bits 6:0 = 7-bit register address) and the remaining 8 bytes carry a 64-bit data payload in MSB-first order, conforming to INT-012.
+
+When the GPU driver is initialized on any host platform, the system SHALL abstract the SPI transport behind the `SpiTransport` trait defined in INT-040, enabling the same GPU driver logic to operate over platform-specific SPI implementations.
+
+When a register write is issued and the GPU command FIFO is full (CMD_FULL signal asserted), the system SHALL block the write operation until CMD_FULL is deasserted before transmitting the SPI transaction.
+
+When communicating with the GPU, the system SHALL support the following operations: register read, register write, bulk memory upload via MEM_ADDR/MEM_DATA auto-increment, triangle submission via sequential COLOR/UV0/VERTEX register writes, color combiner configuration via combiner mode and material color registers, vsync synchronization via VSYNC signal edge detection, and double-buffered framebuffer swap via FB_DRAW/FB_DISPLAY register updates.
 
 ## Rationale
 
@@ -16,7 +22,7 @@ The SPI register interface is the sole communication channel between the host an
 
 ## Parent Requirements
 
-None
+REQ-TBD-GPU-SPI-CONTROLLER (GPU SPI Controller)
 
 ## Allocated To
 

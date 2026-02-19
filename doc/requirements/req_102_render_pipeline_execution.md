@@ -8,7 +8,9 @@
 
 ## Requirement
 
-The system SHALL implement a render command execution pipeline on Core 1 that dequeues render commands from the inter-core SPSC queue and dispatches each command to the GPU driver. The pipeline SHALL support the following command types: framebuffer clear (with optional depth clear), triangle rendering mode configuration (including per-material color write enable and color combiner mode), mesh patch rendering (vertex transformation, lighting, culling, clipping, and GPU submission), screen-space triangle submission (for simple demos), texture upload, color combiner configuration (combiner mode, material colors, fog parameters), and vsync synchronization with framebuffer swap. The primary per-frame command type SHALL be RenderMeshPatch. Frame boundaries SHALL be delineated by WaitVsync commands.
+When a render command is dequeued from the render command queue, the system SHALL dispatch it to the GPU driver according to its type, supporting: framebuffer clear (with optional depth clear), triangle rendering mode configuration (including per-material color write enable and color combiner mode), mesh patch rendering (vertex transformation, lighting, culling, clipping, and GPU submission), screen-space triangle submission (for simple demos), texture upload, color combiner configuration (combiner mode, material colors, fog parameters), and vsync synchronization with framebuffer swap.
+
+When a frame is submitted for rendering, the system SHALL use RenderMeshPatch as the primary per-frame command type and SHALL delineate frame boundaries with WaitVsync commands.
 
 ## Rationale
 
@@ -16,7 +18,7 @@ Centralizing render command execution on a dedicated core ensures deterministic 
 
 ## Parent Requirements
 
-None
+REQ-TBD-SCENE-GRAPH (Scene Graph/ECS)
 
 ## Allocated To
 
@@ -37,7 +39,9 @@ None
 
 ## Notes
 
-On the RP2350 platform, the executor runs in an infinite loop on Core 1, spinning with NOP when the queue is empty. On the PC platform, commands are executed synchronously in the main loop (no queue). The command dispatch logic is platform-agnostic and shared. See REQ-100 for the multi-platform architecture.
+On the RP2350 platform, the executor runs in an infinite loop on Core 1, spinning with NOP when the queue is empty.
+On the PC platform, commands are executed synchronously in the main loop (no queue).
+The command dispatch logic is platform-agnostic and shared.
 
 Framebuffer clear is implemented by rendering two full-viewport triangles (color clear) plus two additional far-plane triangles when depth clear is requested. Performance counters are logged every 120 frames via defmt (RP2350) or tracing (PC).
 

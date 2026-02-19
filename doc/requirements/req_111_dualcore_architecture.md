@@ -3,7 +3,7 @@
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Stable
+- **Stability:** Retired
 - **Verification:** Test
 
 ## Requirement
@@ -30,6 +30,14 @@ This requirement defines the functional behavior of the dual-core architecture s
 ## Verification Method
 
 **Test:** Verify that Core 0 produces render commands and Core 1 consumes them, with correct SPSC queue backpressure behavior.
+
+## Retirement Note
+
+**Retired:** This requirement is premature for the current single-threaded approach.
+The Core 0 / Core 1 split with DMA-pipelined SPI output described here was never implemented.
+The system currently uses a single-threaded execution model on all platforms; the PC platform has always been single-threaded, and the RP2350 port has not yet adopted dual-core execution.
+This requirement's parent, REQ-100, has also been retired.
+If dual-core execution is adopted in the future, a new requirement should be drafted reflecting the actual implementation.
 
 ## Notes
 

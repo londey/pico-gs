@@ -4,6 +4,11 @@
 
 Internal
 
+## Serves Requirement Areas
+
+- Area 7: Vertex Transformation (REQ-115, REQ-116)
+- Area 8: Scene Graph/ECS (REQ-101, REQ-102, REQ-112, REQ-114, REQ-122)
+
 ## Parties
 
 - **Provider:** UNIT-022 (GPU Driver Layer)
@@ -11,23 +16,22 @@ Internal
 
 ## Referenced By
 
-- REQ-100 (Unknown)
-- REQ-101 (Unknown)
-- REQ-102 (Unknown)
-- REQ-105 (Unknown)
-- REQ-110 (GPU Initialization)
-- REQ-115 (Render Mesh Patch)
-- REQ-116 (Upload Texture)
-- REQ-117 (VSync Synchronization)
-- REQ-118 (Clear Framebuffer)
-- REQ-119 (GPU Flow Control)
-- REQ-132 (Ordered Dithering)
-- REQ-133 (Color Grading LUT)
-- REQ-134 (Extended Precision Fragment Processing)
-- REQ-122 (Default Demo Startup)
-- REQ-120 (Async Data Loading)
-- REQ-112 (Scene Graph Management)
-- REQ-106 (PC Debug Host)
+- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-106 (PC Debug Host) — Area 10: GPU Debug GUI
+- REQ-112 (Scene Graph Management) — Area 8: Scene Graph/ECS
+- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
+- REQ-116 (Upload Texture) — Area 1: GPU SPI Controller
+- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-119 (GPU Flow Control) — Area 1: GPU SPI Controller
+- REQ-122 (Default Demo Startup) — Area 8: Scene Graph/ECS
+- REQ-132 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
+- REQ-133 (Color Grading LUT) — Area 6: Screen Scan Out
+- REQ-134 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+
+Note: REQ-100 (Host Firmware Architecture) and REQ-110 (GPU Initialization) and REQ-120 (Async Data Loading) are retired; their references have been removed.
 
 ## Specification
 

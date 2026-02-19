@@ -8,15 +8,17 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a user, I want to the GPU to output video to a standard monitor, so that I can see the rendered graphics
+When the GPU has completed rasterizing a frame and the display controller is active, the system SHALL output a 640×480 progressive video signal via DVI/HDMI at approximately 60 Hz using TMDS encoding, such that the rendered image is visible on a standard monitor without rolling, tearing, or flicker.
 
 ## Rationale
 
-This requirement enables the user story described above.
+The primary purpose of the GPU is to produce visible output on a standard consumer display.
+DVI TMDS encoding over differential pairs allows use of commodity HDMI monitors without a dedicated DAC.
+Display refresh must be unconditionally stable regardless of rendering load so the user never sees a blank or locked display.
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SCREEN-SCANOUT (Screen Scan Out)
 
 ## Allocated To
 
@@ -42,8 +44,6 @@ None
 
 
 ## Notes
-
-User Story: As a user, I want to the GPU to output video to a standard monitor, so that I can see the rendered graphics
 
 **SDRAM Burst Read Impact:**
 Display scanout is the highest-priority SDRAM consumer at 74 MB/s (INT-011).

@@ -16,7 +16,7 @@ This requirement enables the user story described above.
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store)
 
 ## Allocated To
 

@@ -20,7 +20,7 @@ This eliminates CDC latency on Z-buffer access paths, improving effective throug
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store)
 
 ## Allocated To
 

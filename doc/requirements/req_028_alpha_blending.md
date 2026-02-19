@@ -1,37 +1,38 @@
-# REQ-028: Alpha Blending
+# REQ-028: Alpha Blending [RETIRED]
+
+## Status: RETIRED
+
+**Retirement Date:** 2026-02-19
+**Superseded By:** REQ-013 (Alpha Blending)
+**Reason:** REQ-028 was a functional-format duplicate of REQ-013.
+During the spec restructure into the 13-area hierarchy, duplicate requirements were consolidated.
+REQ-013 is now the single canonical requirement for alpha blending under area 5 (Blend/Frame Buffer Store).
+All content from REQ-028 has been absorbed into REQ-013.
 
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Stable
-- **Verification:** Test
+- **Stability:** Retired
+- **Verification:** N/A
 
-## Requirement
+## Original Requirement (archived)
 
 The system SHALL implement alpha blending as specified in the functional requirements.
 
-## Rationale
+## Original Rationale
 
-This requirement defines the functional behavior of the alpha blending subsystem.
+This requirement defined the functional behavior of the alpha blending subsystem.
 
-## Parent Requirements
-
-- REQ-013 (Alpha Blending — user story and detailed acceptance criteria)
-
-## Allocated To
+## Allocated To (original)
 
 - UNIT-006 (Pixel Pipeline)
 
-## Interfaces
+## Interfaces (original)
 
 - INT-010 (GPU Register Map)
 
-## Verification Method
-
-**Test:** Execute relevant test suite for alpha blending. See REQ-013 for detailed acceptance criteria.
-
 ## Notes
 
-This is the functional-format counterpart of REQ-013. See REQ-013 for the full user story and acceptance criteria.
-
-Alpha blending operations are performed in 10.8 fixed-point format (10 integer bits, 8 fractional bits). Destination pixels are read from the RGB565 framebuffer and promoted to 10.8 format by left-shifting and replicating MSBs. After blending, the result passes through ordered dithering (REQ-132) before RGB565 conversion.
+This document is retained for traceability only.
+Do not reference REQ-028 in new requirements or design documents.
+Use REQ-013 for all alpha blending requirements.

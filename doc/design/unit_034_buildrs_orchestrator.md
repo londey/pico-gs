@@ -4,6 +4,10 @@
 
 Asset pipeline entry point
 
+## Parent Area
+
+- Area 13: Game Data Preparation/Import
+
 ## Implements Requirements
 
 - REQ-202 (Asset Build Orchestration)

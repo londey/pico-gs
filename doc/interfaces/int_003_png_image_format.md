@@ -17,7 +17,7 @@ External Standard (Multi-format)
 
 ## Referenced By
 
-- REQ-200 (Unknown)
+- REQ-200 (PNG Asset Processing) — area 13: Game Data Preparation/Import
 
 ## Specification
 

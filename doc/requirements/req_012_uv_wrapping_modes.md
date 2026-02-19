@@ -8,15 +8,15 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to control texture coordinate wrapping behavior, so that I can prevent edge artifacts and achieve repeating or clamped textures
+When a texture coordinate falls outside the normalized range [0, 1) during rasterization, the system SHALL apply the wrapping mode configured in TEXn_WRAP independently for U and V axes to determine the effective texel address before sampling.
 
 ## Rationale
 
-This requirement enables the user story described above.
+UV wrapping modes enable textures to be tiled or clamped at boundaries, supporting both repeating patterns (like floor tiles) and single-use textures that should clamp or return transparent when accessed outside their bounds.
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 
@@ -30,7 +30,7 @@ None
 
 **Demonstration:** The system SHALL meet the following acceptance criteria:
 
-- - [ ] Set TEXn_WRAP register for U and V independently
+- [ ] Set TEXn_WRAP register for U and V independently
 - [ ] Support REPEAT mode (wrap around, UV mod texture_size)
 - [ ] Support CLAMP_TO_EDGE mode (clamp to [0, size-1])
 - [ ] Support CLAMP_TO_ZERO mode (out of bounds = transparent)
@@ -43,4 +43,6 @@ None
 
 ## Notes
 
-User Story: As a firmware developer, I want to control texture coordinate wrapping behavior, so that I can prevent edge artifacts and achieve repeating or clamped textures
+Four wrapping modes are supported: REPEAT (UV mod texture_size), CLAMP_TO_EDGE (clamp to [0, size-1]), CLAMP_TO_ZERO (out-of-bounds returns transparent), and MIRROR (reflect at boundaries).
+U and V axes may have different wrap modes, configured independently via TEXn_WRAP.
+Wrapping must be applied before texel address calculation and, for BC1 textures, must respect 4x4 block boundaries.

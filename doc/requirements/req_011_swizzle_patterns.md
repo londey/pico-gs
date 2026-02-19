@@ -8,15 +8,15 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to reorder texture color channels, so that I can use grayscale textures efficiently and handle different texture formats
+When a texture unit is configured with a non-identity SWIZZLE field in TEXn_FMT, the system SHALL reorder the decoded texture color channels according to the programmed swizzle pattern before passing the texel to the color combiner stage.
 
 ## Rationale
 
-This requirement enables the user story described above.
+Swizzle patterns enable flexible texture channel mapping, allowing assets to be stored with different channel orderings (e.g., BGRA) or reused across different contexts (e.g., grayscale textures replicated to RGB via RRR1 pattern) without requiring separate texture copies.
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 
@@ -46,4 +46,6 @@ None
 
 ## Notes
 
-User Story: As a firmware developer, I want to reorder texture color channels, so that I can use grayscale textures efficiently and handle different texture formats
+Swizzle patterns allow efficient reuse of grayscale textures (e.g., RRR1 replicates red channel to all RGB components) and accommodate different source channel orderings (e.g., BGRA for assets stored with blue-first layout).
+Swizzle applies after texture decode and before color combining (REQ-009).
+At least 13 predefined patterns must be supported; undefined pattern codes default to RGBA (identity).

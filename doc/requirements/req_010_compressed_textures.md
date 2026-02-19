@@ -16,7 +16,7 @@ BC1 block compression provides 8:1 compression over RGBA8888 and 4:1 over RGBA44
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 

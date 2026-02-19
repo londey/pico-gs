@@ -8,19 +8,19 @@
 
 ## Requirement
 
-The system SHALL implement double-buffered rendering as specified in the functional requirements.
+When the host submits a completed frame, the system SHALL swap the front and back framebuffer pointers in the GPU register map (INT-010) such that the display controller begins scanning out the newly rendered buffer on the next vsync boundary, while the previously displayed buffer becomes the new back-buffer available for rendering.
 
 ## Rationale
 
-This requirement defines the functional behavior of the double-buffered rendering subsystem.
+Double buffering eliminates tearing by ensuring the display always reads from a completed frame while the host writes into a separate buffer.
+Swapping on a vsync boundary guarantees the transition occurs during the blanking interval, preventing a partially-updated frame from being displayed.
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER-STORE (Blend/Frame Buffer Store)
 
 ## Allocated To
 
-- UNIT-021 (Core 1 Render Executor)
 - UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
@@ -30,8 +30,12 @@ None
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for double-buffered rendering.
+**Test:** Render two distinct frames to alternating back-buffers.
+After each swap command, verify that the display base address register in INT-010 points to the buffer that was most recently completed.
+Verify that the previous front-buffer address is now the active back-buffer address.
+Verify that swaps occur on vsync boundaries by observing that no swap takes effect mid-scan.
 
 ## Notes
 
-Functional requirements grouped from specification.
+Previously allocated to UNIT-021 (Core 1 Render Executor); UNIT-021 reference removed pending single-threaded architecture consolidation.
+The two framebuffer regions are defined in INT-011 (SRAM Memory Layout).

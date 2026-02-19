@@ -8,15 +8,16 @@
 
 ## Requirement
 
-The system SHALL support the following capability: As a firmware developer, I want to submit a triangle with per-vertex colors, so that I can render smooth lighting gradients
+When the firmware writes three VERTEX registers with TRI_MODE configured for Gouraud shading (GOURAUD=1), setting a distinct COLOR register value before each VERTEX write, the system SHALL interpolate color linearly across the triangle in screen space and write the interpolated RGBA8 color to each covered pixel.
 
 ## Rationale
 
-This requirement enables the user story described above.
+Gouraud shading enables smooth per-vertex lighting gradients by linearly interpolating per-vertex colors across triangle surfaces.
+This is the primary shading mode for diffuse lighting effects and smooth color transitions.
 
 ## Parent Requirements
 
-None
+- REQ-TBD-RASTERIZER (Rasterizer)
 
 ## Allocated To
 
@@ -43,4 +44,4 @@ None
 
 ## Notes
 
-User Story: As a firmware developer, I want to submit a triangle with per-vertex colors, so that I can render smooth lighting gradients
+Derived from user story: As a firmware developer, I want to submit a triangle with per-vertex colors, so that I can render smooth lighting gradients.

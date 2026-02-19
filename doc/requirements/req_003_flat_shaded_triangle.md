@@ -16,7 +16,7 @@ Flat-shaded triangles are the simplest rendering primitive, requiring no texture
 
 ## Parent Requirements
 
-None
+- REQ-TBD-RASTERIZER (Rasterizer)
 
 ## Allocated To
 

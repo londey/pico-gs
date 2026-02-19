@@ -18,7 +18,7 @@ Effects requiring more than two textures (e.g., diffuse + lightmap + specular + 
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 

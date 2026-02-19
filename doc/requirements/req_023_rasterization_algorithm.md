@@ -20,7 +20,7 @@ See UNIT-004 (Triangle Setup) and UNIT-005 (Rasterizer) for implementation detai
 
 ## Parent Requirements
 
-None
+- REQ-TBD-RASTERIZER (Rasterizer)
 
 ## Allocated To
 

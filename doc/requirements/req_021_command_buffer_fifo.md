@@ -53,7 +53,7 @@ At 100 MHz core clock, the ~18 boot commands drain from the FIFO in approximatel
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
 
 ## Allocated To
 

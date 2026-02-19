@@ -4,6 +4,10 @@
 
 Edge-walking rasterization engine
 
+## Parent Requirements
+
+- REQ-TBD-RASTERIZER (Rasterizer)
+
 ## Implements Requirements
 
 - REQ-003 (Flat Shaded Triangle)

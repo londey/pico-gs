@@ -8,19 +8,20 @@
 
 ## Requirement
 
-The system SHALL implement vsync synchronization as specified in the functional requirements.
+When the GPU asserts the vsync signal on the GPIO status line (INT-013), the system SHALL synchronize the start of each new frame render to that vsync pulse, ensuring that the host does not begin submitting the next frame's commands until the GPU has completed scan-out of the current frame.
 
 ## Rationale
 
-This requirement defines the functional behavior of the vsync synchronization subsystem.
+Vsync synchronization prevents tearing artifacts by ensuring the host and GPU agree on frame boundaries.
+Without synchronization, the host may begin overwriting framebuffer data while the display controller is still scanning out pixels from that same buffer.
+Gating frame submission on the vsync signal couples the render loop to the display refresh rate.
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SCREEN-SCAN-OUT (Screen Scan Out)
 
 ## Allocated To
 
-- UNIT-021 (Core 1 Render Executor)
 - UNIT-022 (GPU Driver Layer)
 
 ## Interfaces
@@ -30,8 +31,10 @@ None
 
 ## Verification Method
 
-**Test:** Execute relevant test suite for vsync synchronization.
+**Test:** Configure the GPU to output vsync pulses at the display refresh rate.
+Verify that the host render loop advances to the next frame only after a vsync pulse is detected on the GPIO status line.
+Verify that no register writes for frame N+1 occur before the vsync pulse that ends frame N.
 
 ## Notes
 
-Functional requirements grouped from specification.
+Previously allocated to UNIT-021 (Core 1 Render Executor); UNIT-021 reference removed pending single-threaded architecture consolidation.

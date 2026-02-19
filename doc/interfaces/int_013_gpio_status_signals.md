@@ -9,6 +9,10 @@ External Standard
 - **Standard:** GPIO Status Signals
 - **Reference:** GPIO signals for flow control (CMD_FULL, CMD_EMPTY, VSYNC).
 
+## Serves Requirement Areas
+
+- Area 12: Target Hardware Devices (GPIO status signals are a target hardware interface)
+
 ## Parties
 
 - **Provider:** External
@@ -18,10 +22,10 @@ External Standard
 
 ## Referenced By
 
-- REQ-117 (VSync Synchronization)
-- REQ-119 (GPU Flow Control)
-- REQ-052 (Reliability Requirements)
-- REQ-021 (Command Buffer FIFO)
+- REQ-021 (Command Buffer FIFO) — Area 1: GPU SPI Controller
+- REQ-052 (Reliability Requirements) — Area 11: System Constraints
+- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-119 (GPU Flow Control) — Area 1: GPU SPI Controller
 
 ## Specification
 

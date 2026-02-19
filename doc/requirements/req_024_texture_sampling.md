@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The system SHALL implement texture sampling with format-specific decoding for RGBA4444 and BC1 formats.
+When the pixel pipeline samples a texel during rasterization, the system SHALL decode the texture data using format-specific decoding for the configured format (RGBA4444 or BC1) and produce a decompressed RGBA8 value for downstream processing.
 
 ## Rationale
 
@@ -16,7 +16,7 @@ This requirement defines the functional behavior of the texture sampling subsyst
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 

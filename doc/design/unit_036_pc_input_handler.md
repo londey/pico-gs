@@ -1,13 +1,17 @@
 # UNIT-036: PC Input Handler
 
+## Parent Area
+
+10. GPU Debug GUI (Pico Software)
+
 ## Purpose
 
 Terminal keyboard input handling for the PC debug host platform.
 
 ## Implements Requirements
 
-- REQ-103 (User Input Handling -- PC platform)
-- REQ-106 (PC Debug Host)
+- REQ-103 (USB Keyboard Input) — canonical requirement (covers both RP2350 USB HID and PC terminal); parent area 9 (Keyboard and Controller Input)
+- REQ-106 (PC Debug Host) — parent area 10 (GPU Debug GUI)
 
 ## Interfaces
 

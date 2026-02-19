@@ -3,7 +3,7 @@
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Stable
+- **Stability:** Retired
 - **Verification:** Test
 
 ## Requirement
@@ -39,6 +39,13 @@ None
 - [ ] Status register polling confirms GPU ready
 - [ ] Entire initialization sequence completes within 100ms from power-on
 - [ ] GPU accepts rendering commands immediately after initialization
+
+## Retirement Note
+
+**Retired:** This requirement is premature for the current single-threaded approach.
+The detailed initialization sequence (SPI presence detection, status register polling, 100 ms timeout) was specified assuming a dual-core architecture with a distinct firmware startup phase.
+In the current single-threaded model, GPU initialization is handled implicitly as part of the driver API (INT-020) without a separate formalized sequence.
+If a formal GPU initialization protocol is needed in the future, it should be re-specified as a sub-requirement under area 1 (GPU SPI Controller) after the single-threaded architecture stabilizes.
 
 ## Notes
 

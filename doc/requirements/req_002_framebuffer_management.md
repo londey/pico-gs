@@ -21,7 +21,7 @@ The SDRAM arbiter (UNIT-007) manages concurrent access from the display controll
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store)
 
 ## Allocated To
 
@@ -50,9 +50,8 @@ None
 
 User Story: As a firmware developer, I want to configure draw target and display source addresses, so that I can implement double-buffering without tearing.
 
-Framebuffer registers (FB_DRAW, FB_DISPLAY) may also be configured autonomously by the FPGA boot sequence (REQ-021) via pre-populated command FIFO entries, prior to any host SPI communication.
-The host initialization (REQ-110) will overwrite these boot-time values with its own framebuffer configuration.
-Boot sequence framebuffer addresses must conform to the alignment and address range constraints defined in INT-011 (SDRAM Memory Layout).
+Framebuffer registers (FB_DRAW, FB_DISPLAY) may be configured autonomously by the FPGA boot sequence (REQ-021) via pre-populated command FIFO entries, prior to any host SPI communication.
+Host software will configure framebuffer addresses during initialization, which must conform to the alignment and address range constraints defined in INT-011 (SDRAM Memory Layout).
 
 **Arbitration timing**: The SDRAM arbiter (UNIT-007) operates in the unified 100 MHz clock domain shared by the GPU core and SDRAM.
 Display scanout (highest priority) and rasterizer writes (lower priority) are arbitrated without CDC overhead, enabling back-to-back SDRAM grants on consecutive clock cycles.

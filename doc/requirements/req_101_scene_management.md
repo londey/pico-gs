@@ -8,7 +8,9 @@
 
 ## Requirement
 
-The system SHALL implement a scene management subsystem on Core 0 that maintains the active demo state, supports switching between multiple demonstration scenes via user input, and generates per-frame render commands appropriate to the currently active demo. The scene manager SHALL track whether a newly selected demo requires one-time initialization (such as texture uploads or state resets) and execute that initialization before rendering the first frame of the new demo.
+When a user input event selects a new demonstration scene, the system SHALL update the active demo state, execute any required one-time initialization for that demo (such as texture uploads or state resets), and then generate per-frame render commands appropriate to the newly active demo.
+
+When the active demo requires one-time initialization, the system SHALL complete that initialization before rendering the first frame of the new demo.
 
 ## Rationale
 
@@ -16,7 +18,7 @@ A centralized scene manager decouples the demo selection logic and per-demo init
 
 ## Parent Requirements
 
-None
+REQ-TBD-SCENE-GRAPH (Scene Graph/ECS)
 
 ## Allocated To
 
@@ -38,4 +40,5 @@ None
 
 The scene graph tracks an active demo enum (GouraudTriangle, TexturedTriangle, SpinningTeapot) and a `needs_init` flag. Demo-specific mesh data is pre-built at compile time via the asset pipeline (const flash data). Per-frame rendering for SpinningTeapot consists of frustum culling patch AABBs and enqueuing RenderMeshPatch commands; vertex transformation and lighting are performed by Core 1. The default demo on boot is GouraudTriangle.
 
-On the PC platform, scene management runs in a single thread (no Core 0/Core 1 distinction). The scene management logic itself is platform-agnostic and shared between platforms. See REQ-100 for the multi-platform architecture.
+On the PC platform, scene management runs in a single thread (no Core 0/Core 1 distinction).
+The scene management logic itself is platform-agnostic and shared between platforms.

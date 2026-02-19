@@ -24,7 +24,7 @@ Early Z-test moves the depth comparison before texture fetch, so fragments that 
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store)
 
 ## Allocated To
 

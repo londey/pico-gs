@@ -4,23 +4,26 @@
 
 Platform-agnostic GPU register protocol and flow control, generic over SPI transport
 
+## Parent Requirement Area
+
+- Area 7: Vertex Transformation / Area 8: Scene Graph/ECS (per proposed change: UNIT-022 serves both areas)
+
 ## Implements Requirements
 
-- REQ-100 (Unknown)
-- REQ-101 (Scene Management)
-- REQ-102 (Render Pipeline Execution)
-- REQ-105 (GPU Communication Protocol)
-- REQ-110 (GPU Initialization)
-- REQ-115 (Render Mesh Patch)
-- REQ-116 (Upload Texture)
-- REQ-117 (VSync Synchronization)
-- REQ-118 (Clear Framebuffer)
-- REQ-119 (GPU Flow Control)
-- REQ-121 (Async SPI Transmission)
-- REQ-123 (Double-Buffered Rendering)
-- REQ-132 (Ordered Dithering)
-- REQ-133 (Color Grading LUT)
-- REQ-134 (Extended Precision Fragment Processing)
+- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
+- REQ-116 (Upload Texture) — Area 1: GPU SPI Controller
+- REQ-117 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-119 (GPU Flow Control) — Area 1: GPU SPI Controller
+- REQ-123 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
+- REQ-132 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
+- REQ-133 (Color Grading LUT) — Area 6: Screen Scan Out
+- REQ-134 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+
+Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and REQ-121 (Async SPI Transmission) are retired; their references have been removed.
 
 ## Interfaces
 

@@ -14,9 +14,9 @@ Medium
 - **Stability:** Stable
 - **Verification:** Demonstration
 
-## Overview
+## Requirement
 
-The GPU SHALL support mipmap chains for textures, enabling proper filtering of textured surfaces at varying distances from the camera.
+When a texture unit is configured with a mipmap chain (MIP_LEVELS > 1) and mipmapping is enabled, the system SHALL select and sample the appropriate mipmap level based on the screen-space rate of change of texture coordinates, enabling proper filtering of textured surfaces at varying distances from the camera.
 
 ## Functional Requirements
 
@@ -83,6 +83,10 @@ The GPU SHALL support mipmap chains for textures, enabling proper filtering of t
 | LOD calculation latency | <2 cycles (20 ns at 100 MHz) |
 | Mipmap address calculation | <1 cycle (10 ns at 100 MHz) |
 | Memory overhead | ~33% per texture |
+
+## Parent Requirements
+
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Dependencies
 

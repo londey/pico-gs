@@ -6,9 +6,19 @@
 - **Stability:** Stable
 - **Verification:** Test
 
-## Requirement
+## Requirements
 
-The system SHALL provide both a CLI tool and a library API for converting PNG and OBJ source assets into compiled firmware assets. The CLI SHALL support `texture` and `mesh` subcommands with input path, output directory, and mesh-specific patch configuration arguments. The library API SHALL provide a `build_assets` function that scans a source directory for `textures/*.png` and `meshes/*.obj` files, converts all discovered assets, and generates output files. For each texture, the system SHALL emit a `.bin` file containing raw RGBA8888 pixel data and a `.rs` file defining width, height, and data constants via `include_bytes!`. For each mesh patch, the system SHALL emit a single `.bin` file containing a contiguous SoA blob of quantized vertex data (u16 positions, i16 normals, i16 UVs) and indices (u8 packed strip commands) per INT-031, plus a `.rs` file defining vertex count, entry count, AABB, and data constants. For each mesh, the system SHALL emit a mesh descriptor with overall AABB, patch count, and MeshPatchDescriptor array. The system SHALL generate a master `mod.rs` that includes all generated `.rs` files, sorted alphabetically for deterministic output. The system SHALL detect identifier collisions across all assets before generating any output.
+**REQ-202.1:** When invoked as a CLI tool, the system SHALL provide `texture` and `mesh` subcommands accepting an input file path, an output directory, and (for mesh) patch configuration arguments, and SHALL convert the specified asset to the appropriate GPU-compatible output files.
+
+**REQ-202.2:** When invoked as a library via the `build_assets` function, the system SHALL scan a source directory for `textures/*.png` and `meshes/*.obj` files, convert all discovered assets, and generate output files in the configured output directory.
+
+**REQ-202.3:** When converting a texture asset, the system SHALL emit a `.bin` file containing encoded pixel data and a `.rs` file defining width, height, format, and data constants using `include_bytes!`.
+
+**REQ-202.4:** When converting a mesh asset, the system SHALL emit per-patch `.bin` files each containing a contiguous SoA blob of quantized vertex data and indices per INT-031, with corresponding `.rs` files defining vertex count, entry count, AABB, and data constants, plus a mesh-level descriptor with overall AABB, patch count, and MeshPatchDescriptor array.
+
+**REQ-202.5:** When generating output for a batch of assets, the system SHALL produce a master `mod.rs` that includes all generated `.rs` files in alphabetically sorted order for deterministic output.
+
+**REQ-202.6:** When processing a batch of assets, the system SHALL detect identifier collisions across all assets before generating any output files, and SHALL report all collisions with a descriptive error message.
 
 ## Rationale
 
@@ -16,7 +26,7 @@ The dual CLI/library interface supports both interactive single-asset conversion
 
 ## Parent Requirements
 
-None
+- REQ-TBD-GAME-DATA (Game Data Preparation/Import)
 
 ## Allocated To
 

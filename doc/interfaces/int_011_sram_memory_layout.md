@@ -13,19 +13,19 @@ Internal
 
 ## Referenced By
 
-- REQ-002 (Framebuffer Management)
-- REQ-005 (Depth Tested Triangle)
-- REQ-006 (Textured Triangle)
-- REQ-014 (Enhanced Z-Buffer)
-- REQ-025 (Framebuffer Format)
+- REQ-002 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
+- REQ-005 (Depth Tested Triangle) — area 5: Blend/Frame Buffer Store
+- REQ-006 (Textured Triangle) — area 3: Texture Samplers
+- REQ-014 (Enhanced Z-Buffer) — area 5: Blend/Frame Buffer Store
+- REQ-025 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
 - INT-014 (Texture Memory Layout)
-- REQ-123 (Double-Buffered Rendering)
-- REQ-050 (Performance Targets)
-- REQ-051 (Resource Constraints)
-- REQ-027 (Z-Buffer Operations)
-- REQ-024 (Texture Sampling)
-- REQ-023 (Rasterization Algorithm)
-- REQ-133 (Color Grading LUT)
+- REQ-123 (Double-Buffered Rendering) — area 5: Blend/Frame Buffer Store
+- REQ-050 (Performance Targets) — area 11: System Constraints
+- REQ-051 (Resource Constraints) — area 11: System Constraints
+- REQ-027 (Z-Buffer Operations) — area 5: Blend/Frame Buffer Store
+- REQ-024 (Texture Sampling) — area 3: Texture Samplers
+- REQ-023 (Rasterization Algorithm) — area 2: Rasterizer
+- REQ-133 (Color Grading LUT) — area 6: Screen Scan Out
 
 ## Specification
 

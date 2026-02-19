@@ -40,7 +40,7 @@ Note: The texture cache and SDRAM controller share the same 100 MHz clock domain
 
 ## Parent Requirements
 
-None
+REQ-TBD-TEXTURE-SAMPLERS
 
 ## Allocated To
 

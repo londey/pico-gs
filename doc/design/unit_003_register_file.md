@@ -4,12 +4,15 @@
 
 Stores GPU state and vertex data
 
+## Parent Requirements
+
+- REQ-TBD-GPU-SPI-CONTROLLER (GPU SPI Controller)
+
 ## Implements Requirements
 
 - REQ-001 (Basic Host Communication)
 - REQ-015 (Memory Upload Interface)
 - REQ-022 (Vertex Submission Protocol)
-- REQ-029 (Memory Upload Interface)
 
 ## Interfaces
 

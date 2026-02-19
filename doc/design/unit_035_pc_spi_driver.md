@@ -1,14 +1,18 @@
 # UNIT-035: PC SPI Driver (FT232H)
 
+## Parent Area
+
+10. GPU Debug GUI (Pico Software)
+
 ## Purpose
 
 SPI transport implementation for PC platform via Adafruit FT232H breakout board
 
 ## Implements Requirements
 
-- REQ-105 (GPU Communication Protocol)
-- REQ-106 (PC Debug Host)
-- REQ-100 (Host Firmware Architecture)
+- REQ-105 (GPU Communication Protocol) — parent area 1 (GPU SPI Controller)
+- REQ-106 (PC Debug Host) — parent area 10 (GPU Debug GUI)
+- ~~REQ-100 (Host Firmware Architecture)~~ — retired (premature for single-threaded approach)
 
 ## Interfaces
 

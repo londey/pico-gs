@@ -8,7 +8,9 @@
 
 ## Requirement
 
-The system SHALL implement a model-view-projection (MVP) transformation pipeline that transforms object-space vertex positions to screen-space pixel coordinates suitable for GPU register packing. The pipeline SHALL perform the following stages in order: MVP matrix multiplication (object space to clip space), perspective divide (clip space to normalized device coordinates), and viewport mapping (NDC to screen pixels for a 640x480 display). The system SHALL also provide: normal vector transformation for lighting, back-face culling via screen-space winding order test, construction functions for perspective projection, look-at view, and rotation matrices, frustum plane extraction from the MVP matrix, axis-aligned bounding box (AABB) frustum culling, per-patch clip plane classification, and triangle clipping against frustum planes (Sutherland-Hodgman).
+When transforming a vertex for GPU submission, the system SHALL execute the MVP transformation pipeline in the following stages: MVP matrix multiplication (object space to clip space), perspective divide (clip space to normalized device coordinates), and viewport mapping (NDC to screen pixels for a 640x480 display), producing screen-space coordinates suitable for GPU register packing.
+
+When computing vertex attributes for rasterization, the system SHALL provide: normal vector transformation for lighting, back-face culling via screen-space winding order test, construction functions for perspective projection, look-at view, and rotation matrices, frustum plane extraction from the MVP matrix, axis-aligned bounding box (AABB) frustum culling, per-patch clip plane classification, and triangle clipping against frustum planes (Sutherland-Hodgman).
 
 When rendering a mesh that uses quantized u16 vertex positions per INT-031, the system SHALL pre-multiply the model matrix with a quantization bias matrix that maps the [0, 65535] quantization range back to model-space coordinates using the mesh's AABB, such that `bias_matrix = translate(aabb_min) × scale(aabb_extent / 65535.0)` and `adjusted_model = original_model × bias_matrix`.
 
@@ -18,7 +20,7 @@ The host CPU performs all vertex transformation and projection so that the GPU r
 
 ## Parent Requirements
 
-None
+REQ-TBD-VERTEX-TRANSFORM (Vertex Transformation)
 
 ## Allocated To
 

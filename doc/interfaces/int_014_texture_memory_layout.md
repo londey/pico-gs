@@ -13,13 +13,14 @@ Internal
 
 ## Referenced By
 
-- REQ-006 (Textured Triangle)
-- REQ-008 (Multi-Texture Rendering)
-- REQ-010 (Compressed Textures)
-- REQ-011 (Swizzle Patterns)
-- REQ-024 (Texture Sampling)
+- REQ-TBD-TEXTURE-SAMPLERS (Texture Samplers — top-level area 3 requirement, not yet created)
+- REQ-006 (Textured Triangle — sub-requirement under area 3)
+- REQ-008 (Multi-Texture Rendering — sub-requirement under area 3)
+- REQ-010 (Compressed Textures — sub-requirement under area 3)
+- REQ-011 (Swizzle Patterns — sub-requirement under area 3)
+- REQ-024 (Texture Sampling — sub-requirement under area 3)
 - INT-011 (SDRAM Memory Layout - overall memory allocation)
-- REQ-131 (Texture Cache)
+- REQ-131 (Texture Cache — sub-requirement under area 3)
 
 ## Specification
 

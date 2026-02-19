@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The GPU pixel pipeline SHALL process all fragment colors in 10.8 fixed-point format (10 integer bits, 8 fractional bits = 18 bits per channel) to minimize cumulative precision loss during multi-texture blending, Gouraud shading, and alpha blending.
+When the GPU pixel pipeline processes a fragment through blending, shading, or texture combination stages, the system SHALL represent all intermediate color values in 10.8 fixed-point format (10 integer bits, 8 fractional bits = 18 bits per channel) to minimize cumulative precision loss.
 
 ## Rationale
 
@@ -16,7 +16,7 @@ The GPU pixel pipeline SHALL process all fragment colors in 10.8 fixed-point for
 
 ## Parent Requirements
 
-None
+- REQ-TBD-FRAGMENT-PROCESSOR (Fragment Processor/Color Combiner — top-level area 4 requirement, not yet created)
 
 ## Allocated To
 

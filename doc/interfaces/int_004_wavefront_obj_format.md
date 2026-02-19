@@ -16,7 +16,7 @@ External Standard
 
 ## Referenced By
 
-- REQ-201 (Unknown)
+- REQ-201 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
 
 ## Specification
 

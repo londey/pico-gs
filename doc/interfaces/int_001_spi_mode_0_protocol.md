@@ -16,6 +16,10 @@ External Standard
 - **Consumer:** UNIT-022 (GPU Driver Layer)
 - **Consumer:** UNIT-035 (PC SPI Driver (FT232H))
 
+## Parent Area
+
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
+
 ## Referenced By
 
 - REQ-001 (Basic Host Communication)

@@ -6,11 +6,11 @@ Scanline FIFO and display pipeline
 
 ## Implements Requirements
 
-- REQ-002 (Framebuffer Management)
-- REQ-007 (Display Output)
-- REQ-025 (Framebuffer Format)
-- REQ-026 (Display Output Timing)
-- REQ-133 (Color Grading LUT)
+- REQ-002 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
+- REQ-007 (Display Output) — area 6: Screen Scan Out
+- REQ-025 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
+- REQ-026 (Display Output Timing) — area 6: Screen Scan Out
+- REQ-133 (Color Grading LUT) — area 6: Screen Scan Out
 
 ## Interfaces
 

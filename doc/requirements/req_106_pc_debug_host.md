@@ -16,7 +16,7 @@ The primary purpose of the PC debug host is to simplify spi_gpu FPGA debugging b
 
 ## Parent Requirements
 
-- REQ-100 (Host Firmware Architecture)
+- REQ-TBD-DEBUG-GUI (GPU Debug GUI)
 
 ## Allocated To
 

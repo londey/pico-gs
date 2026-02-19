@@ -8,7 +8,9 @@
 
 ## Requirement
 
-The system SHALL implement framebuffer format as specified in the functional requirements.
+When the pixel pipeline writes a fragment to the framebuffer, the system SHALL store the pixel color in RGB565 format (5-bit red, 6-bit green, 5-bit blue) packed as two pixels per 32-bit memory word, with the even pixel in the low 16 bits and the odd pixel in the high 16 bits.
+
+When the pixel pipeline reads a framebuffer pixel for alpha blending, the system SHALL promote the RGB565 value to 10.8 fixed-point by left-shifting and replicating MSBs, and SHALL treat the promoted alpha as fully opaque (1023).
 
 ## Rationale
 
@@ -16,7 +18,7 @@ This requirement defines the functional behavior of the framebuffer format subsy
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store)
 
 ## Allocated To
 

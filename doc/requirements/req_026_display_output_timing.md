@@ -40,7 +40,7 @@ The 0.7% deviation from the 25.175 MHz VGA standard pixel clock is within the to
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SCREEN-SCANOUT (Screen Scan Out)
 
 ## Allocated To
 

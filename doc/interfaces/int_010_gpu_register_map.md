@@ -14,41 +14,50 @@ Internal
 - **Consumer:** UNIT-008 (Display Controller)
 - **Consumer:** UNIT-022 (GPU Driver Layer)
 
+## Serves Requirement Areas
+
+- Area 1: GPU SPI Controller (REQ-001, REQ-015, REQ-022, REQ-105)
+- Area 2: Rasterizer (REQ-003, REQ-004, REQ-023)
+- Area 3: Texture Samplers (REQ-006, REQ-008, REQ-010, REQ-011, REQ-012, REQ-024, REQ-131)
+- Area 4: Fragment Processor/Color Combiner (REQ-009, REQ-134)
+- Area 5: Blend/Frame Buffer Store (REQ-002, REQ-005, REQ-014, REQ-016, REQ-025, REQ-027, REQ-118, REQ-123, REQ-132)
+- Area 6: Screen Scan Out (REQ-026, REQ-133)
+- Area 11: System Constraints (REQ-050, REQ-051, REQ-052)
+
 ## Referenced By
 
-- REQ-001 (Basic Host Communication)
-- REQ-002 (Framebuffer Management)
-- REQ-003 (Flat Shaded Triangle)
-- REQ-004 (Gouraud Shaded Triangle)
-- REQ-005 (Depth Tested Triangle)
-- REQ-006 (Textured Triangle)
-- REQ-008 (Multi-Texture Rendering)
-- REQ-009 (Texture Blend Modes)
-- REQ-010 (Compressed Textures)
-- REQ-011 (Swizzle Patterns)
-- REQ-012 (UV Wrapping Modes)
-- REQ-013 (Alpha Blending)
-- REQ-014 (Enhanced Z-Buffer)
-- REQ-015 (Memory Upload Interface)
-- REQ-016 (Triangle-Based Clearing)
-- REQ-110 (GPU Initialization)
-- REQ-118 (Clear Framebuffer)
-- REQ-132 (Ordered Dithering)
-- REQ-133 (Color Grading LUT)
-- REQ-134 (Extended Precision Fragment Processing)
-- REQ-123 (Double-Buffered Rendering)
-- REQ-105 (GPU Communication Protocol)
-- REQ-131 (Texture Cache)
-- REQ-052 (Reliability Requirements)
-- REQ-050 (Performance Targets)
-- REQ-051 (Resource Constraints)
-- REQ-027 (Z-Buffer Operations)
-- REQ-026 (Display Output Timing)
-- REQ-024 (Texture Sampling)
-- REQ-023 (Rasterization Algorithm)
-- REQ-022 (Vertex Submission Protocol)
-- REQ-029 (Memory Upload Interface)
-- REQ-028 (Alpha Blending)
+- REQ-001 (Basic Host Communication) — Area 1: GPU SPI Controller
+- REQ-002 (Framebuffer Management) — Area 5: Blend/Frame Buffer Store
+- REQ-003 (Flat Shaded Triangle) — Area 2: Rasterizer
+- REQ-004 (Gouraud Shaded Triangle) — Area 2: Rasterizer
+- REQ-005 (Depth Tested Triangle) — Area 5: Blend/Frame Buffer Store
+- REQ-006 (Textured Triangle) — Area 3: Texture Samplers
+- REQ-008 (Multi-Texture Rendering) — Area 3: Texture Samplers
+- REQ-009 (Texture Blend Modes) — Area 4: Fragment Processor/Color Combiner
+- REQ-010 (Compressed Textures) — Area 3: Texture Samplers
+- REQ-011 (Swizzle Patterns) — Area 3: Texture Samplers
+- REQ-012 (UV Wrapping Modes) — Area 3: Texture Samplers
+- REQ-013 (Alpha Blending) — Area 5: Blend/Frame Buffer Store
+- REQ-014 (Enhanced Z-Buffer) — Area 5: Blend/Frame Buffer Store
+- REQ-015 (Memory Upload Interface) — Area 1: GPU SPI Controller
+- REQ-016 (Triangle-Based Clearing) — Area 5: Blend/Frame Buffer Store
+- REQ-022 (Vertex Submission Protocol) — Area 1: GPU SPI Controller
+- REQ-023 (Rasterization Algorithm) — Area 2: Rasterizer
+- REQ-024 (Texture Sampling) — Area 3: Texture Samplers
+- REQ-026 (Display Output Timing) — Area 6: Screen Scan Out
+- REQ-027 (Z-Buffer Operations) — Area 5: Blend/Frame Buffer Store
+- REQ-050 (Performance Targets) — Area 11: System Constraints
+- REQ-051 (Resource Constraints) — Area 11: System Constraints
+- REQ-052 (Reliability Requirements) — Area 11: System Constraints
+- REQ-105 (GPU Communication Protocol) — Area 1: GPU SPI Controller
+- REQ-118 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-123 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
+- REQ-131 (Texture Cache) — Area 3: Texture Samplers
+- REQ-132 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
+- REQ-133 (Color Grading LUT) — Area 6: Screen Scan Out
+- REQ-134 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+
+Note: REQ-110 (GPU Initialization) and REQ-028 (Alpha Blending, duplicate) and REQ-029 (Memory Upload Interface, duplicate) are retired; their references have been removed.
 
 ## Specification
 

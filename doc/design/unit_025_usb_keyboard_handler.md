@@ -1,13 +1,16 @@
 # UNIT-025: USB Keyboard Handler
 
+## Parent Area
+
+9. Keyboard and Controller Input (Pico Software)
+
 ## Purpose
 
 USB HID keyboard input processing
 
 ## Implements Requirements
 
-- REQ-103 (Unknown)
-- REQ-113 (USB Keyboard Input)
+- REQ-103 (USB Keyboard Input) — canonical requirement; REQ-113 retired and merged into REQ-103
 
 ## Interfaces
 

@@ -11,9 +11,10 @@ Internal
 
 ## Referenced By
 
-- REQ-131 (Texture Cache)
-- REQ-024 (Texture Sampling)
-- REQ-130 (Texture Mipmapping)
+- REQ-TBD-TEXTURE-SAMPLERS (Texture Samplers — top-level area 3 requirement, not yet created)
+- REQ-131 (Texture Cache — sub-requirement under area 3)
+- REQ-024 (Texture Sampling — sub-requirement under area 3)
+- REQ-130 (Texture Mipmapping — sub-requirement under area 3)
 
 ## Specification
 

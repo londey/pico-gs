@@ -16,7 +16,7 @@ The electrical interface must meet SPI Mode 0 timing specifications to ensure re
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
 
 ## Allocated To
 

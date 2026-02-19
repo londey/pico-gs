@@ -3,7 +3,7 @@
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Stable
+- **Stability:** Retired
 - **Verification:** Test
 
 ## Requirement
@@ -39,6 +39,13 @@ None
 **Test (RP2350):** Verify that Core 0 produces render commands into the SPSC queue and Core 1 consumes and executes them against the GPU driver, with correct backpressure behavior when the queue is full.
 
 **Test (PC):** Verify that the PC host initializes the FT232H SPI adapter, communicates with the GPU via the same driver API, and produces structured log output for each GPU register write.
+
+## Retirement Note
+
+**Retired:** This requirement is premature for the current single-threaded approach.
+The dual-core RP2350 architecture (Core 0 scene management / Core 1 render execution via SPSC queue) described here was not implemented.
+The system currently uses a single-threaded execution model on all platforms.
+When a threading or multi-core architecture is needed, a new requirement should be drafted reflecting the actual design decision made at that time.
 
 ## Notes
 

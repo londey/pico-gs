@@ -4,6 +4,10 @@
 
 Receives 72-bit SPI transactions and writes to register file
 
+## Parent Area
+
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
+
 ## Implements Requirements
 
 - REQ-001 (Basic Host Communication)

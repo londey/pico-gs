@@ -8,7 +8,7 @@
 
 ## Requirement
 
-When the pixel pipeline produces fragment data during rasterization, the system SHALL combine multiple color inputs through a programmable color combiner stage that accepts texture colors, vertex colors, material colors, and depth-derived colors as inputs.
+When the pixel pipeline produces a fragment during rasterization, the system SHALL route that fragment through a programmable color combiner stage that accepts texture colors, vertex colors, material colors, and depth-derived colors as inputs and produces a single combined output color.
 
 ## Rationale
 
@@ -17,7 +17,7 @@ By accepting multiple input types (texture, vertex, material, depth-derived), th
 
 ## Parent Requirements
 
-None
+- REQ-TBD-FRAGMENT-PROCESSOR (Fragment Processor/Color Combiner — top-level area 4 requirement, not yet created)
 
 ## Allocated To
 

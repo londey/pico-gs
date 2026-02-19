@@ -8,7 +8,9 @@
 
 ## Requirement
 
-The system SHALL implement z-buffer operations including depth comparison, depth range clipping, and conditional Z-buffer writes as specified in the functional requirements.
+When Z_TEST_EN=1 and a fragment's interpolated depth value is compared against the Z-buffer using the configured Z_COMPARE function, the system SHALL pass the fragment and, when Z_WRITE_EN=1, update the Z-buffer with the new depth value; otherwise the system SHALL discard the fragment without modifying the Z-buffer or color buffer.
+
+When Z_RANGE is configured with Z_RANGE_MIN and Z_RANGE_MAX values, the system SHALL discard any fragment whose interpolated Z value falls outside [Z_RANGE_MIN, Z_RANGE_MAX] before performing the depth comparison.
 
 ## Rationale
 
@@ -16,7 +18,7 @@ This requirement defines the functional behavior of the z-buffer operations subs
 
 ## Parent Requirements
 
-None
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store)
 
 ## Allocated To
 

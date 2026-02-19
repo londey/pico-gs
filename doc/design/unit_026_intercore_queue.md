@@ -1,13 +1,17 @@
 # UNIT-026: Inter-Core Queue
 
+## Parent Area
+
+8. Scene Graph/ECS (Pico Software)
+
 ## Purpose
 
-SPSC queue for Core 0→Core 1 commands
+SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-threaded equivalent on other platforms)
 
 ## Implements Requirements
 
-- REQ-104 (Unknown)
-- REQ-114 (Render Command Queue)
+- REQ-104 (Matrix Transformation Pipeline) — parent area 7 (Vertex Transformation)
+- REQ-114 (Render Command Queue) — parent area 8 (Scene Graph/ECS)
 
 ## Interfaces
 

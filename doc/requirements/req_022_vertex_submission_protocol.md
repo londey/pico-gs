@@ -16,7 +16,7 @@ This requirement defines the functional behavior of the vertex submission protoc
 
 ## Parent Requirements
 
-None
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
 
 ## Allocated To
 

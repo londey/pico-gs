@@ -1,14 +1,18 @@
 # UNIT-023: Transformation Pipeline
 
+## Parent Area
+
+7. Vertex Transformation (Pico Software)
+
 ## Purpose
 
 MVP matrix transforms
 
 ## Implements Requirements
 
-- REQ-102 (Unknown)
-- REQ-115 (Render Mesh Patch)
-- REQ-104 (Matrix Transformation Pipeline)
+- REQ-102 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
+- REQ-115 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
+- REQ-104 (Matrix Transformation Pipeline) — parent area 7 (Vertex Transformation)
 
 ## Interfaces
 

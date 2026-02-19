@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The GPU SHALL support a color grading lookup table applied at display scanout, enabling real-time gamma correction, color temperature adjustment, and artistic color effects without re-rendering.
+When the display controller reads a pixel from the framebuffer for scanout, the system SHALL optionally pass that pixel through a programmable color grading lookup table to apply real-time gamma correction, color temperature adjustment, or artistic color effects before DVI encoding.
 
 ## Rationale
 
@@ -16,7 +16,8 @@ Post-processing effects like gamma correction and color grading are traditionall
 
 ## Parent Requirements
 
-- REQ-007 (Display Output)
+- REQ-TBD-SCREEN-SCAN-OUT (Screen Scan Out — top-level area 6 requirement, not yet created)
+- REQ-007 (Display Output — peer requirement under area 6)
 
 ## Allocated To
 

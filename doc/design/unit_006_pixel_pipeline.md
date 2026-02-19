@@ -20,7 +20,6 @@ Depth range clipping, early Z-test, texture sampling, blending, framebuffer writ
 - REQ-016 (Triangle-Based Clearing)
 - REQ-024 (Texture Sampling)
 - REQ-027 (Z-Buffer Operations)
-- REQ-028 (Alpha Blending)
 - REQ-131 (Texture Cache)
 - REQ-132 (Ordered Dithering)
 - REQ-134 (Extended Precision Fragment Processing)
@@ -156,7 +155,7 @@ The pixel pipeline processes rasterized fragments through a 7-stage pipeline. Al
   - **SUBTRACT:** `result = saturate(a - b)` at 0
 
 **Stage 5: Alpha Blending (10.8 precision):**
-- For alpha blending (REQ-013, REQ-028):
+- For alpha blending (REQ-013):
   1. Read destination pixel from framebuffer (RGB565)
   2. Promote to 10.8 via `fb_promote.sv`: same MSB replication as texture promotion, alpha defaults to 1023
   3. Blend in 10.8: `result = (src * alpha + dst * (1023 - alpha)) >> 8`

@@ -6,9 +6,9 @@ TMDS encoding and differential output
 
 ## Implements Requirements
 
-- REQ-007 (Display Output)
-- REQ-026 (Display Output Timing)
-- REQ-051 (Resource Constraints)
+- REQ-007 (Display Output) — area 6: Screen Scan Out
+- REQ-026 (Display Output Timing) — area 6: Screen Scan Out
+- REQ-051 (Resource Constraints) — area 11: System Constraints
 
 ## Interfaces
 

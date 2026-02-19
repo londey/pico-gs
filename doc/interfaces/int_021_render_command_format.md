@@ -4,6 +4,11 @@
 
 Internal
 
+## Serves Requirement Areas
+
+- Area 7: Vertex Transformation (REQ-104, REQ-115)
+- Area 8: Scene Graph/ECS (REQ-101, REQ-102, REQ-112, REQ-114)
+
 ## Parties
 
 - **Provider:** UNIT-026 (Inter-Core Queue)
@@ -13,14 +18,15 @@ Internal
 
 ## Referenced By
 
-- REQ-101 (Unknown)
-- REQ-102 (Unknown)
-- REQ-103 (Unknown)
-- REQ-104 (Unknown)
-- REQ-111 (Dual-Core Architecture)
-- REQ-114 (Render Command Queue)
-- REQ-115 (Render Mesh Patch)
-- REQ-112 (Scene Graph Management)
+- REQ-101 (Scene Management) — Area 8: Scene Graph/ECS
+- REQ-102 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
+- REQ-103 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
+- REQ-104 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
+- REQ-112 (Scene Graph Management) — Area 8: Scene Graph/ECS
+- REQ-114 (Render Command Queue) — Area 8: Scene Graph/ECS
+- REQ-115 (Render Mesh Patch) — Area 7: Vertex Transformation
+
+Note: REQ-111 (Dual-Core Architecture) is retired; its reference has been removed.
 
 ## Specification
 

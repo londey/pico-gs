@@ -8,7 +8,7 @@
 
 ## Requirement
 
-The GPU SHALL support ordered dithering before RGB565 framebuffer conversion to reduce visible color banding artifacts in smooth gradients.
+When the pixel pipeline writes a fragment color to the RGB565 framebuffer, the system SHALL apply ordered dithering before the format conversion to reduce visible color banding artifacts in smooth gradients.
 
 ## Rationale
 
@@ -16,8 +16,9 @@ Converting 10.8 fixed-point fragment colors to RGB565 format discards fractional
 
 ## Parent Requirements
 
-- REQ-025 (Framebuffer Format)
-- REQ-134 (Extended Precision Fragment Processing)
+- REQ-TBD-BLEND-FRAMEBUFFER (Blend/Frame Buffer Store — top-level area 5 requirement, not yet created)
+- REQ-025 (Framebuffer Format — peer requirement)
+- REQ-134 (Extended Precision Fragment Processing — peer requirement)
 
 ## Allocated To
 

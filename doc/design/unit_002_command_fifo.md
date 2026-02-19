@@ -4,6 +4,10 @@
 
 Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries.
 
+## Parent Area
+
+- REQ-TBD-SPI-CONTROLLER (GPU SPI Controller)
+
 ## Implements Requirements
 
 - REQ-001 (Basic Host Communication)

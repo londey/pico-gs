@@ -1,36 +1,32 @@
-# REQ-029: Memory Upload Interface
+# REQ-029: Memory Upload Interface [RETIRED]
+
+## Status
+
+**RETIRED** — This requirement has been merged into REQ-015 (Memory Upload Interface).
+REQ-029 was a functional-form duplicate of the user-story-form REQ-015.
+All content and acceptance criteria have been consolidated into REQ-015.
 
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Stable
-- **Verification:** Test
+- **Stability:** Retired
+- **Verification:** N/A
 
-## Requirement
+## Rationale for Retirement
 
-The system SHALL implement memory upload interface as specified in the functional requirements.
+REQ-029 and REQ-015 described the same capability (memory upload via MEM_ADDR/MEM_DATA registers) from two perspectives: user story and functional form.
+As part of the 13-area requirement hierarchy restructure (2026-02-19), duplicate pairs are collapsed to a single canonical requirement.
+REQ-015 is the surviving requirement and has been updated to incorporate the functional detail from REQ-029.
 
-## Rationale
+## Successor
 
-This requirement defines the functional behavior of the memory upload interface subsystem.
+- REQ-015 (Memory Upload Interface)
 
-## Parent Requirements
+## Previously Allocated To
 
-- REQ-015 (Memory Upload Interface — user story and detailed acceptance criteria)
+- UNIT-003 (Register File) — now references REQ-015 only
+- UNIT-007 (SRAM Arbiter) — now references REQ-015 only
 
-## Allocated To
-
-- UNIT-003 (Register File)
-- UNIT-007 (SRAM Arbiter)
-
-## Interfaces
+## Previously Referenced Interfaces
 
 - INT-010 (GPU Register Map)
-
-## Verification Method
-
-**Test:** Execute relevant test suite for memory upload interface. See REQ-015 for detailed acceptance criteria.
-
-## Notes
-
-This is the functional-format counterpart of REQ-015. See REQ-015 for the full user story and acceptance criteria.
