@@ -1,257 +1,97 @@
-# Architecture & Design Principles
+# Architecture
 
-**Version**: 1.0.0
-**Last Updated**: 2026-02-03
+*Architecture overview for <system name>*
 
-## Overview
+## System Description
 
-This document captures the architectural decisions and design principles specific to the pico-gs project: an FPGA-based 3D graphics synthesizer for the ICEpi platform, inspired by the PlayStation 2 Graphics Synthesizer (GS).
-
-**Relationship to Constitution**: The [constitution.md](constitution.md) defines *how* we build software (coding practices). This document defines *what* we're building and *why* (design constraints and architectural philosophy).
-
----
+<Describe the system at the highest level: what problem it solves, its primary
+responsibilities, and its operational environment.>
 
 ## Design Philosophy
 
-The pico-gs targets a **specific, constrained feature set** to deliver a functional, demonstrable 3D graphics pipeline within FPGA resource limits.
+<Key architectural principles guiding the design: e.g., "data-flow driven",
+"layered", "hardware abstraction via interfaces", etc.>
 
-**Core goal**: Render a lit teapot and textured cube on screen at 640×480 @ 60Hz.
+## Component Interactions
 
-### In Scope (MVP)
-- Triangle rasterization with edge walking
-- Vertex color interpolation (Gouraud shading)
-- Single texture with perspective-correct UV mapping
-- Z-buffer depth testing
-- Double-buffered framebuffer
-- DVI/HDMI output via GPDI connector
-
-### Explicitly Out of Scope (Initial Release)
-- Programmable shaders
-- Multiple texture units
-- Stencil buffer
-- Anti-aliasing (MSAA/FXAA)
-- Alpha blending (deferred to future milestone)
-- Geometry processing (transforms done on host)
-
-**Rationale**: Feature discipline keeps the project tractable within resource constraints and delivers a working system faster.
+<Narrative description of how major components collaborate. Reference specific
+units (UNIT-NNN) and interfaces (INT-NNN) where helpful.>
 
 ---
 
-## Platform Constraints
-
-### Hardware Platform: ICEpi Zero
-
-**FPGA**: Lattice ECP5-25K
-- 24,000 LUTs
-- 1,008 Kbit Block RAM (EBR)
-- 28 DSP slices
-- Open-source toolchain support
-
-**Host**: Raspberry Pi RP2350
-- Dual Cortex-M33 @ 150 MHz
-- 520 KB SRAM
-- 4 MB Flash
-- USB host capability
-
-**External Memory**: 4 MB SPI PSRAM
-- Shared between framebuffer and texture storage
-- ~200 MB/s bandwidth @ 100 MHz SPI
-
-### Toolchain Mandate
-
-All RTL **must** synthesize using the open-source FPGA toolchain:
-- **Synthesis**: Yosys
-- **Place & Route**: nextpnr-ecp5
-- **Programming**: openFPGALoader
-- **Simulation**: Verilator or Icarus Verilog with cocotb testbenches
-
-**No vendor-specific primitives** are permitted except documented ECP5 hard blocks:
-- SERDES (for DVI output)
-- PLL (clock generation)
-- DSP48 (multiply-accumulate for interpolation)
-- EBR (on-chip block RAM)
-
-**Rationale**: Open toolchain ensures reproducibility, avoids vendor lock-in, and aligns with maker/educational community values.
-
----
-
-## Resource Budget
-
-The ECP5-25K provides finite resources. Design decisions must respect these limits.
-
-| Resource | Total | Budget Target | Headroom |
-|----------|-------|---------------|----------|
-| LUTs | 24,000 | ≤ 20,000 (83%) | 4,000 |
-| BRAM (EBR) | 1,008 kbit | ≤ 800 kbit (79%) | 208 kbit |
-| DSP blocks | 28 | ≤ 24 (86%) | 4 |
-| SRAM bandwidth | 200 MB/s | Display: 74 MB/s<br>Draw: 126 MB/s | — |
-
-### Resource Discipline
-
-- Post-synthesis resource reports **must** be generated for all modules
-- Any module exceeding 25% of total budget requires architectural review
-- Favor algorithmic efficiency over brute-force parallelism
-- Use DSP blocks for multiply operations where possible (saves LUTs)
-
----
-
-## System Architecture
-
-### Host-GPU Division of Responsibility
-
-The GPU is a **rasterizer**, not a geometry processor. This mirrors the PS2 architecture (EE/VU → GS).
-
-**Host (RP2350) responsibilities:**
-- Model/view/projection matrix transforms
-- Clipping to view frustum
-- Perspective division (computing 1/W per vertex)
-- Back-face culling
-- Scene management and draw ordering
-- Asset loading and management
-
-**GPU (FPGA) responsibilities:**
-- Triangle rasterization (screen-space)
-- Vertex attribute interpolation (color, UV, depth)
-- Texture sampling
-- Depth testing
-- Framebuffer writes
-- Display scanout
-
-**Interface**: SPI register-based command interface. Host writes vertex data and draw commands; GPU rasterizes to framebuffer.
-
-**Rationale**: This division keeps the FPGA design tractable and leverages the RP2350's computational capabilities for geometry processing.
-
----
-
-## Memory Architecture
-
-### SRAM Allocation (4 MB total)
-
-| Region | Size | Purpose |
-|--------|------|---------|
-| Framebuffer 0 | 1.2 MB | 640×480×32bpp (RGBA8888) |
-| Framebuffer 1 | 1.2 MB | 640×480×32bpp (double buffer) |
-| Z-buffer | 600 KB | 640×480×16bpp (fixed-point depth) |
-| Texture cache | 1 MB | Runtime texture data |
-
-### Bandwidth-First Design
-
-Display refresh has **absolute priority** over all other SRAM access.
-
-**Bandwidth allocation:**
-- Display scanout: **74 MB/s guaranteed** (640×480×32bpp×60Hz)
-- Draw operations: Best-effort with remaining ~126 MB/s
-- Texture fetch: Shared with draw, prioritized per-pixel
-
-**Memory arbiter must guarantee:**
-1. No visible tearing or scanline corruption under any draw load
-2. Display read-ahead FIFO sufficient to mask arbiter latency (≥ 2 scanlines)
-3. Draw operations gracefully stall rather than corrupt display
-
-**Rationale**: Visual glitches are unacceptable in a graphics system. Bandwidth discipline prevents hard-to-debug race conditions.
-
----
-
-## Interface Stability
-
-The SPI register interface is the **contract** between host software and GPU hardware.
-
-### Versioning Rules
-
-Once a register address and bit field is documented:
-1. The address **shall not** be reassigned
-2. Bit field semantics **shall not** change
-3. Reserved bits **shall** read as zero and ignore writes
-
-### Version Detection
-
-- GPU ID register (read-only) contains:
-  - Major version (breaking changes)
-  - Minor version (backward-compatible additions)
-  - Patch version (bug fixes)
-- Host driver checks version at initialization
-- Incompatible versions fail gracefully with error message
-
-### Breaking Changes
-
-Breaking changes require:
-1. Major version increment
-2. Explicit migration documentation
-3. Feature flag or capability query mechanism
-
-**Rationale**: Interface stability enables independent development of host firmware and FPGA bitstream. Clear versioning prevents mysterious runtime failures.
-
----
-
-## Development Milestones
-
-Features are delivered in layers that provide incremental value and validation.
-
-| Milestone | Deliverable | Validates |
-|-----------|-------------|-----------|
-| M1 | SPI register interface | Host communication working |
-| M2 | Framebuffer clear | SRAM write path functional |
-| M3 | Single pixel write | Coordinate mapping correct |
-| M4 | Flat-shaded triangle | Core rasterizer algorithm |
-| M5 | DVI output | Display pipeline end-to-end |
-| M6 | Gouraud shading | Color interpolation working |
-| M7 | Z-buffer | Depth testing functional |
-| M8 | Textured triangle | Full pixel pipeline complete |
-
-**Principle**: Each milestone **must** be demonstrable on hardware before proceeding. Simulation is necessary but not sufficient.
-
-**Rationale**: Hardware bring-up is unpredictable. Incremental validation catches integration issues early and maintains working system state.
-
----
-
-## Documentation Requirements
-
-### Required Artifacts
-
-**Hardware interface specifications:**
-- Register map with bit-level definitions
-- SPI transaction timing diagram
-- Memory map showing SRAM allocation
-- DVI timing parameters and constraints
-
-**Design documentation:**
-- State machine diagrams for rasterizer and arbiter
-- Pipeline stage diagram with latency annotations
-- Interpolation algorithm description with fixed-point precision
-
-**Host integration:**
-- Example code demonstrating triangle submission
-- Asset format specifications (meshes, textures)
-- Performance characteristics and limitations
-
-**Rationale**: Specifications are executable documentation. They enable independent implementation of host and GPU components.
-
----
-
-## Future Directions (Post-MVP)
-
-Potential enhancements after initial release:
-
-### Performance
-- Tile-based rendering for bandwidth optimization
-- Hardware mipmap generation
-- Texture compression (PVRTC/ETC2)
-
-### Features
-- Alpha blending (over/additive modes)
-- Multiple texture units (multi-texturing)
-- Simple post-processing (scanline effects, dithering)
-- Line and point primitive support
-
-### Tooling
-- Real-time performance counters
-- GPU command stream capture/replay
-- Waveform-based debugging interface
-
-**Note**: These are aspirational. Each requires resource analysis and may be deferred indefinitely to maintain project scope discipline.
-
----
-
-## Amendment History
-
-- **1.0.0** (2026-02-03): Initial architecture document, extracted from constitution v2.0.0
+<!-- syskit-arch-start -->
+### Block Diagram
+
+```mermaid
+flowchart LR
+    UNIT_001["UNIT-001: SPI Slave Controller"]
+    UNIT_002["UNIT-002: Command FIFO"]
+    UNIT_003["UNIT-003: Register File"]
+    UNIT_004["UNIT-004: Triangle Setup"]
+    UNIT_005["UNIT-005: Rasterizer"]
+    UNIT_006["UNIT-006: Pixel Pipeline"]
+    UNIT_007["UNIT-007: Memory Arbiter"]
+    UNIT_008["UNIT-008: Display Controller"]
+    UNIT_009["UNIT-009: DVI TMDS Encoder"]
+    UNIT_010["UNIT-010: Color Combiner"]
+    UNIT_020["UNIT-020: Core 0 Scene Manager"]
+    UNIT_021["UNIT-021: Core 1 Render Executor"]
+    UNIT_022["UNIT-022: GPU Driver Layer"]
+    UNIT_023["UNIT-023: Transformation Pipeline"]
+    UNIT_024["UNIT-024: Lighting Calculator"]
+    UNIT_025["UNIT-025: USB Keyboard Handler"]
+    UNIT_026["UNIT-026: Inter-Core Queue"]
+    UNIT_027["UNIT-027: Demo State Machine"]
+    UNIT_030["UNIT-030: PNG Decoder"]
+    UNIT_031["UNIT-031: OBJ Parser"]
+    UNIT_032["UNIT-032: Mesh Patch Splitter"]
+    UNIT_033["UNIT-033: Codegen Engine"]
+    UNIT_034["UNIT-034: Build.rs Orchestrator"]
+    UNIT_035["UNIT-035: PC SPI Driver (FT232H)"]
+    UNIT_036["UNIT-036: PC Input Handler"]
+    UNIT_009 -->|INT-002| UNIT_009
+    UNIT_003 -->|INT-010| UNIT_001
+    UNIT_003 -->|INT-010| UNIT_004
+    UNIT_003 -->|INT-010| UNIT_005
+    UNIT_003 -->|INT-010| UNIT_006
+    UNIT_003 -->|INT-010| UNIT_008
+    UNIT_003 -->|INT-010| UNIT_010
+    UNIT_003 -->|INT-010| UNIT_022
+    UNIT_022 -->|INT-020| UNIT_021
+    UNIT_026 -->|INT-021| UNIT_020
+    UNIT_026 -->|INT-021| UNIT_021
+    UNIT_026 -->|INT-021| UNIT_027
+    UNIT_006 -->|INT-032| UNIT_006
+    UNIT_036 -->|INT-040| UNIT_022
+```
+
+### Software Units
+
+| Unit | Title | Purpose |
+|------|-------|---------|
+| UNIT-001 | SPI Slave Controller | Receives 72-bit SPI transactions and writes to register file |
+| UNIT-002 | Command FIFO | Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries. |
+| UNIT-003 | Register File | Stores GPU state and vertex data |
+| UNIT-004 | Triangle Setup | Prepares triangle for rasterization |
+| UNIT-005 | Rasterizer | Edge-walking rasterization engine |
+| UNIT-006 | Pixel Pipeline | Depth range clipping, early Z-test, texture sampling, blending, framebuffer write |
+| UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
+| UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
+| UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
+| UNIT-010 | Color Combiner | Pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
+| UNIT-020 | Core 0 Scene Manager | Scene graph management and animation |
+| UNIT-021 | Core 1 Render Executor | Render command queue consumer |
+| UNIT-022 | GPU Driver Layer | Platform-agnostic GPU register protocol and flow control, generic over SPI transport |
+| UNIT-023 | Transformation Pipeline | MVP matrix transforms |
+| UNIT-024 | Lighting Calculator | Gouraud shading calculations |
+| UNIT-025 | USB Keyboard Handler | USB HID keyboard input processing |
+| UNIT-026 | Inter-Core Queue | SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-threaded equivalent on other platforms) |
+| UNIT-027 | Demo State Machine | Demo selection and switching logic |
+| UNIT-030 | PNG Decoder | PNG file loading, RGBA conversion, and texture format encoding (RGBA4444/BC1) |
+| UNIT-031 | OBJ Parser | OBJ file parsing and geometry extraction |
+| UNIT-032 | Mesh Patch Splitter | Mesh splitting with vertex/index limits |
+| UNIT-033 | Codegen Engine | Rust source and binary data generation for compiled assets |
+| UNIT-034 | Build.rs Orchestrator | Asset pipeline entry point |
+| UNIT-035 | PC SPI Driver (FT232H) | SPI transport implementation for PC platform via Adafruit FT232H breakout board |
+| UNIT-036 | PC Input Handler | Terminal keyboard input handling for the PC debug host platform. |
+<!-- syskit-arch-end -->

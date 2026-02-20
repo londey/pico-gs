@@ -37,7 +37,8 @@
                 "EditorConfig.EditorConfig",
                 "Anthropic.claude-code",
                 "streetsidesoftware.code-spell-checker",
-                "mutantdino.resourcemonitor"
+                "mutantdino.resourcemonitor",
+                "bierner.markdown-mermaid"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
