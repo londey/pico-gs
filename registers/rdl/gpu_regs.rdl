@@ -146,7 +146,9 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
                BASE_ADDR is a 16-bit value multiplied by 512 to form the
                byte address (512-byte granularity, 32 MiB addressable).
                Octahedral wrap mode implements coupled diagonal mirroring:
-               crossing one axis edge flips the other axis coordinate.";
+               crossing one axis edge flips the other axis coordinate.
+               Any write to this register invalidates the texture cache
+               for the corresponding texture unit.";
         field {} ENABLE[0:0]                                = 0;
         field {} RSVD_1[1:1]                                = 0;
         field { encode = tex_filter_e; }  FILTER[3:2]       = 0;

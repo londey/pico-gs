@@ -27,8 +27,10 @@ pub const VERTEX: u8 = 0x05;
 // --- Texture Samplers (0x10-0x11) ---
 
 /// Texture 0 unified config (enable, format, filter, dims, wrap, mips, base).
+/// Writing this register invalidates the texture cache for unit 0.
 pub const TEX0_CFG: u8 = 0x10;
 /// Texture 1 unified config.
+/// Writing this register invalidates the texture cache for unit 1.
 pub const TEX1_CFG: u8 = 0x11;
 
 // --- TEXn_CFG bit fields ---

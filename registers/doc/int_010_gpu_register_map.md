@@ -454,6 +454,9 @@ gpu_write(COLOR, color4); gpu_write(UV0_UV1, uv4); gpu_write(VERTEX_KICK_012, v4
 
 Each texture unit has 4 registers (0x10-0x13 for unit 0, 0x14-0x17 for unit 1). The register layout is identical for both units. v10.0: Reduced from 4 texture units to 2.
 
+**Cache Invalidation**: Any write to a texture configuration register invalidates the texture cache for the corresponding texture unit.
+Software does not need to issue a separate cache flush command when changing texture parameters or base address.
+
 ### TEXn_BASE (0x10, 0x14)
 
 Base address of texture in SDRAM. Must be 4K aligned.
