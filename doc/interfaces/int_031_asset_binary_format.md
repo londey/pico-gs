@@ -18,11 +18,6 @@ Internal
 
 ## Specification
 
-
-**Feature**: 003-asset-data-prep
-**Date**: 2026-01-31
-**Status**: Phase 1 Design Artifact
-
 ## Overview
 
 This document specifies the exact format of all generated output files, including Rust wrapper files and binary data files. All formats are designed for direct inclusion in RP2350 firmware builds using the `include_bytes!()` macro.

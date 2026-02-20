@@ -56,7 +56,7 @@ None
   - Green LUT: 64 entries × 24 bits (RGB888)
   - Blue LUT: 32 entries × 24 bits (RGB888)
 - LUT bank select (active/inactive for double-buffering)
-- **LUT DMA Controller** (v9.0):
+- **LUT DMA Controller**:
   - DMA state machine (IDLE, LOAD_LUT, SWAP_BANK)
   - LUT base address (from FB_DISPLAY[18:6])
   - Byte counter (384 bytes total)
@@ -82,7 +82,7 @@ None
    - Standard RGB565→RGB888 expansion: `R8 = {R5, R5[4:2]}`, `G8 = {G6, G6[5:4]}`, `B8 = {B5, B5[4:2]}`
 4. **TMDS Output**: Send RGB888 to DVI encoder (UNIT-009)
 
-**Scanline Prefetch with Burst Reads (v11.0):**
+**Scanline Prefetch with Burst Reads:**
 
 The scanline prefetch FSM reads framebuffer data from SDRAM into the scanline FIFO.
 Each scanline of 640 RGB565 pixels requires 1280 bytes (640 × 16-bit words).
@@ -118,12 +118,12 @@ The scanline FIFO depth must accommodate at least one full burst plus SDRAM acce
 - For a burst of N 16-bit words: burst mode completes in approximately (row activate + CAS latency + N) cycles vs. single-word mode requiring full access setup per word
 - Display scanout at 640 pixels per line benefits substantially because the entire scanline is a sequential address range
 
-**LUT DMA Burst Support (v11.0):**
+**LUT DMA Burst Support:**
 
 The LUT DMA controller also uses burst reads when loading 384 bytes from SDRAM during vblank.
 The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the DMA transfer time compared to single-word mode, though the practical impact is minimal since the vblank period is ~1.43 ms.
 
-**LUT Auto-Load Protocol (v9.0):**
+**LUT Auto-Load Protocol:**
 1. Host prepares LUT data in SDRAM (384 bytes at 4KiB-aligned address)
 2. Host writes FB_DISPLAY or FB_DISPLAY_SYNC with framebuffer address, LUT address, enable flag
 3. At vsync edge:
@@ -153,7 +153,7 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
      - Transition to IDLE
    ```
 
-**Double-Buffering (Auto-Swap, v9.0):**
+**Double-Buffering (Auto-Swap):**
 - Two banks of LUT storage in EBR (active and inactive)
 - DMA writes always go to inactive bank
 - Bank swap is automatic after LUT DMA completes
@@ -177,12 +177,12 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
 ## Verification
 
 - Testbench for color grading LUT: verify identity LUT produces unchanged output
-- **Testbench for LUT DMA auto-load** (v9.0):
+- **Testbench for LUT DMA auto-load**:
   - Verify 384-byte transfer from SDRAM to inactive EBR bank
   - Verify correct LUT format parsing (Red[96B] + Green[192B] + Blue[96B])
   - Verify DMA completes within vblank period (~2µs of 1.43ms)
   - Verify LUT_ADDR=0 skips auto-load
-- **Testbench for bank swapping** (v9.0):
+- **Testbench for bank swapping**:
   - Verify automatic bank swap after DMA completion
   - Verify swap occurs atomically with framebuffer switch
   - Verify no tearing during LUT transition
@@ -190,34 +190,34 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
 - Testbench for cross-channel effects: verify R→G color tinting works correctly
 - Testbench for saturation: verify summed outputs clamp to 8-bit max (255)
 - Timing verification: LUT adds ≤2 cycles scanout latency, within pixel period
-- **DMA priority verification** (v9.0): Verify memory arbiter grants MEDIUM priority to LUT DMA
-- **Scanline burst read verification** (v11.0):
+- **DMA priority verification**: Verify memory arbiter grants MEDIUM priority to LUT DMA
+- **Scanline burst read verification**:
   - Verify prefetch FSM issues burst requests to memory arbiter port 0
   - Verify address auto-increments correctly within burst (sequential 16-bit words)
   - Verify burst read data is correctly pushed into scanline FIFO in order
   - Verify prefetch FSM transitions to PREFETCH_IDLE when FIFO is full
   - Verify no FIFO underrun during active display with burst reads enabled
   - Verify burst reads do not cross scanline address boundaries
-- **LUT DMA burst read verification** (v11.0):
+- **LUT DMA burst read verification**:
   - Verify LUT DMA uses burst requests for the 192 sequential 16-bit SDRAM reads
   - Verify LUT DMA burst completes within vblank period
 
-**Estimated FPGA Resources (v11.0):**
+**Estimated FPGA Resources:**
 - Color grading LUT: 1 EBR block (dual-bank, 128 entries × 24 bits per bank, 512×36 EBR config)
 - Summation + saturation logic: ~230 LUTs
-- **LUT DMA Controller** (v9.0):
+- **LUT DMA Controller**:
   - DMA state machine: ~80 FFs
   - Address counters + byte alignment: ~60 LUTs
   - SDRAM request logic: ~40 LUTs
   - Total DMA addition: ~180 LUTs, ~80 FFs
-- **Scanline prefetch burst support** (v11.0):
+- **Scanline prefetch burst support**:
   - Prefetch FSM state register: ~10 FFs
   - Burst address counter: ~30 FFs
   - Burst remaining counter: ~10 FFs
   - Burst request logic: ~20 LUTs
   - Total burst addition: ~70 LUTs, ~50 FFs
 - Scanline FIFO: 1 EBR block (1024×16, inferred as DP16KD)
-- **Total (v11.0)**: 2 EBR, ~520 LUTs, ~230 FFs
+- **Total**: 2 EBR, ~520 LUTs, ~230 FFs
 
 ## Design Notes
 
@@ -238,20 +238,3 @@ The display controller operates across two synchronous clock domains:
 Since clk_pixel = clk_core / 4 (synchronous integer division from the same PLL), the scanline FIFO uses a synchronous 4:1 clock domain crossing.
 This is simpler and more reliable than the asynchronous CDC that would be required if the clocks were from independent sources.
 
-**Version History:**
-- v5.0: Added color grading LUT with register-based upload (REQ-006.03)
-- v9.0: Replaced register-based LUT upload with memory-based auto-load DMA
-  - Reduces SPI traffic from 128+ register writes to 1 register write
-  - Enables atomic framebuffer + LUT switch
-  - LUT DMA completes in ~2µs during 1.43ms vblank period
-  - See DD-014 for rationale
-- v10.0: Documented boot screen timing interaction with pre-populated FIFO (DD-019)
-- v11.0: Added burst read support for scanline prefetch and LUT DMA
-  - Scanline prefetch FSM issues burst requests to memory arbiter for sequential pixel reads
-  - Reduces display scanout SDRAM bandwidth consumption by eliminating per-word re-arbitration overhead
-  - Frees SDRAM bandwidth for rendering operations on lower-priority arbiter ports
-  - LUT DMA also uses burst reads for reduced transfer time
-  - See INT-011 for burst timing model and UNIT-007 for arbiter burst grant protocol
-- v12.0: Updated all references from async SRAM to SDRAM (W9825G6KH)
-  - Scanline FIFO depth guidance updated to account for SDRAM access latency (row activate + CAS delay)
-  - Burst timing descriptions updated for SDRAM characteristics

@@ -16,11 +16,6 @@ Internal
 
 ## Specification
 
-
-**Feature**: 003-asset-data-prep
-**Date**: 2026-01-31
-**Status**: Phase 1 Design Artifact
-
 ## Overview
 
 > **Note**: The CLI is a **secondary interface** for manual/debug use. The **primary interface** is the Rust library API used by `host_app/build.rs` as a `[build-dependency]`. See `data-model.md` for the library API and `output-format.md` for the build.rs integration pattern.

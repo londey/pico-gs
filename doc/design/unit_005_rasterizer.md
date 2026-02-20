@@ -90,7 +90,7 @@ None
 
 Migrated from speckit module specification.
 
-**v2.0 unified clock update:** The rasterizer now operates at the unified 100 MHz `clk_core`, doubling pixel evaluation throughput compared to the previous 50 MHz design.
+**Unified clock update:** The rasterizer now operates at the unified 100 MHz `clk_core`, doubling pixel evaluation throughput compared to the previous 50 MHz design.
 At one fragment evaluation per clock cycle in the inner edge-walking loop, the rasterizer achieves a peak rate of 100 million fragment evaluations per second.
 Fragment output to the pixel pipeline (UNIT-006) is synchronous within the same 100 MHz clock domain, and downstream SRAM access through the arbiter (UNIT-007) incurs no CDC latency.
 Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM arbitration contention with display scanout, Z-buffer, and texture fetch (see INT-011 bandwidth budget).
@@ -105,7 +105,7 @@ Additionally, the 12 cold-path setup multipliers (6 for edge C coefficients, 6 f
 Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum, the extra 4 setup cycles have zero impact on sustained performance.
 This reduces total DSP usage from 47 to 17 MULT18X18D blocks (ECP5-25K has 28 available), leaving 11 blocks free for texture sampling and color combiner.
 
-**v10.0 dual-texture + color combiner update:** The rasterizer now interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment instead of one.
+**Dual-texture + color combiner update:** The rasterizer now interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment instead of one.
 UV interpolation is reduced from up to 4 sets to up to 2 sets (UV0, UV1).
 The additional color interpolation requires 3 extra MULT18X18D blocks (17×8 per R/G/B channel of color1), increasing per-pixel DSP usage modestly.
 The reduction from 4 to 2 UV sets frees interpolation resources that offset this increase.

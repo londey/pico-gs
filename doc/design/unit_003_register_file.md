@@ -34,7 +34,7 @@ None
 - Outputs color combiner configuration to color combiner (UNIT-010) — register layout preliminary, pending UNIT-010 design
 - Outputs clear_trigger/clear_color to framebuffer clear logic
 - Outputs dither_enable/dither_pattern to UNIT-006 (Pixel Pipeline) for ordered dithering control
-- Outputs fb_display_sync/lut_dma_trigger signals to UNIT-008 (Display Controller) for LUT auto-load DMA (v9.0)
+- Outputs fb_display_sync/lut_dma_trigger signals to UNIT-008 (Display Controller) for LUT auto-load DMA
 - Reads gpu_busy from rasterizer, vblank from display controller, fifo_depth from UNIT-002 for status register
 
 ## Design Description
@@ -77,14 +77,14 @@ None
 | `clear_trigger` | 1 | One-cycle clear command pulse |
 | `dither_enable` | 1 | Ordered dithering enabled (DITHER_MODE[0]) |
 | `dither_pattern` | 2 | Dither pattern selection (DITHER_MODE[3:2]) |
-| `fb_lut_addr` | 13 | LUT SRAM base address (FB_DISPLAY[18:6]) (v9.0) |
-| `color_grade_enable` | 1 | Color grading LUT enabled (FB_DISPLAY[0]) (v9.0) |
-| `lut_dma_trigger` | 1 | One-cycle pulse at vsync when LUT_ADDR != 0 (v9.0) |
+| `fb_lut_addr` | 13 | LUT SRAM base address (FB_DISPLAY[18:6]) |
+| `color_grade_enable` | 1 | Color grading LUT enabled (FB_DISPLAY[0]) |
+| `lut_dma_trigger` | 1 | One-cycle pulse at vsync when LUT_ADDR != 0 |
 | `combiner_cfg` | TBD | Color combiner configuration — field layout pending UNIT-010 design |
 | `mat_color0` | 32 | Material color 0 (RGBA8888) for color combiner |
 | `mat_color1` | 32 | Material color 1 (RGBA8888) for color combiner |
-| `spi_cs_hold` | 1 | Keep SPI CS asserted for blocking write (FB_DISPLAY_SYNC) (v9.0) |
-| `vsync_edge` | 1 | Input: vsync rising edge detector (v9.0) |
+| `spi_cs_hold` | 1 | Keep SPI CS asserted for blocking write (FB_DISPLAY_SYNC) |
+| `vsync_edge` | 1 | Input: vsync rising edge detector |
 
 ### Internal State
 
@@ -98,12 +98,12 @@ None
 - **combiner_cfg**: Color combiner configuration — exact field layout pending UNIT-010 design; addresses 0x18–0x1F reserved per INT-010
 - **mat_color0** [31:0]: Material color 0 (RGBA8888), used as a color combiner input
 - **mat_color1** [31:0]: Material color 1 (RGBA8888), used as a color combiner input
-- **fb_display** [31:0]: Framebuffer display address + LUT control (v9.0)
+- **fb_display** [31:0]: Framebuffer display address + LUT control
   - [31:19]: FB address >> 12 (4KiB aligned)
   - [18:6]: LUT address >> 12 (4KiB aligned, 0 = no LUT load)
   - [0]: Color grading enable
-- **fb_display_sync_pending** [0]: FB_DISPLAY_SYNC write pending (blocking mode) (v9.0)
-- **fb_display_sync_data** [31:0]: Latched FB_DISPLAY_SYNC data during blocking wait (v9.0)
+- **fb_display_sync_pending** [0]: FB_DISPLAY_SYNC write pending (blocking mode)
+- **fb_display_sync_data** [31:0]: Latched FB_DISPLAY_SYNC data during blocking wait
 
 **Register Address Map:**
 
@@ -143,13 +143,13 @@ None
   Exact register layout (field widths, reset values, input selector encoding) pending UNIT-010 design.
   MAT_COLOR0 and MAT_COLOR1 (RGBA8888 material colors) are within this block; other registers TBD.
   Outputs combiner configuration to UNIT-010 (Color Combiner).
-- **FB_DISPLAY (0x09, v9.0)**: Stores fb_display register (non-blocking):
+- **FB_DISPLAY (0x09)**: Stores fb_display register (non-blocking):
   - [31:19]: Framebuffer address >> 12
   - [18:6]: LUT SRAM address >> 12 (0 = no LUT load)
   - [0]: Color grading enable
   - Outputs fb_lut_addr, color_grade_enable to UNIT-008
   - At vsync edge: if LUT_ADDR != 0, assert lut_dma_trigger for one cycle
-- **FB_DISPLAY_SYNC (0x47, v9.0)**: Blocking variant of FB_DISPLAY:
+- **FB_DISPLAY_SYNC (0x47)**: Blocking variant of FB_DISPLAY:
   - Latch write data to fb_display_sync_data
   - Set fb_display_sync_pending = 1
   - Assert spi_cs_hold = 1 (keeps SPI CS asserted, blocking host)
@@ -161,9 +161,9 @@ None
 - STATUS register packs: {vblank, gpu_busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}
 - DITHER_MODE returns: {56'b0, dither_mode[7:0]}
 - Color Combiner registers (0x18–0x1F): Read-back behavior per UNIT-010 design (TBD)
-- FB_DISPLAY returns: {32'b0, fb_display[31:0]} (v9.0)
+- FB_DISPLAY returns: {32'b0, fb_display[31:0]}
 - FB_DISPLAY_SYNC: Write-only (blocking register, no read value)
-- ID register returns constant 0x00000900_00006702 (v9.0: version 9.0)
+- ID register returns constant 0x00000900_00006702
 - Undefined addresses return 0
 
 ## Implementation
@@ -181,9 +181,9 @@ None
 - Verify clear_trigger: write to CLEAR, confirm one-cycle pulse
 - Verify DITHER_MODE: write then read back, confirm dither_enable and dither_pattern outputs match written value
 - Verify DITHER_MODE reset: confirm reset value is 0x01 (enabled, blue noise)
-- **Verify FB_DISPLAY (v9.0)**: write with FB/LUT addresses + enable, confirm outputs; at vsync, confirm lut_dma_trigger if LUT_ADDR != 0
-- **Verify FB_DISPLAY_SYNC (v9.0)**: write and confirm spi_cs_hold asserted; simulate vsync_edge, confirm cs_hold deasserted and fb_display updated; confirm lut_dma_trigger
-- **Verify blocking timeout (v9.0)**: confirm FB_DISPLAY_SYNC blocks SPI transaction until vsync (max 16.67ms)
+- **Verify FB_DISPLAY**: write with FB/LUT addresses + enable, confirm outputs; at vsync, confirm lut_dma_trigger if LUT_ADDR != 0
+- **Verify FB_DISPLAY_SYNC**: write and confirm spi_cs_hold asserted; simulate vsync_edge, confirm cs_hold deasserted and fb_display updated; confirm lut_dma_trigger
+- **Verify blocking timeout**: confirm FB_DISPLAY_SYNC blocks SPI transaction until vsync (max 16.67ms)
 - Verify COLOR_GRADE_LUT_ADDR: write LUT select and index, confirm color_grade_lut_select and color_grade_lut_index outputs
 - Verify COLOR_GRADE_LUT_DATA: write data, confirm 24-bit color_grade_lut_data output and one-cycle color_grade_lut_wr pulse
 - Verify Z_RANGE: write then read back, confirm z_range_min and z_range_max outputs match written value
@@ -196,17 +196,4 @@ None
 
 Migrated from speckit module specification.
 
-**Version History:**
-- v5.0: Added DITHER_MODE (0x32), COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
-- v9.0: Replaced COLOR_GRADE registers with SRAM-based auto-load
-  - Removed COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46)
-  - Expanded FB_DISPLAY (0x09) to include LUT address and enable flag
-  - Added FB_DISPLAY_SYNC (0x47) for blocking vsync-synchronized writes
-  - Added SPI CS hold mechanism for blocking mode
-  - LUT DMA trigger generated at vsync when LUT_ADDR != 0
-  - See DD-014 for rationale
-- v10.0: Reserved color combiner register block (0x18–0x1F) for UNIT-010 (Color Combiner)
-  - Exact register layout pending UNIT-010 design; INT-010 contains preliminary definitions
-  - Texture units reduced from 4 to 2; TEX2/TEX3 registers freed, addresses repurposed for color combiner
-  - UV2_UV3 register (0x02) is removed; replaced by COLOR1 for second vertex color
 

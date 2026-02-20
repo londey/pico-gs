@@ -147,17 +147,17 @@ Computes bounding box as min/max of vertex coordinates clamped to screen (640x48
 
 Migrated from speckit module specification.
 
-**v10.0 reconciliation:** UNIT-004 previously described the entire rasterization pipeline including pixel iteration, Z-buffer access, and framebuffer writes.
+**Reconciliation:** UNIT-004 previously described the entire rasterization pipeline including pixel iteration, Z-buffer access, and framebuffer writes.
 These responsibilities have been split: UNIT-004 now performs only triangle setup (edge coefficients, bounding box), emitting results to UNIT-005 (Edge Walker) which iterates pixels and passes fragments to UNIT-006 (Pixel Pipeline) for Z-test, color write, and SRAM access.
 The FSM was reduced from 12 states (4-bit) to 3 states (3-bit).
 SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
 See DD-015 for rationale.
 
-**v10.0 dual-texture + color combiner update:** Triangle setup now passes through two vertex colors (color0 and color1) per vertex instead of one.
+**Dual-texture + color combiner update:** Triangle setup now passes through two vertex colors (color0 and color1) per vertex instead of one.
 UV passthrough is reduced from up to 4 sets to up to 2 sets (UV0, UV1 only; UV2_UV3 register removed).
 The second vertex color (color1) supports the color combiner's VER_COLOR1 input for specular highlights, emissive terms, or blend factors.
 
-**v2.0 unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
+**Unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
 The setup FSM (IDLE → SETUP → SETUP_2 → SETUP_3) completes edge coefficient computation in 3 cycles (30 ns at 100 MHz) using a shared pair of 11×11 multipliers.
 Combined with the 3-cycle initial edge evaluation (ITER_START → INIT_E1 → INIT_E2), total triangle setup is 6 cycles (60 ns).
 Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum (4-bit QSPI @ 25 MHz), the serialized setup has zero impact on sustained performance.

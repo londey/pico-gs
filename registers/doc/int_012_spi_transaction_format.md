@@ -25,12 +25,6 @@ Internal
 
 ## Specification
 
-
-**Version**: 1.0  
-**Date**: January 2026
-
----
-
 ## Electrical Interface
 
 | Parameter | Value |

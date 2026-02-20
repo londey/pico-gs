@@ -30,13 +30,6 @@ Note: REQ-111 (Dual-Core Architecture) is retired; its reference has been remove
 
 ## Specification
 
-
-**Version**: 1.0
-**Date**: 2026-01-30
-**Implements**: FR-005, FR-006, FR-006a, FR-007, FR-008, FR-009, FR-010, FR-011
-
----
-
 ## Overview
 
 The render command queue is the inter-core communication channel between Core 0 (scene management) and Core 1 (render execution). Core 0 produces render commands; Core 1 consumes and executes them against the GPU driver.
@@ -72,7 +65,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
 | lights | [DirectionalLight; 4] | Directional light sources |
 | ambient | AmbientColor | Ambient light level |
 | flags | RenderFlags | textured, z_test, z_write, gouraud, color_write |
-| combiner_mode | u32 | Color combiner configuration (CC_MODE register value, v10.0: NEW) |
+| combiner_mode | u32 | Color combiner configuration (CC_MODE register value) |
 | clip_flags | u8 | 6-bit frustum plane crossing bitmask from Core 0 culling (bit per plane: left, right, bottom, top, near, far) |
 
 **Processing (Core 1)**:
@@ -89,7 +82,7 @@ Render a pre-built mesh patch: Core 1 DMA-prefetches patch data from flash, tran
    i. If textured: convert UV i16 → f32 (divide by 8192.0). Compute U/W, V/W, 1/W in 1.15 fixed-point
    j. Pack into GpuVertex format and store in clip-space vertex cache
 3. Configure GPU RENDER_MODE register based on flags (includes GOURAUD, Z_TEST_EN, Z_WRITE_EN, COLOR_WRITE_EN, Z_COMPARE, ALPHA_BLEND, CULL_MODE)
-3a. Configure GPU CC_MODE register from combiner_mode (v10.0: color combiner setup)
+3a. Configure GPU CC_MODE register from combiner_mode
 4. For each index entry in the packed u8 strip command stream:
    a. Extract vertex index (bits [7:4]) and kick control (bits [3:2])
    b. Look up transformed vertex from cache

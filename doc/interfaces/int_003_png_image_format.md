@@ -21,9 +21,6 @@ External Standard (Multi-format)
 
 ## Specification
 
-**Version**: 2.0 (Multi-format support)
-**Date**: February 2026
-
 ### Overview
 
 The asset build tool supports multiple texture input formats for maximum workflow flexibility:
@@ -145,7 +142,7 @@ The asset build tool supports multiple texture input formats for maximum workflo
 
 ## Notes
 
-This specification replaces INT-003 v1.0 (PNG-only) to support industry-standard texture formats with pre-compressed data and mipmaps.
+This specification replaces the previous PNG-only version of INT-003 to support industry-standard texture formats with pre-compressed data and mipmaps.
 
 ### External Tool Recommendations
 

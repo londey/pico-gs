@@ -157,10 +157,3 @@ The boot screen rasterization (two clear triangles + one Gouraud triangle) compl
 
 Migrated from speckit module specification.
 
-**Version History:**
-- v1.0: Initial gray-coded async FIFO (Lattice EBR macro, WIDTH=72, DEPTH=16)
-- v2.0: Replaced Lattice EBR FIFO macro with custom soft FIFO backed by regular memory array.
-  FIFO depth increased from 16 to 32.
-  Added synthesis-time memory initialization with boot command sequence for autonomous power-on self-test/boot screen.
-  Write pointer resets to BOOT_COUNT instead of 0.
-  See DD-019 for rationale.

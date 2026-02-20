@@ -140,9 +140,9 @@ Migrated from speckit module specification.
 
 API functions `gpu_set_dither_mode()`, `gpu_set_color_grade_enable()`, and `gpu_upload_color_lut()` were added per INT-020 and are now reflected in the Inputs, Outputs, and Algorithm/Behavior sections above. These wrap register writes to DITHER_MODE (0x32) and COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46).
 
-**Note:** This document describes v8.0 register-based LUT upload. v9.0 migrates to SRAM-based auto-load (see DD-014, INT-010 v9.0).
+**Note:** Register-based LUT upload has been superseded. See DD-014 and INT-010 for the SRAM-based auto-load approach.
 
-**v10.0 dual-texture + color combiner update:** Added `gpu_set_combiner_mode()` and `gpu_set_material_color()` API functions.
+**Dual-texture + color combiner update:** Added `gpu_set_combiner_mode()` and `gpu_set_material_color()` API functions.
 Texture slot range reduced from 0-3 to 0-1 (2 texture units per pass).
 The `submit_triangle()` function no longer writes UV2_UV3; only UV0_UV1 is written when textured.
 A second vertex color (COLOR1) register write is added to the vertex submission sequence when the color combiner uses VER_COLOR1.

@@ -135,4 +135,4 @@ include!("meshes_cube_patch0.rs");
 
 ## Design Notes
 
-Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats (v3.0).
+Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats.

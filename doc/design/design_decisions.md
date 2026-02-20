@@ -371,7 +371,7 @@ Three related changes to the pixel pipeline and register layout:
 
 **Depth Range Clipping:**
 - Zero-cost rejection: register comparison only, no SRAM access
-- Register address 0x31 freed in v8.0 (previously ALPHA_BLEND)
+- Register address 0x31 freed (previously ALPHA_BLEND)
 - Analogous to X/Y scissor, completing the 3D scissor volume
 
 **Per-Material Color Write Enable:**
@@ -599,7 +599,7 @@ Use a 16×16 blue noise dither pattern stored in 1 EBR block:
 
 **Date:** 2026-02-10
 **Status:** Accepted
-**Implementation:** SUPERSEDED BY DD-014 (v9.0 uses SRAM-based upload instead of registers)
+**Implementation:** SUPERSEDED BY DD-014 (uses SRAM-based upload instead of registers)
 
 ### Context
 
@@ -646,7 +646,7 @@ Place 3× 1D color grading LUTs at display scanout in the display controller (UN
 
 ### Context
 
-The original color grading LUT design (DD-013, v5.0) used register-based upload via COLOR_GRADE_CTRL/ADDR/DATA registers. To update all 128 LUT entries:
+The original color grading LUT design (DD-013) used register-based upload via COLOR_GRADE_CTRL/ADDR/DATA registers. To update all 128 LUT entries:
 - Required 128+ register writes over SPI (2 writes per entry: address + data)
 - Total: 256 SPI transactions ≈ 737 µs at 25 MHz SPI clock
 - Separate operations for framebuffer switch and LUT update
@@ -656,7 +656,7 @@ For typical game rendering that switches both framebuffer and color grading per 
 
 ### Decision
 
-Replace register-based LUT upload with SRAM-based auto-load DMA (v9.0):
+Replace register-based LUT upload with SRAM-based auto-load DMA:
 
 **Register Changes:**
 - **Remove** COLOR_GRADE_CTRL (0x44), COLOR_GRADE_LUT_ADDR (0x45), COLOR_GRADE_LUT_DATA (0x46)
@@ -740,13 +740,13 @@ Replace register-based LUT upload with SRAM-based auto-load DMA (v9.0):
 - **Neutral**: SRAM usage minimal (64KiB for 16 LUTs of 27.7MB free)
 
 **Migration:**
-- v8.0 firmware must be updated to use new `gpu_swap_buffers()` API
+- Firmware must be updated to use new `gpu_swap_buffers()` API
 - LUT data must be pre-uploaded to SRAM instead of sent via registers
 - Breaking change but vastly simpler end result
 
 ### References
 
-- INT-010 v9.0: GPU Register Map (FB_DISPLAY, FB_DISPLAY_SYNC)
+- INT-010: GPU Register Map (FB_DISPLAY, FB_DISPLAY_SYNC)
 - REQ-006.03: Color Grading LUT (updated upload protocol)
 - INT-011: SRAM Memory Layout (recommended LUT region)
 - UNIT-008: Display Controller (LUT DMA controller)
@@ -1025,7 +1025,7 @@ Restructure the mesh pipeline so that:
 - **Memory efficiency**: 16-vertex patches × ~568 bytes = DMA-friendly sizes; working RAM ~8 KB (1.5% of 520 KB)
 - **Culling benefit**: Frustum culling eliminates ~30% of patches in typical teapot views
 - **u8 index format**: 50% size reduction vs u16; strip optimization gives ~N+2 entries for N triangles vs 3N; direct GPU register mapping (no lookup table)
-- **GPU registers exist**: INT-010 v8.0 already defines VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), VERTEX_KICK_021 (0x08) — no hardware change needed
+- **GPU registers exist**: INT-010 already defines VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), VERTEX_KICK_021 (0x08) — no hardware change needed
 
 ### Consequences
 

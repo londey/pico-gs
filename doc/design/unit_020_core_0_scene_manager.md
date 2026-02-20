@@ -48,7 +48,7 @@ None
 ### Outputs
 
 - **Render commands**: `RenderCommand` variants enqueued to the inter-core SPSC queue via `CommandProducer`. Commands include `ClearFramebuffer`, `SetTriMode`, `SubmitScreenTriangle`, `UploadTexture`, and `WaitVsync`.
-  - **v10.0 note:** `RenderFlags` now includes a `color_write` field. When `color_write` is false, the GPU writes only to the Z-buffer (RENDER_MODE bit 4 = 0). This enables Z-prepass rendering where depth is established first, then a second color pass writes only to visible pixels.
+  - `RenderFlags` includes a `color_write` field. When `color_write` is false, the GPU writes only to the Z-buffer (RENDER_MODE bit 4 = 0). This enables Z-prepass rendering where depth is established first, then a second color pass writes only to visible pixels.
 - **defmt log messages**: Diagnostic output for demo switches and teapot mesh statistics.
 
 ### Internal State

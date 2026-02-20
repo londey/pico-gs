@@ -24,11 +24,6 @@ Internal
 
 ## Specification
 
-**Version**: 1.0
-**Date**: February 2026
-
----
-
 ## Overview
 
 This document specifies the in-memory layout of texture data in GPU SDRAM.
@@ -235,8 +230,6 @@ All existing assets must be regenerated.
 
 ## Mipmap Chain Organization
 
-**Version**: Added in v2.0 (Mipmap Support)
-
 ### Overview
 
 Textures may include a mipmap chain: the base level plus progressively downsampled levels. Mipmaps improve visual quality by reducing aliasing and improving texture cache performance.
@@ -362,12 +355,12 @@ mip_base_addr = texture_base + mip_offsets[selected_mip];
 
 ## Texture Cache Considerations (REQ-003.08)
 
-The pixel pipeline uses an on-chip texture cache (REQ-003.08) with 2 independent per-sampler caches (v10.0: reduced from 4 samplers) to reduce SDRAM bandwidth.
-Each sampler cache holds 16,384 texels (v10.0: increased from 4,096) in a 4-way set-associative configuration with 256 sets.
+The pixel pipeline uses an on-chip texture cache (REQ-003.08) with 2 independent per-sampler caches to reduce SDRAM bandwidth.
+Each sampler cache holds 16,384 texels in a 4-way set-associative configuration with 256 sets.
 The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
 
 ```
-set = (block_x[7:0] ^ block_y[7:0])  // 256 sets (v10.0: increased from 64)
+set = (block_x[7:0] ^ block_y[7:0])  // 256 sets
 ```
 
 This is a **hardware-only optimization** — the physical memory layout in SDRAM is unchanged. Textures remain stored in linear left-to-right, top-to-bottom block order as specified above. The XOR indexing prevents systematic cache aliasing where vertically adjacent block rows would map to the same cache sets under linear indexing.

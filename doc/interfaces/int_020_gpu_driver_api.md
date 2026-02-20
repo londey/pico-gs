@@ -35,13 +35,6 @@ Note: REQ-100 (Host Firmware Architecture) and REQ-110 (GPU Initialization) and 
 
 ## Specification
 
-
-**Version**: 1.0
-**Date**: 2026-01-30
-**Implements**: FR-001, FR-009, FR-012, FR-016
-
----
-
 ## Overview
 
 The GPU driver provides the low-level interface between the RP2350 host and the SPI GPU. It encapsulates SPI transaction formatting, flow control via GPIO, and buffer management. This contract defines the public API that the render core uses to communicate with the GPU.
@@ -61,7 +54,7 @@ Initialize SPI peripheral and GPIO pins, verify GPU presence.
 **Postconditions**:
 - SPI configured: Mode 0, MSB first, 25 MHz clock
 - GPIO inputs configured: CMD_FULL, CMD_EMPTY, VSYNC
-- GPU device ID verified (expect 0x6702 for v2.0)
+- GPU device ID verified (expect 0x6702)
 
 **Errors**:
 - `GpuNotDetected`: ID register read returned unexpected value
@@ -140,7 +133,7 @@ Upload a single-level texture to GPU SRAM and configure texture unit registers.
 4. Write TEXn_FMT register (width_log2, height_log2, format, enable, mip_levels=1)
 
 **Parameters**:
-- `slot`: Texture unit index (0-1) (v10.0: reduced from 0-3)
+- `slot`: Texture unit index (0-1)
 - `width`, `height`: Texture dimensions (power-of-2, 8-1024)
 - `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
 - `data`: Texture pixel data (size must match format and dimensions)
@@ -165,7 +158,7 @@ Upload a texture with mipmap chain to GPU SRAM and configure texture unit regist
 6. Write TEXn_MIP_BIAS register (default: 0, no bias)
 
 **Parameters**:
-- `slot`: Texture unit index (0-1) (v10.0: reduced from 0-3)
+- `slot`: Texture unit index (0-1)
 - `width`, `height`: Base level dimensions (power-of-2, 8-1024)
 - `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
 - `mip_levels`: Number of mipmap levels (1-11)
@@ -244,7 +237,7 @@ Configure depth range clipping (Z scissor). Fragments outside [z_min, z_max] are
 
 ---
 
-## Color Combiner Configuration (v10.0 NEW)
+## Color Combiner Configuration
 
 ### `gpu_set_combiner_mode(handle: &GpuHandle, rgb_a: CcSource, rgb_b: CcSource, rgb_c: CcSource, rgb_d: CcSource, alpha_a: CcSource, alpha_b: CcSource, alpha_c: CcSource, alpha_d: CcSource)`
 
@@ -501,7 +494,7 @@ gpu_write(VERTEX, v2.position_packed)  // vertex_count → 3, triggers rasteriza
 
 ### Triangle Strip Submission
 
-For efficient mesh rendering, triangles are submitted as strips using kicked vertex registers defined in INT-010 v8.0:
+For efficient mesh rendering, triangles are submitted as strips using kicked vertex registers defined in INT-010:
 
 - `VERTEX_NOKICK (0x06)`: Push vertex, no triangle emitted
 - `VERTEX_KICK_012 (0x07)`: Push vertex, emit triangle (v[0], v[1], v[2])

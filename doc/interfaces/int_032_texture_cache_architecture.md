@@ -21,8 +21,8 @@ Internal
 ### Overview
 
 The texture cache is a per-sampler cache architecture that stores decompressed 4x4 texel blocks in a common intermediate format (RGBA5652) to enable single-cycle bilinear filtering and reduce SDRAM bandwidth.
-Each of the 2 texture samplers (v10.0: reduced from 4) maintains an independent cache to avoid inter-sampler contention.
-Each sampler has a 16,384-texel cache (v10.0: increased from 4,096 texels) for improved hit rates on larger textures.
+Each of the 2 texture samplers maintains an independent cache to avoid inter-sampler contention.
+Each sampler has a 16,384-texel cache for improved hit rates on larger textures.
 
 ### Details
 
@@ -96,7 +96,7 @@ A sampler's cache is fully invalidated (all valid bits cleared) when texture con
 | `TEXn_FMT` (n=0,1) | Sampler N cache | Format, dimensions, or mipmap count changed |
 
 **Invalidation Behavior:**
-- Clears all valid bits for the affected sampler (1024 cache lines, v10.0: increased from 256)
+- Clears all valid bits for the affected sampler (1024 cache lines)
 - No explicit flush register required (implicit invalidation only)
 - Next texture access after invalidation is guaranteed cache miss
 - Stale data is never served after configuration change
@@ -137,7 +137,7 @@ Note: The texture cache and SDRAM controller share the same 100 MHz clock domain
 The burst request interface to UNIT-007 consists of the start address, burst length, and a request strobe; the arbiter responds with a grant and streams data words with a valid strobe.
 
 **Replacement Policy:**
-- Pseudo-LRU per set (256 sets, each with 4 ways; v10.0: increased from 64 sets)
+- Pseudo-LRU per set (256 sets, each with 4 ways)
 - Avoids thrashing for sequential access patterns (e.g., horizontal scanline sweeps)
 
 #### Set Indexing (XOR Folding)
@@ -147,7 +147,7 @@ Cache set index is computed using XOR-folded addressing to distribute spatially 
 ```
 block_x = pixel_x / 4
 block_y = pixel_y / 4
-set = (block_x[7:0] ^ block_y[7:0])  // XOR of low 8 bits → 256 sets (v10.0: increased from 6 bits/64 sets)
+set = (block_x[7:0] ^ block_y[7:0])  // XOR of low 8 bits → 256 sets
 ```
 
 **Rationale:** Linear indexing (`set = block_index % 256`) causes all blocks in a texture row to map to the same 256 sets. XOR indexing distributes adjacent blocks across different sets. The increase from 64 to 256 sets (with the same 4-way associativity) provides 4x the cache capacity per sampler, matching the 16K texel target.
@@ -165,15 +165,15 @@ Each cache line is identified by:
   - Texture base address: `texture_base[31:12]` (from TEXn_BASE register, n=0,1)
   - Mipmap level: `mip_level[3:0]` (0-15)
   - Block address: Computed from UV coordinates and mip level
-- **Set:** 8-bit index (0-255) from XOR-folded block coordinates (v10.0: increased from 6-bit/64 sets)
+- **Set:** 8-bit index (0-255) from XOR-folded block coordinates
 - **Way:** 2-bit index (0-3) for 4-way set associativity
 
-**Total Cache Capacity per Sampler** (v10.0):
+**Total Cache Capacity per Sampler**:
 - 1024 cache lines × 16 texels/line = 16,384 texels (128×128 texture equivalent)
 - 1024 lines × 18 bits/texel × 16 texels = 18,432 bytes = 18 KB per sampler
 - 2 samplers × 18 KB = 36 KB total cache storage
 
-**EBR Usage per Sampler** (v10.0):
+**EBR Usage per Sampler**:
 - 4 banks × 256×18-bit addresses per bank = 4 EBR blocks per bank using 1024×18 EBR (with 256 addresses per set × 4 ways = 1024 entries mapping to 1024×18 EBR)
 - Each sampler: 4 bilinear banks × 4 EBR blocks = 16 EBR blocks per sampler
 - 2 samplers × 16 EBR = 32 EBR blocks total
@@ -182,8 +182,8 @@ Each cache line is identified by:
 
 ## Constraints
 
-- Maximum 2 texture samplers (0-1) (v10.0: reduced from 4)
-- 16,384 texels per sampler cache (v10.0: increased from 4,096)
+- Maximum 2 texture samplers (0-1)
+- 16,384 texels per sampler cache
 - Cache line size fixed at 4×4 texels (16 texels)
 - RGBA5652 format is internal to cache (not exposed to firmware)
 - Cache is write-through (texture writes not supported)

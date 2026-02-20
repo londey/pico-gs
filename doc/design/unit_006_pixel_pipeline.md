@@ -302,12 +302,12 @@ Burst reads eliminate the per-word address setup overhead present in single-word
 The burst length is determined by the texture format register (TEXn_FMT) and does not change during a cache fill operation.
 Cache miss latency is higher than with async SRAM due to SDRAM row activate and CAS latency overhead, but burst throughput is comparable once the first word arrives.
 
-Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats (v3.0). Updated for SDRAM burst read support (v3.2).
+Migrated from speckit module specification. Updated for RGBA4444/BC1 texture formats. Updated for SDRAM burst read support.
 
-**v10.0 dual-texture + color combiner update:** Reduced from 4 texture units to 2 per pass.
+**Dual-texture + color combiner update:** Reduced from 4 texture units to 2 per pass.
 Increased per-sampler cache from 4096 to 16384 texels (16K), using 16 EBR per sampler (32 EBR total for 2 samplers).
 
-**Architectural separation (v10.0):** The pixel pipeline is being decomposed into separate units:
+**Architectural separation:** The pixel pipeline is being decomposed into separate units:
 
 1. **UNIT-006 (this unit):** Depth range clipping, early Z-test, texture sampling (2 units with cache), texture format promotion.
    Outputs TEX_COLOR0, TEX_COLOR1 (plus VER_COLOR0, VER_COLOR1, Z value passthrough) to UNIT-010 via a fragment FIFO.

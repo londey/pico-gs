@@ -26,11 +26,6 @@ Note: REQ-100 (Host Firmware Architecture) is retired; its reference has been re
 
 ## Specification
 
-**Version**: 1.0
-**Date**: 2026-02-12
-
----
-
 ## Overview
 
 The Host Platform HAL defines the trait boundary between platform-agnostic GPU driver/rendering code (pico-gs-core) and platform-specific hardware access (pico-gs-rp2350, pico-gs-pc). It abstracts SPI communication, GPIO flow control, and user input behind traits that each platform implements.
