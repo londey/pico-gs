@@ -46,6 +46,12 @@ while [[ $# -gt 0 ]]; do
             BUILD_PC=true
             shift
             ;;
+        --registers-only)
+            BUILD_FIRMWARE=false
+            BUILD_FPGA=false
+            BUILD_REGISTERS=true
+            shift
+            ;;
         --release)
             RELEASE_MODE=true
             shift
@@ -66,6 +72,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --firmware-only     Build only RP2350 firmware (skips FPGA)"
             echo "  --fpga-only         Build only FPGA bitstream"
             echo "  --pc-only           Build only PC debug host (pico-gs-pc)"
+            echo "  --registers-only    Regenerate register definitions from SystemRDL"
             echo "  --release           Build in release mode (optimized)"
             echo "  --flash-firmware    Flash firmware to RP2350 after build"
             echo "  --flash-fpga        Program FPGA after build"
@@ -83,6 +90,14 @@ done
 
 echo -e "${GREEN}=== pico-gs Build System ===${NC}"
 echo ""
+
+# Step 0: Regenerate register definitions (if requested)
+if [ "${BUILD_REGISTERS:-false}" = true ]; then
+    echo -e "${YELLOW}Regenerating register definitions from SystemRDL...${NC}"
+    "${REPO_ROOT}/registers/scripts/generate.sh"
+    echo -e "${GREEN}✓ Register definitions regenerated${NC}"
+    echo ""
+fi
 
 # Step 1: Build RP2350 firmware (asset conversion happens automatically via build.rs)
 if [ "$BUILD_FIRMWARE" = true ]; then

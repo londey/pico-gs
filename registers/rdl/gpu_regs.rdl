@@ -1,0 +1,363 @@
+// GPU Register Map — SystemRDL source of truth
+// Matches INT-010 v10.0 (February 2026)
+//
+// This file defines the canonical register addresses, bit fields, enumerations,
+// and reset values for the ICEpi SPI GPU.  PeakRDL generates Rust and
+// SystemVerilog outputs from this file.
+//
+// Address space: 7-bit register index (0x00–0x7F), 64-bit data width.
+// Transaction format: 72 bits — [R/W̄(1)][addr(7)][data(64)].
+//
+// NOTE: SystemRDL uses byte addresses, so register index N maps to byte
+// address N*8.  The GPU SPI interface uses the 7-bit register index directly.
+
+// ---------------------------------------------------------------------------
+// Enumerations
+// ---------------------------------------------------------------------------
+
+enum z_compare_e {
+    LESS       = 3'd0 { desc = "Less than (<)"; };
+    LEQUAL     = 3'd1 { desc = "Less than or equal (<=)"; };
+    EQUAL      = 3'd2 { desc = "Equal (=)"; };
+    GEQUAL     = 3'd3 { desc = "Greater than or equal (>=)"; };
+    GREATER    = 3'd4 { desc = "Greater than (>)"; };
+    NOTEQUAL   = 3'd5 { desc = "Not equal (!=)"; };
+    ALWAYS     = 3'd6 { desc = "Always pass"; };
+    NEVER      = 3'd7 { desc = "Never pass"; };
+};
+
+enum alpha_blend_e {
+    DISABLED   = 3'd0 { desc = "Overwrite destination"; };
+    ADD        = 3'd1 { desc = "Additive: src + dst, saturate"; };
+    SUBTRACT   = 3'd2 { desc = "Subtractive: src - dst, saturate"; };
+    BLEND      = 3'd3 { desc = "Alpha blend: src*a + dst*(1-a)"; };
+};
+
+enum cull_mode_e {
+    CULL_NONE  = 2'd0 { desc = "No culling (draw all triangles)"; };
+    CULL_CW    = 2'd1 { desc = "Cull clockwise-wound triangles"; };
+    CULL_CCW   = 2'd2 { desc = "Cull counter-clockwise triangles"; };
+};
+
+enum tex_format_e {
+    RGBA4444   = 2'd0 { desc = "16 bits per pixel"; };
+    BC1        = 2'd1 { desc = "Block compressed, 64 bits per 4x4 block"; };
+};
+
+enum tex_filter_e {
+    NEAREST    = 2'd0 { desc = "No interpolation"; };
+    BILINEAR   = 2'd1 { desc = "2x2 tap filter"; };
+    TRILINEAR  = 2'd2 { desc = "Mipmap blend, requires MIP_LEVELS>1"; };
+};
+
+enum wrap_mode_e {
+    REPEAT         = 2'd0 { desc = "Wrap around"; };
+    CLAMP_TO_EDGE  = 2'd1 { desc = "Clamp to [0, size-1]"; };
+    CLAMP_TO_ZERO  = 2'd2 { desc = "Out of bounds = transparent"; };
+    MIRROR         = 2'd3 { desc = "Reflect at boundaries"; };
+};
+
+enum dither_pattern_e {
+    BLUE_NOISE_16X16 = 2'd0 { desc = "Blue noise 16x16 (default)"; };
+};
+
+// ---------------------------------------------------------------------------
+// Register definitions
+// ---------------------------------------------------------------------------
+
+addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
+    name = "GPU Register Map";
+    desc = "ICEpi SPI GPU register map v10.0";
+
+    default regwidth = 64;
+    default hw = r;
+    default sw = rw;
+
+    // ===================================================================
+    // Vertex State (index 0x00–0x0F)
+    // ===================================================================
+
+    reg color_reg {
+        name = "COLOR";
+        desc = "Diffuse[63:32] + Specular[31:0] vertex colors (ABGR8888 each)";
+        field {} SPEC_RED[8]    = 0;
+        field {} SPEC_GREEN[8]  = 0;
+        field {} SPEC_BLUE[8]   = 0;
+        field {} SPEC_ALPHA[8]  = 0;
+        field {} DIFF_RED[8]    = 0;
+        field {} DIFF_GREEN[8]  = 0;
+        field {} DIFF_BLUE[8]   = 0;
+        field {} DIFF_ALPHA[8]  = 0;
+    };
+    color_reg COLOR @ 0x000;  // index 0x00
+
+    reg uv0_uv1_reg {
+        name = "UV0_UV1";
+        desc = "Texture units 0+1 UV coordinates (1.15 signed fixed-point)";
+        field {} UV0_UQ[16] = 0;
+        field {} UV0_VQ[16] = 0;
+        field {} UV1_UQ[16] = 0;
+        field {} UV1_VQ[16] = 0;
+    };
+    uv0_uv1_reg UV0_UV1 @ 0x008;  // index 0x01
+
+    // index 0x02: Reserved (was UV2_UV3, removed in v10.0)
+
+    reg light_dir_reg {
+        name = "LIGHT_DIR";
+        desc = "Light direction XYZ for DOT3 bump mapping (signed 8-bit per axis)";
+        field {} X_DIR[8] = 0;
+        field {} Y_DIR[8] = 0;
+        field {} Z_DIR[8] = 0;
+        field {} RSVD[40] = 0;
+    };
+    light_dir_reg LIGHT_DIR @ 0x018;  // index 0x03
+
+    // index 0x04-0x05: Reserved
+
+    reg vertex_reg {
+        name = "VERTEX";
+        desc = "Vertex position + 1/W (write-only trigger)";
+        field {} X[16] = 0;   // 12.4 signed fixed-point
+        field {} Y[16] = 0;   // 12.4 signed fixed-point
+        field {} Z[16] = 0;   // 16-bit unsigned depth
+        field {} Q[16] = 0;   // 1/W, 1.15 signed fixed-point
+    };
+    vertex_reg VERTEX_NOKICK    @ 0x030;  // index 0x06
+    vertex_reg VERTEX_KICK_012  @ 0x038;  // index 0x07
+    vertex_reg VERTEX_KICK_021  @ 0x040;  // index 0x08
+
+    // index 0x09-0x0F: Reserved
+
+    // ===================================================================
+    // Texture Unit 0 (index 0x10–0x13)
+    // ===================================================================
+
+    reg tex_base_reg {
+        name = "TEXn_BASE";
+        desc = "Texture base address in SDRAM (4K aligned)";
+        field {} RSVD_LO[12]  = 0;
+        field {} BASE_ADDR[20] = 0;
+        field {} RSVD_HI[32]  = 0;
+    };
+
+    reg tex_fmt_reg {
+        name = "TEXn_FMT";
+        desc = "Texture format, dimensions, swizzle, filtering, mipmap levels";
+        field {} ENABLE[1]      = 0;
+        field {} RSVD_1[1]      = 0;
+        field { encode = tex_format_e; } FORMAT[2] = 0;
+        field {} RSVD_54[2]     = 0;
+        field { encode = tex_filter_e; } FILTER[2] = 0;
+        field {} WIDTH_LOG2[4]  = 0;
+        field {} HEIGHT_LOG2[4] = 0;
+        field {} SWIZZLE[4]     = 0;
+        field {} MIP_LEVELS[4]  = 0;
+        field {} RSVD_HI[40]    = 0;
+    };
+
+    reg tex_mip_bias_reg {
+        name = "TEXn_MIP_BIAS";
+        desc = "Mipmap LOD bias (signed 8-bit, 2 fractional bits)";
+        field {} MIP_BIAS[8] = 0;
+        field {} RSVD[56]    = 0;
+    };
+
+    reg tex_wrap_reg {
+        name = "TEXn_WRAP";
+        desc = "UV coordinate wrapping modes";
+        field { encode = wrap_mode_e; } U_WRAP[2] = 0;
+        field { encode = wrap_mode_e; } V_WRAP[2] = 0;
+        field {} RSVD[60] = 0;
+    };
+
+    tex_base_reg     TEX0_BASE     @ 0x080;  // index 0x10
+    tex_fmt_reg      TEX0_FMT      @ 0x088;  // index 0x11
+    tex_mip_bias_reg TEX0_MIP_BIAS @ 0x090;  // index 0x12
+    tex_wrap_reg     TEX0_WRAP     @ 0x098;  // index 0x13
+
+    // ===================================================================
+    // Texture Unit 1 (index 0x14–0x17)
+    // ===================================================================
+
+    tex_base_reg     TEX1_BASE     @ 0x0A0;  // index 0x14
+    tex_fmt_reg      TEX1_FMT      @ 0x0A8;  // index 0x15
+    tex_mip_bias_reg TEX1_MIP_BIAS @ 0x0B0;  // index 0x16
+    tex_wrap_reg     TEX1_WRAP     @ 0x0B8;  // index 0x17
+
+    // ===================================================================
+    // Color Combiner (index 0x18–0x1F) — v10.0 NEW
+    // ===================================================================
+
+    reg cc_mode_reg {
+        name = "CC_MODE";
+        desc = "Color combiner mode: equation (A-B)*C+D, independent RGB and Alpha";
+        field {} CC_ALPHA_A[4]  = 0;
+        field {} CC_ALPHA_B[4]  = 0;
+        field {} CC_ALPHA_C[4]  = 0;
+        field {} CC_ALPHA_D[4]  = 0;
+        field {} CC_A_SOURCE[4] = 0;
+        field {} CC_B_SOURCE[4] = 0;
+        field {} CC_C_SOURCE[4] = 0;
+        field {} CC_D_SOURCE[4] = 0;
+        field {} RSVD[32]       = 0;
+    };
+    cc_mode_reg CC_MODE @ 0x0C0;  // index 0x18
+
+    reg mat_color_reg {
+        name = "MAT_COLORn";
+        desc = "Material constant color (RGBA8888)";
+        field {} RED[8]    = 0;
+        field {} GREEN[8]  = 0;
+        field {} BLUE[8]   = 0;
+        field {} ALPHA[8]  = 0;
+        field {} RSVD[32]  = 0;
+    };
+    mat_color_reg MAT_COLOR0 @ 0x0C8;  // index 0x19
+    mat_color_reg MAT_COLOR1 @ 0x0D0;  // index 0x1A
+    mat_color_reg FOG_COLOR  @ 0x0D8;  // index 0x1B
+
+    // index 0x1C-0x2F: Reserved
+
+    // ===================================================================
+    // Rendering Configuration (index 0x30–0x3F)
+    // ===================================================================
+
+    reg render_mode_reg {
+        name = "RENDER_MODE";
+        desc = "Unified rendering state (Gouraud, Z, alpha, culling, dithering)";
+        field {} GOURAUD[1]        = 0;
+        field {} RSVD_1[1]         = 0;
+        field {} Z_TEST_EN[1]      = 0;
+        field {} Z_WRITE_EN[1]     = 0;
+        field {} COLOR_WRITE_EN[1] = 0;
+        field { encode = cull_mode_e; }    CULL_MODE[2]   = 0;
+        field { encode = alpha_blend_e; }  ALPHA_BLEND[3]  = 0;
+        field {} DITHER_EN[1]      = 0;
+        field { encode = dither_pattern_e; } DITHER_PATTERN[2] = 0;
+        field { encode = z_compare_e; }    Z_COMPARE[3]    = 0;
+        field {} RSVD_HI[48]       = 0;
+    };
+    render_mode_reg RENDER_MODE @ 0x180;  // index 0x30
+
+    reg z_range_reg {
+        name = "Z_RANGE";
+        desc = "Depth range clipping (Z scissor) min/max";
+        field {} Z_RANGE_MIN[16] = 0;
+        field {} Z_RANGE_MAX[16] = 16'hFFFF;
+        field {} RSVD[32]        = 0;
+    };
+    z_range_reg Z_RANGE @ 0x188;  // index 0x31
+
+    // index 0x32-0x3F: Reserved
+
+    // ===================================================================
+    // Framebuffer & Z-Buffer (index 0x40–0x4F)
+    // ===================================================================
+
+    reg fb_addr_reg {
+        name = "FB address";
+        desc = "Framebuffer or Z-buffer base address (4K aligned)";
+        field {} RSVD_LO[12]   = 0;
+        field {} BASE_ADDR[20] = 0;
+        field {} RSVD_HI[32]   = 0;
+    };
+    fb_addr_reg FB_DRAW    @ 0x200;  // index 0x40
+    fb_addr_reg FB_ZBUFFER @ 0x210;  // index 0x42
+
+    reg fb_display_reg {
+        name = "FB_DISPLAY";
+        desc = "Display scanout framebuffer + LUT control";
+        field {} COLOR_GRADE_ENABLE[1] = 0;
+        field {} RSVD_LO[5]            = 0;
+        field {} LUT_ADDR[13]          = 0;
+        field {} FB_ADDR[13]           = 0;
+        field {} RSVD_HI[32]           = 0;
+    };
+    fb_display_reg FB_DISPLAY @ 0x208;  // index 0x41
+
+    reg fb_control_reg {
+        name = "FB_CONTROL";
+        desc = "Scissor rectangle + write enable masks";
+        field {} SCISSOR_X[10]          = 0;
+        field {} SCISSOR_Y[10]          = 0;
+        field {} SCISSOR_WIDTH[10]      = 10'd1023;
+        field {} SCISSOR_HEIGHT[10]     = 10'd1023;
+        field {} Z_WRITE_EN_OVERRIDE[1] = 0;
+        field {} RSVD_41[1]             = 0;
+        field {} STENCIL_WRITE_EN[1]    = 0;
+        field {} RSVD_HI[21]            = 0;
+    };
+    fb_control_reg FB_CONTROL @ 0x218;  // index 0x43
+
+    // index 0x44-0x46: Reserved
+
+    fb_display_reg FB_DISPLAY_SYNC @ 0x238;  // index 0x47
+
+    // index 0x48-0x4F: Reserved
+
+    // ===================================================================
+    // Performance Counters (index 0x50–0x57) — clear-on-read
+    // ===================================================================
+
+    reg perf_pair_reg {
+        name = "PERF counter pair";
+        desc = "Packed 2x32-bit unsigned saturating counters, clear-on-read";
+        default sw = r;
+        field {} COUNTER_A[32] = 0;
+        field {} COUNTER_B[32] = 0;
+    };
+
+    perf_pair_reg PERF_TEX0       @ 0x280;  // index 0x50
+    perf_pair_reg PERF_TEX1       @ 0x288;  // index 0x51
+    // index 0x52-0x53: Reserved (was PERF_TEX2, PERF_TEX3)
+    perf_pair_reg PERF_PIXELS     @ 0x2A0;  // index 0x54
+    perf_pair_reg PERF_FRAGMENTS  @ 0x2A8;  // index 0x55
+    perf_pair_reg PERF_STALL_VS   @ 0x2B0;  // index 0x56
+    perf_pair_reg PERF_STALL_CT   @ 0x2B8;  // index 0x57
+
+    // index 0x58-0x6F: Reserved
+
+    // ===================================================================
+    // Status & Control (index 0x70–0x7F)
+    // ===================================================================
+
+    reg mem_addr_reg {
+        name = "MEM_ADDR";
+        desc = "Memory upload address pointer";
+        field {} ADDR[32]  = 0;
+        field {} RSVD[32]  = 0;
+    };
+    mem_addr_reg MEM_ADDR @ 0x380;  // index 0x70
+
+    reg mem_data_reg {
+        name = "MEM_DATA";
+        desc = "Memory upload data (auto-increments MEM_ADDR by 4)";
+        field {} DATA[32]  = 0;
+        field {} RSVD[32]  = 0;
+    };
+    mem_data_reg MEM_DATA @ 0x388;  // index 0x71
+
+    // index 0x72-0x7D: Reserved
+
+    reg status_reg {
+        name = "STATUS";
+        desc = "GPU status (read-only)";
+        default sw = r;
+        field {} FIFO_DEPTH[8] = 0;
+        field {} BUSY[1]       = 0;
+        field {} VBLANK[1]     = 0;
+        field {} RSVD[54]      = 0;
+    };
+    status_reg STATUS @ 0x3F0;  // index 0x7E
+
+    reg id_reg {
+        name = "ID";
+        desc = "GPU identification (read-only)";
+        default sw = r;
+        field {} DEVICE_ID[16] = 16'h6702;
+        field {} VERSION[16]   = 16'h0A00;
+        field {} RSVD[32]      = 0;
+    };
+    id_reg ID @ 0x3F8;  // index 0x7F
+};

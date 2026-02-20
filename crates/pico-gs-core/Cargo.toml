@@ -5,6 +5,7 @@ edition.workspace = true
 description = "Platform-agnostic GPU driver, rendering, and scene management for pico-gs"
 
 [dependencies]
+gpu-registers = { path = "../../registers" }
 pico-gs-hal = { path = "../pico-gs-hal" }
 glam = { version = "0.30", default-features = false, features = ["libm"] }
 fixed = "1.30.0"

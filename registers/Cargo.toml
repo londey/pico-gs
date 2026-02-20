@@ -1,0 +1,11 @@
+[package]
+name = "gpu-registers"
+version = "0.1.0"
+edition = "2021"
+description = "GPU register map definitions — single source of truth generated from SystemRDL"
+license = "MIT"
+
+[features]
+default = []
+
+[dependencies]

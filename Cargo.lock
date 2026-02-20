@@ -520,6 +520,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpu-registers"
+version = "0.1.0"
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -746,6 +750,7 @@ dependencies = [
  "asset-prep",
  "fixed",
  "glam",
+ "gpu-registers",
  "heapless 0.9.2",
  "libm",
  "pico-gs-hal",

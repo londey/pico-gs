@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "registers",
     "crates/pico-gs-hal",
     "crates/pico-gs-core",
     "crates/pico-gs-rp2350",
