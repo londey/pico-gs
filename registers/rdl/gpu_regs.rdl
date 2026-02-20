@@ -251,12 +251,15 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg fb_display_reg {
         name = "FB_DISPLAY";
-        desc = "Display scanout framebuffer + LUT control";
+        desc = "Display scanout framebuffer + LUT control.
+               FB_ADDR and LUT_ADDR are 16-bit values multiplied by 512
+               to form the byte address (512-byte granularity, 32 MiB
+               addressable), matching the texture BASE_ADDR encoding.";
         field {} COLOR_GRADE_ENABLE[0:0] = 0;
-        field {} RSVD_LO[5:1]            = 0;
-        field {} LUT_ADDR[18:6]          = 0;
-        field {} FB_ADDR[31:19]          = 0;
-        field {} RSVD_HI[63:32]          = 0;
+        field {} RSVD_LO[15:1]           = 0;
+        field {} LUT_ADDR[31:16]         = 0;
+        field {} FB_ADDR[47:32]          = 0;
+        field {} RSVD_HI[63:48]          = 0;
     };
     fb_display_reg FB_DISPLAY @ 0x208;  // index 0x41
 

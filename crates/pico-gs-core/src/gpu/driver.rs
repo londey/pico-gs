@@ -52,7 +52,10 @@ impl<S: SpiTransport> GpuDriver<S> {
 
         // Configure initial framebuffer addresses.
         driver.write(registers::FB_DRAW, registers::FB_A_ADDR as u64)?;
-        driver.write(registers::FB_DISPLAY, registers::FB_B_ADDR as u64)?;
+        driver.write(
+            registers::FB_DISPLAY,
+            (registers::FB_B_ADDR as u64 >> 9) << registers::FB_DISPLAY_FB_ADDR_SHIFT,
+        )?;
 
         Ok(driver)
     }
@@ -145,7 +148,10 @@ impl<S: SpiTransport> GpuDriver<S> {
     /// Swap draw and display framebuffers.
     pub fn swap_buffers(&mut self) -> Result<(), GpuError<S::Error>> {
         core::mem::swap(&mut self.draw_fb, &mut self.display_fb);
-        self.write(registers::FB_DISPLAY, self.display_fb as u64)?;
+        self.write(
+            registers::FB_DISPLAY,
+            (self.display_fb as u64 >> 9) << registers::FB_DISPLAY_FB_ADDR_SHIFT,
+        )?;
         self.write(registers::FB_DRAW, self.draw_fb as u64)?;
         Ok(())
     }

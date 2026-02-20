@@ -114,10 +114,21 @@ pub const Z_RANGE: u8 = 0x31;
 
 /// Draw target framebuffer address (4K aligned).
 pub const FB_DRAW: u8 = 0x40;
-/// Display scanout framebuffer address (4K aligned, takes effect at VSYNC).
+/// Display scanout framebuffer + LUT control (takes effect at VSYNC).
 pub const FB_DISPLAY: u8 = 0x41;
 /// Z-buffer base address (v8.0: Z_COMPARE moved to RENDER_MODE).
 pub const FB_ZBUFFER: u8 = 0x42;
+/// Display scanout + LUT control, blocking variant (waits for VSYNC).
+pub const FB_DISPLAY_SYNC: u8 = 0x47;
+
+// --- FB_DISPLAY / FB_DISPLAY_SYNC bit fields ---
+
+/// Color grading enable (bit 0).
+pub const FB_DISPLAY_COLOR_GRADE_ENABLE: u64 = 1 << 0;
+/// LUT base address shift (bits [31:16]), x512 byte granularity, 32 MiB addressable.
+pub const FB_DISPLAY_LUT_ADDR_SHIFT: u32 = 16;
+/// Framebuffer base address shift (bits [47:32]), x512 byte granularity, 32 MiB addressable.
+pub const FB_DISPLAY_FB_ADDR_SHIFT: u32 = 32;
 
 // --- Status & Control (0x70-0x7F) ---
 

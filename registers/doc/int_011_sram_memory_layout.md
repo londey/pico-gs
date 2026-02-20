@@ -599,7 +599,7 @@ The requestor is responsible for re-issuing the remaining access from the next a
 
 ## Address Encoding in Registers
 
-### FB_DRAW / FB_DISPLAY Registers
+### FB_DRAW / FB_ZBUFFER Registers
 
 ```
 Register value: [31:12] = address >> 12
@@ -610,12 +610,26 @@ Examples:
   FB_B (0x12C000): register = 0x0012C
 ```
 
-### TEX_BASE Register
+### FB_DISPLAY / FB_DISPLAY_SYNC Registers
 
-Same encoding as framebuffer registers.
+Uses the same 16-bit, 512-byte granularity encoding as texture registers.
 
 ```
-Texture at 0x384000: register = 0x00384
+FB_ADDR  [47:32] = address >> 9
+LUT_ADDR [31:16] = address >> 9
+Effective address: value << 9
+
+Examples:
+  FB_A (0x000000): FB_ADDR = 0x0000
+  FB_B (0x12C000): FB_ADDR = 0x0960
+```
+
+### TEXn_CFG BASE_ADDR
+
+Same 16-bit, 512-byte granularity encoding as FB_DISPLAY.
+
+```
+Texture at 0x384000: BASE_ADDR = 0x1C20
 ```
 
 ---

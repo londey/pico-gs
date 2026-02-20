@@ -67,18 +67,12 @@ module gpu_regs (
     typedef struct {
         logic COLOR;
         logic UV0_UV1;
-        logic LIGHT_DIR;
         logic VERTEX_NOKICK;
         logic VERTEX_KICK_012;
         logic VERTEX_KICK_021;
-        logic TEX0_BASE;
-        logic TEX0_FMT;
-        logic TEX0_MIP_BIAS;
-        logic TEX0_WRAP;
-        logic TEX1_BASE;
-        logic TEX1_FMT;
-        logic TEX1_MIP_BIAS;
-        logic TEX1_WRAP;
+        logic VERTEX_KICK_RECT;
+        logic TEX0_CFG;
+        logic TEX1_CFG;
         logic CC_MODE;
         logic MAT_COLOR0;
         logic MAT_COLOR1;
@@ -115,18 +109,12 @@ module gpu_regs (
         is_invalid_rw = '0;
         decoded_reg_strb.COLOR = cpuif_req_masked & (cpuif_addr == 10'h0);
         decoded_reg_strb.UV0_UV1 = cpuif_req_masked & (cpuif_addr == 10'h8);
-        decoded_reg_strb.LIGHT_DIR = cpuif_req_masked & (cpuif_addr == 10'h18);
         decoded_reg_strb.VERTEX_NOKICK = cpuif_req_masked & (cpuif_addr == 10'h30);
         decoded_reg_strb.VERTEX_KICK_012 = cpuif_req_masked & (cpuif_addr == 10'h38);
         decoded_reg_strb.VERTEX_KICK_021 = cpuif_req_masked & (cpuif_addr == 10'h40);
-        decoded_reg_strb.TEX0_BASE = cpuif_req_masked & (cpuif_addr == 10'h80);
-        decoded_reg_strb.TEX0_FMT = cpuif_req_masked & (cpuif_addr == 10'h88);
-        decoded_reg_strb.TEX0_MIP_BIAS = cpuif_req_masked & (cpuif_addr == 10'h90);
-        decoded_reg_strb.TEX0_WRAP = cpuif_req_masked & (cpuif_addr == 10'h98);
-        decoded_reg_strb.TEX1_BASE = cpuif_req_masked & (cpuif_addr == 10'ha0);
-        decoded_reg_strb.TEX1_FMT = cpuif_req_masked & (cpuif_addr == 10'ha8);
-        decoded_reg_strb.TEX1_MIP_BIAS = cpuif_req_masked & (cpuif_addr == 10'hb0);
-        decoded_reg_strb.TEX1_WRAP = cpuif_req_masked & (cpuif_addr == 10'hb8);
+        decoded_reg_strb.VERTEX_KICK_RECT = cpuif_req_masked & (cpuif_addr == 10'h48);
+        decoded_reg_strb.TEX0_CFG = cpuif_req_masked & (cpuif_addr == 10'h80);
+        decoded_reg_strb.TEX1_CFG = cpuif_req_masked & (cpuif_addr == 10'h88);
         decoded_reg_strb.CC_MODE = cpuif_req_masked & (cpuif_addr == 10'hc0);
         decoded_reg_strb.MAT_COLOR0 = cpuif_req_masked & (cpuif_addr == 10'hc8);
         decoded_reg_strb.MAT_COLOR1 = cpuif_req_masked & (cpuif_addr == 10'hd0);
@@ -215,24 +203,6 @@ module gpu_regs (
         } UV0_UV1;
         struct {
             struct {
-                logic [7:0] next;
-                logic load_next;
-            } X_DIR;
-            struct {
-                logic [7:0] next;
-                logic load_next;
-            } Y_DIR;
-            struct {
-                logic [7:0] next;
-                logic load_next;
-            } Z_DIR;
-            struct {
-                logic [39:0] next;
-                logic load_next;
-            } RSVD;
-        } LIGHT_DIR;
-        struct {
-            struct {
                 logic [15:0] next;
                 logic load_next;
             } X;
@@ -287,18 +257,22 @@ module gpu_regs (
         } VERTEX_KICK_021;
         struct {
             struct {
-                logic [11:0] next;
+                logic [15:0] next;
                 logic load_next;
-            } RSVD_LO;
+            } X;
             struct {
-                logic [19:0] next;
+                logic [15:0] next;
                 logic load_next;
-            } BASE_ADDR;
+            } Y;
             struct {
-                logic [31:0] next;
+                logic [15:0] next;
                 logic load_next;
-            } RSVD_HI;
-        } TEX0_BASE;
+            } Z;
+            struct {
+                logic [15:0] next;
+                logic load_next;
+            } Q;
+        } VERTEX_KICK_RECT;
         struct {
             struct {
                 logic next;
@@ -311,15 +285,15 @@ module gpu_regs (
             struct {
                 logic [1:0] next;
                 logic load_next;
+            } FILTER;
+            struct {
+                logic [2:0] next;
+                logic load_next;
             } FORMAT;
             struct {
-                logic [1:0] next;
+                logic next;
                 logic load_next;
-            } RSVD_54;
-            struct {
-                logic [1:0] next;
-                logic load_next;
-            } FILTER;
+            } RSVD_7;
             struct {
                 logic [3:0] next;
                 logic load_next;
@@ -329,30 +303,6 @@ module gpu_regs (
                 logic load_next;
             } HEIGHT_LOG2;
             struct {
-                logic [3:0] next;
-                logic load_next;
-            } SWIZZLE;
-            struct {
-                logic [3:0] next;
-                logic load_next;
-            } MIP_LEVELS;
-            struct {
-                logic [39:0] next;
-                logic load_next;
-            } RSVD_HI;
-        } TEX0_FMT;
-        struct {
-            struct {
-                logic [7:0] next;
-                logic load_next;
-            } MIP_BIAS;
-            struct {
-                logic [55:0] next;
-                logic load_next;
-            } RSVD;
-        } TEX0_MIP_BIAS;
-        struct {
-            struct {
                 logic [1:0] next;
                 logic load_next;
             } U_WRAP;
@@ -361,24 +311,22 @@ module gpu_regs (
                 logic load_next;
             } V_WRAP;
             struct {
-                logic [59:0] next;
+                logic [3:0] next;
                 logic load_next;
-            } RSVD;
-        } TEX0_WRAP;
-        struct {
+            } MIP_LEVELS;
             struct {
-                logic [11:0] next;
+                logic [7:0] next;
                 logic load_next;
-            } RSVD_LO;
+            } RSVD_MID;
             struct {
-                logic [19:0] next;
+                logic [15:0] next;
                 logic load_next;
             } BASE_ADDR;
             struct {
-                logic [31:0] next;
+                logic [15:0] next;
                 logic load_next;
             } RSVD_HI;
-        } TEX1_BASE;
+        } TEX0_CFG;
         struct {
             struct {
                 logic next;
@@ -391,15 +339,15 @@ module gpu_regs (
             struct {
                 logic [1:0] next;
                 logic load_next;
+            } FILTER;
+            struct {
+                logic [2:0] next;
+                logic load_next;
             } FORMAT;
             struct {
-                logic [1:0] next;
+                logic next;
                 logic load_next;
-            } RSVD_54;
-            struct {
-                logic [1:0] next;
-                logic load_next;
-            } FILTER;
+            } RSVD_7;
             struct {
                 logic [3:0] next;
                 logic load_next;
@@ -409,30 +357,6 @@ module gpu_regs (
                 logic load_next;
             } HEIGHT_LOG2;
             struct {
-                logic [3:0] next;
-                logic load_next;
-            } SWIZZLE;
-            struct {
-                logic [3:0] next;
-                logic load_next;
-            } MIP_LEVELS;
-            struct {
-                logic [39:0] next;
-                logic load_next;
-            } RSVD_HI;
-        } TEX1_FMT;
-        struct {
-            struct {
-                logic [7:0] next;
-                logic load_next;
-            } MIP_BIAS;
-            struct {
-                logic [55:0] next;
-                logic load_next;
-            } RSVD;
-        } TEX1_MIP_BIAS;
-        struct {
-            struct {
                 logic [1:0] next;
                 logic load_next;
             } U_WRAP;
@@ -441,10 +365,22 @@ module gpu_regs (
                 logic load_next;
             } V_WRAP;
             struct {
-                logic [59:0] next;
+                logic [3:0] next;
                 logic load_next;
-            } RSVD;
-        } TEX1_WRAP;
+            } MIP_LEVELS;
+            struct {
+                logic [7:0] next;
+                logic load_next;
+            } RSVD_MID;
+            struct {
+                logic [15:0] next;
+                logic load_next;
+            } BASE_ADDR;
+            struct {
+                logic [15:0] next;
+                logic load_next;
+            } RSVD_HI;
+        } TEX1_CFG;
         struct {
             struct {
                 logic [3:0] next;
@@ -629,19 +565,19 @@ module gpu_regs (
                 logic load_next;
             } COLOR_GRADE_ENABLE;
             struct {
-                logic [4:0] next;
+                logic [14:0] next;
                 logic load_next;
             } RSVD_LO;
             struct {
-                logic [12:0] next;
+                logic [15:0] next;
                 logic load_next;
             } LUT_ADDR;
             struct {
-                logic [12:0] next;
+                logic [15:0] next;
                 logic load_next;
             } FB_ADDR;
             struct {
-                logic [31:0] next;
+                logic [15:0] next;
                 logic load_next;
             } RSVD_HI;
         } FB_DISPLAY;
@@ -699,19 +635,19 @@ module gpu_regs (
                 logic load_next;
             } COLOR_GRADE_ENABLE;
             struct {
-                logic [4:0] next;
+                logic [14:0] next;
                 logic load_next;
             } RSVD_LO;
             struct {
-                logic [12:0] next;
+                logic [15:0] next;
                 logic load_next;
             } LUT_ADDR;
             struct {
-                logic [12:0] next;
+                logic [15:0] next;
                 logic load_next;
             } FB_ADDR;
             struct {
-                logic [31:0] next;
+                logic [15:0] next;
                 logic load_next;
             } RSVD_HI;
         } FB_DISPLAY_SYNC;
@@ -781,20 +717,6 @@ module gpu_regs (
         } UV0_UV1;
         struct {
             struct {
-                logic [7:0] value;
-            } X_DIR;
-            struct {
-                logic [7:0] value;
-            } Y_DIR;
-            struct {
-                logic [7:0] value;
-            } Z_DIR;
-            struct {
-                logic [39:0] value;
-            } RSVD;
-        } LIGHT_DIR;
-        struct {
-            struct {
                 logic [15:0] value;
             } X;
             struct {
@@ -837,15 +759,18 @@ module gpu_regs (
         } VERTEX_KICK_021;
         struct {
             struct {
-                logic [11:0] value;
-            } RSVD_LO;
+                logic [15:0] value;
+            } X;
             struct {
-                logic [19:0] value;
-            } BASE_ADDR;
+                logic [15:0] value;
+            } Y;
             struct {
-                logic [31:0] value;
-            } RSVD_HI;
-        } TEX0_BASE;
+                logic [15:0] value;
+            } Z;
+            struct {
+                logic [15:0] value;
+            } Q;
+        } VERTEX_KICK_RECT;
         struct {
             struct {
                 logic value;
@@ -855,13 +780,13 @@ module gpu_regs (
             } RSVD_1;
             struct {
                 logic [1:0] value;
+            } FILTER;
+            struct {
+                logic [2:0] value;
             } FORMAT;
             struct {
-                logic [1:0] value;
-            } RSVD_54;
-            struct {
-                logic [1:0] value;
-            } FILTER;
+                logic value;
+            } RSVD_7;
             struct {
                 logic [3:0] value;
             } WIDTH_LOG2;
@@ -869,45 +794,24 @@ module gpu_regs (
                 logic [3:0] value;
             } HEIGHT_LOG2;
             struct {
-                logic [3:0] value;
-            } SWIZZLE;
-            struct {
-                logic [3:0] value;
-            } MIP_LEVELS;
-            struct {
-                logic [39:0] value;
-            } RSVD_HI;
-        } TEX0_FMT;
-        struct {
-            struct {
-                logic [7:0] value;
-            } MIP_BIAS;
-            struct {
-                logic [55:0] value;
-            } RSVD;
-        } TEX0_MIP_BIAS;
-        struct {
-            struct {
                 logic [1:0] value;
             } U_WRAP;
             struct {
                 logic [1:0] value;
             } V_WRAP;
             struct {
-                logic [59:0] value;
-            } RSVD;
-        } TEX0_WRAP;
-        struct {
+                logic [3:0] value;
+            } MIP_LEVELS;
             struct {
-                logic [11:0] value;
-            } RSVD_LO;
+                logic [7:0] value;
+            } RSVD_MID;
             struct {
-                logic [19:0] value;
+                logic [15:0] value;
             } BASE_ADDR;
             struct {
-                logic [31:0] value;
+                logic [15:0] value;
             } RSVD_HI;
-        } TEX1_BASE;
+        } TEX0_CFG;
         struct {
             struct {
                 logic value;
@@ -917,13 +821,13 @@ module gpu_regs (
             } RSVD_1;
             struct {
                 logic [1:0] value;
+            } FILTER;
+            struct {
+                logic [2:0] value;
             } FORMAT;
             struct {
-                logic [1:0] value;
-            } RSVD_54;
-            struct {
-                logic [1:0] value;
-            } FILTER;
+                logic value;
+            } RSVD_7;
             struct {
                 logic [3:0] value;
             } WIDTH_LOG2;
@@ -931,34 +835,24 @@ module gpu_regs (
                 logic [3:0] value;
             } HEIGHT_LOG2;
             struct {
-                logic [3:0] value;
-            } SWIZZLE;
-            struct {
-                logic [3:0] value;
-            } MIP_LEVELS;
-            struct {
-                logic [39:0] value;
-            } RSVD_HI;
-        } TEX1_FMT;
-        struct {
-            struct {
-                logic [7:0] value;
-            } MIP_BIAS;
-            struct {
-                logic [55:0] value;
-            } RSVD;
-        } TEX1_MIP_BIAS;
-        struct {
-            struct {
                 logic [1:0] value;
             } U_WRAP;
             struct {
                 logic [1:0] value;
             } V_WRAP;
             struct {
-                logic [59:0] value;
-            } RSVD;
-        } TEX1_WRAP;
+                logic [3:0] value;
+            } MIP_LEVELS;
+            struct {
+                logic [7:0] value;
+            } RSVD_MID;
+            struct {
+                logic [15:0] value;
+            } BASE_ADDR;
+            struct {
+                logic [15:0] value;
+            } RSVD_HI;
+        } TEX1_CFG;
         struct {
             struct {
                 logic [3:0] value;
@@ -1101,16 +995,16 @@ module gpu_regs (
                 logic value;
             } COLOR_GRADE_ENABLE;
             struct {
-                logic [4:0] value;
+                logic [14:0] value;
             } RSVD_LO;
             struct {
-                logic [12:0] value;
+                logic [15:0] value;
             } LUT_ADDR;
             struct {
-                logic [12:0] value;
+                logic [15:0] value;
             } FB_ADDR;
             struct {
-                logic [31:0] value;
+                logic [15:0] value;
             } RSVD_HI;
         } FB_DISPLAY;
         struct {
@@ -1155,16 +1049,16 @@ module gpu_regs (
                 logic value;
             } COLOR_GRADE_ENABLE;
             struct {
-                logic [4:0] value;
+                logic [14:0] value;
             } RSVD_LO;
             struct {
-                logic [12:0] value;
+                logic [15:0] value;
             } LUT_ADDR;
             struct {
-                logic [12:0] value;
+                logic [15:0] value;
             } FB_ADDR;
             struct {
-                logic [31:0] value;
+                logic [15:0] value;
             } RSVD_HI;
         } FB_DISPLAY_SYNC;
         struct {
@@ -1462,98 +1356,6 @@ module gpu_regs (
         end
     end
     assign hwif_out.UV0_UV1.UV1_VQ.value = field_storage.UV0_UV1.UV1_VQ.value;
-    // Field: gpu_regs.LIGHT_DIR.X_DIR
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.LIGHT_DIR.X_DIR.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.LIGHT_DIR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.LIGHT_DIR.X_DIR.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
-            load_next_c = '1;
-        end
-        field_combo.LIGHT_DIR.X_DIR.next = next_c;
-        field_combo.LIGHT_DIR.X_DIR.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.LIGHT_DIR.X_DIR.value <= 8'h0;
-        end else begin
-            if(field_combo.LIGHT_DIR.X_DIR.load_next) begin
-                field_storage.LIGHT_DIR.X_DIR.value <= field_combo.LIGHT_DIR.X_DIR.next;
-            end
-        end
-    end
-    assign hwif_out.LIGHT_DIR.X_DIR.value = field_storage.LIGHT_DIR.X_DIR.value;
-    // Field: gpu_regs.LIGHT_DIR.Y_DIR
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.LIGHT_DIR.Y_DIR.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.LIGHT_DIR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.LIGHT_DIR.Y_DIR.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
-            load_next_c = '1;
-        end
-        field_combo.LIGHT_DIR.Y_DIR.next = next_c;
-        field_combo.LIGHT_DIR.Y_DIR.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.LIGHT_DIR.Y_DIR.value <= 8'h0;
-        end else begin
-            if(field_combo.LIGHT_DIR.Y_DIR.load_next) begin
-                field_storage.LIGHT_DIR.Y_DIR.value <= field_combo.LIGHT_DIR.Y_DIR.next;
-            end
-        end
-    end
-    assign hwif_out.LIGHT_DIR.Y_DIR.value = field_storage.LIGHT_DIR.Y_DIR.value;
-    // Field: gpu_regs.LIGHT_DIR.Z_DIR
-    always_comb begin
-        automatic logic [7:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.LIGHT_DIR.Z_DIR.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.LIGHT_DIR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.LIGHT_DIR.Z_DIR.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
-            load_next_c = '1;
-        end
-        field_combo.LIGHT_DIR.Z_DIR.next = next_c;
-        field_combo.LIGHT_DIR.Z_DIR.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.LIGHT_DIR.Z_DIR.value <= 8'h0;
-        end else begin
-            if(field_combo.LIGHT_DIR.Z_DIR.load_next) begin
-                field_storage.LIGHT_DIR.Z_DIR.value <= field_combo.LIGHT_DIR.Z_DIR.next;
-            end
-        end
-    end
-    assign hwif_out.LIGHT_DIR.Z_DIR.value = field_storage.LIGHT_DIR.Z_DIR.value;
-    // Field: gpu_regs.LIGHT_DIR.RSVD
-    always_comb begin
-        automatic logic [39:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.LIGHT_DIR.RSVD.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.LIGHT_DIR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.LIGHT_DIR.RSVD.value & ~decoded_wr_biten[63:24]) | (decoded_wr_data[63:24] & decoded_wr_biten[63:24]);
-            load_next_c = '1;
-        end
-        field_combo.LIGHT_DIR.RSVD.next = next_c;
-        field_combo.LIGHT_DIR.RSVD.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.LIGHT_DIR.RSVD.value <= 40'h0;
-        end else begin
-            if(field_combo.LIGHT_DIR.RSVD.load_next) begin
-                field_storage.LIGHT_DIR.RSVD.value <= field_combo.LIGHT_DIR.RSVD.next;
-            end
-        end
-    end
-    assign hwif_out.LIGHT_DIR.RSVD.value = field_storage.LIGHT_DIR.RSVD.value;
     // Field: gpu_regs.VERTEX_NOKICK.X
     always_comb begin
         automatic logic [15:0] next_c;
@@ -1830,834 +1632,696 @@ module gpu_regs (
         end
     end
     assign hwif_out.VERTEX_KICK_021.Q.value = field_storage.VERTEX_KICK_021.Q.value;
-    // Field: gpu_regs.TEX0_BASE.RSVD_LO
+    // Field: gpu_regs.VERTEX_KICK_RECT.X
     always_comb begin
-        automatic logic [11:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_BASE.RSVD_LO.value;
+        next_c = field_storage.VERTEX_KICK_RECT.X.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_BASE && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_BASE.RSVD_LO.value & ~decoded_wr_biten[11:0]) | (decoded_wr_data[11:0] & decoded_wr_biten[11:0]);
+        if(decoded_reg_strb.VERTEX_KICK_RECT && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.VERTEX_KICK_RECT.X.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
             load_next_c = '1;
         end
-        field_combo.TEX0_BASE.RSVD_LO.next = next_c;
-        field_combo.TEX0_BASE.RSVD_LO.load_next = load_next_c;
+        field_combo.VERTEX_KICK_RECT.X.next = next_c;
+        field_combo.VERTEX_KICK_RECT.X.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_BASE.RSVD_LO.value <= 12'h0;
+            field_storage.VERTEX_KICK_RECT.X.value <= 16'h0;
         end else begin
-            if(field_combo.TEX0_BASE.RSVD_LO.load_next) begin
-                field_storage.TEX0_BASE.RSVD_LO.value <= field_combo.TEX0_BASE.RSVD_LO.next;
+            if(field_combo.VERTEX_KICK_RECT.X.load_next) begin
+                field_storage.VERTEX_KICK_RECT.X.value <= field_combo.VERTEX_KICK_RECT.X.next;
             end
         end
     end
-    assign hwif_out.TEX0_BASE.RSVD_LO.value = field_storage.TEX0_BASE.RSVD_LO.value;
-    // Field: gpu_regs.TEX0_BASE.BASE_ADDR
+    assign hwif_out.VERTEX_KICK_RECT.X.value = field_storage.VERTEX_KICK_RECT.X.value;
+    // Field: gpu_regs.VERTEX_KICK_RECT.Y
     always_comb begin
-        automatic logic [19:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_BASE.BASE_ADDR.value;
+        next_c = field_storage.VERTEX_KICK_RECT.Y.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_BASE && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_BASE.BASE_ADDR.value & ~decoded_wr_biten[31:12]) | (decoded_wr_data[31:12] & decoded_wr_biten[31:12]);
+        if(decoded_reg_strb.VERTEX_KICK_RECT && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.VERTEX_KICK_RECT.Y.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
             load_next_c = '1;
         end
-        field_combo.TEX0_BASE.BASE_ADDR.next = next_c;
-        field_combo.TEX0_BASE.BASE_ADDR.load_next = load_next_c;
+        field_combo.VERTEX_KICK_RECT.Y.next = next_c;
+        field_combo.VERTEX_KICK_RECT.Y.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_BASE.BASE_ADDR.value <= 20'h0;
+            field_storage.VERTEX_KICK_RECT.Y.value <= 16'h0;
         end else begin
-            if(field_combo.TEX0_BASE.BASE_ADDR.load_next) begin
-                field_storage.TEX0_BASE.BASE_ADDR.value <= field_combo.TEX0_BASE.BASE_ADDR.next;
+            if(field_combo.VERTEX_KICK_RECT.Y.load_next) begin
+                field_storage.VERTEX_KICK_RECT.Y.value <= field_combo.VERTEX_KICK_RECT.Y.next;
             end
         end
     end
-    assign hwif_out.TEX0_BASE.BASE_ADDR.value = field_storage.TEX0_BASE.BASE_ADDR.value;
-    // Field: gpu_regs.TEX0_BASE.RSVD_HI
+    assign hwif_out.VERTEX_KICK_RECT.Y.value = field_storage.VERTEX_KICK_RECT.Y.value;
+    // Field: gpu_regs.VERTEX_KICK_RECT.Z
     always_comb begin
-        automatic logic [31:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_BASE.RSVD_HI.value;
+        next_c = field_storage.VERTEX_KICK_RECT.Z.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_BASE && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_BASE.RSVD_HI.value & ~decoded_wr_biten[63:32]) | (decoded_wr_data[63:32] & decoded_wr_biten[63:32]);
+        if(decoded_reg_strb.VERTEX_KICK_RECT && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.VERTEX_KICK_RECT.Z.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
             load_next_c = '1;
         end
-        field_combo.TEX0_BASE.RSVD_HI.next = next_c;
-        field_combo.TEX0_BASE.RSVD_HI.load_next = load_next_c;
+        field_combo.VERTEX_KICK_RECT.Z.next = next_c;
+        field_combo.VERTEX_KICK_RECT.Z.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_BASE.RSVD_HI.value <= 32'h0;
+            field_storage.VERTEX_KICK_RECT.Z.value <= 16'h0;
         end else begin
-            if(field_combo.TEX0_BASE.RSVD_HI.load_next) begin
-                field_storage.TEX0_BASE.RSVD_HI.value <= field_combo.TEX0_BASE.RSVD_HI.next;
+            if(field_combo.VERTEX_KICK_RECT.Z.load_next) begin
+                field_storage.VERTEX_KICK_RECT.Z.value <= field_combo.VERTEX_KICK_RECT.Z.next;
             end
         end
     end
-    assign hwif_out.TEX0_BASE.RSVD_HI.value = field_storage.TEX0_BASE.RSVD_HI.value;
-    // Field: gpu_regs.TEX0_FMT.ENABLE
+    assign hwif_out.VERTEX_KICK_RECT.Z.value = field_storage.VERTEX_KICK_RECT.Z.value;
+    // Field: gpu_regs.VERTEX_KICK_RECT.Q
+    always_comb begin
+        automatic logic [15:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.VERTEX_KICK_RECT.Q.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.VERTEX_KICK_RECT && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.VERTEX_KICK_RECT.Q.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
+            load_next_c = '1;
+        end
+        field_combo.VERTEX_KICK_RECT.Q.next = next_c;
+        field_combo.VERTEX_KICK_RECT.Q.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.VERTEX_KICK_RECT.Q.value <= 16'h0;
+        end else begin
+            if(field_combo.VERTEX_KICK_RECT.Q.load_next) begin
+                field_storage.VERTEX_KICK_RECT.Q.value <= field_combo.VERTEX_KICK_RECT.Q.next;
+            end
+        end
+    end
+    assign hwif_out.VERTEX_KICK_RECT.Q.value = field_storage.VERTEX_KICK_RECT.Q.value;
+    // Field: gpu_regs.TEX0_CFG.ENABLE
     always_comb begin
         automatic logic [0:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.ENABLE.value;
+        next_c = field_storage.TEX0_CFG.ENABLE.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.ENABLE.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.ENABLE.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
             load_next_c = '1;
         end
-        field_combo.TEX0_FMT.ENABLE.next = next_c;
-        field_combo.TEX0_FMT.ENABLE.load_next = load_next_c;
+        field_combo.TEX0_CFG.ENABLE.next = next_c;
+        field_combo.TEX0_CFG.ENABLE.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_FMT.ENABLE.value <= 1'h0;
+            field_storage.TEX0_CFG.ENABLE.value <= 1'h0;
         end else begin
-            if(field_combo.TEX0_FMT.ENABLE.load_next) begin
-                field_storage.TEX0_FMT.ENABLE.value <= field_combo.TEX0_FMT.ENABLE.next;
+            if(field_combo.TEX0_CFG.ENABLE.load_next) begin
+                field_storage.TEX0_CFG.ENABLE.value <= field_combo.TEX0_CFG.ENABLE.next;
             end
         end
     end
-    assign hwif_out.TEX0_FMT.ENABLE.value = field_storage.TEX0_FMT.ENABLE.value;
-    // Field: gpu_regs.TEX0_FMT.RSVD_1
+    assign hwif_out.TEX0_CFG.ENABLE.value = field_storage.TEX0_CFG.ENABLE.value;
+    // Field: gpu_regs.TEX0_CFG.RSVD_1
     always_comb begin
         automatic logic [0:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.RSVD_1.value;
+        next_c = field_storage.TEX0_CFG.RSVD_1.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.RSVD_1.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.RSVD_1.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
             load_next_c = '1;
         end
-        field_combo.TEX0_FMT.RSVD_1.next = next_c;
-        field_combo.TEX0_FMT.RSVD_1.load_next = load_next_c;
+        field_combo.TEX0_CFG.RSVD_1.next = next_c;
+        field_combo.TEX0_CFG.RSVD_1.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_FMT.RSVD_1.value <= 1'h0;
+            field_storage.TEX0_CFG.RSVD_1.value <= 1'h0;
         end else begin
-            if(field_combo.TEX0_FMT.RSVD_1.load_next) begin
-                field_storage.TEX0_FMT.RSVD_1.value <= field_combo.TEX0_FMT.RSVD_1.next;
+            if(field_combo.TEX0_CFG.RSVD_1.load_next) begin
+                field_storage.TEX0_CFG.RSVD_1.value <= field_combo.TEX0_CFG.RSVD_1.next;
             end
         end
     end
-    assign hwif_out.TEX0_FMT.RSVD_1.value = field_storage.TEX0_FMT.RSVD_1.value;
-    // Field: gpu_regs.TEX0_FMT.FORMAT
+    assign hwif_out.TEX0_CFG.RSVD_1.value = field_storage.TEX0_CFG.RSVD_1.value;
+    // Field: gpu_regs.TEX0_CFG.FILTER
     always_comb begin
         automatic logic [1:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.FORMAT.value;
+        next_c = field_storage.TEX0_CFG.FILTER.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.FORMAT.value & ~decoded_wr_biten[3:2]) | (decoded_wr_data[3:2] & decoded_wr_biten[3:2]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.FILTER.value & ~decoded_wr_biten[3:2]) | (decoded_wr_data[3:2] & decoded_wr_biten[3:2]);
             load_next_c = '1;
         end
-        field_combo.TEX0_FMT.FORMAT.next = next_c;
-        field_combo.TEX0_FMT.FORMAT.load_next = load_next_c;
+        field_combo.TEX0_CFG.FILTER.next = next_c;
+        field_combo.TEX0_CFG.FILTER.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_FMT.FORMAT.value <= 2'h0;
+            field_storage.TEX0_CFG.FILTER.value <= 2'h0;
         end else begin
-            if(field_combo.TEX0_FMT.FORMAT.load_next) begin
-                field_storage.TEX0_FMT.FORMAT.value <= field_combo.TEX0_FMT.FORMAT.next;
+            if(field_combo.TEX0_CFG.FILTER.load_next) begin
+                field_storage.TEX0_CFG.FILTER.value <= field_combo.TEX0_CFG.FILTER.next;
             end
         end
     end
-    assign hwif_out.TEX0_FMT.FORMAT.value = field_storage.TEX0_FMT.FORMAT.value;
-    // Field: gpu_regs.TEX0_FMT.RSVD_54
+    assign hwif_out.TEX0_CFG.FILTER.value = field_storage.TEX0_CFG.FILTER.value;
+    // Field: gpu_regs.TEX0_CFG.FORMAT
+    always_comb begin
+        automatic logic [2:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX0_CFG.FORMAT.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.FORMAT.value & ~decoded_wr_biten[6:4]) | (decoded_wr_data[6:4] & decoded_wr_biten[6:4]);
+            load_next_c = '1;
+        end
+        field_combo.TEX0_CFG.FORMAT.next = next_c;
+        field_combo.TEX0_CFG.FORMAT.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX0_CFG.FORMAT.value <= 3'h0;
+        end else begin
+            if(field_combo.TEX0_CFG.FORMAT.load_next) begin
+                field_storage.TEX0_CFG.FORMAT.value <= field_combo.TEX0_CFG.FORMAT.next;
+            end
+        end
+    end
+    assign hwif_out.TEX0_CFG.FORMAT.value = field_storage.TEX0_CFG.FORMAT.value;
+    // Field: gpu_regs.TEX0_CFG.RSVD_7
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX0_CFG.RSVD_7.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.RSVD_7.value & ~decoded_wr_biten[7:7]) | (decoded_wr_data[7:7] & decoded_wr_biten[7:7]);
+            load_next_c = '1;
+        end
+        field_combo.TEX0_CFG.RSVD_7.next = next_c;
+        field_combo.TEX0_CFG.RSVD_7.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX0_CFG.RSVD_7.value <= 1'h0;
+        end else begin
+            if(field_combo.TEX0_CFG.RSVD_7.load_next) begin
+                field_storage.TEX0_CFG.RSVD_7.value <= field_combo.TEX0_CFG.RSVD_7.next;
+            end
+        end
+    end
+    assign hwif_out.TEX0_CFG.RSVD_7.value = field_storage.TEX0_CFG.RSVD_7.value;
+    // Field: gpu_regs.TEX0_CFG.WIDTH_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX0_CFG.WIDTH_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.WIDTH_LOG2.value & ~decoded_wr_biten[11:8]) | (decoded_wr_data[11:8] & decoded_wr_biten[11:8]);
+            load_next_c = '1;
+        end
+        field_combo.TEX0_CFG.WIDTH_LOG2.next = next_c;
+        field_combo.TEX0_CFG.WIDTH_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX0_CFG.WIDTH_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.TEX0_CFG.WIDTH_LOG2.load_next) begin
+                field_storage.TEX0_CFG.WIDTH_LOG2.value <= field_combo.TEX0_CFG.WIDTH_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.TEX0_CFG.WIDTH_LOG2.value = field_storage.TEX0_CFG.WIDTH_LOG2.value;
+    // Field: gpu_regs.TEX0_CFG.HEIGHT_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX0_CFG.HEIGHT_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.HEIGHT_LOG2.value & ~decoded_wr_biten[15:12]) | (decoded_wr_data[15:12] & decoded_wr_biten[15:12]);
+            load_next_c = '1;
+        end
+        field_combo.TEX0_CFG.HEIGHT_LOG2.next = next_c;
+        field_combo.TEX0_CFG.HEIGHT_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX0_CFG.HEIGHT_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.TEX0_CFG.HEIGHT_LOG2.load_next) begin
+                field_storage.TEX0_CFG.HEIGHT_LOG2.value <= field_combo.TEX0_CFG.HEIGHT_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.TEX0_CFG.HEIGHT_LOG2.value = field_storage.TEX0_CFG.HEIGHT_LOG2.value;
+    // Field: gpu_regs.TEX0_CFG.U_WRAP
     always_comb begin
         automatic logic [1:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.RSVD_54.value;
+        next_c = field_storage.TEX0_CFG.U_WRAP.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.RSVD_54.value & ~decoded_wr_biten[5:4]) | (decoded_wr_data[5:4] & decoded_wr_biten[5:4]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.U_WRAP.value & ~decoded_wr_biten[17:16]) | (decoded_wr_data[17:16] & decoded_wr_biten[17:16]);
             load_next_c = '1;
         end
-        field_combo.TEX0_FMT.RSVD_54.next = next_c;
-        field_combo.TEX0_FMT.RSVD_54.load_next = load_next_c;
+        field_combo.TEX0_CFG.U_WRAP.next = next_c;
+        field_combo.TEX0_CFG.U_WRAP.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_FMT.RSVD_54.value <= 2'h0;
+            field_storage.TEX0_CFG.U_WRAP.value <= 2'h0;
         end else begin
-            if(field_combo.TEX0_FMT.RSVD_54.load_next) begin
-                field_storage.TEX0_FMT.RSVD_54.value <= field_combo.TEX0_FMT.RSVD_54.next;
+            if(field_combo.TEX0_CFG.U_WRAP.load_next) begin
+                field_storage.TEX0_CFG.U_WRAP.value <= field_combo.TEX0_CFG.U_WRAP.next;
             end
         end
     end
-    assign hwif_out.TEX0_FMT.RSVD_54.value = field_storage.TEX0_FMT.RSVD_54.value;
-    // Field: gpu_regs.TEX0_FMT.FILTER
+    assign hwif_out.TEX0_CFG.U_WRAP.value = field_storage.TEX0_CFG.U_WRAP.value;
+    // Field: gpu_regs.TEX0_CFG.V_WRAP
     always_comb begin
         automatic logic [1:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.FILTER.value;
+        next_c = field_storage.TEX0_CFG.V_WRAP.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.FILTER.value & ~decoded_wr_biten[7:6]) | (decoded_wr_data[7:6] & decoded_wr_biten[7:6]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.V_WRAP.value & ~decoded_wr_biten[19:18]) | (decoded_wr_data[19:18] & decoded_wr_biten[19:18]);
             load_next_c = '1;
         end
-        field_combo.TEX0_FMT.FILTER.next = next_c;
-        field_combo.TEX0_FMT.FILTER.load_next = load_next_c;
+        field_combo.TEX0_CFG.V_WRAP.next = next_c;
+        field_combo.TEX0_CFG.V_WRAP.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_FMT.FILTER.value <= 2'h0;
+            field_storage.TEX0_CFG.V_WRAP.value <= 2'h0;
         end else begin
-            if(field_combo.TEX0_FMT.FILTER.load_next) begin
-                field_storage.TEX0_FMT.FILTER.value <= field_combo.TEX0_FMT.FILTER.next;
+            if(field_combo.TEX0_CFG.V_WRAP.load_next) begin
+                field_storage.TEX0_CFG.V_WRAP.value <= field_combo.TEX0_CFG.V_WRAP.next;
             end
         end
     end
-    assign hwif_out.TEX0_FMT.FILTER.value = field_storage.TEX0_FMT.FILTER.value;
-    // Field: gpu_regs.TEX0_FMT.WIDTH_LOG2
+    assign hwif_out.TEX0_CFG.V_WRAP.value = field_storage.TEX0_CFG.V_WRAP.value;
+    // Field: gpu_regs.TEX0_CFG.MIP_LEVELS
     always_comb begin
         automatic logic [3:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.WIDTH_LOG2.value;
+        next_c = field_storage.TEX0_CFG.MIP_LEVELS.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.WIDTH_LOG2.value & ~decoded_wr_biten[11:8]) | (decoded_wr_data[11:8] & decoded_wr_biten[11:8]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.MIP_LEVELS.value & ~decoded_wr_biten[23:20]) | (decoded_wr_data[23:20] & decoded_wr_biten[23:20]);
             load_next_c = '1;
         end
-        field_combo.TEX0_FMT.WIDTH_LOG2.next = next_c;
-        field_combo.TEX0_FMT.WIDTH_LOG2.load_next = load_next_c;
+        field_combo.TEX0_CFG.MIP_LEVELS.next = next_c;
+        field_combo.TEX0_CFG.MIP_LEVELS.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_FMT.WIDTH_LOG2.value <= 4'h0;
+            field_storage.TEX0_CFG.MIP_LEVELS.value <= 4'h0;
         end else begin
-            if(field_combo.TEX0_FMT.WIDTH_LOG2.load_next) begin
-                field_storage.TEX0_FMT.WIDTH_LOG2.value <= field_combo.TEX0_FMT.WIDTH_LOG2.next;
+            if(field_combo.TEX0_CFG.MIP_LEVELS.load_next) begin
+                field_storage.TEX0_CFG.MIP_LEVELS.value <= field_combo.TEX0_CFG.MIP_LEVELS.next;
             end
         end
     end
-    assign hwif_out.TEX0_FMT.WIDTH_LOG2.value = field_storage.TEX0_FMT.WIDTH_LOG2.value;
-    // Field: gpu_regs.TEX0_FMT.HEIGHT_LOG2
-    always_comb begin
-        automatic logic [3:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.HEIGHT_LOG2.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.HEIGHT_LOG2.value & ~decoded_wr_biten[15:12]) | (decoded_wr_data[15:12] & decoded_wr_biten[15:12]);
-            load_next_c = '1;
-        end
-        field_combo.TEX0_FMT.HEIGHT_LOG2.next = next_c;
-        field_combo.TEX0_FMT.HEIGHT_LOG2.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX0_FMT.HEIGHT_LOG2.value <= 4'h0;
-        end else begin
-            if(field_combo.TEX0_FMT.HEIGHT_LOG2.load_next) begin
-                field_storage.TEX0_FMT.HEIGHT_LOG2.value <= field_combo.TEX0_FMT.HEIGHT_LOG2.next;
-            end
-        end
-    end
-    assign hwif_out.TEX0_FMT.HEIGHT_LOG2.value = field_storage.TEX0_FMT.HEIGHT_LOG2.value;
-    // Field: gpu_regs.TEX0_FMT.SWIZZLE
-    always_comb begin
-        automatic logic [3:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.SWIZZLE.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.SWIZZLE.value & ~decoded_wr_biten[19:16]) | (decoded_wr_data[19:16] & decoded_wr_biten[19:16]);
-            load_next_c = '1;
-        end
-        field_combo.TEX0_FMT.SWIZZLE.next = next_c;
-        field_combo.TEX0_FMT.SWIZZLE.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX0_FMT.SWIZZLE.value <= 4'h0;
-        end else begin
-            if(field_combo.TEX0_FMT.SWIZZLE.load_next) begin
-                field_storage.TEX0_FMT.SWIZZLE.value <= field_combo.TEX0_FMT.SWIZZLE.next;
-            end
-        end
-    end
-    assign hwif_out.TEX0_FMT.SWIZZLE.value = field_storage.TEX0_FMT.SWIZZLE.value;
-    // Field: gpu_regs.TEX0_FMT.MIP_LEVELS
-    always_comb begin
-        automatic logic [3:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.MIP_LEVELS.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.MIP_LEVELS.value & ~decoded_wr_biten[23:20]) | (decoded_wr_data[23:20] & decoded_wr_biten[23:20]);
-            load_next_c = '1;
-        end
-        field_combo.TEX0_FMT.MIP_LEVELS.next = next_c;
-        field_combo.TEX0_FMT.MIP_LEVELS.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX0_FMT.MIP_LEVELS.value <= 4'h0;
-        end else begin
-            if(field_combo.TEX0_FMT.MIP_LEVELS.load_next) begin
-                field_storage.TEX0_FMT.MIP_LEVELS.value <= field_combo.TEX0_FMT.MIP_LEVELS.next;
-            end
-        end
-    end
-    assign hwif_out.TEX0_FMT.MIP_LEVELS.value = field_storage.TEX0_FMT.MIP_LEVELS.value;
-    // Field: gpu_regs.TEX0_FMT.RSVD_HI
-    always_comb begin
-        automatic logic [39:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX0_FMT.RSVD_HI.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX0_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_FMT.RSVD_HI.value & ~decoded_wr_biten[63:24]) | (decoded_wr_data[63:24] & decoded_wr_biten[63:24]);
-            load_next_c = '1;
-        end
-        field_combo.TEX0_FMT.RSVD_HI.next = next_c;
-        field_combo.TEX0_FMT.RSVD_HI.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX0_FMT.RSVD_HI.value <= 40'h0;
-        end else begin
-            if(field_combo.TEX0_FMT.RSVD_HI.load_next) begin
-                field_storage.TEX0_FMT.RSVD_HI.value <= field_combo.TEX0_FMT.RSVD_HI.next;
-            end
-        end
-    end
-    assign hwif_out.TEX0_FMT.RSVD_HI.value = field_storage.TEX0_FMT.RSVD_HI.value;
-    // Field: gpu_regs.TEX0_MIP_BIAS.MIP_BIAS
+    assign hwif_out.TEX0_CFG.MIP_LEVELS.value = field_storage.TEX0_CFG.MIP_LEVELS.value;
+    // Field: gpu_regs.TEX0_CFG.RSVD_MID
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_MIP_BIAS.MIP_BIAS.value;
+        next_c = field_storage.TEX0_CFG.RSVD_MID.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_MIP_BIAS && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_MIP_BIAS.MIP_BIAS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.RSVD_MID.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
             load_next_c = '1;
         end
-        field_combo.TEX0_MIP_BIAS.MIP_BIAS.next = next_c;
-        field_combo.TEX0_MIP_BIAS.MIP_BIAS.load_next = load_next_c;
+        field_combo.TEX0_CFG.RSVD_MID.next = next_c;
+        field_combo.TEX0_CFG.RSVD_MID.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_MIP_BIAS.MIP_BIAS.value <= 8'h0;
+            field_storage.TEX0_CFG.RSVD_MID.value <= 8'h0;
         end else begin
-            if(field_combo.TEX0_MIP_BIAS.MIP_BIAS.load_next) begin
-                field_storage.TEX0_MIP_BIAS.MIP_BIAS.value <= field_combo.TEX0_MIP_BIAS.MIP_BIAS.next;
+            if(field_combo.TEX0_CFG.RSVD_MID.load_next) begin
+                field_storage.TEX0_CFG.RSVD_MID.value <= field_combo.TEX0_CFG.RSVD_MID.next;
             end
         end
     end
-    assign hwif_out.TEX0_MIP_BIAS.MIP_BIAS.value = field_storage.TEX0_MIP_BIAS.MIP_BIAS.value;
-    // Field: gpu_regs.TEX0_MIP_BIAS.RSVD
+    assign hwif_out.TEX0_CFG.RSVD_MID.value = field_storage.TEX0_CFG.RSVD_MID.value;
+    // Field: gpu_regs.TEX0_CFG.BASE_ADDR
     always_comb begin
-        automatic logic [55:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_MIP_BIAS.RSVD.value;
+        next_c = field_storage.TEX0_CFG.BASE_ADDR.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_MIP_BIAS && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_MIP_BIAS.RSVD.value & ~decoded_wr_biten[63:8]) | (decoded_wr_data[63:8] & decoded_wr_biten[63:8]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.BASE_ADDR.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
             load_next_c = '1;
         end
-        field_combo.TEX0_MIP_BIAS.RSVD.next = next_c;
-        field_combo.TEX0_MIP_BIAS.RSVD.load_next = load_next_c;
+        field_combo.TEX0_CFG.BASE_ADDR.next = next_c;
+        field_combo.TEX0_CFG.BASE_ADDR.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_MIP_BIAS.RSVD.value <= 56'h0;
+            field_storage.TEX0_CFG.BASE_ADDR.value <= 16'h0;
         end else begin
-            if(field_combo.TEX0_MIP_BIAS.RSVD.load_next) begin
-                field_storage.TEX0_MIP_BIAS.RSVD.value <= field_combo.TEX0_MIP_BIAS.RSVD.next;
+            if(field_combo.TEX0_CFG.BASE_ADDR.load_next) begin
+                field_storage.TEX0_CFG.BASE_ADDR.value <= field_combo.TEX0_CFG.BASE_ADDR.next;
             end
         end
     end
-    assign hwif_out.TEX0_MIP_BIAS.RSVD.value = field_storage.TEX0_MIP_BIAS.RSVD.value;
-    // Field: gpu_regs.TEX0_WRAP.U_WRAP
+    assign hwif_out.TEX0_CFG.BASE_ADDR.value = field_storage.TEX0_CFG.BASE_ADDR.value;
+    // Field: gpu_regs.TEX0_CFG.RSVD_HI
     always_comb begin
-        automatic logic [1:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_WRAP.U_WRAP.value;
+        next_c = field_storage.TEX0_CFG.RSVD_HI.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX0_WRAP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_WRAP.U_WRAP.value & ~decoded_wr_biten[1:0]) | (decoded_wr_data[1:0] & decoded_wr_biten[1:0]);
+        if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX0_CFG.RSVD_HI.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
             load_next_c = '1;
         end
-        field_combo.TEX0_WRAP.U_WRAP.next = next_c;
-        field_combo.TEX0_WRAP.U_WRAP.load_next = load_next_c;
+        field_combo.TEX0_CFG.RSVD_HI.next = next_c;
+        field_combo.TEX0_CFG.RSVD_HI.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_WRAP.U_WRAP.value <= 2'h0;
+            field_storage.TEX0_CFG.RSVD_HI.value <= 16'h0;
         end else begin
-            if(field_combo.TEX0_WRAP.U_WRAP.load_next) begin
-                field_storage.TEX0_WRAP.U_WRAP.value <= field_combo.TEX0_WRAP.U_WRAP.next;
+            if(field_combo.TEX0_CFG.RSVD_HI.load_next) begin
+                field_storage.TEX0_CFG.RSVD_HI.value <= field_combo.TEX0_CFG.RSVD_HI.next;
             end
         end
     end
-    assign hwif_out.TEX0_WRAP.U_WRAP.value = field_storage.TEX0_WRAP.U_WRAP.value;
-    // Field: gpu_regs.TEX0_WRAP.V_WRAP
-    always_comb begin
-        automatic logic [1:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX0_WRAP.V_WRAP.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX0_WRAP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_WRAP.V_WRAP.value & ~decoded_wr_biten[3:2]) | (decoded_wr_data[3:2] & decoded_wr_biten[3:2]);
-            load_next_c = '1;
-        end
-        field_combo.TEX0_WRAP.V_WRAP.next = next_c;
-        field_combo.TEX0_WRAP.V_WRAP.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX0_WRAP.V_WRAP.value <= 2'h0;
-        end else begin
-            if(field_combo.TEX0_WRAP.V_WRAP.load_next) begin
-                field_storage.TEX0_WRAP.V_WRAP.value <= field_combo.TEX0_WRAP.V_WRAP.next;
-            end
-        end
-    end
-    assign hwif_out.TEX0_WRAP.V_WRAP.value = field_storage.TEX0_WRAP.V_WRAP.value;
-    // Field: gpu_regs.TEX0_WRAP.RSVD
-    always_comb begin
-        automatic logic [59:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX0_WRAP.RSVD.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX0_WRAP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_WRAP.RSVD.value & ~decoded_wr_biten[63:4]) | (decoded_wr_data[63:4] & decoded_wr_biten[63:4]);
-            load_next_c = '1;
-        end
-        field_combo.TEX0_WRAP.RSVD.next = next_c;
-        field_combo.TEX0_WRAP.RSVD.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX0_WRAP.RSVD.value <= 60'h0;
-        end else begin
-            if(field_combo.TEX0_WRAP.RSVD.load_next) begin
-                field_storage.TEX0_WRAP.RSVD.value <= field_combo.TEX0_WRAP.RSVD.next;
-            end
-        end
-    end
-    assign hwif_out.TEX0_WRAP.RSVD.value = field_storage.TEX0_WRAP.RSVD.value;
-    // Field: gpu_regs.TEX1_BASE.RSVD_LO
-    always_comb begin
-        automatic logic [11:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_BASE.RSVD_LO.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_BASE && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_BASE.RSVD_LO.value & ~decoded_wr_biten[11:0]) | (decoded_wr_data[11:0] & decoded_wr_biten[11:0]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_BASE.RSVD_LO.next = next_c;
-        field_combo.TEX1_BASE.RSVD_LO.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_BASE.RSVD_LO.value <= 12'h0;
-        end else begin
-            if(field_combo.TEX1_BASE.RSVD_LO.load_next) begin
-                field_storage.TEX1_BASE.RSVD_LO.value <= field_combo.TEX1_BASE.RSVD_LO.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_BASE.RSVD_LO.value = field_storage.TEX1_BASE.RSVD_LO.value;
-    // Field: gpu_regs.TEX1_BASE.BASE_ADDR
-    always_comb begin
-        automatic logic [19:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_BASE.BASE_ADDR.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_BASE && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_BASE.BASE_ADDR.value & ~decoded_wr_biten[31:12]) | (decoded_wr_data[31:12] & decoded_wr_biten[31:12]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_BASE.BASE_ADDR.next = next_c;
-        field_combo.TEX1_BASE.BASE_ADDR.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_BASE.BASE_ADDR.value <= 20'h0;
-        end else begin
-            if(field_combo.TEX1_BASE.BASE_ADDR.load_next) begin
-                field_storage.TEX1_BASE.BASE_ADDR.value <= field_combo.TEX1_BASE.BASE_ADDR.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_BASE.BASE_ADDR.value = field_storage.TEX1_BASE.BASE_ADDR.value;
-    // Field: gpu_regs.TEX1_BASE.RSVD_HI
-    always_comb begin
-        automatic logic [31:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_BASE.RSVD_HI.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_BASE && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_BASE.RSVD_HI.value & ~decoded_wr_biten[63:32]) | (decoded_wr_data[63:32] & decoded_wr_biten[63:32]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_BASE.RSVD_HI.next = next_c;
-        field_combo.TEX1_BASE.RSVD_HI.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_BASE.RSVD_HI.value <= 32'h0;
-        end else begin
-            if(field_combo.TEX1_BASE.RSVD_HI.load_next) begin
-                field_storage.TEX1_BASE.RSVD_HI.value <= field_combo.TEX1_BASE.RSVD_HI.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_BASE.RSVD_HI.value = field_storage.TEX1_BASE.RSVD_HI.value;
-    // Field: gpu_regs.TEX1_FMT.ENABLE
+    assign hwif_out.TEX0_CFG.RSVD_HI.value = field_storage.TEX0_CFG.RSVD_HI.value;
+    // Field: gpu_regs.TEX1_CFG.ENABLE
     always_comb begin
         automatic logic [0:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.ENABLE.value;
+        next_c = field_storage.TEX1_CFG.ENABLE.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.ENABLE.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.ENABLE.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
             load_next_c = '1;
         end
-        field_combo.TEX1_FMT.ENABLE.next = next_c;
-        field_combo.TEX1_FMT.ENABLE.load_next = load_next_c;
+        field_combo.TEX1_CFG.ENABLE.next = next_c;
+        field_combo.TEX1_CFG.ENABLE.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_FMT.ENABLE.value <= 1'h0;
+            field_storage.TEX1_CFG.ENABLE.value <= 1'h0;
         end else begin
-            if(field_combo.TEX1_FMT.ENABLE.load_next) begin
-                field_storage.TEX1_FMT.ENABLE.value <= field_combo.TEX1_FMT.ENABLE.next;
+            if(field_combo.TEX1_CFG.ENABLE.load_next) begin
+                field_storage.TEX1_CFG.ENABLE.value <= field_combo.TEX1_CFG.ENABLE.next;
             end
         end
     end
-    assign hwif_out.TEX1_FMT.ENABLE.value = field_storage.TEX1_FMT.ENABLE.value;
-    // Field: gpu_regs.TEX1_FMT.RSVD_1
+    assign hwif_out.TEX1_CFG.ENABLE.value = field_storage.TEX1_CFG.ENABLE.value;
+    // Field: gpu_regs.TEX1_CFG.RSVD_1
     always_comb begin
         automatic logic [0:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.RSVD_1.value;
+        next_c = field_storage.TEX1_CFG.RSVD_1.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.RSVD_1.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.RSVD_1.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
             load_next_c = '1;
         end
-        field_combo.TEX1_FMT.RSVD_1.next = next_c;
-        field_combo.TEX1_FMT.RSVD_1.load_next = load_next_c;
+        field_combo.TEX1_CFG.RSVD_1.next = next_c;
+        field_combo.TEX1_CFG.RSVD_1.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_FMT.RSVD_1.value <= 1'h0;
+            field_storage.TEX1_CFG.RSVD_1.value <= 1'h0;
         end else begin
-            if(field_combo.TEX1_FMT.RSVD_1.load_next) begin
-                field_storage.TEX1_FMT.RSVD_1.value <= field_combo.TEX1_FMT.RSVD_1.next;
+            if(field_combo.TEX1_CFG.RSVD_1.load_next) begin
+                field_storage.TEX1_CFG.RSVD_1.value <= field_combo.TEX1_CFG.RSVD_1.next;
             end
         end
     end
-    assign hwif_out.TEX1_FMT.RSVD_1.value = field_storage.TEX1_FMT.RSVD_1.value;
-    // Field: gpu_regs.TEX1_FMT.FORMAT
+    assign hwif_out.TEX1_CFG.RSVD_1.value = field_storage.TEX1_CFG.RSVD_1.value;
+    // Field: gpu_regs.TEX1_CFG.FILTER
     always_comb begin
         automatic logic [1:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.FORMAT.value;
+        next_c = field_storage.TEX1_CFG.FILTER.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.FORMAT.value & ~decoded_wr_biten[3:2]) | (decoded_wr_data[3:2] & decoded_wr_biten[3:2]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.FILTER.value & ~decoded_wr_biten[3:2]) | (decoded_wr_data[3:2] & decoded_wr_biten[3:2]);
             load_next_c = '1;
         end
-        field_combo.TEX1_FMT.FORMAT.next = next_c;
-        field_combo.TEX1_FMT.FORMAT.load_next = load_next_c;
+        field_combo.TEX1_CFG.FILTER.next = next_c;
+        field_combo.TEX1_CFG.FILTER.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_FMT.FORMAT.value <= 2'h0;
+            field_storage.TEX1_CFG.FILTER.value <= 2'h0;
         end else begin
-            if(field_combo.TEX1_FMT.FORMAT.load_next) begin
-                field_storage.TEX1_FMT.FORMAT.value <= field_combo.TEX1_FMT.FORMAT.next;
+            if(field_combo.TEX1_CFG.FILTER.load_next) begin
+                field_storage.TEX1_CFG.FILTER.value <= field_combo.TEX1_CFG.FILTER.next;
             end
         end
     end
-    assign hwif_out.TEX1_FMT.FORMAT.value = field_storage.TEX1_FMT.FORMAT.value;
-    // Field: gpu_regs.TEX1_FMT.RSVD_54
+    assign hwif_out.TEX1_CFG.FILTER.value = field_storage.TEX1_CFG.FILTER.value;
+    // Field: gpu_regs.TEX1_CFG.FORMAT
+    always_comb begin
+        automatic logic [2:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX1_CFG.FORMAT.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.FORMAT.value & ~decoded_wr_biten[6:4]) | (decoded_wr_data[6:4] & decoded_wr_biten[6:4]);
+            load_next_c = '1;
+        end
+        field_combo.TEX1_CFG.FORMAT.next = next_c;
+        field_combo.TEX1_CFG.FORMAT.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX1_CFG.FORMAT.value <= 3'h0;
+        end else begin
+            if(field_combo.TEX1_CFG.FORMAT.load_next) begin
+                field_storage.TEX1_CFG.FORMAT.value <= field_combo.TEX1_CFG.FORMAT.next;
+            end
+        end
+    end
+    assign hwif_out.TEX1_CFG.FORMAT.value = field_storage.TEX1_CFG.FORMAT.value;
+    // Field: gpu_regs.TEX1_CFG.RSVD_7
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX1_CFG.RSVD_7.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.RSVD_7.value & ~decoded_wr_biten[7:7]) | (decoded_wr_data[7:7] & decoded_wr_biten[7:7]);
+            load_next_c = '1;
+        end
+        field_combo.TEX1_CFG.RSVD_7.next = next_c;
+        field_combo.TEX1_CFG.RSVD_7.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX1_CFG.RSVD_7.value <= 1'h0;
+        end else begin
+            if(field_combo.TEX1_CFG.RSVD_7.load_next) begin
+                field_storage.TEX1_CFG.RSVD_7.value <= field_combo.TEX1_CFG.RSVD_7.next;
+            end
+        end
+    end
+    assign hwif_out.TEX1_CFG.RSVD_7.value = field_storage.TEX1_CFG.RSVD_7.value;
+    // Field: gpu_regs.TEX1_CFG.WIDTH_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX1_CFG.WIDTH_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.WIDTH_LOG2.value & ~decoded_wr_biten[11:8]) | (decoded_wr_data[11:8] & decoded_wr_biten[11:8]);
+            load_next_c = '1;
+        end
+        field_combo.TEX1_CFG.WIDTH_LOG2.next = next_c;
+        field_combo.TEX1_CFG.WIDTH_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX1_CFG.WIDTH_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.TEX1_CFG.WIDTH_LOG2.load_next) begin
+                field_storage.TEX1_CFG.WIDTH_LOG2.value <= field_combo.TEX1_CFG.WIDTH_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.TEX1_CFG.WIDTH_LOG2.value = field_storage.TEX1_CFG.WIDTH_LOG2.value;
+    // Field: gpu_regs.TEX1_CFG.HEIGHT_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.TEX1_CFG.HEIGHT_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.HEIGHT_LOG2.value & ~decoded_wr_biten[15:12]) | (decoded_wr_data[15:12] & decoded_wr_biten[15:12]);
+            load_next_c = '1;
+        end
+        field_combo.TEX1_CFG.HEIGHT_LOG2.next = next_c;
+        field_combo.TEX1_CFG.HEIGHT_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.TEX1_CFG.HEIGHT_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.TEX1_CFG.HEIGHT_LOG2.load_next) begin
+                field_storage.TEX1_CFG.HEIGHT_LOG2.value <= field_combo.TEX1_CFG.HEIGHT_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.TEX1_CFG.HEIGHT_LOG2.value = field_storage.TEX1_CFG.HEIGHT_LOG2.value;
+    // Field: gpu_regs.TEX1_CFG.U_WRAP
     always_comb begin
         automatic logic [1:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.RSVD_54.value;
+        next_c = field_storage.TEX1_CFG.U_WRAP.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.RSVD_54.value & ~decoded_wr_biten[5:4]) | (decoded_wr_data[5:4] & decoded_wr_biten[5:4]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.U_WRAP.value & ~decoded_wr_biten[17:16]) | (decoded_wr_data[17:16] & decoded_wr_biten[17:16]);
             load_next_c = '1;
         end
-        field_combo.TEX1_FMT.RSVD_54.next = next_c;
-        field_combo.TEX1_FMT.RSVD_54.load_next = load_next_c;
+        field_combo.TEX1_CFG.U_WRAP.next = next_c;
+        field_combo.TEX1_CFG.U_WRAP.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_FMT.RSVD_54.value <= 2'h0;
+            field_storage.TEX1_CFG.U_WRAP.value <= 2'h0;
         end else begin
-            if(field_combo.TEX1_FMT.RSVD_54.load_next) begin
-                field_storage.TEX1_FMT.RSVD_54.value <= field_combo.TEX1_FMT.RSVD_54.next;
+            if(field_combo.TEX1_CFG.U_WRAP.load_next) begin
+                field_storage.TEX1_CFG.U_WRAP.value <= field_combo.TEX1_CFG.U_WRAP.next;
             end
         end
     end
-    assign hwif_out.TEX1_FMT.RSVD_54.value = field_storage.TEX1_FMT.RSVD_54.value;
-    // Field: gpu_regs.TEX1_FMT.FILTER
+    assign hwif_out.TEX1_CFG.U_WRAP.value = field_storage.TEX1_CFG.U_WRAP.value;
+    // Field: gpu_regs.TEX1_CFG.V_WRAP
     always_comb begin
         automatic logic [1:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.FILTER.value;
+        next_c = field_storage.TEX1_CFG.V_WRAP.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.FILTER.value & ~decoded_wr_biten[7:6]) | (decoded_wr_data[7:6] & decoded_wr_biten[7:6]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.V_WRAP.value & ~decoded_wr_biten[19:18]) | (decoded_wr_data[19:18] & decoded_wr_biten[19:18]);
             load_next_c = '1;
         end
-        field_combo.TEX1_FMT.FILTER.next = next_c;
-        field_combo.TEX1_FMT.FILTER.load_next = load_next_c;
+        field_combo.TEX1_CFG.V_WRAP.next = next_c;
+        field_combo.TEX1_CFG.V_WRAP.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_FMT.FILTER.value <= 2'h0;
+            field_storage.TEX1_CFG.V_WRAP.value <= 2'h0;
         end else begin
-            if(field_combo.TEX1_FMT.FILTER.load_next) begin
-                field_storage.TEX1_FMT.FILTER.value <= field_combo.TEX1_FMT.FILTER.next;
+            if(field_combo.TEX1_CFG.V_WRAP.load_next) begin
+                field_storage.TEX1_CFG.V_WRAP.value <= field_combo.TEX1_CFG.V_WRAP.next;
             end
         end
     end
-    assign hwif_out.TEX1_FMT.FILTER.value = field_storage.TEX1_FMT.FILTER.value;
-    // Field: gpu_regs.TEX1_FMT.WIDTH_LOG2
+    assign hwif_out.TEX1_CFG.V_WRAP.value = field_storage.TEX1_CFG.V_WRAP.value;
+    // Field: gpu_regs.TEX1_CFG.MIP_LEVELS
     always_comb begin
         automatic logic [3:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.WIDTH_LOG2.value;
+        next_c = field_storage.TEX1_CFG.MIP_LEVELS.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.WIDTH_LOG2.value & ~decoded_wr_biten[11:8]) | (decoded_wr_data[11:8] & decoded_wr_biten[11:8]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.MIP_LEVELS.value & ~decoded_wr_biten[23:20]) | (decoded_wr_data[23:20] & decoded_wr_biten[23:20]);
             load_next_c = '1;
         end
-        field_combo.TEX1_FMT.WIDTH_LOG2.next = next_c;
-        field_combo.TEX1_FMT.WIDTH_LOG2.load_next = load_next_c;
+        field_combo.TEX1_CFG.MIP_LEVELS.next = next_c;
+        field_combo.TEX1_CFG.MIP_LEVELS.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_FMT.WIDTH_LOG2.value <= 4'h0;
+            field_storage.TEX1_CFG.MIP_LEVELS.value <= 4'h0;
         end else begin
-            if(field_combo.TEX1_FMT.WIDTH_LOG2.load_next) begin
-                field_storage.TEX1_FMT.WIDTH_LOG2.value <= field_combo.TEX1_FMT.WIDTH_LOG2.next;
+            if(field_combo.TEX1_CFG.MIP_LEVELS.load_next) begin
+                field_storage.TEX1_CFG.MIP_LEVELS.value <= field_combo.TEX1_CFG.MIP_LEVELS.next;
             end
         end
     end
-    assign hwif_out.TEX1_FMT.WIDTH_LOG2.value = field_storage.TEX1_FMT.WIDTH_LOG2.value;
-    // Field: gpu_regs.TEX1_FMT.HEIGHT_LOG2
-    always_comb begin
-        automatic logic [3:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.HEIGHT_LOG2.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.HEIGHT_LOG2.value & ~decoded_wr_biten[15:12]) | (decoded_wr_data[15:12] & decoded_wr_biten[15:12]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_FMT.HEIGHT_LOG2.next = next_c;
-        field_combo.TEX1_FMT.HEIGHT_LOG2.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_FMT.HEIGHT_LOG2.value <= 4'h0;
-        end else begin
-            if(field_combo.TEX1_FMT.HEIGHT_LOG2.load_next) begin
-                field_storage.TEX1_FMT.HEIGHT_LOG2.value <= field_combo.TEX1_FMT.HEIGHT_LOG2.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_FMT.HEIGHT_LOG2.value = field_storage.TEX1_FMT.HEIGHT_LOG2.value;
-    // Field: gpu_regs.TEX1_FMT.SWIZZLE
-    always_comb begin
-        automatic logic [3:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.SWIZZLE.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.SWIZZLE.value & ~decoded_wr_biten[19:16]) | (decoded_wr_data[19:16] & decoded_wr_biten[19:16]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_FMT.SWIZZLE.next = next_c;
-        field_combo.TEX1_FMT.SWIZZLE.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_FMT.SWIZZLE.value <= 4'h0;
-        end else begin
-            if(field_combo.TEX1_FMT.SWIZZLE.load_next) begin
-                field_storage.TEX1_FMT.SWIZZLE.value <= field_combo.TEX1_FMT.SWIZZLE.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_FMT.SWIZZLE.value = field_storage.TEX1_FMT.SWIZZLE.value;
-    // Field: gpu_regs.TEX1_FMT.MIP_LEVELS
-    always_comb begin
-        automatic logic [3:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.MIP_LEVELS.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.MIP_LEVELS.value & ~decoded_wr_biten[23:20]) | (decoded_wr_data[23:20] & decoded_wr_biten[23:20]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_FMT.MIP_LEVELS.next = next_c;
-        field_combo.TEX1_FMT.MIP_LEVELS.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_FMT.MIP_LEVELS.value <= 4'h0;
-        end else begin
-            if(field_combo.TEX1_FMT.MIP_LEVELS.load_next) begin
-                field_storage.TEX1_FMT.MIP_LEVELS.value <= field_combo.TEX1_FMT.MIP_LEVELS.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_FMT.MIP_LEVELS.value = field_storage.TEX1_FMT.MIP_LEVELS.value;
-    // Field: gpu_regs.TEX1_FMT.RSVD_HI
-    always_comb begin
-        automatic logic [39:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_FMT.RSVD_HI.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_FMT && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_FMT.RSVD_HI.value & ~decoded_wr_biten[63:24]) | (decoded_wr_data[63:24] & decoded_wr_biten[63:24]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_FMT.RSVD_HI.next = next_c;
-        field_combo.TEX1_FMT.RSVD_HI.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_FMT.RSVD_HI.value <= 40'h0;
-        end else begin
-            if(field_combo.TEX1_FMT.RSVD_HI.load_next) begin
-                field_storage.TEX1_FMT.RSVD_HI.value <= field_combo.TEX1_FMT.RSVD_HI.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_FMT.RSVD_HI.value = field_storage.TEX1_FMT.RSVD_HI.value;
-    // Field: gpu_regs.TEX1_MIP_BIAS.MIP_BIAS
+    assign hwif_out.TEX1_CFG.MIP_LEVELS.value = field_storage.TEX1_CFG.MIP_LEVELS.value;
+    // Field: gpu_regs.TEX1_CFG.RSVD_MID
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_MIP_BIAS.MIP_BIAS.value;
+        next_c = field_storage.TEX1_CFG.RSVD_MID.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_MIP_BIAS && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_MIP_BIAS.MIP_BIAS.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.RSVD_MID.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
             load_next_c = '1;
         end
-        field_combo.TEX1_MIP_BIAS.MIP_BIAS.next = next_c;
-        field_combo.TEX1_MIP_BIAS.MIP_BIAS.load_next = load_next_c;
+        field_combo.TEX1_CFG.RSVD_MID.next = next_c;
+        field_combo.TEX1_CFG.RSVD_MID.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_MIP_BIAS.MIP_BIAS.value <= 8'h0;
+            field_storage.TEX1_CFG.RSVD_MID.value <= 8'h0;
         end else begin
-            if(field_combo.TEX1_MIP_BIAS.MIP_BIAS.load_next) begin
-                field_storage.TEX1_MIP_BIAS.MIP_BIAS.value <= field_combo.TEX1_MIP_BIAS.MIP_BIAS.next;
+            if(field_combo.TEX1_CFG.RSVD_MID.load_next) begin
+                field_storage.TEX1_CFG.RSVD_MID.value <= field_combo.TEX1_CFG.RSVD_MID.next;
             end
         end
     end
-    assign hwif_out.TEX1_MIP_BIAS.MIP_BIAS.value = field_storage.TEX1_MIP_BIAS.MIP_BIAS.value;
-    // Field: gpu_regs.TEX1_MIP_BIAS.RSVD
+    assign hwif_out.TEX1_CFG.RSVD_MID.value = field_storage.TEX1_CFG.RSVD_MID.value;
+    // Field: gpu_regs.TEX1_CFG.BASE_ADDR
     always_comb begin
-        automatic logic [55:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_MIP_BIAS.RSVD.value;
+        next_c = field_storage.TEX1_CFG.BASE_ADDR.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_MIP_BIAS && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_MIP_BIAS.RSVD.value & ~decoded_wr_biten[63:8]) | (decoded_wr_data[63:8] & decoded_wr_biten[63:8]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.BASE_ADDR.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
             load_next_c = '1;
         end
-        field_combo.TEX1_MIP_BIAS.RSVD.next = next_c;
-        field_combo.TEX1_MIP_BIAS.RSVD.load_next = load_next_c;
+        field_combo.TEX1_CFG.BASE_ADDR.next = next_c;
+        field_combo.TEX1_CFG.BASE_ADDR.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_MIP_BIAS.RSVD.value <= 56'h0;
+            field_storage.TEX1_CFG.BASE_ADDR.value <= 16'h0;
         end else begin
-            if(field_combo.TEX1_MIP_BIAS.RSVD.load_next) begin
-                field_storage.TEX1_MIP_BIAS.RSVD.value <= field_combo.TEX1_MIP_BIAS.RSVD.next;
+            if(field_combo.TEX1_CFG.BASE_ADDR.load_next) begin
+                field_storage.TEX1_CFG.BASE_ADDR.value <= field_combo.TEX1_CFG.BASE_ADDR.next;
             end
         end
     end
-    assign hwif_out.TEX1_MIP_BIAS.RSVD.value = field_storage.TEX1_MIP_BIAS.RSVD.value;
-    // Field: gpu_regs.TEX1_WRAP.U_WRAP
+    assign hwif_out.TEX1_CFG.BASE_ADDR.value = field_storage.TEX1_CFG.BASE_ADDR.value;
+    // Field: gpu_regs.TEX1_CFG.RSVD_HI
     always_comb begin
-        automatic logic [1:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_WRAP.U_WRAP.value;
+        next_c = field_storage.TEX1_CFG.RSVD_HI.value;
         load_next_c = '0;
-        if(decoded_reg_strb.TEX1_WRAP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_WRAP.U_WRAP.value & ~decoded_wr_biten[1:0]) | (decoded_wr_data[1:0] & decoded_wr_biten[1:0]);
+        if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.TEX1_CFG.RSVD_HI.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
             load_next_c = '1;
         end
-        field_combo.TEX1_WRAP.U_WRAP.next = next_c;
-        field_combo.TEX1_WRAP.U_WRAP.load_next = load_next_c;
+        field_combo.TEX1_CFG.RSVD_HI.next = next_c;
+        field_combo.TEX1_CFG.RSVD_HI.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_WRAP.U_WRAP.value <= 2'h0;
+            field_storage.TEX1_CFG.RSVD_HI.value <= 16'h0;
         end else begin
-            if(field_combo.TEX1_WRAP.U_WRAP.load_next) begin
-                field_storage.TEX1_WRAP.U_WRAP.value <= field_combo.TEX1_WRAP.U_WRAP.next;
+            if(field_combo.TEX1_CFG.RSVD_HI.load_next) begin
+                field_storage.TEX1_CFG.RSVD_HI.value <= field_combo.TEX1_CFG.RSVD_HI.next;
             end
         end
     end
-    assign hwif_out.TEX1_WRAP.U_WRAP.value = field_storage.TEX1_WRAP.U_WRAP.value;
-    // Field: gpu_regs.TEX1_WRAP.V_WRAP
-    always_comb begin
-        automatic logic [1:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_WRAP.V_WRAP.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_WRAP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_WRAP.V_WRAP.value & ~decoded_wr_biten[3:2]) | (decoded_wr_data[3:2] & decoded_wr_biten[3:2]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_WRAP.V_WRAP.next = next_c;
-        field_combo.TEX1_WRAP.V_WRAP.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_WRAP.V_WRAP.value <= 2'h0;
-        end else begin
-            if(field_combo.TEX1_WRAP.V_WRAP.load_next) begin
-                field_storage.TEX1_WRAP.V_WRAP.value <= field_combo.TEX1_WRAP.V_WRAP.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_WRAP.V_WRAP.value = field_storage.TEX1_WRAP.V_WRAP.value;
-    // Field: gpu_regs.TEX1_WRAP.RSVD
-    always_comb begin
-        automatic logic [59:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.TEX1_WRAP.RSVD.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.TEX1_WRAP && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_WRAP.RSVD.value & ~decoded_wr_biten[63:4]) | (decoded_wr_data[63:4] & decoded_wr_biten[63:4]);
-            load_next_c = '1;
-        end
-        field_combo.TEX1_WRAP.RSVD.next = next_c;
-        field_combo.TEX1_WRAP.RSVD.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.TEX1_WRAP.RSVD.value <= 60'h0;
-        end else begin
-            if(field_combo.TEX1_WRAP.RSVD.load_next) begin
-                field_storage.TEX1_WRAP.RSVD.value <= field_combo.TEX1_WRAP.RSVD.next;
-            end
-        end
-    end
-    assign hwif_out.TEX1_WRAP.RSVD.value = field_storage.TEX1_WRAP.RSVD.value;
+    assign hwif_out.TEX1_CFG.RSVD_HI.value = field_storage.TEX1_CFG.RSVD_HI.value;
     // Field: gpu_regs.CC_MODE.CC_ALPHA_A
     always_comb begin
         automatic logic [3:0] next_c;
@@ -3626,12 +3290,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY.COLOR_GRADE_ENABLE.value = field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value;
     // Field: gpu_regs.FB_DISPLAY.RSVD_LO
     always_comb begin
-        automatic logic [4:0] next_c;
+        automatic logic [14:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY.RSVD_LO.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY.RSVD_LO.value & ~decoded_wr_biten[5:1]) | (decoded_wr_data[5:1] & decoded_wr_biten[5:1]);
+            next_c = (field_storage.FB_DISPLAY.RSVD_LO.value & ~decoded_wr_biten[15:1]) | (decoded_wr_data[15:1] & decoded_wr_biten[15:1]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY.RSVD_LO.next = next_c;
@@ -3639,7 +3303,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY.RSVD_LO.value <= 5'h0;
+            field_storage.FB_DISPLAY.RSVD_LO.value <= 15'h0;
         end else begin
             if(field_combo.FB_DISPLAY.RSVD_LO.load_next) begin
                 field_storage.FB_DISPLAY.RSVD_LO.value <= field_combo.FB_DISPLAY.RSVD_LO.next;
@@ -3649,12 +3313,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY.RSVD_LO.value = field_storage.FB_DISPLAY.RSVD_LO.value;
     // Field: gpu_regs.FB_DISPLAY.LUT_ADDR
     always_comb begin
-        automatic logic [12:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY.LUT_ADDR.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY.LUT_ADDR.value & ~decoded_wr_biten[18:6]) | (decoded_wr_data[18:6] & decoded_wr_biten[18:6]);
+            next_c = (field_storage.FB_DISPLAY.LUT_ADDR.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY.LUT_ADDR.next = next_c;
@@ -3662,7 +3326,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY.LUT_ADDR.value <= 13'h0;
+            field_storage.FB_DISPLAY.LUT_ADDR.value <= 16'h0;
         end else begin
             if(field_combo.FB_DISPLAY.LUT_ADDR.load_next) begin
                 field_storage.FB_DISPLAY.LUT_ADDR.value <= field_combo.FB_DISPLAY.LUT_ADDR.next;
@@ -3672,12 +3336,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY.LUT_ADDR.value = field_storage.FB_DISPLAY.LUT_ADDR.value;
     // Field: gpu_regs.FB_DISPLAY.FB_ADDR
     always_comb begin
-        automatic logic [12:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY.FB_ADDR.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY.FB_ADDR.value & ~decoded_wr_biten[31:19]) | (decoded_wr_data[31:19] & decoded_wr_biten[31:19]);
+            next_c = (field_storage.FB_DISPLAY.FB_ADDR.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY.FB_ADDR.next = next_c;
@@ -3685,7 +3349,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY.FB_ADDR.value <= 13'h0;
+            field_storage.FB_DISPLAY.FB_ADDR.value <= 16'h0;
         end else begin
             if(field_combo.FB_DISPLAY.FB_ADDR.load_next) begin
                 field_storage.FB_DISPLAY.FB_ADDR.value <= field_combo.FB_DISPLAY.FB_ADDR.next;
@@ -3695,12 +3359,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY.FB_ADDR.value = field_storage.FB_DISPLAY.FB_ADDR.value;
     // Field: gpu_regs.FB_DISPLAY.RSVD_HI
     always_comb begin
-        automatic logic [31:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY.RSVD_HI.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY.RSVD_HI.value & ~decoded_wr_biten[63:32]) | (decoded_wr_data[63:32] & decoded_wr_biten[63:32]);
+            next_c = (field_storage.FB_DISPLAY.RSVD_HI.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY.RSVD_HI.next = next_c;
@@ -3708,7 +3372,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY.RSVD_HI.value <= 32'h0;
+            field_storage.FB_DISPLAY.RSVD_HI.value <= 16'h0;
         end else begin
             if(field_combo.FB_DISPLAY.RSVD_HI.load_next) begin
                 field_storage.FB_DISPLAY.RSVD_HI.value <= field_combo.FB_DISPLAY.RSVD_HI.next;
@@ -3994,12 +3658,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY_SYNC.COLOR_GRADE_ENABLE.value = field_storage.FB_DISPLAY_SYNC.COLOR_GRADE_ENABLE.value;
     // Field: gpu_regs.FB_DISPLAY_SYNC.RSVD_LO
     always_comb begin
-        automatic logic [4:0] next_c;
+        automatic logic [14:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY_SYNC.RSVD_LO.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY_SYNC && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY_SYNC.RSVD_LO.value & ~decoded_wr_biten[5:1]) | (decoded_wr_data[5:1] & decoded_wr_biten[5:1]);
+            next_c = (field_storage.FB_DISPLAY_SYNC.RSVD_LO.value & ~decoded_wr_biten[15:1]) | (decoded_wr_data[15:1] & decoded_wr_biten[15:1]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY_SYNC.RSVD_LO.next = next_c;
@@ -4007,7 +3671,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY_SYNC.RSVD_LO.value <= 5'h0;
+            field_storage.FB_DISPLAY_SYNC.RSVD_LO.value <= 15'h0;
         end else begin
             if(field_combo.FB_DISPLAY_SYNC.RSVD_LO.load_next) begin
                 field_storage.FB_DISPLAY_SYNC.RSVD_LO.value <= field_combo.FB_DISPLAY_SYNC.RSVD_LO.next;
@@ -4017,12 +3681,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY_SYNC.RSVD_LO.value = field_storage.FB_DISPLAY_SYNC.RSVD_LO.value;
     // Field: gpu_regs.FB_DISPLAY_SYNC.LUT_ADDR
     always_comb begin
-        automatic logic [12:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY_SYNC && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value & ~decoded_wr_biten[18:6]) | (decoded_wr_data[18:6] & decoded_wr_biten[18:6]);
+            next_c = (field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY_SYNC.LUT_ADDR.next = next_c;
@@ -4030,7 +3694,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value <= 13'h0;
+            field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value <= 16'h0;
         end else begin
             if(field_combo.FB_DISPLAY_SYNC.LUT_ADDR.load_next) begin
                 field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value <= field_combo.FB_DISPLAY_SYNC.LUT_ADDR.next;
@@ -4040,12 +3704,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY_SYNC.LUT_ADDR.value = field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value;
     // Field: gpu_regs.FB_DISPLAY_SYNC.FB_ADDR
     always_comb begin
-        automatic logic [12:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY_SYNC.FB_ADDR.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY_SYNC && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY_SYNC.FB_ADDR.value & ~decoded_wr_biten[31:19]) | (decoded_wr_data[31:19] & decoded_wr_biten[31:19]);
+            next_c = (field_storage.FB_DISPLAY_SYNC.FB_ADDR.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY_SYNC.FB_ADDR.next = next_c;
@@ -4053,7 +3717,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY_SYNC.FB_ADDR.value <= 13'h0;
+            field_storage.FB_DISPLAY_SYNC.FB_ADDR.value <= 16'h0;
         end else begin
             if(field_combo.FB_DISPLAY_SYNC.FB_ADDR.load_next) begin
                 field_storage.FB_DISPLAY_SYNC.FB_ADDR.value <= field_combo.FB_DISPLAY_SYNC.FB_ADDR.next;
@@ -4063,12 +3727,12 @@ module gpu_regs (
     assign hwif_out.FB_DISPLAY_SYNC.FB_ADDR.value = field_storage.FB_DISPLAY_SYNC.FB_ADDR.value;
     // Field: gpu_regs.FB_DISPLAY_SYNC.RSVD_HI
     always_comb begin
-        automatic logic [31:0] next_c;
+        automatic logic [15:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY_SYNC.RSVD_HI.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY_SYNC && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY_SYNC.RSVD_HI.value & ~decoded_wr_biten[63:32]) | (decoded_wr_data[63:32] & decoded_wr_biten[63:32]);
+            next_c = (field_storage.FB_DISPLAY_SYNC.RSVD_HI.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY_SYNC.RSVD_HI.next = next_c;
@@ -4076,7 +3740,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY_SYNC.RSVD_HI.value <= 32'h0;
+            field_storage.FB_DISPLAY_SYNC.RSVD_HI.value <= 16'h0;
         end else begin
             if(field_combo.FB_DISPLAY_SYNC.RSVD_HI.load_next) begin
                 field_storage.FB_DISPLAY_SYNC.RSVD_HI.value <= field_combo.FB_DISPLAY_SYNC.RSVD_HI.next;
@@ -4212,7 +3876,7 @@ module gpu_regs (
     logic [63:0] readback_data;
 
     // Assign readback values to a flattened array
-    logic [63:0] readback_array[35];
+    logic [63:0] readback_array[29];
     assign readback_array[0][7:0] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_R.value : '0;
     assign readback_array[0][15:8] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_G.value : '0;
     assign readback_array[0][23:16] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_B.value : '0;
@@ -4225,143 +3889,133 @@ module gpu_regs (
     assign readback_array[1][31:16] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV0_VQ.value : '0;
     assign readback_array[1][47:32] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV1_UQ.value : '0;
     assign readback_array[1][63:48] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV1_VQ.value : '0;
-    assign readback_array[2][7:0] = (decoded_reg_strb.LIGHT_DIR && !decoded_req_is_wr) ? field_storage.LIGHT_DIR.X_DIR.value : '0;
-    assign readback_array[2][15:8] = (decoded_reg_strb.LIGHT_DIR && !decoded_req_is_wr) ? field_storage.LIGHT_DIR.Y_DIR.value : '0;
-    assign readback_array[2][23:16] = (decoded_reg_strb.LIGHT_DIR && !decoded_req_is_wr) ? field_storage.LIGHT_DIR.Z_DIR.value : '0;
-    assign readback_array[2][63:24] = (decoded_reg_strb.LIGHT_DIR && !decoded_req_is_wr) ? field_storage.LIGHT_DIR.RSVD.value : '0;
-    assign readback_array[3][15:0] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.X.value : '0;
-    assign readback_array[3][31:16] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Y.value : '0;
-    assign readback_array[3][47:32] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Z.value : '0;
-    assign readback_array[3][63:48] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Q.value : '0;
-    assign readback_array[4][15:0] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.X.value : '0;
-    assign readback_array[4][31:16] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Y.value : '0;
-    assign readback_array[4][47:32] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Z.value : '0;
-    assign readback_array[4][63:48] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Q.value : '0;
-    assign readback_array[5][15:0] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.X.value : '0;
-    assign readback_array[5][31:16] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Y.value : '0;
-    assign readback_array[5][47:32] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Z.value : '0;
-    assign readback_array[5][63:48] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Q.value : '0;
-    assign readback_array[6][11:0] = (decoded_reg_strb.TEX0_BASE && !decoded_req_is_wr) ? field_storage.TEX0_BASE.RSVD_LO.value : '0;
-    assign readback_array[6][31:12] = (decoded_reg_strb.TEX0_BASE && !decoded_req_is_wr) ? field_storage.TEX0_BASE.BASE_ADDR.value : '0;
-    assign readback_array[6][63:32] = (decoded_reg_strb.TEX0_BASE && !decoded_req_is_wr) ? field_storage.TEX0_BASE.RSVD_HI.value : '0;
-    assign readback_array[7][0:0] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.ENABLE.value : '0;
-    assign readback_array[7][1:1] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.RSVD_1.value : '0;
-    assign readback_array[7][3:2] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.FORMAT.value : '0;
-    assign readback_array[7][5:4] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.RSVD_54.value : '0;
-    assign readback_array[7][7:6] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.FILTER.value : '0;
-    assign readback_array[7][11:8] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.WIDTH_LOG2.value : '0;
-    assign readback_array[7][15:12] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.HEIGHT_LOG2.value : '0;
-    assign readback_array[7][19:16] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.SWIZZLE.value : '0;
-    assign readback_array[7][23:20] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.MIP_LEVELS.value : '0;
-    assign readback_array[7][63:24] = (decoded_reg_strb.TEX0_FMT && !decoded_req_is_wr) ? field_storage.TEX0_FMT.RSVD_HI.value : '0;
-    assign readback_array[8][7:0] = (decoded_reg_strb.TEX0_MIP_BIAS && !decoded_req_is_wr) ? field_storage.TEX0_MIP_BIAS.MIP_BIAS.value : '0;
-    assign readback_array[8][63:8] = (decoded_reg_strb.TEX0_MIP_BIAS && !decoded_req_is_wr) ? field_storage.TEX0_MIP_BIAS.RSVD.value : '0;
-    assign readback_array[9][1:0] = (decoded_reg_strb.TEX0_WRAP && !decoded_req_is_wr) ? field_storage.TEX0_WRAP.U_WRAP.value : '0;
-    assign readback_array[9][3:2] = (decoded_reg_strb.TEX0_WRAP && !decoded_req_is_wr) ? field_storage.TEX0_WRAP.V_WRAP.value : '0;
-    assign readback_array[9][63:4] = (decoded_reg_strb.TEX0_WRAP && !decoded_req_is_wr) ? field_storage.TEX0_WRAP.RSVD.value : '0;
-    assign readback_array[10][11:0] = (decoded_reg_strb.TEX1_BASE && !decoded_req_is_wr) ? field_storage.TEX1_BASE.RSVD_LO.value : '0;
-    assign readback_array[10][31:12] = (decoded_reg_strb.TEX1_BASE && !decoded_req_is_wr) ? field_storage.TEX1_BASE.BASE_ADDR.value : '0;
-    assign readback_array[10][63:32] = (decoded_reg_strb.TEX1_BASE && !decoded_req_is_wr) ? field_storage.TEX1_BASE.RSVD_HI.value : '0;
-    assign readback_array[11][0:0] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.ENABLE.value : '0;
-    assign readback_array[11][1:1] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.RSVD_1.value : '0;
-    assign readback_array[11][3:2] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.FORMAT.value : '0;
-    assign readback_array[11][5:4] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.RSVD_54.value : '0;
-    assign readback_array[11][7:6] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.FILTER.value : '0;
-    assign readback_array[11][11:8] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.WIDTH_LOG2.value : '0;
-    assign readback_array[11][15:12] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.HEIGHT_LOG2.value : '0;
-    assign readback_array[11][19:16] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.SWIZZLE.value : '0;
-    assign readback_array[11][23:20] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.MIP_LEVELS.value : '0;
-    assign readback_array[11][63:24] = (decoded_reg_strb.TEX1_FMT && !decoded_req_is_wr) ? field_storage.TEX1_FMT.RSVD_HI.value : '0;
-    assign readback_array[12][7:0] = (decoded_reg_strb.TEX1_MIP_BIAS && !decoded_req_is_wr) ? field_storage.TEX1_MIP_BIAS.MIP_BIAS.value : '0;
-    assign readback_array[12][63:8] = (decoded_reg_strb.TEX1_MIP_BIAS && !decoded_req_is_wr) ? field_storage.TEX1_MIP_BIAS.RSVD.value : '0;
-    assign readback_array[13][1:0] = (decoded_reg_strb.TEX1_WRAP && !decoded_req_is_wr) ? field_storage.TEX1_WRAP.U_WRAP.value : '0;
-    assign readback_array[13][3:2] = (decoded_reg_strb.TEX1_WRAP && !decoded_req_is_wr) ? field_storage.TEX1_WRAP.V_WRAP.value : '0;
-    assign readback_array[13][63:4] = (decoded_reg_strb.TEX1_WRAP && !decoded_req_is_wr) ? field_storage.TEX1_WRAP.RSVD.value : '0;
-    assign readback_array[14][3:0] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_A.value : '0;
-    assign readback_array[14][7:4] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_B.value : '0;
-    assign readback_array[14][11:8] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_C.value : '0;
-    assign readback_array[14][15:12] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_D.value : '0;
-    assign readback_array[14][19:16] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_A_SOURCE.value : '0;
-    assign readback_array[14][23:20] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_B_SOURCE.value : '0;
-    assign readback_array[14][27:24] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_C_SOURCE.value : '0;
-    assign readback_array[14][31:28] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_D_SOURCE.value : '0;
-    assign readback_array[14][63:32] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.RSVD.value : '0;
-    assign readback_array[15][7:0] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.RED.value : '0;
-    assign readback_array[15][15:8] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.GREEN.value : '0;
-    assign readback_array[15][23:16] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.BLUE.value : '0;
-    assign readback_array[15][31:24] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.ALPHA.value : '0;
-    assign readback_array[15][63:32] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.RSVD.value : '0;
-    assign readback_array[16][7:0] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.RED.value : '0;
-    assign readback_array[16][15:8] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.GREEN.value : '0;
-    assign readback_array[16][23:16] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.BLUE.value : '0;
-    assign readback_array[16][31:24] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.ALPHA.value : '0;
-    assign readback_array[16][63:32] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.RSVD.value : '0;
-    assign readback_array[17][7:0] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.RED.value : '0;
-    assign readback_array[17][15:8] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.GREEN.value : '0;
-    assign readback_array[17][23:16] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.BLUE.value : '0;
-    assign readback_array[17][31:24] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.ALPHA.value : '0;
-    assign readback_array[17][63:32] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.RSVD.value : '0;
-    assign readback_array[18][0:0] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.GOURAUD.value : '0;
-    assign readback_array[18][1:1] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.RSVD_1.value : '0;
-    assign readback_array[18][2:2] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_TEST_EN.value : '0;
-    assign readback_array[18][3:3] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_WRITE_EN.value : '0;
-    assign readback_array[18][4:4] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.COLOR_WRITE_EN.value : '0;
-    assign readback_array[18][6:5] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.CULL_MODE.value : '0;
-    assign readback_array[18][9:7] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.ALPHA_BLEND.value : '0;
-    assign readback_array[18][10:10] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.DITHER_EN.value : '0;
-    assign readback_array[18][12:11] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.DITHER_PATTERN.value : '0;
-    assign readback_array[18][15:13] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_COMPARE.value : '0;
-    assign readback_array[18][63:16] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.RSVD_HI.value : '0;
-    assign readback_array[19][15:0] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.Z_RANGE_MIN.value : '0;
-    assign readback_array[19][31:16] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.Z_RANGE_MAX.value : '0;
-    assign readback_array[19][63:32] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.RSVD.value : '0;
-    assign readback_array[20][11:0] = (decoded_reg_strb.FB_DRAW && !decoded_req_is_wr) ? field_storage.FB_DRAW.RSVD_LO.value : '0;
-    assign readback_array[20][31:12] = (decoded_reg_strb.FB_DRAW && !decoded_req_is_wr) ? field_storage.FB_DRAW.BASE_ADDR.value : '0;
-    assign readback_array[20][63:32] = (decoded_reg_strb.FB_DRAW && !decoded_req_is_wr) ? field_storage.FB_DRAW.RSVD_HI.value : '0;
-    assign readback_array[21][0:0] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value : '0;
-    assign readback_array[21][5:1] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_LO.value : '0;
-    assign readback_array[21][18:6] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.LUT_ADDR.value : '0;
-    assign readback_array[21][31:19] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.FB_ADDR.value : '0;
-    assign readback_array[21][63:32] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_HI.value : '0;
-    assign readback_array[22][11:0] = (decoded_reg_strb.FB_ZBUFFER && !decoded_req_is_wr) ? field_storage.FB_ZBUFFER.RSVD_LO.value : '0;
-    assign readback_array[22][31:12] = (decoded_reg_strb.FB_ZBUFFER && !decoded_req_is_wr) ? field_storage.FB_ZBUFFER.BASE_ADDR.value : '0;
-    assign readback_array[22][63:32] = (decoded_reg_strb.FB_ZBUFFER && !decoded_req_is_wr) ? field_storage.FB_ZBUFFER.RSVD_HI.value : '0;
-    assign readback_array[23][9:0] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_X.value : '0;
-    assign readback_array[23][19:10] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_Y.value : '0;
-    assign readback_array[23][29:20] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_WIDTH.value : '0;
-    assign readback_array[23][39:30] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_HEIGHT.value : '0;
-    assign readback_array[23][40:40] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value : '0;
-    assign readback_array[23][41:41] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_41.value : '0;
-    assign readback_array[23][42:42] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.STENCIL_WRITE_EN.value : '0;
-    assign readback_array[23][63:43] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_HI.value : '0;
-    assign readback_array[24][0:0] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.COLOR_GRADE_ENABLE.value : '0;
-    assign readback_array[24][5:1] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.RSVD_LO.value : '0;
-    assign readback_array[24][18:6] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value : '0;
-    assign readback_array[24][31:19] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.FB_ADDR.value : '0;
-    assign readback_array[24][63:32] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.RSVD_HI.value : '0;
-    assign readback_array[25][31:0] = (decoded_reg_strb.PERF_TEX0 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[25][63:32] = (decoded_reg_strb.PERF_TEX0 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[26][31:0] = (decoded_reg_strb.PERF_TEX1 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[26][63:32] = (decoded_reg_strb.PERF_TEX1 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[27][31:0] = (decoded_reg_strb.PERF_PIXELS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[27][63:32] = (decoded_reg_strb.PERF_PIXELS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[28][31:0] = (decoded_reg_strb.PERF_FRAGMENTS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[28][63:32] = (decoded_reg_strb.PERF_FRAGMENTS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[29][31:0] = (decoded_reg_strb.PERF_STALL_VS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[29][63:32] = (decoded_reg_strb.PERF_STALL_VS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[30][31:0] = (decoded_reg_strb.PERF_STALL_CT && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[30][63:32] = (decoded_reg_strb.PERF_STALL_CT && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[31][31:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;
-    assign readback_array[31][63:32] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.RSVD.value : '0;
-    assign readback_array[32][31:0] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.DATA.value : '0;
-    assign readback_array[32][63:32] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.RSVD.value : '0;
-    assign readback_array[33][7:0] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 8'h0 : '0;
-    assign readback_array[33][8:8] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[33][9:9] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[33][63:10] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 54'h0 : '0;
-    assign readback_array[34][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
-    assign readback_array[34][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
-    assign readback_array[34][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[2][15:0] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.X.value : '0;
+    assign readback_array[2][31:16] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Y.value : '0;
+    assign readback_array[2][47:32] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Z.value : '0;
+    assign readback_array[2][63:48] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Q.value : '0;
+    assign readback_array[3][15:0] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.X.value : '0;
+    assign readback_array[3][31:16] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Y.value : '0;
+    assign readback_array[3][47:32] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Z.value : '0;
+    assign readback_array[3][63:48] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Q.value : '0;
+    assign readback_array[4][15:0] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.X.value : '0;
+    assign readback_array[4][31:16] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Y.value : '0;
+    assign readback_array[4][47:32] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Z.value : '0;
+    assign readback_array[4][63:48] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Q.value : '0;
+    assign readback_array[5][15:0] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.X.value : '0;
+    assign readback_array[5][31:16] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.Y.value : '0;
+    assign readback_array[5][47:32] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.Z.value : '0;
+    assign readback_array[5][63:48] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.Q.value : '0;
+    assign readback_array[6][0:0] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.ENABLE.value : '0;
+    assign readback_array[6][1:1] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_1.value : '0;
+    assign readback_array[6][3:2] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.FILTER.value : '0;
+    assign readback_array[6][6:4] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.FORMAT.value : '0;
+    assign readback_array[6][7:7] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_7.value : '0;
+    assign readback_array[6][11:8] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.WIDTH_LOG2.value : '0;
+    assign readback_array[6][15:12] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.HEIGHT_LOG2.value : '0;
+    assign readback_array[6][17:16] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.U_WRAP.value : '0;
+    assign readback_array[6][19:18] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.V_WRAP.value : '0;
+    assign readback_array[6][23:20] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.MIP_LEVELS.value : '0;
+    assign readback_array[6][31:24] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_MID.value : '0;
+    assign readback_array[6][47:32] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.BASE_ADDR.value : '0;
+    assign readback_array[6][63:48] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_HI.value : '0;
+    assign readback_array[7][0:0] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.ENABLE.value : '0;
+    assign readback_array[7][1:1] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_1.value : '0;
+    assign readback_array[7][3:2] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.FILTER.value : '0;
+    assign readback_array[7][6:4] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.FORMAT.value : '0;
+    assign readback_array[7][7:7] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_7.value : '0;
+    assign readback_array[7][11:8] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.WIDTH_LOG2.value : '0;
+    assign readback_array[7][15:12] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.HEIGHT_LOG2.value : '0;
+    assign readback_array[7][17:16] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.U_WRAP.value : '0;
+    assign readback_array[7][19:18] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.V_WRAP.value : '0;
+    assign readback_array[7][23:20] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.MIP_LEVELS.value : '0;
+    assign readback_array[7][31:24] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_MID.value : '0;
+    assign readback_array[7][47:32] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.BASE_ADDR.value : '0;
+    assign readback_array[7][63:48] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_HI.value : '0;
+    assign readback_array[8][3:0] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_A.value : '0;
+    assign readback_array[8][7:4] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_B.value : '0;
+    assign readback_array[8][11:8] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_C.value : '0;
+    assign readback_array[8][15:12] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_ALPHA_D.value : '0;
+    assign readback_array[8][19:16] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_A_SOURCE.value : '0;
+    assign readback_array[8][23:20] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_B_SOURCE.value : '0;
+    assign readback_array[8][27:24] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_C_SOURCE.value : '0;
+    assign readback_array[8][31:28] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.CC_D_SOURCE.value : '0;
+    assign readback_array[8][63:32] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.RSVD.value : '0;
+    assign readback_array[9][7:0] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.RED.value : '0;
+    assign readback_array[9][15:8] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.GREEN.value : '0;
+    assign readback_array[9][23:16] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.BLUE.value : '0;
+    assign readback_array[9][31:24] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.ALPHA.value : '0;
+    assign readback_array[9][63:32] = (decoded_reg_strb.MAT_COLOR0 && !decoded_req_is_wr) ? field_storage.MAT_COLOR0.RSVD.value : '0;
+    assign readback_array[10][7:0] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.RED.value : '0;
+    assign readback_array[10][15:8] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.GREEN.value : '0;
+    assign readback_array[10][23:16] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.BLUE.value : '0;
+    assign readback_array[10][31:24] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.ALPHA.value : '0;
+    assign readback_array[10][63:32] = (decoded_reg_strb.MAT_COLOR1 && !decoded_req_is_wr) ? field_storage.MAT_COLOR1.RSVD.value : '0;
+    assign readback_array[11][7:0] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.RED.value : '0;
+    assign readback_array[11][15:8] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.GREEN.value : '0;
+    assign readback_array[11][23:16] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.BLUE.value : '0;
+    assign readback_array[11][31:24] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.ALPHA.value : '0;
+    assign readback_array[11][63:32] = (decoded_reg_strb.FOG_COLOR && !decoded_req_is_wr) ? field_storage.FOG_COLOR.RSVD.value : '0;
+    assign readback_array[12][0:0] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.GOURAUD.value : '0;
+    assign readback_array[12][1:1] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.RSVD_1.value : '0;
+    assign readback_array[12][2:2] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_TEST_EN.value : '0;
+    assign readback_array[12][3:3] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_WRITE_EN.value : '0;
+    assign readback_array[12][4:4] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.COLOR_WRITE_EN.value : '0;
+    assign readback_array[12][6:5] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.CULL_MODE.value : '0;
+    assign readback_array[12][9:7] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.ALPHA_BLEND.value : '0;
+    assign readback_array[12][10:10] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.DITHER_EN.value : '0;
+    assign readback_array[12][12:11] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.DITHER_PATTERN.value : '0;
+    assign readback_array[12][15:13] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_COMPARE.value : '0;
+    assign readback_array[12][63:16] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.RSVD_HI.value : '0;
+    assign readback_array[13][15:0] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.Z_RANGE_MIN.value : '0;
+    assign readback_array[13][31:16] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.Z_RANGE_MAX.value : '0;
+    assign readback_array[13][63:32] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.RSVD.value : '0;
+    assign readback_array[14][11:0] = (decoded_reg_strb.FB_DRAW && !decoded_req_is_wr) ? field_storage.FB_DRAW.RSVD_LO.value : '0;
+    assign readback_array[14][31:12] = (decoded_reg_strb.FB_DRAW && !decoded_req_is_wr) ? field_storage.FB_DRAW.BASE_ADDR.value : '0;
+    assign readback_array[14][63:32] = (decoded_reg_strb.FB_DRAW && !decoded_req_is_wr) ? field_storage.FB_DRAW.RSVD_HI.value : '0;
+    assign readback_array[15][0:0] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value : '0;
+    assign readback_array[15][15:1] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_LO.value : '0;
+    assign readback_array[15][31:16] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.LUT_ADDR.value : '0;
+    assign readback_array[15][47:32] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.FB_ADDR.value : '0;
+    assign readback_array[15][63:48] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_HI.value : '0;
+    assign readback_array[16][11:0] = (decoded_reg_strb.FB_ZBUFFER && !decoded_req_is_wr) ? field_storage.FB_ZBUFFER.RSVD_LO.value : '0;
+    assign readback_array[16][31:12] = (decoded_reg_strb.FB_ZBUFFER && !decoded_req_is_wr) ? field_storage.FB_ZBUFFER.BASE_ADDR.value : '0;
+    assign readback_array[16][63:32] = (decoded_reg_strb.FB_ZBUFFER && !decoded_req_is_wr) ? field_storage.FB_ZBUFFER.RSVD_HI.value : '0;
+    assign readback_array[17][9:0] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_X.value : '0;
+    assign readback_array[17][19:10] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_Y.value : '0;
+    assign readback_array[17][29:20] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_WIDTH.value : '0;
+    assign readback_array[17][39:30] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_HEIGHT.value : '0;
+    assign readback_array[17][40:40] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value : '0;
+    assign readback_array[17][41:41] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_41.value : '0;
+    assign readback_array[17][42:42] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.STENCIL_WRITE_EN.value : '0;
+    assign readback_array[17][63:43] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_HI.value : '0;
+    assign readback_array[18][0:0] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.COLOR_GRADE_ENABLE.value : '0;
+    assign readback_array[18][15:1] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.RSVD_LO.value : '0;
+    assign readback_array[18][31:16] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.LUT_ADDR.value : '0;
+    assign readback_array[18][47:32] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.FB_ADDR.value : '0;
+    assign readback_array[18][63:48] = (decoded_reg_strb.FB_DISPLAY_SYNC && !decoded_req_is_wr) ? field_storage.FB_DISPLAY_SYNC.RSVD_HI.value : '0;
+    assign readback_array[19][31:0] = (decoded_reg_strb.PERF_TEX0 && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[19][63:32] = (decoded_reg_strb.PERF_TEX0 && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[20][31:0] = (decoded_reg_strb.PERF_TEX1 && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[20][63:32] = (decoded_reg_strb.PERF_TEX1 && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[21][31:0] = (decoded_reg_strb.PERF_PIXELS && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[21][63:32] = (decoded_reg_strb.PERF_PIXELS && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[22][31:0] = (decoded_reg_strb.PERF_FRAGMENTS && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[22][63:32] = (decoded_reg_strb.PERF_FRAGMENTS && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[23][31:0] = (decoded_reg_strb.PERF_STALL_VS && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[23][63:32] = (decoded_reg_strb.PERF_STALL_VS && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[24][31:0] = (decoded_reg_strb.PERF_STALL_CT && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[24][63:32] = (decoded_reg_strb.PERF_STALL_CT && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[25][31:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;
+    assign readback_array[25][63:32] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.RSVD.value : '0;
+    assign readback_array[26][31:0] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.DATA.value : '0;
+    assign readback_array[26][63:32] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.RSVD.value : '0;
+    assign readback_array[27][7:0] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 8'h0 : '0;
+    assign readback_array[27][8:8] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 1'h0 : '0;
+    assign readback_array[27][9:9] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 1'h0 : '0;
+    assign readback_array[27][63:10] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 54'h0 : '0;
+    assign readback_array[28][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
+    assign readback_array[28][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
+    assign readback_array[28][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
 
     // Reduce the array
     always_comb begin
@@ -4369,7 +4023,7 @@ module gpu_regs (
         readback_done = decoded_req & ~decoded_req_is_wr;
         readback_err = '0;
         readback_data_var = '0;
-        for(int i=0; i<35; i++) readback_data_var |= readback_array[i];
+        for(int i=0; i<29; i++) readback_data_var |= readback_array[i];
         readback_data = readback_data_var;
     end
 

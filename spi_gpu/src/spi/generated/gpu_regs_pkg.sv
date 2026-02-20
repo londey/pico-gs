@@ -75,29 +75,6 @@ package gpu_regs_pkg;
     } gpu_regs__uv0_uv1_reg__out_t;
 
     typedef struct {
-        logic [7:0] value;
-    } gpu_regs__light_dir_reg__X_DIR__out_t;
-
-    typedef struct {
-        logic [7:0] value;
-    } gpu_regs__light_dir_reg__Y_DIR__out_t;
-
-    typedef struct {
-        logic [7:0] value;
-    } gpu_regs__light_dir_reg__Z_DIR__out_t;
-
-    typedef struct {
-        logic [39:0] value;
-    } gpu_regs__light_dir_reg__RSVD__out_t;
-
-    typedef struct {
-        gpu_regs__light_dir_reg__X_DIR__out_t X_DIR;
-        gpu_regs__light_dir_reg__Y_DIR__out_t Y_DIR;
-        gpu_regs__light_dir_reg__Z_DIR__out_t Z_DIR;
-        gpu_regs__light_dir_reg__RSVD__out_t RSVD;
-    } gpu_regs__light_dir_reg__out_t;
-
-    typedef struct {
         logic [15:0] value;
     } gpu_regs__vertex_reg__X__out_t;
 
@@ -121,106 +98,72 @@ package gpu_regs_pkg;
     } gpu_regs__vertex_reg__out_t;
 
     typedef struct {
-        logic [11:0] value;
-    } gpu_regs__tex_base_reg__RSVD_LO__out_t;
-
-    typedef struct {
-        logic [19:0] value;
-    } gpu_regs__tex_base_reg__BASE_ADDR__out_t;
-
-    typedef struct {
-        logic [31:0] value;
-    } gpu_regs__tex_base_reg__RSVD_HI__out_t;
-
-    typedef struct {
-        gpu_regs__tex_base_reg__RSVD_LO__out_t RSVD_LO;
-        gpu_regs__tex_base_reg__BASE_ADDR__out_t BASE_ADDR;
-        gpu_regs__tex_base_reg__RSVD_HI__out_t RSVD_HI;
-    } gpu_regs__tex_base_reg__out_t;
+        logic value;
+    } gpu_regs__tex_cfg_reg__ENABLE__out_t;
 
     typedef struct {
         logic value;
-    } gpu_regs__tex_fmt_reg__ENABLE__out_t;
+    } gpu_regs__tex_cfg_reg__RSVD_1__out_t;
+
+    typedef struct {
+        logic [1:0] value;
+    } gpu_regs__tex_cfg_reg__FILTER__out_t;
+
+    typedef struct {
+        logic [2:0] value;
+    } gpu_regs__tex_cfg_reg__FORMAT__out_t;
 
     typedef struct {
         logic value;
-    } gpu_regs__tex_fmt_reg__RSVD_1__out_t;
+    } gpu_regs__tex_cfg_reg__RSVD_7__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__tex_cfg_reg__WIDTH_LOG2__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__tex_cfg_reg__HEIGHT_LOG2__out_t;
 
     typedef struct {
         logic [1:0] value;
-    } gpu_regs__tex_fmt_reg__FORMAT__out_t;
+    } gpu_regs__tex_cfg_reg__U_WRAP__out_t;
 
     typedef struct {
         logic [1:0] value;
-    } gpu_regs__tex_fmt_reg__RSVD_54__out_t;
-
-    typedef struct {
-        logic [1:0] value;
-    } gpu_regs__tex_fmt_reg__FILTER__out_t;
+    } gpu_regs__tex_cfg_reg__V_WRAP__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__tex_fmt_reg__WIDTH_LOG2__out_t;
-
-    typedef struct {
-        logic [3:0] value;
-    } gpu_regs__tex_fmt_reg__HEIGHT_LOG2__out_t;
-
-    typedef struct {
-        logic [3:0] value;
-    } gpu_regs__tex_fmt_reg__SWIZZLE__out_t;
-
-    typedef struct {
-        logic [3:0] value;
-    } gpu_regs__tex_fmt_reg__MIP_LEVELS__out_t;
-
-    typedef struct {
-        logic [39:0] value;
-    } gpu_regs__tex_fmt_reg__RSVD_HI__out_t;
-
-    typedef struct {
-        gpu_regs__tex_fmt_reg__ENABLE__out_t ENABLE;
-        gpu_regs__tex_fmt_reg__RSVD_1__out_t RSVD_1;
-        gpu_regs__tex_fmt_reg__FORMAT__out_t FORMAT;
-        gpu_regs__tex_fmt_reg__RSVD_54__out_t RSVD_54;
-        gpu_regs__tex_fmt_reg__FILTER__out_t FILTER;
-        gpu_regs__tex_fmt_reg__WIDTH_LOG2__out_t WIDTH_LOG2;
-        gpu_regs__tex_fmt_reg__HEIGHT_LOG2__out_t HEIGHT_LOG2;
-        gpu_regs__tex_fmt_reg__SWIZZLE__out_t SWIZZLE;
-        gpu_regs__tex_fmt_reg__MIP_LEVELS__out_t MIP_LEVELS;
-        gpu_regs__tex_fmt_reg__RSVD_HI__out_t RSVD_HI;
-    } gpu_regs__tex_fmt_reg__out_t;
+    } gpu_regs__tex_cfg_reg__MIP_LEVELS__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__tex_mip_bias_reg__MIP_BIAS__out_t;
+    } gpu_regs__tex_cfg_reg__RSVD_MID__out_t;
 
     typedef struct {
-        logic [55:0] value;
-    } gpu_regs__tex_mip_bias_reg__RSVD__out_t;
+        logic [15:0] value;
+    } gpu_regs__tex_cfg_reg__BASE_ADDR__out_t;
 
     typedef struct {
-        gpu_regs__tex_mip_bias_reg__MIP_BIAS__out_t MIP_BIAS;
-        gpu_regs__tex_mip_bias_reg__RSVD__out_t RSVD;
-    } gpu_regs__tex_mip_bias_reg__out_t;
+        logic [15:0] value;
+    } gpu_regs__tex_cfg_reg__RSVD_HI__out_t;
 
     typedef struct {
-        logic [1:0] value;
-    } gpu_regs__tex_wrap_reg__U_WRAP__out_t;
-
-    typedef struct {
-        logic [1:0] value;
-    } gpu_regs__tex_wrap_reg__V_WRAP__out_t;
-
-    typedef struct {
-        logic [59:0] value;
-    } gpu_regs__tex_wrap_reg__RSVD__out_t;
-
-    typedef struct {
-        gpu_regs__tex_wrap_reg__U_WRAP__out_t U_WRAP;
-        gpu_regs__tex_wrap_reg__V_WRAP__out_t V_WRAP;
-        gpu_regs__tex_wrap_reg__RSVD__out_t RSVD;
-    } gpu_regs__tex_wrap_reg__out_t;
+        gpu_regs__tex_cfg_reg__ENABLE__out_t ENABLE;
+        gpu_regs__tex_cfg_reg__RSVD_1__out_t RSVD_1;
+        gpu_regs__tex_cfg_reg__FILTER__out_t FILTER;
+        gpu_regs__tex_cfg_reg__FORMAT__out_t FORMAT;
+        gpu_regs__tex_cfg_reg__RSVD_7__out_t RSVD_7;
+        gpu_regs__tex_cfg_reg__WIDTH_LOG2__out_t WIDTH_LOG2;
+        gpu_regs__tex_cfg_reg__HEIGHT_LOG2__out_t HEIGHT_LOG2;
+        gpu_regs__tex_cfg_reg__U_WRAP__out_t U_WRAP;
+        gpu_regs__tex_cfg_reg__V_WRAP__out_t V_WRAP;
+        gpu_regs__tex_cfg_reg__MIP_LEVELS__out_t MIP_LEVELS;
+        gpu_regs__tex_cfg_reg__RSVD_MID__out_t RSVD_MID;
+        gpu_regs__tex_cfg_reg__BASE_ADDR__out_t BASE_ADDR;
+        gpu_regs__tex_cfg_reg__RSVD_HI__out_t RSVD_HI;
+    } gpu_regs__tex_cfg_reg__out_t;
 
     typedef struct {
         logic [3:0] value;
@@ -397,19 +340,19 @@ package gpu_regs_pkg;
     } gpu_regs__fb_display_reg__COLOR_GRADE_ENABLE__out_t;
 
     typedef struct {
-        logic [4:0] value;
+        logic [14:0] value;
     } gpu_regs__fb_display_reg__RSVD_LO__out_t;
 
     typedef struct {
-        logic [12:0] value;
+        logic [15:0] value;
     } gpu_regs__fb_display_reg__LUT_ADDR__out_t;
 
     typedef struct {
-        logic [12:0] value;
+        logic [15:0] value;
     } gpu_regs__fb_display_reg__FB_ADDR__out_t;
 
     typedef struct {
-        logic [31:0] value;
+        logic [15:0] value;
     } gpu_regs__fb_display_reg__RSVD_HI__out_t;
 
     typedef struct {
@@ -546,18 +489,12 @@ package gpu_regs_pkg;
     typedef struct {
         gpu_regs__color_reg__out_t COLOR;
         gpu_regs__uv0_uv1_reg__out_t UV0_UV1;
-        gpu_regs__light_dir_reg__out_t LIGHT_DIR;
         gpu_regs__vertex_reg__out_t VERTEX_NOKICK;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_012;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_021;
-        gpu_regs__tex_base_reg__out_t TEX0_BASE;
-        gpu_regs__tex_fmt_reg__out_t TEX0_FMT;
-        gpu_regs__tex_mip_bias_reg__out_t TEX0_MIP_BIAS;
-        gpu_regs__tex_wrap_reg__out_t TEX0_WRAP;
-        gpu_regs__tex_base_reg__out_t TEX1_BASE;
-        gpu_regs__tex_fmt_reg__out_t TEX1_FMT;
-        gpu_regs__tex_mip_bias_reg__out_t TEX1_MIP_BIAS;
-        gpu_regs__tex_wrap_reg__out_t TEX1_WRAP;
+        gpu_regs__vertex_reg__out_t VERTEX_KICK_RECT;
+        gpu_regs__tex_cfg_reg__out_t TEX0_CFG;
+        gpu_regs__tex_cfg_reg__out_t TEX1_CFG;
         gpu_regs__cc_mode_reg__out_t CC_MODE;
         gpu_regs__mat_color_reg__out_t MAT_COLOR0;
         gpu_regs__mat_color_reg__out_t MAT_COLOR1;
@@ -581,22 +518,27 @@ package gpu_regs_pkg;
         gpu_regs__id_reg__out_t ID;
     } gpu_regs__out_t;
 
-    typedef enum logic {
-        tex_format_e__RGBA4444 = 'h0,
-        tex_format_e__BC1 = 'h1
-    } tex_format_e_e;
-
     typedef enum logic [1:0] {
         tex_filter_e__NEAREST = 'h0,
         tex_filter_e__BILINEAR = 'h1,
         tex_filter_e__TRILINEAR = 'h2
     } tex_filter_e_e;
 
+    typedef enum logic [2:0] {
+        tex_format_e__BC1 = 'h0,
+        tex_format_e__BC2 = 'h1,
+        tex_format_e__BC3 = 'h2,
+        tex_format_e__BC4 = 'h3,
+        tex_format_e__RGB565 = 'h4,
+        tex_format_e__RGBA8888 = 'h5,
+        tex_format_e__R8 = 'h6
+    } tex_format_e_e;
+
     typedef enum logic [1:0] {
         wrap_mode_e__REPEAT = 'h0,
         wrap_mode_e__CLAMP_TO_EDGE = 'h1,
-        wrap_mode_e__CLAMP_TO_ZERO = 'h2,
-        wrap_mode_e__MIRROR = 'h3
+        wrap_mode_e__MIRROR = 'h2,
+        wrap_mode_e__OCTAHEDRAL = 'h3
     } wrap_mode_e_e;
 
     typedef enum logic [1:0] {

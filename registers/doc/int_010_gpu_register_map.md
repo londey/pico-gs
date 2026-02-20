@@ -943,13 +943,14 @@ Address where triangles are rendered. Must be 4K aligned.
 Display scanout framebuffer address with optional color grading LUT auto-load. Non-blocking write (returns immediately).
 
 ```
-[63:32]   Reserved (write as 0)
-[31:19]   FB_ADDR: Framebuffer base address >> 12 (4KiB aligned, 13 bits)
-          Effective address range: 0x000000 - 0x1FFF000 (32 MB SDRAM)
-[18:6]    LUT_ADDR: Color grading LUT base address >> 12 (4KiB aligned, 13 bits)
-          Effective address range: 0x000000 - 0x1FFF000
+[63:48]   Reserved (write as 0)
+[47:32]   FB_ADDR: Framebuffer base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 - 0x1FFFE00 (32 MiB SDRAM)
+          Same encoding as texture BASE_ADDR
+[31:16]   LUT_ADDR: Color grading LUT base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 - 0x1FFFE00
           Special value: 0x0000 = skip LUT auto-load, keep current LUT
-[5:1]     Reserved (write as 0)
+[15:1]    Reserved (write as 0)
 [0]       COLOR_GRADE_ENABLE: 1=color grading enabled, 0=bypass (RGB565→RGB888 expansion)
 ```
 
@@ -981,15 +982,14 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 **Notes**:
 - Replaces v8.0 COLOR_GRADE_CTRL/ADDR/DATA register-based LUT upload (v9.0 change)
 - LUT data must be prepared in SDRAM by firmware before write (see REQ-006.03)
-- Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
-- LUT address must be 4KiB aligned (bits [11:0] assumed 0)
+- Address encoding matches texture BASE_ADDR (16-bit, 512-byte granularity, 32 MiB addressable)
 - LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
 - For blocking write (waits for vsync), use FB_DISPLAY_SYNC (0x47) instead
 - Backwards compatible: writing only FB address with LUT_ADDR=0, ENABLE=0 behaves like v8.0
 
 **Reset Value**: 0x0000000000000000 (FB at 0x000000, no LUT, color grading disabled)
 
-**Version**: Modified in v9.0 (expanded from address-only to include LUT control)
+**Version**: Modified in v9.0 (expanded from address-only to include LUT control); v10.1 (address fields widened to 16-bit, 512-byte granularity)
 
 ---
 
@@ -1069,13 +1069,14 @@ Framebuffer control: scissor rectangle and write enable masks.
 Display scanout framebuffer address with optional color grading LUT auto-load. **Blocking write** (waits for vsync).
 
 ```
-[63:32]   Reserved (write as 0)
-[31:19]   FB_ADDR: Framebuffer base address >> 12 (4KiB aligned, 13 bits)
-          Effective address range: 0x000000 - 0x1FFF000 (32 MB SDRAM)
-[18:6]    LUT_ADDR: Color grading LUT base address >> 12 (4KiB aligned, 13 bits)
-          Effective address range: 0x000000 - 0x1FFF000
+[63:48]   Reserved (write as 0)
+[47:32]   FB_ADDR: Framebuffer base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 - 0x1FFFE00 (32 MiB SDRAM)
+          Same encoding as texture BASE_ADDR
+[31:16]   LUT_ADDR: Color grading LUT base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 - 0x1FFFE00
           Special value: 0x0000 = skip LUT auto-load, keep current LUT
-[5:1]     Reserved (write as 0)
+[15:1]    Reserved (write as 0)
 [0]       COLOR_GRADE_ENABLE: 1=color grading enabled, 0=bypass (RGB565→RGB888 expansion)
 ```
 
@@ -1119,14 +1120,13 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 **Notes**:
 - Same register format as FB_DISPLAY (0x41), only difference is blocking behavior
 - LUT data must be prepared in SDRAM by firmware before write (see REQ-006.03)
-- Framebuffer address must be 4KiB aligned (bits [11:0] assumed 0)
-- LUT address must be 4KiB aligned (bits [11:0] assumed 0)
+- Address encoding matches texture BASE_ADDR (16-bit, 512-byte granularity, 32 MiB addressable)
 - LUT auto-load DMA takes ~2µs during vblank (~1.43ms available)
 - For non-blocking write, use FB_DISPLAY (0x41) instead
 
 **Reset Value**: N/A (write-only blocking register)
 
-**Version**: Added in v9.0
+**Version**: Added in v9.0; v10.1 (address fields widened to 16-bit, 512-byte granularity)
 
 ---
 
@@ -2075,7 +2075,8 @@ Active-high outputs from GPU to host.
 
 **Version 9.0** (February 2026):
 - **BREAKING CHANGE**: FB_DISPLAY (0x41) register expanded to include LUT control
-  - Now includes framebuffer address (13 bits), LUT SDRAM address (13 bits), and COLOR_GRADE_ENABLE flag
+  - Now includes framebuffer address (16 bits), LUT SDRAM address (16 bits), and COLOR_GRADE_ENABLE flag
+  - Address encoding: 512-byte granularity (value × 512 = byte address), matching texture BASE_ADDR
   - Non-blocking write (returns immediately)
   - Change takes effect at next vsync
   - LUT auto-load from SDRAM if LUT_ADDR != 0 (384 bytes DMA during vblank)
