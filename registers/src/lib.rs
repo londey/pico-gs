@@ -24,57 +24,80 @@ pub const UV3: u8 = 0x04;
 /// Vertex position + push trigger. Third write submits triangle.
 pub const VERTEX: u8 = 0x05;
 
-// --- Texture Unit 0 (0x10-0x17) ---
+// --- Texture Samplers (0x10-0x11) ---
 
-/// Texture 0 base address in GPU SRAM (4K aligned).
-pub const TEX0_BASE: u8 = 0x10;
-/// Texture 0 format: dimensions, swizzle, compressed flag, enable.
-pub const TEX0_FMT: u8 = 0x11;
-/// Texture 0 blend function.
-pub const TEX0_BLEND: u8 = 0x12;
-/// Texture 0 LUT base address (for compressed textures).
-pub const TEX0_LUT_BASE: u8 = 0x13;
-/// Texture 0 UV wrapping mode.
-pub const TEX0_WRAP: u8 = 0x14;
+/// Texture 0 unified config (enable, format, filter, dims, wrap, mips, base).
+pub const TEX0_CFG: u8 = 0x10;
+/// Texture 1 unified config.
+pub const TEX1_CFG: u8 = 0x11;
 
-// --- Texture Unit 1 (0x18-0x1F) ---
+// --- TEXn_CFG bit fields ---
 
-/// Texture 1 base address in GPU SRAM (4K aligned).
-pub const TEX1_BASE: u8 = 0x18;
-/// Texture 1 format.
-pub const TEX1_FMT: u8 = 0x19;
-/// Texture 1 blend function.
-pub const TEX1_BLEND: u8 = 0x1A;
-/// Texture 1 LUT base address.
-pub const TEX1_LUT_BASE: u8 = 0x1B;
-/// Texture 1 UV wrapping mode.
-pub const TEX1_WRAP: u8 = 0x1C;
+/// Texture enable (bit 0).
+pub const TEX_CFG_ENABLE: u64 = 1 << 0;
 
-// --- Texture Unit 2 (0x20-0x27) ---
+/// Texture filter mode (bits [3:2]).
+pub const TEX_CFG_FILTER_SHIFT: u32 = 2;
+/// Texture format (bits [6:4]).
+pub const TEX_CFG_FORMAT_SHIFT: u32 = 4;
+/// Width log2 (bits [11:8]).
+pub const TEX_CFG_WIDTH_LOG2_SHIFT: u32 = 8;
+/// Height log2 (bits [15:12]).
+pub const TEX_CFG_HEIGHT_LOG2_SHIFT: u32 = 12;
+/// U wrap mode (bits [17:16]).
+pub const TEX_CFG_U_WRAP_SHIFT: u32 = 16;
+/// V wrap mode (bits [19:18]).
+pub const TEX_CFG_V_WRAP_SHIFT: u32 = 18;
+/// Mipmap level count (bits [23:20]).
+pub const TEX_CFG_MIP_LEVELS_SHIFT: u32 = 20;
+/// Base address (bits [47:32]), x512 byte granularity, 32 MiB addressable.
+pub const TEX_CFG_BASE_ADDR_SHIFT: u32 = 32;
 
-/// Texture 2 base address in GPU SRAM (4K aligned).
-pub const TEX2_BASE: u8 = 0x20;
-/// Texture 2 format.
-pub const TEX2_FMT: u8 = 0x21;
-/// Texture 2 blend function.
-pub const TEX2_BLEND: u8 = 0x22;
-/// Texture 2 LUT base address.
-pub const TEX2_LUT_BASE: u8 = 0x23;
-/// Texture 2 UV wrapping mode.
-pub const TEX2_WRAP: u8 = 0x24;
+/// Texture format (TEXn_CFG\[6:4\]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum TexFormat {
+    /// 4 bpp block compressed, opaque or 1-bit alpha.
+    Bc1 = 0,
+    /// 8 bpp block compressed, explicit alpha.
+    Bc2 = 1,
+    /// 8 bpp block compressed, interpolated alpha.
+    Bc3 = 2,
+    /// 4 bpp block compressed, single channel.
+    Bc4 = 3,
+    /// 16 bpp 5-6-5 uncompressed, 4x4 tiled.
+    Rgb565 = 4,
+    /// 32 bpp 8-8-8-8 uncompressed, 4x4 tiled.
+    Rgba8888 = 5,
+    /// 8 bpp single channel, 4x4 tiled.
+    R8 = 6,
+}
 
-// --- Texture Unit 3 (0x28-0x2F) ---
+/// Texture filter mode (TEXn_CFG\[3:2\]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum TexFilter {
+    /// No interpolation.
+    Nearest = 0,
+    /// 2x2 tap bilinear filter.
+    Bilinear = 1,
+    /// Mipmap blend (requires MIP_LEVELS > 1).
+    Trilinear = 2,
+}
 
-/// Texture 3 base address in GPU SRAM (4K aligned).
-pub const TEX3_BASE: u8 = 0x28;
-/// Texture 3 format.
-pub const TEX3_FMT: u8 = 0x29;
-/// Texture 3 blend function.
-pub const TEX3_BLEND: u8 = 0x2A;
-/// Texture 3 LUT base address.
-pub const TEX3_LUT_BASE: u8 = 0x2B;
-/// Texture 3 UV wrapping mode.
-pub const TEX3_WRAP: u8 = 0x2C;
+/// UV coordinate wrap mode (TEXn_CFG U_WRAP/V_WRAP).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum WrapMode {
+    /// Wrap around.
+    Repeat = 0,
+    /// Clamp to edge.
+    ClampToEdge = 1,
+    /// Reflect at boundaries.
+    Mirror = 2,
+    /// Coupled diagonal mirror for octahedral mapping.
+    Octahedral = 3,
+}
 
 // --- Rendering Configuration (0x30-0x3F) ---
 

@@ -10,45 +10,45 @@ package gpu_regs_pkg;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__SPEC_RED__out_t;
+    } gpu_regs__color_reg__COLOR0_R__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__SPEC_GREEN__out_t;
+    } gpu_regs__color_reg__COLOR0_G__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__SPEC_BLUE__out_t;
+    } gpu_regs__color_reg__COLOR0_B__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__SPEC_ALPHA__out_t;
+    } gpu_regs__color_reg__COLOR0_A__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__DIFF_RED__out_t;
+    } gpu_regs__color_reg__COLOR1_R__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__DIFF_GREEN__out_t;
+    } gpu_regs__color_reg__COLOR1_G__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__DIFF_BLUE__out_t;
+    } gpu_regs__color_reg__COLOR1_B__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__color_reg__DIFF_ALPHA__out_t;
+    } gpu_regs__color_reg__COLOR1_A__out_t;
 
     typedef struct {
-        gpu_regs__color_reg__SPEC_RED__out_t SPEC_RED;
-        gpu_regs__color_reg__SPEC_GREEN__out_t SPEC_GREEN;
-        gpu_regs__color_reg__SPEC_BLUE__out_t SPEC_BLUE;
-        gpu_regs__color_reg__SPEC_ALPHA__out_t SPEC_ALPHA;
-        gpu_regs__color_reg__DIFF_RED__out_t DIFF_RED;
-        gpu_regs__color_reg__DIFF_GREEN__out_t DIFF_GREEN;
-        gpu_regs__color_reg__DIFF_BLUE__out_t DIFF_BLUE;
-        gpu_regs__color_reg__DIFF_ALPHA__out_t DIFF_ALPHA;
+        gpu_regs__color_reg__COLOR0_R__out_t COLOR0_R;
+        gpu_regs__color_reg__COLOR0_G__out_t COLOR0_G;
+        gpu_regs__color_reg__COLOR0_B__out_t COLOR0_B;
+        gpu_regs__color_reg__COLOR0_A__out_t COLOR0_A;
+        gpu_regs__color_reg__COLOR1_R__out_t COLOR1_R;
+        gpu_regs__color_reg__COLOR1_G__out_t COLOR1_G;
+        gpu_regs__color_reg__COLOR1_B__out_t COLOR1_B;
+        gpu_regs__color_reg__COLOR1_A__out_t COLOR1_A;
     } gpu_regs__color_reg__out_t;
 
     typedef struct {

@@ -165,35 +165,35 @@ module gpu_regs (
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } SPEC_RED;
+            } COLOR0_R;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } SPEC_GREEN;
+            } COLOR0_G;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } SPEC_BLUE;
+            } COLOR0_B;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } SPEC_ALPHA;
+            } COLOR0_A;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } DIFF_RED;
+            } COLOR1_R;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } DIFF_GREEN;
+            } COLOR1_G;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } DIFF_BLUE;
+            } COLOR1_B;
             struct {
                 logic [7:0] next;
                 logic load_next;
-            } DIFF_ALPHA;
+            } COLOR1_A;
         } COLOR;
         struct {
             struct {
@@ -742,28 +742,28 @@ module gpu_regs (
         struct {
             struct {
                 logic [7:0] value;
-            } SPEC_RED;
+            } COLOR0_R;
             struct {
                 logic [7:0] value;
-            } SPEC_GREEN;
+            } COLOR0_G;
             struct {
                 logic [7:0] value;
-            } SPEC_BLUE;
+            } COLOR0_B;
             struct {
                 logic [7:0] value;
-            } SPEC_ALPHA;
+            } COLOR0_A;
             struct {
                 logic [7:0] value;
-            } DIFF_RED;
+            } COLOR1_R;
             struct {
                 logic [7:0] value;
-            } DIFF_GREEN;
+            } COLOR1_G;
             struct {
                 logic [7:0] value;
-            } DIFF_BLUE;
+            } COLOR1_B;
             struct {
                 logic [7:0] value;
-            } DIFF_ALPHA;
+            } COLOR1_A;
         } COLOR;
         struct {
             struct {
@@ -1186,190 +1186,190 @@ module gpu_regs (
     } field_storage_t;
     field_storage_t field_storage;
 
-    // Field: gpu_regs.COLOR.SPEC_RED
+    // Field: gpu_regs.COLOR.COLOR0_R
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.SPEC_RED.value;
+        next_c = field_storage.COLOR.COLOR0_R.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.SPEC_RED.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
+            next_c = (field_storage.COLOR.COLOR0_R.value & ~decoded_wr_biten[7:0]) | (decoded_wr_data[7:0] & decoded_wr_biten[7:0]);
             load_next_c = '1;
         end
-        field_combo.COLOR.SPEC_RED.next = next_c;
-        field_combo.COLOR.SPEC_RED.load_next = load_next_c;
+        field_combo.COLOR.COLOR0_R.next = next_c;
+        field_combo.COLOR.COLOR0_R.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.SPEC_RED.value <= 8'h0;
+            field_storage.COLOR.COLOR0_R.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.SPEC_RED.load_next) begin
-                field_storage.COLOR.SPEC_RED.value <= field_combo.COLOR.SPEC_RED.next;
+            if(field_combo.COLOR.COLOR0_R.load_next) begin
+                field_storage.COLOR.COLOR0_R.value <= field_combo.COLOR.COLOR0_R.next;
             end
         end
     end
-    assign hwif_out.COLOR.SPEC_RED.value = field_storage.COLOR.SPEC_RED.value;
-    // Field: gpu_regs.COLOR.SPEC_GREEN
+    assign hwif_out.COLOR.COLOR0_R.value = field_storage.COLOR.COLOR0_R.value;
+    // Field: gpu_regs.COLOR.COLOR0_G
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.SPEC_GREEN.value;
+        next_c = field_storage.COLOR.COLOR0_G.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.SPEC_GREEN.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
+            next_c = (field_storage.COLOR.COLOR0_G.value & ~decoded_wr_biten[15:8]) | (decoded_wr_data[15:8] & decoded_wr_biten[15:8]);
             load_next_c = '1;
         end
-        field_combo.COLOR.SPEC_GREEN.next = next_c;
-        field_combo.COLOR.SPEC_GREEN.load_next = load_next_c;
+        field_combo.COLOR.COLOR0_G.next = next_c;
+        field_combo.COLOR.COLOR0_G.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.SPEC_GREEN.value <= 8'h0;
+            field_storage.COLOR.COLOR0_G.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.SPEC_GREEN.load_next) begin
-                field_storage.COLOR.SPEC_GREEN.value <= field_combo.COLOR.SPEC_GREEN.next;
+            if(field_combo.COLOR.COLOR0_G.load_next) begin
+                field_storage.COLOR.COLOR0_G.value <= field_combo.COLOR.COLOR0_G.next;
             end
         end
     end
-    assign hwif_out.COLOR.SPEC_GREEN.value = field_storage.COLOR.SPEC_GREEN.value;
-    // Field: gpu_regs.COLOR.SPEC_BLUE
+    assign hwif_out.COLOR.COLOR0_G.value = field_storage.COLOR.COLOR0_G.value;
+    // Field: gpu_regs.COLOR.COLOR0_B
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.SPEC_BLUE.value;
+        next_c = field_storage.COLOR.COLOR0_B.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.SPEC_BLUE.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
+            next_c = (field_storage.COLOR.COLOR0_B.value & ~decoded_wr_biten[23:16]) | (decoded_wr_data[23:16] & decoded_wr_biten[23:16]);
             load_next_c = '1;
         end
-        field_combo.COLOR.SPEC_BLUE.next = next_c;
-        field_combo.COLOR.SPEC_BLUE.load_next = load_next_c;
+        field_combo.COLOR.COLOR0_B.next = next_c;
+        field_combo.COLOR.COLOR0_B.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.SPEC_BLUE.value <= 8'h0;
+            field_storage.COLOR.COLOR0_B.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.SPEC_BLUE.load_next) begin
-                field_storage.COLOR.SPEC_BLUE.value <= field_combo.COLOR.SPEC_BLUE.next;
+            if(field_combo.COLOR.COLOR0_B.load_next) begin
+                field_storage.COLOR.COLOR0_B.value <= field_combo.COLOR.COLOR0_B.next;
             end
         end
     end
-    assign hwif_out.COLOR.SPEC_BLUE.value = field_storage.COLOR.SPEC_BLUE.value;
-    // Field: gpu_regs.COLOR.SPEC_ALPHA
+    assign hwif_out.COLOR.COLOR0_B.value = field_storage.COLOR.COLOR0_B.value;
+    // Field: gpu_regs.COLOR.COLOR0_A
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.SPEC_ALPHA.value;
+        next_c = field_storage.COLOR.COLOR0_A.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.SPEC_ALPHA.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
+            next_c = (field_storage.COLOR.COLOR0_A.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
             load_next_c = '1;
         end
-        field_combo.COLOR.SPEC_ALPHA.next = next_c;
-        field_combo.COLOR.SPEC_ALPHA.load_next = load_next_c;
+        field_combo.COLOR.COLOR0_A.next = next_c;
+        field_combo.COLOR.COLOR0_A.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.SPEC_ALPHA.value <= 8'h0;
+            field_storage.COLOR.COLOR0_A.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.SPEC_ALPHA.load_next) begin
-                field_storage.COLOR.SPEC_ALPHA.value <= field_combo.COLOR.SPEC_ALPHA.next;
+            if(field_combo.COLOR.COLOR0_A.load_next) begin
+                field_storage.COLOR.COLOR0_A.value <= field_combo.COLOR.COLOR0_A.next;
             end
         end
     end
-    assign hwif_out.COLOR.SPEC_ALPHA.value = field_storage.COLOR.SPEC_ALPHA.value;
-    // Field: gpu_regs.COLOR.DIFF_RED
+    assign hwif_out.COLOR.COLOR0_A.value = field_storage.COLOR.COLOR0_A.value;
+    // Field: gpu_regs.COLOR.COLOR1_R
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.DIFF_RED.value;
+        next_c = field_storage.COLOR.COLOR1_R.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.DIFF_RED.value & ~decoded_wr_biten[39:32]) | (decoded_wr_data[39:32] & decoded_wr_biten[39:32]);
+            next_c = (field_storage.COLOR.COLOR1_R.value & ~decoded_wr_biten[39:32]) | (decoded_wr_data[39:32] & decoded_wr_biten[39:32]);
             load_next_c = '1;
         end
-        field_combo.COLOR.DIFF_RED.next = next_c;
-        field_combo.COLOR.DIFF_RED.load_next = load_next_c;
+        field_combo.COLOR.COLOR1_R.next = next_c;
+        field_combo.COLOR.COLOR1_R.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.DIFF_RED.value <= 8'h0;
+            field_storage.COLOR.COLOR1_R.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.DIFF_RED.load_next) begin
-                field_storage.COLOR.DIFF_RED.value <= field_combo.COLOR.DIFF_RED.next;
+            if(field_combo.COLOR.COLOR1_R.load_next) begin
+                field_storage.COLOR.COLOR1_R.value <= field_combo.COLOR.COLOR1_R.next;
             end
         end
     end
-    assign hwif_out.COLOR.DIFF_RED.value = field_storage.COLOR.DIFF_RED.value;
-    // Field: gpu_regs.COLOR.DIFF_GREEN
+    assign hwif_out.COLOR.COLOR1_R.value = field_storage.COLOR.COLOR1_R.value;
+    // Field: gpu_regs.COLOR.COLOR1_G
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.DIFF_GREEN.value;
+        next_c = field_storage.COLOR.COLOR1_G.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.DIFF_GREEN.value & ~decoded_wr_biten[47:40]) | (decoded_wr_data[47:40] & decoded_wr_biten[47:40]);
+            next_c = (field_storage.COLOR.COLOR1_G.value & ~decoded_wr_biten[47:40]) | (decoded_wr_data[47:40] & decoded_wr_biten[47:40]);
             load_next_c = '1;
         end
-        field_combo.COLOR.DIFF_GREEN.next = next_c;
-        field_combo.COLOR.DIFF_GREEN.load_next = load_next_c;
+        field_combo.COLOR.COLOR1_G.next = next_c;
+        field_combo.COLOR.COLOR1_G.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.DIFF_GREEN.value <= 8'h0;
+            field_storage.COLOR.COLOR1_G.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.DIFF_GREEN.load_next) begin
-                field_storage.COLOR.DIFF_GREEN.value <= field_combo.COLOR.DIFF_GREEN.next;
+            if(field_combo.COLOR.COLOR1_G.load_next) begin
+                field_storage.COLOR.COLOR1_G.value <= field_combo.COLOR.COLOR1_G.next;
             end
         end
     end
-    assign hwif_out.COLOR.DIFF_GREEN.value = field_storage.COLOR.DIFF_GREEN.value;
-    // Field: gpu_regs.COLOR.DIFF_BLUE
+    assign hwif_out.COLOR.COLOR1_G.value = field_storage.COLOR.COLOR1_G.value;
+    // Field: gpu_regs.COLOR.COLOR1_B
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.DIFF_BLUE.value;
+        next_c = field_storage.COLOR.COLOR1_B.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.DIFF_BLUE.value & ~decoded_wr_biten[55:48]) | (decoded_wr_data[55:48] & decoded_wr_biten[55:48]);
+            next_c = (field_storage.COLOR.COLOR1_B.value & ~decoded_wr_biten[55:48]) | (decoded_wr_data[55:48] & decoded_wr_biten[55:48]);
             load_next_c = '1;
         end
-        field_combo.COLOR.DIFF_BLUE.next = next_c;
-        field_combo.COLOR.DIFF_BLUE.load_next = load_next_c;
+        field_combo.COLOR.COLOR1_B.next = next_c;
+        field_combo.COLOR.COLOR1_B.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.DIFF_BLUE.value <= 8'h0;
+            field_storage.COLOR.COLOR1_B.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.DIFF_BLUE.load_next) begin
-                field_storage.COLOR.DIFF_BLUE.value <= field_combo.COLOR.DIFF_BLUE.next;
+            if(field_combo.COLOR.COLOR1_B.load_next) begin
+                field_storage.COLOR.COLOR1_B.value <= field_combo.COLOR.COLOR1_B.next;
             end
         end
     end
-    assign hwif_out.COLOR.DIFF_BLUE.value = field_storage.COLOR.DIFF_BLUE.value;
-    // Field: gpu_regs.COLOR.DIFF_ALPHA
+    assign hwif_out.COLOR.COLOR1_B.value = field_storage.COLOR.COLOR1_B.value;
+    // Field: gpu_regs.COLOR.COLOR1_A
     always_comb begin
         automatic logic [7:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.COLOR.DIFF_ALPHA.value;
+        next_c = field_storage.COLOR.COLOR1_A.value;
         load_next_c = '0;
         if(decoded_reg_strb.COLOR && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.COLOR.DIFF_ALPHA.value & ~decoded_wr_biten[63:56]) | (decoded_wr_data[63:56] & decoded_wr_biten[63:56]);
+            next_c = (field_storage.COLOR.COLOR1_A.value & ~decoded_wr_biten[63:56]) | (decoded_wr_data[63:56] & decoded_wr_biten[63:56]);
             load_next_c = '1;
         end
-        field_combo.COLOR.DIFF_ALPHA.next = next_c;
-        field_combo.COLOR.DIFF_ALPHA.load_next = load_next_c;
+        field_combo.COLOR.COLOR1_A.next = next_c;
+        field_combo.COLOR.COLOR1_A.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.COLOR.DIFF_ALPHA.value <= 8'h0;
+            field_storage.COLOR.COLOR1_A.value <= 8'h0;
         end else begin
-            if(field_combo.COLOR.DIFF_ALPHA.load_next) begin
-                field_storage.COLOR.DIFF_ALPHA.value <= field_combo.COLOR.DIFF_ALPHA.next;
+            if(field_combo.COLOR.COLOR1_A.load_next) begin
+                field_storage.COLOR.COLOR1_A.value <= field_combo.COLOR.COLOR1_A.next;
             end
         end
     end
-    assign hwif_out.COLOR.DIFF_ALPHA.value = field_storage.COLOR.DIFF_ALPHA.value;
+    assign hwif_out.COLOR.COLOR1_A.value = field_storage.COLOR.COLOR1_A.value;
     // Field: gpu_regs.UV0_UV1.UV0_UQ
     always_comb begin
         automatic logic [15:0] next_c;
@@ -4213,14 +4213,14 @@ module gpu_regs (
 
     // Assign readback values to a flattened array
     logic [63:0] readback_array[35];
-    assign readback_array[0][7:0] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.SPEC_RED.value : '0;
-    assign readback_array[0][15:8] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.SPEC_GREEN.value : '0;
-    assign readback_array[0][23:16] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.SPEC_BLUE.value : '0;
-    assign readback_array[0][31:24] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.SPEC_ALPHA.value : '0;
-    assign readback_array[0][39:32] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.DIFF_RED.value : '0;
-    assign readback_array[0][47:40] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.DIFF_GREEN.value : '0;
-    assign readback_array[0][55:48] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.DIFF_BLUE.value : '0;
-    assign readback_array[0][63:56] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.DIFF_ALPHA.value : '0;
+    assign readback_array[0][7:0] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_R.value : '0;
+    assign readback_array[0][15:8] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_G.value : '0;
+    assign readback_array[0][23:16] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_B.value : '0;
+    assign readback_array[0][31:24] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_A.value : '0;
+    assign readback_array[0][39:32] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_R.value : '0;
+    assign readback_array[0][47:40] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_G.value : '0;
+    assign readback_array[0][55:48] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_B.value : '0;
+    assign readback_array[0][63:56] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_A.value : '0;
     assign readback_array[1][15:0] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV0_UQ.value : '0;
     assign readback_array[1][31:16] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV0_VQ.value : '0;
     assign readback_array[1][47:32] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV1_UQ.value : '0;
