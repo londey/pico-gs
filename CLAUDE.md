@@ -171,7 +171,8 @@ This project uses **syskit** for specification-driven development. Specification
 For non-trivial changes affecting system behavior, use the syskit workflow:
 
 1. `/syskit-impact <change>` — Analyze what specifications are affected
-2. `/syskit-propose` — Propose specification updates
+2. `/syskit-propose` — Propose all specification updates at once
+   **OR** `/syskit-refine --scope <type>` — Propose changes incrementally by document type (requirements, interfaces, design)
 3. `/syskit-plan` — Break into implementation tasks
 4. `/syskit-implement` — Execute with traceability
 

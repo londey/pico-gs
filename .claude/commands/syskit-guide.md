@@ -40,9 +40,11 @@ Explain the naming convention:
 - `req_001_motor_control.md` → referenced as `REQ-001`
 - `req_001.01_torque_limit.md` → referenced as `REQ-001.01` (child of REQ-001)
 - `int_002_spi_bus.md` → referenced as `INT-002`
+- `int_002.01_uart_registers.md` → referenced as `INT-002.01` (child of INT-002)
 - `unit_003_pwm_driver.md` → referenced as `UNIT-003`
+- `unit_003.01_pid_controller.md` → referenced as `UNIT-003.01` (child of UNIT-003)
 
-Explain that requirements support hierarchical numbering — child requirements use dot-notation (e.g., `REQ-001.03`) so the parent relationship is visible from the ID itself.
+Explain that all document types support two-level hierarchy — child documents use dot-notation (e.g., `REQ-001.03`, `INT-002.01`, `UNIT-003.01`) so the parent relationship is visible from the ID itself.
 
 Explain that these documents cross-reference each other to create a traceability web:
 - Requirements reference the interfaces they use and the design units that implement them
@@ -152,7 +154,7 @@ Provide a brief inventory of existing documents:
 
 Explain the conventions this project uses:
 
-1. **Naming:** `req_NNN_name.md` → `REQ-NNN` (child requirements: `req_NNN.NN_name.md` → `REQ-NNN.NN`), `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN`
+1. **Naming:** `req_NNN_name.md` → `REQ-NNN`, `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN` (children use dot-notation: `req_NNN.NN_name.md` → `REQ-NNN.NN`, `int_NNN.NN_name.md` → `INT-NNN.NN`, `unit_NNN.NN_name.md` → `UNIT-NNN.NN`)
 2. **Cross-references:** Documents link to each other using these IDs to create traceability:
    - Requirements → Interfaces they use, Design Units that implement them
    - Design Units → Requirements they satisfy, Interfaces they provide/consume
@@ -168,9 +170,9 @@ Walk through how to make changes in this project:
 4. **`/syskit-implement`** — Executes tasks one by one with verification.
 
 Also mention helper scripts for creating new documents:
-- `.syskit/scripts/new-req.sh <name>` — Create a new requirement
-- `.syskit/scripts/new-int.sh <name>` — Create a new interface
-- `.syskit/scripts/new-unit.sh <name>` — Create a new design unit
+- `.syskit/scripts/new-req.sh <name>` — Create a new requirement (use `--parent REQ-NNN` for child)
+- `.syskit/scripts/new-int.sh <name>` — Create a new interface (use `--parent INT-NNN` for child)
+- `.syskit/scripts/new-unit.sh <name>` — Create a new design unit (use `--parent UNIT-NNN` for child)
 
 ### Step 5B: Offer Next Steps
 

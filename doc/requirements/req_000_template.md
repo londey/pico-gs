@@ -34,7 +34,7 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 
 - REQ-NNN (<parent requirement name>)
 - Or "None" if this is a top-level requirement
-- Child requirements use hierarchical IDs: REQ-NNN.NN (e.g., REQ-004.01 is a child of REQ-002.02)
+- Child requirements use hierarchical IDs: REQ-NNN.NN (e.g., REQ-004.01 is a child of REQ-004)
 
 ## Allocated To
 

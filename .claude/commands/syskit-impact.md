@@ -2,8 +2,11 @@
 description: Analyze impact of a proposed change across all specifications
 arguments:
   - name: change
-    description: Description of the proposed change
-    required: true
+    description: Description of the proposed change (not needed for --incremental)
+    required: false
+  - name: incremental
+    description: "Re-run impact analysis acknowledging already-approved refinements (flag, no value needed)"
+    required: false
 ---
 
 # Impact Analysis
@@ -18,7 +21,7 @@ $ARGUMENTS.change
 
 ### Step 0: Context Check
 
-If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, or IMPLEMENT_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
+If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, IMPLEMENT_SUMMARY, or REFINE_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
 
 "This conversation already has syskit command history in context. Start a fresh conversation to run `/syskit-impact` — all progress is saved to disk and will be picked up automatically."
 
@@ -30,7 +33,30 @@ Read `.syskit/manifest.md` to get the current list of all specification document
 
 Count the total number of specification documents listed (excluding any with `_000_template` in the name). You will use this count to validate the subagent's output.
 
+### Step 1.5: Check for Incremental Mode
+
+If `$ARGUMENTS.incremental` is provided (or the user's command included `--incremental`):
+
+1. Find the most recent analysis folder in `.syskit/analysis/`.
+
+2. Read the first few lines of `impact.md` in that folder to get the original proposed change description.
+
+3. Check for `refine_status.md` in the folder. If it does not exist, warn the user: "No refinement history found. Run `/syskit-refine` first, or use `/syskit-impact` without `--incremental` for a fresh analysis."
+
+4. Read the `refine_status.md` to note which scopes have been approved.
+
+5. Set the PROPOSED_CHANGE to the original change description from impact.md, appended with:
+   "NOTE: The following refinements have already been approved and applied to the doc/ files: \<list approved scopes and their document lists from refine_status.md\>. The impact analysis should reflect the CURRENT state of these documents (post-refinement) and focus on remaining unrefined documents."
+
+6. Rename the existing `impact.md` to `impact_prev.md` (for reference).
+
+7. Note the analysis folder path — you will reuse it. Skip Step 2.
+
+If `$ARGUMENTS.incremental` is NOT provided and `$ARGUMENTS.change` is empty, STOP and tell the user: "Please provide a change description: `/syskit-impact \"your change description\"`"
+
 ### Step 2: Create Analysis Folder
+
+**Skip this step if in incremental mode (Step 1.5 was executed).**
 
 Create the analysis folder: `.syskit/analysis/{{DATE}}_<change_name>/`
 
@@ -65,9 +91,9 @@ Do NOT read the full `impact.md` into context. Use the summary to validate.
 
 ### Step 5: Generate Snapshot
 
-Run: `.syskit/scripts/manifest-snapshot.sh .syskit/analysis/{{DATE}}_<change_name>/`
+Run: `.syskit/scripts/manifest-snapshot.sh .syskit/analysis/<folder>/`
 
-Clean up the draft staging directory:
+If NOT in incremental mode, clean up the draft staging directory:
 
 ```bash
 rm -rf .syskit/analysis/_draft/
@@ -75,10 +101,14 @@ rm -rf .syskit/analysis/_draft/
 
 ### Step 6: Next Step
 
-Present the summary counts to the user and tell them:
+Present the summary counts to the user.
+
+**If in incremental mode**, also show a comparison: "Previous analysis had \<n\> documents affected. After refinement: \<n\> documents now affected."
+
+Tell the user:
 
 "Impact analysis complete. Results saved to `.syskit/analysis/<folder>/impact.md`.
 
-Next step: run `/syskit-propose` to propose specific changes to the affected documents.
+Next step: run `/syskit-refine --scope <recommended_scope>` to propose changes to the next set of documents, or `/syskit-propose` to propose all changes at once.
 
 Tip: Start a new conversation before running the next command to free up context."
