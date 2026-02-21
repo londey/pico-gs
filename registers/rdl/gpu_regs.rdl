@@ -255,7 +255,12 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg fb_display_reg {
         name = "FB_DISPLAY";
-        desc = "Display scanout framebuffer + LUT control.
+        desc = "Display scanout framebuffer + LUT control (write-blocks-until-vsync).
+               Writing this register blocks the GPU pipeline until the next
+               vertical blanking interval, then atomically switches the display
+               scanout address.  If COLOR_GRADE_ENABLE is set, the color
+               grading LUT is loaded from LUT_ADDR during the blanking
+               interval before the new frame begins scanout.
                FB_ADDR and LUT_ADDR are 16-bit values multiplied by 512
                to form the byte address (512-byte granularity, 32 MiB
                addressable), matching the texture BASE_ADDR encoding.";
@@ -297,11 +302,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     };
     mem_fill_reg MEM_FILL @ 0x220;  // index 0x44
 
-    // index 0x45-0x46: Reserved
-
-    fb_display_reg FB_DISPLAY_SYNC @ 0x238;  // index 0x47
-
-    // index 0x48-0x4F: Reserved
+    // index 0x45-0x4F: Reserved
 
     // ===================================================================
     // Performance Counters (index 0x50–0x57) — clear-on-read
