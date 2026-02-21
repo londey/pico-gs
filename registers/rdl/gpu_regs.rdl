@@ -239,15 +239,19 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     // Framebuffer & Z-Buffer (index 0x40–0x4F)
     // ===================================================================
 
-    reg fb_addr_reg {
-        name = "FB address";
-        desc = "Framebuffer or Z-buffer base address (4K aligned)";
-        field {} RSVD_LO[11:0]    = 0;
-        field {} BASE_ADDR[31:12] = 0;
-        field {} RSVD_HI[63:32]   = 0;
+    reg fb_config_reg {
+        name = "FB_CONFIG";
+        desc = "Draw framebuffer and Z-buffer base addresses.
+               COLOR_BASE and Z_BASE are 16-bit values multiplied by 512
+               to form the byte address (512-byte granularity, 32 MiB
+               addressable), matching the texture BASE_ADDR encoding.";
+        field {} COLOR_BASE[15:0]   = 0;
+        field {} Z_BASE[31:16]      = 0;
+        field {} RSVD[63:32]        = 0;
     };
-    fb_addr_reg FB_DRAW    @ 0x200;  // index 0x40
-    fb_addr_reg FB_ZBUFFER @ 0x210;  // index 0x42
+    fb_config_reg FB_CONFIG @ 0x200;  // index 0x40
+
+    // index 0x42: Reserved (was FB_ZBUFFER, merged into FB_CONFIG)
 
     reg fb_display_reg {
         name = "FB_DISPLAY";
@@ -277,7 +281,23 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     };
     fb_control_reg FB_CONTROL @ 0x218;  // index 0x43
 
-    // index 0x44-0x46: Reserved
+    reg mem_fill_reg {
+        name = "MEM_FILL";
+        desc = "Hardware memory fill (write-triggers-fill).
+               Writes a 16-bit constant value to a contiguous region of SDRAM.
+               FILL_BASE uses the same 512-byte-granularity encoding as
+               COLOR_BASE, Z_BASE, and texture BASE_ADDR.
+               The fill unit generates sequential SDRAM burst writes for
+               maximum throughput.  Blocks the GPU pipeline until complete;
+               the SPI command FIFO continues accepting commands.";
+        field {} FILL_BASE[15:0]    = 0;   // target address >> 9
+        field {} FILL_VALUE[31:16]  = 0;   // 16-bit constant (RGB565 or Z16)
+        field {} FILL_COUNT[51:32]  = 0;   // count in 16-bit words (up to 1,048,576)
+        field {} RSVD[63:52]        = 0;
+    };
+    mem_fill_reg MEM_FILL @ 0x220;  // index 0x44
+
+    // index 0x45-0x46: Reserved
 
     fb_display_reg FB_DISPLAY_SYNC @ 0x238;  // index 0x47
 
