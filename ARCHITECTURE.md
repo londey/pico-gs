@@ -7,7 +7,7 @@
 pico-gs is an educational/hobby 3D GPU implemented on the ICEpi Zero v1.3 development board (Lattice ECP5-25K FPGA, CABGA256) with 32 MiB of SDRAM (Winbond W9825G6KH-6).
 It outputs 640x480 at 60 Hz as DVI on the board's HDMI port.
 
-The GPU is driven over QSPI from a Raspberry Pi Pico 2 (RP2350, dual Cortex-M33) host.
+The GPU is driven over SPI from a Raspberry Pi Pico 2 (RP2350, dual Cortex-M33) host.
 The same host software also runs on a PC via an FT232H USB-to-SPI adapter for desktop debugging.
 Two GPIO lines provide hardware flow control: one signals when the command FIFO is nearly full, the other delivers a VSYNC pulse for frame synchronization.
 
@@ -23,12 +23,14 @@ The host handles all vertex transformation, lighting, back-face culling, and cli
 The GPU handles rasterization, texturing, depth testing, color combining, and scanout.
 This split keeps the FPGA fabric focused on per-pixel throughput while the host's dual cores manage scene complexity.
 
-Fragment processing uses 10.8 fixed-point arithmetic throughout, matched to the ECP5's native 18x18 DSP multipliers.
+Fragment processing uses 10.8 fixed-point arithmetic (18-bit) as the pipeline-wide format, matched to the ECP5's native 18x18 DSP multipliers.
+The 2-bit integer headroom above 8-bit color (range 0–1023) allows intermediate values from the `(A-B)*C+D` combiner to exceed 255 without premature saturation.
+Stages that operate exclusively on 8-bit color channels — bilinear texture filtering, color combiner multiply, alpha blending — use the ECP5's 9x9 DSP sub-mode, packing up to four multiplies per slice to conserve DSP resources.
 Memory bandwidth is managed through a 4-way set-associative texture cache (>90% hit rate), early Z rejection before texture fetch, and burst-oriented scanline-order traversal.
 
 ## Component Interactions
 
-The host submits triangles as a stream of 72-bit register writes over QSPI.
+The host submits triangles as a stream of 72-bit register writes over SPI.
 Each write carries a 7-bit register address and 64-bit data payload.
 Per-vertex state (color, UVs, position) is accumulated in the register file (UNIT-003); the third vertex write triggers the hardware rasterizer.
 
@@ -37,12 +39,37 @@ When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
 
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
 The rasterizer (UNIT-005) walks the bounding box using edge-function increments, interpolating Z, two vertex colors, and two UV coordinate pairs per fragment.
-The pixel pipeline (UNIT-006) performs early Z testing, dual-texture sampling through per-sampler caches, and feeds the color combiner (UNIT-010) whose `(A-B)*C+D` equation selects from texture colors, vertex colors, material constants, and a depth-derived fog term.
+The pixel pipeline (UNIT-006) performs early Z testing and dual-texture sampling through per-sampler caches.
+The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per clock: each stage evaluates `(A-B)*C+D` independently for RGB and alpha, selecting from texture colors, vertex colors, per-draw-call constant colors, and a combined-output feedback path.
+Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add in a single pass; for simple single-equation rendering, stage 1 is configured as a pass-through.
 After optional alpha blending and ordered dithering, fragments are written to the double-buffered framebuffer in SDRAM.
 
 A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: display scanout (highest), framebuffer writes, Z-buffer access, and texture cache fills (lowest).
 The display controller (UNIT-008) prefetches scanlines into a FIFO and drives the DVI/TMDS encoder (UNIT-009) for 640x480 output.
 Frame presentation is double-buffered — the host writes to one framebuffer while the display controller scans out the other, swapping atomically at VSYNC.
+
+## Host Interface
+
+The FPGA's SPI slave accepts standard SPI Mode 0 at up to 62.5 MHz from the RP2350's hardware SPI peripheral, or 30 MHz from the FT232H MPSSE (PC debug path).
+At 62.5 MHz, the 72-bit transaction format yields approximately 868K register writes per second — roughly 960 non-textured or 640 textured triangles per frame at 60 fps.
+SPI bandwidth, not vertex compute, is the primary throughput bottleneck.
+
+A future upgrade path widens the interface to quad SPI via the RP2350's PIO, using four data lines at 37.5 MHz for approximately 2M register writes per second (2.4x improvement) with only two additional GPIO pins.
+The FPGA slave change is minimal: widening the shift register input from 1 to 4 bits.
+The FT232H debug path would remain on standard SPI.
+
+## Rendering Techniques
+
+The color combiner's `(A-B)*C+D` equation, combined with dual texture units and two pipelined combiner stages, supports several classic rendering techniques in a single pass:
+
+- **Textured Gouraud:** `TEX0 * SHADE` — diffuse texture modulated by per-vertex lighting.
+- **Lightmapping:** `TEX0 * TEX1` — diffuse texture (UV0) multiplied by a pre-computed lightmap (UV1).
+  Unlike the N64 RDP, both texture units are sampled in a single pipeline pass with no throughput penalty.
+- **Lightmap + dynamic fill light:** `TEX0 * TEX1 + SHADE` — additive per-vertex contribution on top of lightmapped surfaces.
+- **Fog (two-stage):** Stage 0 computes lit/textured color; stage 1 blends COMBINED toward CONST1 (fog color) using vertex alpha as the fog factor.
+- **Decal / solid color:** `TEX0 * ONE` or `CONST0 * ONE` — trivial pass-through configurations.
+
+Multi-pass rendering extends the repertoire to environment mapping over lightmapped surfaces and similar effects that require more than two texture samples.
 
 ---
 
