@@ -30,7 +30,7 @@ The signed representation naturally handles the `(A-B)` subtraction in the color
 The 12 fractional bits reduce accumulated quantization error through chained combiner stages and alpha blending, preserving gradient fidelity in dark tones.
 Alpha blending promotes the framebuffer's UNORM value to Q4.12 before blending; the result follows the normal dither-and-write path.
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
-Memory bandwidth is managed through a 4-way set-associative texture cache (>90% hit rate), early Z rejection before texture fetch, and burst-oriented scanline-order traversal.
+Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate), a Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
 ## Component Interactions
 
@@ -42,7 +42,8 @@ The SPI slave (UNIT-001) feeds an asynchronous command FIFO (UNIT-002) that brid
 When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
 
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
-The rasterizer (UNIT-005) walks the bounding box using edge-function increments, interpolating Z, two vertex colors, and two UV coordinate pairs per fragment.
+The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using edge-function increments, interpolating Z, two vertex colors, and two UV coordinate pairs per fragment.
+All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
 The pixel pipeline (UNIT-006) performs early Z testing and dual-texture sampling through per-sampler caches.
 The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per clock: each stage evaluates `(A-B)*C+D` independently for RGB and alpha, selecting from texture colors, two interpolated vertex colors (SHADE0 for diffuse, SHADE1 for specular), per-draw-call constant colors, and a combined-output feedback path.
 Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add in a single pass; for simple single-equation rendering, stage 1 is configured as a pass-through.
@@ -88,16 +89,20 @@ flowchart TD
     REG -- "vertex kick" --> SETUP
     RAST --> STIP
 
-    ZBUF[("Z-Buffer")]
-    TEXMEM[("Texture Data")]
-    FB[("Framebuffer")]
+    ZCACHE["Z-Buffer Tile Cache<br/>(4-way, 4×4 tiles)"]
+    WBUF["Write-Coalescing<br/>Buffer"]
+    ZBUF[("Z-Buffer<br/>SDRAM")]
+    TEXMEM[("Texture Data<br/>SDRAM")]
+    FB[("Framebuffer<br/>SDRAM")]
 
-    ZBUF -. "Z read" .-> EZ
+    EZ <-. "Z read/write" .-> ZCACHE
+    PW -. "Z update" .-> ZCACHE
+    ZCACHE -. "fill/evict burst" .-> ZBUF
     TEXMEM -. "cache fill" .-> TEX0
     TEXMEM -. "cache fill" .-> TEX1
     FB -. "dst read" .-> AB
-    PW -. "color write" .-> FB
-    PW -. "Z write" .-> ZBUF
+    PW -. "color write" .-> WBUF
+    WBUF -. "burst write" .-> FB
 ```
 
 ### Per-fragment data lanes
@@ -214,6 +219,79 @@ FB_DISPLAY latches the display mode fields (FB_WIDTH_LOG2, LINE_DOUBLE) atomical
 This allows the host to freely reprogram FB_CONFIG for render-to-texture passes during the frame without affecting the active scanout.
 
 This approach mirrors classic console practice — many PS2 titles rendered at 512 pixels wide (a power-of-two convenient for the Graphics Synthesizer's block-based memory) and relied on the display output to scale to the television's native resolution.
+
+## Memory System
+
+### SDRAM Bus and Pixel Addressing
+
+The GPU uses a single 16-bit SDRAM (Winbond W9825G6KH-6) at 100 MHz, providing a peak bandwidth of 200 MB/s.
+This single bus is shared by four consumers in fixed-priority order: display scanout (highest), framebuffer writes, Z-buffer read/write, and texture cache fills (lowest).
+
+Both the framebuffer (RGB565) and Z-buffer (16-bit depth) use **native 16-bit addressing**: each pixel occupies exactly one 16-bit SDRAM column.
+This eliminates the waste of padding 16-bit values into 32-bit words — every SDRAM column transfer carries useful data.
+
+Pixel and depth addresses are computed directly:
+
+```
+pixel_addr = FB_BASE + block_addr(x, y)    [16-bit word address]
+z_addr     = Z_BASE  + block_addr(x, y)    [16-bit word address]
+```
+
+A 512×512 framebuffer occupies 512 KB; a double-buffered framebuffer plus Z-buffer totals ~1.5 MB, well within the 32 MiB SDRAM.
+
+### Bandwidth Budget
+
+| Consumer | Rate (512×480 @ 60 Hz) | Priority | Notes |
+|---|---|---|---|
+| Display scanout | ~30 MB/s | Highest | Burst reads, 1 word/pixel |
+| FB color writes | Variable | 2 | Burst-coalesced |
+| Z-buffer R/W | Variable | 3 | Cached (tile cache) |
+| Texture fills | Variable | Lowest | Cached (texture cache) |
+
+Display scanout consumes ~15% of peak bandwidth, leaving ~170 MB/s for rendering.
+
+### Z-Buffer Tile Cache
+
+The Z-buffer has the worst per-fragment bandwidth profile: every visible fragment requires a read-compare-conditional-write cycle on the same address.
+A small on-chip cache absorbs this traffic, following industry precedent (NVIDIA GeForce 256, ATI HyperZ).
+
+**Geometry:** 4-way set-associative, 16 sets.
+Each cache line holds a 4×4 tile of 16-bit Z values (256 bits = 32 bytes), aligned with the surface tiling format.
+
+**Behavior:**
+1. **Hit:** Z value read from on-chip EBR in 1 cycle. If the fragment passes, the cached value is updated and the line marked dirty. Zero SDRAM traffic.
+2. **Miss:** Dirty line evicted as a 16-word burst write; new line filled as a 16-word burst read (~44 cycles total, amortized over up to 16 subsequent hits).
+3. **Write-back policy:** Dirty lines are written to SDRAM only on eviction or explicit end-of-frame flush (before buffer swap).
+
+Expected hit rate is 85–95% depending on scene complexity and overdraw, reducing Z-buffer SDRAM traffic by 5–7×.
+The cache controller reuses the same set-associative structure, XOR set indexing, and burst fill/evict FSM proven in the texture cache.
+
+**Cost:** 4–5 EBR, ~300–400 LUTs.
+
+### Burst Coalescing
+
+A write-coalescing buffer sits between the rasterizer and the SDRAM arbiter.
+When the rasterizer emits a run of adjacent pixels on the same scanline (or within the same 4×4 tile), the buffer collects them and issues a single SDRAM burst write rather than individual single-word transactions.
+
+Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after the initial overhead, so a 16-pixel tile write completes in ~24 cycles (1.5 cycles/pixel) versus ~9 cycles per individual write.
+
+**Cost:** ~100–150 LUTs, zero EBR (distributed RAM).
+
+### EBR Budget
+
+| Component | EBR | Notes |
+|---|---|---|
+| Texture cache (2 samplers) | 32 | 16 per sampler |
+| Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
+| Dither matrix | 1 | 16×16 blue noise |
+| Color grading LUT | 1 | 128-entry RGB |
+| Scanline FIFO | 1 | 1024×16 display |
+| FB write buffer | 1 | Single-tile coalescing buffer |
+| **Total** | **40–41** | **of 56 available (ECP5-25K)** |
+
+### Throughput
+
+With native 16-bit addressing, burst coalescing, and Z-buffer caching, the rasterizer sustains approximately 28–35 Mpixels/sec for typical triangle workloads — sufficient for >1× overdraw at 640×480 @ 60 Hz (18.4 Mpixels/sec visible).
 
 ---
 
