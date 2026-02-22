@@ -11,7 +11,8 @@ The GPU is driven over SPI from a Raspberry Pi Pico 2 (RP2350, dual Cortex-M33) 
 The same host software also runs on a PC via an FT232H USB-to-SPI adapter for desktop debugging.
 Two GPIO lines provide hardware flow control: one signals when the command FIFO is nearly full, the other delivers a VSYNC pulse for frame synchronization.
 
-The framebuffer is RGB565, the Z-buffer is 16-bit unsigned, and the pixel pipeline supports two independent texture units per pixel in a single pass.
+The framebuffer is RGB565 in 4×4 block-tiled layout, the Z-buffer is 16-bit unsigned (also block-tiled), and the pixel pipeline supports two independent texture units per pixel in a single pass.
+Render targets are power-of-two per axis (non-square permitted) and share the same tiled format as textures, enabling completed render targets to be sampled directly as texture sources with no copy or format conversion.
 The pipeline is fixed-function, inspired by the Nintendo 64 RDP's programmable color combiner — `(A-B)*C+D` applied independently to RGB and alpha — with additional features including blue noise dithering, per-channel color grading LUTs, DOT3 bump mapping, octahedral UV wrapping, and stipple-pattern fragment discard for order-independent transparency without framebuffer reads.
 
 ## Design Philosophy
@@ -48,7 +49,8 @@ Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture b
 After optional alpha blending and ordered dithering, fragments are written to the double-buffered framebuffer in SDRAM.
 
 A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: display scanout (highest), framebuffer writes, Z-buffer access, and texture cache fills (lowest).
-The display controller (UNIT-008) prefetches scanlines into a FIFO and drives the DVI/TMDS encoder (UNIT-009) for 640x480 output.
+The display controller (UNIT-008) reads from the block-tiled framebuffer surface, applies an optional color-grade LUT, stretches the image to 640×480 using nearest-neighbor horizontal scaling, and drives the DVI/TMDS encoder (UNIT-009).
+The render framebuffer may be smaller than the display resolution (typically 512×480 or 256×240); the display controller stretches horizontally and optionally line-doubles to fill the 640×480 output.
 Frame presentation is double-buffered — the host writes to one framebuffer while the display controller scans out the other, swapping atomically at VSYNC.
 
 ## Fragment Pipeline
@@ -144,6 +146,74 @@ The color combiner's `(A-B)*C+D` equation, combined with dual texture units and 
 - **Decal / solid color:** `TEX0 * ONE` or `CONST0 * ONE` — trivial pass-through configurations.
 
 Multi-pass rendering extends the repertoire to environment mapping over lightmapped surfaces and similar effects that require more than two texture samples.
+
+## Surface Tiling
+
+All color buffers and Z-buffers use 4×4 block-tiled layout in SDRAM, matching the texture cache's native block format.
+Pixels within each 4×4 block are stored in row-major order; blocks themselves are arranged in row-major order across the surface.
+Surface dimensions must be power-of-two per axis (non-square permitted) — the tiled address calculation uses only shifts and masks, requiring no multiply hardware.
+
+For a pixel at position (x, y) in a surface with width 2^WIDTH_LOG2:
+
+```
+block_x    = x >> 2
+block_y    = y >> 2
+local_x    = x & 3
+local_y    = y & 3
+block_idx  = (block_y << (WIDTH_LOG2 - 2)) | block_x
+byte_addr  = base + block_idx * 32 + (local_y * 4 + local_x) * 2
+```
+
+This layout unifies framebuffers, Z-buffers, and textures: a completed render target can be bound directly as a texture source (format `RGB565` tiled) with no format conversion or copy.
+The block-tiled layout also aligns with the texture cache's 4×4 block fetch unit, ensuring that render-target-as-texture sampling uses the same cache path as any other texture.
+
+Because all blocks in a power-of-two surface are contiguous in SDRAM, the existing MEM_FILL command clears any render target with a single linear fill — no block-aware fill command is required.
+
+## Render to Texture
+
+The GPU supports rendering to off-screen power-of-two surfaces that can subsequently be sampled as textures.
+FB_CONFIG specifies the active render target (color base, Z-base, and surface dimensions); the host reprograms it between passes.
+A paired Z-buffer at Z_BASE always has the same dimensions as the color buffer.
+
+Typical render-to-texture flow:
+
+1. Write FB_CONFIG with the render target's base addresses and dimensions.
+2. Clear color and Z via MEM_FILL (contiguous for any power-of-two surface).
+3. Set scissor rectangle and render the off-screen scene.
+4. Write FB_CONFIG back to the display framebuffer.
+5. Write TEX0_CFG with the render target's base address, dimensions, and format (RGB565).
+   This implicitly invalidates the texture cache for the sampler.
+6. Render geometry that samples from the render target.
+7. Write FB_DISPLAY to present the display framebuffer at VSYNC.
+
+Since the display framebuffer is also a power-of-two tiled surface (typically 512×512), it can itself be bound as a texture source — enabling the front buffer to be sampled in a subsequent frame for effects such as motion blur or rear-view mirrors.
+
+Self-referencing (sampling from the current render target while writing to it) is not supported.
+
+## Display Scaling
+
+The DVI output is fixed at 640×480 at 60 Hz.
+The display framebuffer may be smaller than the display resolution: the display controller stretches the source image horizontally to fill 640 pixels per scanline.
+Two display modes are supported:
+
+| Mode | Source | Horizontal | Vertical | Use case |
+|------|--------|------------|----------|----------|
+| 512×480 | 512-wide surface, 480 active rows | 512→640 stretch | 1:1 row mapping | Default rendering |
+| 256×240 | 256-wide surface, 240 active rows | 256→640 stretch | Line doubling (each row output twice) | Half-resolution / retro |
+
+The framebuffer surface is always power-of-two (512×512 or 256×256).
+In 512×480 mode, the bottom 32 rows of the 512×512 surface are not scanned out and may be left unused or repurposed by the host for small data.
+
+Horizontal scaling uses nearest-neighbor interpolation via a Bresenham-style accumulator — no multiply hardware is required.
+The scaling ratio for 512→640 is 4:5, producing a repeating 5-pixel pattern where one source pixel is doubled.
+For 256→640 the ratio is 2:5.
+
+Interpolation operates on UNORM8 values post color-grade LUT, ensuring that the LUT's tone mapping is applied before any pixel blending.
+
+FB_DISPLAY latches the display mode fields (FB_WIDTH_LOG2, LINE_DOUBLE) atomically at VSYNC, independent of FB_CONFIG.
+This allows the host to freely reprogram FB_CONFIG for render-to-texture passes during the frame without affecting the active scanout.
+
+This approach mirrors classic console practice — many PS2 titles rendered at 512 pixels wide (a power-of-two convenient for the Graphics Synthesizer's block-based memory) and relied on the display output to scale to the television's native resolution.
 
 ---
 

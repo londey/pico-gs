@@ -324,13 +324,24 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg fb_config_reg {
         name = "FB_CONFIG";
-        desc = "Draw framebuffer and Z-buffer base addresses.
+        desc = "Render target configuration: color/Z-buffer base addresses and
+               power-of-two surface dimensions.
                COLOR_BASE and Z_BASE are 16-bit values multiplied by 512
                to form the byte address (512-byte granularity, 32 MiB
-               addressable), matching the texture BASE_ADDR encoding.";
+               addressable), matching the texture BASE_ADDR encoding.
+               WIDTH_LOG2 and HEIGHT_LOG2 define the surface dimensions in
+               pixels as 1 << n; both the color buffer and Z-buffer use 4×4
+               block-tiled layout at these dimensions.  A paired Z-buffer at
+               Z_BASE always has the same dimensions as the color buffer.
+               The host reprograms this register between render passes to
+               switch between display framebuffer and off-screen render
+               targets; the pixel writer uses WIDTH_LOG2 for tiled address
+               calculation (shift-only, no multiply).";
         field {} COLOR_BASE[15:0]   = 0;
         field {} Z_BASE[31:16]      = 0;
-        field {} RSVD[63:32]        = 0;
+        field {} WIDTH_LOG2[35:32]  = 0;   // surface width = 1 << WIDTH_LOG2 pixels
+        field {} HEIGHT_LOG2[39:36] = 0;   // surface height = 1 << HEIGHT_LOG2 pixels
+        field {} RSVD[63:40]        = 0;
     };
     fb_config_reg FB_CONFIG @ 0x200;  // index 0x40
 
@@ -338,20 +349,37 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg fb_display_reg {
         name = "FB_DISPLAY";
-        desc = "Display scanout framebuffer + LUT control (write-blocks-until-vsync).
+        desc = "Display scanout configuration (write-blocks-until-vsync).
                Writing this register blocks the GPU pipeline until the next
-               vertical blanking interval, then atomically switches the display
-               scanout address.  If COLOR_GRADE_ENABLE is set, the color
-               grading LUT is loaded from LUT_ADDR during the blanking
-               interval before the new frame begins scanout.
+               vertical blanking interval, then atomically switches the
+               display scanout address and latches all display mode fields.
+               The DVI output is always 640×480 at 60 Hz.  The display
+               controller reads from a 4×4 block-tiled framebuffer and
+               stretches the source image to 640×480 using nearest-neighbor
+               horizontal scaling (Bresenham accumulator, no multiply HW).
+               FB_WIDTH_LOG2 specifies the tiled surface width for scanout
+               address calculation — latched independently from FB_CONFIG
+               so that render-to-texture passes can reprogram FB_CONFIG
+               mid-frame without affecting display scanout.
+               When LINE_DOUBLE is set, only 240 source rows are read and
+               each is output twice to fill 480 display lines; the line
+               buffer is reused without re-reading SDRAM.
+               Horizontal interpolation operates on UNORM8 values post
+               color-grade LUT, ensuring tone mapping precedes any pixel
+               blending.
+               If COLOR_GRADE_ENABLE is set, the color grading LUT is
+               loaded from LUT_ADDR during the blanking interval before
+               the new frame begins scanout.
                FB_ADDR and LUT_ADDR are 16-bit values multiplied by 512
                to form the byte address (512-byte granularity, 32 MiB
                addressable), matching the texture BASE_ADDR encoding.";
         field {} COLOR_GRADE_ENABLE[0:0] = 0;
-        field {} RSVD_LO[15:1]           = 0;
+        field {} LINE_DOUBLE[1:1]        = 0;   // 0 = 480 rows (1:1), 1 = 240 rows (each doubled)
+        field {} RSVD_LO[15:2]           = 0;
         field {} LUT_ADDR[31:16]         = 0;
         field {} FB_ADDR[47:32]          = 0;
-        field {} RSVD_HI[63:48]          = 0;
+        field {} FB_WIDTH_LOG2[51:48]    = 0;   // display FB width = 1 << n (e.g. 9 = 512)
+        field {} RSVD_HI[63:52]          = 0;
     };
     fb_display_reg FB_DISPLAY @ 0x208;  // index 0x41
 
