@@ -18,7 +18,7 @@ pub struct Texture {
     pub height: u16,
     pub width_log2: u8,
     pub height_log2: u8,
-    pub data: &'static [u32],
+    pub data: &'static [u64],
 }
 
 /// Global texture table for cross-core texture ID lookup.
@@ -48,23 +48,29 @@ impl TextureSource for StaticTextureSource {
 }
 
 /// Generate the 64x64 checkerboard at compile time.
-const CHECKERBOARD_64_DATA: [u32; 64 * 64] = {
-    let mut data = [0u32; 64 * 64];
+/// Two adjacent RGBA8888 pixels are packed per 64-bit dword (low pixel in [31:0]).
+const CHECKERBOARD_64_DATA: [u64; 64 * 64 / 2] = {
+    let mut data = [0u64; 64 * 64 / 2];
     let mut y = 0usize;
     while y < 64 {
         let mut x = 0usize;
         while x < 64 {
             // 8x8 block checkerboard pattern.
-            let block_x = x / 8;
+            let block_x0 = x / 8;
+            let block_x1 = (x + 1) / 8;
             let block_y = y / 8;
-            let is_white = (block_x + block_y).is_multiple_of(2);
-            let color: u32 = if is_white {
-                0xFF_FF_FF_FF // White, opaque (ABGR: A=FF, B=FF, G=FF, R=FF)
+            let c0: u32 = if (block_x0 + block_y) % 2 == 0 {
+                0xFF_FF_FF_FF // White, opaque (RGBA8888)
             } else {
                 0xFF_40_40_40 // Dark gray, opaque
             };
-            data[y * 64 + x] = color;
-            x += 1;
+            let c1: u32 = if (block_x1 + block_y) % 2 == 0 {
+                0xFF_FF_FF_FF
+            } else {
+                0xFF_40_40_40
+            };
+            data[(y * 64 + x) / 2] = (c0 as u64) | ((c1 as u64) << 32);
+            x += 2;
         }
         y += 1;
     }

@@ -72,11 +72,26 @@ impl<S: SpiTransport> GpuDriver<S> {
         Ok(val)
     }
 
-    /// Upload a block of 32-bit words to GPU SRAM via MEM_ADDR/MEM_DATA.
-    pub fn upload_memory(&mut self, gpu_addr: u32, data: &[u32]) -> Result<(), GpuError<S::Error>> {
-        self.write(registers::MEM_ADDR, gpu_addr as u64)?;
-        for &word in data {
-            self.write(registers::MEM_DATA, word as u64)?;
+    /// Upload a block of 64-bit dwords to GPU SDRAM via MEM_ADDR/MEM_DATA.
+    ///
+    /// `dword_addr` is a 22-bit dword address (byte address >> 3).
+    pub fn upload_memory(&mut self, dword_addr: u32, data: &[u64]) -> Result<(), GpuError<S::Error>> {
+        self.write(registers::MEM_ADDR, dword_addr as u64)?;
+        for &dword in data {
+            self.write(registers::MEM_DATA, dword)?;
+        }
+        Ok(())
+    }
+
+    /// Read a block of 64-bit dwords from GPU SDRAM via MEM_ADDR/MEM_DATA.
+    ///
+    /// Writing MEM_ADDR triggers a prefetch; each subsequent MEM_DATA read
+    /// returns the prefetched dword and pipelines the next.
+    /// `dword_addr` is a 22-bit dword address (byte address >> 3).
+    pub fn read_memory(&mut self, dword_addr: u32, buf: &mut [u64]) -> Result<(), GpuError<S::Error>> {
+        self.write(registers::MEM_ADDR, dword_addr as u64)?;
+        for slot in buf.iter_mut() {
+            *slot = self.read(registers::MEM_DATA)?;
         }
         Ok(())
     }

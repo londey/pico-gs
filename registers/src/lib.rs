@@ -132,9 +132,9 @@ pub const FB_DISPLAY_FB_ADDR_SHIFT: u32 = 32;
 
 // --- Status & Control (0x70-0x7F) ---
 
-/// Memory upload address pointer.
+/// Memory access dword address pointer (22-bit, write triggers read prefetch).
 pub const MEM_ADDR: u8 = 0x70;
-/// Memory upload data (auto-increments MEM_ADDR by 4).
+/// Memory data register (bidirectional 64-bit, auto-increments MEM_ADDR by 1).
 pub const MEM_DATA: u8 = 0x71;
 /// GPU status register (read-only): VBLANK, BUSY, FIFO_DEPTH.
 pub const STATUS: u8 = 0x7E;

@@ -104,15 +104,15 @@ Transfer texture pixel data to GPU SRAM.
 **Input**:
 | Field | Type | Description |
 |-------|------|-------------|
-| data_ptr | *const u32 | Pointer to RGBA8888 pixel data |
-| data_len | u32 | Number of 32-bit words |
-| gpu_address | u32 | Target GPU SRAM address (4K aligned) |
+| data_ptr | *const u64 | Pointer to RGBA8888 pixel data (packed 2 pixels per 64-bit dword) |
+| data_len | u32 | Number of 64-bit dwords |
+| gpu_dword_addr | u32 | Target GPU SDRAM dword address (22-bit, byte address >> 3) |
 
 **Processing (Core 1)**:
-1. Call `gpu_upload_memory(gpu_address, data)`
+1. Call `gpu_upload_memory(gpu_dword_addr, data)`
 2. This writes MEM_ADDR then MEM_DATA × data_len
 
-**Performance note**: Texture upload at 25 MHz SPI ≈ 3 MB/s. A 256×256 RGBA texture (256 KB) takes ~85 ms. Textures should be uploaded once during demo initialization, not per-frame.
+**Performance note**: Texture upload at 25 MHz SPI ≈ 6 MB/s (64-bit dwords per 72-bit transaction). A 256×256 RGBA texture (256 KB) takes ~43 ms. Textures should be uploaded once during demo initialization, not per-frame.
 
 ---
 

@@ -394,17 +394,21 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg mem_addr_reg {
         name = "MEM_ADDR";
-        desc = "Memory upload address pointer";
-        field {} ADDR[31:0]   = 0;
-        field {} RSVD[63:32]  = 0;
+        desc = "Memory access dword address pointer (22-bit, addresses 8-byte dwords
+               in 32 MiB SDRAM).  Writing this register sets the SDRAM target
+               address and triggers a read prefetch so that the next SPI read of
+               MEM_DATA can return data immediately.";
+        field {} ADDR[21:0]   = 0;
+        field {} RSVD[63:22]  = 0;
     };
     mem_addr_reg MEM_ADDR @ 0x380;  // index 0x70
 
     reg mem_data_reg {
         name = "MEM_DATA";
-        desc = "Memory upload data (auto-increments MEM_ADDR by 4)";
-        field {} DATA[31:0]   = 0;
-        field {} RSVD[63:32]  = 0;
+        desc = "Memory data register (bidirectional 64-bit, auto-increments MEM_ADDR by 1).
+               Write: stores DATA[63:0] to SDRAM at MEM_ADDR, then increments.
+               Read: returns prefetched 64-bit SDRAM dword and triggers next prefetch.";
+        field {} DATA[63:0]   = 0;
     };
     mem_data_reg MEM_DATA @ 0x388;  // index 0x71
 

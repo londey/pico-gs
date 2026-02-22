@@ -648,12 +648,12 @@ To upload texture data from host:
 **Recommendation for MVP**: Add MEM_ADDR (0x70) and MEM_DATA (0x71) registers for host memory access:
 
 ```
-MEM_ADDR: Write sets SDRAM address pointer
-MEM_DATA: Write stores 32 bits at pointer, auto-increments
-          Read returns 32 bits at pointer, auto-increments
+MEM_ADDR: Write sets SDRAM dword address pointer (22-bit, 8-byte dwords)
+MEM_DATA: Write stores 64 bits at pointer, auto-increments by 1
+          Read returns prefetched 64-bit dword, auto-increments by 1
 ```
 
-This allows host to upload textures at ~3 MB/s (limited by SPI).
+This allows host to transfer data at ~6 MB/s (64-bit dwords over 25 MHz SPI).
 Note: Unlike SRAM, SDRAM requires initialization before first access (see Initialization Sequence above).
 The SDRAM controller handles initialization autonomously after PLL lock.
 

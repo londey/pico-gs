@@ -103,20 +103,33 @@ Read a 64-bit value from a GPU register.
 
 ---
 
-## Bulk Memory Upload
+## Bulk Memory Transfer
 
-### `gpu_upload_memory(handle: &GpuHandle, gpu_addr: u32, data: &[u32])`
+### `gpu_upload_memory(handle: &GpuHandle, dword_addr: u32, data: &[u64])`
 
-Upload a block of 32-bit words to GPU SRAM via MEM_ADDR/MEM_DATA registers.
+Upload a block of 64-bit dwords to GPU SDRAM via MEM_ADDR/MEM_DATA registers.
 
 **Sequence**:
-1. `gpu_write(MEM_ADDR, gpu_addr)`
-2. For each word in `data`: `gpu_write(MEM_DATA, word)`
-3. MEM_ADDR auto-increments by 4 after each MEM_DATA write
+1. `gpu_write(MEM_ADDR, dword_addr)` — 22-bit dword address (addresses 8-byte dwords in 32 MiB SDRAM)
+2. For each dword in `data`: `gpu_write(MEM_DATA, dword)`
+3. MEM_ADDR auto-increments by 1 after each MEM_DATA write
 
-**Performance**: ~3 MB/s at 25 MHz SPI (each 32-bit word requires a full 72-bit transaction).
+**Performance**: ~6 MB/s at 25 MHz SPI (each 64-bit dword requires a single 72-bit transaction).
 
 **Use cases**: Texture upload, LUT upload
+
+### `gpu_read_memory(handle: &GpuHandle, dword_addr: u32, buf: &mut [u64])`
+
+Read a block of 64-bit dwords from GPU SDRAM via MEM_ADDR/MEM_DATA registers.
+
+**Sequence**:
+1. `gpu_write(MEM_ADDR, dword_addr)` — triggers prefetch of first dword
+2. For each slot in `buf`: `gpu_read(MEM_DATA)` — returns prefetched dword, triggers next prefetch
+3. MEM_ADDR auto-increments by 1 after each MEM_DATA read
+
+**Performance**: ~6 MB/s at 25 MHz SPI.
+
+**Use cases**: Memory readback, verification
 
 ---
 

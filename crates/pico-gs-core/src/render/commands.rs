@@ -12,7 +12,7 @@ use crate::render::{ClearCommand, RenderCommand, ScreenTriangleCommand, UploadTe
 
 /// Texture metadata for the command executor.
 pub struct TextureInfo<'a> {
-    pub data: &'a [u32],
+    pub data: &'a [u64],
     pub width: u16,
     pub height: u16,
     pub width_log2: u8,
@@ -106,10 +106,10 @@ fn execute_upload_texture<S: SpiTransport>(
     };
 
     // Upload pixel data via MEM_ADDR/MEM_DATA.
-    gpu.upload_memory(cmd.gpu_address, tex.data)?;
+    gpu.upload_memory(cmd.gpu_dword_addr, tex.data)?;
 
     // Configure TEX0.
-    gpu.write(registers::TEX0_BASE, cmd.gpu_address as u64)?;
+    gpu.write(registers::TEX0_BASE, cmd.gpu_dword_addr as u64)?;
 
     // TEX0_FMT: swizzle=RGBA(0), height_log2, width_log2, not compressed, enabled.
     let fmt: u64 = ((tex.height_log2 as u64) << 8)

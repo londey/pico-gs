@@ -121,8 +121,8 @@ pub struct ScreenTriangleCommand {
 /// Command to upload texture data to GPU memory.
 #[derive(Clone, Copy, Debug)]
 pub struct UploadTextureCommand {
-    /// GPU SRAM target address (4K aligned).
-    pub gpu_address: u32,
+    /// GPU SDRAM dword address (22-bit, byte address >> 3).
+    pub gpu_dword_addr: u32,
     /// Index into a global texture data table.
     pub texture_id: u8,
 }

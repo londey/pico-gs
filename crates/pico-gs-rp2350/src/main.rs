@@ -237,7 +237,7 @@ fn main() -> ! {
                     enqueue_blocking(
                         &mut producer,
                         RenderCommand::UploadTexture(UploadTextureCommand {
-                            gpu_address: pico_gs_core::gpu::registers::TEXTURE_BASE_ADDR,
+                            gpu_dword_addr: pico_gs_core::gpu::registers::TEXTURE_BASE_ADDR >> 3,
                             texture_id: pico_gs_core::assets::textures::TEX_ID_CHECKERBOARD,
                         }),
                     );

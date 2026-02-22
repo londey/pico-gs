@@ -177,8 +177,8 @@ All register semantics are identical regardless of command source.
 | 0x57 | PERF_STALL_CT | R | Cache stalls[31:0] + triangles[63:32] |
 | 0x58-0x6F | - | - | Reserved |
 | **Status & Control** ||||
-| 0x70 | MEM_ADDR | R/W | Memory upload address pointer |
-| 0x71 | MEM_DATA | R/W | Memory upload data (auto-increment) |
+| 0x70 | MEM_ADDR | R/W | Memory dword address pointer (22-bit) |
+| 0x71 | MEM_DATA | R/W | Memory data (bidirectional 64-bit, auto-increment) |
 | 0x72-0x7D | - | - | Reserved |
 | 0x7E | STATUS | R | GPU status and FIFO depth |
 | 0x7F | ID | R | GPU identification |
@@ -1282,14 +1282,20 @@ Reserved for future performance counters.
 
 ### 0x70: MEM_ADDR
 
-Memory address pointer for bulk data transfer.
+Memory access dword address pointer.
 
 ```
-[63:32]   Reserved (write as 0)
-[31:0]    SDRAM address pointer
+[63:22]   Reserved (write as 0)
+[21:0]    SDRAM dword address (addresses 8-byte dwords in 32 MiB SDRAM)
 ```
 
-**Usage**: Set this register before reading/writing MEM_DATA. The address is used for bulk uploads of textures, lookup tables, or other GPU memory.
+**Usage**: Set this register before reading/writing MEM_DATA.
+The address is used for bulk transfers of textures, lookup tables, or other GPU memory.
+The 22-bit address field covers 2²² × 8 = 32 MiB.
+
+**Prefetch**: Writing MEM_ADDR initiates an SDRAM read at the specified dword address.
+The result is latched into an internal holding register so that the next SPI read of MEM_DATA returns data immediately (combinational from the register file).
+The inter-transaction gap (~3–8 µs at 25 MHz SPI) provides ample time for the SDRAM access (~100 ns).
 
 **Reset Value**: 0x0000000000000000
 
@@ -1297,28 +1303,35 @@ Memory address pointer for bulk data transfer.
 
 ### 0x71: MEM_DATA
 
-Memory data register with auto-increment.
+Bidirectional 64-bit memory data register with auto-increment.
 
 ```
-[63:32]   Reserved (write as 0)
-[31:0]    32-bit data value
+[63:0]    64-bit data dword
 ```
 
 **Write Behavior**:
-- Writes 32-bit value to SDRAM at MEM_ADDR
-- Auto-increments MEM_ADDR by 4
+- Writes DATA[63:0] to SDRAM at MEM_ADDR
+- Auto-increments MEM_ADDR by 1 (next 8-byte dword)
 - Allows host to upload textures via SPI
 
 **Read Behavior**:
-- Reads 32-bit value from SDRAM at MEM_ADDR
-- Auto-increments MEM_ADDR by 4
-- Allows host to verify memory contents
+- Returns the prefetched 64-bit SDRAM dword (loaded when MEM_ADDR was written, or by the previous MEM_DATA read)
+- Auto-increments MEM_ADDR by 1 and triggers prefetch of the next dword
+- Successive reads form a burst: each read returns the current dword and pipelines the next
 
-**Example**: Upload 1KB texture:
+**Example — Upload 1 KB texture**:
 ```c
-gpu_write(REG_MEM_ADDR, 0x384000);
-for (int i = 0; i < 256; i++) {
-    gpu_write(REG_MEM_DATA, texture_data[i]);  // Auto-increments
+gpu_write(REG_MEM_ADDR, 0x70800);  // Dword address (byte addr 0x384000 >> 3)
+for (int i = 0; i < 128; i++) {
+    gpu_write(REG_MEM_DATA, texture_data[i]);  // 64-bit dwords, auto-increments
+}
+```
+
+**Example — Read back 1 KB**:
+```c
+gpu_write(REG_MEM_ADDR, 0x70800);  // Triggers prefetch of first dword
+for (int i = 0; i < 128; i++) {
+    readback[i] = gpu_read(REG_MEM_DATA);  // Returns prefetched dword, triggers next
 }
 ```
 
@@ -1504,9 +1517,9 @@ gpu_write(REG_VERTEX, PACK_XYZ(x2, y2, z2));  // Triggers draw
 ```c
 // Upload BC1-compressed texture to SDRAM at 0x404000
 // For 128x128 texture: (128/4) x (128/4) = 1024 blocks x 8 bytes = 8192 bytes
-gpu_write(REG_MEM_ADDR, 0x404000);
-for (int i = 0; i < 8192 / 4; i++) {
-    gpu_write(REG_MEM_DATA, bc1_data[i]);  // Auto-increments by 4
+gpu_write(REG_MEM_ADDR, 0x404000 >> 3);  // Dword address
+for (int i = 0; i < 8192 / 8; i++) {
+    gpu_write(REG_MEM_DATA, bc1_data[i]);  // 64-bit dwords, auto-increments
 }
 
 // Configure texture unit 0 for BC1 compressed format
@@ -1643,7 +1656,7 @@ After hardware reset or power-on:
 | PERF_FRAGMENTS | 0x0000000000000000 | Both counters zero |
 | PERF_STALL_VS | 0x0000000000000000 | Both counters zero |
 | PERF_STALL_CT | 0x0000000000000000 | Both counters zero |
-| MEM_ADDR | 0x0000000000000000 | Address 0x000000 |
+| MEM_ADDR | 0x0000000000000000 | Dword address 0x000000 |
 | MEM_DATA | N/A | Depends on memory |
 | STATUS | 0x0000000000000000 | Idle, FIFO empty |
 | ID | 0x00000A0000006702 | Device 0x6702 |
