@@ -23,7 +23,7 @@ The host handles all vertex transformation, lighting, back-face culling, and cli
 The GPU handles rasterization, texturing, depth testing, color combining, and scanout.
 This split keeps the FPGA fabric focused on per-pixel throughput while the host's dual cores manage scene complexity.
 
-Fragment processing uses 10.8 fixed-point arithmetic (18-bit) as the pipeline-wide format, matched to the ECP5's native 18x18 DSP multipliers.
+Fragment processing uses UQ10.8 fixed-point arithmetic (18-bit) as the pipeline-wide format, matched to the ECP5's native 18x18 DSP multipliers.
 The 2-bit integer headroom above 8-bit color (range 0–1023) allows intermediate values from the `(A-B)*C+D` combiner to exceed 255 without premature saturation.
 Stages that operate exclusively on 8-bit color channels — bilinear texture filtering, color combiner multiply, alpha blending — use the ECP5's 9x9 DSP sub-mode, packing up to four multiplies per slice to conserve DSP resources.
 Memory bandwidth is managed through a 4-way set-associative texture cache (>90% hit rate), early Z rejection before texture fetch, and burst-oriented scanline-order traversal.

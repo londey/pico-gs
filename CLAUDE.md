@@ -21,7 +21,7 @@ pico-gs/
 │   ├── pico-gs-core/         # Platform-agnostic GPU driver, rendering, scene (no_std)
 │   │   ├── src/
 │   │   │   ├── gpu/          # GpuDriver<S>, registers, vertex packing
-│   │   │   ├── math/         # Fixed-point math (12.4, 1.15, z25)
+│   │   │   ├── math/         # Fixed-point math (Q12.4, Q1.15)
 │   │   │   ├── render/       # Commands, mesh rendering, transform, lighting
 │   │   │   └── scene/        # Scene management, demo definitions
 │   │   └── tests/            # Integration tests
@@ -128,6 +128,19 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 
 - Use semantic line breaks: start each sentence on its own line.
   Adjacent lines render as a single paragraph in HTML, but one-sentence-per-line produces cleaner diffs and easier code review.
+
+## Fixed-Point Notation
+
+All fixed-point values use TI-style Q notation:
+- `Qm.n` — signed: m integer bits (including sign bit), n fractional bits, total width = m + n bits.
+- `UQm.n` — unsigned: m integer bits, n fractional bits, total width = m + n bits.
+
+Examples:
+- `Q2.2` is a signed 4-bit value with resolution 2⁻² (1/4), range −2.0 to +1.75.
+- `UQ2.2` is an unsigned 4-bit value with resolution 2⁻² (1/4), range 0.0 to +3.75.
+
+Apply this notation consistently in documentation, code comments, and specifications.
+When sign/unsigned is ambiguous, always use the explicit `Q` or `UQ` prefix.
 
 ## ICEpi Zero Board Documentation
 

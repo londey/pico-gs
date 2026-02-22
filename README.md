@@ -195,6 +195,11 @@ The build script can build and flash both targets in one go:
 
 See [CLAUDE.md](CLAUDE.md) for development guidelines and project conventions.
 
+### Conventions
+
+Fixed-point values throughout the project use TI-style Q notation (`Qm.n` for signed, `UQm.n` for unsigned).
+See [CLAUDE.md](CLAUDE.md) for the full definition and examples.
+
 ## License
 
 MIT
