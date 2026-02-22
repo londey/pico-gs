@@ -23,9 +23,12 @@ The host handles all vertex transformation, lighting, back-face culling, and cli
 The GPU handles rasterization, texturing, depth testing, color combining, and scanout.
 This split keeps the FPGA fabric focused on per-pixel throughput while the host's dual cores manage scene complexity.
 
-Fragment processing uses UQ10.8 fixed-point arithmetic (18-bit) as the pipeline-wide format, matched to the ECP5's native 18x18 DSP multipliers.
-The 2-bit integer headroom above 8-bit color (range 0–1023) allows intermediate values from the `(A-B)*C+D` combiner to exceed 255 without premature saturation.
-Stages that operate exclusively on 8-bit color channels — bilinear texture filtering, color combiner multiply, alpha blending — use the ECP5's 9x9 DSP sub-mode, packing up to four multiplies per slice to conserve DSP resources.
+Fragment processing uses Q4.12 signed fixed-point arithmetic (16-bit) as the pipeline-wide format, with colors normalized to 0.0–1.0.
+All UNORM inputs — vertex colors, material constants, and texture samples — are promoted to Q4.12 at pipeline entry; output converts back to UNORM after optional dithering.
+The signed representation naturally handles the `(A-B)` subtraction in the color combiner, and the 3-bit integer headroom above 1.0 (range up to ~8.0) accommodates additive blending without premature saturation.
+The 12 fractional bits reduce accumulated quantization error through chained combiner stages and alpha blending, preserving gradient fidelity in dark tones.
+Alpha blending promotes the framebuffer's UNORM value to Q4.12 before blending; the result follows the normal dither-and-write path.
+The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
 Memory bandwidth is managed through a 4-way set-associative texture cache (>90% hit rate), early Z rejection before texture fetch, and burst-oriented scanline-order traversal.
 
 ## Component Interactions
