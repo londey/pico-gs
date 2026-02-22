@@ -167,79 +167,129 @@ package gpu_regs_pkg;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_ALPHA_A__out_t;
+    } gpu_regs__cc_mode_reg__C0_RGB_A__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_ALPHA_B__out_t;
+    } gpu_regs__cc_mode_reg__C0_RGB_B__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_ALPHA_C__out_t;
+    } gpu_regs__cc_mode_reg__C0_RGB_C__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_ALPHA_D__out_t;
+    } gpu_regs__cc_mode_reg__C0_RGB_D__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_A_SOURCE__out_t;
+    } gpu_regs__cc_mode_reg__C0_ALPHA_A__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_B_SOURCE__out_t;
+    } gpu_regs__cc_mode_reg__C0_ALPHA_B__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_C_SOURCE__out_t;
+    } gpu_regs__cc_mode_reg__C0_ALPHA_C__out_t;
 
     typedef struct {
         logic [3:0] value;
-    } gpu_regs__cc_mode_reg__CC_D_SOURCE__out_t;
+    } gpu_regs__cc_mode_reg__C0_ALPHA_D__out_t;
 
     typedef struct {
-        logic [31:0] value;
-    } gpu_regs__cc_mode_reg__RSVD__out_t;
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_RGB_A__out_t;
 
     typedef struct {
-        gpu_regs__cc_mode_reg__CC_ALPHA_A__out_t CC_ALPHA_A;
-        gpu_regs__cc_mode_reg__CC_ALPHA_B__out_t CC_ALPHA_B;
-        gpu_regs__cc_mode_reg__CC_ALPHA_C__out_t CC_ALPHA_C;
-        gpu_regs__cc_mode_reg__CC_ALPHA_D__out_t CC_ALPHA_D;
-        gpu_regs__cc_mode_reg__CC_A_SOURCE__out_t CC_A_SOURCE;
-        gpu_regs__cc_mode_reg__CC_B_SOURCE__out_t CC_B_SOURCE;
-        gpu_regs__cc_mode_reg__CC_C_SOURCE__out_t CC_C_SOURCE;
-        gpu_regs__cc_mode_reg__CC_D_SOURCE__out_t CC_D_SOURCE;
-        gpu_regs__cc_mode_reg__RSVD__out_t RSVD;
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_RGB_B__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_RGB_C__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_RGB_D__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_ALPHA_A__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_ALPHA_B__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_ALPHA_C__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_reg__C1_ALPHA_D__out_t;
+
+    typedef struct {
+        gpu_regs__cc_mode_reg__C0_RGB_A__out_t C0_RGB_A;
+        gpu_regs__cc_mode_reg__C0_RGB_B__out_t C0_RGB_B;
+        gpu_regs__cc_mode_reg__C0_RGB_C__out_t C0_RGB_C;
+        gpu_regs__cc_mode_reg__C0_RGB_D__out_t C0_RGB_D;
+        gpu_regs__cc_mode_reg__C0_ALPHA_A__out_t C0_ALPHA_A;
+        gpu_regs__cc_mode_reg__C0_ALPHA_B__out_t C0_ALPHA_B;
+        gpu_regs__cc_mode_reg__C0_ALPHA_C__out_t C0_ALPHA_C;
+        gpu_regs__cc_mode_reg__C0_ALPHA_D__out_t C0_ALPHA_D;
+        gpu_regs__cc_mode_reg__C1_RGB_A__out_t C1_RGB_A;
+        gpu_regs__cc_mode_reg__C1_RGB_B__out_t C1_RGB_B;
+        gpu_regs__cc_mode_reg__C1_RGB_C__out_t C1_RGB_C;
+        gpu_regs__cc_mode_reg__C1_RGB_D__out_t C1_RGB_D;
+        gpu_regs__cc_mode_reg__C1_ALPHA_A__out_t C1_ALPHA_A;
+        gpu_regs__cc_mode_reg__C1_ALPHA_B__out_t C1_ALPHA_B;
+        gpu_regs__cc_mode_reg__C1_ALPHA_C__out_t C1_ALPHA_C;
+        gpu_regs__cc_mode_reg__C1_ALPHA_D__out_t C1_ALPHA_D;
     } gpu_regs__cc_mode_reg__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__mat_color_reg__RED__out_t;
+    } gpu_regs__const_color_reg__CONST0_R__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__mat_color_reg__GREEN__out_t;
+    } gpu_regs__const_color_reg__CONST0_G__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__mat_color_reg__BLUE__out_t;
+    } gpu_regs__const_color_reg__CONST0_B__out_t;
 
     typedef struct {
         logic [7:0] value;
-    } gpu_regs__mat_color_reg__ALPHA__out_t;
+    } gpu_regs__const_color_reg__CONST0_A__out_t;
 
     typedef struct {
-        logic [31:0] value;
-    } gpu_regs__mat_color_reg__RSVD__out_t;
+        logic [7:0] value;
+    } gpu_regs__const_color_reg__CONST1_R__out_t;
 
     typedef struct {
-        gpu_regs__mat_color_reg__RED__out_t RED;
-        gpu_regs__mat_color_reg__GREEN__out_t GREEN;
-        gpu_regs__mat_color_reg__BLUE__out_t BLUE;
-        gpu_regs__mat_color_reg__ALPHA__out_t ALPHA;
-        gpu_regs__mat_color_reg__RSVD__out_t RSVD;
-    } gpu_regs__mat_color_reg__out_t;
+        logic [7:0] value;
+    } gpu_regs__const_color_reg__CONST1_G__out_t;
+
+    typedef struct {
+        logic [7:0] value;
+    } gpu_regs__const_color_reg__CONST1_B__out_t;
+
+    typedef struct {
+        logic [7:0] value;
+    } gpu_regs__const_color_reg__CONST1_A__out_t;
+
+    typedef struct {
+        gpu_regs__const_color_reg__CONST0_R__out_t CONST0_R;
+        gpu_regs__const_color_reg__CONST0_G__out_t CONST0_G;
+        gpu_regs__const_color_reg__CONST0_B__out_t CONST0_B;
+        gpu_regs__const_color_reg__CONST0_A__out_t CONST0_A;
+        gpu_regs__const_color_reg__CONST1_R__out_t CONST1_R;
+        gpu_regs__const_color_reg__CONST1_G__out_t CONST1_G;
+        gpu_regs__const_color_reg__CONST1_B__out_t CONST1_B;
+        gpu_regs__const_color_reg__CONST1_A__out_t CONST1_A;
+    } gpu_regs__const_color_reg__out_t;
 
     typedef struct {
         logic value;
@@ -282,7 +332,19 @@ package gpu_regs_pkg;
     } gpu_regs__render_mode_reg__Z_COMPARE__out_t;
 
     typedef struct {
-        logic [47:0] value;
+        logic value;
+    } gpu_regs__render_mode_reg__STIPPLE_EN__out_t;
+
+    typedef struct {
+        logic [1:0] value;
+    } gpu_regs__render_mode_reg__ALPHA_TEST_FUNC__out_t;
+
+    typedef struct {
+        logic [7:0] value;
+    } gpu_regs__render_mode_reg__ALPHA_REF__out_t;
+
+    typedef struct {
+        logic [36:0] value;
     } gpu_regs__render_mode_reg__RSVD_HI__out_t;
 
     typedef struct {
@@ -296,6 +358,9 @@ package gpu_regs_pkg;
         gpu_regs__render_mode_reg__DITHER_EN__out_t DITHER_EN;
         gpu_regs__render_mode_reg__DITHER_PATTERN__out_t DITHER_PATTERN;
         gpu_regs__render_mode_reg__Z_COMPARE__out_t Z_COMPARE;
+        gpu_regs__render_mode_reg__STIPPLE_EN__out_t STIPPLE_EN;
+        gpu_regs__render_mode_reg__ALPHA_TEST_FUNC__out_t ALPHA_TEST_FUNC;
+        gpu_regs__render_mode_reg__ALPHA_REF__out_t ALPHA_REF;
         gpu_regs__render_mode_reg__RSVD_HI__out_t RSVD_HI;
     } gpu_regs__render_mode_reg__out_t;
 
@@ -318,22 +383,30 @@ package gpu_regs_pkg;
     } gpu_regs__z_range_reg__out_t;
 
     typedef struct {
-        logic [11:0] value;
-    } gpu_regs__fb_addr_reg__RSVD_LO__out_t;
+        logic [63:0] value;
+    } gpu_regs__stipple_pattern_reg__PATTERN__out_t;
 
     typedef struct {
-        logic [19:0] value;
-    } gpu_regs__fb_addr_reg__BASE_ADDR__out_t;
+        gpu_regs__stipple_pattern_reg__PATTERN__out_t PATTERN;
+    } gpu_regs__stipple_pattern_reg__out_t;
+
+    typedef struct {
+        logic [15:0] value;
+    } gpu_regs__fb_config_reg__COLOR_BASE__out_t;
+
+    typedef struct {
+        logic [15:0] value;
+    } gpu_regs__fb_config_reg__Z_BASE__out_t;
 
     typedef struct {
         logic [31:0] value;
-    } gpu_regs__fb_addr_reg__RSVD_HI__out_t;
+    } gpu_regs__fb_config_reg__RSVD__out_t;
 
     typedef struct {
-        gpu_regs__fb_addr_reg__RSVD_LO__out_t RSVD_LO;
-        gpu_regs__fb_addr_reg__BASE_ADDR__out_t BASE_ADDR;
-        gpu_regs__fb_addr_reg__RSVD_HI__out_t RSVD_HI;
-    } gpu_regs__fb_addr_reg__out_t;
+        gpu_regs__fb_config_reg__COLOR_BASE__out_t COLOR_BASE;
+        gpu_regs__fb_config_reg__Z_BASE__out_t Z_BASE;
+        gpu_regs__fb_config_reg__RSVD__out_t RSVD;
+    } gpu_regs__fb_config_reg__out_t;
 
     typedef struct {
         logic value;
@@ -407,6 +480,29 @@ package gpu_regs_pkg;
     } gpu_regs__fb_control_reg__out_t;
 
     typedef struct {
+        logic [15:0] value;
+    } gpu_regs__mem_fill_reg__FILL_BASE__out_t;
+
+    typedef struct {
+        logic [15:0] value;
+    } gpu_regs__mem_fill_reg__FILL_VALUE__out_t;
+
+    typedef struct {
+        logic [19:0] value;
+    } gpu_regs__mem_fill_reg__FILL_COUNT__out_t;
+
+    typedef struct {
+        logic [11:0] value;
+    } gpu_regs__mem_fill_reg__RSVD__out_t;
+
+    typedef struct {
+        gpu_regs__mem_fill_reg__FILL_BASE__out_t FILL_BASE;
+        gpu_regs__mem_fill_reg__FILL_VALUE__out_t FILL_VALUE;
+        gpu_regs__mem_fill_reg__FILL_COUNT__out_t FILL_COUNT;
+        gpu_regs__mem_fill_reg__RSVD__out_t RSVD;
+    } gpu_regs__mem_fill_reg__out_t;
+
+    typedef struct {
         logic [31:0] value;
     } gpu_regs__perf_pair_reg__COUNTER_A__out_t;
 
@@ -420,11 +516,11 @@ package gpu_regs_pkg;
     } gpu_regs__perf_pair_reg__out_t;
 
     typedef struct {
-        logic [31:0] value;
+        logic [21:0] value;
     } gpu_regs__mem_addr_reg__ADDR__out_t;
 
     typedef struct {
-        logic [31:0] value;
+        logic [41:0] value;
     } gpu_regs__mem_addr_reg__RSVD__out_t;
 
     typedef struct {
@@ -433,16 +529,11 @@ package gpu_regs_pkg;
     } gpu_regs__mem_addr_reg__out_t;
 
     typedef struct {
-        logic [31:0] value;
+        logic [63:0] value;
     } gpu_regs__mem_data_reg__DATA__out_t;
 
     typedef struct {
-        logic [31:0] value;
-    } gpu_regs__mem_data_reg__RSVD__out_t;
-
-    typedef struct {
         gpu_regs__mem_data_reg__DATA__out_t DATA;
-        gpu_regs__mem_data_reg__RSVD__out_t RSVD;
     } gpu_regs__mem_data_reg__out_t;
 
     typedef struct {
@@ -496,16 +587,14 @@ package gpu_regs_pkg;
         gpu_regs__tex_cfg_reg__out_t TEX0_CFG;
         gpu_regs__tex_cfg_reg__out_t TEX1_CFG;
         gpu_regs__cc_mode_reg__out_t CC_MODE;
-        gpu_regs__mat_color_reg__out_t MAT_COLOR0;
-        gpu_regs__mat_color_reg__out_t MAT_COLOR1;
-        gpu_regs__mat_color_reg__out_t FOG_COLOR;
+        gpu_regs__const_color_reg__out_t CONST_COLOR;
         gpu_regs__render_mode_reg__out_t RENDER_MODE;
         gpu_regs__z_range_reg__out_t Z_RANGE;
-        gpu_regs__fb_addr_reg__out_t FB_DRAW;
+        gpu_regs__stipple_pattern_reg__out_t STIPPLE_PATTERN;
+        gpu_regs__fb_config_reg__out_t FB_CONFIG;
         gpu_regs__fb_display_reg__out_t FB_DISPLAY;
-        gpu_regs__fb_addr_reg__out_t FB_ZBUFFER;
         gpu_regs__fb_control_reg__out_t FB_CONTROL;
-        gpu_regs__fb_display_reg__out_t FB_DISPLAY_SYNC;
+        gpu_regs__mem_fill_reg__out_t MEM_FILL;
         gpu_regs__perf_pair_reg__out_t PERF_TEX0;
         gpu_regs__perf_pair_reg__out_t PERF_TEX1;
         gpu_regs__perf_pair_reg__out_t PERF_PIXELS;
@@ -541,6 +630,44 @@ package gpu_regs_pkg;
         wrap_mode_e__OCTAHEDRAL = 'h3
     } wrap_mode_e_e;
 
+    typedef enum logic [3:0] {
+        cc_source_e__CC_COMBINED = 'h0,
+        cc_source_e__CC_TEX0 = 'h1,
+        cc_source_e__CC_TEX1 = 'h2,
+        cc_source_e__CC_SHADE0 = 'h3,
+        cc_source_e__CC_CONST0 = 'h4,
+        cc_source_e__CC_CONST1 = 'h5,
+        cc_source_e__CC_ONE = 'h6,
+        cc_source_e__CC_ZERO = 'h7,
+        cc_source_e__CC_SHADE1 = 'h8,
+        cc_source_e__CC_RSVD_9 = 'h9,
+        cc_source_e__CC_RSVD_10 = 'ha,
+        cc_source_e__CC_RSVD_11 = 'hb,
+        cc_source_e__CC_RSVD_12 = 'hc,
+        cc_source_e__CC_RSVD_13 = 'hd,
+        cc_source_e__CC_RSVD_14 = 'he,
+        cc_source_e__CC_RSVD_15 = 'hf
+    } cc_source_e_e;
+
+    typedef enum logic [3:0] {
+        cc_rgb_c_source_e__CC_C_COMBINED = 'h0,
+        cc_rgb_c_source_e__CC_C_TEX0 = 'h1,
+        cc_rgb_c_source_e__CC_C_TEX1 = 'h2,
+        cc_rgb_c_source_e__CC_C_SHADE0 = 'h3,
+        cc_rgb_c_source_e__CC_C_CONST0 = 'h4,
+        cc_rgb_c_source_e__CC_C_CONST1 = 'h5,
+        cc_rgb_c_source_e__CC_C_ONE = 'h6,
+        cc_rgb_c_source_e__CC_C_ZERO = 'h7,
+        cc_rgb_c_source_e__CC_C_TEX0_ALPHA = 'h8,
+        cc_rgb_c_source_e__CC_C_TEX1_ALPHA = 'h9,
+        cc_rgb_c_source_e__CC_C_SHADE0_ALPHA = 'ha,
+        cc_rgb_c_source_e__CC_C_CONST0_ALPHA = 'hb,
+        cc_rgb_c_source_e__CC_C_COMBINED_ALPHA = 'hc,
+        cc_rgb_c_source_e__CC_C_SHADE1 = 'hd,
+        cc_rgb_c_source_e__CC_C_SHADE1_ALPHA = 'he,
+        cc_rgb_c_source_e__CC_C_RSVD_15 = 'hf
+    } cc_rgb_c_source_e_e;
+
     typedef enum logic [1:0] {
         cull_mode_e__CULL_NONE = 'h0,
         cull_mode_e__CULL_CW = 'h1,
@@ -568,4 +695,11 @@ package gpu_regs_pkg;
         z_compare_e__ALWAYS = 'h6,
         z_compare_e__NEVER = 'h7
     } z_compare_e_e;
+
+    typedef enum logic [1:0] {
+        alpha_test_e__AT_ALWAYS = 'h0,
+        alpha_test_e__AT_LESS = 'h1,
+        alpha_test_e__AT_GEQUAL = 'h2,
+        alpha_test_e__AT_NOTEQUAL = 'h3
+    } alpha_test_e_e;
 endpackage

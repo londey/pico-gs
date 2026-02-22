@@ -65,6 +65,13 @@ enum dither_pattern_e {
     BLUE_NOISE_16X16 = 2'd0 { desc = "Blue noise 16x16 (default)"; };
 };
 
+enum alpha_test_e {
+    AT_ALWAYS   = 2'd0 { desc = "Always pass (alpha test disabled)"; };
+    AT_LESS     = 2'd1 { desc = "Pass if fragment alpha < ALPHA_REF"; };
+    AT_GEQUAL   = 2'd2 { desc = "Pass if fragment alpha >= ALPHA_REF (cutout transparency)"; };
+    AT_NOTEQUAL = 2'd3 { desc = "Pass if fragment alpha != ALPHA_REF"; };
+};
+
 // Color combiner input sources (RGB A, B, D and all Alpha slots)
 enum cc_source_e {
     CC_COMBINED    = 4'd0  { desc = "Previous combiner stage output"; };
@@ -271,18 +278,21 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg render_mode_reg {
         name = "RENDER_MODE";
-        desc = "Unified rendering state (Gouraud, Z, alpha, culling, dithering)";
-        field {} GOURAUD[0:0]                                = 0;
-        field {} RSVD_1[1:1]                                 = 0;
-        field {} Z_TEST_EN[2:2]                              = 0;
-        field {} Z_WRITE_EN[3:3]                             = 0;
-        field {} COLOR_WRITE_EN[4:4]                         = 0;
-        field { encode = cull_mode_e; }    CULL_MODE[6:5]    = 0;
-        field { encode = alpha_blend_e; }  ALPHA_BLEND[9:7]  = 0;
-        field {} DITHER_EN[10:10]                            = 0;
+        desc = "Unified rendering state (Gouraud, Z, alpha, culling, dithering, stipple)";
+        field {} GOURAUD[0:0]                                  = 0;
+        field {} RSVD_1[1:1]                                   = 0;
+        field {} Z_TEST_EN[2:2]                                = 0;
+        field {} Z_WRITE_EN[3:3]                               = 0;
+        field {} COLOR_WRITE_EN[4:4]                           = 0;
+        field { encode = cull_mode_e; }      CULL_MODE[6:5]    = 0;
+        field { encode = alpha_blend_e; }    ALPHA_BLEND[9:7]  = 0;
+        field {} DITHER_EN[10:10]                              = 0;
         field { encode = dither_pattern_e; } DITHER_PATTERN[12:11] = 0;
-        field { encode = z_compare_e; }    Z_COMPARE[15:13]  = 0;
-        field {} RSVD_HI[63:16]                              = 0;
+        field { encode = z_compare_e; }      Z_COMPARE[15:13]  = 0;
+        field {} STIPPLE_EN[16:16]                             = 0;
+        field { encode = alpha_test_e; }     ALPHA_TEST_FUNC[18:17] = 0;
+        field {} ALPHA_REF[26:19]                              = 0;
+        field {} RSVD_HI[63:27]                                = 0;
     };
     render_mode_reg RENDER_MODE @ 0x180;  // index 0x30
 
@@ -295,7 +305,18 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     };
     z_range_reg Z_RANGE @ 0x188;  // index 0x31
 
-    // index 0x32-0x3F: Reserved
+    reg stipple_pattern_reg {
+        name = "STIPPLE_PATTERN";
+        desc = "8x8 stipple bitmask (row-major, bit 0 = pixel (0,0)).
+               Bit index = y[2:0] * 8 + x[2:0].  Fragment passes if the
+               corresponding bit is 1; discarded if 0.  Only active when
+               RENDER_MODE.STIPPLE_EN = 1.  Screen coordinates are masked
+               to 3 bits (x & 7, y & 7) to index into the pattern.";
+        field {} PATTERN[63:0] = 64'hFFFFFFFFFFFFFFFF;
+    };
+    stipple_pattern_reg STIPPLE_PATTERN @ 0x190;  // index 0x32
+
+    // index 0x33-0x3F: Reserved
 
     // ===================================================================
     // Framebuffer & Z-Buffer (index 0x40–0x4F)
