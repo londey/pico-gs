@@ -43,7 +43,7 @@ When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
 The rasterizer (UNIT-005) walks the bounding box using edge-function increments, interpolating Z, two vertex colors, and two UV coordinate pairs per fragment.
 The pixel pipeline (UNIT-006) performs early Z testing and dual-texture sampling through per-sampler caches.
-The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per clock: each stage evaluates `(A-B)*C+D` independently for RGB and alpha, selecting from texture colors, vertex colors, per-draw-call constant colors, and a combined-output feedback path.
+The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per clock: each stage evaluates `(A-B)*C+D` independently for RGB and alpha, selecting from texture colors, two interpolated vertex colors (SHADE0 for diffuse, SHADE1 for specular), per-draw-call constant colors, and a combined-output feedback path.
 Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add in a single pass; for simple single-equation rendering, stage 1 is configured as a pass-through.
 After optional alpha blending and ordered dithering, fragments are written to the double-buffered framebuffer in SDRAM.
 
@@ -65,10 +65,12 @@ The FT232H debug path would remain on standard SPI.
 
 The color combiner's `(A-B)*C+D` equation, combined with dual texture units and two pipelined combiner stages, supports several classic rendering techniques in a single pass:
 
-- **Textured Gouraud:** `TEX0 * SHADE` — diffuse texture modulated by per-vertex lighting.
+- **Textured Gouraud:** `TEX0 * SHADE0` — diffuse texture modulated by per-vertex lighting.
 - **Lightmapping:** `TEX0 * TEX1` — diffuse texture (UV0) multiplied by a pre-computed lightmap (UV1).
   Unlike the N64 RDP, both texture units are sampled in a single pipeline pass with no throughput penalty.
-- **Lightmap + dynamic fill light:** `TEX0 * TEX1 + SHADE` — additive per-vertex contribution on top of lightmapped surfaces.
+- **Lightmap + dynamic fill light:** `TEX0 * TEX1 + SHADE0` — additive per-vertex contribution on top of lightmapped surfaces.
+- **Specular highlight (two-stage):** Stage 0 computes `TEX0 * SHADE0` (diffuse); stage 1 adds the specular color via `COMBINED + SHADE1`.
+  The host computes both diffuse and specular lighting per-vertex; the combiner composites them in a single pass.
 - **Fog (two-stage):** Stage 0 computes lit/textured color; stage 1 blends COMBINED toward CONST1 (fog color) using vertex alpha as the fog factor.
 - **Decal / solid color:** `TEX0 * ONE` or `CONST0 * ONE` — trivial pass-through configurations.
 

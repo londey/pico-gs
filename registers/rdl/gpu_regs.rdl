@@ -70,12 +70,12 @@ enum cc_source_e {
     CC_COMBINED    = 4'd0  { desc = "Previous combiner stage output"; };
     CC_TEX0        = 4'd1  { desc = "Texture unit 0 color/alpha"; };
     CC_TEX1        = 4'd2  { desc = "Texture unit 1 color/alpha"; };
-    CC_SHADE       = 4'd3  { desc = "Interpolated vertex color/alpha (Gouraud)"; };
+    CC_SHADE0      = 4'd3  { desc = "Interpolated vertex color 0 (COLOR0, typically diffuse)"; };
     CC_CONST0      = 4'd4  { desc = "Constant color 0 (per-draw-call)"; };
     CC_CONST1      = 4'd5  { desc = "Constant color 1 (per-draw-call, also used for fog)"; };
     CC_ONE         = 4'd6  { desc = "Constant 1.0 (0xFF per channel)"; };
     CC_ZERO        = 4'd7  { desc = "Constant 0.0"; };
-    CC_RSVD_8      = 4'd8  { desc = "Reserved (reads as 0)"; };
+    CC_SHADE1      = 4'd8  { desc = "Interpolated vertex color 1 (COLOR1, typically specular)"; };
     CC_RSVD_9      = 4'd9  { desc = "Reserved (reads as 0)"; };
     CC_RSVD_10     = 4'd10 { desc = "Reserved (reads as 0)"; };
     CC_RSVD_11     = 4'd11 { desc = "Reserved (reads as 0)"; };
@@ -90,18 +90,18 @@ enum cc_rgb_c_source_e {
     CC_C_COMBINED       = 4'd0  { desc = "Previous combiner stage RGB output"; };
     CC_C_TEX0           = 4'd1  { desc = "Texture 0 RGB"; };
     CC_C_TEX1           = 4'd2  { desc = "Texture 1 RGB"; };
-    CC_C_SHADE          = 4'd3  { desc = "Shade RGB"; };
+    CC_C_SHADE0         = 4'd3  { desc = "Shade 0 RGB (COLOR0, typically diffuse)"; };
     CC_C_CONST0         = 4'd4  { desc = "Constant color 0 RGB"; };
     CC_C_CONST1         = 4'd5  { desc = "Constant color 1 RGB"; };
     CC_C_ONE            = 4'd6  { desc = "Constant 1.0"; };
     CC_C_ZERO           = 4'd7  { desc = "Constant 0.0"; };
     CC_C_TEX0_ALPHA     = 4'd8  { desc = "Texture 0 alpha broadcast to RGB"; };
     CC_C_TEX1_ALPHA     = 4'd9  { desc = "Texture 1 alpha broadcast to RGB"; };
-    CC_C_SHADE_ALPHA    = 4'd10 { desc = "Shade alpha broadcast to RGB"; };
+    CC_C_SHADE0_ALPHA   = 4'd10 { desc = "Shade 0 alpha broadcast to RGB (COLOR0 alpha)"; };
     CC_C_CONST0_ALPHA   = 4'd11 { desc = "Constant color 0 alpha broadcast to RGB"; };
     CC_C_COMBINED_ALPHA = 4'd12 { desc = "Previous stage alpha broadcast to RGB"; };
-    CC_C_RSVD_13        = 4'd13 { desc = "Reserved (reads as 0)"; };
-    CC_C_RSVD_14        = 4'd14 { desc = "Reserved (reads as 0)"; };
+    CC_C_SHADE1         = 4'd13 { desc = "Shade 1 RGB (COLOR1, typically specular)"; };
+    CC_C_SHADE1_ALPHA   = 4'd14 { desc = "Shade 1 alpha broadcast to RGB (COLOR1 alpha)"; };
     CC_C_RSVD_15        = 4'd15 { desc = "Reserved (reads as 0)"; };
 };
 
