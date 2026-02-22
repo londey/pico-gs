@@ -51,6 +51,75 @@ A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: 
 The display controller (UNIT-008) prefetches scanlines into a FIFO and drives the DVI/TMDS encoder (UNIT-009) for 640x480 output.
 Frame presentation is double-buffered — the host writes to one framebuffer while the display controller scans out the other, swapping atomically at VSYNC.
 
+## Fragment Pipeline
+
+The stages below trace a fragment from SPI command to framebuffer write.
+Stages marked **✗** can kill the fragment, skipping all subsequent stages and SDRAM traffic.
+
+```mermaid
+flowchart TD
+    subgraph front["Front End"]
+        SPI["SPI Receive"] --> FIFO["Command FIFO"] --> REG["Register File"]
+    end
+
+    subgraph geom["Geometry · per triangle"]
+        SETUP["Triangle Setup +<br/>Backface Cull ✗"] --> RAST["Rasterizer +<br/>Scissor Clamp"]
+    end
+
+    subgraph frag["Fragment · per pixel"]
+        STIP["Stipple Test ✗"]
+        ZRC["Depth Range Clip ✗"]
+        EZ["Early Z Test ✗"]
+        TEX0["TEX0 Sample + Cache"]
+        TEX1["TEX1 Sample + Cache"]
+        CC0["Color Combiner 0<br/>(A-B)*C+D"]
+        CC1["Color Combiner 1<br/>(A-B)*C+D"]
+        AT["Alpha Test ✗"]
+        AB["Alpha Blend"]
+        DITH["Dither"]
+        PW["Pixel Write"]
+        STIP --> ZRC --> EZ --> TEX0 --> CC0
+        EZ --> TEX1 --> CC0
+        CC0 -- "COMBINED" --> CC1 --> AT --> AB --> DITH --> PW
+    end
+
+    REG -- "vertex kick" --> SETUP
+    RAST --> STIP
+
+    ZBUF[("Z-Buffer")]
+    TEXMEM[("Texture Data")]
+    FB[("Framebuffer")]
+
+    ZBUF -. "Z read" .-> EZ
+    TEXMEM -. "cache fill" .-> TEX0
+    TEXMEM -. "cache fill" .-> TEX1
+    FB -. "dst read" .-> AB
+    PW -. "color write" .-> FB
+    PW -. "Z write" .-> ZBUF
+```
+
+### Per-fragment data lanes
+
+Each column shows a value's lifetime from production (first ●) to last consumption (last ●).
+
+| Stage | x, y | z | shade0 | shade1 | uv | tex0 | tex1 | comb | color | SDRAM access |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
+| Rasterizer | ● | ● | ● | ● | ● | | | | | |
+| Stipple Test | ● | ● | ● | ● | ● | | | | | |
+| Depth Range Clip | ● | ● | ● | ● | ● | | | | | |
+| Early Z Test | ● | ● | ● | ● | ● | | | | | Z-buffer read |
+| Texture Sample | ● | ● | ● | ● | ● | ● | ● | | | Texture read (cache miss) |
+| Color Combiner 0 | ● | ● | ● | ● | | ● | ● | ● | | |
+| Color Combiner 1 | ● | ● | ● | ● | | ● | ● | ● | ● | |
+| Alpha Test | ● | ● | | | | | | | ● | |
+| Alpha Blend | ● | ● | | | | | | | ● | Framebuffer read (dst) |
+| Dither | ● | ● | | | | | | | ● | |
+| Pixel Write | ● | ● | | | | | | | ● | FB write, Z write |
+
+**Widths:** x, y are S12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
+Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
+After dither, color is truncated to RGB565 (16-bit) for framebuffer write.
+
 ## Host Interface
 
 The FPGA's SPI slave accepts standard SPI Mode 0 at up to 62.5 MHz from the RP2350's hardware SPI peripheral, or 30 MHz from the FT232H MPSSE (PC debug path).
