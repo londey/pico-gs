@@ -11,7 +11,7 @@
 
 // --- Vertex State (0x00-0x0F) ---
 
-/// Vertex color register (ABGR, latched for next VERTEX write).
+/// Vertex color register (RGBA8888 UNORM8, latched for next VERTEX write).
 pub const COLOR: u8 = 0x00;
 /// Texture unit 0 UV coordinates (perspective-correct 1.15 fixed-point).
 pub const UV0: u8 = 0x01;

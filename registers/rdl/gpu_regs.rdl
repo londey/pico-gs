@@ -123,7 +123,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg color_reg {
         name = "COLOR";
-        desc = "COLOR0[31:0] + COLOR1[63:32] vertex colors (ABGR8888 each)";
+        desc = "COLOR0[31:0] + COLOR1[63:32] vertex colors (RGBA8888 UNORM8 each)";
         field {} COLOR0_R[7:0]     = 0;
         field {} COLOR0_G[15:8]    = 0;
         field {} COLOR0_B[23:16]   = 0;
@@ -247,7 +247,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg const_color_reg {
         name = "CONST_COLOR";
-        desc = "Two per-draw-call constant colors packed into one 64-bit register.
+        desc = "Two per-draw-call constant colors packed into one 64-bit register (RGBA8888 UNORM8 each).
                CONST1 (bits [63:32]) doubles as the fog color.";
         field {} CONST0_R[7:0]    = 0;
         field {} CONST0_G[15:8]   = 0;

@@ -551,7 +551,7 @@ Use always-on 10.8 fixed-point format (18 bits per channel) for all internal fra
 - +6-12 DSP slices for 18×18 multipliers (texture blend, vertex color, alpha blend)
 - +~1500-2500 LUTs for wider datapaths and saturation logic
 - Eliminates visible banding in multi-stage blend chains
-- Vertex color input (ABGR8888 register) promoted to 10.8 on entry: `value_10_8 = {2'b0, value_8, 8'b0}`
+- Vertex color input (RGBA8888 UNORM8 register) promoted to 10.8 on entry: `value_10_8 = {2'b0, value_8, 8'b0}`
 - See REQ-004.02 for full specification
 
 ---

@@ -39,8 +39,8 @@ None
 
 - Triangle vertex data from UNIT-004 (Triangle Setup):
   - 3× vertex position (X, Y, Z)
-  - 3× primary vertex color (RGBA8 — ABGR8888 from COLOR register, used as VER_COLOR0)
-  - 3× secondary vertex color (RGBA8 — ABGR8888 from COLOR1 register, used as VER_COLOR1)
+  - 3× primary vertex color (RGBA8888 UNORM8 from COLOR register, used as VER_COLOR0)
+  - 3× secondary vertex color (RGBA8888 UNORM8 from COLOR1 register, used as VER_COLOR1)
   - 3× UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1)
 - Register state (TRI_MODE, FB_DRAW, FB_ZBUFFER)
 
