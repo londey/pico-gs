@@ -142,7 +142,7 @@ Fill the screen with a solid color using a full-viewport triangle.
 | clear_depth | bool | Also clear z-buffer |
 
 **Processing (Core 1)**:
-1. Set TRI_MODE: flat shading, no texture, no Z-test/write
+1. Set RENDER_MODE: flat shading, no texture, no Z-test/write
 2. Set COLOR to fill color
 3. Submit 2 triangles covering full 640×480 viewport:
    - Triangle 1: (0,0), (639,0), (639,479)

@@ -155,9 +155,9 @@ This prevents lower-priority burst transfers from starving higher-priority ports
 | Granted Port | Max Burst Before Preemption Check | Rationale |
 |--------------|-----------------------------------|-----------|
 | Port 0 (display) | No limit (highest priority) | Display is never preempted |
-| Port 1 (framebuffer) | 16 words | Limits worst-case display latency to 16 cycles |
-| Port 2 (Z-buffer) | 8 words | Short bursts; Z accesses are interleaved with test logic |
-| Port 3 (texture) | 16 words | Matches BC1/RGBA4444 cache line sizes |
+| Port 1 (framebuffer) | 16 words | Limits worst-case display latency to 16 cycles; matches 4×4 tile size (RGB565: 16 words) |
+| Port 2 (Z-buffer) | 16 words | Matches 4×4 Z-tile fill/evict burst size (16 × 16-bit Z values) |
+| Port 3 (texture) | 32 words | Covers largest texture cache fill: RGBA8888 4×4 tile = 32 × 16-bit words |
 
 When a burst reaches the maximum length without preemption, the arbiter allows it to complete naturally.
 Preemption only occurs if a higher-priority port actually asserts req during the burst.
@@ -205,7 +205,7 @@ Each lower-priority port is only ready when no higher-priority port is requestin
 - Verify sequential completion: access completes naturally when no higher-priority port interrupts
 - Verify burst_len=0 selects single-word mode (backward compatibility)
 - Verify sequential + single-word interleaving: port 0 issues single-word requests while port 3 has a sequential access; confirm port 0 preempts
-- Verify max burst preemption limits per port (16 words for port 1/3, 8 words for port 2)
+- Verify max burst preemption limits per port (16 words for ports 1/2, 32 words for port 3)
 - Verify auto-refresh preemption: mem_ready deasserts during refresh, arbiter blocks new grants until refresh completes
 - Verify CAS latency: first read data arrives 3 cycles after READ command in sequential mode
 
@@ -225,7 +225,7 @@ Key behavioral differences:
 - Auto-refresh interrupts normal access at a rate of ~1 per 781 cycles; the arbiter must tolerate mem_ready deassertion during refresh
 - The arbiter interface (req/we/addr/wdata/rdata/ack/ready/burst) is preserved; the SDRAM controller internally manages row activation, CAS latency, precharge, and refresh
 
-**Dual-texture + color combiner update:** Port 3 texture traffic now comes from at most 2 texture samplers (reduced from 4).
-With 16K texels per sampler cache (4× larger than before), cache miss rates are substantially lower, reducing Port 3 bandwidth demands.
-The arbiter architecture, priority scheme, and burst preemption logic are unchanged.
-The max burst length for Port 3 (16 words) remains appropriate since individual cache fills are still 4-word (BC1) or 16-word (RGBA4444) bursts.
+**Texture format update:** Port 3 texture traffic comes from at most 2 texture samplers.
+Supported texture formats require varying burst sizes per 4×4 cache fill: BC1=4 words, BC4=4 words, R8=8 words, BC2/BC3=8 words, RGB565=16 words, RGBA8888=32 words.
+The max burst length for Port 3 is set to 32 words to cover the largest format (RGBA8888).
+With 16K texels per sampler cache (4-way set-associative), cache miss rates exceed 90% for typical scenes, reducing Port 3 average bandwidth demands substantially.

@@ -28,13 +28,14 @@ None
 
 - Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata
 - Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses
-- Outputs framebuffer configuration (fb_draw, fb_display) to UNIT-007 (SRAM Arbiter) and UNIT-008 (Display Controller)
-- Outputs mode flags (gouraud, textured, z_test, z_write, color_write) to rasterizer pipeline
+- Outputs render target configuration (fb_config) to UNIT-007 (SRAM Arbiter) and the pixel pipeline
+- Outputs display configuration (fb_display) to UNIT-008 (Display Controller)
+- Outputs mode flags (gouraud, textured, z_test, z_write, color_write, dither_en, alpha_blend, cull_mode, z_compare, stipple_en, alpha_test_func, alpha_ref) to rasterizer pipeline
 - Outputs Z range clipping parameters (z_range_min, z_range_max) to pixel pipeline (UNIT-006)
-- Outputs color combiner configuration to color combiner (UNIT-010) — register layout preliminary, pending UNIT-010 design
-- Outputs clear_trigger/clear_color to framebuffer clear logic
-- Outputs dither_enable/dither_pattern to UNIT-006 (Pixel Pipeline) for ordered dithering control
-- Outputs fb_display_sync/lut_dma_trigger signals to UNIT-008 (Display Controller) for LUT auto-load DMA
+- Outputs scissor rectangle (scissor_x, scissor_y, scissor_width, scissor_height) to pixel pipeline (UNIT-006)
+- Outputs color combiner configuration (cc_mode, const_color) to color combiner (UNIT-010)
+- Outputs mem_fill trigger and parameters to the SDRAM fill unit
+- Outputs fb_display_sync trigger signals to UNIT-008 (Display Controller)
 - Reads gpu_busy from rasterizer, vblank from display controller, fifo_depth from UNIT-002 for status register
 
 ## Design Description
@@ -59,51 +60,68 @@ None
 |--------|-------|-------------|
 | `cmd_rdata` | 64 | Read data (combinational, addressed by cmd_addr) |
 | `tri_valid` | 1 | One-cycle pulse when 3rd vertex submitted |
-| `tri_x[0:2]` | 3x16 | Vertex X coordinates (12.4 fixed) |
-| `tri_y[0:2]` | 3x16 | Vertex Y coordinates (12.4 fixed) |
-| `tri_z[0:2]` | 3x25 | Vertex Z depth values |
-| `tri_color[0:2]` | 3x32 | Vertex RGBA8888 colors |
-| `tri_inv_area` | 16 | 1/area (0.16 fixed), CPU-provided |
+| `tri_x[0:2]` | 3x16 | Vertex X coordinates (S12.4 fixed) |
+| `tri_y[0:2]` | 3x16 | Vertex Y coordinates (S12.4 fixed) |
+| `tri_z[0:2]` | 3x16 | Vertex Z depth values (16-bit unsigned) |
+| `tri_q[0:2]` | 3x16 | Vertex 1/W values (S3.12 fixed) |
+| `tri_color0[0:2]` | 3x32 | Vertex COLOR0 RGBA8888 per vertex |
+| `tri_color1[0:2]` | 3x32 | Vertex COLOR1 RGBA8888 per vertex |
+| `tri_uv0[0:2]` | 3x32 | Vertex UV0 coordinates per vertex |
+| `tri_uv1[0:2]` | 3x32 | Vertex UV1 coordinates per vertex |
 | `mode_gouraud` | 1 | Gouraud shading enabled (RENDER_MODE[0]) |
-| `mode_textured` | 1 | Texture mapping enabled (RENDER_MODE[1]) |
 | `mode_z_test` | 1 | Z-test enabled (RENDER_MODE[2]) |
 | `mode_z_write` | 1 | Z-write enabled (RENDER_MODE[3]) |
 | `mode_color_write` | 1 | Color buffer write enabled (RENDER_MODE[4]) |
+| `mode_cull` | 2 | Backface culling mode (RENDER_MODE[6:5]) |
+| `mode_alpha_blend` | 3 | Alpha blend mode (RENDER_MODE[9:7]) |
+| `mode_dither_en` | 1 | Ordered dithering enabled (RENDER_MODE[10]) |
+| `mode_dither_pattern` | 2 | Dither pattern (RENDER_MODE[12:11]) |
+| `mode_z_compare` | 3 | Z comparison function (RENDER_MODE[15:13]) |
+| `mode_stipple_en` | 1 | Stipple test enabled (RENDER_MODE[16]) |
+| `mode_alpha_test` | 2 | Alpha test function (RENDER_MODE[18:17]) |
+| `mode_alpha_ref` | 8 | Alpha test reference (RENDER_MODE[26:19]) |
 | `z_range_min` | 16 | Z range clipping minimum (Z_RANGE[15:0]) |
 | `z_range_max` | 16 | Z range clipping maximum (Z_RANGE[31:16]) |
-| `fb_draw` | 20 | Draw target address [31:12] |
-| `fb_display` | 20 | Display source address [31:12] |
-| `clear_color` | 32 | RGBA8888 clear color |
-| `clear_trigger` | 1 | One-cycle clear command pulse |
-| `dither_enable` | 1 | Ordered dithering enabled (DITHER_MODE[0]) |
-| `dither_pattern` | 2 | Dither pattern selection (DITHER_MODE[3:2]) |
-| `fb_lut_addr` | 13 | LUT SRAM base address (FB_DISPLAY[18:6]) |
+| `stipple_pattern` | 64 | 8x8 stipple bitmask (STIPPLE_PATTERN[63:0]) |
+| `fb_color_base` | 16 | Render target color base (FB_CONFIG[15:0], ×512 byte addr) |
+| `fb_z_base` | 16 | Render target Z base (FB_CONFIG[31:16], ×512 byte addr) |
+| `fb_width_log2` | 4 | Render surface width log2 (FB_CONFIG[35:32]) |
+| `fb_height_log2` | 4 | Render surface height log2 (FB_CONFIG[39:36]) |
+| `scissor_x` | 10 | Scissor X origin (FB_CONTROL[9:0]) |
+| `scissor_y` | 10 | Scissor Y origin (FB_CONTROL[19:10]) |
+| `scissor_width` | 10 | Scissor width (FB_CONTROL[29:20]) |
+| `scissor_height` | 10 | Scissor height (FB_CONTROL[39:30]) |
+| `mem_fill_trigger` | 1 | One-cycle pulse when MEM_FILL is written |
+| `mem_fill_base` | 16 | Fill target base address (MEM_FILL[15:0], ×512) |
+| `mem_fill_value` | 16 | Fill constant value (MEM_FILL[31:16]) |
+| `mem_fill_count` | 20 | Fill word count (MEM_FILL[51:32]) |
+| `fb_lut_addr` | 16 | LUT SDRAM base address (FB_DISPLAY[31:16]) |
+| `fb_display_addr` | 16 | Display scanout base address (FB_DISPLAY[47:32]) |
+| `fb_display_width_log2` | 4 | Display FB width log2 (FB_DISPLAY[51:48]) |
+| `fb_line_double` | 1 | Line-double mode (FB_DISPLAY[1]) |
 | `color_grade_enable` | 1 | Color grading LUT enabled (FB_DISPLAY[0]) |
-| `lut_dma_trigger` | 1 | One-cycle pulse at vsync when LUT_ADDR != 0 |
-| `combiner_cfg` | TBD | Color combiner configuration — field layout pending UNIT-010 design |
-| `mat_color0` | 32 | Material color 0 (RGBA8888) for color combiner |
-| `mat_color1` | 32 | Material color 1 (RGBA8888) for color combiner |
-| `spi_cs_hold` | 1 | Keep SPI CS asserted for blocking write (FB_DISPLAY_SYNC) |
+| `cc_mode` | 64 | Color combiner mode (CC_MODE register) |
+| `const_color` | 64 | Constant colors 0+1 packed (CONST_COLOR register) |
 | `vsync_edge` | 1 | Input: vsync rising edge detector |
+| `ts_mem_wr` | 1 | One-cycle pulse: write cycle counter to SDRAM |
+| `ts_mem_addr` | 23 | SDRAM word address for timestamp write |
+| `ts_mem_data` | 32 | Cycle counter value to write |
 
 ### Internal State
 
-- **vertex_count** [1:0]: Counts submitted vertices (0, 1, 2); resets to 0 after 3rd
-- **vertex_x/y/z** [0:2]: Latched vertex positions for vertices 0-2
-- **vertex_colors** [0:2]: Latched RGBA8888 colors for vertices 0-2
-- **current_color** [31:0]: Color to apply to the next VERTEX write (default white)
-- **current_inv_area** [15:0]: 1/area value to apply when triangle emitted
-- **tri_mode** [7:0]: Mode flags register (bits [3:0] decoded to gouraud/textured/z_test/z_write)
-- **dither_mode** [7:0]: Dither control register (bit 0 = enable, bits [3:2] = pattern)
-- **combiner_cfg**: Color combiner configuration — exact field layout pending UNIT-010 design; addresses 0x18–0x1F reserved per INT-010
-- **mat_color0** [31:0]: Material color 0 (RGBA8888), used as a color combiner input
-- **mat_color1** [31:0]: Material color 1 (RGBA8888), used as a color combiner input
-- **fb_display** [31:0]: Framebuffer display address + LUT control
-  - [31:19]: FB address >> 12 (4KiB aligned)
-  - [18:6]: LUT address >> 12 (4KiB aligned, 0 = no LUT load)
-  - [0]: Color grading enable
-- **fb_display_sync_pending** [0]: FB_DISPLAY_SYNC write pending (blocking mode)
-- **fb_display_sync_data** [31:0]: Latched FB_DISPLAY_SYNC data during blocking wait
+- **vertex_count** [1:0]: Counts submitted vertices (0, 1, 2); resets to 0 after kick
+- **vertex_buf**: Latched X/Y/Z/Q/COLOR0/COLOR1/UV0/UV1 for up to 3 buffered vertices
+- **current_color0** [63:0]: COLOR register value for next vertex write (default white)
+- **current_uv01** [63:0]: UV0_UV1 register value for next vertex write
+- **render_mode** [63:0]: RENDER_MODE register
+- **z_range** [63:0]: Z_RANGE register (reset: Z_RANGE_MIN=0, Z_RANGE_MAX=0xFFFF)
+- **stipple_pattern** [63:0]: STIPPLE_PATTERN register (reset: all ones)
+- **fb_config** [63:0]: FB_CONFIG register
+- **fb_display** [63:0]: FB_DISPLAY register
+- **fb_control** [63:0]: FB_CONTROL register
+- **cc_mode** [63:0]: CC_MODE register
+- **const_color** [63:0]: CONST_COLOR register
+- **tex0_cfg, tex1_cfg** [63:0]: TEX0_CFG, TEX1_CFG registers
 - **cycle_counter** [31:0]: Frame-relative cycle counter (clk_core, resets to 0 on vsync rising edge)
 - **vblank_prev** [0]: Previous vblank value for rising-edge detection
 
@@ -112,52 +130,56 @@ None
 | Address | Name | Access |
 |---------|------|--------|
 | 0x00 | COLOR | R/W |
-| 0x01 | UV | R/W (deferred) |
-| 0x02 | VERTEX | W (triggers on 3rd write) |
-| 0x03 | INV_AREA | W |
-| 0x04 | TRI_MODE | R/W |
-| 0x08 | FB_DRAW | R/W |
-| 0x09 | FB_DISPLAY | R/W |
-| 0x0A | CLEAR_COLOR | R/W |
-| 0x0B | CLEAR | W (pulse) |
-| 0x31 | Z_RANGE | R/W (z_range_min, z_range_max) |
-| 0x32 | DITHER_MODE | R/W (enable, pattern) |
-| 0x18–0x1F | Color Combiner | R/W (reserved block — layout per INT-010 / UNIT-010, preliminary) |
-| 0x47 | FB_DISPLAY_SYNC | W |
-| 0x50 | PERF_TIMESTAMP | R/W (write: capture counter to SDRAM; read: live counter) |
-| 0x7F | ID | R (0x6702) |
+| 0x01 | UV0_UV1 | R/W |
+| 0x06 | VERTEX_NOKICK | W (buffers vertex, no triangle emit) |
+| 0x07 | VERTEX_KICK_012 | W (buffers vertex, emits triangle v[0],v[1],v[2]) |
+| 0x08 | VERTEX_KICK_021 | W (buffers vertex, emits triangle v[0],v[2],v[1]) |
+| 0x09 | VERTEX_KICK_RECT | W (two-corner rectangle emit) |
+| 0x10 | TEX0_CFG | R/W |
+| 0x11 | TEX1_CFG | R/W |
+| 0x18 | CC_MODE | R/W |
+| 0x19 | CONST_COLOR | R/W |
+| 0x30 | RENDER_MODE | R/W |
+| 0x31 | Z_RANGE | R/W |
+| 0x32 | STIPPLE_PATTERN | R/W |
+| 0x40 | FB_CONFIG | R/W |
+| 0x41 | FB_DISPLAY | W (blocks until vsync) |
+| 0x43 | FB_CONTROL | R/W |
+| 0x44 | MEM_FILL | W (triggers fill operation) |
+| 0x50 | PERF_TIMESTAMP | R/W |
+| 0x70 | MEM_ADDR | R/W |
+| 0x71 | MEM_DATA | R/W |
+| 0x7F | ID | R (0x00000A00_00006702) |
 
 ### Algorithm / Behavior
 
 **Vertex Submission State Machine:**
-1. Host writes COLOR register to set the color for the next vertex
-2. Host writes INV_AREA to set the reciprocal triangle area
-3. Host writes VERTEX register with packed {Z[24:0], Y[15:0], X[15:0]}
-4. On each VERTEX write: latch x/y/z/color into vertex_x/y/z/vertex_colors[vertex_count], increment vertex_count
-5. On 3rd VERTEX write (vertex_count == 2): assert tri_valid for one cycle, latch all three vertices and inv_area onto the tri_* output buses, reset vertex_count to 0
+
+The register file maintains a 3-entry vertex ring buffer indexed by vertex_count.
+
+1. Host writes COLOR register to set COLOR0/COLOR1 for the next vertex
+2. Host writes UV0_UV1 register to set UV coordinates for the next vertex
+3. Host writes a VERTEX register variant:
+   - **VERTEX_NOKICK (0x06):** Latch position data with current COLOR/UV into vertex_buf[vertex_count & 2]; advance vertex_count
+   - **VERTEX_KICK_012 (0x07):** Latch as above; assert tri_valid for one cycle; output vertex_buf entries as triangle (0,1,2); advance vertex_count
+   - **VERTEX_KICK_021 (0x08):** Latch as above; assert tri_valid; output as (0,2,1) winding order
+   - **VERTEX_KICK_RECT (0x09):** Use current and previous vertex as opposite corners; assert rect_valid
 
 **Register Write Logic:**
 - All writes gated by cmd_valid && !cmd_rw
-- CLEAR register (0x0B) generates a one-cycle clear_trigger pulse
-- tri_valid and clear_trigger are self-clearing (deasserted next cycle)
-- DITHER_MODE (0x32): Stores dither_mode register; outputs dither_enable (bit 0) and dither_pattern (bits [3:2]) to UNIT-006 (Pixel Pipeline). Reset value: 0x01 (enabled, blue noise pattern)
-- Color Combiner registers (0x18–0x1F): Reserved address block for color combiner configuration.
-  Exact register layout (field widths, reset values, input selector encoding) pending UNIT-010 design.
-  MAT_COLOR0 and MAT_COLOR1 (RGBA8888 material colors) are within this block; other registers TBD.
-  Outputs combiner configuration to UNIT-010 (Color Combiner).
-- **FB_DISPLAY (0x09)**: Stores fb_display register (non-blocking):
-  - [31:19]: Framebuffer address >> 12
-  - [18:6]: LUT SRAM address >> 12 (0 = no LUT load)
-  - [0]: Color grading enable
-  - Outputs fb_lut_addr, color_grade_enable to UNIT-008
-  - At vsync edge: if LUT_ADDR != 0, assert lut_dma_trigger for one cycle
-- **FB_DISPLAY_SYNC (0x47)**: Blocking variant of FB_DISPLAY:
-  - Latch write data to fb_display_sync_data
-  - Set fb_display_sync_pending = 1
-  - Assert spi_cs_hold = 1 (keeps SPI CS asserted, blocking host)
-  - Wait for vsync_edge input
-  - On vsync_edge: apply fb_display_sync_data to fb_display, clear pending, deassert spi_cs_hold
-  - Trigger lut_dma if LUT_ADDR != 0
+- MEM_FILL (0x44): Generates a one-cycle mem_fill_trigger pulse; outputs fill parameters
+- tri_valid and mem_fill_trigger are self-clearing (deasserted next cycle)
+- **RENDER_MODE (0x30):** Stores render_mode register; all mode_* outputs are combinational decodes of the fields.
+  Reset value: 0 (all modes disabled, DITHER_EN=0, no culling, no blending)
+- **CC_MODE (0x18):** Stores cc_mode register; passed combinationally to UNIT-010 (Color Combiner).
+  Two-stage combiner: cycle 0 fields [31:0], cycle 1 fields [63:32].
+- **CONST_COLOR (0x19):** Stores const_color register; CONST0 in [31:0], CONST1/fog color in [63:32].
+- **TEX0_CFG (0x10), TEX1_CFG (0x11):** Any write invalidates the corresponding texture cache in UNIT-006.
+- **FB_DISPLAY (0x41):** Blocking register — write blocks the GPU pipeline until the next vsync, then applies atomically.
+  Outputs fb_display_addr, fb_lut_addr, fb_display_width_log2, fb_line_double, color_grade_enable to UNIT-008.
+  If COLOR_GRADE_ENABLE=1 and LUT_ADDR!=0, the hardware auto-loads the LUT from SDRAM during vblank.
+- **FB_CONFIG (0x40):** Non-blocking render target switch.
+- **FB_CONTROL (0x43):** Scissor rectangle configuration.
 
 **Cycle Counter:**
 - `vblank_prev` tracks previous vblank level for rising-edge detection
@@ -172,12 +194,12 @@ None
 - Fire-and-forget: command FIFO advances immediately; back-to-back writes overwrite the pending request
 
 **Register Read Logic (combinational):**
-- DITHER_MODE returns: {56'b0, dither_mode[7:0]}
-- Color Combiner registers (0x18–0x1F): Read-back behavior per UNIT-010 design (TBD)
-- FB_DISPLAY returns: {32'b0, fb_display[31:0]}
-- FB_DISPLAY_SYNC: Write-only (blocking register, no read value)
+- RENDER_MODE, Z_RANGE, STIPPLE_PATTERN, FB_CONFIG, FB_CONTROL, CC_MODE, CONST_COLOR: Return stored register value
+- FB_DISPLAY: Write-only (blocking register, no read value; returns 0)
 - PERF_TIMESTAMP returns: {32'd0, cycle_counter} (live instantaneous value)
-- ID register returns constant 0x00000900_00006702
+- ID register returns constant 0x00000A00_00006702
+- TEX0_CFG, TEX1_CFG: Return stored register values
+- MEM_DATA: Return prefetched SDRAM dword
 - Undefined addresses return 0
 
 ## Implementation
@@ -186,31 +208,29 @@ None
 
 ## Verification
 
-- Verify vertex submission: write 3 vertices, confirm tri_valid pulse and correct tri_* outputs
-- Verify vertex_count wraps: submit 6 vertices (2 triangles), confirm 2 tri_valid pulses
-- Verify color latching: change COLOR between vertices, confirm per-vertex colors on output
-- Verify register read-back: write then read COLOR, TRI_MODE, FB_DRAW, FB_DISPLAY, CLEAR_COLOR
-- Verify ID register: read 0x7F returns 0x6702
-- Verify clear_trigger: write to CLEAR, confirm one-cycle pulse
-- Verify DITHER_MODE: write then read back, confirm dither_enable and dither_pattern outputs match written value
-- Verify DITHER_MODE reset: confirm reset value is 0x01 (enabled, blue noise)
-- **Verify FB_DISPLAY**: write with FB/LUT addresses + enable, confirm outputs; at vsync, confirm lut_dma_trigger if LUT_ADDR != 0
-- **Verify FB_DISPLAY_SYNC**: write and confirm spi_cs_hold asserted; simulate vsync_edge, confirm cs_hold deasserted and fb_display updated; confirm lut_dma_trigger
-- **Verify blocking timeout**: confirm FB_DISPLAY_SYNC blocks SPI transaction until vsync (max 16.67ms)
-- Verify COLOR_GRADE_LUT_ADDR: write LUT select and index, confirm color_grade_lut_select and color_grade_lut_index outputs
-- Verify COLOR_GRADE_LUT_DATA: write data, confirm 24-bit color_grade_lut_data output and one-cycle color_grade_lut_wr pulse
-- Verify Z_RANGE: write then read back, confirm z_range_min and z_range_max outputs match written value
-- Verify Z_RANGE reset: confirm reset value is 0x0000FFFF (min=0, max=0xFFFF)
-- Verify mode_color_write output: write RENDER_MODE with bit 4 set/clear, confirm mode_color_write output tracks
-- Verify color combiner registers (0x18–0x1F): write/read-back — specific test cases pending UNIT-010 design
+- Verify vertex submission: write COLOR + UV + VERTEX_KICK_012 for 3 vertices; confirm tri_valid pulse and correct tri_* outputs
+- Verify strip submission: write VERTEX_NOKICK for v0, v1 then VERTEX_KICK_012 for v2; confirm one tri_valid pulse
+- Verify VERTEX_KICK_021 emits opposite winding order
+- Verify color latching: change COLOR between vertices; confirm per-vertex colors on output
+- Verify register read-back: write then read COLOR, CC_MODE, FB_CONFIG, CONST_COLOR, RENDER_MODE, Z_RANGE
+- Verify ID register: read 0x7F returns 0x00000A00_00006702
+- Verify MEM_FILL trigger: write MEM_FILL, confirm one-cycle mem_fill_trigger pulse with correct base/value/count
+- Verify RENDER_MODE: write various combinations; confirm all mode_* outputs decode correctly
+- Verify RENDER_MODE reset: confirm reset value is 0x00 (all flags disabled)
+- Verify Z_RANGE reset: confirm reset value has Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF
+- Verify STIPPLE_PATTERN reset: confirm reset value is 0xFFFFFFFF_FFFFFFFF (all bits set)
+- Verify FB_CONFIG: write color_base, z_base, width_log2, height_log2; confirm all outputs
+- Verify FB_CONTROL: write scissor rectangle; confirm scissor_x/y/width/height outputs
+- Verify CC_MODE: write two-stage combiner configuration; confirm cc_mode output passes through
+- Verify CONST_COLOR: write two constant colors; confirm const_color output
+- Verify TEXn_CFG write triggers cache invalidation signal for sampler N
+- Verify FB_DISPLAY blocks SPI pipeline until vsync; confirm outputs updated atomically
 - Verify cycle_counter resets to 0 on vsync rising edge
 - Verify cycle_counter increments once per clk_core cycle and saturates at 0xFFFFFFFF
 - Verify PERF_TIMESTAMP write asserts ts_mem_wr pulse with correct addr and captured counter
 - Verify PERF_TIMESTAMP read returns live cycle_counter value
-- Verify reset: all registers return to defaults (white color, address 0, modes disabled, dither enabled, cycle_counter=0)
+- Verify reset: all registers return to defaults
 
 ## Design Notes
 
 Migrated from speckit module specification.
-
-

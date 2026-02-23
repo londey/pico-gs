@@ -35,12 +35,12 @@ Internal
 |-----------|-------|
 | Device | Winbond W9825G6KH-6 |
 | Total Capacity | 32 MB (256 Mbit) |
-| Organization | 4 banks x 8192 rows x 512 columns x 16 bits |
+| Organization | 4 banks × 8192 rows × 512 columns × 16 bits |
 | Data Width | 16 bits |
 | Clock Frequency | 100 MHz |
 | CAS Latency | 3 cycles (CL=3) |
-| Address Range | 0x000000 - 0x1FFFFFF |
-| Peak Bandwidth | 200 MB/s (16 bits x 100 MHz) |
+| Address Range | 0x000000 – 0x1FFFFFF |
+| Peak Bandwidth | 200 MB/s (16 bits × 100 MHz) |
 
 **Clock Domain Note**: The SDRAM interface operates at 100 MHz (`clk_core`), which is the same clock domain as the GPU core.
 A PLL generates the 100 MHz core clock and a 90-degree phase-shifted 100 MHz clock for the SDRAM chip (`sdram_clk`).
@@ -84,10 +84,41 @@ After power-on and PLL lock, the SDRAM controller must execute the following ini
 1. Wait at least 200 us with CKE high and stable clock
 2. Issue PRECHARGE ALL command (A10=1)
 3. Wait tRP (2 cycles)
-4. Issue 2x AUTO REFRESH commands (each followed by tRC = 6 cycle wait)
+4. Issue 2× AUTO REFRESH commands (each followed by tRC = 6 cycle wait)
 5. Issue LOAD MODE REGISTER: CL=3, burst length=1 (full page burst not used), sequential burst type
 6. Wait tMRD (2 cycles)
 7. SDRAM is now ready for normal operation
+
+---
+
+## 4×4 Block-Tiled Layout
+
+All color buffers, Z-buffers, and textures use **4×4 block-tiled layout**.
+Pixels within each 4×4 block are stored in row-major order; blocks themselves are arranged in row-major order across the surface.
+Surface dimensions must be a power of two per axis (non-square surfaces permitted).
+
+Each pixel and each depth value occupies exactly **one 16-bit SDRAM column** (native 16-bit addressing).
+This eliminates the storage waste of 32-bit-per-pixel alignment — every SDRAM column transfer carries useful data.
+
+**Block-tiled address calculation** for a pixel at position (x, y) in a surface with `width = 1 << WIDTH_LOG2`:
+
+```
+block_x    = x >> 2
+block_y    = y >> 2
+local_x    = x & 3
+local_y    = y & 3
+block_idx  = (block_y << (WIDTH_LOG2 - 2)) | block_x
+word_addr  = base_word + block_idx * 16 + (local_y * 4 + local_x)
+byte_addr  = word_addr * 2
+```
+
+Where `base_word` is the surface base address in 16-bit word units (= `BASE_ADDR_BYTES / 2`).
+
+The same formula applies to both color pixels (RGB565) and depth values (Z16).
+
+**Example (512×512 surface):**
+- `WIDTH_LOG2 = 9`
+- Pixel (8, 4): `block_x=2`, `block_y=1`, `local_x=0`, `local_y=0`, `block_idx = (1 << 7) | 2 = 130`, `word_addr = base + 130*16 + 0 = base + 2080`
 
 ---
 
@@ -97,31 +128,27 @@ After power-on and PLL lock, the SDRAM controller must execute the following ini
 0x0000000 ┌─────────────────────────────────────────┐
           │                                         │
           │         Framebuffer A (Color)           │
-          │         640×480×4 = 1,228,800 bytes     │
+          │         512×512×2 = 524,288 bytes       │
           │                                         │
-0x012C000 ├─────────────────────────────────────────┤
+0x0080000 ├─────────────────────────────────────────┤
           │                                         │
           │         Framebuffer B (Color)           │
-          │         640×480×4 = 1,228,800 bytes     │
+          │         512×512×2 = 524,288 bytes       │
           │                                         │
-0x0258000 ├─────────────────────────────────────────┤
+0x0100000 ├─────────────────────────────────────────┤
           │                                         │
           │         Z-Buffer                        │
-          │         640×480×3 = 921,600 bytes       │
-          │         (padded to 4 bytes/pixel)       │
-          │         Actual: 640×480×4 = 1,228,800   │
+          │         512×512×2 = 524,288 bytes       │
           │                                         │
-0x0384000 ├─────────────────────────────────────────┤
+0x0180000 ├─────────────────────────────────────────┤
           │                                         │
           │         Texture Memory                  │
-          │         ~768 KB available               │
+          │         ~1.5 MB available               │
           │                                         │
-0x0440000 ├─────────────────────────────────────────┤
-          │                                         │
+0x0300000 ├─────────────────────────────────────────┤
           │                                         │
           │         Reserved / Free                 │
-          │         ~27.7 MB                        │
-          │                                         │
+          │         ~29.0 MB                        │
           │                                         │
 0x2000000 └─────────────────────────────────────────┘
 ```
@@ -135,29 +162,24 @@ After power-on and PLL lock, the SDRAM controller must execute the following ini
 | Parameter | Value |
 |-----------|-------|
 | Base Address | 0x000000 |
-| End Address | 0x12BFFF |
-| Size | 1,228,800 bytes |
-| Pixel Format | RGB565 (16 bits) stored in 32-bit words |
-| Dimensions | 640 × 480 |
-| Row Pitch | 2,560 bytes (640 × 4) |
+| End Address | 0x07FFFF |
+| Size | 524,288 bytes |
+| Pixel Format | RGB565 (16 bits per pixel) |
+| Dimensions | 512 × 512 (display uses 512×480; bottom 32 rows unused) |
+| Layout | 4×4 block-tiled |
+| Bytes per pixel | 2 (one 16-bit SDRAM column) |
 
-**Storage Format**:
+**Storage Format** (per pixel):
 ```
-[31:16]   Unused (zeros)
 [15:11]   Red (5 bits)
 [10:5]    Green (6 bits)
 [4:0]     Blue (5 bits)
 ```
 
-**Address Calculation**:
-```
-pixel_addr = FB_BASE + (y * 640 + x) * 4
-```
-
-**Note**: RGB565 uses only lower 16 bits of each 32-bit word. This wastes 50% of storage but simplifies addressing. Upper 16 bits are written as zero. Future optimization could pack 2 pixels per word.
-With SDRAM's 16-bit data bus, a 32-bit pixel access requires two sequential column reads/writes within the same active row.
+**Address Calculation**: See block-tiled formula above with `WIDTH_LOG2 = 9`.
 
 **4K Alignment**: Base address 0x000000 is naturally 4K aligned.
+Register encoding: `COLOR_BASE = 0x0000` (address >> 9).
 
 ---
 
@@ -165,16 +187,17 @@ With SDRAM's 16-bit data bus, a 32-bit pixel access requires two sequential colu
 
 | Parameter | Value |
 |-----------|-------|
-| Base Address | 0x12C000 |
-| End Address | 0x257FFF |
-| Size | 1,228,800 bytes |
-| Pixel Format | RGB565 (16 bits) stored in 32-bit words |
-| Dimensions | 640 × 480 |
-| Row Pitch | 2,560 bytes |
+| Base Address | 0x080000 |
+| End Address | 0x0FFFFF |
+| Size | 524,288 bytes |
+| Pixel Format | RGB565 (16 bits per pixel) |
+| Dimensions | 512 × 512 |
+| Layout | 4×4 block-tiled |
 
-**Storage Format**: Same as Framebuffer A (RGB565 in lower 16 bits, upper 16 bits unused)
+**Storage Format**: Same as Framebuffer A (RGB565, 16-bit per pixel).
 
-**4K Alignment**: 0x12C000 = 1,228,800 = 300 × 4096, aligned.
+**4K Alignment**: 0x080000 = 524,288 = 128 × 4096, aligned.
+Register encoding: `COLOR_BASE = 0x0400` (address >> 9).
 
 ---
 
@@ -182,25 +205,26 @@ With SDRAM's 16-bit data bus, a 32-bit pixel access requires two sequential colu
 
 | Parameter | Value |
 |-----------|-------|
-| Base Address | 0x258000 |
-| End Address | 0x383FFF |
-| Size | 1,228,800 bytes (padded) |
-| Depth Format | 16-bit in 32-bit word |
-| Dimensions | 640 × 480 |
-| Row Pitch | 2,560 bytes |
+| Base Address | 0x100000 |
+| End Address | 0x17FFFF |
+| Size | 524,288 bytes |
+| Depth Format | 16-bit unsigned (Z16) |
+| Dimensions | 512 × 512 |
+| Layout | 4×4 block-tiled |
+| Bytes per depth value | 2 (one 16-bit SDRAM column) |
 
-**Storage Format**:
+**Storage Format** (per depth value):
 ```
-[31:16]   Unused (reads as 0)
-[15:0]    Depth value (0 = near, 0xFFFF = far)
-```
-
-**Address Calculation**:
-```
-z_addr = Z_BASE + (y * 640 + x) * 4
+[15:0]    Depth value (0 = near plane, 0xFFFF = far plane)
 ```
 
-**Note**: 32-bit aligned storage wastes 25% space but simplifies addressing and SDRAM access (16-bit SDRAM bus needs 2 column accesses per pixel anyway).
+**Address Calculation**: Identical formula to the color buffer, using `Z_BASE` in place of `COLOR_BASE`.
+
+**Note**: Z-buffer accesses are absorbed by the Z-buffer tile cache (4-way, 16 sets, 4×4 tiles) in UNIT-006.
+Only cache misses and dirty-line evictions generate SDRAM traffic via the arbiter.
+
+**4K Alignment**: 0x100000 = 1,048,576 = 256 × 4096, aligned.
+Register encoding: `Z_BASE = 0x0800` (address >> 9).
 
 ---
 
@@ -208,48 +232,49 @@ z_addr = Z_BASE + (y * 640 + x) * 4
 
 | Parameter | Value |
 |-----------|-------|
-| Base Address | 0x384000 |
-| End Address | 0x43FFFF |
-| Size | 786,432 bytes (~768 KB) |
-| Formats Supported | RGBA4444 (16 bpp), BC1 (0.5 bpp compressed) |
+| Base Address | 0x180000 |
+| End Address | 0x2FFFFF |
+| Size | 1,572,864 bytes (~1.5 MB) |
+| Formats Supported | BC1, BC2, BC3, BC4, RGB565 (tiled), RGBA8888 (tiled), R8 (tiled) |
 
-**Memory layout:** See INT-014 (Texture Memory Layout) for detailed format
-specifications. All textures are organized in 4x4 texel blocks.
+**Memory layout:** See INT-014 (Texture Memory Layout) for detailed format specifications.
+All textures use 4×4 block-tiled layout.
 
-**Note**: Textures use RGBA4444 or BC1 formats as specified in INT-014.
-Unlike the framebuffer (RGB565 in lower 16 bits), textures utilize full
-storage efficiency with no padding. BC1 provides 8:1 compression over
-legacy RGBA8888.
+**RGB565 Capacity (16 bpp, tiled):**
 
-**RGBA4444 Capacity (16 bpp):**
-
-| Texture Size | Bytes | Count in 768 KB |
+| Texture Size | Bytes | Count in 1.5 MB |
 |--------------|-------|-----------------|
-| 512x512 | 524,288 | 1 |
-| 256x256 | 131,072 | 6 |
-| 128x128 | 32,768 | 24 |
-| 64x64 | 8,192 | 96 |
+| 512×512 | 524,288 | 3 |
+| 256×256 | 131,072 | 12 |
+| 128×128 | 32,768 | 48 |
+| 64×64 | 8,192 | 192 |
 
-**BC1 Capacity (0.5 bpp compressed):**
+**BC1 Capacity (4 bpp compressed):**
 
-| Texture Size | Bytes | Count in 768 KB |
+| Texture Size | Bytes | Count in 1.5 MB |
 |--------------|-------|-----------------|
-| 1024x1024 | 524,288 | 1 |
-| 512x512 | 131,072 | 6 |
-| 256x256 | 32,768 | 24 |
-| 128x128 | 8,192 | 96 |
+| 1024×1024 | 524,288 | 3 |
+| 512×512 | 131,072 | 12 |
+| 256×256 | 32,768 | 48 |
+| 128×128 | 8,192 | 192 |
 
-**Texture Address Alignment**: Textures must be 4K aligned for TEX_BASE register.
+**Texture Address Alignment**: Textures must be 512-byte aligned for the TEX_CFG BASE_ADDR register (512-byte granularity).
 
-**Recommended Texture Layout (RGBA4444, 256x256)**:
+**Recommended Texture Layout (RGB565, 256×256)**:
 ```
-0x384000  Texture 0 (128 KB)
-0x3A4000  Texture 1 (128 KB)
-0x3C4000  Texture 2 (128 KB)
-0x3E4000  Texture 3 (128 KB)
-0x404000  Texture 4 (128 KB)
-0x424000  Texture 5 (128 KB)
-0x440000  (end of default texture region)
+0x180000  Texture 0 (128 KB)
+0x1A0000  Texture 1 (128 KB)
+0x1C0000  Texture 2 (128 KB)
+0x1E0000  Texture 3 (128 KB)
+0x200000  Texture 4 (128 KB)
+0x220000  Texture 5 (128 KB)
+0x240000  Texture 6 (128 KB)
+0x260000  Texture 7 (128 KB)
+0x280000  Texture 8 (128 KB)
+0x2A0000  Texture 9 (128 KB)
+0x2C0000  Texture 10 (128 KB)
+0x2E0000  Texture 11 (128 KB)
+0x300000  (end of default texture region)
 ```
 
 ---
@@ -258,31 +283,31 @@ legacy RGBA8888.
 
 | Parameter | Value |
 |-----------|-------|
-| Base Address | 0x440000 |
+| Base Address | 0x300000 |
 | End Address | 0x1FFFFFF |
-| Size | 29,097,984 bytes (~27.7 MB) |
+| Size | ~29.0 MB |
 
 **Potential Uses**:
-- **Color grading LUTs**
-- Additional framebuffers (triple buffering)
+- Color grading LUTs
+- Additional framebuffers (triple buffering, off-screen render targets)
 - Larger texture storage
 - Future: vertex buffers, command lists
 - Host scratch memory
 
 **Recommended Color Grading LUT Region**:
 ```
-0x440000 ┬─────────────────────────────────────────┐
+0x300000 ┬─────────────────────────────────────────┐
          │  Color Grading LUTs                     │
          │  (Recommended allocation)               │
-0x441000 │  LUT 0 (identity, 4KiB)                 │
-0x442000 │  LUT 1 (gamma 2.2, 4KiB)                │
-0x443000 │  LUT 2 (warm tint, 4KiB)                │
-0x444000 │  LUT 3 (cool tint, 4KiB)                │
-0x445000 │  LUT 4 (high contrast, 4KiB)            │
+0x300000 │  LUT 0 (identity, 4KiB)                 │
+0x301000 │  LUT 1 (gamma 2.2, 4KiB)                │
+0x302000 │  LUT 2 (warm tint, 4KiB)                │
+0x303000 │  LUT 3 (cool tint, 4KiB)                │
+0x304000 │  LUT 4 (high contrast, 4KiB)            │
          │  ... (16 LUTs fit in 64KiB)             │
-0x450000 ├─────────────────────────────────────────┤
+0x310000 ├─────────────────────────────────────────┤
          │  Free / Additional LUTs                 │
-         │  ~27.6 MB                               │
+         │  ~29.0 MB                               │
 0x2000000 └─────────────────────────────────────────┘
 ```
 
@@ -308,7 +333,7 @@ Each RGB888 entry: 3 bytes in order R[7:0], G[7:0], B[7:0]
 **Usage Notes**:
 - Each LUT: 384 bytes actual data + padding to 4KiB
 - Firmware can pre-prepare multiple LUTs at boot for instant switching
-- LUT auto-load triggered via FB_DISPLAY or FB_DISPLAY_SYNC writes (see INT-010)
+- LUT auto-load triggered via FB_DISPLAY writes (see INT-010)
 - Typical setup: identity, gamma correction, various artistic grades
 
 ---
@@ -319,36 +344,28 @@ Each RGB888 entry: 3 bytes in order R[7:0], G[7:0], B[7:0]
 
 ```
 Priority: HIGHEST
-Pattern: Sequential burst read, one scanline at a time
-Bandwidth: 640 × 4 × 60 × 480 = 73.7 MB/s (32-bit words)
-Effective: 640 × 2 × 60 × 480 = 36.9 MB/s (RGB565 data only)
-Access: Burst read, 2560 bytes per scanline (1280 × 16-bit reads)
+Pattern: Sequential burst reads, tile-by-tile along each scanline
+Bandwidth: 512 × 2 × 60 × 480 = ~29.5 MB/s (16-bit words, 512-wide surface)
+Access: Burst read, 16 words per 4×4 tile, tiles in row-major order per scanline
 Timing: Must complete before next scanline starts
 ```
 
-**Note**: Bandwidth reflects 32-bit word reads, but only lower 16 bits contain RGB565 pixel data.
-Upper 16 bits are discarded.
-Effective bandwidth for pixel data is half of memory bandwidth.
+**4×4 Tile Access**: The display controller reads tiles in row-major order along each scanline.
+For each 4-pixel-wide tile, 16 consecutive 16-bit words are read in a burst from SDRAM.
+Each burst fits within a single SDRAM row (16 words = 32 bytes, well within a 512-column row).
+SDRAM timing per tile: ACTIVATE (1 cycle) + tRCD (2 cycles) + READ (1 cycle) + CL (3 cycles) + 16 data words = ~23 cycles.
 
-**SDRAM Burst Access**: Display scanout is the primary beneficiary of SDRAM sequential access.
-Each scanline is 2560 bytes = 1280 sequential 16-bit SDRAM column reads.
-With SDRAM, reading sequential columns within an active row requires only 1 cycle per word after the initial CAS latency (CL=3).
-A burst within a single row: ACTIVATE (1 cycle) + tRCD (2 cycles) + READ command (1 cycle) + CL (3 cycles) + N data words = 7 + N cycles.
-For a full scanline of 1280 words spanning multiple rows (each row has 512 columns), row changes require PRECHARGE + ACTIVATE overhead (tRP + tRCD = 4 cycles).
-A 640-pixel scanline at 32-bit per pixel requires 1280 16-bit accesses spanning approximately 3 SDRAM rows (1280 / 512 = 2.5), incurring ~2 row changes.
-Total: ~7 + 1280 + 2 × 4 = ~1295 cycles (vs ~1920 cycles for non-burst 32-bit access).
-
-**Note**: The arbiter may preempt a display burst to service a higher-latency-sensitive request.
-The maximum burst length before preemption check is configurable (see UNIT-007).
+A 512-pixel scanline consists of 128 tiles (512 / 4).
+Total cycles per scanline ≈ 128 × 23 = ~2,944 cycles.
+Available time per scanline at 100 MHz = 3,200 cycles (32 µs × 100 MHz).
+FIFO prefetch during blanking keeps scanout ahead of the display beam.
 
 **Scanline Timing**:
 - Pixel clock: 25.000 MHz (derived as 4:1 divisor from 100 MHz core clock)
 - Pixels per line (total): 800
-- Time per line: 32.00 us
-- Visible pixels: 640 (25.6 us)
-- Blanking: 160 pixels (6.4 us)
-
-FIFO prefetch uses blanking time to stay ahead.
+- Time per line: 32.00 µs
+- Visible pixels: 640 (25.6 µs)
+- Blanking: 160 pixels (6.4 µs)
 
 ---
 
@@ -356,17 +373,17 @@ FIFO prefetch uses blanking time to stay ahead.
 
 ```
 Priority: LOW (yields to display)
-Pattern: Semi-sequential within triangle bbox
-Bandwidth: Variable, up to 200 MB/s burst (GPU core at 100 MHz)
-Access: Single pixel writes or short burst writes (burst_len up to 16)
+Pattern: 4×4 tile order within bounding box; burst writes per tile
+Bandwidth: Variable, up to ~28–35 Mpixels/sec (see ARCHITECTURE.md)
+Access: Write-coalescing buffer collects pixels within a tile; issues 16-word burst per tile
 ```
 
-**Write Coalescing / Burst Writes**:
-- Rasterizer emits pixels in scanline order
-- Adjacent pixels within the same SDRAM row can be combined into a burst write
-- Typical burst: 4-16 pixels (8-32 bytes on 16-bit bus)
-- Once an SDRAM row is activated, sequential column writes take 1 cycle per word with no CAS latency overhead (write data is presented immediately)
-- Row changes within a burst require PRECHARGE + ACTIVATE overhead (tRP + tRCD = 4 cycles)
+**Write Coalescing**:
+- Rasterizer walks the triangle bounding box in 4×4 tile order (aligned with block-tiled layout and Z-cache block size)
+- Adjacent pixels within the same tile are collected by the write-coalescing buffer
+- A full tile: 16-word burst write, ~22 cycles (ACTIVATE + tRCD + 16 writes + tWR + PRECHARGE)
+- A partial tile (edge/corner): shorter burst; cost amortized over tile count, not individual pixels
+- Row changes: tiles within the same SDRAM row proceed without PRECHARGE; a new tile column may cross row boundaries (~5 cycle overhead per row change)
 
 ---
 
@@ -375,27 +392,19 @@ Access: Single pixel writes or short burst writes (burst_len up to 16)
 ```
 Priority: MEDIUM
 Pattern: Burst block reads on cache miss (REQ-003.08)
-Bandwidth: ~5-15 MB/s average (with >85% cache hit rate)
-Access: BC1: 8 bytes per cache miss (burst), RGBA4444: 32 bytes per cache miss (burst)
+Bandwidth: ~5–15 MB/s average (with >90% cache hit rate)
+Access: BC1: 4 words per cache miss (burst); RGB565 tiled: 16 words per cache miss (burst)
 ```
 
-**Texture Cache (REQ-003.08)**: Each of the 2 texture samplers has an on-chip 4-way set-associative texture cache with 16,384 texels.
+**Texture Cache**: Each of the 2 texture samplers has an on-chip 4-way set-associative texture cache with 16,384 texels.
 On cache hit, no SDRAM access is needed.
-On cache miss, the full 4x4 block is fetched using a sequential read from SDRAM:
-- BC1: 8 bytes = 4 sequential 16-bit reads.
-  SDRAM timing: ACTIVATE (1) + tRCD (2) + READ (1) + CL (3) + 4 data = ~11 cycles (all within one row)
-- RGBA4444: 32 bytes = 16 sequential 16-bit reads.
-  SDRAM timing: ACTIVATE (1) + tRCD (2) + READ (1) + CL (3) + 16 data = ~23 cycles (all within one row)
+On cache miss, the full 4×4 block is fetched using a sequential burst read from SDRAM:
+- BC1: 4 × 16-bit words = 8 bytes. SDRAM timing: ~11 cycles.
+- RGB565 tiled: 16 × 16-bit words = 32 bytes. SDRAM timing: ~23 cycles.
+- RGBA8888 tiled: 32 × 16-bit words = 64 bytes. SDRAM timing: ~39 cycles (may cross row boundary).
+- R8 tiled: 8 × 16-bit words = 16 bytes. SDRAM timing: ~15 cycles.
 
-**Comparison to async SRAM**: The SDRAM CAS latency (CL=3) adds a fixed overhead per burst that did not exist with async SRAM.
-However, once the first word arrives, subsequent words stream at 1 word per cycle, identical to the async SRAM burst rate.
-The net increase is ~6 cycles per cache miss for the ACTIVATE + tRCD + CL pipeline fill.
-For long bursts (RGBA4444, 16 words), this overhead is amortized and the effective throughput approaches the peak bus rate.
 End-to-end cache fill latency (including decompression/conversion overlap) is documented in INT-032.
-
-With the 16K-texel per-sampler cache, expected hit rates increase to >90% for typical scenes, further reducing average texture SDRAM bandwidth from a worst-case ~50 MB/s.
-Fewer samplers (2 vs 4) also reduces peak texture bandwidth demand.
-The net effect frees additional bandwidth for framebuffer and Z-buffer operations.
 
 ---
 
@@ -403,28 +412,26 @@ The net effect frees additional bandwidth for framebuffer and Z-buffer operation
 
 ```
 Priority: LOW
-Pattern: Matches rasterization pattern
-Bandwidth: ~50 MB/s for read + write (max), reduced with early Z-test
-Access: Read-test (early, before texture) + write (late, after all processing)
+Pattern: Matches 4×4 tile rasterization order
+Bandwidth: Low (tile cache absorbs most traffic)
+Access: 16-word burst fill on cache miss; 16-word burst evict on dirty eviction
 ```
 
-**SDRAM Access Pattern**: Z-buffer accesses follow the rasterization scan order.
-When the rasterizer processes consecutive pixels within a scanline, Z-buffer reads and writes can be issued as short sequential accesses (typically 2-8 words) within an active SDRAM row.
-However, since Z reads and writes are interleaved with depth test decisions (pass/fail), burst lengths are shorter and less predictable than display scanout or texture cache fills.
-The SDRAM row activation overhead (tRCD = 2 cycles) and CAS latency (CL = 3 cycles) apply to each new row.
-The primary benefit of sequential access is eliminating per-word re-arbitration overhead for adjacent pixel Z accesses within the same row.
+**Z-Buffer Tile Cache**: A 4-way set-associative Z-buffer tile cache (16 sets, 4×4 tiles) in UNIT-006 absorbs Z read/write traffic.
+Each cache line holds a 4×4 tile of 16-bit Z values (256 bits = 16 × 16-bit words).
+Expected hit rate: 85–95% for typical scenes, reducing Z-buffer SDRAM traffic by 5–7×.
 
-**Z-Buffer Access Sequence** (with early Z-test):
-1. **Stage 0 (Early)**: Read current Z at (x, y)
+**SDRAM Access Sequence** (cache miss):
+1. Dirty line eviction: 16-word burst write to the evicted tile's address (~22 cycles)
+2. New line fill: 16-word burst read from the new tile's address (~23 cycles)
+3. Total cache miss cost: ~45 cycles, amortized over up to 16 subsequent Z hits
+
+**Z-Buffer Access Sequence** (with early Z-test, per pipeline stage):
+1. Stage 0 (Early): Read Z from cache (or trigger miss/fill)
 2. Compare with incoming Z (using RENDER_MODE.Z_COMPARE function)
-3. If test fails: discard fragment immediately (no texture fetch, no color write, no Z write)
-4. If test passes: proceed through texture/blend pipeline (Stages 1-5)
-5. **Stage 6 (Late)**: If Z_WRITE_EN=1, write new Z value to Z-buffer
-
-**Note**: Z-buffer reads now occur before texture reads in the pipeline (UNIT-006 Stage 0 vs Stage 1+).
-This may improve bandwidth utilization: early fragment rejection reduces total SDRAM accesses for texture, framebuffer read (alpha blend), and Z write.
-In scenes with high overdraw (3-4x), early Z-test can reduce effective Z+texture+FB bandwidth by 30-50%.
-No changes to Z-buffer addresses, sizes, or data format.
+3. If test fails: discard fragment immediately
+4. If test passes: proceed through texture/blend pipeline
+5. Stage 6 (Late): If Z_WRITE_EN=1, update cache entry (mark dirty)
 
 ---
 
@@ -444,42 +451,33 @@ SDRAM effective throughput is lower than the peak bus rate due to command overhe
 
 For long sequential reads within a single row, effective throughput approaches 200 MB/s after the initial CL overhead.
 For random single-word accesses (ACTIVATE + tRCD + READ + CL + 1 data + PRECHARGE = ~11 cycles per 16-bit word), effective throughput drops to ~18 MB/s.
-Typical GPU access patterns are semi-sequential, yielding effective throughput between these extremes.
+The 4×4 block-tiled layout ensures most accesses are 16-word bursts within a single SDRAM row, keeping effective throughput close to the sequential optimum.
 
 ### Allocated Budget
 
-| Consumer | Bandwidth (random) | Bandwidth (sequential) | % of Total (seq.) | Notes |
-|----------|--------------------|-----------------------|---------------------|-------|
-| Display scanout | — | ~50 MB/s | 25% | Long sequential reads, ~2 row changes per scanline |
-| Framebuffer write | — | ~40 MB/s | 20% | Short sequential writes (4-16 pixels per row) |
-| Z-buffer R/W | ~30 MB/s | ~35 MB/s | 17.5% | Short sequential within rows, some row changes |
-| Texture fetch | ~5 MB/s | ~5 MB/s | 2.5% | Sequential cache fills (REQ-003.08), >90% hit rate (2 samplers, 16K cache) |
-| Auto-refresh | ~1.6 MB/s | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
-| **Headroom** | — | ~68 MB/s | 34.2% | Available for higher fill rates |
+| Consumer | Bandwidth | % of Total | Notes |
+|----------|-----------|------------|-------|
+| Display scanout | ~30 MB/s | 15% | 16-word tile bursts; 512-wide surface at 60 Hz |
+| Framebuffer write | ~40 MB/s | 20% | 16-word tile bursts; coalesced writes |
+| Z-buffer R/W | ~10 MB/s | 5% | Tile cache absorbs 85–95% of Z traffic |
+| Texture fetch | ~5–15 MB/s | 2.5–7.5% | Sequential cache fills; >90% hit rate |
+| Auto-refresh | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
+| **Headroom** | ~100–115 MB/s | ~51–57% | Available for fill rate, overdraw |
 
-**SDRAM overhead summary**: Compared to async SRAM, SDRAM adds CAS latency (CL=3) and row activation overhead (tRCD=2) per access.
-For sequential access patterns (display scanout, cache fills), the overhead is amortized over many words and effective throughput is similar to async SRAM burst mode.
-For random access patterns (Z-buffer with scattered fragments), the per-access overhead is higher.
-Auto-refresh consumes a small but non-negotiable fraction of bandwidth.
-
-**Note**: Pre-cache texture fetch budget was 30 MB/s (15%).
-The per-sampler texture cache (REQ-003.08) with 16K texels per sampler reduces average texture SDRAM bandwidth to ~3-8 MB/s depending on scene complexity and cache hit rate, freeing ~22-27 MB/s for other consumers.
-With only 2 texture samplers, peak simultaneous cache miss bandwidth is halved compared to a 4-sampler configuration.
-
-**Clock Domain Note**: Because the GPU core and SDRAM controller share the same 100 MHz clock domain, there is no CDC overhead on any arbiter port.
-All requestors (display controller, rasterizer, pixel pipeline, texture cache) issue requests synchronously, and the arbiter can grant access with single-cycle latency after an ack.
+**Note**: Display scanout bandwidth reflects 512-wide (not 640-wide) surface at 60 Hz.
+The display controller stretches horizontally to fill the 640-pixel DVI output without additional SDRAM reads.
 
 ### Fill Rate Estimate
 
-At ~90 MB/s effective sequential write bandwidth (GPU core and SDRAM at 100 MHz, accounting for row activation overhead on typical rasterization patterns):
+With native 16-bit addressing and burst coalescing (ARCHITECTURE.md):
 ```
-90 MB/s ÷ 4 bytes/pixel ≈ 22.5 Mpixels/sec
+~28–35 Mpixels/sec (rasterizer sustained throughput)
 ```
 
 For 640×480 @ 60 Hz (18.4 Mpixels/sec visible):
-- Can fill ~122% of screen per frame (>1x overdraw budget)
+- Can fill ~152–190% of screen per frame (>1× overdraw budget)
 - Sufficient for complex 3D scenes with moderate overdraw
-- Write bandwidth is slightly lower than async SRAM due to SDRAM row activation overhead on non-sequential pixel patterns
+- Improvement over the 22.5 Mpixels/sec figure of the prior 32-bit-per-pixel layout, because native 16-bit addressing halves framebuffer and Z-buffer SDRAM traffic per pixel
 
 ---
 
@@ -504,19 +502,14 @@ Commands are encoded via the combination of CS#, RAS#, CAS#, WE# signals:
 **Single-Word Read** (burst_len=0):
 
 ```
-State machine (100 MHz, 10 ns cycle):
-
 READ_SINGLE:
   Cycle 0: ACTIVATE — Open row, drive bank + row address
   Cycle 1-2: Wait tRCD (2 cycles)
-  Cycle 3: READ command — Drive column address (low half)
+  Cycle 3: READ command — Drive column address
   Cycle 4-5: Wait CL-1 (2 cycles)
-  Cycle 6: Latch low 16-bit data
-  Cycle 7: READ command — Drive column address (high half)
-  Cycle 8-9: Wait CL-1 (2 cycles)
-  Cycle 10: Latch high 16-bit data, assemble 32-bit word
-  Cycle 11: PRECHARGE
-  Total: ~12 cycles for one 32-bit word
+  Cycle 6: Latch 16-bit data
+  Cycle 7: PRECHARGE
+  Total: ~8 cycles for one 16-bit word
 ```
 
 **Single-Word Write** (burst_len=0):
@@ -525,17 +518,15 @@ READ_SINGLE:
 WRITE_SINGLE:
   Cycle 0: ACTIVATE — Open row, drive bank + row address
   Cycle 1-2: Wait tRCD (2 cycles)
-  Cycle 3: WRITE command — Drive column address (low half) + data
-  Cycle 4: WRITE command — Drive column address (high half) + data
-  Cycle 5-6: Wait tWR (2 cycles)
-  Cycle 7: PRECHARGE (auto-precharge can be used via A10)
-  Total: ~8 cycles for one 32-bit word
+  Cycle 3: WRITE command — Drive column address + data
+  Cycle 4-5: Wait tWR (2 cycles)
+  Cycle 6: PRECHARGE
+  Total: ~7 cycles for one 16-bit word
 ```
 
 **Sequential Read** (burst_len>0):
 
 The SDRAM controller reads N sequential 16-bit words within an active row.
-The SDRAM mode register is configured for burst length 1 (controller-managed sequential access), with the controller issuing sequential READ commands to consecutive column addresses.
 
 ```
 SEQUENTIAL_READ (N words, same row):
@@ -549,13 +540,6 @@ SEQUENTIAL_READ (N words, same row):
   Cycle 6+N-1: Last data word valid
   Cycle 6+N: PRECHARGE
   Total: ~7 + N cycles for N words (same row)
-
-ROW CHANGE (during sequential access):
-  When column address crosses a row boundary (every 512 columns):
-  - PRECHARGE current row (1 cycle) + wait tRP (2 cycles)
-  - ACTIVATE new row (1 cycle) + wait tRCD (2 cycles)
-  - Resume READ commands
-  - Overhead: ~5 cycles per row change
 ```
 
 **Sequential Write** (burst_len>0):
@@ -573,12 +557,12 @@ SEQUENTIAL_WRITE (N words, same row):
   Total: ~6 + N cycles for N words (same row)
 ```
 
-**Burst Length**: The burst_len signal specifies the number of 16-bit words to transfer (1-255).
+**Burst Length**: The burst_len signal specifies the number of 16-bit words to transfer (1–255).
 A burst_len of 0 selects single-word mode.
 
-**Throughput Comparison** (reading 8 sequential 16-bit words, same row):
-- Single-word mode: 8 words x 12 cycles/word = 96 cycles
-- Sequential mode: 7 + 8 = 15 cycles (6.4x faster)
+**Throughput Comparison** (reading 16 sequential 16-bit words, same row):
+- Single-word mode: 16 words × 8 cycles/word = 128 cycles
+- Sequential mode: 7 + 16 = 23 cycles (5.6× faster)
 
 **Auto-Refresh Scheduling**: The SDRAM controller must issue AUTO REFRESH commands at a rate of at least 8192 refreshes per 64 ms (one every 781 cycles at 100 MHz).
 The controller inserts refresh commands during arbiter idle periods.
@@ -593,20 +577,21 @@ The requestor is responsible for re-issuing the remaining access from the next a
 
 ## Address Encoding in Registers
 
-### FB_DRAW / FB_ZBUFFER Registers
+### FB_CONFIG: COLOR_BASE and Z_BASE
 
 ```
-Register value: [31:12] = address >> 12
-Effective address: value << 12
+Register field value (16-bit): address >> 9
+Effective address: value << 9    (512-byte granularity, 32 MiB addressable)
 
 Examples:
-  FB_A (0x000000): register = 0x00000
-  FB_B (0x12C000): register = 0x0012C
+  FB_A (0x000000): COLOR_BASE = 0x0000
+  FB_B (0x080000): COLOR_BASE = 0x0400
+  Z    (0x100000): Z_BASE     = 0x0800
 ```
 
-### FB_DISPLAY / FB_DISPLAY_SYNC Registers
+### FB_DISPLAY: FB_ADDR and LUT_ADDR
 
-Uses the same 16-bit, 512-byte granularity encoding as texture registers.
+Uses the same 16-bit, 512-byte granularity encoding as COLOR_BASE and Z_BASE.
 
 ```
 FB_ADDR  [47:32] = address >> 9
@@ -615,15 +600,23 @@ Effective address: value << 9
 
 Examples:
   FB_A (0x000000): FB_ADDR = 0x0000
-  FB_B (0x12C000): FB_ADDR = 0x0960
+  FB_B (0x080000): FB_ADDR = 0x0400
 ```
 
-### TEXn_CFG BASE_ADDR
+### TEXn_CFG: BASE_ADDR
 
 Same 16-bit, 512-byte granularity encoding as FB_DISPLAY.
 
 ```
-Texture at 0x384000: BASE_ADDR = 0x1C20
+Texture at 0x180000: BASE_ADDR = 0x0C00
+```
+
+### MEM_FILL: FILL_BASE
+
+Same 512-byte granularity encoding.
+
+```
+FILL_BASE = address >> 9
 ```
 
 ---
@@ -632,30 +625,15 @@ Texture at 0x384000: BASE_ADDR = 0x1C20
 
 To upload texture data from host:
 
-1. **Direct Register Write** (slow, for small data):
-   - No dedicated upload register in current spec
-   - Would require adding MEM_ADDR and MEM_DATA registers
+1. **MEM_ADDR / MEM_DATA registers** (index 0x70 / 0x71):
+   - Write MEM_ADDR with the target SDRAM dword address (22-bit, 8-byte dwords)
+   - Write MEM_DATA to store 64 bits at that address; address auto-increments by 1
+   - Read MEM_DATA to retrieve prefetched 64-bit dword; address auto-increments by 1
+   - Transfer rate: ~6 MB/s (64-bit dwords over 62.5 MHz SPI)
 
-2. **DMA via Second SPI** (future enhancement):
-   - Dedicated bulk transfer interface
-   - Not in initial specification
-
-3. **Pre-loaded SDRAM** (practical for development):
+2. **Pre-loaded SDRAM** (practical for development):
    - Load textures at power-on via test interface
-   - Or use RP2350's second core for SDRAM init
-   - Note: SDRAM contents are lost on power loss (volatile memory)
-
-**Recommendation for MVP**: Add MEM_ADDR (0x70) and MEM_DATA (0x71) registers for host memory access:
-
-```
-MEM_ADDR: Write sets SDRAM dword address pointer (22-bit, 8-byte dwords)
-MEM_DATA: Write stores 64 bits at pointer, auto-increments by 1
-          Read returns prefetched 64-bit dword, auto-increments by 1
-```
-
-This allows host to transfer data at ~6 MB/s (64-bit dwords over 25 MHz SPI).
-Note: Unlike SRAM, SDRAM requires initialization before first access (see Initialization Sequence above).
-The SDRAM controller handles initialization autonomously after PLL lock.
+   - SDRAM contents are lost on power loss (volatile memory)
 
 ---
 
@@ -666,37 +644,37 @@ The SDRAM controller handles initialization autonomously after PLL lock.
 For simpler applications without double-buffering:
 
 ```
-0x000000  Framebuffer (1.2 MB)
-0x12C000  Z-Buffer (1.2 MB)
-0x258000  Textures (remaining)
+0x000000  Framebuffer (512 KB, 512×512)
+0x080000  Z-Buffer    (512 KB, 512×512)
+0x100000  Textures    (~30 MB available)
 ```
 
-Saves 1.2 MB for larger texture storage.
+Saves 512 KB for larger texture storage.
 
 ### Triple Buffer
 
 For lowest latency input response:
 
 ```
-0x000000  Framebuffer A (1.2 MB)
-0x12C000  Framebuffer B (1.2 MB)
-0x258000  Framebuffer C (1.2 MB)
-0x384000  Z-Buffer (1.2 MB)
-0x4B0000  Textures (remaining ~26 MB)
+0x000000  Framebuffer A (512 KB)
+0x080000  Framebuffer B (512 KB)
+0x100000  Framebuffer C (512 KB)
+0x180000  Z-Buffer      (512 KB)
+0x200000  Textures      (~30 MB)
 ```
 
-Host renders to A, GPU displays B, C is ready for next frame.
-
-### High Resolution (Future)
-
-For 800×600 or 1024×768 (requires faster pixel clock):
+### Half-Resolution (256×240 with Line Doubling)
 
 ```
-800×600×4 = 1,920,000 bytes per buffer
-Two buffers + Z = 5.76 MB
-Still fits easily in 32 MB
+0x000000  Framebuffer A (256×256 = 128 KB)
+0x020000  Framebuffer B (256×256 = 128 KB)
+0x040000  Z-Buffer      (256×256 = 128 KB)
+0x060000  Textures      (~31.6 MB)
 ```
 
+Display controller uses LINE_DOUBLE=1 in FB_DISPLAY to output each row twice for 480-line fill.
+
+---
 
 ## Constraints
 
@@ -708,6 +686,8 @@ See specification details above.
 - The SDRAM controller must complete initialization before any GPU access is permitted
 - Bank conflicts (accessing a different row in the same bank) incur PRECHARGE + ACTIVATE overhead
 - The 90-degree phase-shifted SDRAM clock requires a PLL output; see INT-002 for PLL configuration
+- All surface base addresses must be 512-byte aligned (matching the BASE_ADDR register granularity)
+- Surface dimensions must be power-of-two per axis for the block-tiled address calculation
 
 ## Notes
 

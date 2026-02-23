@@ -52,99 +52,121 @@ Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and RE
 - **`GpuDriver::new(transport: S)`**: Generic constructor taking any `S: SpiTransport` implementation (INT-040).
 - **`write()` parameters**: `addr: u8` (7-bit register address), `data: u64` (64-bit register value).
 - **`read()` parameters**: `addr: u8` (7-bit register address with bit 7 set for read).
-- **`upload_memory()` parameters**: `gpu_addr: u32` (target SRAM address), `data: &[u32]` (word array to upload).
+- **`upload_memory()` parameters**: `gpu_addr: u32` (target SDRAM dword address), `data: &[u64]` (dword array to upload).
 - **`submit_triangle()` parameters**: Three `&GpuVertex` references and a `textured: bool` flag.
-- **`gpu_set_render_mode()` parameters**: `gouraud: bool`, `z_test: bool`, `z_write: bool`, `color_write: bool` -- configure RENDER_MODE register (0x30) flags. When `color_write` is false, the GPU writes only to the Z-buffer (Z-prepass mode).
-- **`gpu_set_z_range()` parameters**: `z_min: u16`, `z_max: u16` -- write Z_RANGE register (0x31) to restrict Z-test to a sub-range. Default: min=0, max=0xFFFF (full range).
-- **`gpu_set_dither_mode()` parameters**: `enabled: bool` -- enable or disable ordered dithering.
-- **`gpu_set_color_grade_enable()` parameters**: `enabled: bool` -- enable or disable color grading LUT at scanout.
-- **`gpu_upload_color_lut()` parameters**: `red: &[u32; 32]` (Red LUT, 32 RGB888 entries), `green: &[u32; 64]` (Green LUT, 64 RGB888 entries), `blue: &[u32; 32]` (Blue LUT, 32 RGB888 entries).
-- **`gpu_set_combiner_mode()` parameters**: `rgb_a: u8, rgb_b: u8, rgb_c: u8, rgb_d: u8, alpha_a: u8, alpha_b: u8, alpha_c: u8, alpha_d: u8` -- configure the color combiner equation `(A-B)*C+D` input selectors for RGB and Alpha channels. Each selector is a 4-bit value choosing from: 0=TEX_COLOR0, 1=TEX_COLOR1, 2=VER_COLOR0, 3=VER_COLOR1, 4=MAT_COLOR0, 5=MAT_COLOR1, 6=Z_COLOR, 7=ONE, 8=ZERO.
-- **`gpu_set_material_color()` parameters**: `slot: u8` (0 or 1), `color: u32` (RGBA8888) -- write MAT_COLOR0 or MAT_COLOR1 register.
+- **`gpu_set_render_mode()` parameters**: Full RENDER_MODE fields — `gouraud`, `z_test`, `z_write`, `color_write`, `cull_mode`, `alpha_blend`, `dither`, `z_compare`, `stipple_en`, `alpha_test_func`, `alpha_ref`.
+- **`gpu_set_z_range()` parameters**: `z_min: u16`, `z_max: u16` — write Z_RANGE register (0x31).
+- **`gpu_set_fb_config()` parameters**: `color_base: u16`, `z_base: u16`, `width_log2: u8`, `height_log2: u8` — write FB_CONFIG register (0x40).
+- **`gpu_set_scissor()` parameters**: `x: u16`, `y: u16`, `width: u16`, `height: u16` — write FB_CONTROL register (0x43).
+- **`gpu_mem_fill()` parameters**: `base: u16`, `value: u16`, `count: u32` — write MEM_FILL register (0x44) to initiate a hardware fill.
+- **`gpu_set_combiner_mode()` parameters**: Two-cycle `(A-B)*C+D` equation selectors for RGB and Alpha, cycle 0 and cycle 1 — configure CC_MODE register (0x18).
+- **`gpu_set_const_color()` parameters**: `const0: RGBA8`, `const1: RGBA8` — write CONST_COLOR register (0x19).
 
 ### Outputs
 
-- **`GpuDriver::new()` return**: `Result<GpuDriver<S>, GpuError>` -- `GpuNotDetected` if ID register mismatch, `Ok(driver)` on success.
+- **`GpuDriver::new()` return**: `Result<GpuDriver<S>, GpuError>` — `GpuNotDetected` if ID register mismatch, `Ok(driver)` on success.
 - **SPI transactions**: Delegated to the `SpiTransport` implementation. The driver builds 9-byte frames and calls `write_register()`/`read_register()` on the transport.
 - **Flow control and GPIO side effects**: Handled by the `SpiTransport` implementation (transparent to the driver).
-- **`gpu_set_dither_mode()` return**: None. Writes DITHER_MODE register (0x32) with 0x01 (enabled) or 0x00 (disabled).
-- **`gpu_set_color_grade_enable()` return**: None. Writes COLOR_GRADE_CTRL register (0x44) with 0x01 (enabled) or 0x00 (disabled).
-- **`gpu_upload_color_lut()` return**: None. Performs 260 SPI register writes (1 reset + 128 addr/data pairs + 1 swap) to upload all three LUT channels and activate at next vblank.
-- **`gpu_set_combiner_mode()` return**: None. Writes COMBINER_RGB (0x33) and COMBINER_ALPHA (0x34) registers with packed input selectors.
-- **`gpu_set_material_color()` return**: None. Writes MAT_COLOR0 (0x35) or MAT_COLOR1 (0x36) register.
+- **`gpu_set_render_mode()` return**: None. Packs all RENDER_MODE fields into a 64-bit value and writes to RENDER_MODE (0x30).
+- **`gpu_mem_fill()` return**: None. Writes MEM_FILL (0x44); GPU blocks pipeline until fill completes.
+- **`gpu_set_combiner_mode()` return**: None. Writes CC_MODE (0x18) with packed cycle-0 and cycle-1 selectors.
+- **`gpu_set_const_color()` return**: None. Writes CONST_COLOR (0x19) with CONST0 in [31:0] and CONST1 in [63:32].
 
 ### Internal State
 
 - **`GpuDriver<S: SpiTransport>`** struct fields:
-  - `spi: S` -- platform-specific SPI transport (implements `SpiTransport` from INT-040).
-  - `draw_fb: u32` -- current draw framebuffer SRAM address (swapped on buffer swap).
-  - `display_fb: u32` -- current display framebuffer SRAM address (swapped on buffer swap).
+  - `spi: S` — platform-specific SPI transport (implements `SpiTransport` from INT-040).
+  - `draw_fb: (u16, u16, u8, u8)` — current draw framebuffer (color_base, z_base, width_log2, height_log2).
+  - `display_fb: (u16, u16, u8, u8)` — current display framebuffer fields.
 
 ### Algorithm / Behavior
 
 1. **Initialization** (`GpuDriver::new(spi)`):
-   a. Construct `GpuDriver` with `draw_fb = FB_A_ADDR` (0x000000) and `display_fb = FB_B_ADDR` (0x12C000).
+   a. Construct `GpuDriver` with draw and display framebuffer state set to FB_A defaults.
    b. Read the ID register (0x7F) via `spi.read_register(0x7F)`; verify device ID matches `EXPECTED_DEVICE_ID` (0x6702). Return `GpuNotDetected` on mismatch.
-   c. Write initial framebuffer addresses to FB_DRAW (0x40) and FB_DISPLAY (0x41).
+   c. Write initial FB_CONFIG (0x40) for the draw framebuffer.
+   d. Write initial FB_DISPLAY (0x41) for the display framebuffer (blocks until vsync).
+
 2. **Register write** (`write()`): Delegates to `self.spi.write_register(addr, data)`. Flow control is handled by the transport implementation.
+
 3. **Register read** (`read()`): Delegates to `self.spi.read_register(addr)`.
+
 4. **Vsync wait** (`wait_vsync()`): Delegates to the transport's flow control implementation.
-5. **Buffer swap** (`swap_buffers()`): Swap `draw_fb` and `display_fb` values, write both to their respective GPU registers.
-6. **Memory upload** (`upload_memory()`): Write base address to MEM_ADDR (0x70), then write each data word to MEM_DATA (0x71) which auto-increments the address.
-7. **Triangle submit** (`submit_triangle()`): For each of 3 vertices, write COLOR register, optionally UV0 register (if textured), then VERTEX register (third VERTEX write triggers GPU rasterization).
-8. **Render mode** (`gpu_set_render_mode(gouraud, z_test, z_write, color_write)`): Pack flags into a single byte (bit 0 = gouraud, bit 1 = textured (reserved, always 0 via this API), bit 2 = z_test, bit 3 = z_write, bit 4 = color_write) and write to RENDER_MODE register (0x30). Replaces the legacy TRI_MODE register.
-9. **Z range** (`gpu_set_z_range(z_min, z_max)`): Write Z_RANGE register (0x31) with `{z_max[15:0], z_min[15:0]}` packed into the lower 32 bits. Default value after reset is 0x0000FFFF (min=0, max=0xFFFF, full range). Used to restrict Z-test to a depth sub-range for layered rendering or Z-prepass partitioning.
-10. **Dither mode** (`gpu_set_dither_mode(enabled)`): Write DITHER_MODE register (0x32) with 0x01 if enabled, 0x00 if disabled. Dithering smooths 10.8-to-RGB565 quantization using a blue noise pattern; enabled by default after GPU init.
-11. **Color grade enable** (`gpu_set_color_grade_enable(enabled)`): Write COLOR_GRADE_CTRL register (0x44) with 0x01 if enabled, 0x00 if disabled. The LUT must be uploaded before enabling (undefined output with uninitialized LUT).
-12. **Color LUT upload** (`gpu_upload_color_lut(red, green, blue)`):
-    a. Write COLOR_GRADE_CTRL with bit 2 set (RESET_ADDR) to reset the LUT address pointer.
-    b. For each of the 32 Red LUT entries: write COLOR_GRADE_LUT_ADDR (0x45) with `(0b00 << 6) | index`, then write COLOR_GRADE_LUT_DATA (0x46) with `red[index] & 0xFFFFFF`.
-    c. For each of the 64 Green LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b01 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `green[index] & 0xFFFFFF`.
-    d. For each of the 32 Blue LUT entries: write COLOR_GRADE_LUT_ADDR with `(0b10 << 6) | index`, then write COLOR_GRADE_LUT_DATA with `blue[index] & 0xFFFFFF`.
-    e. Write COLOR_GRADE_CTRL with bit 1 set (SWAP_BANKS) to activate the new LUT data at the next vblank.
-13. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR, optionally COLOR1 (if dual vertex colors enabled), optionally UV0, then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on kick parameter (0/1/2).
-14. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
-15. **Combiner mode** (`gpu_set_combiner_mode(rgb_a, rgb_b, rgb_c, rgb_d, alpha_a, alpha_b, alpha_c, alpha_d)`): Pack RGB selectors into COMBINER_RGB register (0x33) as `{rgb_d[3:0], rgb_c[3:0], rgb_b[3:0], rgb_a[3:0]}` in the lower 16 bits, and write. Pack Alpha selectors into COMBINER_ALPHA register (0x34) similarly.
+
+5. **Buffer swap** (`swap_buffers()`): Swap draw and display framebuffer values; write FB_CONFIG (0x40) for the new draw target and FB_DISPLAY (0x41) for the new display target (blocks until vsync).
+
+6. **Memory upload** (`upload_memory()`): Write base address to MEM_ADDR (0x70), then write each data dword to MEM_DATA (0x71) which auto-increments the address.
+
+7. **Triangle submit** (`submit_triangle()`): For each of 3 vertices, write COLOR register (0x00), optionally UV0_UV1 register (0x01) if textured, then VERTEX_KICK_012 (0x07) for the third vertex or VERTEX_NOKICK (0x06) for the first two.
+
+8. **Render mode** (`gpu_set_render_mode(...)`): Pack all RENDER_MODE fields per INT-010 bit layout and write to RENDER_MODE register (0x30).
+   Dithering is now a field within RENDER_MODE (bit 10), not a separate register.
+
+9. **Z range** (`gpu_set_z_range(z_min, z_max)`): Write Z_RANGE register (0x31) with `{z_max[15:0], z_min[15:0]}` packed into the lower 32 bits. Default value after reset is 0x0000FFFF (min=0, max=0xFFFF, full range).
+
+10. **FB config** (`gpu_set_fb_config(color_base, z_base, width_log2, height_log2)`): Pack fields and write to FB_CONFIG register (0x40). Used to configure render-to-texture targets.
+
+11. **Scissor** (`gpu_set_scissor(x, y, width, height)`): Write FB_CONTROL register (0x43) with scissor fields.
+
+12. **Hardware fill** (`gpu_mem_fill(base, value, count)`): Write MEM_FILL register (0x44) with:
+    - FILL_BASE[15:0] = base (512-byte-granularity address, same encoding as COLOR_BASE/Z_BASE)
+    - FILL_VALUE[31:16] = value (16-bit constant, RGB565 for color buffer or Z16 for Z-buffer)
+    - FILL_COUNT[51:32] = count (number of 16-bit words)
+    GPU executes the fill synchronously within the command FIFO.
+
+13. **Combiner mode** (`gpu_set_combiner_mode(...)`): Pack two-cycle `(A-B)*C+D` selectors into CC_MODE register (0x18).
+    Cycle 0 fields occupy [31:0], cycle 1 fields occupy [63:32] per INT-010 CC_MODE layout.
     Common presets:
-    - **Modulate:** rgb = (TEX0, ZERO, VER0, ZERO) → `TEX0 * VER0`
-    - **Decal:** rgb = (TEX0, ZERO, ONE, ZERO) → `TEX0`
-    - **Add specular:** rgb = (TEX0, ZERO, VER0, VER1) → `TEX0 * VER0 + VER1`
-16. **Material color** (`gpu_set_material_color(slot, color)`): Write MAT_COLOR0 (0x35) if slot=0, MAT_COLOR1 (0x36) if slot=1.
+    - **Modulate (cycle 0, cycle 1 passthrough):** C0: A=TEX0, B=ZERO, C=SHADE0, D=ZERO → `TEX0 * SHADE0`
+    - **Decal:** C0: A=TEX0, B=ZERO, C=ONE, D=ZERO → `TEX0`
+    - **Specular add (two-stage):** C0: A=TEX0, B=ZERO, C=SHADE0, D=ZERO; C1: A=COMBINED, B=ZERO, C=ONE, D=SHADE1
+
+14. **Constant colors** (`gpu_set_const_color(const0, const1)`): Write CONST_COLOR register (0x19) with CONST0 in bits [31:0] and CONST1 (also used as fog color) in bits [63:32].
+
+15. **Color LUT prepare** (`gpu_prepare_lut(lut_addr, lut)`): Upload 384-byte LUT to SDRAM via MEM_ADDR/MEM_DATA. The LUT is auto-loaded during vblank when FB_DISPLAY.LUT_ADDR is set. See INT-020 for detailed sequence.
+
+16. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR (0x00), optionally UV0_UV1 (0x01), then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on `kick`.
+
+17. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
 
 ## Implementation
 
 - `crates/pico-gs-core/src/gpu/mod.rs`: Platform-agnostic GPU driver (generic over `SpiTransport`)
-- `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants (includes `Z_RANGE = 0x31`, `RENDER_MODE = 0x30`, `RENDER_MODE_COLOR_WRITE = 1 << 4`, `COMBINER_RGB = 0x33`, `COMBINER_ALPHA = 0x34`, `MAT_COLOR0 = 0x35`, `MAT_COLOR1 = 0x36`)
+- `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants matching INT-010 (CC_MODE=0x18, CONST_COLOR=0x19, RENDER_MODE=0x30, Z_RANGE=0x31, STIPPLE_PATTERN=0x32, FB_CONFIG=0x40, FB_DISPLAY=0x41, FB_CONTROL=0x43, MEM_FILL=0x44, PERF_TIMESTAMP=0x50, MEM_ADDR=0x70, MEM_DATA=0x71, ID=0x7F)
 - `crates/pico-gs-core/src/gpu/vertex.rs`: Vertex packing
 
 ## Verification
 
-- **Init test**: Verify `gpu_init()` returns `GpuNotDetected` when ID register returns wrong value, and `Ok` with correct framebuffer addresses when ID matches.
+- **Init test**: Verify `gpu_init()` returns `GpuNotDetected` when ID register returns wrong value, and `Ok` with correct framebuffer setup when ID matches.
 - **Write format test**: Verify 9-byte SPI transaction format: address byte has bit 7 clear, data bytes are MSB-first.
 - **Read format test**: Verify 9-byte SPI transaction format: address byte has bit 7 set, response reconstructed from bytes 1..8.
 - **Flow control test**: Verify `write()` spin-waits when CMD_FULL is asserted and proceeds when deasserted.
 - **Vsync test**: Verify `wait_vsync()` detects a low-to-high transition on the VSYNC pin.
-- **Buffer swap test**: Verify `swap_buffers()` exchanges draw/display addresses and writes both registers.
-- **Triangle submit test**: Verify `submit_triangle()` writes COLOR + VERTEX (non-textured) or COLOR + UV0 + VERTEX (textured) for each of 3 vertices.
-- **Dither mode test**: Verify `gpu_set_dither_mode(true)` writes 0x01 to DITHER_MODE (0x32), and `gpu_set_dither_mode(false)` writes 0x00.
-- **Color grade enable test**: Verify `gpu_set_color_grade_enable(true)` writes 0x01 to COLOR_GRADE_CTRL (0x44), and `gpu_set_color_grade_enable(false)` writes 0x00.
-- **Color LUT upload test**: Verify `gpu_upload_color_lut()` performs the correct sequence: reset addr, 32 red entries (addr + data writes), 64 green entries, 32 blue entries, then swap banks. Total: 260 SPI transactions.
-- **Render mode test**: Verify `gpu_set_render_mode(true, true, true, true)` writes 0x1D to RENDER_MODE (0x30) (bits 0,2,3,4 set), and `gpu_set_render_mode(false, false, false, false)` writes 0x00. Verify `color_write=false` produces a value with bit 4 clear.
-- **Z range test**: Verify `gpu_set_z_range(0, 0xFFFF)` writes 0x0000_FFFF_0000_0000 to Z_RANGE (0x31). Verify `gpu_set_z_range(0x100, 0xFF00)` writes the correct packed value.
-- **Combiner mode test**: Verify `gpu_set_combiner_mode()` writes correct packed selectors to COMBINER_RGB (0x33) and COMBINER_ALPHA (0x34). Verify modulate preset produces expected register values.
-- **Material color test**: Verify `gpu_set_material_color(0, 0xFF0000FF)` writes to MAT_COLOR0 (0x35), and `gpu_set_material_color(1, 0x00FF00FF)` writes to MAT_COLOR1 (0x36).
+- **Buffer swap test**: Verify `swap_buffers()` exchanges draw/display configurations and writes FB_CONFIG and FB_DISPLAY.
+- **Triangle submit test**: Verify `submit_triangle()` writes COLOR + VERTEX (non-textured) or COLOR + UV0_UV1 + VERTEX (textured) for each of 3 vertices.
+- **Render mode test**: Verify `gpu_set_render_mode()` packs all fields correctly into RENDER_MODE (0x30) per INT-010 bit layout. Verify dither flag maps to bit 10.
+- **Z range test**: Verify `gpu_set_z_range(0, 0xFFFF)` writes correct packed value to Z_RANGE (0x31).
+- **FB config test**: Verify `gpu_set_fb_config()` packs color_base, z_base, width_log2, height_log2 into FB_CONFIG (0x40).
+- **Scissor test**: Verify `gpu_set_scissor()` writes correct packed value to FB_CONTROL (0x43).
+- **Mem fill test**: Verify `gpu_mem_fill(base, value, count)` writes correct packed value to MEM_FILL (0x44).
+- **Combiner mode test**: Verify `gpu_set_combiner_mode()` writes correct two-cycle packed selectors to CC_MODE (0x18). Verify modulate preset produces expected register value.
+- **Const color test**: Verify `gpu_set_const_color(const0, const1)` writes CONST0 in bits [31:0] and CONST1 in bits [63:32] of CONST_COLOR (0x19).
+- **LUT prepare test**: Verify `gpu_prepare_lut()` issues MEM_ADDR + correct sequence of MEM_DATA writes for 384 bytes.
 
 ## Design Notes
 
 Migrated from speckit module specification.
 
-API functions `gpu_set_dither_mode()`, `gpu_set_color_grade_enable()`, and `gpu_upload_color_lut()` were added per INT-020 and are now reflected in the Inputs, Outputs, and Algorithm/Behavior sections above. These wrap register writes to DITHER_MODE (0x32) and COLOR_GRADE_CTRL/LUT_ADDR/LUT_DATA (0x44-0x46).
+Dithering is configured via the DITHER_EN field in RENDER_MODE (0x30, bit 10).
+The former standalone DITHER_MODE register (0x32) no longer exists; 0x32 is now STIPPLE_PATTERN.
 
-**Note:** Register-based LUT upload has been superseded. See DD-014 and INT-010 for the SRAM-based auto-load approach.
+Color LUT upload uses the SDRAM auto-load mechanism: the host prepares LUT data in SDRAM via MEM_ADDR/MEM_DATA, then sets FB_DISPLAY.LUT_ADDR to that address.
+The hardware auto-loads the LUT during vblank when COLOR_GRADE_ENABLE=1 and LUT_ADDR!=0.
+The former register-based upload protocol (COLOR_GRADE_CTRL / COLOR_GRADE_LUT_ADDR / COLOR_GRADE_LUT_DATA registers) has been removed.
 
-**Dual-texture + color combiner update:** Added `gpu_set_combiner_mode()` and `gpu_set_material_color()` API functions.
-Texture slot range reduced from 0-3 to 0-1 (2 texture units per pass).
-The `submit_triangle()` function no longer writes UV2_UV3; only UV0_UV1 is written when textured.
-A second vertex color (COLOR1) register write is added to the vertex submission sequence when the color combiner uses VER_COLOR1.
-Register constants in `registers.rs` updated: TEX2/TEX3 constants removed; COMBINER_RGB, COMBINER_ALPHA, MAT_COLOR0, MAT_COLOR1 added.
+The combiner now has two pipelined stages (CC_MODE[31:0] = cycle 0, CC_MODE[63:32] = cycle 1).
+For single-equation rendering, configure cycle 1 as a pass-through: A=COMBINED, B=ZERO, C=ONE, D=ZERO.
+CONST0 and CONST1 replace the former separate MAT_COLOR0/MAT_COLOR1/FOG_COLOR registers; they are packed together in CONST_COLOR (0x19).
 
+The `gpu_set_render_mode()` function includes `dither` as a parameter (formerly a separate `gpu_set_dither_mode()` call).
+The former `gpu_set_color_grade_enable()` function is replaced by the `enable_grading` field in `gpu_swap_buffers()` via the FB_DISPLAY register.

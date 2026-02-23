@@ -88,7 +88,7 @@ host_app/assets/
 
 **Textures**:
 - Rust wrapper: `{identifier_lowercase}.rs`
-- Binary data: `{identifier_lowercase}_rgba4444.bin` or `{identifier_lowercase}_bc1.bin`
+- Binary data: `{identifier_lowercase}_{format}.bin` where `{format}` is one of: `rgba4444`, `bc1`, `rgb565`, `rgba8888`, `r8`
 
 **Meshes** (per patch):
 - Rust wrapper: `{identifier_lowercase}_patch{n}.rs` (where n is 0-based)
@@ -157,12 +157,12 @@ pub const {IDENTIFIER}_DATA: &[u8] = include_bytes!("{bin_filename}");
 **Field Descriptions**:
 - `{source_path}`: Original PNG file path (e.g., `assets/textures/player.png`)
 - `{width}`, `{height}`: Texture dimensions (u32, power-of-two, 8-1024)
-- `{format}`: Texture format string (`RGBA4444` or `BC1`)
+- `{format}`: Texture format string (one of: `RGBA4444`, `BC1`, `RGB565`, `RGBA8888`, `R8`)
 - `{byte_count}`: Total bytes (format-dependent, see below)
 - `{kb_size}`: Size in KB, formatted to 1 decimal place
 - `{IDENTIFIER}`: Uppercase identifier (e.g., `TEXTURES_PLAYER`)
-- `{format_enum}`: Rust enum variant (`RGBA4444` or `BC1`)
-- `{bin_filename}`: Relative path to binary file (e.g., `player_rgba4444.bin`)
+- `{format_enum}`: Rust enum variant (one of: `RGBA4444`, `BC1`, `RGB565`, `RGBA8888`, `R8`)
+- `{bin_filename}`: Relative path to binary file (e.g., `player_rgba4444.bin`, `player_rgb565.bin`)
 
 **Example** (`player.rs` - RGBA4444):
 ```rust
@@ -235,6 +235,42 @@ Total size: (width / 4) x (height / 4) x 32 bytes
 - 64x64: 8,192 bytes (8 KB)
 - 256x256: 131,072 bytes (128 KB)
 - 512x512: 524,288 bytes (512 KB)
+
+See INT-014 for full format specification and address calculation.
+
+### RGB565 Binary Data File (`_rgb565.bin`)
+
+**Format**: Raw RGB565 pixel data organized in 4×4 blocks
+
+**Properties**:
+- Byte order: Little-endian
+- Block size: 32 bytes (16 pixels × 2 bytes)
+- Pixel format: [15:11]=R, [10:5]=G, [4:0]=B
+- Size: `(width / 4) × (height / 4) × 32` bytes
+
+See INT-014 for full format specification and address calculation.
+
+### RGBA8888 Binary Data File (`_rgba8888.bin`)
+
+**Format**: Raw RGBA8888 pixel data organized in 4×4 blocks
+
+**Properties**:
+- Byte order: Little-endian
+- Block size: 64 bytes (16 pixels × 4 bytes)
+- Pixel format: [31:24]=R, [23:16]=G, [15:8]=B, [7:0]=A
+- Size: `(width / 4) × (height / 4) × 64` bytes
+
+See INT-014 for full format specification and address calculation.
+
+### R8 Binary Data File (`_r8.bin`)
+
+**Format**: Raw single-channel 8-bit data organized in 4×4 blocks
+
+**Properties**:
+- Byte order: N/A (single byte per pixel)
+- Block size: 16 bytes (16 pixels × 1 byte)
+- Pixel format: [7:0]=R (single channel)
+- Size: `(width / 4) × (height / 4) × 16` bytes
 
 See INT-014 for full format specification and address calculation.
 
@@ -667,6 +703,9 @@ The library generates a master `mod.rs` in `OUT_DIR/assets/` that re-exports all
 pub enum TextureFormat {
     RGBA4444,
     BC1,
+    RGB565,
+    RGBA8888,
+    R8,
 }
 
 #[derive(Copy, Clone)]
@@ -885,7 +924,14 @@ When implementing output generation, ensure:
    - [ ] BC1: 4x4 block organization, 8 bytes per block
    - [ ] BC1: Size = (width / 4) x (height / 4) x 8
    - [ ] BC1: Width and height are multiples of 4
-   - [ ] Format matches filename suffix (_rgba4444.bin or _bc1.bin)
+   - [ ] RGB565: 4x4 block organization, 32 bytes per block (16 pixels × 2 bytes)
+   - [ ] RGB565: Size = (width / 4) x (height / 4) x 32
+   - [ ] RGBA8888: 4x4 block organization, 64 bytes per block (16 pixels × 4 bytes)
+   - [ ] RGBA8888: Size = (width / 4) x (height / 4) x 64
+   - [ ] R8: 4x4 block organization, 16 bytes per block (16 pixels × 1 byte)
+   - [ ] R8: Size = (width / 4) x (height / 4) x 16
+   - [ ] All block-organized formats: width and height are multiples of 4
+   - [ ] Format matches filename suffix (_rgba4444.bin, _bc1.bin, _rgb565.bin, _rgba8888.bin, or _r8.bin)
 
 5. **Mesh binaries**:
    - [ ] Patch blob total size: vertex_count × 16 + entry_count bytes

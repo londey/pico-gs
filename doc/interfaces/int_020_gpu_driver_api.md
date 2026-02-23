@@ -92,7 +92,7 @@ byte[8] = data & 0xFF
 Read a 64-bit value from a GPU register.
 
 **Preconditions**:
-- `addr` is a readable register (ID: 0x7F, MEM_DATA: 0x71)
+- `addr` is a readable register (ID: 0x7F, MEM_DATA: 0x71, PERF_TIMESTAMP: 0x50)
 - For consistent reads, CMD_EMPTY should be asserted
 
 **Transaction**:
@@ -133,92 +133,129 @@ Read a block of 64-bit dwords from GPU SDRAM via MEM_ADDR/MEM_DATA registers.
 
 ---
 
+## Hardware Fill
+
+### `gpu_mem_fill(handle: &GpuHandle, base: u16, value: u16, count: u32)`
+
+Fill a contiguous region of SDRAM with a 16-bit constant value using the hardware MEM_FILL engine.
+
+**Sequence**:
+1. Build MEM_FILL register value:
+   ```rust
+   let reg_value = ((count as u64) << 32)
+                 | ((value as u64) << 16)
+                 | (base as u64);
+   ```
+2. `gpu_write(MEM_FILL, reg_value)`
+3. GPU executes the fill within the command FIFO; subsequent commands are queued and execute after completion
+
+**Parameters**:
+- `base`: Target base address (512-byte granularity, same encoding as FB_CONFIG.COLOR_BASE)
+  - Byte address = base × 512
+- `value`: 16-bit constant to write at each position (RGB565 for color buffer, Z16 for Z-buffer)
+- `count`: Number of 16-bit words to write (up to 1,048,576 = 1M words = 2 MB per fill)
+
+**Use cases**:
+- Clear framebuffer: fill with background RGB565 color
+- Clear Z-buffer: fill with 0xFFFF (far depth)
+
+**Performance**: MEM_FILL uses sequential SDRAM burst writes for maximum throughput (~100 MB/s theoretical, burst-limited to ~50 MB/s with SDRAM overhead).
+
+**Example**:
+```rust
+// Clear color buffer (black)
+let fb_base: u16 = (FB_A_BYTE_ADDR / 512) as u16;
+let pixels = (width * height) as u32;
+gpu_mem_fill(&gpu, fb_base, 0x0000, pixels);
+
+// Clear Z-buffer (far = 0xFFFF)
+let z_base: u16 = (FB_A_Z_BYTE_ADDR / 512) as u16;
+gpu_mem_fill(&gpu, z_base, 0xFFFF, pixels);
+```
+
+---
+
 ## Texture Upload
 
 ### `gpu_upload_texture(handle: &GpuHandle, slot: u8, width: u32, height: u32, format: TextureFormat, data: &[u8])`
 
-Upload a single-level texture to GPU SRAM and configure texture unit registers.
+Upload a single-level texture to GPU SDRAM and configure texture unit registers.
 
 **Sequence**:
-1. Allocate GPU SRAM for texture (4K aligned)
+1. Allocate GPU SDRAM for texture (512-byte aligned)
 2. Upload texture data via `gpu_upload_memory()`
-3. Write TEXn_BASE register (texture address)
-4. Write TEXn_FMT register (width_log2, height_log2, format, enable, mip_levels=1)
+3. Write TEXn_CFG register (0x10 + slot) with base_addr, width_log2, height_log2, format, enable, mip_levels=1
 
 **Parameters**:
 - `slot`: Texture unit index (0-1)
 - `width`, `height`: Texture dimensions (power-of-2, 8-1024)
-- `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
-- `data`: Texture pixel data (size must match format and dimensions)
+- `format`: One of `TextureFormat` variants (see below)
+- `data`: Texture pixel data in 4×4 block-tiled layout (size must match format and dimensions)
+
+**`TextureFormat` enum**:
+| Variant | Value | Description |
+|---------|-------|-------------|
+| `BC1` | 0 | 4 bpp, 4×4 blocks, opaque or 1-bit alpha |
+| `BC2` | 1 | 8 bpp, 4×4 blocks, explicit 4-bit alpha |
+| `BC3` | 2 | 8 bpp, 4×4 blocks, interpolated alpha |
+| `BC4` | 3 | 4 bpp, 4×4 blocks, single channel (R8 quality) |
+| `RGB565` | 4 | 16 bpp, 4×4 tiled, no alpha |
+| `RGBA8888` | 5 | 32 bpp, 4×4 tiled, full alpha |
+| `R8` | 6 | 8 bpp, 4×4 tiled, single channel |
 
 **Example**:
 ```rust
 gpu_upload_texture(&gpu, 0, 256, 256, TextureFormat::BC1, PLAYER_DATA);
+gpu_upload_texture(&gpu, 1, 64, 64, TextureFormat::RGB565, LIGHTMAP_DATA);
 ```
 
 ---
 
 ### `gpu_upload_texture_with_mipmaps(handle: &GpuHandle, slot: u8, width: u32, height: u32, format: TextureFormat, mip_levels: u8, data: &[u8], mip_offsets: &[usize])`
 
-Upload a texture with mipmap chain to GPU SRAM and configure texture unit registers.
+Upload a texture with mipmap chain to GPU SDRAM and configure texture unit registers.
 
 **Sequence**:
 1. Calculate total size (sum of all mipmap level sizes)
-2. Allocate GPU SRAM for texture chain (4K aligned base address)
+2. Allocate GPU SDRAM for texture chain (512-byte aligned base address)
 3. Upload all mipmap levels sequentially via `gpu_upload_memory()`
-4. Write TEXn_BASE register (base level address)
-5. Write TEXn_FMT register (width_log2, height_log2, format, enable, mip_levels)
-6. Write TEXn_MIP_BIAS register (default: 0, no bias)
+4. Write TEXn_CFG register (base_addr, width_log2, height_log2, format, enable, mip_levels)
 
 **Parameters**:
 - `slot`: Texture unit index (0-1)
 - `width`, `height`: Base level dimensions (power-of-2, 8-1024)
-- `format`: TextureFormat::RGBA4444 or TextureFormat::BC1
+- `format`: `TextureFormat` variant
 - `mip_levels`: Number of mipmap levels (1-11)
-- `data`: Complete mipmap chain data (all levels concatenated)
+- `data`: Complete mipmap chain data (all levels concatenated, 4×4 block-tiled)
 - `mip_offsets`: Byte offsets of each mipmap level within `data`
 
 **Validation**:
 - `mip_levels` must be in range [1, 11]
 - `mip_levels` must be ≤ min(width_log2, height_log2) + 1
 - `mip_offsets.len()` must equal `mip_levels`
-- Total data size must match expected mipmap chain size
-
-**Example**:
-```rust
-gpu_upload_texture_with_mipmaps(
-    &gpu,
-    0,  // slot
-    PLAYER_WIDTH,
-    PLAYER_HEIGHT,
-    PLAYER_FORMAT,
-    PLAYER_MIP_LEVELS,
-    PLAYER_DATA,
-    &PLAYER_MIP_OFFSETS
-);
-```
-
-**Performance**: Same as single-level upload (~3 MB/s), but total size is ~33% larger with full mipmap chain.
 
 ---
 
 ## Rendering Configuration
 
-### `gpu_set_render_mode(handle: &GpuHandle, gouraud: bool, z_test: bool, z_write: bool, color_write: bool, z_compare: ZCompare, alpha_blend: AlphaBlend, cull_mode: CullMode, dither: bool)`
+### `gpu_set_render_mode(handle: &GpuHandle, gouraud: bool, z_test: bool, z_write: bool, color_write: bool, z_compare: ZCompare, alpha_blend: AlphaBlend, cull_mode: CullMode, dither: bool, stipple_en: bool, alpha_test: AlphaTest, alpha_ref: u8)`
 
-Configure per-material rendering state in a single register write.
+Configure per-material rendering state in a single RENDER_MODE register write.
 
 **Sequence**:
-1. Build RENDER_MODE register value from parameters:
+1. Build RENDER_MODE register value per INT-010 bit layout:
    ```rust
-   let value = (z_compare as u64) << 13
-             | (dither as u64) << 10
-             | (alpha_blend as u64) << 7
-             | (cull_mode as u64) << 5
-             | (color_write as u64) << 4
-             | (z_write as u64) << 3
-             | (z_test as u64) << 2
-             | (gouraud as u64);
+   let value = ((z_compare as u64) << 13)
+             | ((dither as u64) << 10)
+             | ((alpha_blend as u64) << 7)
+             | ((cull_mode as u64) << 5)
+             | ((color_write as u64) << 4)
+             | ((z_write as u64) << 3)
+             | ((z_test as u64) << 2)
+             | (gouraud as u64)
+             | ((stipple_en as u64) << 16)
+             | ((alpha_test as u64) << 17)
+             | ((alpha_ref as u64) << 19);
    ```
 2. `gpu_write(RENDER_MODE, value)`
 
@@ -228,110 +265,161 @@ Configure per-material rendering state in a single register write.
 - `z_write`: Enable Z-buffer writes on depth test pass
 - `color_write`: Enable color buffer writes (false = Z-only prepass)
 - `z_compare`: Depth comparison function (LESS, LEQUAL, EQUAL, GEQUAL, GREATER, NOTEQUAL, ALWAYS, NEVER)
-- `alpha_blend`: Alpha blending mode (DISABLED, ADD, SUBTRACT, ALPHA_BLEND)
+- `alpha_blend`: Alpha blending mode (DISABLED, ADD, SUBTRACT, BLEND)
 - `cull_mode`: Backface culling (NONE, CW, CCW)
-- `dither`: Enable ordered dithering
+- `dither`: Enable ordered dithering before RGB565 framebuffer write
+- `stipple_en`: Enable 8×8 stipple pattern fragment discard
+- `alpha_test`: Alpha test function (ALWAYS, LESS, GEQUAL, NOTEQUAL)
+- `alpha_ref`: Alpha reference value (UNORM8, compared against fragment alpha)
+
+**Notes**:
+- Dithering is configured here; there is no separate `gpu_set_dither_mode()` function.
+- Dithering smooths the Q4.12→RGB565 quantization using a blue noise pattern.
+
+### `gpu_set_stipple_pattern(handle: &GpuHandle, pattern: u64)`
+
+Set the 8×8 stipple bitmask. Bit index = y[2:0] × 8 + x[2:0]. Fragment passes when bit = 1.
+
+**Sequence**:
+1. `gpu_write(STIPPLE_PATTERN, pattern)`
+
+**Default**: 0xFFFFFFFF_FFFFFFFF (all fragments pass)
 
 ### `gpu_set_z_range(handle: &GpuHandle, z_min: u16, z_max: u16)`
 
-Configure depth range clipping (Z scissor). Fragments outside [z_min, z_max] are discarded before any SRAM access.
+Configure depth range clipping (Z scissor). Fragments outside [z_min, z_max] are discarded before any SDRAM access.
 
 **Sequence**:
 1. `gpu_write(Z_RANGE, ((z_max as u64) << 16) | (z_min as u64))`
 
 **Parameters**:
-- `z_min`: Minimum Z value (16-bit unsigned, inclusive). Fragments with Z < z_min are discarded.
-- `z_max`: Maximum Z value (16-bit unsigned, inclusive). Fragments with Z > z_max are discarded.
+- `z_min`: Minimum Z value (16-bit unsigned, inclusive)
+- `z_max`: Maximum Z value (16-bit unsigned, inclusive)
 
 **Notes**:
 - Default (disabled): z_min=0x0000, z_max=0xFFFF (passes all fragments)
-- Depth range test is independent of RENDER_MODE.Z_TEST_EN
-- Depth range test occurs before early Z-test in the pixel pipeline (Stage 0)
 
 ---
 
 ## Color Combiner Configuration
 
-### `gpu_set_combiner_mode(handle: &GpuHandle, rgb_a: CcSource, rgb_b: CcSource, rgb_c: CcSource, rgb_d: CcSource, alpha_a: CcSource, alpha_b: CcSource, alpha_c: CcSource, alpha_d: CcSource)`
+### `gpu_set_combiner_mode(handle: &GpuHandle, c0: CombinerCycle, c1: CombinerCycle)`
 
-Configure the color combiner equation `(A - B) × C + D` for both RGB and alpha channels.
+Configure the two-stage color combiner equation `(A - B) × C + D` for both RGB and alpha channels.
+
+**`CombinerCycle`** struct:
+```rust
+struct CombinerCycle {
+    rgb_a: CcSource,
+    rgb_b: CcSource,
+    rgb_c: CcRgbCSource,   // extended source set for blend factor
+    rgb_d: CcSource,
+    alpha_a: CcSource,
+    alpha_b: CcSource,
+    alpha_c: CcSource,
+    alpha_d: CcSource,
+}
+```
 
 **Sequence**:
-1. Build CC_MODE register value from parameters:
+1. Build CC_MODE register value:
    ```rust
-   let value = ((rgb_d as u64) << 28)
-             | ((rgb_c as u64) << 24)
-             | ((rgb_b as u64) << 20)
-             | ((rgb_a as u64) << 16)
-             | ((alpha_d as u64) << 12)
-             | ((alpha_c as u64) << 8)
-             | ((alpha_b as u64) << 4)
-             | (alpha_a as u64);
+   let cycle0 = pack_cycle(c0);  // bits [31:0]
+   let cycle1 = pack_cycle(c1);  // bits [63:32]
+   let value = cycle0 | (cycle1 << 32);
    ```
 2. `gpu_write(CC_MODE, value)`
 
-**Parameters** (`CcSource` enum):
-- `TexColor0` (0x0): Texture unit 0 output
-- `TexColor1` (0x1): Texture unit 1 output
-- `VerColor0` (0x2): Vertex color 0 (diffuse)
-- `VerColor1` (0x3): Vertex color 1 (specular)
-- `MatColor0` (0x4): Material color 0
-- `MatColor1` (0x5): Material color 1
-- `ZColor` (0x6): Z-based fog factor
-- `Zero` (0x7): Constant 0
-- `One` (0x8): Constant 1
+**`CcSource` enum** (4-bit, used for A/B/D slots):
+- `Combined` (0x0): Previous cycle output
+- `TexColor0` (0x1): Texture unit 0 output
+- `TexColor1` (0x2): Texture unit 1 output
+- `Shade0` (0x3): Vertex color 0 (diffuse)
+- `Const0` (0x4): Constant color 0
+- `Const1` (0x5): Constant color 1 / fog color
+- `One` (0x6): Constant 1.0
+- `Zero` (0x7): Constant 0.0
+- `Shade1` (0x8): Vertex color 1 (specular)
 
-### `gpu_set_material_color(handle: &GpuHandle, slot: u8, color: RGBA8)`
+**`CcRgbCSource` enum** (4-bit, RGB C slot extended set):
+- Includes all CcSource values plus:
+  - `TexColor0Alpha` (0x8): TEX0 alpha broadcast to RGB
+  - `TexColor1Alpha` (0x9): TEX1 alpha broadcast to RGB
+  - `Shade0Alpha` (0xA): Shade0 alpha broadcast to RGB
+  - `Const0Alpha` (0xB): Const0 alpha broadcast to RGB
+  - `CombinedAlpha` (0xC): Combined alpha broadcast to RGB
+  - `Shade1` (0xD): Shade1 RGB
+  - `Shade1Alpha` (0xE): Shade1 alpha broadcast to RGB
 
-Set a material-wide constant color for use in the color combiner.
+**Single-stage helper** (`gpu_set_combiner_simple`): Sets cycle 0 with provided equation and cycle 1 as pass-through (A=COMBINED, B=ZERO, C=ONE, D=ZERO).
+
+**Common presets**:
+```rust
+// Modulate: TEX0 * SHADE0
+gpu_set_combiner_simple(&gpu, CombinerCycle {
+    rgb_a: CcSource::TexColor0, rgb_b: CcSource::Zero, rgb_c: CcRgbCSource::Shade0, rgb_d: CcSource::Zero,
+    alpha_a: CcSource::TexColor0, alpha_b: CcSource::Zero, alpha_c: CcSource::Shade0, alpha_d: CcSource::Zero,
+});
+
+// Fog (two-stage): stage 0 = TEX0 * SHADE0, stage 1 = lerp(COMBINED, CONST1, SHADE0.A)
+gpu_set_combiner_mode(&gpu, modulate_cycle, CombinerCycle {
+    rgb_a: CcSource::Combined, rgb_b: CcSource::Const1, rgb_c: CcRgbCSource::Shade0Alpha, rgb_d: CcSource::Const1,
+    alpha_a: CcSource::One, alpha_b: CcSource::Zero, alpha_c: CcSource::One, alpha_d: CcSource::Zero,
+});
+```
+
+### `gpu_set_const_color(handle: &GpuHandle, const0: RGBA8, const1: RGBA8)`
+
+Set the two per-draw-call constant colors. CONST1 also serves as the fog color.
 
 **Sequence**:
-1. `gpu_write(MAT_COLOR0 + slot, color.to_u32() as u64)` where slot is 0 or 1
+1. `gpu_write(CONST_COLOR, (const1.to_u32() as u64) << 32 | const0.to_u32() as u64)`
+
+---
+
+## Framebuffer Configuration
+
+### `gpu_set_fb_config(handle: &GpuHandle, color_base: u16, z_base: u16, width_log2: u8, height_log2: u8)`
+
+Configure the render target (color buffer + Z-buffer) for subsequent rendering.
+
+**Sequence**:
+1. Build FB_CONFIG register value:
+   ```rust
+   let value = ((height_log2 as u64) << 36)
+             | ((width_log2 as u64) << 32)
+             | ((z_base as u64) << 16)
+             | (color_base as u64);
+   ```
+2. `gpu_write(FB_CONFIG, value)`
 
 **Parameters**:
-- `slot`: Material color index (0 or 1)
-- `color`: RGBA8888 color value
+- `color_base`: Byte address of color buffer ÷ 512 (512-byte granularity)
+- `z_base`: Byte address of Z-buffer ÷ 512
+- `width_log2`: Surface width as power-of-two exponent (e.g., 9 = 512 pixels wide)
+- `height_log2`: Surface height as power-of-two exponent
 
-### `gpu_set_fog_color(handle: &GpuHandle, color: RGBA8)`
+**Notes**:
+- Both color and Z surfaces use 4×4 block-tiled layout at these dimensions.
+- Use to switch between double-buffered framebuffers or render-to-texture targets.
 
-Set the fog color for Z-based distance fogging.
+### `gpu_set_scissor(handle: &GpuHandle, x: u16, y: u16, width: u16, height: u16)`
+
+Set the pixel-precision scissor rectangle. Fragments outside are discarded.
 
 **Sequence**:
-1. `gpu_write(FOG_COLOR, color.to_u32() as u64)`
-
-**Example** (fog setup):
-```rust
-// Configure fog: lerp between scene color and fog color based on depth
-gpu_set_fog_color(&gpu, RGBA8::new(180, 180, 200, 255));  // Blue-gray fog
-gpu_set_combiner_mode(
-    &gpu,
-    CcSource::TexColor0, CcSource::MatColor0, CcSource::ZColor, CcSource::MatColor0,  // RGB: (TEX0 - FOG) * Z + FOG
-    CcSource::One, CcSource::Zero, CcSource::One, CcSource::Zero,                      // Alpha: 1.0
-);
-```
+1. Build FB_CONTROL register value and `gpu_write(FB_CONTROL, value)`.
 
 ---
 
 ## Dithering and Color Grading
 
-### `gpu_set_dither_mode(handle: &GpuHandle, enabled: bool)`
-
-Enable or disable ordered dithering before RGB565 framebuffer conversion.
-
-**Sequence**:
-1. `gpu_write(DITHER_MODE, if enabled { 0x01 } else { 0x00 })`
-
-**Notes**:
-- Dithering is enabled by default after GPU init
-- Dithering smooths the 10.8→RGB565 quantization using a blue noise pattern
-- Disable for pixel-perfect rendering or solid-color fills
-
 ### `gpu_prepare_lut(handle: &GpuHandle, lut_addr: u32, lut: &ColorGradeLut)`
 
-Upload color grading LUT data to SRAM for later auto-load.
+Upload color grading LUT data to SDRAM for later auto-load.
 
 **Sequence**:
-1. `gpu_write(MEM_ADDR, lut_addr)` — set SRAM destination address
+1. `gpu_write(MEM_ADDR, lut_addr)` — set SDRAM destination address (dword address)
 2. For each Red LUT entry (32 entries × 3 bytes):
    - Write 3 bytes R,G,B via `MEM_DATA` (auto-increments address)
 3. For each Green LUT entry (64 entries × 3 bytes):
@@ -340,10 +428,10 @@ Upload color grading LUT data to SRAM for later auto-load.
    - Write 3 bytes R,G,B via `MEM_DATA`
 
 **Parameters**:
-- `lut_addr`: SRAM address for LUT storage (must be 4KiB aligned)
+- `lut_addr`: SDRAM dword address for LUT storage (must be 512-byte aligned → dword_addr must be multiple of 64)
 - `lut`: LUT data structure with red[32], green[64], blue[32] RGB888 entries
 
-**Format in SRAM** (384 bytes total):
+**Format in SDRAM** (384 bytes total):
 ```rust
 struct ColorGradeLut {
     red: [(u8, u8, u8); 32],    // 32 entries × 3 bytes (R,G,B) = 96 bytes
@@ -355,34 +443,13 @@ struct ColorGradeLut {
 **Performance**: 384 bytes ÷ 4 bytes/write = 96 MEM_DATA writes ≈ 276 µs at 25 MHz
 
 **Notes**:
-- LUT data can be prepared once at init or anytime before use
-- Multiple LUTs can be pre-prepared in SRAM for instant switching
-- Use `gpu_create_identity_lut()`, `gpu_create_gamma_lut()`, etc. to generate LUT data
-
-**Example**:
-```rust
-// Prepare identity LUT at 0x441000
-let identity_lut = gpu_create_identity_lut();
-gpu_prepare_lut(&gpu, 0x441000, &identity_lut);
-
-// Prepare gamma 2.2 LUT at 0x442000
-let gamma_lut = gpu_create_gamma_lut(2.2);
-gpu_prepare_lut(&gpu, 0x442000, &gamma_lut);
-```
+- LUT data can be prepared once at init or anytime before use.
+- Multiple LUTs can be pre-prepared in SDRAM for instant switching at vblank.
+- The LUT is auto-loaded during vblank when FB_DISPLAY.COLOR_GRADE_ENABLE=1 and LUT_ADDR!=0.
 
 ### `gpu_create_identity_lut() → ColorGradeLut`
 
 Create identity LUT where each channel maps to itself (no color change).
-
-**Returns**: LUT where output RGB = input RGB (with 5→8 / 6→8 bit expansion)
-
-**Example**:
-```rust
-let identity = gpu_create_identity_lut();
-// identity.red[31] = (248, 0, 0)  — R5=31 → R8=248, G8=0, B8=0
-// identity.green[63] = (0, 252, 0) — G6=63 → R8=0, G8=252, B8=0
-// identity.blue[31] = (0, 0, 248)  — B5=31 → R8=0, G8=0, B8=248
-```
 
 ### `gpu_create_gamma_lut(gamma: f32) → ColorGradeLut`
 
@@ -391,23 +458,13 @@ Create gamma correction LUT (linear → gamma curve).
 **Parameters**:
 - `gamma`: Gamma value (typical: 2.2 for sRGB, 2.4 for Rec.709)
 
-**Returns**: LUT where each channel's output = `(input / max)^(1/gamma) * 255`
-
-**Example**:
-```rust
-let srgb_lut = gpu_create_gamma_lut(2.2);
-gpu_prepare_lut(&gpu, 0x442000, &srgb_lut);
-```
-
 ### `gpu_create_contrast_lut(contrast: f32, brightness: f32) → ColorGradeLut`
 
 Create contrast/brightness adjustment LUT.
 
 **Parameters**:
-- `contrast`: Contrast multiplier (1.0 = no change, >1.0 = more contrast, <1.0 = less contrast)
+- `contrast`: Contrast multiplier (1.0 = no change)
 - `brightness`: Brightness offset (-128 to +128, 0 = no change)
-
-**Returns**: LUT where `output = saturate(input * contrast + brightness)`
 
 ---
 
@@ -421,47 +478,44 @@ Block until the GPU asserts the VSYNC GPIO signal.
 1. Wait for VSYNC GPIO rising edge
 2. Return immediately after edge detected
 
-**Timing**: VSYNC pulses every 16.67 ms (60 Hz), pulse width ~400 ns
+**Timing**: VSYNC pulses every 16.67 ms (60 Hz)
 
-### `gpu_swap_buffers(handle: &GpuHandle, draw: u32, display: u32, lut_addr: u32, enable_grading: bool, blocking: bool)`
+### `gpu_swap_buffers(handle: &GpuHandle, draw_color_base: u16, draw_z_base: u16, width_log2: u8, height_log2: u8, display_fb_addr: u16, display_width_log2: u8, lut_addr: u16, enable_grading: bool, line_double: bool)`
 
-Configure which framebuffer is drawn to and displayed, with optional color grading LUT auto-load.
+Configure the draw and display framebuffers atomically at vsync.
 
 **Parameters**:
-- `draw`: Framebuffer address for rendering (FB_DRAW)
-- `display`: Framebuffer address for scanout (must be 4KiB aligned)
-- `lut_addr`: SRAM address of color grading LUT (4KiB aligned), or 0 to skip LUT update
-- `enable_grading`: Enable (true) or bypass (false) color grading
-- `blocking`: Block until vsync (true) or return immediately (false)
+- `draw_color_base`, `draw_z_base`, `width_log2`, `height_log2`: New draw render target (written to FB_CONFIG, 0x40)
+- `display_fb_addr`: New display scanout base address (512-byte granularity)
+- `display_width_log2`: Display surface width log2 for tiled address calculation
+- `lut_addr`: SDRAM address of color grading LUT (512-byte granularity), or 0 to skip LUT update
+- `enable_grading`: Enable (true) or bypass (false) color grading at scanout
+- `line_double`: Double each source line to fill 480 display lines from 240 source rows
 
 **Sequence**:
-1. Build register value:
+1. Write FB_CONFIG (0x40) with new draw target parameters (non-blocking)
+2. Build FB_DISPLAY register value:
    ```rust
-   let reg_value = ((display >> 12) << 19)
-                 | ((lut_addr >> 12) << 6)
-                 | (enable_grading as u64);
+   let fb_display_value = ((display_width_log2 as u64) << 48)
+                        | ((display_fb_addr as u64) << 32)
+                        | ((lut_addr as u64) << 16)
+                        | ((line_double as u64) << 1)
+                        | (enable_grading as u64);
    ```
-2. Write to appropriate register:
-   - If `blocking == true`: `gpu_write(FB_DISPLAY_SYNC, reg_value)` — **blocks until vsync**
-   - If `blocking == false`: `gpu_write(FB_DISPLAY, reg_value)` — returns immediately
-3. Write draw framebuffer: `gpu_write(FB_DRAW, draw)`
+3. Write to FB_DISPLAY (0x41) — **blocks the GPU pipeline until vsync**; changes apply atomically
 
 **Behavior**:
-- Non-blocking mode (`blocking=false`): Write returns immediately, changes take effect at next vsync
-- Blocking mode (`blocking=true`): Write waits for vsync (SPI CS held asserted), changes apply atomically
-- If `lut_addr != 0`: Hardware auto-loads 384-byte LUT from SRAM during vblank
-- If `lut_addr == 0`: Skip LUT load, only switch framebuffer
+- FB_DISPLAY write waits for vsync within the command FIFO (SPI CS held asserted until vsync)
+- If `lut_addr != 0` and `enable_grading`: hardware auto-loads 384-byte LUT from SDRAM during vblank
+- If `lut_addr == 0`: skip LUT load, only switch display scanout
 
 **Examples**:
 ```rust
-// Non-blocking swap with gamma correction LUT
-gpu_swap_buffers(&gpu, 0x12C000, 0x000000, 0x442000, true, false);
+// Swap with gamma correction LUT
+gpu_swap_buffers(&gpu, FB_B_COLOR, FB_B_Z, 9, 9, FB_A_ADDR, 9, LUT_ADDR, true, false);
 
-// Blocking swap without color grading
-gpu_swap_buffers(&gpu, 0x000000, 0x12C000, 0, false, true);
-
-// Framebuffer-only swap (keep current LUT)
-gpu_swap_buffers(&gpu, 0x12C000, 0x000000, 0, true, false);
+// Swap without color grading
+gpu_swap_buffers(&gpu, FB_A_COLOR, FB_A_Z, 9, 9, FB_B_ADDR, 9, 0, false, false);
 ```
 
 ---
@@ -490,17 +544,17 @@ Submit a single triangle to the GPU by writing vertex state registers.
 
 **Sequence for Gouraud-shaded, textured triangle**:
 ```
-gpu_write(COLOR, v0.color_packed)
-gpu_write(UV0,   v0.uv_packed)
-gpu_write(VERTEX, v0.position_packed)  // vertex_count → 1
+gpu_write(COLOR, v0.color_packed)         // COLOR0 + COLOR1
+gpu_write(UV0_UV1, v0.uv_packed)
+gpu_write(VERTEX_NOKICK, v0.position_packed)
 
 gpu_write(COLOR, v1.color_packed)
-gpu_write(UV0,   v1.uv_packed)
-gpu_write(VERTEX, v1.position_packed)  // vertex_count → 2
+gpu_write(UV0_UV1, v1.uv_packed)
+gpu_write(VERTEX_NOKICK, v1.position_packed)
 
 gpu_write(COLOR, v2.color_packed)
-gpu_write(UV0,   v2.uv_packed)
-gpu_write(VERTEX, v2.position_packed)  // vertex_count → 3, triggers rasterization
+gpu_write(UV0_UV1, v2.uv_packed)
+gpu_write(VERTEX_KICK_012, v2.position_packed)  // triggers rasterization
 ```
 
 **Register writes per triangle**: 9 (3 vertices × 3 registers each)
@@ -512,8 +566,7 @@ For efficient mesh rendering, triangles are submitted as strips using kicked ver
 - `VERTEX_NOKICK (0x06)`: Push vertex, no triangle emitted
 - `VERTEX_KICK_012 (0x07)`: Push vertex, emit triangle (v[0], v[1], v[2])
 - `VERTEX_KICK_021 (0x08)`: Push vertex, emit triangle (v[0], v[2], v[1])
-
-The packed u8 index format's kick bits (bits [3:2]) select the register: 0=NOKICK, 1=KICK_012, 2=KICK_021.
+- `VERTEX_KICK_RECT (0x09)`: Two-corner axis-aligned rectangle emit
 
 ### Buffered SPI Output
 
@@ -523,8 +576,6 @@ For DMA/PIO-driven SPI output on RP2350, the GPU driver supports a buffered writ
 fn pack_register_write(buffer: &mut [u8], offset: usize, addr: u8, data: u64) -> usize
 ```
 
-The output buffer is double-buffered: Core 1 fills one buffer while DMA/PIO sends the other. On PC, a dedicated SPI thread reads from the output buffer and sends via FT232H.
-
 ---
 
 ## GpuVertex (packed format)
@@ -533,9 +584,9 @@ Pre-packed vertex data ready for GPU register writes.
 
 | Field | Format | GPU Register |
 |-------|--------|-------------|
-| color_packed | u64: [31:24]=A, [23:16]=B, [15:8]=G, [7:0]=R | COLOR (0x00) |
-| uv_packed | u64: [47:32]=Q(1.15), [31:16]=VQ(1.15), [15:0]=UQ(1.15) | UV0 (0x01) |
-| position_packed | u64: [47:32]=Z(16), [31:16]=Y(12.4), [15:0]=X(12.4) | VERTEX (0x06) |
+| color_packed | u64: COLOR0 in [31:0], COLOR1 in [63:32] (RGBA8888 each) | COLOR (0x00) |
+| uv_packed | u64: UV0_U in [15:0], UV0_V in [31:16], UV1_U in [47:32], UV1_V in [63:48] (S3.12) | UV0_UV1 (0x01) |
+| position_packed | u64: X in [15:0], Y in [31:16], Z in [47:32], Q (1/W) in [63:48] (S12.4, S3.12) | VERTEX_NOKICK/KICK (0x06-0x09) |
 
 ---
 
@@ -546,7 +597,6 @@ Pre-packed vertex data ready for GPU register writes.
 | GpuNotDetected | ID mismatch on init | Halt with error indicator |
 | SpiBusError | SPI peripheral failure | Halt with error indicator |
 | FifoOverflow | Write when full (should not happen with flow control) | N/A — prevented by flow control |
-
 
 ## Constraints
 
