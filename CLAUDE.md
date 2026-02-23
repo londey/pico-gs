@@ -107,11 +107,43 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 ## SystemVerilog Code Style
 
 - All modules, wires, registers require comments; active-low signals use `_n` suffix
-- `always_ff`: simple non-blocking assignments only (exceptions: memory inference, async reset synchronizers)
-- `always_comb`: all combinational logic; default assignments at top to avoid latches
+- `always_ff`: simple `reg <= next_reg` non-blocking assignments only.
+  Async reset (`if (!rst_n) ... else`) is expected, but the non-reset branch should contain only plain assignments — no `if`, `case`, or other conditional logic.
+  Compute all `next_*` values in a companion `always_comb` block.
+  Exceptions: memory inference patterns, async reset synchronizers.
+  ```systemverilog
+  // GOOD — always_ff is a flat list of assignments
+  always_comb begin
+      next_count = count;
+      next_flag  = 1'b0;
+      if (enable) begin
+          next_count = count + 8'd1;
+          next_flag  = 1'b1;
+      end
+  end
+  always_ff @(posedge clk or negedge rst_n) begin
+      if (!rst_n) begin
+          count <= 8'd0;
+          flag  <= 1'b0;
+      end else begin
+          count <= next_count;
+          flag  <= next_flag;
+      end
+  end
+
+  // BAD — conditional logic buried inside always_ff
+  always_ff @(posedge clk or negedge rst_n) begin
+      if (!rst_n) begin
+          count <= 8'd0;
+      end else if (enable) begin
+          count <= count + 8'd1;
+      end
+  end
+  ```
+- `always_comb`: all combinational logic including next-state computation; default assignments at top to avoid latches
 - One declaration per line; explicit bit widths on all literals; files start with `` `default_nettype none ``
 - Always use `begin`/`end` blocks for `if`/`else`/`case`
-- FSMs: separate state register (`always_ff`) from next-state logic (`always_comb`); use enums for state encoding
+- All sequential logic (FSMs, register banks, counters): separate state register (`always_ff`) from next-state logic (`always_comb`). Use enums for FSM state encoding
 - One module per file, filename matches module name; always use named port connections
 - CDC: 2-FF synchronizer for single-bit, gray coding for multi-bit
 - Lint with `verilator --lint-only -Wall`; fix all warnings, do not suppress with pragmas

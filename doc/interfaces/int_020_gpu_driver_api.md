@@ -30,6 +30,10 @@ Internal
 - REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
 - REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
 - REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+- REQ-014.04 (Particle System)
+- REQ-014.01 (Lightmapped Static Mesh)
+- REQ-014.02 (Static Mesh with Directional Lighting)
+- REQ-014.03 (Skinned Mesh (3-Bone))
 
 Note: REQ-100 (Host Firmware Architecture) and REQ-110 (GPU Initialization) and REQ-120 (Async Data Loading) are retired; their references have been removed.
 

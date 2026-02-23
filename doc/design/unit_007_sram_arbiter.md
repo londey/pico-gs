@@ -13,6 +13,7 @@ Arbitrates SDRAM access between display and render
 - REQ-001.02 (Memory Upload Interface)
 - REQ-005.06 (Framebuffer Format)
 - REQ-005.07 (Z-Buffer Operations)
+- REQ-005.08 (Clear Framebuffer)
 
 ## Interfaces
 
