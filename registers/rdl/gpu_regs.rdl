@@ -385,15 +385,12 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg fb_control_reg {
         name = "FB_CONTROL";
-        desc = "Scissor rectangle + write enable masks";
+        desc = "Scissor rectangle";
         field {} SCISSOR_X[9:0]              = 0;
         field {} SCISSOR_Y[19:10]            = 0;
         field {} SCISSOR_WIDTH[29:20]        = 10'd1023;
         field {} SCISSOR_HEIGHT[39:30]       = 10'd1023;
-        field {} Z_WRITE_EN_OVERRIDE[40:40]  = 0;
-        field {} RSVD_41[41:41]              = 0;
-        field {} STENCIL_WRITE_EN[42:42]     = 0;
-        field {} RSVD_HI[63:43]              = 0;
+        field {} RSVD_HI[63:40]              = 0;
     };
     fb_control_reg FB_CONTROL @ 0x218;  // index 0x43
 

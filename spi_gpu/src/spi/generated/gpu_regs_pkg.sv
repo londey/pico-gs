@@ -399,12 +399,22 @@ package gpu_regs_pkg;
     } gpu_regs__fb_config_reg__Z_BASE__out_t;
 
     typedef struct {
-        logic [31:0] value;
+        logic [3:0] value;
+    } gpu_regs__fb_config_reg__WIDTH_LOG2__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__fb_config_reg__HEIGHT_LOG2__out_t;
+
+    typedef struct {
+        logic [23:0] value;
     } gpu_regs__fb_config_reg__RSVD__out_t;
 
     typedef struct {
         gpu_regs__fb_config_reg__COLOR_BASE__out_t COLOR_BASE;
         gpu_regs__fb_config_reg__Z_BASE__out_t Z_BASE;
+        gpu_regs__fb_config_reg__WIDTH_LOG2__out_t WIDTH_LOG2;
+        gpu_regs__fb_config_reg__HEIGHT_LOG2__out_t HEIGHT_LOG2;
         gpu_regs__fb_config_reg__RSVD__out_t RSVD;
     } gpu_regs__fb_config_reg__out_t;
 
@@ -413,7 +423,11 @@ package gpu_regs_pkg;
     } gpu_regs__fb_display_reg__COLOR_GRADE_ENABLE__out_t;
 
     typedef struct {
-        logic [14:0] value;
+        logic value;
+    } gpu_regs__fb_display_reg__LINE_DOUBLE__out_t;
+
+    typedef struct {
+        logic [13:0] value;
     } gpu_regs__fb_display_reg__RSVD_LO__out_t;
 
     typedef struct {
@@ -425,14 +439,20 @@ package gpu_regs_pkg;
     } gpu_regs__fb_display_reg__FB_ADDR__out_t;
 
     typedef struct {
-        logic [15:0] value;
+        logic [3:0] value;
+    } gpu_regs__fb_display_reg__FB_WIDTH_LOG2__out_t;
+
+    typedef struct {
+        logic [11:0] value;
     } gpu_regs__fb_display_reg__RSVD_HI__out_t;
 
     typedef struct {
         gpu_regs__fb_display_reg__COLOR_GRADE_ENABLE__out_t COLOR_GRADE_ENABLE;
+        gpu_regs__fb_display_reg__LINE_DOUBLE__out_t LINE_DOUBLE;
         gpu_regs__fb_display_reg__RSVD_LO__out_t RSVD_LO;
         gpu_regs__fb_display_reg__LUT_ADDR__out_t LUT_ADDR;
         gpu_regs__fb_display_reg__FB_ADDR__out_t FB_ADDR;
+        gpu_regs__fb_display_reg__FB_WIDTH_LOG2__out_t FB_WIDTH_LOG2;
         gpu_regs__fb_display_reg__RSVD_HI__out_t RSVD_HI;
     } gpu_regs__fb_display_reg__out_t;
 
@@ -453,19 +473,7 @@ package gpu_regs_pkg;
     } gpu_regs__fb_control_reg__SCISSOR_HEIGHT__out_t;
 
     typedef struct {
-        logic value;
-    } gpu_regs__fb_control_reg__Z_WRITE_EN_OVERRIDE__out_t;
-
-    typedef struct {
-        logic value;
-    } gpu_regs__fb_control_reg__RSVD_41__out_t;
-
-    typedef struct {
-        logic value;
-    } gpu_regs__fb_control_reg__STENCIL_WRITE_EN__out_t;
-
-    typedef struct {
-        logic [20:0] value;
+        logic [23:0] value;
     } gpu_regs__fb_control_reg__RSVD_HI__out_t;
 
     typedef struct {
@@ -473,9 +481,6 @@ package gpu_regs_pkg;
         gpu_regs__fb_control_reg__SCISSOR_Y__out_t SCISSOR_Y;
         gpu_regs__fb_control_reg__SCISSOR_WIDTH__out_t SCISSOR_WIDTH;
         gpu_regs__fb_control_reg__SCISSOR_HEIGHT__out_t SCISSOR_HEIGHT;
-        gpu_regs__fb_control_reg__Z_WRITE_EN_OVERRIDE__out_t Z_WRITE_EN_OVERRIDE;
-        gpu_regs__fb_control_reg__RSVD_41__out_t RSVD_41;
-        gpu_regs__fb_control_reg__STENCIL_WRITE_EN__out_t STENCIL_WRITE_EN;
         gpu_regs__fb_control_reg__RSVD_HI__out_t RSVD_HI;
     } gpu_regs__fb_control_reg__out_t;
 

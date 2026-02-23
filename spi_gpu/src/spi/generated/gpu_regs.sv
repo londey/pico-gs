@@ -565,7 +565,15 @@ module gpu_regs (
                 logic load_next;
             } Z_BASE;
             struct {
-                logic [31:0] next;
+                logic [3:0] next;
+                logic load_next;
+            } WIDTH_LOG2;
+            struct {
+                logic [3:0] next;
+                logic load_next;
+            } HEIGHT_LOG2;
+            struct {
+                logic [23:0] next;
                 logic load_next;
             } RSVD;
         } FB_CONFIG;
@@ -575,7 +583,11 @@ module gpu_regs (
                 logic load_next;
             } COLOR_GRADE_ENABLE;
             struct {
-                logic [14:0] next;
+                logic next;
+                logic load_next;
+            } LINE_DOUBLE;
+            struct {
+                logic [13:0] next;
                 logic load_next;
             } RSVD_LO;
             struct {
@@ -587,7 +599,11 @@ module gpu_regs (
                 logic load_next;
             } FB_ADDR;
             struct {
-                logic [15:0] next;
+                logic [3:0] next;
+                logic load_next;
+            } FB_WIDTH_LOG2;
+            struct {
+                logic [11:0] next;
                 logic load_next;
             } RSVD_HI;
         } FB_DISPLAY;
@@ -609,19 +625,7 @@ module gpu_regs (
                 logic load_next;
             } SCISSOR_HEIGHT;
             struct {
-                logic next;
-                logic load_next;
-            } Z_WRITE_EN_OVERRIDE;
-            struct {
-                logic next;
-                logic load_next;
-            } RSVD_41;
-            struct {
-                logic next;
-                logic load_next;
-            } STENCIL_WRITE_EN;
-            struct {
-                logic [20:0] next;
+                logic [23:0] next;
                 logic load_next;
             } RSVD_HI;
         } FB_CONTROL;
@@ -985,7 +989,13 @@ module gpu_regs (
                 logic [15:0] value;
             } Z_BASE;
             struct {
-                logic [31:0] value;
+                logic [3:0] value;
+            } WIDTH_LOG2;
+            struct {
+                logic [3:0] value;
+            } HEIGHT_LOG2;
+            struct {
+                logic [23:0] value;
             } RSVD;
         } FB_CONFIG;
         struct {
@@ -993,7 +1003,10 @@ module gpu_regs (
                 logic value;
             } COLOR_GRADE_ENABLE;
             struct {
-                logic [14:0] value;
+                logic value;
+            } LINE_DOUBLE;
+            struct {
+                logic [13:0] value;
             } RSVD_LO;
             struct {
                 logic [15:0] value;
@@ -1002,7 +1015,10 @@ module gpu_regs (
                 logic [15:0] value;
             } FB_ADDR;
             struct {
-                logic [15:0] value;
+                logic [3:0] value;
+            } FB_WIDTH_LOG2;
+            struct {
+                logic [11:0] value;
             } RSVD_HI;
         } FB_DISPLAY;
         struct {
@@ -1019,16 +1035,7 @@ module gpu_regs (
                 logic [9:0] value;
             } SCISSOR_HEIGHT;
             struct {
-                logic value;
-            } Z_WRITE_EN_OVERRIDE;
-            struct {
-                logic value;
-            } RSVD_41;
-            struct {
-                logic value;
-            } STENCIL_WRITE_EN;
-            struct {
-                logic [20:0] value;
+                logic [23:0] value;
             } RSVD_HI;
         } FB_CONTROL;
         struct {
@@ -3315,14 +3322,60 @@ module gpu_regs (
         end
     end
     assign hwif_out.FB_CONFIG.Z_BASE.value = field_storage.FB_CONFIG.Z_BASE.value;
+    // Field: gpu_regs.FB_CONFIG.WIDTH_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_CONFIG.WIDTH_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_CONFIG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_CONFIG.WIDTH_LOG2.value & ~decoded_wr_biten[35:32]) | (decoded_wr_data[35:32] & decoded_wr_biten[35:32]);
+            load_next_c = '1;
+        end
+        field_combo.FB_CONFIG.WIDTH_LOG2.next = next_c;
+        field_combo.FB_CONFIG.WIDTH_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_CONFIG.WIDTH_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.FB_CONFIG.WIDTH_LOG2.load_next) begin
+                field_storage.FB_CONFIG.WIDTH_LOG2.value <= field_combo.FB_CONFIG.WIDTH_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.FB_CONFIG.WIDTH_LOG2.value = field_storage.FB_CONFIG.WIDTH_LOG2.value;
+    // Field: gpu_regs.FB_CONFIG.HEIGHT_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_CONFIG.HEIGHT_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_CONFIG && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_CONFIG.HEIGHT_LOG2.value & ~decoded_wr_biten[39:36]) | (decoded_wr_data[39:36] & decoded_wr_biten[39:36]);
+            load_next_c = '1;
+        end
+        field_combo.FB_CONFIG.HEIGHT_LOG2.next = next_c;
+        field_combo.FB_CONFIG.HEIGHT_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_CONFIG.HEIGHT_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.FB_CONFIG.HEIGHT_LOG2.load_next) begin
+                field_storage.FB_CONFIG.HEIGHT_LOG2.value <= field_combo.FB_CONFIG.HEIGHT_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.FB_CONFIG.HEIGHT_LOG2.value = field_storage.FB_CONFIG.HEIGHT_LOG2.value;
     // Field: gpu_regs.FB_CONFIG.RSVD
     always_comb begin
-        automatic logic [31:0] next_c;
+        automatic logic [23:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_CONFIG.RSVD.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_CONFIG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_CONFIG.RSVD.value & ~decoded_wr_biten[63:32]) | (decoded_wr_data[63:32] & decoded_wr_biten[63:32]);
+            next_c = (field_storage.FB_CONFIG.RSVD.value & ~decoded_wr_biten[63:40]) | (decoded_wr_data[63:40] & decoded_wr_biten[63:40]);
             load_next_c = '1;
         end
         field_combo.FB_CONFIG.RSVD.next = next_c;
@@ -3330,7 +3383,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_CONFIG.RSVD.value <= 32'h0;
+            field_storage.FB_CONFIG.RSVD.value <= 24'h0;
         end else begin
             if(field_combo.FB_CONFIG.RSVD.load_next) begin
                 field_storage.FB_CONFIG.RSVD.value <= field_combo.FB_CONFIG.RSVD.next;
@@ -3361,14 +3414,37 @@ module gpu_regs (
         end
     end
     assign hwif_out.FB_DISPLAY.COLOR_GRADE_ENABLE.value = field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value;
+    // Field: gpu_regs.FB_DISPLAY.LINE_DOUBLE
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_DISPLAY.LINE_DOUBLE.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_DISPLAY.LINE_DOUBLE.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
+            load_next_c = '1;
+        end
+        field_combo.FB_DISPLAY.LINE_DOUBLE.next = next_c;
+        field_combo.FB_DISPLAY.LINE_DOUBLE.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_DISPLAY.LINE_DOUBLE.value <= 1'h0;
+        end else begin
+            if(field_combo.FB_DISPLAY.LINE_DOUBLE.load_next) begin
+                field_storage.FB_DISPLAY.LINE_DOUBLE.value <= field_combo.FB_DISPLAY.LINE_DOUBLE.next;
+            end
+        end
+    end
+    assign hwif_out.FB_DISPLAY.LINE_DOUBLE.value = field_storage.FB_DISPLAY.LINE_DOUBLE.value;
     // Field: gpu_regs.FB_DISPLAY.RSVD_LO
     always_comb begin
-        automatic logic [14:0] next_c;
+        automatic logic [13:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY.RSVD_LO.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY.RSVD_LO.value & ~decoded_wr_biten[15:1]) | (decoded_wr_data[15:1] & decoded_wr_biten[15:1]);
+            next_c = (field_storage.FB_DISPLAY.RSVD_LO.value & ~decoded_wr_biten[15:2]) | (decoded_wr_data[15:2] & decoded_wr_biten[15:2]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY.RSVD_LO.next = next_c;
@@ -3376,7 +3452,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY.RSVD_LO.value <= 15'h0;
+            field_storage.FB_DISPLAY.RSVD_LO.value <= 14'h0;
         end else begin
             if(field_combo.FB_DISPLAY.RSVD_LO.load_next) begin
                 field_storage.FB_DISPLAY.RSVD_LO.value <= field_combo.FB_DISPLAY.RSVD_LO.next;
@@ -3430,14 +3506,37 @@ module gpu_regs (
         end
     end
     assign hwif_out.FB_DISPLAY.FB_ADDR.value = field_storage.FB_DISPLAY.FB_ADDR.value;
+    // Field: gpu_regs.FB_DISPLAY.FB_WIDTH_LOG2
+    always_comb begin
+        automatic logic [3:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value & ~decoded_wr_biten[51:48]) | (decoded_wr_data[51:48] & decoded_wr_biten[51:48]);
+            load_next_c = '1;
+        end
+        field_combo.FB_DISPLAY.FB_WIDTH_LOG2.next = next_c;
+        field_combo.FB_DISPLAY.FB_WIDTH_LOG2.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value <= 4'h0;
+        end else begin
+            if(field_combo.FB_DISPLAY.FB_WIDTH_LOG2.load_next) begin
+                field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value <= field_combo.FB_DISPLAY.FB_WIDTH_LOG2.next;
+            end
+        end
+    end
+    assign hwif_out.FB_DISPLAY.FB_WIDTH_LOG2.value = field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value;
     // Field: gpu_regs.FB_DISPLAY.RSVD_HI
     always_comb begin
-        automatic logic [15:0] next_c;
+        automatic logic [11:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_DISPLAY.RSVD_HI.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_DISPLAY && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_DISPLAY.RSVD_HI.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
+            next_c = (field_storage.FB_DISPLAY.RSVD_HI.value & ~decoded_wr_biten[63:52]) | (decoded_wr_data[63:52] & decoded_wr_biten[63:52]);
             load_next_c = '1;
         end
         field_combo.FB_DISPLAY.RSVD_HI.next = next_c;
@@ -3445,7 +3544,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_DISPLAY.RSVD_HI.value <= 16'h0;
+            field_storage.FB_DISPLAY.RSVD_HI.value <= 12'h0;
         end else begin
             if(field_combo.FB_DISPLAY.RSVD_HI.load_next) begin
                 field_storage.FB_DISPLAY.RSVD_HI.value <= field_combo.FB_DISPLAY.RSVD_HI.next;
@@ -3545,83 +3644,14 @@ module gpu_regs (
         end
     end
     assign hwif_out.FB_CONTROL.SCISSOR_HEIGHT.value = field_storage.FB_CONTROL.SCISSOR_HEIGHT.value;
-    // Field: gpu_regs.FB_CONTROL.Z_WRITE_EN_OVERRIDE
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.FB_CONTROL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value & ~decoded_wr_biten[40:40]) | (decoded_wr_data[40:40] & decoded_wr_biten[40:40]);
-            load_next_c = '1;
-        end
-        field_combo.FB_CONTROL.Z_WRITE_EN_OVERRIDE.next = next_c;
-        field_combo.FB_CONTROL.Z_WRITE_EN_OVERRIDE.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value <= 1'h0;
-        end else begin
-            if(field_combo.FB_CONTROL.Z_WRITE_EN_OVERRIDE.load_next) begin
-                field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value <= field_combo.FB_CONTROL.Z_WRITE_EN_OVERRIDE.next;
-            end
-        end
-    end
-    assign hwif_out.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value = field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value;
-    // Field: gpu_regs.FB_CONTROL.RSVD_41
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.FB_CONTROL.RSVD_41.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.FB_CONTROL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_CONTROL.RSVD_41.value & ~decoded_wr_biten[41:41]) | (decoded_wr_data[41:41] & decoded_wr_biten[41:41]);
-            load_next_c = '1;
-        end
-        field_combo.FB_CONTROL.RSVD_41.next = next_c;
-        field_combo.FB_CONTROL.RSVD_41.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.FB_CONTROL.RSVD_41.value <= 1'h0;
-        end else begin
-            if(field_combo.FB_CONTROL.RSVD_41.load_next) begin
-                field_storage.FB_CONTROL.RSVD_41.value <= field_combo.FB_CONTROL.RSVD_41.next;
-            end
-        end
-    end
-    assign hwif_out.FB_CONTROL.RSVD_41.value = field_storage.FB_CONTROL.RSVD_41.value;
-    // Field: gpu_regs.FB_CONTROL.STENCIL_WRITE_EN
-    always_comb begin
-        automatic logic [0:0] next_c;
-        automatic logic load_next_c;
-        next_c = field_storage.FB_CONTROL.STENCIL_WRITE_EN.value;
-        load_next_c = '0;
-        if(decoded_reg_strb.FB_CONTROL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_CONTROL.STENCIL_WRITE_EN.value & ~decoded_wr_biten[42:42]) | (decoded_wr_data[42:42] & decoded_wr_biten[42:42]);
-            load_next_c = '1;
-        end
-        field_combo.FB_CONTROL.STENCIL_WRITE_EN.next = next_c;
-        field_combo.FB_CONTROL.STENCIL_WRITE_EN.load_next = load_next_c;
-    end
-    always_ff @(posedge clk) begin
-        if(rst) begin
-            field_storage.FB_CONTROL.STENCIL_WRITE_EN.value <= 1'h0;
-        end else begin
-            if(field_combo.FB_CONTROL.STENCIL_WRITE_EN.load_next) begin
-                field_storage.FB_CONTROL.STENCIL_WRITE_EN.value <= field_combo.FB_CONTROL.STENCIL_WRITE_EN.next;
-            end
-        end
-    end
-    assign hwif_out.FB_CONTROL.STENCIL_WRITE_EN.value = field_storage.FB_CONTROL.STENCIL_WRITE_EN.value;
     // Field: gpu_regs.FB_CONTROL.RSVD_HI
     always_comb begin
-        automatic logic [20:0] next_c;
+        automatic logic [23:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.FB_CONTROL.RSVD_HI.value;
         load_next_c = '0;
         if(decoded_reg_strb.FB_CONTROL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.FB_CONTROL.RSVD_HI.value & ~decoded_wr_biten[63:43]) | (decoded_wr_data[63:43] & decoded_wr_biten[63:43]);
+            next_c = (field_storage.FB_CONTROL.RSVD_HI.value & ~decoded_wr_biten[63:40]) | (decoded_wr_data[63:40] & decoded_wr_biten[63:40]);
             load_next_c = '1;
         end
         field_combo.FB_CONTROL.RSVD_HI.next = next_c;
@@ -3629,7 +3659,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.FB_CONTROL.RSVD_HI.value <= 21'h0;
+            field_storage.FB_CONTROL.RSVD_HI.value <= 24'h0;
         end else begin
             if(field_combo.FB_CONTROL.RSVD_HI.load_next) begin
                 field_storage.FB_CONTROL.RSVD_HI.value <= field_combo.FB_CONTROL.RSVD_HI.next;
@@ -3933,20 +3963,21 @@ module gpu_regs (
     assign readback_array[12][63:0] = (decoded_reg_strb.STIPPLE_PATTERN && !decoded_req_is_wr) ? field_storage.STIPPLE_PATTERN.PATTERN.value : '0;
     assign readback_array[13][15:0] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.COLOR_BASE.value : '0;
     assign readback_array[13][31:16] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.Z_BASE.value : '0;
-    assign readback_array[13][63:32] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.RSVD.value : '0;
+    assign readback_array[13][35:32] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.WIDTH_LOG2.value : '0;
+    assign readback_array[13][39:36] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.HEIGHT_LOG2.value : '0;
+    assign readback_array[13][63:40] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.RSVD.value : '0;
     assign readback_array[14][0:0] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value : '0;
-    assign readback_array[14][15:1] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_LO.value : '0;
+    assign readback_array[14][1:1] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.LINE_DOUBLE.value : '0;
+    assign readback_array[14][15:2] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_LO.value : '0;
     assign readback_array[14][31:16] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.LUT_ADDR.value : '0;
     assign readback_array[14][47:32] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.FB_ADDR.value : '0;
-    assign readback_array[14][63:48] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_HI.value : '0;
+    assign readback_array[14][51:48] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value : '0;
+    assign readback_array[14][63:52] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_HI.value : '0;
     assign readback_array[15][9:0] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_X.value : '0;
     assign readback_array[15][19:10] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_Y.value : '0;
     assign readback_array[15][29:20] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_WIDTH.value : '0;
     assign readback_array[15][39:30] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_HEIGHT.value : '0;
-    assign readback_array[15][40:40] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.Z_WRITE_EN_OVERRIDE.value : '0;
-    assign readback_array[15][41:41] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_41.value : '0;
-    assign readback_array[15][42:42] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.STENCIL_WRITE_EN.value : '0;
-    assign readback_array[15][63:43] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_HI.value : '0;
+    assign readback_array[15][63:40] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_HI.value : '0;
     assign readback_array[16][15:0] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_BASE.value : '0;
     assign readback_array[16][31:16] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_VALUE.value : '0;
     assign readback_array[16][51:32] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_COUNT.value : '0;

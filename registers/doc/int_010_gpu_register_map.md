@@ -162,7 +162,7 @@ All register semantics are identical regardless of command source.
 | 0x40 | FB_DRAW | R/W | Draw target framebuffer address |
 | 0x41 | FB_DISPLAY | R/W | **Display scanout + LUT control (non-blocking)** |
 | 0x42 | FB_ZBUFFER | R/W | Z-buffer address (Z_COMPARE in RENDER_MODE) |
-| 0x43 | FB_CONTROL | R/W | **Scissor rect + write enables** |
+| 0x43 | FB_CONTROL | R/W | **Scissor rectangle** |
 | 0x44-0x46 | - | - | Reserved |
 | 0x47 | FB_DISPLAY_SYNC | R/W | **Display scanout + LUT control (vsync-blocking)** |
 | 0x48-0x4F | - | - | Reserved (framebuffer config) |
@@ -1002,13 +1002,10 @@ Z-buffer base address. Compare function moved to RENDER_MODE.
 
 ### 0x43: FB_CONTROL
 
-Framebuffer control: scissor rectangle and write enable masks.
+Scissor rectangle for fragment clipping.
 
 ```
-[63:43]   Reserved (write as 0)
-[42]      STENCIL_WRITE_EN: Enable stencil buffer writes (future use)
-[41]      Reserved (COLOR_WRITE_EN moved to RENDER_MODE[4])
-[40]      Z_WRITE_EN_OVERRIDE: Override RENDER_MODE.Z_WRITE_EN (reserved)
+[63:40]   Reserved (write as 0)
 [39:30]   SCISSOR_HEIGHT: Scissor rectangle height (10 bits, 1-1024)
 [29:20]   SCISSOR_WIDTH: Scissor rectangle width (10 bits, 1-1024)
 [19:10]   SCISSOR_Y: Scissor rectangle top-left Y (10 bits, 0-1023)
@@ -1021,27 +1018,16 @@ Framebuffer control: scissor rectangle and write enable masks.
 - Default (disabled): SCISSOR_X=0, SCISSOR_Y=0, SCISSOR_WIDTH=1024, SCISSOR_HEIGHT=1024 (full screen)
 - Typical use: UI rendering (set scissor per UI element to prevent overdraw)
 
-**Write Enable Flags**:
-- **COLOR_WRITE_EN**: Moved to RENDER_MODE[4]. See RENDER_MODE register (0x30) for color write control.
-  - Use RENDER_MODE.COLOR_WRITE_EN for Z-only prepass (render depth but not color)
-  - Z-test still occurs if RENDER_MODE.Z_TEST_EN=1
-
-- **Z_WRITE_EN_OVERRIDE** (bit 40): **Future use, currently reserved**
-  - Intended for per-pixel Z-write control
-  - If implemented: 1 = use RENDER_MODE.Z_WRITE_EN, 0 = force Z-write off
-
-- **STENCIL_WRITE_EN** (bit 42): Reserved for future stencil buffer support
-
 **Common Use Cases**:
 
-| Use Case | Z_WRITE_EN_OVERRIDE | SCISSOR |
-|----------|---------------------|---------|
-| Normal rendering | 0 (use RENDER_MODE) | Full screen or UI bounds |
-| Z-only prepass | 0 (use RENDER_MODE) | Full screen |
-| UI element | 0 | UI element bounding box |
-| HUD overlay | 0 | HUD region |
+| Use Case | SCISSOR |
+|----------|---------|
+| Normal rendering | Full screen or UI bounds |
+| Z-only prepass | Full screen |
+| UI element | UI element bounding box |
+| HUD overlay | HUD region |
 
-**Reset Value**: 0x00000000_3FF003FF (full screen scissor 1024×1024 at 0,0, all writes enabled)
+**Reset Value**: 0x00000000_3FF003FF (full screen scissor 1024×1024 at 0,0)
 
 ---
 
@@ -1649,7 +1635,7 @@ After hardware reset or power-on:
 | FB_DRAW | 0x0000000000000000 | Address 0x000000 |
 | FB_DISPLAY | 0x0000000000000000 | FB=0x000000, LUT=0x0, color grading disabled |
 | FB_ZBUFFER | 0x0000000000000000 | Address 0x000000 (Z_COMPARE in RENDER_MODE) |
-| FB_CONTROL | 0x00000000_3FF003FF | Full screen scissor 1024×1024, all writes enabled |
+| FB_CONTROL | 0x00000000_3FF003FF | Full screen scissor 1024×1024 |
 | FB_DISPLAY_SYNC | N/A | Write-only blocking register |
 | PERF_TEX0-1 | 0x0000000000000000 | Both hits and misses zero |
 | PERF_PIXELS | 0x0000000000000000 | Both counters zero |
