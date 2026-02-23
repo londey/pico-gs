@@ -354,11 +354,11 @@ flowchart LR
 | UNIT-003 | Register File | Stores GPU state and vertex data |
 | UNIT-004 | Triangle Setup | Prepares triangle for rasterization |
 | UNIT-005 | Rasterizer | Edge-walking rasterization engine |
-| UNIT-006 | Pixel Pipeline | Depth range clipping, early Z-test, texture sampling, blending, framebuffer write |
+| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture sampling, and format promotion to Q4.12 |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
-| UNIT-010 | Color Combiner | Pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
+| UNIT-010 | Color Combiner | Two-stage pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
 | UNIT-020 | Core 0 Scene Manager | Scene graph management and animation |
 | UNIT-021 | Core 1 Render Executor | Render command queue consumer |
 | UNIT-022 | GPU Driver Layer | Platform-agnostic GPU register protocol and flow control, generic over SPI transport |

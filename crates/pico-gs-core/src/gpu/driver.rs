@@ -50,11 +50,18 @@ impl<S: SpiTransport> GpuDriver<S> {
             return Err(GpuError::GpuNotDetected);
         }
 
-        // Configure initial framebuffer addresses.
-        driver.write(registers::FB_DRAW, registers::FB_A_ADDR as u64)?;
+        // Configure initial render target via FB_CONFIG.
+        driver.write(
+            registers::FB_CONFIG,
+            (registers::FB_A_BASE_512 as u64) << registers::FB_CONFIG_COLOR_BASE_SHIFT
+                | (registers::ZBUFFER_BASE_512 as u64) << registers::FB_CONFIG_Z_BASE_SHIFT
+                | (9u64 << registers::FB_CONFIG_WIDTH_LOG2_SHIFT)
+                | (9u64 << registers::FB_CONFIG_HEIGHT_LOG2_SHIFT),
+        )?;
         driver.write(
             registers::FB_DISPLAY,
-            (registers::FB_B_ADDR as u64 >> 9) << registers::FB_DISPLAY_FB_ADDR_SHIFT,
+            (registers::FB_B_BASE_512 as u64) << registers::FB_DISPLAY_FB_ADDR_SHIFT
+                | (9u64 << registers::FB_DISPLAY_WIDTH_LOG2_SHIFT),
         )?;
 
         Ok(driver)
@@ -105,6 +112,9 @@ impl<S: SpiTransport> GpuDriver<S> {
     }
 
     /// Submit a single triangle (3 vertices) to the GPU.
+    ///
+    /// First two vertices use VERTEX_NOKICK; the third uses VERTEX_KICK_012
+    /// to trigger rasterization with standard winding order.
     pub fn submit_triangle(
         &mut self,
         v0: &GpuVertex,
@@ -114,21 +124,21 @@ impl<S: SpiTransport> GpuDriver<S> {
     ) -> Result<(), GpuError<S::Error>> {
         self.write(registers::COLOR, v0.color_packed)?;
         if textured {
-            self.write(registers::UV0, v0.uv_packed)?;
+            self.write(registers::UV0_UV1, v0.uv_packed)?;
         }
-        self.write(registers::VERTEX, v0.position_packed)?;
+        self.write(registers::VERTEX_NOKICK, v0.position_packed)?;
 
         self.write(registers::COLOR, v1.color_packed)?;
         if textured {
-            self.write(registers::UV0, v1.uv_packed)?;
+            self.write(registers::UV0_UV1, v1.uv_packed)?;
         }
-        self.write(registers::VERTEX, v1.position_packed)?;
+        self.write(registers::VERTEX_NOKICK, v1.position_packed)?;
 
         self.write(registers::COLOR, v2.color_packed)?;
         if textured {
-            self.write(registers::UV0, v2.uv_packed)?;
+            self.write(registers::UV0_UV1, v2.uv_packed)?;
         }
-        self.write(registers::VERTEX, v2.position_packed)?;
+        self.write(registers::VERTEX_KICK_012, v2.position_packed)?;
 
         Ok(())
     }
@@ -169,13 +179,23 @@ impl<S: SpiTransport> GpuDriver<S> {
     }
 
     /// Swap draw and display framebuffers.
+    ///
+    /// Writes FB_DISPLAY with the new display target (blocking until vsync),
+    /// then writes FB_CONFIG with the new draw target.
     pub fn swap_buffers(&mut self) -> Result<(), GpuError<S::Error>> {
         core::mem::swap(&mut self.draw_fb, &mut self.display_fb);
         self.write(
             registers::FB_DISPLAY,
-            (self.display_fb as u64 >> 9) << registers::FB_DISPLAY_FB_ADDR_SHIFT,
+            (self.display_fb as u64 >> 9) << registers::FB_DISPLAY_FB_ADDR_SHIFT
+                | (9u64 << registers::FB_DISPLAY_WIDTH_LOG2_SHIFT),
         )?;
-        self.write(registers::FB_DRAW, self.draw_fb as u64)?;
+        self.write(
+            registers::FB_CONFIG,
+            (self.draw_fb as u64 >> 9) << registers::FB_CONFIG_COLOR_BASE_SHIFT
+                | (registers::ZBUFFER_BASE_512 as u64) << registers::FB_CONFIG_Z_BASE_SHIFT
+                | (9u64 << registers::FB_CONFIG_WIDTH_LOG2_SHIFT)
+                | (9u64 << registers::FB_CONFIG_HEIGHT_LOG2_SHIFT),
+        )?;
         Ok(())
     }
 
