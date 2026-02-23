@@ -413,26 +413,27 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     // index 0x45-0x4F: Reserved
 
     // ===================================================================
-    // Performance Counters (index 0x50–0x57) — clear-on-read
+    // Performance Timestamp (index 0x50)
     // ===================================================================
 
-    reg perf_pair_reg {
-        name = "PERF counter pair";
-        desc = "Packed 2x32-bit unsigned saturating counters, clear-on-read";
-        default sw = r;
-        field {} COUNTER_A[31:0]  = 0;
-        field {} COUNTER_B[63:32] = 0;
+    reg perf_timestamp_reg {
+        name = "PERF_TIMESTAMP";
+        desc = "Command-stream timestamp marker.
+               Write: DATA[22:0] = 23-bit SDRAM word address (32-bit word
+               granularity, 32 MiB addressable).  When this command reaches
+               the front of the command FIFO, the GPU captures the current
+               frame-relative cycle counter (32-bit unsigned saturating,
+               clk_core, resets to 0 on vsync rising edge) and writes it
+               as a 32-bit word to the specified SDRAM address via the
+               memory arbiter.
+               Read: returns the live (instantaneous) cycle counter in
+               bits [31:0], zero-extended to 64 bits.  Not FIFO-ordered.";
+        field {} SDRAM_ADDR[22:0]  = 0;
+        field {} RSVD[63:23]       = 0;
     };
+    perf_timestamp_reg PERF_TIMESTAMP @ 0x280;  // index 0x50
 
-    perf_pair_reg PERF_TEX0       @ 0x280;  // index 0x50
-    perf_pair_reg PERF_TEX1       @ 0x288;  // index 0x51
-    // index 0x52-0x53: Reserved (was PERF_TEX2, PERF_TEX3)
-    perf_pair_reg PERF_PIXELS     @ 0x2A0;  // index 0x54
-    perf_pair_reg PERF_FRAGMENTS  @ 0x2A8;  // index 0x55
-    perf_pair_reg PERF_STALL_VS   @ 0x2B0;  // index 0x56
-    perf_pair_reg PERF_STALL_CT   @ 0x2B8;  // index 0x57
-
-    // index 0x58-0x6F: Reserved
+    // index 0x51-0x6F: Reserved
 
     // ===================================================================
     // Status & Control (index 0x70–0x7F)

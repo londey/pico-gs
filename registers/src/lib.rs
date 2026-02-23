@@ -130,6 +130,17 @@ pub const FB_DISPLAY_LUT_ADDR_SHIFT: u32 = 16;
 /// Framebuffer base address shift (bits [47:32]), x512 byte granularity, 32 MiB addressable.
 pub const FB_DISPLAY_FB_ADDR_SHIFT: u32 = 32;
 
+// --- Performance Timestamp (0x50) ---
+
+/// Performance timestamp marker.
+///
+/// Write: DATA\[22:0\] = 23-bit SDRAM word address (32-bit word granularity,
+/// 32 MiB addressable).  The GPU captures the frame-relative cycle counter
+/// and writes it as a 32-bit word to the specified SDRAM address.
+///
+/// Read: returns the live (instantaneous) cycle counter in \[31:0\].
+pub const PERF_TIMESTAMP: u8 = 0x50;
+
 // --- Status & Control (0x70-0x7F) ---
 
 /// Memory access dword address pointer (22-bit, write triggers read prefetch).

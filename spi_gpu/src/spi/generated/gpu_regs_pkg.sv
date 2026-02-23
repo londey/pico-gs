@@ -508,17 +508,17 @@ package gpu_regs_pkg;
     } gpu_regs__mem_fill_reg__out_t;
 
     typedef struct {
-        logic [31:0] value;
-    } gpu_regs__perf_pair_reg__COUNTER_A__out_t;
+        logic [22:0] value;
+    } gpu_regs__perf_timestamp_reg__SDRAM_ADDR__out_t;
 
     typedef struct {
-        logic [31:0] value;
-    } gpu_regs__perf_pair_reg__COUNTER_B__out_t;
+        logic [40:0] value;
+    } gpu_regs__perf_timestamp_reg__RSVD__out_t;
 
     typedef struct {
-        gpu_regs__perf_pair_reg__COUNTER_A__out_t COUNTER_A;
-        gpu_regs__perf_pair_reg__COUNTER_B__out_t COUNTER_B;
-    } gpu_regs__perf_pair_reg__out_t;
+        gpu_regs__perf_timestamp_reg__SDRAM_ADDR__out_t SDRAM_ADDR;
+        gpu_regs__perf_timestamp_reg__RSVD__out_t RSVD;
+    } gpu_regs__perf_timestamp_reg__out_t;
 
     typedef struct {
         logic [21:0] value;
@@ -577,12 +577,7 @@ package gpu_regs_pkg;
         gpu_regs__fb_display_reg__out_t FB_DISPLAY;
         gpu_regs__fb_control_reg__out_t FB_CONTROL;
         gpu_regs__mem_fill_reg__out_t MEM_FILL;
-        gpu_regs__perf_pair_reg__out_t PERF_TEX0;
-        gpu_regs__perf_pair_reg__out_t PERF_TEX1;
-        gpu_regs__perf_pair_reg__out_t PERF_PIXELS;
-        gpu_regs__perf_pair_reg__out_t PERF_FRAGMENTS;
-        gpu_regs__perf_pair_reg__out_t PERF_STALL_VS;
-        gpu_regs__perf_pair_reg__out_t PERF_STALL_CT;
+        gpu_regs__perf_timestamp_reg__out_t PERF_TIMESTAMP;
         gpu_regs__mem_addr_reg__out_t MEM_ADDR;
         gpu_regs__mem_data_reg__out_t MEM_DATA;
         gpu_regs__id_reg__out_t ID;

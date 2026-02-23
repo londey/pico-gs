@@ -44,6 +44,11 @@ module register_file (
     output reg  [31:0]  clear_color,    // RGBA8888 clear color
     output reg          clear_trigger,  // Clear command pulse
 
+    // Timestamp SDRAM write (to memory arbiter)
+    output reg          ts_mem_wr,      // One-cycle write request pulse
+    output reg  [22:0]  ts_mem_addr,    // 23-bit SDRAM word address (32-bit granularity)
+    output reg  [31:0]  ts_mem_data,    // Captured cycle counter value
+
     // Status signals
     input  wire         gpu_busy,       // GPU is rendering
     input  wire         vblank,         // Vertical blank
@@ -75,6 +80,10 @@ module register_file (
     localparam ADDR_CLEAR       = 7'h0B;  // Clear trigger (write-only)
     localparam ADDR_STATUS      = 7'h10;  // Status register (read-only)
     localparam ADDR_Z_RANGE     = 7'h31;  // Depth range clipping min/max (v10.0)
+
+    // Performance timestamp
+    localparam ADDR_PERF_TIMESTAMP = 7'h50;  // Write: capture cycle counter to SDRAM
+
     localparam ADDR_ID          = 7'h7F;  // GPU ID (read-only)
 
     // GPU ID: 0x6702 (version 2.0, Gouraud implementation)
@@ -99,6 +108,10 @@ module register_file (
 
     reg [15:0] tri_mode;            // RENDER_MODE bits [15:0]
     reg [31:0] z_range;             // Depth range clipping {max[31:16], min[15:0]}
+
+    // Frame-relative cycle counter (32-bit unsigned saturating, resets on vsync)
+    reg [31:0] cycle_counter;
+    reg        vblank_prev;
 
     // Assign mode outputs from tri_mode register
     always_comb begin
@@ -135,10 +148,25 @@ module register_file (
             vertex_count <= 2'b00;
             tri_valid <= 1'b0;
 
+            cycle_counter <= 32'd0;
+            vblank_prev <= 1'b0;
+            ts_mem_wr <= 1'b0;
+            ts_mem_addr <= 23'd0;
+            ts_mem_data <= 32'd0;
+
         end else begin
-            // Clear trigger is a pulse
+            // Clear pulse outputs
             clear_trigger <= 1'b0;
             tri_valid <= 1'b0;
+            ts_mem_wr <= 1'b0;
+
+            // Frame-relative cycle counter: saturating, resets on vsync rising edge
+            vblank_prev <= vblank;
+            if (vblank && !vblank_prev) begin
+                cycle_counter <= 32'd0;
+            end else if (cycle_counter != 32'hFFFFFFFF) begin
+                cycle_counter <= cycle_counter + 32'd1;
+            end
 
             if (cmd_valid && !cmd_rw) begin
                 case (cmd_addr)
@@ -216,6 +244,13 @@ module register_file (
                         z_range <= cmd_wdata[31:0];
                     end
 
+                    ADDR_PERF_TIMESTAMP: begin
+                        // Capture cycle_counter and request SDRAM write
+                        ts_mem_wr   <= 1'b1;
+                        ts_mem_addr <= cmd_wdata[22:0];
+                        ts_mem_data <= cycle_counter;
+                    end
+
                     default: begin
                         // Ignore writes to undefined or read-only registers
                     end
@@ -239,6 +274,8 @@ module register_file (
             ADDR_CLEAR_COLOR: cmd_rdata = {32'b0, clear_color};
 
             ADDR_Z_RANGE:     cmd_rdata = {32'b0, z_range};
+
+            ADDR_PERF_TIMESTAMP: cmd_rdata = {32'd0, cycle_counter};
 
             ADDR_STATUS: begin
                 // Status[15:0] = {vblank, busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}

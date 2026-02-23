@@ -104,6 +104,8 @@ None
   - [0]: Color grading enable
 - **fb_display_sync_pending** [0]: FB_DISPLAY_SYNC write pending (blocking mode)
 - **fb_display_sync_data** [31:0]: Latched FB_DISPLAY_SYNC data during blocking wait
+- **cycle_counter** [31:0]: Frame-relative cycle counter (clk_core, resets to 0 on vsync rising edge)
+- **vblank_prev** [0]: Previous vblank value for rising-edge detection
 
 **Register Address Map:**
 
@@ -122,6 +124,7 @@ None
 | 0x32 | DITHER_MODE | R/W (enable, pattern) |
 | 0x18–0x1F | Color Combiner | R/W (reserved block — layout per INT-010 / UNIT-010, preliminary) |
 | 0x47 | FB_DISPLAY_SYNC | W |
+| 0x50 | PERF_TIMESTAMP | R/W (write: capture counter to SDRAM; read: live counter) |
 | 0x7F | ID | R (0x6702) |
 
 ### Algorithm / Behavior
@@ -156,11 +159,24 @@ None
   - On vsync_edge: apply fb_display_sync_data to fb_display, clear pending, deassert spi_cs_hold
   - Trigger lut_dma if LUT_ADDR != 0
 
+**Cycle Counter:**
+- `vblank_prev` tracks previous vblank level for rising-edge detection
+- On vsync rising edge (`vblank && !vblank_prev`): reset `cycle_counter` to 0
+- Otherwise: increment `cycle_counter` by 1 each `clk_core` cycle (saturates at 0xFFFFFFFF)
+- Counter runs at 100 MHz (10 ns resolution), saturates after ~42.9 seconds
+
+**PERF_TIMESTAMP Write (0x50):**
+- DATA[22:0] is a 23-bit SDRAM word address (32-bit word granularity)
+- Asserts `ts_mem_wr` for one cycle with `ts_mem_addr` = DATA[22:0] and `ts_mem_data` = cycle_counter
+- gpu_top.sv latches the request and drives memory arbiter port 3 to write the 32-bit timestamp to SDRAM
+- Fire-and-forget: command FIFO advances immediately; back-to-back writes overwrite the pending request
+
 **Register Read Logic (combinational):**
 - DITHER_MODE returns: {56'b0, dither_mode[7:0]}
 - Color Combiner registers (0x18–0x1F): Read-back behavior per UNIT-010 design (TBD)
 - FB_DISPLAY returns: {32'b0, fb_display[31:0]}
 - FB_DISPLAY_SYNC: Write-only (blocking register, no read value)
+- PERF_TIMESTAMP returns: {32'd0, cycle_counter} (live instantaneous value)
 - ID register returns constant 0x00000900_00006702
 - Undefined addresses return 0
 
@@ -187,7 +203,11 @@ None
 - Verify Z_RANGE reset: confirm reset value is 0x0000FFFF (min=0, max=0xFFFF)
 - Verify mode_color_write output: write RENDER_MODE with bit 4 set/clear, confirm mode_color_write output tracks
 - Verify color combiner registers (0x18–0x1F): write/read-back — specific test cases pending UNIT-010 design
-- Verify reset: all registers return to defaults (white color, address 0, modes disabled, dither enabled)
+- Verify cycle_counter resets to 0 on vsync rising edge
+- Verify cycle_counter increments once per clk_core cycle and saturates at 0xFFFFFFFF
+- Verify PERF_TIMESTAMP write asserts ts_mem_wr pulse with correct addr and captured counter
+- Verify PERF_TIMESTAMP read returns live cycle_counter value
+- Verify reset: all registers return to defaults (white color, address 0, modes disabled, dither enabled, cycle_counter=0)
 
 ## Design Notes
 

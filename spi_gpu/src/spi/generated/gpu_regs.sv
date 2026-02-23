@@ -82,12 +82,7 @@ module gpu_regs (
         logic FB_DISPLAY;
         logic FB_CONTROL;
         logic MEM_FILL;
-        logic PERF_TEX0;
-        logic PERF_TEX1;
-        logic PERF_PIXELS;
-        logic PERF_FRAGMENTS;
-        logic PERF_STALL_VS;
-        logic PERF_STALL_CT;
+        logic PERF_TIMESTAMP;
         logic MEM_ADDR;
         logic MEM_DATA;
         logic ID;
@@ -121,12 +116,7 @@ module gpu_regs (
         decoded_reg_strb.FB_DISPLAY = cpuif_req_masked & (cpuif_addr == 10'h208);
         decoded_reg_strb.FB_CONTROL = cpuif_req_masked & (cpuif_addr == 10'h218);
         decoded_reg_strb.MEM_FILL = cpuif_req_masked & (cpuif_addr == 10'h220);
-        decoded_reg_strb.PERF_TEX0 = cpuif_req_masked & (cpuif_addr == 10'h280) & !cpuif_req_is_wr;
-        decoded_reg_strb.PERF_TEX1 = cpuif_req_masked & (cpuif_addr == 10'h288) & !cpuif_req_is_wr;
-        decoded_reg_strb.PERF_PIXELS = cpuif_req_masked & (cpuif_addr == 10'h2a0) & !cpuif_req_is_wr;
-        decoded_reg_strb.PERF_FRAGMENTS = cpuif_req_masked & (cpuif_addr == 10'h2a8) & !cpuif_req_is_wr;
-        decoded_reg_strb.PERF_STALL_VS = cpuif_req_masked & (cpuif_addr == 10'h2b0) & !cpuif_req_is_wr;
-        decoded_reg_strb.PERF_STALL_CT = cpuif_req_masked & (cpuif_addr == 10'h2b8) & !cpuif_req_is_wr;
+        decoded_reg_strb.PERF_TIMESTAMP = cpuif_req_masked & (cpuif_addr == 10'h280);
         decoded_reg_strb.MEM_ADDR = cpuif_req_masked & (cpuif_addr == 10'h380);
         decoded_reg_strb.MEM_DATA = cpuif_req_masked & (cpuif_addr == 10'h388);
         decoded_reg_strb.ID = cpuif_req_masked & (cpuif_addr == 10'h3f8) & !cpuif_req_is_wr;
@@ -647,6 +637,16 @@ module gpu_regs (
         } MEM_FILL;
         struct {
             struct {
+                logic [22:0] next;
+                logic load_next;
+            } SDRAM_ADDR;
+            struct {
+                logic [40:0] next;
+                logic load_next;
+            } RSVD;
+        } PERF_TIMESTAMP;
+        struct {
+            struct {
                 logic [21:0] next;
                 logic load_next;
             } ADDR;
@@ -1050,6 +1050,14 @@ module gpu_regs (
                 logic [11:0] value;
             } RSVD;
         } MEM_FILL;
+        struct {
+            struct {
+                logic [22:0] value;
+            } SDRAM_ADDR;
+            struct {
+                logic [40:0] value;
+            } RSVD;
+        } PERF_TIMESTAMP;
         struct {
             struct {
                 logic [21:0] value;
@@ -3757,18 +3765,52 @@ module gpu_regs (
         end
     end
     assign hwif_out.MEM_FILL.RSVD.value = field_storage.MEM_FILL.RSVD.value;
-    assign hwif_out.PERF_TEX0.COUNTER_A.value = 32'h0;
-    assign hwif_out.PERF_TEX0.COUNTER_B.value = 32'h0;
-    assign hwif_out.PERF_TEX1.COUNTER_A.value = 32'h0;
-    assign hwif_out.PERF_TEX1.COUNTER_B.value = 32'h0;
-    assign hwif_out.PERF_PIXELS.COUNTER_A.value = 32'h0;
-    assign hwif_out.PERF_PIXELS.COUNTER_B.value = 32'h0;
-    assign hwif_out.PERF_FRAGMENTS.COUNTER_A.value = 32'h0;
-    assign hwif_out.PERF_FRAGMENTS.COUNTER_B.value = 32'h0;
-    assign hwif_out.PERF_STALL_VS.COUNTER_A.value = 32'h0;
-    assign hwif_out.PERF_STALL_VS.COUNTER_B.value = 32'h0;
-    assign hwif_out.PERF_STALL_CT.COUNTER_A.value = 32'h0;
-    assign hwif_out.PERF_STALL_CT.COUNTER_B.value = 32'h0;
+    // Field: gpu_regs.PERF_TIMESTAMP.SDRAM_ADDR
+    always_comb begin
+        automatic logic [22:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PERF_TIMESTAMP && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value & ~decoded_wr_biten[22:0]) | (decoded_wr_data[22:0] & decoded_wr_biten[22:0]);
+            load_next_c = '1;
+        end
+        field_combo.PERF_TIMESTAMP.SDRAM_ADDR.next = next_c;
+        field_combo.PERF_TIMESTAMP.SDRAM_ADDR.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value <= 23'h0;
+        end else begin
+            if(field_combo.PERF_TIMESTAMP.SDRAM_ADDR.load_next) begin
+                field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value <= field_combo.PERF_TIMESTAMP.SDRAM_ADDR.next;
+            end
+        end
+    end
+    assign hwif_out.PERF_TIMESTAMP.SDRAM_ADDR.value = field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value;
+    // Field: gpu_regs.PERF_TIMESTAMP.RSVD
+    always_comb begin
+        automatic logic [40:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PERF_TIMESTAMP.RSVD.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PERF_TIMESTAMP && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PERF_TIMESTAMP.RSVD.value & ~decoded_wr_biten[63:23]) | (decoded_wr_data[63:23] & decoded_wr_biten[63:23]);
+            load_next_c = '1;
+        end
+        field_combo.PERF_TIMESTAMP.RSVD.next = next_c;
+        field_combo.PERF_TIMESTAMP.RSVD.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PERF_TIMESTAMP.RSVD.value <= 41'h0;
+        end else begin
+            if(field_combo.PERF_TIMESTAMP.RSVD.load_next) begin
+                field_storage.PERF_TIMESTAMP.RSVD.value <= field_combo.PERF_TIMESTAMP.RSVD.next;
+            end
+        end
+    end
+    assign hwif_out.PERF_TIMESTAMP.RSVD.value = field_storage.PERF_TIMESTAMP.RSVD.value;
     // Field: gpu_regs.MEM_ADDR.ADDR
     always_comb begin
         automatic logic [21:0] next_c;
@@ -3858,7 +3900,7 @@ module gpu_regs (
     logic [63:0] readback_data;
 
     // Assign readback values to a flattened array
-    logic [63:0] readback_array[26];
+    logic [63:0] readback_array[21];
     assign readback_array[0][7:0] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_R.value : '0;
     assign readback_array[0][15:8] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_G.value : '0;
     assign readback_array[0][23:16] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_B.value : '0;
@@ -3976,24 +4018,14 @@ module gpu_regs (
     assign readback_array[16][31:16] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_VALUE.value : '0;
     assign readback_array[16][51:32] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_COUNT.value : '0;
     assign readback_array[16][63:52] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.RSVD.value : '0;
-    assign readback_array[17][31:0] = (decoded_reg_strb.PERF_TEX0 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[17][63:32] = (decoded_reg_strb.PERF_TEX0 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[18][31:0] = (decoded_reg_strb.PERF_TEX1 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[18][63:32] = (decoded_reg_strb.PERF_TEX1 && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[19][31:0] = (decoded_reg_strb.PERF_PIXELS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[19][63:32] = (decoded_reg_strb.PERF_PIXELS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[20][31:0] = (decoded_reg_strb.PERF_FRAGMENTS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[20][63:32] = (decoded_reg_strb.PERF_FRAGMENTS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[21][31:0] = (decoded_reg_strb.PERF_STALL_VS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[21][63:32] = (decoded_reg_strb.PERF_STALL_VS && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[22][31:0] = (decoded_reg_strb.PERF_STALL_CT && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[22][63:32] = (decoded_reg_strb.PERF_STALL_CT && !decoded_req_is_wr) ? 32'h0 : '0;
-    assign readback_array[23][21:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;
-    assign readback_array[23][63:22] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.RSVD.value : '0;
-    assign readback_array[24][63:0] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.DATA.value : '0;
-    assign readback_array[25][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
-    assign readback_array[25][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
-    assign readback_array[25][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[17][22:0] = (decoded_reg_strb.PERF_TIMESTAMP && !decoded_req_is_wr) ? field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value : '0;
+    assign readback_array[17][63:23] = (decoded_reg_strb.PERF_TIMESTAMP && !decoded_req_is_wr) ? field_storage.PERF_TIMESTAMP.RSVD.value : '0;
+    assign readback_array[18][21:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;
+    assign readback_array[18][63:22] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.RSVD.value : '0;
+    assign readback_array[19][63:0] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.DATA.value : '0;
+    assign readback_array[20][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
+    assign readback_array[20][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
+    assign readback_array[20][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
 
     // Reduce the array
     always_comb begin
@@ -4001,7 +4033,7 @@ module gpu_regs (
         readback_done = decoded_req & ~decoded_req_is_wr;
         readback_err = '0;
         readback_data_var = '0;
-        for(int i=0; i<26; i++) readback_data_var |= readback_array[i];
+        for(int i=0; i<21; i++) readback_data_var |= readback_array[i];
         readback_data = readback_data_var;
     end
 

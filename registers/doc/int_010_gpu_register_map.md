@@ -109,8 +109,8 @@ All register semantics are identical regardless of command source.
 0x20-0x2F: Reserved (freed from old texture registers)
 0x30-0x3F: Rendering Configuration (RENDER_MODE consolidated)
 0x40-0x4F: Framebuffer, Z-Buffer, Scissor, Color Grading
-0x50-0x5F: Performance Counters (PACKED: 2×32-bit per register)
-0x60-0x6F: Reserved (freed from old performance counters)
+0x50: Performance Timestamp (PERF_TIMESTAMP)
+0x51-0x6F: Reserved
 0x70-0x7F: Status & Control (MEM_ADDR, MEM_DATA, ID)
 ```
 
@@ -118,7 +118,7 @@ All register semantics are identical regardless of command source.
 - Texture units reduced from 4 to 2, with 4x larger per-unit cache (16K texels)
 - Color combiner replaces sequential 4-texture blend with flexible N64/GeForce2-style combining
 - UV2_UV3 register eliminated (0x02 freed), texture registers 0x18-0x1F repurposed for color combiner
-- Performance counter registers for TEX2/TEX3 freed (0x52-0x53 now reserved)
+- Performance counters replaced with command-stream timestamp marker (PERF_TIMESTAMP writes to SDRAM)
 
 ---
 
@@ -166,16 +166,9 @@ All register semantics are identical regardless of command source.
 | 0x44-0x46 | - | - | Reserved |
 | 0x47 | FB_DISPLAY_SYNC | R/W | **Display scanout + LUT control (vsync-blocking)** |
 | 0x48-0x4F | - | - | Reserved (framebuffer config) |
-| **Performance Counters** ||||
-| 0x50 | PERF_TEX0 | R | **TEX0 hits[31:0] + misses[63:32]** |
-| 0x51 | PERF_TEX1 | R | TEX1 hits + misses |
-| 0x52 | - | - | Reserved |
-| 0x53 | - | - | Reserved |
-| 0x54 | PERF_PIXELS | R | Pixels written[31:0] + fragments passed[63:32] |
-| 0x55 | PERF_FRAGMENTS | R | Fragments failed[31:0] + reserved[63:32] |
-| 0x56 | PERF_STALL_VS | R | Vertex stalls[31:0] + SDRAM stalls[63:32] |
-| 0x57 | PERF_STALL_CT | R | Cache stalls[31:0] + triangles[63:32] |
-| 0x58-0x6F | - | - | Reserved |
+| **Performance Timestamp** ||||
+| 0x50 | PERF_TIMESTAMP | R/W | **Write: capture cycle counter to SDRAM[22:0]; Read: live counter** |
+| 0x51-0x6F | - | - | Reserved |
 | **Status & Control** ||||
 | 0x70 | MEM_ADDR | R/W | Memory dword address pointer (22-bit) |
 | 0x71 | MEM_DATA | R/W | Memory data (bidirectional 64-bit, auto-increment) |
@@ -1094,172 +1087,66 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 
 ---
 
-## Performance Counter Registers (0x50-0x5F)
+## Performance Timestamp (0x50)
 
-Performance counters packed as **pairs of 32-bit unsigned saturating counters** per register. All are **clear-on-read** (reading returns value AND resets both counters to 0).
-
-```
-[63:32]   Counter B (32-bit unsigned, saturates at 0xFFFFFFFF)
-[31:0]    Counter A (32-bit unsigned, saturates at 0xFFFFFFFF)
-```
-
-**Clear-on-Read Protocol**:
-```c
-uint64_t value = gpu_read(REG_PERF_TEX0);
-uint32_t hits = value & 0xFFFFFFFF;
-uint32_t misses = (value >> 32) & 0xFFFFFFFF;
-// Both counters now reset to 0, start counting again
-```
-
-**Saturation Behavior**:
-- Counters saturate at 0xFFFFFFFF (4,294,967,295) and stop incrementing
-- Reading a saturated counter clears it back to 0
-- 32-bit range sufficient for typical per-frame sampling (at 60 FPS, would take ~2.27 years of continuous max hits to saturate)
-
-**Use Cases**:
-- **Performance Profiling**: Sample counters every frame to measure triangle throughput, fill rate, cache efficiency
-- **Bottleneck Detection**: Compare stall counters to identify pipeline bottlenecks
-- **Cache Tuning**: Measure texture cache hit rates to validate cache architecture
-- **Debugging**: Track pixels written, triangles submitted for correctness verification
+Command-stream timestamp marker for precise GPU-side profiling.
+A 32-bit unsigned saturating cycle counter increments every `clk_core` cycle (100 MHz, 10 ns resolution) and resets to 0 on each vsync rising edge.
+At 100 MHz the counter saturates after ~42.9 seconds, far exceeding the 16.67 ms frame period.
 
 ---
 
-### 0x50-0x51: PERF_TEXn (Packed Hit/Miss Counters)
+### 0x50: PERF_TIMESTAMP
 
-Texture cache hit/miss counters for each of the 2 texture samplers, **packed 2×32-bit per register**.
+**Write Behavior:**
 
-**Register Layout**:
+DATA[22:0] specifies a 23-bit SDRAM word address (32-bit word granularity, 32 MiB addressable).
+When this write reaches the front of the command FIFO and is executed by the register file, the GPU captures the current frame-relative cycle counter value and writes it as a 32-bit word to the specified SDRAM address via memory arbiter port 3.
 
-| Addr | Name | Counter A [31:0] | Counter B [63:32] |
-|------|------|------------------|-------------------|
-| 0x50 | PERF_TEX0 | TEX0 cache hits | TEX0 cache misses |
-| 0x51 | PERF_TEX1 | TEX1 cache hits | TEX1 cache misses |
-| 0x52 | - | Reserved | Reserved |
-| 0x53 | - | Reserved | Reserved |
+The SDRAM write is fire-and-forget: the command FIFO advances immediately after latching the request.
+If a second PERF_TIMESTAMP write arrives before the previous SDRAM write completes, the new request overwrites the pending one (latest wins).
 
-**Increment Conditions**:
-- **Hits [31:0]**: Increments when pixel pipeline requests texel from sampler N and the 4×4 block is already cached
-- **Misses [63:32]**: Increments when pixel pipeline requests texel and the block is NOT cached (triggers cache fill)
+```
+[63:23]   Reserved (0)
+[22:0]    SDRAM word address (32-bit granularity)
+```
 
-**Cache Hit Rate Calculation**:
+**Read Behavior:**
+
+Returns the current (instantaneous) cycle counter value in bits [31:0], zero-extended to 64 bits.
+This read is NOT FIFO-ordered — it returns the counter value at the time the read is processed, not when the read was submitted.
+
+```
+[63:32]   0 (reserved)
+[31:0]    Frame-relative cycle counter (32-bit unsigned saturating, 100 MHz)
+```
+
+**Cycle Counter Specification:**
+- Clock: clk_core (100 MHz, 10 ns resolution)
+- Width: 32 bits unsigned, saturating at 0xFFFFFFFF
+- Reset: clears to 0 on each vsync rising edge
+
+**Usage Example:**
 ```rust
-let value = gpu_read(REG_PERF_TEX0);
-let hits = (value & 0xFFFFFFFF) as u32;
-let misses = (value >> 32) as u32;
-let total = hits + misses;
-let hit_rate = if total > 0 { (hits as f32 / total as f32) * 100.0 } else { 0.0 };
-println!("Texture 0 cache hit rate: {:.1}%", hit_rate);
+// Allocate a small timestamp buffer in SDRAM (e.g. at a known word address)
+const TS_BUF: u32 = 0x7F_FF00;
+
+// Bracket a draw call with timestamps
+gpu.write(PERF_TIMESTAMP, TS_BUF as u64);       // t0: before draw
+// ... draw calls ...
+gpu.write(PERF_TIMESTAMP, (TS_BUF + 1) as u64);  // t1: after draw
+
+// Read results back via MEM_ADDR/MEM_DATA
+let t0 = gpu.read_memory_word(TS_BUF);
+let t1 = gpu.read_memory_word(TS_BUF + 1);
+let elapsed_cycles = t1.wrapping_sub(t0);
+let elapsed_us = elapsed_cycles as f32 * 0.01;  // 10 ns per cycle
 ```
 
-**Expected Performance** (per REQ-003.08):
-- Typical scenes: >85% hit rate due to spatial locality
-- Cache miss causes stall (tracked by PERF_STALL_CT register)
-
-**Reset Value**: 0 (clears on read)
+**Reset Value**: 0x0000000000000000
 
 ---
 
-### 0x54: PERF_PIXELS (Packed Pixels/Fragments Passed)
-
-Pixels written to framebuffer and fragments that passed Z-test, **packed 2×32-bit**.
-
-```
-[63:32]   Fragments passed Z-test (32-bit unsigned)
-[31:0]    Pixels written to framebuffer (32-bit unsigned)
-```
-
-**Increment Conditions**:
-- **Pixels written [31:0]**: Increments when pixel pipeline writes a pixel to the framebuffer at FB_DRAW address (after passing Z-test if enabled).
-- **Fragments passed [63:32]**: Increments when fragment passes depth test (or Z-test is disabled). Equivalent to pixels written.
-
-**Use Cases**:
-- **Fill Rate Measurement**: `fill_rate = pixels_written / frame_time_seconds`
-- **Overdraw Detection**: If pixels_written > screen_resolution, scene has overdraw
-- **Culling Efficiency**: Compare to theoretical max (640×480 = 307,200 pixels)
-
-**Reset Value**: 0 (clears on read)
-
----
-
-### 0x55: PERF_FRAGMENTS (Packed Fragments Failed + Reserved)
-
-Fragments that failed Z-test (early-Z rejection), **packed with reserved counter**.
-
-```
-[63:32]   Reserved (reads as 0)
-[31:0]    Fragments failed Z-test (32-bit unsigned)
-```
-
-**Increment Condition**: Increments when fragment fails depth test and is discarded (Z_TEST=1 and depth comparison fails).
-
-**Use Cases**:
-- **Z-Cull Efficiency**: `cull_rate = FAILED / (PASSED + FAILED)`
-- **Render Order Optimization**: Front-to-back rendering increases FAILED count (good for performance)
-
-**Reset Value**: 0 (clears on read)
-
----
-
-### 0x56: PERF_STALL_VS (Packed Vertex/SDRAM Stalls)
-
-Cycles stalled waiting for vertex data or SDRAM arbiter, **packed 2×32-bit**.
-
-```
-[63:32]   SDRAM stall cycles (32-bit unsigned)
-[31:0]    Vertex stall cycles (32-bit unsigned)
-```
-
-**Increment Conditions**:
-- **Vertex stalls [31:0]**: Increments once per clk_core cycle when rasterizer (UNIT-005) is idle waiting for tri_valid signal from register file.
-- **SDRAM stalls [63:32]**: Increments once per clk_core cycle when any rendering unit has a pending SDRAM request not granted by arbiter (UNIT-007).
-
-**Use Cases**:
-- **Bottleneck Detection**: High vertex stalls indicate host not submitting triangles fast enough
-- **Memory Bandwidth Analysis**: High SDRAM stalls indicate memory contention
-- **SPI Bandwidth**: Correlate vertex stalls with triangle submission rate
-
-**Reset Value**: 0 (clears on read)
-
----
-
-### 0x57: PERF_STALL_CT (Packed Cache Stalls/Triangles)
-
-Cycles stalled waiting for cache fill and triangles submitted, **packed 2×32-bit**.
-
-```
-[63:32]   Triangles submitted (32-bit unsigned)
-[31:0]    Cache stall cycles (32-bit unsigned)
-```
-
-**Increment Conditions**:
-- **Cache stalls [31:0]**: Increments once per clk_core cycle when pixel pipeline is stalled waiting for texture cache miss to complete (SDRAM fetch + decompress + bank write).
-- **Triangles [63:32]**: Increments once per tri_valid pulse from UNIT-003 when a triangle is submitted for rasterization (any VERTEX_KICK register write).
-
-**Cache Fill Latency** (per INT-032):
-- BC1 format: ~8 cycles
-- RGBA4444 format: ~18 cycles
-
-**Use Cases**:
-- **Cache Miss Impact**: Correlate cache stalls with PERF_TEXn misses to understand miss penalty
-- **Texture Format Selection**: Compare BC1 vs RGBA4444 stall cycles
-- **Triangle Throughput**: `tri_rate = triangles / frame_time_seconds`
-- **Mesh Complexity**: Track triangles per frame for different scenes
-
-**Note**: Triangle count includes culled triangles (backface, degenerate).
-
-**Reset Value**: 0 (clears on read)
-
----
-
-### 0x58-0x6F: Reserved
-
-Reserved for future performance counters.
-
-**Potential Future Counters**:
-- PERF_VERTICES_SUBMITTED (vertex write count)
-- PERF_TRIANGLES_CULLED (backface + degenerate count)
-- PERF_CACHE_EVICTIONS (cache line replacements)
-- PERF_DMA_TRANSFERS (SPI→SDRAM bulk uploads)
+### 0x51-0x6F: Reserved
 
 ---
 
@@ -1616,11 +1503,7 @@ After hardware reset or power-on:
 | FB_ZBUFFER | 0x0000000000000000 | Address 0x000000 (Z_COMPARE in RENDER_MODE) |
 | FB_CONTROL | 0x00000000_3FF003FF | Full screen scissor 1024×1024 |
 | FB_DISPLAY_SYNC | N/A | Write-only blocking register |
-| PERF_TEX0-1 | 0x0000000000000000 | Both hits and misses zero |
-| PERF_PIXELS | 0x0000000000000000 | Both counters zero |
-| PERF_FRAGMENTS | 0x0000000000000000 | Both counters zero |
-| PERF_STALL_VS | 0x0000000000000000 | Both counters zero |
-| PERF_STALL_CT | 0x0000000000000000 | Both counters zero |
+| PERF_TIMESTAMP | 0x0000000000000000 | Cycle counter starts at 0 |
 | MEM_ADDR | 0x0000000000000000 | Dword address 0x000000 |
 | MEM_DATA | N/A | Depends on memory |
 | ID | 0x00000A0000006702 | Device 0x6702 |
@@ -1670,9 +1553,8 @@ See specification details above.
 
 Writing to **TEXn_BASE** or **TEXn_FMT** registers (n=0,1) implicitly invalidates the corresponding sampler's texture cache. All valid bits for the affected sampler are cleared, ensuring the next texture access fetches fresh data from SDRAM.
 
-**Performance Counters**: Cache hit/miss statistics are available via performance counter registers (0x50-0x51) for the 2 texture samplers. Read these counters to measure cache efficiency and validate the >85% hit rate target from REQ-003.08.
-
-No explicit cache control registers are defined beyond the performance counters. Future versions may add a `CACHE_CTRL` register for explicit flush/invalidate commands.
+No explicit cache control registers are defined.
+Future versions may add a `CACHE_CTRL` register for explicit flush/invalidate commands.
 
 ## Notes
 

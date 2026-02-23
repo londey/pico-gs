@@ -154,6 +154,11 @@ module gpu_top (
     wire [31:0] clear_color;
     wire clear_trigger;
 
+    // Timestamp SDRAM write signals (register_file → arbiter port 3)
+    wire        ts_mem_wr;
+    wire [22:0] ts_mem_addr;
+    wire [31:0] ts_mem_data;
+
     // Status signals
     wire gpu_busy;
     wire vblank;
@@ -227,6 +232,9 @@ module gpu_top (
         .fb_display(fb_display),
         .clear_color(clear_color),
         .clear_trigger(clear_trigger),
+        .ts_mem_wr(ts_mem_wr),
+        .ts_mem_addr(ts_mem_addr),
+        .ts_mem_data(ts_mem_data),
         .gpu_busy(gpu_busy),
         .vblank(vblank),
         .fifo_depth({2'b0, fifo_rd_count})
@@ -442,11 +450,36 @@ module gpu_top (
     assign arb_port2_burst_len = 8'b0;
     assign arb_port2_burst_wdata = 16'b0;
 
-    // Port 3: Texture (not used yet)
-    assign arb_port3_req = 1'b0;
-    assign arb_port3_we = 1'b0;
-    assign arb_port3_addr = 24'b0;
-    assign arb_port3_wdata = 32'b0;
+    // Port 3: Timestamp SDRAM write (shared with future texture reads)
+    //
+    // Simple FSM: latch ts_mem_wr pulse from register_file, hold arbiter
+    // request until acknowledged.  Single-word write, no burst.
+    reg         ts_pending;
+    reg  [23:0] ts_arb_addr;
+    reg  [31:0] ts_arb_wdata;
+
+    always_ff @(posedge clk_core or negedge rst_n_core) begin
+        if (!rst_n_core) begin
+            ts_pending  <= 1'b0;
+            ts_arb_addr <= 24'd0;
+            ts_arb_wdata <= 32'd0;
+        end else begin
+            if (ts_mem_wr) begin
+                // Latch new timestamp write request
+                ts_pending  <= 1'b1;
+                ts_arb_addr <= {ts_mem_addr, 1'b0};  // 23-bit word addr → 24-bit half-word addr
+                ts_arb_wdata <= ts_mem_data;
+            end else if (ts_pending && arb_port3_ack) begin
+                // Arbiter accepted the write
+                ts_pending <= 1'b0;
+            end
+        end
+    end
+
+    assign arb_port3_req = ts_pending;
+    assign arb_port3_we = 1'b1;
+    assign arb_port3_addr = ts_arb_addr;
+    assign arb_port3_wdata = ts_arb_wdata;
     assign arb_port3_burst_len = 8'b0;
     assign arb_port3_burst_wdata = 16'b0;
 

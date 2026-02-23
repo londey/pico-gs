@@ -75,7 +75,11 @@ impl<S: SpiTransport> GpuDriver<S> {
     /// Upload a block of 64-bit dwords to GPU SDRAM via MEM_ADDR/MEM_DATA.
     ///
     /// `dword_addr` is a 22-bit dword address (byte address >> 3).
-    pub fn upload_memory(&mut self, dword_addr: u32, data: &[u64]) -> Result<(), GpuError<S::Error>> {
+    pub fn upload_memory(
+        &mut self,
+        dword_addr: u32,
+        data: &[u64],
+    ) -> Result<(), GpuError<S::Error>> {
         self.write(registers::MEM_ADDR, dword_addr as u64)?;
         for &dword in data {
             self.write(registers::MEM_DATA, dword)?;
@@ -88,7 +92,11 @@ impl<S: SpiTransport> GpuDriver<S> {
     /// Writing MEM_ADDR triggers a prefetch; each subsequent MEM_DATA read
     /// returns the prefetched dword and pipelines the next.
     /// `dword_addr` is a 22-bit dword address (byte address >> 3).
-    pub fn read_memory(&mut self, dword_addr: u32, buf: &mut [u64]) -> Result<(), GpuError<S::Error>> {
+    pub fn read_memory(
+        &mut self,
+        dword_addr: u32,
+        buf: &mut [u64],
+    ) -> Result<(), GpuError<S::Error>> {
         self.write(registers::MEM_ADDR, dword_addr as u64)?;
         for slot in buf.iter_mut() {
             *slot = self.read(registers::MEM_DATA)?;
@@ -179,6 +187,30 @@ impl<S: SpiTransport> GpuDriver<S> {
     /// Get the current display framebuffer address.
     pub fn display_fb(&self) -> u32 {
         self.display_fb
+    }
+
+    /// Insert a timestamp marker into the command stream.
+    ///
+    /// When this command is processed by the GPU, the current frame-relative
+    /// cycle counter (100 MHz, 10 ns resolution, saturating) is written as a
+    /// 32-bit word to the specified SDRAM address.
+    ///
+    /// # Arguments
+    ///
+    /// * `sdram_word_addr` - 23-bit SDRAM word address (32-bit word granularity,
+    ///   32 MiB addressable). Only bits \[22:0\] are used.
+    pub fn timestamp(&mut self, sdram_word_addr: u32) -> Result<(), GpuError<S::Error>> {
+        self.write(registers::PERF_TIMESTAMP, sdram_word_addr as u64)
+    }
+
+    /// Read the GPU's current cycle counter value (instantaneous, not FIFO-ordered).
+    ///
+    /// # Returns
+    ///
+    /// Frame-relative cycle count (32-bit, 100 MHz, saturating, resets at vsync).
+    pub fn read_cycle_counter(&mut self) -> Result<u32, GpuError<S::Error>> {
+        let val = self.read(registers::PERF_TIMESTAMP)?;
+        Ok(val as u32)
     }
 }
 
