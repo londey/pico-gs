@@ -90,7 +90,6 @@ module gpu_regs (
         logic PERF_STALL_CT;
         logic MEM_ADDR;
         logic MEM_DATA;
-        logic STATUS;
         logic ID;
     } decoded_reg_strb_t;
     decoded_reg_strb_t decoded_reg_strb;
@@ -130,7 +129,6 @@ module gpu_regs (
         decoded_reg_strb.PERF_STALL_CT = cpuif_req_masked & (cpuif_addr == 10'h2b8) & !cpuif_req_is_wr;
         decoded_reg_strb.MEM_ADDR = cpuif_req_masked & (cpuif_addr == 10'h380);
         decoded_reg_strb.MEM_DATA = cpuif_req_masked & (cpuif_addr == 10'h388);
-        decoded_reg_strb.STATUS = cpuif_req_masked & (cpuif_addr == 10'h3f0) & !cpuif_req_is_wr;
         decoded_reg_strb.ID = cpuif_req_masked & (cpuif_addr == 10'h3f8) & !cpuif_req_is_wr;
         decoded_err = (~is_valid_addr | is_invalid_rw) & decoded_req;
     end
@@ -3840,10 +3838,6 @@ module gpu_regs (
         end
     end
     assign hwif_out.MEM_DATA.DATA.value = field_storage.MEM_DATA.DATA.value;
-    assign hwif_out.STATUS.FIFO_DEPTH.value = 8'h0;
-    assign hwif_out.STATUS.BUSY.value = 1'h0;
-    assign hwif_out.STATUS.VBLANK.value = 1'h0;
-    assign hwif_out.STATUS.RSVD.value = 54'h0;
     assign hwif_out.ID.DEVICE_ID.value = 16'h6702;
     assign hwif_out.ID.VERSION.value = 16'ha00;
     assign hwif_out.ID.RSVD.value = 32'h0;
@@ -3864,7 +3858,7 @@ module gpu_regs (
     logic [63:0] readback_data;
 
     // Assign readback values to a flattened array
-    logic [63:0] readback_array[27];
+    logic [63:0] readback_array[26];
     assign readback_array[0][7:0] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_R.value : '0;
     assign readback_array[0][15:8] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_G.value : '0;
     assign readback_array[0][23:16] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_B.value : '0;
@@ -3997,13 +3991,9 @@ module gpu_regs (
     assign readback_array[23][21:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;
     assign readback_array[23][63:22] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.RSVD.value : '0;
     assign readback_array[24][63:0] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.DATA.value : '0;
-    assign readback_array[25][7:0] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 8'h0 : '0;
-    assign readback_array[25][8:8] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[25][9:9] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 1'h0 : '0;
-    assign readback_array[25][63:10] = (decoded_reg_strb.STATUS && !decoded_req_is_wr) ? 54'h0 : '0;
-    assign readback_array[26][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
-    assign readback_array[26][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
-    assign readback_array[26][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
+    assign readback_array[25][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
+    assign readback_array[25][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
+    assign readback_array[25][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
 
     // Reduce the array
     always_comb begin
@@ -4011,7 +4001,7 @@ module gpu_regs (
         readback_done = decoded_req & ~decoded_req_is_wr;
         readback_err = '0;
         readback_data_var = '0;
-        for(int i=0; i<27; i++) readback_data_var |= readback_array[i];
+        for(int i=0; i<26; i++) readback_data_var |= readback_array[i];
         readback_data = readback_data_var;
     end
 

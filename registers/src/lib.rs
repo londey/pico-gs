@@ -136,8 +136,6 @@ pub const FB_DISPLAY_FB_ADDR_SHIFT: u32 = 32;
 pub const MEM_ADDR: u8 = 0x70;
 /// Memory data register (bidirectional 64-bit, auto-increments MEM_ADDR by 1).
 pub const MEM_DATA: u8 = 0x71;
-/// GPU status register (read-only): VBLANK, BUSY, FIFO_DEPTH.
-pub const STATUS: u8 = 0x7E;
 /// GPU identification register (read-only): VERSION + DEVICE_ID.
 pub const ID: u8 = 0x7F;
 

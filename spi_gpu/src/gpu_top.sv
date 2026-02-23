@@ -24,7 +24,7 @@ module gpu_top (
 
     // ==== GPIO Status Outputs (to RP2350) ====
     output wire         gpio_cmd_full,      // Command buffer near-full warning
-    output wire         gpio_cmd_empty,     // Command buffer empty (safe to read STATUS)
+    output wire         gpio_cmd_empty,     // Command buffer empty (safe to read registers)
     output wire         gpio_vsync,         // Vertical sync pulse
 
     // ==== SDRAM Interface (32MB W9825G6KH-6, 16-bit synchronous) ====

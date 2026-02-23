@@ -171,7 +171,7 @@ CMD_EMPTY ──────────────────────┘
 
 **Behavior**:
 - Asserts when FIFO is completely empty AND no command executing
-- Safe to read STATUS or other registers when asserted
+- Safe to read registers (ID, MEM_DATA) when asserted
 - Reading during GPU activity may return stale/inconsistent data
 - After power-on reset, CMD_EMPTY is deasserted while pre-populated boot commands are being processed (see Boot Pre-Population under Command Queueing)
 
@@ -266,9 +266,8 @@ The SPI interface operates in a separate clock domain from the GPU core.
 ## Read Timing Constraints
 
 **When to Read**:
-- STATUS register may be read any time (but data may be in flux)
-- For consistent STATUS read, wait for CMD_EMPTY
 - ID register is constant, can be read any time
+- For other readable registers, wait for CMD_EMPTY
 
 **Read During Write**:
 - If host initiates read while write FIFO is being processed, data is from register file at that instant
@@ -298,7 +297,7 @@ The GPU has minimal error reporting. Host is responsible for correct usage.
 **Robustness Recommendations**:
 1. Always check CMD_FULL before write burst
 2. Check ID register on init to confirm GPU presence
-3. Use VSYNC for frame timing, not polling STATUS
+3. Use VSYNC GPIO for frame timing
 4. Reset GPU (via separate GPIO or power cycle) if in unknown state
 
 ---

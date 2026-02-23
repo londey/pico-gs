@@ -460,16 +460,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     // index 0x72-0x7D: Reserved
 
-    reg status_reg {
-        name = "STATUS";
-        desc = "GPU status (read-only)";
-        default sw = r;
-        field {} FIFO_DEPTH[7:0] = 0;
-        field {} BUSY[8:8]       = 0;
-        field {} VBLANK[9:9]     = 0;
-        field {} RSVD[63:10]     = 0;
-    };
-    status_reg STATUS @ 0x3F0;  // index 0x7E
+    // index 0x7E: Reserved (STATUS removed — host uses CMD_FULL/VSYNC GPIOs)
 
     reg id_reg {
         name = "ID";

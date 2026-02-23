@@ -118,7 +118,6 @@ None
 | 0x09 | FB_DISPLAY | R/W |
 | 0x0A | CLEAR_COLOR | R/W |
 | 0x0B | CLEAR | W (pulse) |
-| 0x10 | STATUS | R (busy, vblank, fifo_depth, vertex_count) |
 | 0x31 | Z_RANGE | R/W (z_range_min, z_range_max) |
 | 0x32 | DITHER_MODE | R/W (enable, pattern) |
 | 0x18–0x1F | Color Combiner | R/W (reserved block — layout per INT-010 / UNIT-010, preliminary) |
@@ -158,7 +157,6 @@ None
   - Trigger lut_dma if LUT_ADDR != 0
 
 **Register Read Logic (combinational):**
-- STATUS register packs: {vblank, gpu_busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}
 - DITHER_MODE returns: {56'b0, dither_mode[7:0]}
 - Color Combiner registers (0x18–0x1F): Read-back behavior per UNIT-010 design (TBD)
 - FB_DISPLAY returns: {32'b0, fb_display[31:0]}
@@ -176,7 +174,6 @@ None
 - Verify vertex_count wraps: submit 6 vertices (2 triangles), confirm 2 tri_valid pulses
 - Verify color latching: change COLOR between vertices, confirm per-vertex colors on output
 - Verify register read-back: write then read COLOR, TRI_MODE, FB_DRAW, FB_DISPLAY, CLEAR_COLOR
-- Verify STATUS register: confirm gpu_busy, vblank, fifo_depth, vertex_count fields are correct
 - Verify ID register: read 0x7F returns 0x6702
 - Verify clear_trigger: write to CLEAR, confirm one-cycle pulse
 - Verify DITHER_MODE: write then read back, confirm dither_enable and dither_pattern outputs match written value

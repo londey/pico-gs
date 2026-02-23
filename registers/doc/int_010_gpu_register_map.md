@@ -111,7 +111,7 @@ All register semantics are identical regardless of command source.
 0x40-0x4F: Framebuffer, Z-Buffer, Scissor, Color Grading
 0x50-0x5F: Performance Counters (PACKED: 2×32-bit per register)
 0x60-0x6F: Reserved (freed from old performance counters)
-0x70-0x7F: Status & Control (MEM_ADDR, MEM_DATA, STATUS, ID)
+0x70-0x7F: Status & Control (MEM_ADDR, MEM_DATA, ID)
 ```
 
 **Key Optimizations**:
@@ -179,8 +179,7 @@ All register semantics are identical regardless of command source.
 | **Status & Control** ||||
 | 0x70 | MEM_ADDR | R/W | Memory dword address pointer (22-bit) |
 | 0x71 | MEM_DATA | R/W | Memory data (bidirectional 64-bit, auto-increment) |
-| 0x72-0x7D | - | - | Reserved |
-| 0x7E | STATUS | R | GPU status and FIFO depth |
+| 0x72-0x7E | - | - | Reserved |
 | 0x7F | ID | R | GPU identification |
 
 ---
@@ -1325,26 +1324,6 @@ for (int i = 0; i < 128; i++) {
 
 ---
 
-### 0x7E: STATUS
-
-GPU status (read-only).
-
-```
-[63:16]   Reserved (reads as 0)
-[15:10]   Reserved
-[9]       VBLANK: Currently in vertical blanking period
-[8]       BUSY: GPU is processing commands
-[7:0]     FIFO_DEPTH: Number of commands in queue
-```
-
-**FIFO_DEPTH**:
-- 0 = FIFO empty, safe to read other registers
-- ≥(MAX-2) = Near full, CMD_FULL GPIO asserted
-
-**Reset Value**: 0x0000000000000000
-
----
-
 ### 0x7F: ID
 
 GPU identification (read-only).
@@ -1644,7 +1623,6 @@ After hardware reset or power-on:
 | PERF_STALL_CT | 0x0000000000000000 | Both counters zero |
 | MEM_ADDR | 0x0000000000000000 | Dword address 0x000000 |
 | MEM_DATA | N/A | Depends on memory |
-| STATUS | 0x0000000000000000 | Idle, FIFO empty |
 | ID | 0x00000A0000006702 | Device 0x6702 |
 | vertex_count | 0 | Internal state counter |
 
@@ -1657,13 +1635,13 @@ Active-high outputs from GPU to host.
 | Signal | Description |
 |--------|-------------|
 | CMD_FULL | FIFO depth ≥ (MAX - 2), host should pause writes |
-| CMD_EMPTY | FIFO depth = 0, safe to read STATUS register |
+| CMD_EMPTY | FIFO depth = 0, safe to read registers |
 | VSYNC | Pulses high for one clk_core cycle at frame boundary |
 
 **Timing Notes**:
 - CMD_FULL has 2-slot slack: host may complete in-flight transaction
 - VSYNC aligns with display vertical blanking start
-- Poll GPIO or STATUS register; both provide FIFO information
+- Poll GPIO for FIFO and VSYNC information
 
 ---
 
@@ -1676,7 +1654,7 @@ Active-high outputs from GPU to host.
 **Read Transaction** (72 bits @ 25 MHz SPI):
 - Duration: 2.88 µs
 - Data valid on MISO starting from bit 63
-- Only read STATUS when CMD_EMPTY to avoid stale data
+- Only read registers (ID, MEM_DATA) when CMD_EMPTY to avoid stale data
 
 **Triangle Submission** (typical multi-texture):
 - Minimum: 3 VERTEX writes = 8.64 µs

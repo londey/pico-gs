@@ -92,7 +92,7 @@ byte[8] = data & 0xFF
 Read a 64-bit value from a GPU register.
 
 **Preconditions**:
-- `addr` is a readable register (STATUS: 0x7E, ID: 0x7F)
+- `addr` is a readable register (ID: 0x7F, MEM_DATA: 0x71)
 - For consistent reads, CMD_EMPTY should be asserted
 
 **Transaction**:

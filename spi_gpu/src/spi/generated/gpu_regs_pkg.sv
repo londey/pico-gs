@@ -542,29 +542,6 @@ package gpu_regs_pkg;
     } gpu_regs__mem_data_reg__out_t;
 
     typedef struct {
-        logic [7:0] value;
-    } gpu_regs__status_reg__FIFO_DEPTH__out_t;
-
-    typedef struct {
-        logic value;
-    } gpu_regs__status_reg__BUSY__out_t;
-
-    typedef struct {
-        logic value;
-    } gpu_regs__status_reg__VBLANK__out_t;
-
-    typedef struct {
-        logic [53:0] value;
-    } gpu_regs__status_reg__RSVD__out_t;
-
-    typedef struct {
-        gpu_regs__status_reg__FIFO_DEPTH__out_t FIFO_DEPTH;
-        gpu_regs__status_reg__BUSY__out_t BUSY;
-        gpu_regs__status_reg__VBLANK__out_t VBLANK;
-        gpu_regs__status_reg__RSVD__out_t RSVD;
-    } gpu_regs__status_reg__out_t;
-
-    typedef struct {
         logic [15:0] value;
     } gpu_regs__id_reg__DEVICE_ID__out_t;
 
@@ -608,7 +585,6 @@ package gpu_regs_pkg;
         gpu_regs__perf_pair_reg__out_t PERF_STALL_CT;
         gpu_regs__mem_addr_reg__out_t MEM_ADDR;
         gpu_regs__mem_data_reg__out_t MEM_DATA;
-        gpu_regs__status_reg__out_t STATUS;
         gpu_regs__id_reg__out_t ID;
     } gpu_regs__out_t;
 
