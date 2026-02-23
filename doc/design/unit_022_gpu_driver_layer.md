@@ -131,6 +131,7 @@ Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and RE
 
 ## Implementation
 
+- `crates/pico-gs-core/src/gpu/driver.rs`: GpuDriver struct, init, buffer management, register write helpers
 - `crates/pico-gs-core/src/gpu/mod.rs`: Platform-agnostic GPU driver (generic over `SpiTransport`)
 - `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants matching INT-010 (CC_MODE=0x18, CONST_COLOR=0x19, RENDER_MODE=0x30, Z_RANGE=0x31, STIPPLE_PATTERN=0x32, FB_CONFIG=0x40, FB_DISPLAY=0x41, FB_CONTROL=0x43, MEM_FILL=0x44, PERF_TIMESTAMP=0x50, MEM_ADDR=0x70, MEM_DATA=0x71, ID=0x7F)
 - `crates/pico-gs-core/src/gpu/vertex.rs`: Vertex packing

@@ -1,4 +1,4 @@
-// Spec-ref: unit_022_gpu_driver_layer.md `232f8f1ca5a48b18` 2026-02-19
+// Spec-ref: unit_022_gpu_driver_layer.md `c44d854d73502f21` 2026-02-23
 //! GpuVertex: pre-packed vertex data for GPU register writes.
 
 use crate::math::fixed;
@@ -6,11 +6,18 @@ use crate::math::fixed;
 /// A vertex packed into GPU register format, ready for submission.
 #[derive(Clone, Copy, Debug)]
 pub struct GpuVertex {
-    /// Packed COLOR register value: [31:24]=A, [23:16]=B, [15:8]=G, [7:0]=R.
+    /// Packed COLOR register value (0x00): COLOR0 (diffuse) in [63:32], COLOR1 (specular)
+    /// in [31:0]. Currently only COLOR0 is populated: [39:32]=R, [47:40]=G, [55:48]=B,
+    /// [63:56]=A.
     pub color_packed: u64,
-    /// Packed UV0 register value: [47:32]=Q(1.15), [31:16]=VQ(1.15), [15:0]=UQ(1.15).
+
+    /// Packed UV0_UV1 register value (0x01): [15:0]=UV0_UQ, [31:16]=UV0_VQ,
+    /// [47:32]=UV1_UQ, [63:48]=UV1_VQ (Q1.15 signed fixed-point).
     pub uv_packed: u64,
-    /// Packed VERTEX register value: [56:32]=Z(25), [31:16]=Y(12.4), [15:0]=X(12.4).
+
+    /// Packed vertex position + 1/W for VERTEX_NOKICK (0x06) / VERTEX_KICK_012 (0x07):
+    /// [15:0]=X (Q12.4), [31:16]=Y (Q12.4), [47:32]=Z (16-bit unsigned),
+    /// [63:48]=Q=1/W (Q1.15).
     pub position_packed: u64,
 }
 
