@@ -257,6 +257,7 @@ fn main() -> ! {
                     RenderCommand::ClearFramebuffer(ClearCommand {
                         color: [0, 0, 0, 255],
                         clear_depth: false,
+                        depth_value: 0xFFFF,
                     }),
                 );
                 enqueue_blocking(
@@ -286,6 +287,7 @@ fn main() -> ! {
                     RenderCommand::ClearFramebuffer(ClearCommand {
                         color: [0, 0, 0, 255],
                         clear_depth: false,
+                        depth_value: 0xFFFF,
                     }),
                 );
                 enqueue_blocking(
@@ -319,6 +321,7 @@ fn main() -> ! {
                     RenderCommand::ClearFramebuffer(ClearCommand {
                         color: [20, 20, 30, 255],
                         clear_depth: true,
+                        depth_value: 0xFFFF,
                     }),
                 );
                 enqueue_blocking(

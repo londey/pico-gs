@@ -127,11 +127,15 @@ pub struct UploadTextureCommand {
     pub texture_id: u8,
 }
 
-/// Command to clear the framebuffer.
+/// Command to clear the framebuffer using hardware MEM_FILL (REQ-005.08).
 #[derive(Clone, Copy, Debug)]
 pub struct ClearCommand {
-    /// Fill color (R, G, B, A).
+    /// Fill color (R, G, B, A). Converted to RGB565 for MEM_FILL.
     pub color: [u8; 4],
-    /// Also clear the z-buffer to far plane.
+
+    /// Also clear the Z-buffer.
     pub clear_depth: bool,
+
+    /// Z-buffer fill value (16-bit unsigned depth). Default: 0xFFFF (far plane).
+    pub depth_value: u16,
 }

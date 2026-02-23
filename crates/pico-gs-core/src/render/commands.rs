@@ -1,4 +1,4 @@
-// Spec-ref: unit_021_core_1_render_executor.md `2ea56d6fed942e2b` 2026-02-19
+// Spec-ref: unit_021_core_1_render_executor.md `dcf005c05af32ec5` 2026-02-23
 //! Render command execution: clear, triangle submit, texture upload, vsync.
 //!
 //! Generic over `SpiTransport + FlowControl` so it works on any platform.
@@ -7,8 +7,14 @@ use pico_gs_hal::{FlowControl, SpiTransport};
 
 use crate::gpu::driver::{GpuDriver, GpuError};
 use crate::gpu::registers;
-use crate::gpu::vertex::GpuVertex;
 use crate::render::{ClearCommand, RenderCommand, ScreenTriangleCommand, UploadTextureCommand};
+
+/// Convert RGBA8888 color to RGB565.
+///
+/// Drops the alpha channel. Red gets 5 bits, green 6, blue 5.
+fn rgba_to_rgb565(r: u8, g: u8, b: u8) -> u16 {
+    ((r as u16 >> 3) << 11) | ((g as u16 >> 2) << 5) | (b as u16 >> 3)
+}
 
 /// Texture metadata for the command executor.
 pub struct TextureInfo<'a> {
@@ -52,43 +58,33 @@ fn execute_screen_triangle<S: SpiTransport>(
     gpu.submit_triangle(&cmd.v0, &cmd.v1, &cmd.v2, cmd.textured)
 }
 
-/// Clear framebuffer by rendering two full-viewport triangles.
+/// Clear framebuffer using hardware MEM_FILL (REQ-005.08).
+///
+/// Converts the RGBA8888 color to RGB565 and issues a MEM_FILL command for
+/// the color buffer.  When `clear_depth` is true, a second MEM_FILL fills
+/// the Z-buffer with `depth_value`.
+///
+/// Base addresses and surface dimensions are derived from the driver's
+/// current draw framebuffer state (`GpuDriver::draw_fb()`).
 fn execute_clear<S: SpiTransport>(
     gpu: &mut GpuDriver<S>,
     cmd: &ClearCommand,
 ) -> Result<(), GpuError<S::Error>> {
-    let [r, g, b, a] = cmd.color;
+    let (color_base, z_base, width_log2, height_log2) = gpu.draw_fb();
 
-    // Flat shading, color-write enabled, no depth.
-    gpu.write(registers::RENDER_MODE, registers::RENDER_MODE_COLOR_WRITE)?;
-    gpu.write(registers::COLOR, crate::gpu::vertex::pack_color(r, g, b, a))?;
+    // Compute word count: width * height pixels, each pixel is one 16-bit word.
+    let word_count = 1u32 << (width_log2 as u32 + height_log2 as u32);
 
-    // Two triangles covering 640x480 viewport.
-    let v00 = GpuVertex::from_color_position(r, g, b, a, 0.0, 0.0, 0.0);
-    let v10 = GpuVertex::from_color_position(r, g, b, a, 639.0, 0.0, 0.0);
-    let v11 = GpuVertex::from_color_position(r, g, b, a, 639.0, 479.0, 0.0);
-    let v01 = GpuVertex::from_color_position(r, g, b, a, 0.0, 479.0, 0.0);
+    // Convert RGBA8888 to RGB565 for the color buffer fill.
+    let [r, g, b, _a] = cmd.color;
+    let rgb565 = rgba_to_rgb565(r, g, b);
 
-    gpu.submit_triangle(&v00, &v10, &v11, false)?;
-    gpu.submit_triangle(&v00, &v11, &v01, false)?;
+    // MEM_FILL for color buffer.
+    gpu.gpu_mem_fill(color_base, rgb565, word_count)?;
 
+    // MEM_FILL for Z-buffer (if requested).
     if cmd.clear_depth {
-        // Z-only pass: ALWAYS compare, Z-write enabled, no color write.
-        gpu.write(
-            registers::RENDER_MODE,
-            registers::RENDER_MODE_Z_TEST
-                | registers::RENDER_MODE_Z_WRITE
-                | registers::Z_COMPARE_ALWAYS,
-        )?;
-
-        // Full-screen triangles at far plane depth.
-        let far_v00 = GpuVertex::from_color_position(0, 0, 0, 0, 0.0, 0.0, 1.0);
-        let far_v10 = GpuVertex::from_color_position(0, 0, 0, 0, 639.0, 0.0, 1.0);
-        let far_v11 = GpuVertex::from_color_position(0, 0, 0, 0, 639.0, 479.0, 1.0);
-        let far_v01 = GpuVertex::from_color_position(0, 0, 0, 0, 0.0, 479.0, 1.0);
-
-        gpu.submit_triangle(&far_v00, &far_v10, &far_v11, false)?;
-        gpu.submit_triangle(&far_v00, &far_v11, &far_v01, false)?;
+        gpu.gpu_mem_fill(z_base, cmd.depth_value, word_count)?;
     }
 
     Ok(())
