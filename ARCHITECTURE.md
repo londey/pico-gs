@@ -9,7 +9,7 @@ It outputs 640x480 at 60 Hz as DVI on the board's HDMI port.
 
 The GPU is driven over SPI from a Raspberry Pi Pico 2 (RP2350, dual Cortex-M33) host.
 The same host software also runs on a PC via an FT232H USB-to-SPI adapter for desktop debugging.
-Two GPIO lines provide hardware flow control: one signals when the command FIFO is nearly full, the other delivers a VSYNC pulse for frame synchronization.
+Three GPIO lines provide hardware status to the host: CMD_FULL warns when the command FIFO is nearly full (host must pause writes), CMD_EMPTY indicates the FIFO is empty and no command is executing (safe to issue register reads), and VSYNC delivers a pulse for frame synchronization.
 
 The framebuffer is RGB565 in 4×4 block-tiled layout, the Z-buffer is 16-bit unsigned (also block-tiled), and the pixel pipeline supports two independent texture units per pixel in a single pass.
 Render targets are power-of-two per axis (non-square permitted) and share the same tiled format as textures, enabling completed render targets to be sampled directly as texture sources with no copy or format conversion.
@@ -38,8 +38,11 @@ The host submits triangles as a stream of 72-bit register writes over SPI.
 Each write carries a 7-bit register address and 64-bit data payload.
 Per-vertex state (color, UVs, position) is accumulated in the register file (UNIT-003); the third vertex write triggers the hardware rasterizer.
 
-The SPI slave (UNIT-001) feeds an asynchronous command FIFO (UNIT-002) that bridges the SPI clock domain to the 100 MHz core domain.
+The SPI slave (UNIT-001) feeds a 512-entry asynchronous command FIFO (UNIT-002, 2 EBR blocks, 72 bits wide) that bridges the SPI clock domain to the 100 MHz core domain.
+Commands execute in strict FIFO order; a long-running operation such as rasterizing a large triangle stalls all subsequent commands until it completes.
+At 62.5 MHz SPI this provides approximately 590 µs of host-side buffering (~170 triangles), decoupling the host's SPI burst rate from the GPU's variable per-command execution time.
 When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
+The CMD_EMPTY GPIO indicates the FIFO is drained and no command is executing, which the host must check before issuing a register read (reads bypass the FIFO and require an idle register file).
 
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
 The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using edge-function increments, interpolating Z, two vertex colors, and two UV coordinate pairs per fragment.
@@ -283,11 +286,12 @@ Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after 
 |---|---|---|
 | Texture cache (2 samplers) | 32 | 16 per sampler |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
+| Command FIFO | 2 | 512×72 async CDC |
 | Dither matrix | 1 | 16×16 blue noise |
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | FB write buffer | 1 | Single-tile coalescing buffer |
-| **Total** | **40–41** | **of 56 available (ECP5-25K)** |
+| **Total** | **42–43** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 

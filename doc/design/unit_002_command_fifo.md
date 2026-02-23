@@ -95,7 +95,7 @@ None
 1. On rd_en && !rd_empty: read mem[rd_ptr] into rd_data_reg, increment rd_ptr, update rd_ptr_gray
 2. Empty detection: rd_count = wr_ptr_binary_sync - rd_ptr; empty when rd_count == 0
 
-**Parameters:** WIDTH=72 (SPI transaction width), DEPTH=32 (power of 2), ADDR_WIDTH=log2(DEPTH)=5, BOOT_COUNT (number of pre-populated entries, currently ~18)
+**Parameters:** WIDTH=72 (SPI transaction width), DEPTH=512 (power of 2, 2 EBR blocks), ADDR_WIDTH=log2(DEPTH)=9, BOOT_COUNT (number of pre-populated entries, currently ~18)
 
 ### Boot Pre-Population
 
@@ -120,7 +120,7 @@ The pre-populated entries form a complete GPU command sequence that executes the
 5. **Draw RGB triangle:** Write COLOR (0x00) with red (0xFF0000FF), write VERTEX_KICK_012 (0x07) for vertex 0; write COLOR with green (0x00FF00FF), write VERTEX_KICK_012 for vertex 1; write COLOR with blue (0x0000FFFF), write VERTEX_KICK_012 for vertex 2
 6. **Present:** Write FB_DISPLAY (0x41) with the same buffer address as FB_DRAW to display the rendered boot screen
 
-The total boot sequence is approximately 18 commands, well within the 32-entry FIFO depth.
+The total boot sequence is approximately 18 commands, well within the 512-entry FIFO depth.
 
 **Runtime Behavior After Boot:**
 
@@ -141,8 +141,8 @@ The boot screen rasterization (two clear triangles + one Gouraud triangle) compl
 ## Verification
 
 - Verify write-then-read: single entry write followed by read across clock domains
-- Verify full flag: fill FIFO to DEPTH (32) entries, confirm wr_full asserts and writes are suppressed
-- Verify almost_full flag: confirm assertion at DEPTH-2 (30) threshold
+- Verify full flag: fill FIFO to DEPTH (512) entries, confirm wr_full asserts and writes are suppressed
+- Verify almost_full flag: confirm assertion at DEPTH-2 (510) threshold
 - Verify empty flag: read until empty, confirm rd_empty asserts and reads are suppressed
 - Verify Gray-code CDC: use unrelated write/read clocks with varying phase relationships
 - Verify rd_count accuracy: compare against expected occupancy across multiple operations

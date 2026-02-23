@@ -52,7 +52,7 @@ module register_file (
     // Status signals
     input  wire         gpu_busy,       // GPU is rendering
     input  wire         vblank,         // Vertical blank
-    input  wire [7:0]   fifo_depth      // Command FIFO depth
+    input  wire [9:0]   fifo_depth      // Command FIFO depth (0–512)
 );
 
     // ========================================================================
@@ -278,8 +278,8 @@ module register_file (
             ADDR_PERF_TIMESTAMP: cmd_rdata = {32'd0, cycle_counter};
 
             ADDR_STATUS: begin
-                // Status[15:0] = {vblank, busy, fifo_depth[7:0], vertex_count[1:0], 4'b0}
-                cmd_rdata = {48'b0, vblank, gpu_busy, fifo_depth, vertex_count, 4'b0};
+                // Status[15:0] = {vblank, busy, fifo_depth[9:0], vertex_count[1:0], 2'b0}
+                cmd_rdata = {48'b0, vblank, gpu_busy, fifo_depth, vertex_count, 2'b0};
             end
 
             ADDR_ID: begin

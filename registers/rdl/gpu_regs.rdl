@@ -7,6 +7,13 @@
 // Address space: 7-bit register index (0x00–0x7F), 64-bit data width.
 // Transaction format: 72 bits — [R/W̄(1)][addr(7)][data(64)].
 //
+// Command queuing: Write transactions are buffered in a 512-entry async FIFO
+// (2 EBR blocks) and executed in strict FIFO order.  A long-running command
+// (e.g. rasterization triggered by a vertex kick) stalls subsequent commands
+// until it completes.  The host must check the CMD_FULL GPIO before each write
+// and must check CMD_EMPTY (FIFO drained, no command executing) before issuing
+// a register read.
+//
 // NOTE: SystemRDL uses byte addresses, so register index N maps to byte
 // address N*8.  The GPU SPI interface uses the 7-bit register index directly.
 

@@ -117,7 +117,7 @@ module gpu_top (
     wire        fifo_rd_en;
     wire [71:0] fifo_rd_data;
     wire        fifo_rd_empty;
-    wire [5:0]  fifo_rd_count;
+    wire [9:0]  fifo_rd_count;
 
     // Register file signals
     wire        reg_cmd_valid;
@@ -237,7 +237,7 @@ module gpu_top (
         .ts_mem_data(ts_mem_data),
         .gpu_busy(gpu_busy),
         .vblank(vblank),
-        .fifo_depth({2'b0, fifo_rd_count})
+        .fifo_depth(fifo_rd_count)
     );
 
     // Route register file read data back to SPI slave for read transactions

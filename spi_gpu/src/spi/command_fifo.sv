@@ -29,7 +29,7 @@ module command_fifo (
     input  wire        rd_en,
     output wire [71:0] rd_data,
     output wire        rd_empty,
-    output wire [5:0]  rd_count
+    output wire [9:0]  rd_count
 );
 
     // Number of pre-populated boot commands (must match boot_commands.hex)
@@ -41,7 +41,7 @@ module command_fifo (
 
     async_fifo #(
         .WIDTH      (72),
-        .DEPTH      (32),
+        .DEPTH      (512),
         .BOOT_COUNT (BOOT_COUNT),
         .INIT_FILE  ("src/spi/boot_commands.hex")
     ) u_fifo (

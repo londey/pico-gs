@@ -55,7 +55,7 @@ module tb_command_fifo;
     reg         rd_en;
     wire [71:0] rd_data;
     wire        rd_empty;
-    wire [5:0]  rd_count;
+    wire [9:0]  rd_count;
 
     // Test counters
     integer pass_count = 0;
@@ -119,7 +119,7 @@ module tb_command_fifo;
         end
     endtask
 
-    task check_count(input string name, input logic [5:0] actual, input logic [5:0] expected);
+    task check_count(input string name, input logic [9:0] actual, input logic [9:0] expected);
         if (actual === expected) begin
             pass_count = pass_count + 1;
         end else begin
@@ -274,9 +274,9 @@ module tb_command_fifo;
         $display("--- Test 1: Boot Pre-Population After Reset ---");
         @(posedge clk); #1;
         check_bit("rd_empty = 0 (boot commands present)", rd_empty, 1'b0);
-        check_count("rd_count = BOOT_COUNT (17)", rd_count, 6'd17);
-        check_bit("wr_full = 0 (17 < 32)", wr_full, 1'b0);
-        check_bit("wr_almost_full = 0 (17 < 30)", wr_almost_full, 1'b0);
+        check_count("rd_count = BOOT_COUNT (17)", rd_count, 10'd17);
+        check_bit("wr_full = 0 (17 < 512)", wr_full, 1'b0);
+        check_bit("wr_almost_full = 0 (17 < 510)", wr_almost_full, 1'b0);
 
         // ============================================================
         // Test 2: Boot Command Content Verification
@@ -315,14 +315,14 @@ module tb_command_fifo;
         wait_cdc;
         @(posedge clk); #1;
         check_bit("rd_empty = 1 after boot drain", rd_empty, 1'b1);
-        check_count("rd_count = 0 after boot drain", rd_count, 6'd0);
+        check_count("rd_count = 0 after boot drain", rd_count, 10'd0);
 
         // Write a new SPI-originated command
         fifo_write(72'hDE_ADBE_EF01_2345_6789);
         wait_cdc;
         @(posedge clk); #1;
         check_bit("rd_empty deasserts after SPI write", rd_empty, 1'b0);
-        check_count("rd_count = 1 after SPI write", rd_count, 6'd1);
+        check_count("rd_count = 1 after SPI write", rd_count, 10'd1);
 
         // Read and verify
         fifo_read;
@@ -348,7 +348,7 @@ module tb_command_fifo;
         fifo_write(72'h42_CAFE_BABE_DEAD_BEEF);
         wait_cdc;
         @(posedge clk); #1;
-        check_count("rd_count = 18 (17 boot + 1 new)", rd_count, 6'd18);
+        check_count("rd_count = 18 (17 boot + 1 new)", rd_count, 10'd18);
 
         // Read and discard all 17 boot entries
         for (i = 0; i < BOOT_COUNT; i = i + 1) begin
@@ -388,7 +388,7 @@ module tb_command_fifo;
         wait_cdc;
 
         @(posedge clk); #1;
-        check_count("rd_count = 10 after 10 SPI writes", rd_count, 6'd10);
+        check_count("rd_count = 10 after 10 SPI writes", rd_count, 10'd10);
 
         // Read back and verify data integrity and order
         for (i = 0; i < 10; i = i + 1) begin
@@ -401,7 +401,7 @@ module tb_command_fifo;
         wait_cdc;
         @(posedge clk); #1;
         check_bit("rd_empty after 10 post-boot reads", rd_empty, 1'b1);
-        check_count("rd_count = 0 after post-boot drain", rd_count, 6'd0);
+        check_count("rd_count = 0 after post-boot drain", rd_count, 10'd0);
 
         // ============================================================
         // Summary
