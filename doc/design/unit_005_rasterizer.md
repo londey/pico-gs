@@ -90,6 +90,7 @@ Formal testbenches:
 - Test degenerate triangles (zero area, single-pixel, off-screen)
 - Verify SRAM arbiter handshake (req/ack/ready protocol)
 - VER-001 (Rasterizer Unit Testbench)
+- VER-001 (Rasterizer Unit Testbench)
 
 ## Design Notes
 

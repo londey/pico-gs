@@ -232,6 +232,7 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - Verify PERF_TIMESTAMP write asserts ts_mem_wr pulse with correct addr and captured counter
 - Verify PERF_TIMESTAMP read returns live cycle_counter value
 - Verify reset: all registers return to defaults
+- VER-003 (Register File Unit Testbench)
 
 ## Design Notes
 

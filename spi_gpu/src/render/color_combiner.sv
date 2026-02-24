@@ -1,4 +1,4 @@
-// Spec-ref: unit_010_color_combiner.md `b08bd23f921eccbc` 2026-02-24
+// Spec-ref: unit_010_color_combiner.md `d3ec594e7b854b0e` 2026-02-24
 //
 // Color Combiner — Two-Stage Pipelined Programmable Color Combiner
 //
