@@ -143,6 +143,8 @@ Computes bounding box as min/max of vertex coordinates clamped to screen (640x48
 - Verify degenerate triangles: zero-area triangle produces no pixel writes
 - Verify setup_valid handshake: setup_valid asserts for one cycle and deasserts when downstream_ready is low
 - VER-010 (Gouraud Triangle Golden Image Test)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 
 ## Design Notes
 

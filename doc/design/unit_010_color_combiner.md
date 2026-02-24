@@ -145,6 +145,7 @@ Note: VER-004 implementation is deferred until UNIT-010 WIP status is resolved a
 - Verify FIFO backpressure: combiner stalls correctly when output FIFO is full
 - VER-004 (Color Combiner Unit Testbench)
 - VER-004 (Color Combiner Unit Testbench)
+- VER-004 (Color Combiner Unit Testbench)
 
 ## Design Notes
 

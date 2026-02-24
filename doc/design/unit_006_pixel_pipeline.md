@@ -312,6 +312,10 @@ Planned formal testbenches (VER documents not yet created; see `doc/verification
 - VER-010 (Gouraud Triangle Golden Image Test)
 - VER-005 (Texture Decoder Unit Testbench)
 - VER-002 (Early Z-Test Unit Testbench)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
+- VER-005 (Texture Decoder Unit Testbench)
+- VER-002 (Early Z-Test Unit Testbench)
 
 ## Design Notes
 

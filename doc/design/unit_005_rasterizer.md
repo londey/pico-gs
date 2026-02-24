@@ -93,6 +93,9 @@ Formal testbenches:
 - VER-001 (Rasterizer Unit Testbench)
 - VER-010 (Gouraud Triangle Golden Image Test)
 - VER-001 (Rasterizer Unit Testbench)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
+- VER-001 (Rasterizer Unit Testbench)
 
 ## Design Notes
 
