@@ -91,6 +91,8 @@ Formal testbenches:
 - Verify SRAM arbiter handshake (req/ack/ready protocol)
 - VER-001 (Rasterizer Unit Testbench)
 - VER-001 (Rasterizer Unit Testbench)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-001 (Rasterizer Unit Testbench)
 
 ## Design Notes
 

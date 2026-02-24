@@ -233,6 +233,8 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - Verify PERF_TIMESTAMP read returns live cycle_counter value
 - Verify reset: all registers return to defaults
 - VER-003 (Register File Unit Testbench)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-003 (Register File Unit Testbench)
 
 ## Design Notes
 
