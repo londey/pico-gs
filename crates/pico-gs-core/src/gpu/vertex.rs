@@ -1,4 +1,4 @@
-// Spec-ref: unit_022_gpu_driver_layer.md `c44d854d73502f21` 2026-02-23
+// Spec-ref: unit_022_gpu_driver_layer.md `c44d854d73502f21` 2026-02-24
 //! GpuVertex: pre-packed vertex data for GPU register writes.
 
 use crate::math::fixed;

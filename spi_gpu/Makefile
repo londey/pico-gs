@@ -51,7 +51,8 @@ VERILATOR_FLAGS = --binary -f verilator.f
 
 .PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
-	test-burst-integration test-burst-all lint-memory lint clean
+	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
+	test-texture-decoder lint-memory lint clean
 
 # Default target
 all: bitstream
@@ -147,6 +148,34 @@ test-burst-integration:
 # Run all burst-related testbenches
 test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
 
+# Register file v10 testbench (vertex submission, MEM_FILL, RENDER_MODE, ID, CC_MODE, FB_CONFIG, FB_CONTROL)
+test-register-file-v10:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/spi/register_file.sv \
+		$(TB_DIR)/spi/register_file_v10_tb.sv \
+		--top-module register_file_v10_tb -o tb_register_file_v10
+	./obj_dir/tb_register_file_v10
+
+# Color combiner testbench (modulate, saturation, COMBINED source)
+test-color-combiner:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/color_combiner.sv \
+		$(TB_DIR)/render/color_combiner_tb.sv \
+		--top-module color_combiner_tb -o tb_color_combiner
+	./obj_dir/tb_color_combiner
+
+# Texture decoder testbench (RGB565, RGBA8888, R8, texel_promote, stipple)
+test-texture-decoder:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/texture_rgb565.sv \
+		$(RTL_DIR)/render/texture_rgba8888.sv \
+		$(RTL_DIR)/render/texture_r8.sv \
+		$(RTL_DIR)/render/texel_promote.sv \
+		$(RTL_DIR)/render/stipple.sv \
+		$(TB_DIR)/render/texture_decoder_tb.sv \
+		--top-module texture_decoder_tb -o tb_texture_decoder
+	./obj_dir/tb_texture_decoder
+
 # Lint memory subsystem RTL
 lint-memory:
 	$(VERILATOR) --lint-only -Wall -Wno-MULTITOP \
@@ -170,7 +199,13 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/render/early_z.sv \
-	$(RTL_DIR)/render/texture_cache.sv
+	$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/color_combiner.sv \
+	$(RTL_DIR)/render/texture_rgb565.sv \
+	$(RTL_DIR)/render/texture_rgba8888.sv \
+	$(RTL_DIR)/render/texture_r8.sv \
+	$(RTL_DIR)/render/texel_promote.sv \
+	$(RTL_DIR)/render/stipple.sv
 
 # Lint all RTL sources. Leaf modules linted individually for precise diagnostics.
 # Modules with sub-instances linted with their dependencies.

@@ -533,3 +533,118 @@ pub const UV0: u8 = UV0_UV1;
 /// COLOR0 (diffuse) is in \[63:32\], COLOR1 (specular) is in \[31:0\].
 /// Both names refer to register address 0x00.
 pub const COLOR0_COLOR1: u8 = COLOR;
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify key register address constants introduced/moved in v10.0.
+    #[test]
+    fn register_addresses_v10() {
+        assert_eq!(CC_MODE, 0x18, "CC_MODE should be at 0x18");
+        assert_eq!(CONST_COLOR, 0x19, "CONST_COLOR should be at 0x19");
+        assert_eq!(RENDER_MODE, 0x30, "RENDER_MODE should be at 0x30");
+        assert_eq!(STIPPLE_PATTERN, 0x32, "STIPPLE_PATTERN should be at 0x32");
+        assert_eq!(FB_CONFIG, 0x40, "FB_CONFIG should be at 0x40");
+        assert_eq!(FB_DISPLAY, 0x41, "FB_DISPLAY should be at 0x41");
+        assert_eq!(FB_CONTROL, 0x43, "FB_CONTROL should be at 0x43");
+        assert_eq!(MEM_FILL, 0x44, "MEM_FILL should be at 0x44");
+    }
+
+    /// Verify vertex register addresses.
+    #[test]
+    fn vertex_register_addresses() {
+        assert_eq!(COLOR, 0x00);
+        assert_eq!(UV0_UV1, 0x01);
+        assert_eq!(VERTEX_NOKICK, 0x06);
+        assert_eq!(VERTEX_KICK_012, 0x07);
+        assert_eq!(VERTEX_KICK_021, 0x08);
+        assert_eq!(VERTEX_KICK_RECT, 0x09);
+    }
+
+    /// Verify texture register addresses (split TEX0_BASE/FMT/MIP_BIAS/WRAP).
+    #[test]
+    fn texture_register_addresses() {
+        assert_eq!(TEX0_BASE, 0x10);
+        assert_eq!(TEX0_FMT, 0x11);
+        assert_eq!(TEX0_MIP_BIAS, 0x12);
+        assert_eq!(TEX0_WRAP, 0x13);
+        assert_eq!(TEX1_BASE, 0x14);
+        assert_eq!(TEX1_FMT, 0x15);
+        assert_eq!(TEX1_MIP_BIAS, 0x16);
+        assert_eq!(TEX1_WRAP, 0x17);
+    }
+
+    /// Verify status/control addresses.
+    #[test]
+    fn status_control_addresses() {
+        assert_eq!(PERF_TIMESTAMP, 0x50);
+        assert_eq!(MEM_ADDR, 0x70);
+        assert_eq!(MEM_DATA, 0x71);
+        assert_eq!(ID, 0x7F);
+    }
+
+    /// Verify RENDER_MODE bit field positions.
+    #[test]
+    fn render_mode_bit_fields() {
+        assert_eq!(RENDER_MODE_GOURAUD, 1 << 0);
+        assert_eq!(RENDER_MODE_Z_TEST, 1 << 2);
+        assert_eq!(RENDER_MODE_Z_WRITE, 1 << 3);
+        assert_eq!(RENDER_MODE_COLOR_WRITE, 1 << 4);
+        assert_eq!(RENDER_MODE_CULL_SHIFT, 5);
+        assert_eq!(RENDER_MODE_ALPHA_BLEND_SHIFT, 7);
+        assert_eq!(RENDER_MODE_DITHER_EN, 1 << 10);
+        assert_eq!(RENDER_MODE_DITHER_PATTERN_SHIFT, 11);
+        assert_eq!(RENDER_MODE_Z_COMPARE_SHIFT, 13);
+        assert_eq!(RENDER_MODE_STIPPLE_EN, 1 << 16);
+        assert_eq!(RENDER_MODE_ALPHA_TEST_SHIFT, 17);
+        assert_eq!(RENDER_MODE_ALPHA_REF_SHIFT, 19);
+    }
+
+    /// Verify MEM_FILL bit-field shifts.
+    #[test]
+    fn mem_fill_bit_fields() {
+        assert_eq!(MEM_FILL_BASE_SHIFT, 0);
+        assert_eq!(MEM_FILL_VALUE_SHIFT, 16);
+        assert_eq!(MEM_FILL_COUNT_SHIFT, 32);
+    }
+
+    /// Verify FB_CONFIG bit-field shifts.
+    #[test]
+    fn fb_config_bit_fields() {
+        assert_eq!(FB_CONFIG_COLOR_BASE_SHIFT, 0);
+        assert_eq!(FB_CONFIG_Z_BASE_SHIFT, 16);
+        assert_eq!(FB_CONFIG_WIDTH_LOG2_SHIFT, 32);
+        assert_eq!(FB_CONFIG_HEIGHT_LOG2_SHIFT, 36);
+    }
+
+    /// Verify FB_DISPLAY bit-field shifts.
+    #[test]
+    fn fb_display_bit_fields() {
+        assert_eq!(FB_DISPLAY_COLOR_GRADE_ENABLE, 1);
+        assert_eq!(FB_DISPLAY_LINE_DOUBLE, 2);
+        assert_eq!(FB_DISPLAY_LUT_ADDR_SHIFT, 16);
+        assert_eq!(FB_DISPLAY_FB_ADDR_SHIFT, 32);
+        assert_eq!(FB_DISPLAY_WIDTH_LOG2_SHIFT, 48);
+    }
+
+    /// Verify memory map addresses.
+    #[test]
+    fn memory_map_addresses() {
+        assert_eq!(FB_A_ADDR, 0x000000);
+        assert_eq!(FB_B_ADDR, 0x080000);
+        assert_eq!(ZBUFFER_ADDR, 0x100000);
+        assert_eq!(TEXTURE_BASE_ADDR, 0x180000);
+        assert_eq!(FB_A_BASE_512, 0);
+        assert_eq!(FB_B_BASE_512, (0x080000u32 >> 9) as u16);
+        assert_eq!(ZBUFFER_BASE_512, (0x100000u32 >> 9) as u16);
+    }
+
+    // NOTE: FB_DRAW and FB_ZBUFFER constants have been removed in v10.0.
+    // Referencing them would produce a compile error, which is the intended
+    // behavior. This is documented here rather than as an automated test.
+}

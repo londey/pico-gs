@@ -109,10 +109,13 @@ module sram_arbiter (
     // Per-port max burst lengths before preemption check (informational):
     //   Port 0 (display):     no limit (highest priority, never preempted)
     //   Port 1 (framebuffer): 16 words (limits worst-case display latency)
-    //   Port 2 (Z-buffer):    8 words  (short bursts for Z accesses)
-    //   Port 3 (texture):     16 words (matches cache line sizes)
+    //   Port 2 (Z-buffer):    16 words (matches 4×4 Z-tile fill/evict burst size: 16 × 16-bit Z values)
+    //   Port 3 (texture):     32 words (covers largest texture cache fill: RGBA8888 4×4 tile = 32 × 16-bit words)
     // Preemption is demand-driven: the arbiter cancels an active burst only
     // when a higher-priority port asserts req. No timer-based enforcement.
+    //
+    // Supported texture format burst sizes per 4×4 cache fill:
+    //   BC1=4, BC4=4, R8=8, BC2/BC3=8, RGB565=16, RGBA8888=32 (16-bit words)
     // ====================================================================
 
     // ====================================================================
