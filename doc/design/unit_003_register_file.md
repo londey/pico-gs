@@ -208,6 +208,8 @@ The register file maintains a 3-entry vertex ring buffer indexed by vertex_count
 
 ## Verification
 
+Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
+
 - Verify vertex submission: write COLOR + UV + VERTEX_KICK_012 for 3 vertices; confirm tri_valid pulse and correct tri_* outputs
 - Verify strip submission: write VERTEX_NOKICK for v0, v1 then VERTEX_KICK_012 for v2; confirm one tri_valid pulse
 - Verify VERTEX_KICK_021 emits opposite winding order

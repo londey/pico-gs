@@ -194,3 +194,6 @@ See specification details above.
 ## Notes
 
 Migrated from speckit contract: specs/002-rp2350-host-software/contracts/render-commands.md
+
+The Verilator integration simulation harness (used by VER-010 through VER-013 golden image tests) injects render stimulus by driving UNIT-003 register-file inputs directly, replicating the register-write sequences that `RenderMeshPatch` and `ClearFramebuffer` commands produce.
+The harness must faithfully encode all register writes per this interface specification to produce correct simulation results.

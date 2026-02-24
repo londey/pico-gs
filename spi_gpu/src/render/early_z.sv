@@ -1,4 +1,4 @@
-// Spec-ref: unit_006_pixel_pipeline.md `1384ed9b98e93b3e` 2026-02-24
+// Spec-ref: unit_006_pixel_pipeline.md `bf312f58951cfa1c` 2026-02-24
 // Early Z-Test and Depth Range Clipping
 // Combinational module for Stage 0 of the pixel pipeline (UNIT-006).
 // Performs depth range test (Z scissor) and Z-buffer comparison.

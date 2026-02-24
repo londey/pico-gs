@@ -78,6 +78,10 @@ None
 
 ## Verification
 
+Formal testbenches:
+- **VER-001** (`tb_rasterizer` — Verilator unit testbench; covers REQ-002.03 rasterization algorithm)
+- **VER-010** through **VER-013** (golden image integration tests exercise the full rasterizer-to-framebuffer path)
+
 - Verify edge function computation for known triangles (clockwise/counter-clockwise winding)
 - Test bounding box clamping at screen edges (0, 639, 479)
 - Verify barycentric interpolation produces correct colors at vertices and midpoints
@@ -85,6 +89,7 @@ None
 - Verify RGB888-to-RGB565 conversion in framebuffer writes
 - Test degenerate triangles (zero area, single-pixel, off-screen)
 - Verify SRAM arbiter handshake (req/ack/ready protocol)
+- VER-001 (Rasterizer Unit Testbench)
 
 ## Design Notes
 

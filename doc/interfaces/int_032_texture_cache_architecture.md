@@ -260,3 +260,10 @@ See DD-010 in [design_decisions.md](../design/design_decisions.md) for architect
 - **UNIT-006 (Pixel Pipeline):** Cache implementation details (4-way set associative, pseudo-LRU, EBR usage)
 - **REQ-003.06 (Texture Sampling):** Cache-aware sampling pipeline behavior
 - **REQ-003.07 (Texture Mipmapping):** Cache handles mip-level blocks with distinct tags
+
+### Verification
+
+- **VER-005** (`texture_decoder_tb`): Unit testbench verifying texture decoders that produce RGBA5652 output for cache storage.
+  Tests all seven source formats (BC1–BC4, RGB565, RGBA8888, R8) and confirms correct RGBA5652 encoding per the conversion table above.
+- **VER-012** (Textured triangle golden image test): Integration test exercising the full cache + decode + sample path.
+  The integration simulation harness must model (or stub) the SDRAM miss-handling protocol defined in the Cache Miss Handling Protocol section above, including correct burst lengths per format and the IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE fill FSM.

@@ -283,6 +283,11 @@ The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for di
 
 ## Verification
 
+Planned formal testbenches (VER documents not yet created; see `doc/verification/README.md` for status):
+- **VER-002** (`tb_early_z` — Verilator unit testbench; covers REQ-005.02 early Z-test path)
+- **VER-005** (`texture_decoder_tb` — Verilator unit testbench; covers REQ-003.01 texture decode/sampling)
+- **VER-010** through **VER-013** (golden image integration tests exercise the full pixel pipeline including texture cache and fragment output)
+
 - Testbench for BC1 decoder: verify 4-color and 1-bit alpha modes
 - Testbench for RGB565 decoder: verify all 16 pixels in a 4×4 block store as RGBA5652 with A=opaque
 - Testbench for RGBA8888 decoder: verify truncation to RGBA5652 precision

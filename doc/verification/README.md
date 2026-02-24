@@ -40,3 +40,29 @@ Verification methods:
 <!-- TOC-START -->
 - [Test Strategy](test_strategy.md)
 <!-- TOC-END -->
+
+## Planned Verification Documents
+
+The following VER documents are planned but not yet created.
+Each file should be created from `ver_000_template.md` and placed in this directory.
+
+### Unit Testbenches (VER-001 through VER-005)
+
+| ID | Filename (to create) | Testbench | Verifies |
+|----|----------------------|-----------|---------|
+| VER-001 | `ver_001_rasterizer.md` | `tb_rasterizer` | REQ-002.03, UNIT-005 |
+| VER-002 | `ver_002_early_z.md` | `tb_early_z` | REQ-005.02, UNIT-006 |
+| VER-003 | `ver_003_register_file.md` | `tb_register_file` | UNIT-003 |
+| VER-004 | `ver_004_color_combiner.md` | `color_combiner_tb` | REQ-004.01, UNIT-010 (blocked: UNIT-010 is WIP) |
+| VER-005 | `ver_005_texture_decoder.md` | `texture_decoder_tb` | REQ-003.01, UNIT-006 |
+
+### Golden Image Integration Tests (VER-010 through VER-013)
+
+| ID | Filename (to create) | Scene | Verifies |
+|----|----------------------|-------|---------|
+| VER-010 | `ver_010_gouraud_triangle.md` | Multi-colored (Gouraud) triangle | REQ-002.02 |
+| VER-011 | `ver_011_depth_tested_triangles.md` | Depth-tested overlapping triangles | REQ-005.02 |
+| VER-012 | `ver_012_textured_triangle.md` | Textured triangle | REQ-003.01 |
+| VER-013 | `ver_013_color_combined_output.md` | Blended/color-combined output | REQ-004.01 |
+
+These tests require the common integration simulation harness (`spi_gpu/tests/harness/`) described in `test_strategy.md`.

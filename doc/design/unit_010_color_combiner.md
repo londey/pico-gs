@@ -129,6 +129,9 @@ UNIT-006 (Pixel Pipeline)          UNIT-010 (Color Combiner)         Fragment Ou
 
 ## Verification
 
+Formal testbench: **VER-004** (`color_combiner_tb` — Verilator unit testbench; covers REQ-004.01 color combiner equation).
+Note: VER-004 implementation is deferred until UNIT-010 WIP status is resolved and combiner pipeline timing is finalized.
+
 - Verify cycle 0 modulate: `TEX0 * SHADE0` produces expected Q4.12 output
 - Verify cycle 0 decal: `TEX0` passes through unchanged (C=ONE, B=D=ZERO)
 - Verify two-stage specular: cycle 0 = `TEX0 * SHADE0`, cycle 1 = `COMBINED + SHADE1`
