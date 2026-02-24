@@ -52,7 +52,7 @@ VERILATOR_FLAGS = --binary -f verilator.f
 .PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
-	test-texture-decoder lint-memory lint clean
+	test-texture-decoder lint-memory lint harness-scaffold clean
 
 # Default target
 all: bitstream
@@ -241,6 +241,20 @@ lint:
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
 	echo "Lint passed."
 
+# Integration test harness scaffold (compile check, no Verilator model)
+# Builds the harness C++ files without RTL to verify they compile.
+# The full harness (with Verilated gpu_top) requires additional build steps.
+HARNESS_DIR = $(TB_DIR)/harness
+HARNESS_SOURCES = \
+	$(HARNESS_DIR)/harness.cpp \
+	$(HARNESS_DIR)/sdram_model.cpp \
+	$(HARNESS_DIR)/ppm_writer.cpp
+
+harness-scaffold: $(BUILD_DIR)
+	$(CXX) -std=c++17 -Wall -Wextra -I$(HARNESS_DIR) \
+		$(HARNESS_SOURCES) -o $(BUILD_DIR)/harness_scaffold
+	$(BUILD_DIR)/harness_scaffold
+
 # Verilator simulation (placeholder for cocotb)
 sim:
 	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
@@ -249,7 +263,7 @@ sim:
 # Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR) obj_dir
-	rm -f *.vcd *.fst
+	rm -f *.vcd *.fst *.ppm
 
 # Help
 help:
@@ -273,5 +287,6 @@ help:
 	@echo "  test-burst-all   - Run all burst testbenches"
 	@echo "  lint-memory      - Lint memory subsystem RTL"
 	@echo "  lint             - Lint all RTL sources"
+	@echo "  harness-scaffold - Compile integration harness scaffold (no RTL)"
 	@echo "  clean            - Remove build artifacts"
 	@echo "  help             - Show this message"

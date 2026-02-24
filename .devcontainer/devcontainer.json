@@ -38,7 +38,8 @@
                 "Anthropic.claude-code",
                 "streetsidesoftware.code-spell-checker",
                 "mutantdino.resourcemonitor",
-                "bierner.markdown-mermaid"
+                "bierner.markdown-mermaid",
+                "ms-vscode.cpptools-extension-pack"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
