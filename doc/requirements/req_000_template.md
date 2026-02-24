@@ -53,6 +53,10 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 - **Inspection:** Verified by examination
 - **Demonstration:** Verified by operation
 
+## Verified By
+
+- VER-NNN (<verification name>)
+
 ## Notes
 
 <Additional context, open questions, or references>

@@ -30,19 +30,15 @@ Otherwise:
 
 - Find the most recent folder in `.syskit/analysis/`
 
-Check for approval status using this priority:
+Check for approval status:
 
-1. If `refine_status.md` exists in the folder:
-   - Read it. Check the top-level `Status:` field.
-   - If "Complete", proceed — all scopes have been refined and approved.
-   - If "In Progress", warn the user: "Refinement is still in progress. The following scopes are not yet approved: \<list\>. Run `/syskit-refine` to complete them, or pass `--force` to plan with partial refinement."
-   - The subagent will read all `refine_<scope>.md` files for context.
+1. Check that `proposed_changes.md` exists in the folder.
+   - If it does not exist, tell the user: "No proposed changes found. Run `/syskit-propose` first to generate specification changes."
 
-2. Else if `proposed_changes.md` exists:
-   - Read ONLY its first ~10 lines. Check the `Status:` line.
-   - If not "Approved", prompt user to run `/syskit-propose` first.
-
-3. If neither exists, prompt user to run `/syskit-propose` or `/syskit-refine` first.
+2. Read ONLY its first ~10 lines. Check the `Status:` line.
+   - If "Approved", proceed.
+   - If "Pending Approval", tell the user: "Proposed changes have not been approved yet. Run `/syskit-approve` to review and approve them, or approve inline during `/syskit-propose`."
+   - If any other status, tell the user the current status and suggest re-running `/syskit-propose`.
 
 Note the analysis folder path and the change name — you will pass these to the subagent.
 

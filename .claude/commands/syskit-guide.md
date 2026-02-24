@@ -16,7 +16,7 @@ If `$ARGUMENTS.system` is provided, use it to tailor examples and suggestions to
 
 ### Step 1: Detect Scenario
 
-List all files in `doc/requirements/`, `doc/interfaces/`, and `doc/design/`.
+List all files in `doc/requirements/`, `doc/interfaces/`, `doc/design/`, and `doc/verification/`.
 
 Ignore template files (filenames containing `_000_template`).
 
@@ -34,7 +34,8 @@ Explain the project structure syskit has set up:
 1. **`doc/requirements/`** — What the system must do. Each file is a requirement (REQ-NNN).
 2. **`doc/interfaces/`** — Contracts between components and external systems. Each file is an interface (INT-NNN).
 3. **`doc/design/`** — How each piece of the system works. Each file is a design unit (UNIT-NNN).
-4. **`.syskit/`** — Tooling: scripts, manifest, working folders for analysis and tasks.
+4. **`doc/verification/`** — How requirements are verified. Each file is a verification procedure (VER-NNN).
+5. **`.syskit/`** — Tooling: scripts, manifest, working folders for analysis and tasks.
 
 Explain the naming convention:
 - `req_001_motor_control.md` → referenced as `REQ-001`
@@ -43,12 +44,15 @@ Explain the naming convention:
 - `int_002.01_uart_registers.md` → referenced as `INT-002.01` (child of INT-002)
 - `unit_003_pwm_driver.md` → referenced as `UNIT-003`
 - `unit_003.01_pid_controller.md` → referenced as `UNIT-003.01` (child of UNIT-003)
+- `ver_004_motor_test.md` → referenced as `VER-004`
+- `ver_004.01_edge_cases.md` → referenced as `VER-004.01` (child of VER-004)
 
 Explain that all document types support two-level hierarchy — child documents use dot-notation (e.g., `REQ-001.03`, `INT-002.01`, `UNIT-003.01`) so the parent relationship is visible from the ID itself.
 
 Explain that these documents cross-reference each other to create a traceability web:
-- Requirements reference the interfaces they use and the design units that implement them
+- Requirements reference the interfaces they use, the design units that implement them, and the verifications that prove them
 - Design units reference the requirements they satisfy and the interfaces they provide or consume
+- Verification documents reference the requirements they verify and the design units they exercise
 
 ### Step 3A: Create a Requirement
 
@@ -127,12 +131,14 @@ Explain:
 - The manifest (`.syskit/manifest.md`) stores SHA256 hashes of every spec document
 - This enables **freshness checking** — syskit detects when specs have changed between workflow steps, preventing work based on stale analysis
 
-Then explain the four-command change workflow for future changes:
+Then explain the change workflow for future changes:
 
 1. **`/syskit-impact`** — Describe a change; syskit analyzes which specs are affected
-2. **`/syskit-propose`** — Review and approve proposed modifications to affected specs
-3. **`/syskit-plan`** — Break approved spec changes into implementation tasks
-4. **`/syskit-implement`** — Execute tasks one by one with verification
+2. **`/syskit-propose`** — Draft proposed modifications to affected specs
+3. **`/syskit-refine`** — (Optional, repeatable) Fix issues in proposed changes based on your review feedback
+4. **`/syskit-approve`** — Approve changes when ready (works across sessions — review overnight if needed)
+5. **`/syskit-plan`** — Break approved spec changes into implementation tasks
+6. **`/syskit-implement`** — Execute tasks one by one with verification
 
 Tell the user: "You're set up. When you want to make a change, start with `/syskit-impact` and describe what you want to change."
 
@@ -148,16 +154,18 @@ Provide a brief inventory of existing documents:
    - **Requirements:** List each file's ID and title (e.g., `REQ-001: Motor Control`)
    - **Interfaces:** List each file's ID and title (e.g., `INT-001: SPI Bus`)
    - **Design Units:** List each file's ID and title (e.g., `UNIT-001: PWM Driver`)
-2. Note any special documents present: `states_and_modes.md`, `quality_metrics.md`, `design_decisions.md`, `concept_of_execution.md`
+   - **Verification:** List each file's ID and title (e.g., `VER-001: Motor Test`)
+2. Note any special documents present: `states_and_modes.md`, `quality_metrics.md`, `design_decisions.md`, `concept_of_execution.md`, `test_strategy.md`
 
 ### Step 3B: Explain the Structure
 
 Explain the conventions this project uses:
 
-1. **Naming:** `req_NNN_name.md` → `REQ-NNN`, `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN` (children use dot-notation: `req_NNN.NN_name.md` → `REQ-NNN.NN`, `int_NNN.NN_name.md` → `INT-NNN.NN`, `unit_NNN.NN_name.md` → `UNIT-NNN.NN`)
+1. **Naming:** `req_NNN_name.md` → `REQ-NNN`, `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN`, `ver_NNN_name.md` → `VER-NNN` (children use dot-notation: `req_NNN.NN_name.md` → `REQ-NNN.NN`, `int_NNN.NN_name.md` → `INT-NNN.NN`, `unit_NNN.NN_name.md` → `UNIT-NNN.NN`, `ver_NNN.NN_name.md` → `VER-NNN.NN`)
 2. **Cross-references:** Documents link to each other using these IDs to create traceability:
-   - Requirements → Interfaces they use, Design Units that implement them
+   - Requirements → Interfaces they use, Design Units that implement them, Verifications that prove them
    - Design Units → Requirements they satisfy, Interfaces they provide/consume
+   - Verifications → Requirements they verify, Design Units they exercise
 3. **Manifest:** `.syskit/manifest.md` stores SHA256 hashes for freshness checking between workflow steps
 
 ### Step 4B: Explain the Change Workflow
@@ -165,14 +173,17 @@ Explain the conventions this project uses:
 Walk through how to make changes in this project:
 
 1. **`/syskit-impact <description>`** — Start here. Describe what you want to change. Syskit analyzes which specs are affected and creates an impact report.
-2. **`/syskit-propose`** — Proposes specific edits to affected specs. You review and approve before any specs are modified.
-3. **`/syskit-plan`** — Creates an implementation task breakdown from approved spec changes.
-4. **`/syskit-implement`** — Executes tasks one by one with verification.
+2. **`/syskit-propose`** — Drafts specific edits to affected specs. You review using `git diff`.
+3. **`/syskit-refine --feedback "<issues>"`** — (Optional) Fix issues in the proposal based on your review. Repeatable.
+4. **`/syskit-approve`** — Approve changes when satisfied. Works across sessions — review overnight if needed.
+5. **`/syskit-plan`** — Creates an implementation task breakdown from approved spec changes.
+6. **`/syskit-implement`** — Executes tasks one by one with verification.
 
 Also mention helper scripts for creating new documents:
 - `.syskit/scripts/new-req.sh <name>` — Create a new requirement (use `--parent REQ-NNN` for child)
 - `.syskit/scripts/new-int.sh <name>` — Create a new interface (use `--parent INT-NNN` for child)
 - `.syskit/scripts/new-unit.sh <name>` — Create a new design unit (use `--parent UNIT-NNN` for child)
+- `.syskit/scripts/new-ver.sh <name>` — Create a new verification (use `--parent VER-NNN` for child)
 
 ### Step 5B: Offer Next Steps
 

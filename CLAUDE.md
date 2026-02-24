@@ -239,16 +239,17 @@ This project uses **syskit** for specification-driven development. Specification
 For non-trivial changes affecting system behavior, use the syskit workflow:
 
 1. `/syskit-impact <change>` — Analyze what specifications are affected
-2. `/syskit-propose` — Propose all specification updates at once
-   **OR** `/syskit-refine --scope <type>` — Propose changes incrementally by document type (requirements, interfaces, design)
-3. `/syskit-plan` — Break into implementation tasks
-4. `/syskit-implement` — Execute with traceability
+2. `/syskit-propose` — Propose specification updates
+3. `/syskit-refine --feedback "<issues>"` — Iterate on proposed changes based on review feedback (optional, repeatable)
+4. `/syskit-approve` — Approve changes (works across sessions, enables overnight review)
+5. `/syskit-plan` — Break into implementation tasks
+6. `/syskit-implement` — Execute with traceability
 
 New to syskit? Run `/syskit-guide` for an interactive walkthrough.
 
 ### Reference
 
-- Specifications: `doc/requirements/`, `doc/interfaces/`, `doc/design/`
+- Specifications: `doc/requirements/`, `doc/interfaces/`, `doc/design/`, `doc/verification/`
 - Working documents: `.syskit/analysis/`, `.syskit/tasks/`
 - Scripts: `.syskit/scripts/`
 - Full instructions: `.syskit/AGENTS.md` (read on demand, not auto-loaded)

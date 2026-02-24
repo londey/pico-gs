@@ -41,16 +41,12 @@ If `$ARGUMENTS.incremental` is provided (or the user's command included `--incre
 
 2. Read the first few lines of `impact.md` in that folder to get the original proposed change description.
 
-3. Check for `refine_status.md` in the folder. If it does not exist, warn the user: "No refinement history found. Run `/syskit-refine` first, or use `/syskit-impact` without `--incremental` for a fresh analysis."
+3. Set the PROPOSED_CHANGE to the original change description from impact.md, appended with:
+   "NOTE: Specifications may have been modified since the original analysis (via `/syskit-propose` and `/syskit-refine`). The impact analysis should reflect the CURRENT state of all documents."
 
-4. Read the `refine_status.md` to note which scopes have been approved.
+4. Rename the existing `impact.md` to `impact_prev.md` (for reference).
 
-5. Set the PROPOSED_CHANGE to the original change description from impact.md, appended with:
-   "NOTE: The following refinements have already been approved and applied to the doc/ files: \<list approved scopes and their document lists from refine_status.md\>. The impact analysis should reflect the CURRENT state of these documents (post-refinement) and focus on remaining unrefined documents."
-
-6. Rename the existing `impact.md` to `impact_prev.md` (for reference).
-
-7. Note the analysis folder path — you will reuse it. Skip Step 2.
+5. Note the analysis folder path — you will reuse it. Skip Step 2.
 
 If `$ARGUMENTS.incremental` is NOT provided and `$ARGUMENTS.change` is empty, STOP and tell the user: "Please provide a change description: `/syskit-impact \"your change description\"`"
 
@@ -109,6 +105,6 @@ Tell the user:
 
 "Impact analysis complete. Results saved to `.syskit/analysis/<folder>/impact.md`.
 
-Next step: run `/syskit-refine --scope <recommended_scope>` to propose changes to the next set of documents, or `/syskit-propose` to propose all changes at once.
+Next step: run `/syskit-propose` to propose specification changes based on this analysis.
 
 Tip: Start a new conversation before running the next command to free up context."

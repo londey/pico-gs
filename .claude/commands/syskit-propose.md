@@ -139,7 +139,11 @@ Reply with:
 - **'approve'** to keep all changes and proceed to planning
 - **'approve \<filename\>'** to keep changes to a specific file and revert others
 - **'revise \<filename\>'** to discuss modifications to a specific file
-- **'reject'** to revert all changes (`git checkout -- doc/`)"
+- **'reject'** to revert all changes (`git checkout -- doc/`)
+
+Or review at your leisure and use these commands in a new session:
+- **`/syskit-refine --feedback \"<your feedback>\"`** to iterate on the proposed changes
+- **`/syskit-approve`** to approve when ready"
 
 ### Step 8: Handle Approval
 
@@ -148,11 +152,11 @@ Reply with:
 - **revise \<filename\>:** Discuss the specific file with the user, make adjustments, then re-present.
 - **reject:** Run `git checkout -- doc/` to revert all changes. Tell the user the proposal has been discarded.
 
-### Step 9: Next Step
+### Step 9: Next Steps
 
 After applying approved changes, tell the user:
 
-"Proposed changes applied. Summary saved to `.syskit/analysis/<folder>/proposed_changes.md`.
+"Changes approved. Summary saved to `.syskit/analysis/<folder>/proposed_changes.md`.
 
 Next step: run `/syskit-plan` to create an implementation task breakdown.
 
