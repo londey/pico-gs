@@ -52,7 +52,9 @@ VERILATOR_FLAGS = --binary -f verilator.f
 .PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
-	test-texture-decoder lint-memory lint harness-scaffold clean
+	test-texture-decoder lint-memory lint harness-scaffold clean help \
+	test test-rasterizer test-early-z test-register-file \
+	test-gouraud test-depth-test test-textured test-color-combined
 
 # Default target
 all: bitstream
@@ -156,7 +158,7 @@ test-register-file-v10:
 		--top-module register_file_v10_tb -o tb_register_file_v10
 	./obj_dir/tb_register_file_v10
 
-# Color combiner testbench (modulate, saturation, COMBINED source)
+# VER-004: Color combiner unit testbench (deferred: UNIT-010 WIP)
 test-color-combiner:
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/color_combiner.sv \
@@ -164,7 +166,7 @@ test-color-combiner:
 		--top-module color_combiner_tb -o tb_color_combiner
 	./obj_dir/tb_color_combiner
 
-# Texture decoder testbench (RGB565, RGBA8888, R8, texel_promote, stipple)
+# VER-005: Texture decoder unit testbench
 test-texture-decoder:
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/texture_rgb565.sv \
@@ -175,6 +177,56 @@ test-texture-decoder:
 		$(TB_DIR)/render/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
 	./obj_dir/tb_texture_decoder
+
+# VER-001: Rasterizer unit testbench
+test-rasterizer:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/early_z.sv \
+		$(RTL_DIR)/render/rasterizer.sv \
+		$(TB_DIR)/render/tb_rasterizer.sv \
+		--top-module tb_rasterizer -o tb_rasterizer
+	./obj_dir/tb_rasterizer
+
+# VER-002: Early Z-test unit testbench
+test-early-z:
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/early_z.sv \
+		$(TB_DIR)/render/tb_early_z.sv \
+		--top-module tb_early_z -o tb_early_z
+	./obj_dir/tb_early_z
+
+# VER-003: Register file unit testbench
+test-register-file: test-register-file-v10
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/spi/register_file.sv \
+		$(TB_DIR)/spi/tb_register_file.sv \
+		--top-module tb_register_file -o tb_register_file
+	./obj_dir/tb_register_file
+
+# VER-010: Gouraud triangle golden image test (requires integration harness)
+test-gouraud:
+	@echo "VER-010: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
+	@exit 1
+
+# VER-011: Depth-tested triangles golden image test (requires integration harness)
+test-depth-test:
+	@echo "VER-011: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
+	@exit 1
+
+# VER-012: Textured triangle golden image test (requires integration harness)
+test-textured:
+	@echo "VER-012: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
+	@exit 1
+
+# VER-013: Color-combined output golden image test (requires integration harness + UNIT-010 stable)
+test-color-combined:
+	@echo "VER-013: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
+	@exit 1
+
+# Run all RTL tests. Unit testbenches (VER-001 through VER-005) run fully.
+# Golden image tests (VER-010 through VER-013) are stubs until harness is implemented.
+test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder
+	@echo "Unit testbenches passed. Golden image tests (VER-010 to VER-013) require integration harness."
 
 # Lint memory subsystem RTL
 lint-memory:
@@ -276,6 +328,18 @@ help:
 	@echo "  bitstream        - Generate bitstream"
 	@echo "  program          - Program FPGA via JTAG"
 	@echo "  sim              - Run simulation testbenches"
+	@echo ""
+	@echo "Testing:"
+	@echo "  test             - Run all RTL tests (lint + unit testbenches)"
+	@echo "  test-rasterizer  - VER-001: Rasterizer unit testbench"
+	@echo "  test-early-z     - VER-002: Early Z-test unit testbench"
+	@echo "  test-register-file - VER-003: Register file unit testbench"
+	@echo "  test-color-combiner - VER-004: Color combiner unit testbench"
+	@echo "  test-texture-decoder - VER-005: Texture decoder unit testbench"
+	@echo "  test-gouraud     - VER-010: Gouraud triangle golden image (stub)"
+	@echo "  test-depth-test  - VER-011: Depth-tested triangles golden image (stub)"
+	@echo "  test-textured    - VER-012: Textured triangle golden image (stub)"
+	@echo "  test-color-combined - VER-013: Color-combined golden image (stub)"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
@@ -285,8 +349,12 @@ help:
 	@echo "  test-texture-cache-burst - Run texture cache burst testbench"
 	@echo "  test-burst-integration   - Run burst integration testbench"
 	@echo "  test-burst-all   - Run all burst testbenches"
-	@echo "  lint-memory      - Lint memory subsystem RTL"
+	@echo ""
+	@echo "Lint and analysis:"
 	@echo "  lint             - Lint all RTL sources"
+	@echo "  lint-memory      - Lint memory subsystem RTL"
 	@echo "  harness-scaffold - Compile integration harness scaffold (no RTL)"
+	@echo ""
+	@echo "Maintenance:"
 	@echo "  clean            - Remove build artifacts"
 	@echo "  help             - Show this message"
