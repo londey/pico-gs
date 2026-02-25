@@ -160,9 +160,9 @@ if [ "$BUILD_TEST" = true ]; then
     echo ""
 fi
 
-# Step 4: RTL tests (lint + unit testbenches)
+# Step 4: RTL tests (lint + unit testbenches + golden image tests if approved)
 if [ "$BUILD_TEST" = true ]; then
-    echo -e "${YELLOW}[4/5] Running RTL tests (lint + unit testbenches)...${NC}"
+    echo -e "${YELLOW}[4/5] Running RTL tests (lint + unit testbenches + golden image tests)...${NC}"
     cd "${SPI_GPU}"
     make test
     echo -e "${GREEN}✓ RTL tests passed${NC}"
