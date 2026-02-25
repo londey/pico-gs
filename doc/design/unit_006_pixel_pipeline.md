@@ -8,22 +8,26 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 
 - REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
-- REQ-005.02 (Depth Tested Triangle)
 - REQ-003.01 (Textured Triangle)
 - REQ-003.02 (Multi-Texture Rendering — dual-texture per pass)
-- REQ-004.01 (Color Combiner)
 - REQ-003.03 (Compressed Textures)
 - REQ-003.04 (Swizzle Patterns)
 - REQ-003.05 (UV Wrapping Modes)
+- REQ-003.06 (Texture Sampling)
+- REQ-003.07 (Texture Mipmapping) — trilinear filtering between adjacent mip levels
+- REQ-003.08 (Texture Cache)
+- REQ-004.01 (Color Combiner)
+- REQ-004.02 (Extended Precision Fragment Processing)
+- REQ-005.01 (Framebuffer Management)
+- REQ-005.02 (Depth Tested Triangle)
 - REQ-005.03 (Alpha Blending)
 - REQ-005.04 (Enhanced Z-Buffer)
 - REQ-005.05 (Triangle-Based Clearing)
-- REQ-003.06 (Texture Sampling)
-- REQ-005.07 (Z-Buffer Operations)
-- REQ-003.08 (Texture Cache)
-- REQ-005.10 (Ordered Dithering)
-- REQ-004.02 (Extended Precision Fragment Processing)
 - REQ-005.06 (Framebuffer Format)
+- REQ-005.07 (Z-Buffer Operations)
+- REQ-005.09 (Double-Buffered Rendering) — writes to off-screen render target via FB_CONFIG
+- REQ-005.10 (Ordered Dithering)
+- REQ-014.01 (Lightmapped Static Mesh) — dual-texture blending supports lightmap compositing
 
 ## Interfaces
 
@@ -36,7 +40,6 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 - INT-010 (GPU Register Map)
 - INT-011 (SDRAM Memory Layout)
 - INT-014 (Texture Memory Layout)
-- INT-032 (Texture Cache Architecture)
 
 ### Internal Interfaces
 

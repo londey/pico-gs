@@ -24,7 +24,7 @@ Asset pipeline entry point
 
 ### Internal Interfaces
 
-- Calls `png_converter::load_and_convert()` (UNIT-033) for each `.png` file.
+- Calls `png_converter::load_and_convert()` (UNIT-030) for each `.png` file.
 - Calls `obj_converter::load_and_convert()` (UNIT-031) for each `.obj` file.
 - Calls `identifier::check_collisions()` to detect duplicate Rust identifiers across all assets.
 - Calls `output_gen::write_texture_output()`, `output_gen::write_mesh_output()`, and `output_gen::write_mod_rs()` to emit generated files.

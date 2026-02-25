@@ -26,6 +26,7 @@ None
 
 ### Consumes
 
+- INT-020 (GPU Driver API)
 - INT-021 (Render Command Format)
 - INT-013 (GPIO Status Signals)
 

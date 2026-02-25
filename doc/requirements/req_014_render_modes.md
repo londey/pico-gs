@@ -27,6 +27,14 @@ None (top-level area)
 - REQ-014.03 (Skinned Mesh)
 - REQ-014.04 (Particle System)
 
+## Allocated To
+
+- UNIT-006 (Pixel Pipeline) — GPU-side multi-texture and combiner execution for lightmapped mode
+- UNIT-021 (Core 1 Render Executor) — host-side render command dispatch
+- UNIT-022 (GPU Driver Layer) — GPU register configuration for each mode
+- UNIT-023 (Transformation Pipeline) — vertex transformation shared by all modes
+- UNIT-024 (Lighting Calculator) — per-vertex lighting for directionally-lit modes
+
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.

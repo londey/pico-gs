@@ -20,7 +20,7 @@ None
 
 ### Consumes
 
-None
+- INT-031 (Asset Binary Format) — output SoA blob format (u16 positions, i16 normals, i16 UVs, u8 strip commands) is defined by INT-031
 
 ### Internal Interfaces
 

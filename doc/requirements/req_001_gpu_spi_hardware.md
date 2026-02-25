@@ -29,6 +29,18 @@ None (top-level area)
 - REQ-001.05 (Vertex Submission Protocol)
 - REQ-001.06 (GPU Flow Control)
 
+## Allocated To
+
+- UNIT-001 (SPI Slave Controller)
+- UNIT-002 (Command FIFO)
+- UNIT-003 (Register File)
+
+## Interfaces
+
+- INT-010 (GPU Register Map)
+- INT-012 (SPI Transaction Format)
+- INT-013 (GPIO Status Signals)
+
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.

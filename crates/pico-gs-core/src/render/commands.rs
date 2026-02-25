@@ -1,4 +1,4 @@
-// Spec-ref: unit_021_core_1_render_executor.md `dcf005c05af32ec5` 2026-02-23
+// Spec-ref: unit_021_core_1_render_executor.md `899cd15ce77a6291` 2026-02-25
 //! Render command execution: clear, triangle submit, texture upload, vsync.
 //!
 //! Generic over `SpiTransport + FlowControl` so it works on any platform.

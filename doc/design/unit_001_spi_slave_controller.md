@@ -13,16 +13,16 @@ Receives 72-bit SPI transactions and writes to register file
 - REQ-001.01 (Basic Host Communication)
 - REQ-001.03 (SPI Electrical Interface)
 - REQ-011.02 (Resource Constraints)
+- REQ-011.03 (Reliability Requirements)
 
 ## Interfaces
 
 ### Provides
 
-None
+- INT-001 (SPI Mode 0 Protocol)
 
 ### Consumes
 
-- INT-001 (SPI Mode 0 Protocol)
 - INT-010 (GPU Register Map)
 - INT-012 (SPI Transaction Format)
 

@@ -6,14 +6,16 @@ Arbitrates SDRAM access between display and render
 
 ## Implements Requirements
 
-- REQ-005.01 (Framebuffer Management)
+- REQ-001.02 (Memory Upload Interface)
 - REQ-002.01 (Flat Shaded Triangle)
+- REQ-005.01 (Framebuffer Management)
 - REQ-005.02 (Depth Tested Triangle)
 - REQ-005.04 (Enhanced Z-Buffer)
-- REQ-001.02 (Memory Upload Interface)
 - REQ-005.06 (Framebuffer Format)
 - REQ-005.07 (Z-Buffer Operations)
 - REQ-005.08 (Clear Framebuffer)
+- REQ-011.01 (Performance Targets) — SDRAM bandwidth arbitration underpins throughput targets
+- REQ-011.02 (Resource Constraints) — resource-constrained unit
 
 ## Interfaces
 

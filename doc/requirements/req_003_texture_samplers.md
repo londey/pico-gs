@@ -29,6 +29,16 @@ None (top-level area)
 - REQ-003.07 (Texture Mipmapping)
 - REQ-003.08 (Texture Cache)
 
+## Allocated To
+
+- UNIT-006 (Pixel Pipeline)
+
+## Interfaces
+
+- INT-010 (GPU Register Map)
+- INT-014 (Texture Memory Layout)
+- INT-032 (Texture Cache Architecture)
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.

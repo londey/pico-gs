@@ -27,6 +27,13 @@ None (top-level area)
 - REQ-008.04 (Render Command Queue)
 - REQ-008.05 (Default Demo Startup)
 
+## Allocated To
+
+- UNIT-020 (Core 0 Scene Manager)
+- UNIT-021 (Core 1 Render Executor)
+- UNIT-026 (Inter-Core Queue)
+- UNIT-027 (Demo State Machine)
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.

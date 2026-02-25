@@ -1,4 +1,4 @@
-// Spec-ref: unit_036_pc_input_handler.md `e5cc981513f31ccd` 2026-02-19
+// Spec-ref: unit_036_pc_input_handler.md `edb183e71828ca93` 2026-02-25
 //! Terminal keyboard input handler for PC debug host (stub).
 //!
 //! Will use crossterm for raw terminal input when the dependency is added.

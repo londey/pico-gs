@@ -12,6 +12,7 @@ Gouraud shading calculations
 
 - REQ-008.02 (Render Pipeline Execution) — parent area 8 (Scene Graph/ECS)
 - REQ-007.02 (Render Mesh Patch) — parent area 7 (Vertex Transformation)
+- REQ-014.02 (Static Mesh Directional Lighting) — area 14: Rendering Quality
 
 ## Interfaces
 

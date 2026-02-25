@@ -22,6 +22,7 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
 - REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
 - REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
+- REQ-014.01 (Lightmapped Static Mesh) — combiner mode and texture unit register configuration
 
 Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and REQ-121 (Async SPI Transmission) are retired; their references have been removed.
 
@@ -135,6 +136,8 @@ Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and RE
 - `crates/pico-gs-core/src/gpu/mod.rs`: Platform-agnostic GPU driver (generic over `SpiTransport`)
 - `crates/pico-gs-core/src/gpu/registers.rs`: Register map constants matching INT-010 (CC_MODE=0x18, CONST_COLOR=0x19, RENDER_MODE=0x30, Z_RANGE=0x31, STIPPLE_PATTERN=0x32, FB_CONFIG=0x40, FB_DISPLAY=0x41, FB_CONTROL=0x43, MEM_FILL=0x44, PERF_TIMESTAMP=0x50, MEM_ADDR=0x70, MEM_DATA=0x71, ID=0x7F)
 - `crates/pico-gs-core/src/gpu/vertex.rs`: Vertex packing
+- `spi_gpu/src/memory/sdram_controller.sv`: SDRAM controller (memory upload/read target)
+- `spi_gpu/tests/memory/tb_sdram_controller.sv`: SDRAM controller testbench (behavioral model + timing validation)
 
 ## Verification
 

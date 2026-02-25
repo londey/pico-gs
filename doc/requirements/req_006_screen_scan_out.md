@@ -24,6 +24,17 @@ None (top-level area)
 - REQ-006.02 (Display Output Timing)
 - REQ-006.03 (Color Grading LUT)
 
+## Allocated To
+
+- UNIT-008 (Display Controller)
+- UNIT-009 (DVI TMDS Encoder)
+
+## Interfaces
+
+- INT-002 (DVI TMDS Output)
+- INT-010 (GPU Register Map)
+- INT-011 (SDRAM Memory Layout)
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.

@@ -24,6 +24,11 @@ None (top-level area)
 - REQ-004.01 (Color Combiner)
 - REQ-004.02 (Extended Precision Fragment Processing)
 
+## Allocated To
+
+- UNIT-006 (Pixel Pipeline)
+- UNIT-010 (Color Combiner)
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.

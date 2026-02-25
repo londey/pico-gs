@@ -7,16 +7,18 @@ Scanline FIFO and display pipeline
 ## Implements Requirements
 
 - REQ-005.01 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
-- REQ-006.01 (Display Output) — area 6: Screen Scan Out
 - REQ-005.06 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
+- REQ-005.09 (Double-Buffered Rendering) — scanout address switches at vsync via FB_DISPLAY
+- REQ-006.01 (Display Output) — area 6: Screen Scan Out
 - REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
 - REQ-006.03 (Color Grading LUT) — area 6: Screen Scan Out
+- REQ-011.01 (Performance Targets) — pixel clock and scanout timing are performance-critical
 
 ## Interfaces
 
 ### Provides
 
-None
+- INT-002 (DVI TMDS Output)
 
 ### Consumes
 

@@ -24,6 +24,11 @@ None (top-level area)
 - REQ-009.01 (USB Keyboard Input)
 - REQ-009.02 (Gamepad Input)
 
+## Allocated To
+
+- UNIT-025 (USB Keyboard Handler)
+- UNIT-036 (PC Input Handler)
+
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.

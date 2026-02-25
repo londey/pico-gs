@@ -28,4 +28,3 @@ None (top-level area)
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.
-Previously included a separate "Target Hardware Devices" area (REQ-311), which has been merged here.

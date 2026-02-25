@@ -1,4 +1,4 @@
-// Spec-ref: unit_022_gpu_driver_layer.md `c44d854d73502f21` 2026-02-24
+// Spec-ref: unit_022_gpu_driver_layer.md `2e395d1315d4c2b1` 2026-02-25
 //! Platform-agnostic GPU driver, generic over SpiTransport.
 //!
 //! Replaces the RP2350-specific `GpuHandle` with `GpuDriver<S>` that delegates

@@ -12,10 +12,14 @@ Edge-walking rasterization engine
 
 - REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
-- REQ-005.02 (Depth Tested Triangle)
-- REQ-003.01 (Textured Triangle)
 - REQ-002.03 (Rasterization Algorithm)
+- REQ-003.01 (Textured Triangle)
 - REQ-004.02 (Extended Precision Fragment Processing) — RGBA8 interpolation output promotion to 10.8
+- REQ-005.02 (Depth Tested Triangle)
+- REQ-005.04 (Enhanced Z-Buffer) — emits Z values for downstream Z-buffer operations
+- REQ-005.05 (Triangle-Based Clearing) — rasterizes screen-covering clear triangles
+- REQ-005.07 (Z-Buffer Operations) — generates per-fragment Z values for Z-buffer read/write
+- REQ-011.01 (Performance Targets) — triangle throughput and fill rate are primary performance drivers
 
 ## Interfaces
 
@@ -26,6 +30,7 @@ None
 ### Consumes
 
 - INT-010 (GPU Register Map)
+- INT-011 (SDRAM Memory Layout)
 
 ### Internal Interfaces
 

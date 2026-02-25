@@ -21,7 +21,7 @@ SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-thread
 
 ### Consumes
 
-None
+- INT-031 (Asset Binary Format) — `RenderMeshPatch` carries a `&'static MeshPatchDescriptor` whose SoA vertex blob follows the INT-031 binary layout
 
 ### Internal Interfaces
 

@@ -6,8 +6,14 @@ Internal
 
 ## Serves Requirement Areas
 
-- Area 7: Vertex Transformation (REQ-007.02, REQ-013.02)
+- Area 1: GPU SPI Controller (REQ-001.06, REQ-013.01, REQ-013.02, REQ-013.03)
+- Area 4: Fragment Processor/Color Combiner (REQ-004.02)
+- Area 5: Blend/Frame Buffer Store (REQ-005.08, REQ-005.09, REQ-005.10)
+- Area 6: Screen Scan Out (REQ-006.03)
+- Area 7: Vertex Transformation (REQ-007.02)
 - Area 8: Scene Graph/ECS (REQ-008.01, REQ-008.02, REQ-008.03, REQ-008.04, REQ-008.05)
+- Area 10: GPU Debug GUI (REQ-010.01)
+- Area 14: Demo Scenes (REQ-014.01, REQ-014.02, REQ-014.03, REQ-014.04)
 
 ## Parties
 
@@ -25,6 +31,7 @@ Internal
 - REQ-013.02 (Upload Texture) — Area 1: GPU SPI Controller
 - REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
 - REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
+- REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
 - REQ-001.06 (GPU Flow Control) — Area 1: GPU SPI Controller
 - REQ-008.05 (Default Demo Startup) — Area 8: Scene Graph/ECS
 - REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store

@@ -1,4 +1,4 @@
-// Spec-ref: unit_024_lighting_calculator.md `5c318da382f1923e` 2026-02-19
+// Spec-ref: unit_024_lighting_calculator.md `d17733cc80438d47` 2026-02-25
 //! Gouraud lighting calculation for directional lights + ambient.
 
 use crate::render::{AmbientLight, DirectionalLight};

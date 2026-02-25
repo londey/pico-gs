@@ -11,10 +11,10 @@ Internal
 
 ## Referenced By
 
-- REQ-003 (Texture Samplers — top-level area 3 requirement, not yet created)
-- REQ-003.08 (Texture Cache — sub-requirement under area 3)
-- REQ-003.06 (Texture Sampling — sub-requirement under area 3)
-- REQ-003.07 (Texture Mipmapping — sub-requirement under area 3)
+- REQ-003 (Texture Samplers)
+- REQ-003.06 (Texture Sampling)
+- REQ-003.07 (Texture Mipmapping)
+- REQ-003.08 (Texture Cache)
 
 ## Specification
 

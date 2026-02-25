@@ -18,6 +18,7 @@ Render command queue consumer
 - REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
 - REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
 - REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
+- REQ-014.01 (Lightmapped Static Mesh) — host-side render command dispatch for dual-texture rendering
 
 Note: REQ-100 (Host Firmware Architecture) and REQ-111 (Dual-Core Architecture) are retired; their references have been removed.
 Note: This unit's name reflects its RP2350 dual-core origin. In a future change it may be merged with UNIT-020 into a single-threaded execution unit; for now it is re-parented under Area 8 without functional change.

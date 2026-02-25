@@ -1,4 +1,4 @@
-// Spec-ref: unit_021_core_1_render_executor.md `dcf005c05af32ec5` 2026-02-23
+// Spec-ref: unit_021_core_1_render_executor.md `899cd15ce77a6291` 2026-02-25
 //! Core 1: Render command execution and GPU communication.
 //!
 //! Dequeues render commands from the inter-core SPSC queue and dispatches

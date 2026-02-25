@@ -32,6 +32,18 @@ None (top-level area)
 - REQ-005.09 (Double-Buffered Rendering)
 - REQ-005.10 (Ordered Dithering)
 
+## Allocated To
+
+- UNIT-005 (Rasterizer)
+- UNIT-006 (Pixel Pipeline)
+- UNIT-007 (Memory Arbiter)
+- UNIT-008 (Display Controller)
+
+## Interfaces
+
+- INT-010 (GPU Register Map)
+- INT-011 (SDRAM Memory Layout)
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.

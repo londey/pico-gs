@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `131de9348d1ec397` 2026-02-25
+// Spec-ref: unit_005_rasterizer.md `4112fcc8c6cf0438` 2026-02-25
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and barycentric interpolation

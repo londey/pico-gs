@@ -13,7 +13,7 @@ External Standard (Multi-format)
 ## Parties
 
 - **Provider:** External (asset authoring tools, texture compressors)
-- **Consumer:** UNIT-030 (Texture Loader)
+- **Consumer:** UNIT-030 (PNG Decoder)
 
 ## Referenced By
 

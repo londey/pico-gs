@@ -13,6 +13,7 @@ Stores GPU state and vertex data
 - REQ-001.01 (Basic Host Communication)
 - REQ-001.02 (Memory Upload Interface)
 - REQ-001.05 (Vertex Submission Protocol)
+- REQ-011.02 (Resource Constraints)
 
 ## Interfaces
 

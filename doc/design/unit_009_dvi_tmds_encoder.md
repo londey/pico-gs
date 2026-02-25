@@ -17,7 +17,6 @@ TMDS encoding and differential output
 - INT-002 (DVI TMDS Output)
 
 ### Consumes
-- INT-002 (DVI TMDS Output)
 
 None
 

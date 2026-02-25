@@ -16,7 +16,7 @@
 //   tWR:  2 cycles (last write data to PRECHARGE)
 //   CAS latency: 3 cycles (READ command to data valid)
 //
-// Spec-ref: unit_022_gpu_driver_layer.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_022_gpu_driver_layer.md `2e395d1315d4c2b1` 2026-02-25
 
 module tb_sdram_controller;
 

@@ -23,6 +23,11 @@ None (top-level area)
 
 - REQ-010.01 (PC Debug Host)
 
+## Allocated To
+
+- UNIT-035 (PC SPI Driver)
+- UNIT-036 (PC Input Handler)
+
 ## Notes
 
-This is one of 13 top-level requirement areas organizing the specification hierarchy.
+This is one of the top-level requirement areas organizing the specification hierarchy.

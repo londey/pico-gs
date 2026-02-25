@@ -1,5 +1,5 @@
-// Spec-ref: unit_020_core_0_scene_manager.md `01153ba84472e246` 2026-02-19
-// Spec-ref: unit_027_demo_state_machine.md `5cbf78b95c8afa68` 2026-02-19
+// Spec-ref: unit_020_core_0_scene_manager.md `c129656ed59bacc1` 2026-02-25
+// Spec-ref: unit_027_demo_state_machine.md `35a274f9070c13a9` 2026-02-25
 //! Scene graph management and demo state machine.
 
 pub mod demos;
