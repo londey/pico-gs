@@ -234,6 +234,10 @@ This project uses **syskit** for specification-driven development. Specification
 - After code changes, run `.syskit/scripts/impl-check.sh` to verify spec-to-implementation freshness.
 - After spec changes, run `.syskit/scripts/impl-stamp.sh UNIT-NNN` to update Spec-ref hashes in source files.
 
+### Documentation principle
+
+- **Reference, don't reproduce.** Don't duplicate definitions, requirements, or design descriptions — reference the authoritative source instead. For project documents, reference by ID (`REQ-NNN`, `INT-NNN`, `UNIT-NNN`, `VER-NNN`). For external standards, reference by name, version/year, and section number (e.g., "IEEE 802.3-2022 §4.2.1", "RFC 9293 §3.1"). This applies to specification documents and code comments alike.
+
 ### Making changes
 
 For non-trivial changes affecting system behavior, use the syskit workflow:
