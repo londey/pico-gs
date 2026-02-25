@@ -531,8 +531,9 @@ int main(int argc, char** argv) {
     SdramModel sdram(SDRAM_WORDS);
 
     // TODO: Pre-load texture data into SDRAM model for textured tests
-    //   (VER-012, VER-013). Use sdram.fill_texture() with the appropriate
-    //   format and base address per INT-014.
+    //   (VER-012, VER-013). Use sdram.fill_texture(base_word, fmt, data,
+    //   size, width_log2) with the appropriate format and base address
+    //   per INT-014.
 
     // -----------------------------------------------------------------------
     // 3. Reset the GPU

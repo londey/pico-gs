@@ -131,16 +131,21 @@ public:
     /// This is the high-level texture upload function that performs the
     /// block-tiling address transformation.
     ///
+    /// For block-compressed formats (BC1, BC2, BC3, BC4), input data is
+    /// already in block order and is uploaded linearly via upload_raw().
+    ///
+    /// For uncompressed formats (RGB565, RGBA8888, R8), input data is in
+    /// linear row-major pixel order and is rearranged into 4x4 block-tiled
+    /// layout per INT-011.
+    ///
     /// @param base_word_addr  SDRAM word address for the texture base.
-    /// @param fmt             Texture format (determines bytes per block).
+    /// @param fmt             Texture format (determines bytes per pixel/block).
     /// @param pixel_data      Linear row-major pixel data.
     /// @param data_size       Size of pixel_data in bytes.
-    ///
-    /// TODO: Implement the full block-tiling transform per INT-011.
-    ///       For now, this writes data linearly (sufficient for pre-tiled
-    ///       asset data).
+    /// @param width_log2      Log2 of texture width in pixels (e.g. 4 for 16px).
     void fill_texture(uint32_t base_word_addr, TexFormat fmt,
-                      const uint8_t* pixel_data, size_t data_size);
+                      const uint8_t* pixel_data, size_t data_size,
+                      uint32_t width_log2);
 
     /// Burst read a sequence of consecutive 16-bit words from the model.
     ///
