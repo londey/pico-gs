@@ -369,8 +369,10 @@ module gpu_top (
     assign gpio_cmd_full = fifo_wr_almost_full;
     assign gpio_cmd_empty = fifo_rd_empty;
 
-    // Temporary status assignments (will be connected to actual modules later)
-    assign gpu_busy = 1'b0;    // No rendering pipeline yet
+    // Stall the command FIFO when the rasterizer cannot accept a new triangle.
+    // This prevents VERTEX_KICK pulses from being lost while the rasterizer is
+    // busy processing the previous triangle.
+    assign gpu_busy = !rast_ready;
     // vblank is assigned from display timing generator (see display section)
 
     // ========================================================================

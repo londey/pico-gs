@@ -280,7 +280,13 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
             }
             state.read_pipe[slot].valid = true;
             state.read_pipe[slot].word_addr = word_addr;
-            state.read_pipe[slot].countdown = CAS_LATENCY;
+            // CAS_LATENCY - 1: connect_sdram() is called AFTER tick(), so
+            // read data driven after cycle N is sampled by the RTL on cycle
+            // N+1's rising edge.  Subtracting 1 from the pipeline delay
+            // compensates for this one-cycle offset, ensuring data appears
+            // on sdram_dq at the same rising edge the SDRAM controller
+            // expects it (CAS_LATENCY cycles after the READ command).
+            state.read_pipe[slot].countdown = CAS_LATENCY - 1;
             state.read_pipe_head = (slot + 1) % READ_PIPE_DEPTH;
             state.read_count++;
             break;
@@ -731,6 +737,13 @@ int main(int argc, char** argv) {
         uint64_t edge_test_count = 0;
         uint64_t edge_pass_count = 0;
         uint64_t port1_req_count = 0;
+        uint64_t range_test_count = 0;
+        uint64_t zbuf_read_count = 0;
+        uint64_t zbuf_wait_count = 0;
+        uint64_t zbuf_test_count = 0;
+        uint64_t zbuf_test_fail_count = 0;
+        uint64_t write_wait_count = 0;
+        uint64_t range_fail_count = 0;
         bool rast_started = false;
         bool diag_printed = false;
         for (uint64_t i = 0; i < PIPELINE_DRAIN_CYCLES && !contextp->gotFinish(); i++) {
@@ -794,6 +807,37 @@ int main(int argc, char** argv) {
                 edge_pass_count++;
             }
 
+            if (rast_state == 12) {  // RANGE_TEST = 12
+                range_test_count++;
+                // Print first few range test diagnostics
+                if (range_test_count <= 3) {
+                    printf("DIAG: RANGE_TEST #%llu — interp_z=0x%04X\n",
+                           (unsigned long long)range_test_count,
+                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z);
+                }
+            }
+
+            if (rast_state == 6) {  // ZBUF_READ = 6
+                zbuf_read_count++;
+            }
+
+            if (rast_state == 7) {  // ZBUF_WAIT = 7
+                zbuf_wait_count++;
+            }
+
+            if (rast_state == 8) {  // ZBUF_TEST = 8
+                zbuf_test_count++;
+                if (zbuf_test_count <= 3) {
+                    printf("DIAG: ZBUF_TEST #%llu — interp_z=0x%04X\n",
+                           (unsigned long long)zbuf_test_count,
+                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z);
+                }
+            }
+
+            if (rast_state == 10) {  // WRITE_WAIT = 10
+                write_wait_count++;
+            }
+
             if (rast_state == 9) {  // WRITE_PIXEL = 9
                 write_pixel_count++;
                 if (write_pixel_count <= 3) {
@@ -836,6 +880,14 @@ int main(int argc, char** argv) {
                (unsigned long long)edge_pass_count,
                (unsigned long long)write_pixel_count,
                (unsigned long long)port1_req_count);
+        printf("DIAG: range_test=%llu, zbuf_read=%llu, zbuf_wait=%llu, zbuf_test=%llu, "
+               "zbuf_test_fail=%llu, write_wait=%llu\n",
+               (unsigned long long)range_test_count,
+               (unsigned long long)zbuf_read_count,
+               (unsigned long long)zbuf_wait_count,
+               (unsigned long long)zbuf_test_count,
+               (unsigned long long)zbuf_test_fail_count,
+               (unsigned long long)write_wait_count);
     }
 
     // -----------------------------------------------------------------------

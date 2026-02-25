@@ -193,8 +193,8 @@ module rasterizer (
     wire [1:0] _unused_interp_g_low = interp_g[1:0];
     wire [2:0] _unused_interp_b_low = interp_b[2:0];
 
-    // Z-buffer value read from memory
-    reg [15:0] zbuf_value;  // 16-bit Z for current pixel
+    // zbuf_value register removed: early_z reads directly from zb_rdata[15:0]
+    // to avoid a one-cycle stale-data timing issue (see early_z instantiation).
 
     // ========================================================================
     // Shared Setup Multiplier (2 × 11×11 signed, muxed across 6 setup phases)
@@ -329,9 +329,16 @@ module rasterizer (
     wire ez_z_test_pass;
     wire ez_z_bypass;
 
+    // The early_z zbuffer_z input is driven directly from the arbiter's
+    // registered read-data port (zb_rdata) rather than the rasterizer's
+    // local zbuf_value register.  This avoids a one-cycle stale-data bug:
+    // the arbiter latches port2_rdata on the same clock edge as zb_ack,
+    // so zbuf_value (latched in ZBUF_WAIT on the zb_ack edge) captures
+    // the OLD port2_rdata.  In ZBUF_TEST (one cycle after zb_ack),
+    // port2_rdata has been updated and zb_rdata[15:0] is correct.
     early_z u_early_z (
         .fragment_z(interp_z),
-        .zbuffer_z(zbuf_value),
+        .zbuffer_z(zb_rdata[15:0]),
         .z_range_min(z_range_min),
         .z_range_max(z_range_max),
         .z_test_en(mode_z_test),
@@ -512,7 +519,6 @@ module rasterizer (
             zb_req <= 1'b0;
             zb_we <= 1'b0;
             zb_addr <= 24'b0;
-            zbuf_value <= 16'hFFFF;
             area_shift_reg <= 4'd0;
 
         end else begin
@@ -641,9 +647,6 @@ module rasterizer (
                 ZBUF_WAIT: begin
                     if (zb_ack) begin
                         zb_req <= 1'b0;
-
-                        // Extract 16-bit Z value from lower 16 bits of 32-bit word
-                        zbuf_value <= zb_rdata[15:0];
                     end
                 end
 
@@ -676,9 +679,17 @@ module rasterizer (
                 end
 
                 WRITE_WAIT: begin
-                    // Wait for all active writes to complete
-                    if ((!fb_req || fb_ack) && (!zb_req || zb_ack)) begin
+                    // Deassert each write request independently when its ack
+                    // arrives.  The arbiter services one port at a time, so
+                    // fb_ack and zb_ack never fire on the same cycle when both
+                    // ports are active.  Clearing each req on its own ack
+                    // prevents a deadlock where the higher-priority port
+                    // (port 1 / fb) is re-granted indefinitely while the
+                    // lower-priority port (port 2 / zb) starves.
+                    if (fb_ack) begin
                         fb_req <= 1'b0;
+                    end
+                    if (zb_ack) begin
                         zb_req <= 1'b0;
                     end
                 end
