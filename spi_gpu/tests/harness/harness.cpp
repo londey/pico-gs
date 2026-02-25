@@ -39,6 +39,12 @@ struct RegWrite {
 };
 
 // ---------------------------------------------------------------------------
+// Command scripts (one per golden image test)
+// ---------------------------------------------------------------------------
+
+#include "scripts/ver_010_gouraud.cpp"
+
+// ---------------------------------------------------------------------------
 // Simulation constants
 // ---------------------------------------------------------------------------
 
@@ -543,9 +549,19 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // 4. Drive command script
     // -----------------------------------------------------------------------
-    // TODO: Select command script based on test name (argv or compile-time).
-    // TODO: Call execute_script(top, trace, sim_time, sdram, conn, script, count);
-    //   (where conn is an SdramConnState instance, created alongside the SdramModel)
+    // Select command script based on test name.
+    // Default: VER-010 (Gouraud triangle).
+    // Additional test scripts will be added as VER-011, VER-012, VER-013
+    // are implemented.
+    const RegWrite* script = ver_010_script;
+    size_t script_count = ver_010_script_len;
+
+    SdramConnState conn;
+
+    // TODO: Call execute_script(top, trace, sim_time, sdram, conn, script, script_count);
+    (void)script;
+    (void)script_count;
+    (void)conn;
 
     // -----------------------------------------------------------------------
     // 5. Run clock until rendering completes
