@@ -59,7 +59,7 @@ Frame presentation is double-buffered — the host writes to one framebuffer whi
 
 ## Fragment Pipeline
 
-The stages below trace a fragment from SPI command to framebuffer write.
+The stages below trace a fragment from SPI command to DVI output.
 Stages marked **✗** can kill the fragment, skipping all subsequent stages and SDRAM traffic.
 
 ```mermaid
@@ -106,7 +106,21 @@ flowchart TD
     FB -. "dst read" .-> AB
     PW -. "color write" .-> WBUF
     WBUF -. "burst write" .-> FB
+
+    subgraph display["Display · per scanline"]
+        SCAN["Scanline Prefetch<br/>(burst read)"]
+        CLUT["Color Grade LUT<br/>R32 · G64 · B32<br/>RGB565 → RGB888"]
+        HSCALE["Horizontal Scale<br/>(nearest-neighbor)"]
+        TMDS["DVI TMDS Encode<br/>+ 10:1 Serialize"]
+        SCAN --> CLUT --> HSCALE --> TMDS
+    end
+
+    FB -. "scanline burst" .-> SCAN
+    TMDS -. "HDMI" .-> HDMI[("DVI Output<br/>640×480 @ 60 Hz")]
 ```
+
+After framebuffer write, the display controller (UNIT-008) prefetches scanlines via burst reads from SDRAM, applies the optional color-grade LUT (three per-channel 1D tables producing RGB888 — see REQ-006.03), scales horizontally to 640 pixels (see [Display Scaling](#display-scaling)), and feeds the DVI TMDS encoder (UNIT-009) at 25 MHz pixel clock.
+The LUT is double-buffered in EBR and auto-loaded from SDRAM via DMA during vblank.
 
 ### Per-fragment data lanes
 
