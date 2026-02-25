@@ -360,11 +360,17 @@ harness-scaffold: $(BUILD_DIR)
 # Integration test harness binary (full Verilator simulation).
 # Compiles all RTL via Verilator with the PLL simulation stub, then links
 # the harness C++ files against the Verilated model.
+# Integration test harness binary (full Verilator simulation).
+# Uses --cc --exe --build instead of --binary to avoid the auto-generated
+# main() conflicting with the harness's own main().
+# Uses --pins-inout-enables so the inout sdram_dq port is split into
+# sdram_dq (input), sdram_dq__out (output), sdram_dq__en (output enable).
 $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
+	$(VERILATOR) --cc --exe --build -f verilator.f \
+		--pins-inout-enables \
 		$(HARNESS_RTL_SOURCES) \
 		--top-module gpu_top \
-		--exe $(HARNESS_SOURCES) \
+		$(HARNESS_SOURCES) \
 		-CFLAGS "-I../$(HARNESS_DIR)" \
 		-o harness
 	cp obj_dir/harness $(BUILD_DIR)/harness

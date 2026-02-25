@@ -192,9 +192,9 @@ struct SdramConnState {
 /// Word address calculation from SDRAM signals:
 ///   word_addr = (bank << 23) | (row << 9) | column
 ///
-/// Verilator splits the inout sdram_dq port into:
-///   sdram_dq__in  — driven by testbench (read data to controller)
-///   sdram_dq__out — driven by controller (write data from controller)
+/// With --pins-inout-enables, Verilator splits the inout sdram_dq port into:
+///   sdram_dq      — input  (testbench drives read data to controller)
+///   sdram_dq__out — output (controller drives write data from controller)
 ///   sdram_dq__en  — output enable (1 = controller driving, 0 = tristate)
 static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
                           SdramConnState& state) {
@@ -214,11 +214,15 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
         }
     }
 
-    // Drive read data onto the DQ input bus
+    // Drive read data onto the DQ input bus.
+    // With --pins-inout-enables, the inout sdram_dq is split into:
+    //   sdram_dq      — input  (testbench drives read data to controller)
+    //   sdram_dq__out — output (controller drives write data)
+    //   sdram_dq__en  — output enable (1 = controller driving)
     if (read_data_valid) {
-        top->sdram_dq__in = read_data;
+        top->sdram_dq = read_data;
     } else {
-        top->sdram_dq__in = 0;
+        top->sdram_dq = 0;
     }
 
     // Step 2: Decode current-cycle SDRAM command
@@ -519,10 +523,10 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // 1. Initialize Verilator
     // -----------------------------------------------------------------------
-    Verilated::commandArgs(argc, argv);
-    Verilated::traceEverOn(true);
-
     auto* contextp = new VerilatedContext;
+    contextp->commandArgs(argc, argv);
+    contextp->traceEverOn(true);
+
     auto* top = new Vgpu_top{contextp};
 
     // Optional FST trace file, enabled by the --trace command-line flag.
