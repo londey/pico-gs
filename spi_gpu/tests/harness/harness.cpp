@@ -43,6 +43,7 @@ struct RegWrite {
 // ---------------------------------------------------------------------------
 
 #include "scripts/ver_010_gouraud.cpp"
+#include "scripts/ver_011_depth_test.cpp"
 
 // ---------------------------------------------------------------------------
 // Simulation constants
@@ -549,18 +550,88 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // 4. Drive command script
     // -----------------------------------------------------------------------
-    // Select command script based on test name.
+    // Select command script based on test name (argv[1] or argv[2]).
     // Default: VER-010 (Gouraud triangle).
-    // Additional test scripts will be added as VER-011, VER-012, VER-013
-    // are implemented.
-    const RegWrite* script = ver_010_script;
-    size_t script_count = ver_010_script_len;
+    // Supported test names: "ver010", "ver011"
+    //
+    // Usage:
+    //   ./harness [output.ppm]                  — runs VER-010 (default)
+    //   ./harness [output.ppm] [test_name]      — runs the named test
+    //   ./harness --test ver011 [output.ppm]    — runs the named test
+
+    const char* test_name = "ver010";
+    const char* output_file = "output.ppm";
+
+    // Simple argument parsing: look for --test flag or positional args.
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
+            test_name = argv[++i];
+        } else if (strstr(argv[i], ".ppm") != nullptr) {
+            output_file = argv[i];
+        } else {
+            // Treat bare argument as test name if not a .ppm file
+            test_name = argv[i];
+        }
+    }
 
     SdramConnState conn;
 
-    // TODO: Call execute_script(top, trace, sim_time, sdram, conn, script, script_count);
-    (void)script;
-    (void)script_count;
+    /// Number of idle cycles to run between sequential script phases to
+    /// ensure the rendering pipeline has fully drained.  This is a
+    /// conservative value; the actual pipeline latency is much shorter.
+    static constexpr uint64_t PIPELINE_DRAIN_CYCLES = 1'000'000;
+
+    if (strcmp(test_name, "ver011") == 0) {
+        // VER-011: Depth-tested overlapping triangles.
+        // Requires three sequential phases with pipeline drain between each.
+
+        // Phase 1: Z-buffer clear pass
+        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
+        //       ver_011_zclear_script, ver_011_zclear_script_len);
+
+        // Drain pipeline after Z-clear
+        // TODO: for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
+        //     tick(top, trace, sim_time);
+        //     connect_sdram(top, sdram, conn);
+        // }
+
+        // Phase 2: Triangle A (far, red)
+        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
+        //       ver_011_tri_a_script, ver_011_tri_a_script_len);
+
+        // Drain pipeline after Triangle A
+        // TODO: for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
+        //     tick(top, trace, sim_time);
+        //     connect_sdram(top, sdram, conn);
+        // }
+
+        // Phase 3: Triangle B (near, blue)
+        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
+        //       ver_011_tri_b_script, ver_011_tri_b_script_len);
+
+        printf("Running VER-011 (depth-tested overlapping triangles).\n");
+
+        // Suppress unused-variable warnings until TODO blocks are activated.
+        (void)ver_011_zclear_script;
+        (void)ver_011_zclear_script_len;
+        (void)ver_011_tri_a_script;
+        (void)ver_011_tri_a_script_len;
+        (void)ver_011_tri_b_script;
+        (void)ver_011_tri_b_script_len;
+        (void)PIPELINE_DRAIN_CYCLES;
+    } else {
+        // Default: VER-010 (Gouraud triangle).
+        const RegWrite* script = ver_010_script;
+        size_t script_count = ver_010_script_len;
+
+        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
+        //       script, script_count);
+        (void)script;
+        (void)script_count;
+
+        printf("Running VER-010 (Gouraud triangle).\n");
+    }
+
     (void)conn;
 
     // -----------------------------------------------------------------------
@@ -576,11 +647,6 @@ int main(int argc, char** argv) {
     // Framebuffer A base word address (INT-011): 0x000000 / 2 = 0
     uint32_t fb_base_word = 0;
     uint16_t* fb = extract_framebuffer(sdram, fb_base_word);
-
-    const char* output_file = "output.ppm";
-    if (argc > 1) {
-        output_file = argv[1];
-    }
 
     if (!ppm_writer::write_ppm(output_file, FB_WIDTH, FB_HEIGHT, fb)) {
         fprintf(stderr, "ERROR: Failed to write PPM file: %s\n", output_file);
