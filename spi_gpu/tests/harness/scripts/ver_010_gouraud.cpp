@@ -30,6 +30,7 @@
 // ---------------------------------------------------------------------------
 
 static constexpr uint8_t REG_COLOR            = 0x00;  // ADDR_COLOR
+static constexpr uint8_t REG_AREA_SETUP       = 0x05;  // ADDR_AREA_SETUP
 static constexpr uint8_t REG_VERTEX_NOKICK    = 0x06;  // ADDR_VERTEX_NOKICK
 static constexpr uint8_t REG_VERTEX_KICK_012  = 0x07;  // ADDR_VERTEX_KICK_012
 static constexpr uint8_t REG_RENDER_MODE      = 0x30;  // ADDR_RENDER_MODE
@@ -150,6 +151,102 @@ static constexpr uint64_t pack_fb_control(uint16_t x, uint16_t y,
 }
 
 // ---------------------------------------------------------------------------
+// AREA_SETUP register packing (from register_file.sv ADDR_AREA_SETUP decode):
+//
+//   [15:0]   = INV_AREA  (UQ0.16 reciprocal of (2*area >> AREA_SHIFT))
+//   [19:16]  = AREA_SHIFT (barrel-shift count, 0-15)
+//
+// The rasterizer uses integer pixel coordinates (Q12.4 truncated to 10-bit
+// integers) for edge function computation.  The host must compute 2*area
+// and the corresponding shift/inv_area in the same coordinate space.
+// ---------------------------------------------------------------------------
+
+/// Compute the packed 64-bit AREA_SETUP register value from three vertices
+/// given in integer pixel coordinates (matching the rasterizer's conversion
+/// of Q12.4 to 10-bit integers).
+///
+/// The algorithm maximizes shift to get the best inv_area precision, subject
+/// to the constraint that the largest edge function coefficient (A or B) must
+/// still produce at least 1 step per pixel after shifting (i.e., max_coeff >> shift >= 1).
+///
+/// @param x0,y0  Vertex 0 screen coordinates (integer pixels).
+/// @param x1,y1  Vertex 1 screen coordinates (integer pixels).
+/// @param x2,y2  Vertex 2 screen coordinates (integer pixels).
+/// @return        64-bit AREA_SETUP register value: [19:16]=shift, [15:0]=inv_area.
+static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1,
+                                              int x2, int y2) {
+    // Signed area = x0*(y1-y2) + x1*(y2-y0) + x2*(y0-y1)
+    // 2*area is the absolute value (rasterizer uses CCW winding, area > 0)
+    int64_t twice_area = static_cast<int64_t>(x0) * (y1 - y2)
+                       + static_cast<int64_t>(x1) * (y2 - y0)
+                       + static_cast<int64_t>(x2) * (y0 - y1);
+    if (twice_area < 0) {
+        twice_area = -twice_area;
+    }
+
+    // Compute edge function A and B coefficients (same as rasterizer setup).
+    // A_i = y_a - y_b,  B_i = x_b - x_a  for each edge (va, vb).
+    // The largest coefficient determines the maximum safe shift:
+    // we need max_coeff >> shift >= 1 so each pixel step produces a
+    // distinct shifted edge value.
+    auto abs_val = [](int v) -> int { return v < 0 ? -v : v; };
+    int max_coeff = 0;
+    // Edge 0: V1 → V2
+    max_coeff = abs_val(y1 - y2) > max_coeff ? abs_val(y1 - y2) : max_coeff;
+    max_coeff = abs_val(x2 - x1) > max_coeff ? abs_val(x2 - x1) : max_coeff;
+    // Edge 1: V2 → V0
+    max_coeff = abs_val(y2 - y0) > max_coeff ? abs_val(y2 - y0) : max_coeff;
+    max_coeff = abs_val(x0 - x2) > max_coeff ? abs_val(x0 - x2) : max_coeff;
+    // Edge 2: V0 → V1
+    max_coeff = abs_val(y0 - y1) > max_coeff ? abs_val(y0 - y1) : max_coeff;
+    max_coeff = abs_val(x1 - x0) > max_coeff ? abs_val(x1 - x0) : max_coeff;
+
+    // Maximum shift that preserves 1 step per pixel: floor(log2(max_coeff))
+    uint32_t shift_max = 0;
+    if (max_coeff > 1) {
+        int v = max_coeff;
+        while (v > 1) {
+            shift_max++;
+            v >>= 1;
+        }
+    }
+
+    // Minimum shift to fit 2*area in 16 bits: max(0, ceil(log2(2*area+1)) - 16)
+    uint32_t shift_min = 0;
+    if (twice_area > 0) {
+        uint64_t val = static_cast<uint64_t>(twice_area);
+        uint32_t bits_needed = 0;
+        while (val > 0) {
+            bits_needed++;
+            val >>= 1;
+        }
+        if (bits_needed > 16) {
+            shift_min = bits_needed - 16;
+        }
+    }
+
+    // Pick optimal shift: as large as possible (best inv_area precision),
+    // but at least shift_min and at most shift_max.
+    uint32_t shift = shift_max;
+    if (shift < shift_min) {
+        shift = shift_min;  // must fit in 16 bits
+    }
+    if (shift > 15) {
+        shift = 15;  // clamp to 4-bit field
+    }
+
+    // Compute inv_area = round(65536 / (twice_area >> shift))
+    uint64_t shifted_area = static_cast<uint64_t>(twice_area) >> shift;
+    uint16_t inv_area = 0;
+    if (shifted_area > 0) {
+        inv_area = static_cast<uint16_t>((65536ULL + shifted_area / 2) / shifted_area);
+    }
+
+    return (static_cast<uint64_t>(shift & 0xF) << 16) |
+           (static_cast<uint64_t>(inv_area));
+}
+
+// ---------------------------------------------------------------------------
 // RENDER_MODE encoding (from register_file.sv ADDR_RENDER_MODE decode):
 //
 //   [0]     = GOURAUD_EN
@@ -167,10 +264,13 @@ static constexpr uint64_t RENDER_MODE_GOURAUD_COLOR =
 // VER-010 Command Script
 // ---------------------------------------------------------------------------
 
-// Vertex positions (screen-space integer coordinates):
+// Vertex positions (screen-space integer coordinates, CCW winding):
 //   V0: (320, 40)   — top center      — red
-//   V1: (80, 400)   — bottom left     — green
-//   V2: (560, 400)  — bottom right    — blue
+//   V1: (560, 400)  — bottom right    — blue
+//   V2: (80, 400)   — bottom left     — green
+//
+// The rasterizer uses a standard edge function test (e0 >= 0 && e1 >= 0 && e2 >= 0)
+// which requires counter-clockwise (CCW) winding.  The signed area must be positive.
 
 static const RegWrite ver_010_script[] = {
     // 1. Configure framebuffer: color base = 0, z base = 0,
@@ -184,18 +284,39 @@ static const RegWrite ver_010_script[] = {
     // 3. Set render mode: Gouraud shading + color write, no Z test/write
     {REG_RENDER_MODE, RENDER_MODE_GOURAUD_COLOR},
 
+    // 3b. Set AREA_SETUP for the triangle (320,40)-(560,400)-(80,400)
+    //     2*area = 172800, max_coeff = 480, shift = 8, inv_area = 97
+    {REG_AREA_SETUP, compute_area_setup(320, 40, 560, 400, 80, 400)},
+
     // 4. Submit V0: red vertex at top center (320, 40)
     {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00))},  // Red diffuse
     {REG_VERTEX_NOKICK,  pack_vertex(320, 40, 0x0000)},
 
-    // 5. Submit V1: green vertex at bottom left (80, 400)
-    {REG_COLOR,          pack_color(argb(0x00, 0xFF, 0x00))},  // Green diffuse
-    {REG_VERTEX_NOKICK,  pack_vertex(80, 400, 0x0000)},
-
-    // 6. Submit V2: blue vertex at bottom right (560, 400)
-    //    VERTEX_KICK_012 triggers rasterization of the triangle (V0, V1, V2).
+    // 5. Submit V1: blue vertex at bottom right (560, 400)
     {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF))},  // Blue diffuse
-    {REG_VERTEX_KICK_012, pack_vertex(560, 400, 0x0000)},
+    {REG_VERTEX_NOKICK,  pack_vertex(560, 400, 0x0000)},
+
+    // 6. Submit V2: green vertex at bottom left (80, 400)
+    //    VERTEX_KICK_012 triggers rasterization of the triangle (V0, V1, V2).
+    {REG_COLOR,          pack_color(argb(0x00, 0xFF, 0x00))},  // Green diffuse
+    {REG_VERTEX_KICK_012, pack_vertex(80, 400, 0x0000)},
+
+    // 7. Dummy trailing command — ensures the KICK_012 above is consumed
+    //    from the FIFO before it goes empty.
+    //
+    //    The async_fifo uses a registered read-data output: rd_data appears
+    //    one cycle AFTER rd_en fires.  gpu_top asserts reg_cmd_valid on the
+    //    same cycle rd_en fires, so the register file processes the PREVIOUS
+    //    rd_data value.  This off-by-one means the LAST entry written to the
+    //    FIFO is loaded into rd_data_reg but never consumed (the FIFO appears
+    //    empty before the register file sees the data).  Adding a benign
+    //    trailing write (here: a redundant COLOR register write) ensures the
+    //    real last command (VERTEX_KICK_012) is the one that gets processed,
+    //    and only this harmless dummy is lost.
+    //
+    //    TODO: Fix the FIFO read interface in gpu_top to implement proper
+    //    first-word-fall-through (FWFT) behavior.
+    {REG_COLOR, 0x0000000000000000ULL},  // Dummy NOP (COLOR write, benign)
 };
 
 static constexpr size_t ver_010_script_len =

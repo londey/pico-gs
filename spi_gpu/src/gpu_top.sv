@@ -190,6 +190,10 @@ module gpu_top (
     wire [63:0] cc_mode;
     wire [63:0] const_color;
 
+    // Barycentric area normalization (AREA_SETUP)
+    wire [15:0] area_inv;
+    wire [3:0]  area_shift;
+
     // Texture configuration
     wire [63:0] tex0_cfg;
     wire [63:0] tex1_cfg;
@@ -275,6 +279,10 @@ module gpu_top (
         .tri_color1(tri_color1),
         .tri_uv0(tri_uv0),
         .tri_uv1(tri_uv1),
+
+        // Barycentric area normalization
+        .area_inv(area_inv),
+        .area_shift(area_shift),
 
         // Rectangle output
         .rect_valid(rect_valid),
@@ -717,11 +725,9 @@ module gpu_top (
         .v2_z(tri_z[2]),
         .v2_color(tri_color0[2][23:0]),
 
-        // Barycentric interpolation
-        // TODO: inv_area no longer provided by register_file v10;
-        // rasterizer computes edge functions internally but still expects
-        // this input for normalization.  Tied to 1.0 in UQ0.16 for now.
-        .inv_area(16'h0100),
+        // Barycentric interpolation (from AREA_SETUP register)
+        .inv_area(area_inv),
+        .area_shift(area_shift),
 
         // Framebuffer write (memory arbiter port 1)
         .fb_req(arb_port1_req),

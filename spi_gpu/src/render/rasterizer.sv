@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `131de9348d1ec397` 2026-02-24
+// Spec-ref: unit_005_rasterizer.md `131de9348d1ec397` 2026-02-25
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and barycentric interpolation
@@ -42,6 +42,7 @@ module rasterizer (
 
     // Barycentric interpolation (from CPU)
     input  wire [15:0]  inv_area,       // 1/area (0.16 fixed point)
+    input  wire [3:0]   area_shift,     // Edge value barrel shift count (0-15)
 
     // Framebuffer write interface (to SRAM arbiter port 1)
     output reg          fb_req,
@@ -149,6 +150,7 @@ module rasterizer (
 
     // Barycentric interpolation
     reg [15:0] inv_area_reg;  // 1/area (0.16 fixed point)
+    reg [3:0]  area_shift_reg;  // Edge barrel shift count
 
     // Bounding box
     reg [9:0] bbox_min_x, bbox_max_x;
@@ -248,16 +250,34 @@ module rasterizer (
     // Barycentric Weight Computation (combinational, latched in EDGE_TEST)
     // ========================================================================
 
+    // Barrel-shift edge values to fit in 16 bits for large triangles.
+    // The host sets area_shift = max(0, ceil(log2(2*area+1)) - 16)
+    // and compensates inv_area accordingly.
+    wire [31:0] e0_shifted_full = e0[31:0] >> area_shift_reg;
+    wire [31:0] e1_shifted_full = e1[31:0] >> area_shift_reg;
+    wire [31:0] e2_shifted_full = e2[31:0] >> area_shift_reg;
+    wire [15:0] e0_shifted = e0_shifted_full[15:0];
+    wire [15:0] e1_shifted = e1_shifted_full[15:0];
+    wire [15:0] e2_shifted = e2_shifted_full[15:0];
+
+    // Upper bits of shifted edge values discarded (host ensures shifted value fits 16 bits)
+    wire [15:0] _unused_e0_shifted_hi = e0_shifted_full[31:16];
+    wire [15:0] _unused_e1_shifted_hi = e1_shifted_full[31:16];
+    wire [15:0] _unused_e2_shifted_hi = e2_shifted_full[31:16];
+
     // Full 16×16 products in 16.16 format; truncated to [16:0] (1.16 fixed point)
     // when latched into w0/w1/w2 registers.
-    wire [31:0] w0_full = e0[15:0] * inv_area_reg;
-    wire [31:0] w1_full = e1[15:0] * inv_area_reg;
-    wire [31:0] w2_full = e2[15:0] * inv_area_reg;
+    wire [31:0] w0_full = e0_shifted * inv_area_reg;
+    wire [31:0] w1_full = e1_shifted * inv_area_reg;
+    wire [31:0] w2_full = e2_shifted * inv_area_reg;
 
     // Upper bits [31:17] discarded during 1.16 truncation
     wire [14:0] _unused_w0_hi = w0_full[31:17];
     wire [14:0] _unused_w1_hi = w1_full[31:17];
     wire [14:0] _unused_w2_hi = w2_full[31:17];
+
+    // Shifted edge values used in multiply; original e[15:0] no longer directly used
+    // for weight computation (but e values still used for inside-triangle test)
 
     // ========================================================================
     // Interpolation Combinational Logic
@@ -493,6 +513,7 @@ module rasterizer (
             zb_we <= 1'b0;
             zb_addr <= 24'b0;
             zbuf_value <= 16'hFFFF;
+            area_shift_reg <= 4'd0;
 
         end else begin
             case (state)
@@ -524,6 +545,7 @@ module rasterizer (
 
                         // Latch barycentric inv_area (0.16 fixed, lower 16 bits)
                         inv_area_reg <= inv_area[15:0];
+                        area_shift_reg <= area_shift;
 
                         tri_ready <= 1'b0;
                     end
@@ -609,8 +631,9 @@ module rasterizer (
                 ZBUF_READ: begin
                     // Read Z-buffer - direct 16-bit read (one value per 32-bit word)
                     // Only bits [23:12] of base address are relevant for 24-bit SRAM space
-                    // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids multiplier
-                    zb_addr <= {zb_base_addr[23:12], 12'b0} + {5'b0, curr_y, 9'b0} + {7'b0, curr_y, 7'b0} + {14'd0, curr_x};
+                    // Byte address = base + y*1280 + x*2 (16-bit values, 640-pixel stride)
+                    // 1280 = 1024 + 256, so y*1280 = (y<<10) + (y<<8) — avoids multiplier
+                    zb_addr <= {zb_base_addr[23:12], 12'b0} + {4'b0, curr_y, 10'b0} + {6'b0, curr_y, 8'b0} + {13'd0, curr_x, 1'b0};
                     zb_we <= 1'b0;  // Read operation
                     zb_req <= 1'b1;
                 end
@@ -632,8 +655,9 @@ module rasterizer (
                     // Framebuffer write (gated by COLOR_WRITE_EN)
                     if (mode_color_write) begin
                         // Write to framebuffer - R5G6B5 format (16-bit color)
-                        // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids multiplier
-                        fb_addr <= {fb_base_addr[23:12], 12'b0} + {5'b0, curr_y, 9'b0} + {7'b0, curr_y, 7'b0} + {14'd0, curr_x};
+                        // Byte address = base + y*1280 + x*2 (16-bit pixels, 640-pixel stride)
+                        // 1280 = 1024 + 256, so y*1280 = (y<<10) + (y<<8) — avoids multiplier
+                        fb_addr <= {fb_base_addr[23:12], 12'b0} + {4'b0, curr_y, 10'b0} + {6'b0, curr_y, 8'b0} + {13'd0, curr_x, 1'b0};
                         fb_wdata <= {16'h0000,                          // Upper 16 bits unused
                                      interp_r[7:3],                     // R5
                                      interp_g[7:2],                     // G6
@@ -643,8 +667,9 @@ module rasterizer (
 
                     // Z-buffer write (gated by Z_WRITE_EN)
                     if (mode_z_write) begin
-                        // 640 = 512 + 128, so y*640 = (y<<9) + (y<<7) — avoids multiplier
-                        zb_addr <= {zb_base_addr[23:12], 12'b0} + {5'b0, curr_y, 9'b0} + {7'b0, curr_y, 7'b0} + {14'd0, curr_x};
+                        // Byte address = base + y*1280 + x*2 (16-bit Z values, 640-pixel stride)
+                        // 1280 = 1024 + 256, so y*1280 = (y<<10) + (y<<8) — avoids multiplier
+                        zb_addr <= {zb_base_addr[23:12], 12'b0} + {4'b0, curr_y, 10'b0} + {6'b0, curr_y, 8'b0} + {13'd0, curr_x, 1'b0};
                         zb_we <= 1'b1;  // Write operation
                         zb_req <= 1'b1;
                     end

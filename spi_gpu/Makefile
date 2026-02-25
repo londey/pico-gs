@@ -207,30 +207,30 @@ test-register-file: test-register-file-v10
 # VER-010: Gouraud triangle golden image test
 test-gouraud: $(BUILD_DIR)/harness
 	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.ppm
-	diff -q $(TB_DIR)/sim_out/gouraud_triangle.ppm $(TB_DIR)/golden/gouraud_triangle.ppm
+	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.png
+	diff -q $(TB_DIR)/sim_out/gouraud_triangle.png $(TB_DIR)/golden/gouraud_triangle.png
 
 # VER-011: Depth-tested triangles golden image test
 test-depth-test: $(BUILD_DIR)/harness
 	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.ppm
-	diff -q $(TB_DIR)/sim_out/depth_test.ppm $(TB_DIR)/golden/depth_test.ppm
+	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.png
+	diff -q $(TB_DIR)/sim_out/depth_test.png $(TB_DIR)/golden/depth_test.png
 
 # VER-010 initial approval: run simulation and generate output for visual inspection.
 # After inspecting the output, copy to golden/ and commit to enable test-gouraud.
 test-gouraud-init: $(BUILD_DIR)/harness
 	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.ppm
-	@echo "Output written to $(TB_DIR)/sim_out/gouraud_triangle.ppm"
-	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/gouraud_triangle.ppm $(TB_DIR)/golden/"
+	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.png
+	@echo "Output written to $(TB_DIR)/sim_out/gouraud_triangle.png"
+	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/gouraud_triangle.png $(TB_DIR)/golden/"
 
 # VER-011 initial approval: run simulation and generate output for visual inspection.
 # After inspecting the output, copy to golden/ and commit to enable test-depth-test.
 test-depth-test-init: $(BUILD_DIR)/harness
 	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.ppm
-	@echo "Output written to $(TB_DIR)/sim_out/depth_test.ppm"
-	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/depth_test.ppm $(TB_DIR)/golden/"
+	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.png
+	@echo "Output written to $(TB_DIR)/sim_out/depth_test.png"
+	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/depth_test.png $(TB_DIR)/golden/"
 
 # VER-012: Textured triangle golden image test (blocked)
 test-textured:
@@ -246,12 +246,12 @@ test-color-combined:
 # Golden image tests (VER-010, VER-011) run when approved golden images exist.
 test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder
 	@echo "Unit testbenches passed."
-	@if [ -f $(TB_DIR)/golden/gouraud_triangle.ppm ]; then \
+	@if [ -f $(TB_DIR)/golden/gouraud_triangle.png ]; then \
 		$(MAKE) test-gouraud; \
 	else \
 		echo "VER-010: Golden image not yet approved. Run 'make test-gouraud' after approval."; \
 	fi
-	@if [ -f $(TB_DIR)/golden/depth_test.ppm ]; then \
+	@if [ -f $(TB_DIR)/golden/depth_test.png ]; then \
 		$(MAKE) test-depth-test; \
 	else \
 		echo "VER-011: Golden image not yet approved. Run 'make test-depth-test' after approval."; \
@@ -329,7 +329,7 @@ HARNESS_DIR = $(TB_DIR)/harness
 HARNESS_SOURCES = \
 	$(HARNESS_DIR)/harness.cpp \
 	$(HARNESS_DIR)/sdram_model.cpp \
-	$(HARNESS_DIR)/ppm_writer.cpp
+	$(HARNESS_DIR)/png_writer.cpp
 
 # RTL sources for the integration harness Verilator build.
 # Same as RTL_SOURCES but with pll_core_sim.sv (passthrough stub) replacing
@@ -383,8 +383,8 @@ sim:
 # Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR) obj_dir
-	rm -f *.vcd *.fst *.ppm
-	rm -rf $(TB_DIR)/sim_out/*.ppm
+	rm -f *.vcd *.fst *.png
+	rm -rf $(TB_DIR)/sim_out/*.png
 
 # Help
 help:

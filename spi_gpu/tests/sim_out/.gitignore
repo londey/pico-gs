@@ -1,4 +1,4 @@
 # Transient simulation output files.
 # Only approved golden images in tests/golden/ are committed.
-*.ppm
+*.png
 *.fst

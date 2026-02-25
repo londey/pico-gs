@@ -27,6 +27,10 @@ module register_file (
     output reg  [2:0][31:0] tri_uv0,    // UV0 coordinates per vertex
     output reg  [2:0][31:0] tri_uv1,    // UV1 coordinates per vertex
 
+    // Barycentric area normalization (AREA_SETUP)
+    output reg  [15:0]  area_inv,           // INV_AREA (UQ0.16)
+    output reg  [3:0]   area_shift,         // AREA_SHIFT (0-15)
+
     // Rectangle output (VERTEX_KICK_RECT)
     output reg          rect_valid,
 
@@ -115,6 +119,7 @@ module register_file (
 
     localparam ADDR_COLOR              = 7'h00;  // Vertex color (diffuse + specular)
     localparam ADDR_UV0_UV1            = 7'h01;  // UV coordinates for TEX0 + TEX1
+    localparam ADDR_AREA_SETUP         = 7'h05;  // Barycentric area normalization
     localparam ADDR_VERTEX_NOKICK      = 7'h06;  // Buffer vertex, no triangle emit
     localparam ADDR_VERTEX_KICK_012    = 7'h07;  // Buffer vertex, emit tri (0,1,2)
     localparam ADDR_VERTEX_KICK_021    = 7'h08;  // Buffer vertex, emit tri (0,2,1)
@@ -174,6 +179,7 @@ module register_file (
     reg [63:0] tex0_cfg_reg;            // TEX0_CFG register
     reg [63:0] tex1_cfg_reg;            // TEX1_CFG register
     reg [63:0] mem_addr_reg;            // MEM_ADDR register
+    reg [63:0] area_setup_reg;          // AREA_SETUP register
     // mem_data write value is held in the mem_data_out output register
 
     // FB_DISPLAY blocking: pending value waits for vsync
@@ -274,6 +280,15 @@ module register_file (
     end
 
     // ========================================================================
+    // Combinational Decode: AREA_SETUP → barycentric outputs
+    // ========================================================================
+
+    always_comb begin
+        area_inv   = area_setup_reg[15:0];
+        area_shift = area_setup_reg[19:16];
+    end
+
+    // ========================================================================
     // Combinational Decode: MEM_ADDR → output
     // ========================================================================
 
@@ -327,6 +342,7 @@ module register_file (
     reg [63:0] next_tex0_cfg;
     reg [63:0] next_tex1_cfg;
     reg [63:0] next_mem_addr;
+    reg [63:0] next_area_setup;
 
     // FB_DISPLAY pending state
     reg        next_fb_display_pending;
@@ -394,6 +410,7 @@ module register_file (
         next_tex0_cfg              = tex0_cfg_reg;
         next_tex1_cfg              = tex1_cfg_reg;
         next_mem_addr              = mem_addr_reg;
+        next_area_setup            = area_setup_reg;
         next_fb_display_pending    = fb_display_pending;
         next_fb_display_pending_val = fb_display_pending_val;
         next_vertex_count          = vertex_count;
@@ -623,6 +640,10 @@ module register_file (
                     next_const_color = cmd_wdata;
                 end
 
+                ADDR_AREA_SETUP: begin
+                    next_area_setup = cmd_wdata;
+                end
+
                 ADDR_RENDER_MODE: begin
                     next_render_mode = cmd_wdata;
                 end
@@ -710,6 +731,7 @@ module register_file (
             tex0_cfg_reg        <= 64'h0;
             tex1_cfg_reg        <= 64'h0;
             mem_addr_reg        <= 64'h0;
+            area_setup_reg      <= 64'h0;
 
             // Reset FB_DISPLAY pending state
             fb_display_pending     <= 1'b0;
@@ -774,6 +796,7 @@ module register_file (
             tex0_cfg_reg        <= next_tex0_cfg;
             tex1_cfg_reg        <= next_tex1_cfg;
             mem_addr_reg        <= next_mem_addr;
+            area_setup_reg      <= next_area_setup;
 
             // FB_DISPLAY pending state
             fb_display_pending     <= next_fb_display_pending;
@@ -834,6 +857,7 @@ module register_file (
         case (cmd_addr)
             ADDR_COLOR:           cmd_rdata = current_color0;
             ADDR_UV0_UV1:         cmd_rdata = current_uv01;
+            ADDR_AREA_SETUP:      cmd_rdata = area_setup_reg;
             ADDR_RENDER_MODE:     cmd_rdata = render_mode_reg;
             ADDR_Z_RANGE:         cmd_rdata = z_range_reg;
             ADDR_STIPPLE_PATTERN: cmd_rdata = stipple_pattern_reg;

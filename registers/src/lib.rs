@@ -22,6 +22,19 @@ pub const COLOR: u8 = 0x00;
 /// (Q1.15 signed fixed-point, perspective-correct).
 pub const UV0_UV1: u8 = 0x01;
 
+/// Barycentric interpolation area normalization register.
+///
+/// \[15:0\] INV_AREA — reciprocal of (2*triangle_area >> AREA_SHIFT) in UQ0.16.
+/// \[19:16\] AREA_SHIFT — barrel-shift count for edge function normalization (0-15).
+/// Written by the host before each vertex kick.
+pub const AREA_SETUP: u8 = 0x05;
+
+/// INV_AREA field shift in AREA_SETUP (bits \[15:0\]).
+pub const AREA_SETUP_INV_AREA_SHIFT: u32 = 0;
+
+/// AREA_SHIFT field shift in AREA_SETUP (bits \[19:16\]).
+pub const AREA_SETUP_AREA_SHIFT_SHIFT: u32 = 16;
+
 /// Light direction vector for DOT3 bump mapping (X8Y8Z8).
 pub const LIGHT_DIR: u8 = 0x03;
 

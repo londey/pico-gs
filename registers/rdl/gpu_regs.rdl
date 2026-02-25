@@ -163,7 +163,21 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     // index 0x03: Reserved (was LIGHT_DIR, removed — use COLOR registers for light direction)
 
-    // index 0x04-0x05: Reserved
+    // index 0x04: Reserved
+
+    reg area_setup_reg {
+        name = "AREA_SETUP";
+        desc = "Barycentric interpolation area normalization.
+               INV_AREA is the reciprocal of (2*triangle_area >> AREA_SHIFT)
+               in UQ0.16 fixed point.  AREA_SHIFT is the barrel-shift count
+               applied to edge function values before the 16x16 multiply.
+               The host computes both values from the triangle vertex
+               positions before each vertex kick.";
+        field {} INV_AREA[15:0]    = 0;   // 1/(area>>shift) in UQ0.16
+        field {} AREA_SHIFT[19:16] = 0;   // right-shift count (0-15)
+        field {} RSVD[63:20]       = 0;
+    };
+    area_setup_reg AREA_SETUP @ 0x028;  // index 0x05
 
     reg vertex_reg {
         name = "VERTEX";

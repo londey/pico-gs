@@ -1,18 +1,18 @@
 # Integration Test Harness
 
 Shared C++ harness for VER-010 through VER-013 golden image integration tests.
-This harness drives a Verilated `gpu_top` model with register-write command scripts, captures the resulting framebuffer from a behavioral SDRAM model, and writes PPM golden images for comparison.
+This harness drives a Verilated `gpu_top` model with register-write command scripts, captures the resulting framebuffer from a behavioral SDRAM model, and writes PNG golden images for comparison.
 
 ## Architecture Overview
 
 The harness consists of four components:
 
-1. **Main harness** (`harness.cpp`) -- Instantiates the Verilated GPU model, connects the behavioral SDRAM model to the memory arbiter ports, drives register-write command scripts into the register file inputs, runs the clock loop until rendering completes, and calls the PPM writer to serialize the framebuffer.
+1. **Main harness** (`harness.cpp`) -- Instantiates the Verilated GPU model, connects the behavioral SDRAM model to the memory arbiter ports, drives register-write command scripts into the register file inputs, runs the clock loop until rendering completes, and calls the PNG writer to serialize the framebuffer.
 
 2. **Behavioral SDRAM model** (`sdram_model.h`, `sdram_model.cpp`) -- A cycle-accurate behavioral model of the W9825G6KH-6 SDRAM (INT-011).
    Provides a simple C++ API (`read_word()`, `write_word()`, `fill_texture()`) and implements the 4x4 block-tiled address layout defined in INT-011.
 
-3. **PPM writer** (`ppm_writer.h`, `ppm_writer.cpp`) -- Reads an RGB565 framebuffer array and writes a binary P6 PPM file, converting 16-bit RGB565 pixels to 8-bit-per-channel RGB for PPM output.
+3. **PNG writer** (`png_writer.h`, `png_writer.cpp`) -- Reads an RGB565 framebuffer array and writes a PNG file using stb_image_write, converting 16-bit RGB565 pixels to 8-bit-per-channel RGB.
 
 4. **Command scripts** -- C++ arrays of `{addr, data}` pairs encoding INT-021 register-write sequences.
    Each VER test scene provides its own command script that replicates the register writes produced by `RenderMeshPatch`, `ClearFramebuffer`, and other render commands.
@@ -22,7 +22,7 @@ The harness consists of four components:
 The harness is compiled with Verilator using the project's shared flags:
 
 ```
-verilator --binary -f verilator.f <RTL sources> tests/harness/harness.cpp tests/harness/sdram_model.cpp tests/harness/ppm_writer.cpp --top-module gpu_top -o harness
+verilator --binary -f verilator.f <RTL sources> tests/harness/harness.cpp tests/harness/sdram_model.cpp tests/harness/png_writer.cpp --top-module gpu_top -o harness
 ```
 
 This matches the existing Makefile convention (`VERILATOR_FLAGS = --binary -f verilator.f`).
@@ -87,13 +87,13 @@ static const RegWrite ver_010_script[] = {
 This format directly encodes the register-write sequences that INT-021 `RenderMeshPatch` and `ClearFramebuffer` commands produce on the SPI bus.
 The harness drives these writes into the register file inputs of the Verilated model.
 
-## PPM Output
+## PNG Output
 
 After the simulation completes rendering, the harness:
 
 1. Extracts the framebuffer contents from the SDRAM model (512x480 region of the 512x512 color buffer).
-2. Calls `ppm_writer::write_ppm()` to convert RGB565 pixels to 8-bit RGB and write a binary P6 PPM file.
-3. The output PPM is compared against approved golden images in `tests/golden/`.
+2. Calls `png_writer::write_png()` to convert RGB565 pixels to 8-bit RGB and write a PNG file (via stb_image_write).
+3. The output PNG is compared against approved golden images in `tests/golden/`.
 
 ## Directory Layout
 
@@ -104,8 +104,9 @@ tests/
     harness.cpp         -- Main harness skeleton
     sdram_model.h       -- Behavioral SDRAM model header
     sdram_model.cpp     -- Behavioral SDRAM model implementation
-    ppm_writer.h        -- PPM image writer header
-    ppm_writer.cpp      -- PPM image writer implementation
+    png_writer.h        -- PNG image writer header
+    png_writer.cpp      -- PNG image writer implementation (uses stb_image_write.h)
+    stb_image_write.h   -- stb single-header PNG encoder (vendored, public domain)
   golden/
     .gitkeep            -- Golden images (empty until first approved image)
   vectors/

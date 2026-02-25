@@ -132,6 +132,7 @@ static const RegWrite ver_011_zclear_script[] = {
     //    (irrelevant since COLOR_WRITE=0) and Z=0xFFFF.
     //
     //    Triangle 1: (0,0) - (639,0) - (0,479) covers lower-left half
+    {REG_AREA_SETUP, compute_area_setup(0, 0, 639, 0, 0, 479)},
     {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK,  pack_vertex(0, 0, 0xFFFF)},
 
@@ -142,6 +143,7 @@ static const RegWrite ver_011_zclear_script[] = {
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
 
     //    Triangle 2: (639,0) - (639,479) - (0,479) covers upper-right half
+    {REG_AREA_SETUP, compute_area_setup(639, 0, 639, 479, 0, 479)},
     {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK,  pack_vertex(639, 0, 0xFFFF)},
 
@@ -150,6 +152,9 @@ static const RegWrite ver_011_zclear_script[] = {
 
     {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
+
+    // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
+    {REG_COLOR, 0x0000000000000000ULL},
 };
 
 static constexpr size_t ver_011_zclear_script_len =
@@ -171,6 +176,9 @@ static const RegWrite ver_011_tri_a_script[] = {
     // 1. Set render mode: depth-tested Gouraud rendering
     {REG_RENDER_MODE, RENDER_MODE_DEPTH_TEST},
 
+    // 1b. Set AREA_SETUP for Triangle A: (100,100)-(400,100)-(250,380)
+    {REG_AREA_SETUP, compute_area_setup(100, 100, 400, 100, 250, 380)},
+
     // 2. Submit V0: red at (100, 100), Z=0x8000
     {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK,  pack_vertex(100, 100, 0x8000)},
@@ -183,6 +191,9 @@ static const RegWrite ver_011_tri_a_script[] = {
     //    VERTEX_KICK_012 triggers rasterization of Triangle A (V0, V1, V2).
     {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(250, 380, 0x8000)},
+
+    // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
+    {REG_COLOR, 0x0000000000000000ULL},
 };
 
 static constexpr size_t ver_011_tri_a_script_len =
@@ -201,6 +212,9 @@ static constexpr size_t ver_011_tri_a_script_len =
 // ---------------------------------------------------------------------------
 
 static const RegWrite ver_011_tri_b_script[] = {
+    // 0b. Set AREA_SETUP for Triangle B: (200,80)-(500,80)-(350,360)
+    {REG_AREA_SETUP, compute_area_setup(200, 80, 500, 80, 350, 360)},
+
     // 1. Submit V0: blue at (200, 80), Z=0x4000
     {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK,  pack_vertex(200, 80, 0x4000)},
@@ -213,6 +227,9 @@ static const RegWrite ver_011_tri_b_script[] = {
     //    VERTEX_KICK_012 triggers rasterization of Triangle B (V0, V1, V2).
     {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(350, 360, 0x4000)},
+
+    // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
+    {REG_COLOR, 0x0000000000000000ULL},
 };
 
 static constexpr size_t ver_011_tri_b_script_len =
