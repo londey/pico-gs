@@ -1,9 +1,5 @@
 # VER-012: Textured Triangle Golden Image Test
 
-> **Implementation Blocked** -- This test requires the integration simulation harness (`spi_gpu/tests/harness/`) which is not yet implemented (see Task 010).
-> The VER document is created now to capture the test scene specification before implementation begins.
-> The golden image file `spi_gpu/tests/golden/textured_triangle.ppm` will be created after the harness is implemented and its output is visually approved.
-
 ## Verification Method
 
 **Test:** Verified by executing a Verilator golden image simulation that renders a textured triangle through the full GPU RTL hierarchy -- including the texture cache, texture decoder, and behavioral SDRAM model implementing the INT-032 cache miss handling protocol -- and compares the output pixel-exactly against an approved golden image.
@@ -21,7 +17,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 ## Preconditions
 
-- Integration simulation harness (`spi_gpu/tests/harness/`) is implemented and compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths).
+- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths).
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
 - Golden image `spi_gpu/tests/golden/textured_triangle.ppm` has been approved and committed.
@@ -135,9 +131,9 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness (to be created in Task 010).
+- `spi_gpu/tests/harness/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE), drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/textured_triangle.ppm`: Approved golden image (to be created after the initial simulation run is visually inspected and approved).
+- `spi_gpu/tests/golden/textured_triangle.ppm`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
 
@@ -147,7 +143,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   Burst lengths for other formats are documented in INT-032: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
-- **Makefile target:** Run this test with: `cd spi_gpu && make test-textured` (Makefile target to be added in Task 011).
+- **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
 - **Perspective-correct UV:** The UV coordinates are interpolated using perspective-correct interpolation (U/W, V/W, 1/W).
   With the checker pattern, any affine warping would be visible as curved checker lines -- the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
 - **Vertex color modulation:** All vertex colors are set to white (`0xFFFFFFFF`) so the MODULATE combiner mode produces `texture_color x 1.0 = texture_color`.

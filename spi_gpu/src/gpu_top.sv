@@ -126,33 +126,81 @@ module gpu_top (
     wire [63:0] reg_cmd_wdata;
     wire [63:0] reg_cmd_rdata;
 
-    // Triangle output signals
+    // Triangle output signals (from register_file vertex state machine)
     wire        tri_valid;
     wire [2:0][15:0] tri_x;
     wire [2:0][15:0] tri_y;
-    wire [2:0][24:0] tri_z;
-    wire [2:0][31:0] tri_color;
-    wire [15:0]      tri_inv_area;
+    wire [2:0][15:0] tri_z;
+    wire [2:0][15:0] tri_q;
+    wire [2:0][31:0] tri_color0;    // Diffuse RGBA8888 per vertex
+    wire [2:0][31:0] tri_color1;    // Specular RGBA8888 per vertex
+    wire [2:0][31:0] tri_uv0;
+    wire [2:0][31:0] tri_uv1;
 
-    // Triangle mode signals
-    wire mode_gouraud;
-    wire mode_textured;
-    wire mode_z_test;
-    wire mode_z_write;
-    wire mode_color_write;
-    wire [2:0] z_compare;
+    // Rectangle output
+    wire rect_valid;
+
+    // Rendering mode signals (from RENDER_MODE register)
+    wire        mode_gouraud;
+    wire        mode_z_test;
+    wire        mode_z_write;
+    wire        mode_color_write;
+    wire [1:0]  mode_cull;
+    wire [2:0]  mode_alpha_blend;
+    wire        mode_dither_en;
+    wire [1:0]  mode_dither_pattern;
+    wire [2:0]  mode_z_compare;
+    wire        mode_stipple_en;
+    wire [1:0]  mode_alpha_test;
+    wire [7:0]  mode_alpha_ref;
 
     // Depth range clipping
     wire [15:0] z_range_min;
     wire [15:0] z_range_max;
 
-    // Framebuffer configuration
-    wire [31:12] fb_draw;
-    wire [31:12] fb_display;
+    // Stipple pattern
+    wire [63:0] stipple_pattern;
 
-    // Clear signals
-    wire [31:0] clear_color;
-    wire clear_trigger;
+    // Framebuffer configuration (FB_CONFIG)
+    wire [15:0] fb_color_base;      // Color buffer base (x512 byte addr)
+    wire [15:0] fb_z_base;          // Z buffer base (x512 byte addr)
+    wire [3:0]  fb_width_log2;
+    wire [3:0]  fb_height_log2;
+
+    // Scissor rectangle (FB_CONTROL)
+    wire [9:0]  scissor_x;
+    wire [9:0]  scissor_y;
+    wire [9:0]  scissor_width;
+    wire [9:0]  scissor_height;
+
+    // Memory fill (MEM_FILL)
+    wire        mem_fill_trigger;
+    wire [15:0] mem_fill_base;
+    wire [15:0] mem_fill_value;
+    wire [19:0] mem_fill_count;
+
+    // Display configuration (FB_DISPLAY)
+    wire [15:0] fb_lut_addr;
+    wire [15:0] fb_display_addr;
+    wire [3:0]  fb_display_width_log2;
+    wire        fb_line_double;
+    wire        color_grade_enable;
+
+    // Color combiner
+    wire [63:0] cc_mode;
+    wire [63:0] const_color;
+
+    // Texture configuration
+    wire [63:0] tex0_cfg;
+    wire [63:0] tex1_cfg;
+    wire        tex0_cache_inv;
+    wire        tex1_cache_inv;
+
+    // Memory access (MEM_ADDR / MEM_DATA)
+    wire [63:0] mem_addr_out;
+    wire [63:0] mem_data_out;
+    wire        mem_data_wr;
+    wire        mem_data_rd;
 
     // Timestamp SDRAM write signals (register_file → arbiter port 3)
     wire        ts_mem_wr;
@@ -205,39 +253,105 @@ module gpu_top (
     assign reg_cmd_wdata = fifo_rd_data[63:0];
     assign fifo_rd_en = !fifo_rd_empty && !gpu_busy;  // Read when data available and GPU not busy
 
-    // Register File instantiation
+    // Register File instantiation (INT-010 v10.0)
     register_file u_register_file (
         .clk(clk_core),
         .rst_n(rst_n_core),
+
+        // Register interface (from command FIFO)
         .cmd_valid(reg_cmd_valid),
         .cmd_rw(reg_cmd_rw),
         .cmd_addr(reg_cmd_addr),
         .cmd_wdata(reg_cmd_wdata),
         .cmd_rdata(reg_cmd_rdata),
+
+        // Triangle output
         .tri_valid(tri_valid),
         .tri_x(tri_x),
         .tri_y(tri_y),
         .tri_z(tri_z),
-        .tri_color(tri_color),
-        .tri_inv_area(tri_inv_area),
+        .tri_q(tri_q),
+        .tri_color0(tri_color0),
+        .tri_color1(tri_color1),
+        .tri_uv0(tri_uv0),
+        .tri_uv1(tri_uv1),
+
+        // Rectangle output
+        .rect_valid(rect_valid),
+
+        // Rendering mode flags
         .mode_gouraud(mode_gouraud),
-        .mode_textured(mode_textured),
         .mode_z_test(mode_z_test),
         .mode_z_write(mode_z_write),
         .mode_color_write(mode_color_write),
-        .z_compare(z_compare),
+        .mode_cull(mode_cull),
+        .mode_alpha_blend(mode_alpha_blend),
+        .mode_dither_en(mode_dither_en),
+        .mode_dither_pattern(mode_dither_pattern),
+        .mode_z_compare(mode_z_compare),
+        .mode_stipple_en(mode_stipple_en),
+        .mode_alpha_test(mode_alpha_test),
+        .mode_alpha_ref(mode_alpha_ref),
+
+        // Depth range
         .z_range_min(z_range_min),
         .z_range_max(z_range_max),
-        .fb_draw(fb_draw),
-        .fb_display(fb_display),
-        .clear_color(clear_color),
-        .clear_trigger(clear_trigger),
+
+        // Stipple
+        .stipple_pattern(stipple_pattern),
+
+        // Framebuffer configuration
+        .fb_color_base(fb_color_base),
+        .fb_z_base(fb_z_base),
+        .fb_width_log2(fb_width_log2),
+        .fb_height_log2(fb_height_log2),
+
+        // Scissor rectangle
+        .scissor_x(scissor_x),
+        .scissor_y(scissor_y),
+        .scissor_width(scissor_width),
+        .scissor_height(scissor_height),
+
+        // Memory fill
+        .mem_fill_trigger(mem_fill_trigger),
+        .mem_fill_base(mem_fill_base),
+        .mem_fill_value(mem_fill_value),
+        .mem_fill_count(mem_fill_count),
+
+        // Display configuration
+        .fb_lut_addr(fb_lut_addr),
+        .fb_display_addr(fb_display_addr),
+        .fb_display_width_log2(fb_display_width_log2),
+        .fb_line_double(fb_line_double),
+        .color_grade_enable(color_grade_enable),
+
+        // Color combiner
+        .cc_mode(cc_mode),
+        .const_color(const_color),
+
+        // Texture configuration
+        .tex0_cfg(tex0_cfg),
+        .tex1_cfg(tex1_cfg),
+        .tex0_cache_inv(tex0_cache_inv),
+        .tex1_cache_inv(tex1_cache_inv),
+
+        // Memory access
+        .mem_addr_out(mem_addr_out),
+        .mem_data_out(mem_data_out),
+        .mem_data_wr(mem_data_wr),
+        .mem_data_rd(mem_data_rd),
+        .mem_data_in(64'h0),           // TODO: connect to SDRAM read path
+
+        // Timestamp SDRAM write
         .ts_mem_wr(ts_mem_wr),
         .ts_mem_addr(ts_mem_addr),
         .ts_mem_data(ts_mem_data),
+
+        // Status inputs
         .gpu_busy(gpu_busy),
         .vblank(vblank),
-        .fifo_depth(fifo_rd_count)
+        .vsync_edge(disp_frame_start), // Use frame_start as vsync edge proxy
+        .fifo_depth(fifo_rd_count[7:0])
     );
 
     // Route register file read data back to SPI slave for read transactions
@@ -523,7 +637,8 @@ module gpu_top (
         .pixel_x(disp_pixel_x),
         .pixel_y(disp_pixel_y),
         .frame_start(disp_frame_start),
-        .fb_display_base(fb_display),
+        // x512 byte addr → [31:12] (4KB-aligned base address)
+        .fb_display_base({7'b0, fb_display_addr[15:3]}),
         // Memory interface — single-word (display controller port names preserved)
         .sram_req(arb_port0_req),
         .sram_we(arb_port0_we),
@@ -587,23 +702,26 @@ module gpu_top (
         // Vertex 0
         .v0_x(tri_x[0]),
         .v0_y(tri_y[0]),
-        .v0_z(tri_z[0][15:0]),      // Use lower 16 bits of Z
-        .v0_color(tri_color[0][23:0]),  // RGB only
+        .v0_z(tri_z[0]),
+        .v0_color(tri_color0[0][23:0]),  // Diffuse RGB
 
         // Vertex 1
         .v1_x(tri_x[1]),
         .v1_y(tri_y[1]),
-        .v1_z(tri_z[1][15:0]),
-        .v1_color(tri_color[1][23:0]),
+        .v1_z(tri_z[1]),
+        .v1_color(tri_color0[1][23:0]),
 
         // Vertex 2
         .v2_x(tri_x[2]),
         .v2_y(tri_y[2]),
-        .v2_z(tri_z[2][15:0]),
-        .v2_color(tri_color[2][23:0]),
+        .v2_z(tri_z[2]),
+        .v2_color(tri_color0[2][23:0]),
 
         // Barycentric interpolation
-        .inv_area(tri_inv_area),
+        // TODO: inv_area no longer provided by register_file v10;
+        // rasterizer computes edge functions internally but still expects
+        // this input for normalization.  Tied to 1.0 in UQ0.16 for now.
+        .inv_area(16'h0100),
 
         // Framebuffer write (memory arbiter port 1)
         .fb_req(arb_port1_req),
@@ -623,15 +741,15 @@ module gpu_top (
         .zb_ack(arb_port2_ack),
         .zb_ready(arb_port2_ready),
 
-        // Configuration
-        .fb_base_addr(fb_draw[31:12]),  // Draw framebuffer base
-        .zb_base_addr(20'h20000),       // Z-buffer at fixed address for now
+        // Configuration — x512 byte addr → [31:12] (4KB-aligned base address)
+        .fb_base_addr({7'b0, fb_color_base[15:3]}),
+        .zb_base_addr({7'b0, fb_z_base[15:3]}),
 
         // Rendering mode
         .mode_z_test(mode_z_test),
         .mode_z_write(mode_z_write),
         .mode_color_write(mode_color_write),
-        .z_compare(z_compare),
+        .z_compare(mode_z_compare),
 
         // Depth range clipping
         .z_range_min(z_range_min),

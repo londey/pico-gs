@@ -21,9 +21,9 @@ $ARGUMENTS.change
 
 ### Step 0: Context Check
 
-If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, IMPLEMENT_SUMMARY, or REFINE_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
+If this conversation already contains output from a previous syskit command (look for any `*_SUMMARY` markers or previous `/syskit-*` command invocations), STOP and tell the user:
 
-"This conversation already has syskit command history in context. Start a fresh conversation to run `/syskit-impact` — all progress is saved to disk and will be picked up automatically."
+"Impact analysis should start in a fresh conversation. All progress is saved to disk and will be picked up automatically."
 
 If the user explicitly included `--continue` in their command, skip this check and proceed.
 
@@ -105,6 +105,4 @@ Tell the user:
 
 "Impact analysis complete. Results saved to `.syskit/analysis/<folder>/impact.md`.
 
-Next step: run `/syskit-propose` to propose specification changes based on this analysis.
-
-Tip: Start a new conversation before running the next command to free up context."
+Next step: run `/syskit-propose` to propose specification changes based on this analysis. You can run it right here in this conversation or start a new one."

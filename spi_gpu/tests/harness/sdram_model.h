@@ -142,6 +142,37 @@ public:
     void fill_texture(uint32_t base_word_addr, TexFormat fmt,
                       const uint8_t* pixel_data, size_t data_size);
 
+    /// Burst read a sequence of consecutive 16-bit words from the model.
+    ///
+    /// Reads `count` sequential 16-bit words starting at `start_word_addr`
+    /// into the caller-supplied buffer. This models the SDRAM controller's
+    /// sequential burst read as described in INT-032, where the texture
+    /// cache issues burst reads of varying length per texture format.
+    ///
+    /// Out-of-range addresses read as 0. The buffer must be at least
+    /// `count` elements large.
+    ///
+    /// @param start_word_addr  Starting 16-bit word address in SDRAM.
+    /// @param buffer           Output buffer for read data.
+    /// @param count            Number of 16-bit words to read.
+    void burst_read(uint32_t start_word_addr, uint16_t* buffer,
+                    uint32_t count) const;
+
+    /// Burst write a sequence of consecutive 16-bit words into the model.
+    ///
+    /// Writes `count` sequential 16-bit words starting at `start_word_addr`
+    /// from the caller-supplied buffer. This models the SDRAM controller's
+    /// sequential burst write, used by the framebuffer write-back path.
+    ///
+    /// Out-of-range addresses are silently ignored. The buffer must be at
+    /// least `count` elements large.
+    ///
+    /// @param start_word_addr  Starting 16-bit word address in SDRAM.
+    /// @param buffer           Input buffer of data to write.
+    /// @param count            Number of 16-bit words to write.
+    void burst_write(uint32_t start_word_addr, const uint16_t* buffer,
+                     uint32_t count);
+
     /// Return the total number of 16-bit words in the model.
     uint32_t size() const { return num_words_; }
 

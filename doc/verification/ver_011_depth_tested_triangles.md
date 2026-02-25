@@ -1,9 +1,5 @@
 # VER-011: Depth-Tested Overlapping Triangles Golden Image Test
 
-> **Implementation Blocked** -- This test requires the integration simulation harness (`spi_gpu/tests/harness/`) which is not yet implemented (see Task 010).
-> The VER document is created now to capture the test scene specification before implementation begins.
-> The golden image file `spi_gpu/tests/golden/depth_test.ppm` will be created after the harness is implemented and its output is visually approved.
-
 ## Verification Method
 
 **Test:** Verified by executing a Verilator golden image simulation that renders two overlapping triangles with known depth values through the full GPU RTL hierarchy and compares the output pixel-exactly against an approved golden image.
@@ -22,7 +18,7 @@ The test confirms that the near triangle occludes the far triangle at every over
 
 ## Preconditions
 
-- Integration simulation harness (`spi_gpu/tests/harness/`) is implemented and compiles successfully under Verilator.
+- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator.
 - Golden image `spi_gpu/tests/golden/depth_test.ppm` has been approved and committed.
 - Z-buffer initialized to `0xFFFF` via a Z-buffer clear pass before rendering (see Z-buffer clear step below).
 - Verilator 5.x is installed and available on `$PATH`.
@@ -146,16 +142,16 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness (to be created in Task 010).
+- `spi_gpu/tests/harness/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model, drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/depth_test.ppm`: Approved golden image (to be created after the initial simulation run is visually inspected and approved).
+- `spi_gpu/tests/golden/depth_test.ppm`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
 
 - See `doc/verification/test_strategy.md` (Golden Image Approval Testing section) for the approval workflow: run the simulation, visually inspect the output PPM, copy to the `golden/` directory, and commit.
 - The Z-buffer clear step serves dual purpose: it is a precondition for the depth test and also provides independent verification that the ALWAYS compare mode with Z_WRITE=1 correctly writes `0xFFFF` to the entire Z-buffer.
   If the clear fails, Triangle A will not render because the uninitialized Z-buffer may contain values that cause fragments to be discarded.
-- Run this test with: `cd spi_gpu && make test-depth-test` (Makefile target to be added in Task 011).
+- Run this test with: `cd spi_gpu && make test-depth-test`.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
 - VER-011 provides full-pipeline confirmation of Z-buffer behavior; VER-002 (`tb_early_z`) provides unit-level confirmation.
   Together they jointly satisfy REQ-005.02 per the requirement document's Verification Method section.

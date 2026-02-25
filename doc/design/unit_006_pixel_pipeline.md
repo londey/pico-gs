@@ -307,15 +307,12 @@ Planned formal testbenches (VER documents not yet created; see `doc/verification
 - Q4.12 promotion test: verify RGBA5652 → Q4.12 promotion produces values in [0.0, 1.0]
 - Alpha blend BLEND mode: verify Porter-Duff src-over at alpha=0.5 produces correct 50% mix
 - Dithering: verify Q4.12-to-RGB565 dithering reduces banding
-- VER-005 (Texture Decoder Unit Testbench)
 - VER-002 (Early Z-Test Unit Testbench)
-- VER-010 (Gouraud Triangle Golden Image Test)
 - VER-005 (Texture Decoder Unit Testbench)
-- VER-002 (Early Z-Test Unit Testbench)
 - VER-010 (Gouraud Triangle Golden Image Test)
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
-- VER-005 (Texture Decoder Unit Testbench)
-- VER-002 (Early Z-Test Unit Testbench)
+- VER-012 (Textured Triangle Golden Image Test)
+- VER-013 (Color-Combined Output Golden Image Test)
 
 ## Design Notes
 

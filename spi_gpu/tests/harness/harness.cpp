@@ -59,24 +59,50 @@ static constexpr uint64_t MAX_SIM_CYCLES = 50'000'000;
 
 #ifdef VERILATOR
 /// Advance the simulation by one clock cycle (rising + falling edge).
+///
+/// Drives clk_50 (the board oscillator input to gpu_top).  When the
+/// simulation PLL stub (pll_core_sim.sv) is active, clk_50 is forwarded
+/// directly to clk_core internally, so this single clock edge pair
+/// advances the entire core-domain pipeline by one cycle.
+///
+/// Each call increments sim_time by 2 (one for the rising edge, one for
+/// the falling edge), matching the Verilator convention of one time unit
+/// per edge.
 static void tick(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time) {
-    // TODO: Drive top->clk_core high, evaluate, advance sim_time
-    // TODO: Drive top->clk_core low, evaluate, advance sim_time
-    // TODO: If trace is non-null, dump waveform at each edge
-    (void)top;
-    (void)trace;
-    (void)sim_time;
+    // Rising edge
+    top->clk_50 = 1;
+    top->eval();
+    sim_time++;
+    if (trace) {
+        trace->dump(sim_time);
+    }
+
+    // Falling edge
+    top->clk_50 = 0;
+    top->eval();
+    sim_time++;
+    if (trace) {
+        trace->dump(sim_time);
+    }
 }
 
 /// Assert reset for the specified number of cycles, then deassert.
+///
+/// Holds rst_n low for `cycles` clock cycles (each cycle is one rising +
+/// falling edge pair via tick()).  After the hold period, rst_n is driven
+/// high and one additional tick() is issued so the design sees the clean
+/// deassertion on a rising clock edge.
 static void reset(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time,
                   int cycles) {
-    // TODO: Drive rst_n low for `cycles` clock cycles
-    // TODO: Deassert rst_n (drive high)
-    (void)top;
-    (void)trace;
-    (void)sim_time;
-    (void)cycles;
+    // Assert reset (active-low)
+    top->rst_n = 0;
+    for (int i = 0; i < cycles; i++) {
+        tick(top, trace, sim_time);
+    }
+
+    // Deassert reset — let the design see the rising edge of rst_n
+    top->rst_n = 1;
+    tick(top, trace, sim_time);
 }
 #endif
 
@@ -85,26 +111,212 @@ static void reset(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time,
 // ---------------------------------------------------------------------------
 
 #ifdef VERILATOR
-/// Connect the behavioral SDRAM model to the Verilated memory arbiter ports.
+
+// SDRAM command encoding: {csn, rasn, casn, wen}
+// Matches sdram_controller.sv localparam definitions.
+static constexpr uint8_t SDRAM_CMD_NOP          = 0b0111;
+static constexpr uint8_t SDRAM_CMD_ACTIVATE     = 0b0011;
+static constexpr uint8_t SDRAM_CMD_READ         = 0b0101;
+static constexpr uint8_t SDRAM_CMD_WRITE        = 0b0100;
+static constexpr uint8_t SDRAM_CMD_PRECHARGE    = 0b0010;
+static constexpr uint8_t SDRAM_CMD_AUTO_REFRESH = 0b0001;
+static constexpr uint8_t SDRAM_CMD_LOAD_MODE    = 0b0000;
+
+// CAS latency (CL=3, matching sdram_controller.sv)
+static constexpr int CAS_LATENCY = 3;
+
+// Maximum depth for the CAS latency read pipeline.
+// Must be >= CAS_LATENCY to allow pipelined reads.
+static constexpr int READ_PIPE_DEPTH = 8;
+
+/// Per-bank active row tracking for SDRAM model connection.
+struct SdramBankState {
+    bool     row_active;    ///< Whether a row is currently activated
+    uint32_t active_row;    ///< Row address of the activated row (13 bits)
+};
+
+/// Read pipeline entry for CAS latency modeling.
+/// Scheduled reads appear on the DQ bus CAS_LATENCY cycles after the READ
+/// command is issued.
+struct ReadPipeEntry {
+    bool     valid;         ///< Entry is valid (data pending)
+    uint32_t word_addr;     ///< SDRAM word address to read from SdramModel
+    int      countdown;     ///< Cycles remaining before data appears on bus
+};
+
+/// SDRAM connection state persisted across clock cycles.
+/// This struct is instantiated once and passed by reference to connect_sdram()
+/// on every tick().
+struct SdramConnState {
+    SdramBankState banks[4];                   ///< 4 SDRAM banks
+    ReadPipeEntry  read_pipe[READ_PIPE_DEPTH]; ///< CAS latency delay FIFO
+    int            read_pipe_head;             ///< Next write slot in pipe
+    bool           initialized;                ///< Set after first call
+
+    SdramConnState() : read_pipe_head(0), initialized(false) {
+        for (int i = 0; i < 4; i++) {
+            banks[i].row_active = false;
+            banks[i].active_row = 0;
+        }
+        for (int i = 0; i < READ_PIPE_DEPTH; i++) {
+            read_pipe[i].valid = false;
+            read_pipe[i].word_addr = 0;
+            read_pipe[i].countdown = 0;
+        }
+    }
+};
+
+/// Connect the behavioral SDRAM model to the Verilated memory controller ports.
 ///
-/// This function is called once per clock cycle to:
-///   1. Sample the arbiter's SDRAM command outputs (csn, rasn, casn, wen, ba,
-///      addr, dq_out, dqm).
-///   2. Feed them into the SdramModel.
-///   3. Drive the model's response (dq_in, data_valid) back into the
-///      Verilated design.
+/// This function is called once per clock cycle (after eval on rising edge) to:
+///   1. Sample the controller's SDRAM command outputs (csn, rasn, casn, wen,
+///      ba, addr, dq_out, dqm).
+///   2. Decode the SDRAM command (ACTIVATE, READ, WRITE, PRECHARGE, etc.).
+///   3. For ACTIVATE: record the row address for the selected bank.
+///   4. For WRITE: write data from the DQ bus into the SdramModel at the
+///      computed word address (bank | row | column).
+///   5. For READ: schedule data to appear on DQ bus after CAS_LATENCY cycles.
+///   6. Advance the read pipeline and drive any matured read data onto DQ in.
 ///
-/// The SDRAM model must faithfully implement the timing specified in INT-011:
+/// The SDRAM model faithfully implements the timing specified in INT-011:
 ///   - CAS latency 3 (CL=3)
-///   - tRCD = 2 cycles
-///   - tRP = 2 cycles
-///   - Sequential burst reads/writes
-static void connect_sdram(Vgpu_top* /*top*/, SdramModel& /*sdram*/) {
-    // TODO: Sample top->sdram_csn, top->sdram_rasn, etc.
-    // TODO: Decode SDRAM command (ACTIVATE, READ, WRITE, PRECHARGE, etc.)
-    // TODO: Drive SdramModel accordingly
-    // TODO: Feed SdramModel read data back to top->sdram_dq
+///   - Sequential burst reads/writes (column auto-increment by controller)
+///
+/// Word address calculation from SDRAM signals:
+///   word_addr = (bank << 23) | (row << 9) | column
+///
+/// Verilator splits the inout sdram_dq port into:
+///   sdram_dq__in  — driven by testbench (read data to controller)
+///   sdram_dq__out — driven by controller (write data from controller)
+///   sdram_dq__en  — output enable (1 = controller driving, 0 = tristate)
+static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
+                          SdramConnState& state) {
+    // Step 1: Advance read pipeline — decrement countdowns, drive matured data
+    bool read_data_valid = false;
+    uint16_t read_data = 0;
+
+    for (int i = 0; i < READ_PIPE_DEPTH; i++) {
+        if (state.read_pipe[i].valid) {
+            state.read_pipe[i].countdown--;
+            if (state.read_pipe[i].countdown <= 0) {
+                // Data is ready — read from model and mark entry consumed
+                read_data = sdram.read_word(state.read_pipe[i].word_addr);
+                read_data_valid = true;
+                state.read_pipe[i].valid = false;
+            }
+        }
+    }
+
+    // Drive read data onto the DQ input bus
+    if (read_data_valid) {
+        top->sdram_dq__in = read_data;
+    } else {
+        top->sdram_dq__in = 0;
+    }
+
+    // Step 2: Decode current-cycle SDRAM command
+    uint8_t cmd = static_cast<uint8_t>(
+        ((top->sdram_csn  & 1) << 3) |
+        ((top->sdram_rasn & 1) << 2) |
+        ((top->sdram_casn & 1) << 1) |
+        ((top->sdram_wen  & 1) << 0)
+    );
+
+    uint8_t  bank = static_cast<uint8_t>(top->sdram_ba & 0x3);
+    uint16_t addr = static_cast<uint16_t>(top->sdram_a & 0x1FFF);
+
+    switch (cmd) {
+        case SDRAM_CMD_ACTIVATE: {
+            // Record active row for the selected bank
+            state.banks[bank].row_active = true;
+            state.banks[bank].active_row = addr;  // A[12:0] = row address
+            break;
+        }
+
+        case SDRAM_CMD_READ: {
+            // Schedule a read with CAS latency delay
+            // Column address is A[8:0] on the READ command
+            uint32_t col = addr & 0x1FF;
+            uint32_t row = state.banks[bank].active_row;
+            // word_addr = (bank << 23) | (row << 9) | column
+            // This matches the sdram_controller address decomposition:
+            //   bank = addr[23:22], row = addr[21:9], col = addr[8:1]
+            // But since the controller already decomposes byte addresses and
+            // drives column addresses directly, we reconstruct the flat word
+            // address that corresponds to the SdramModel's 16-bit word array.
+            uint32_t word_addr = (static_cast<uint32_t>(bank) << 23)
+                               | (row << 9)
+                               | col;
+
+            // Find an empty slot in the read pipeline
+            int slot = state.read_pipe_head;
+            for (int i = 0; i < READ_PIPE_DEPTH; i++) {
+                int idx = (state.read_pipe_head + i) % READ_PIPE_DEPTH;
+                if (!state.read_pipe[idx].valid) {
+                    slot = idx;
+                    break;
+                }
+            }
+            state.read_pipe[slot].valid = true;
+            state.read_pipe[slot].word_addr = word_addr;
+            state.read_pipe[slot].countdown = CAS_LATENCY;
+            state.read_pipe_head = (slot + 1) % READ_PIPE_DEPTH;
+            break;
+        }
+
+        case SDRAM_CMD_WRITE: {
+            // Write data from DQ bus into SdramModel immediately
+            // (SDRAM captures write data on the same cycle as the WRITE command)
+            uint32_t col = addr & 0x1FF;
+            uint32_t row = state.banks[bank].active_row;
+            uint32_t word_addr = (static_cast<uint32_t>(bank) << 23)
+                               | (row << 9)
+                               | col;
+
+            uint16_t wdata = static_cast<uint16_t>(top->sdram_dq__out & 0xFFFF);
+            uint8_t  dqm   = static_cast<uint8_t>(top->sdram_dqm & 0x3);
+
+            // Apply byte mask (DQM): DQM[1] masks upper byte, DQM[0] masks lower byte
+            // DQM=0 means byte is written; DQM=1 means byte is masked (not written)
+            if (dqm == 0x00) {
+                // Both bytes written
+                sdram.write_word(word_addr, wdata);
+            } else {
+                // Partial write — read-modify-write with byte masking
+                uint16_t existing = sdram.read_word(word_addr);
+                if (!(dqm & 0x01)) {
+                    existing = (existing & 0xFF00) | (wdata & 0x00FF);
+                }
+                if (!(dqm & 0x02)) {
+                    existing = (existing & 0x00FF) | (wdata & 0xFF00);
+                }
+                sdram.write_word(word_addr, existing);
+            }
+            break;
+        }
+
+        case SDRAM_CMD_PRECHARGE: {
+            // Close row(s). A10=1 means all banks, A10=0 means selected bank.
+            if (addr & (1 << 10)) {
+                // Precharge all banks
+                for (int i = 0; i < 4; i++) {
+                    state.banks[i].row_active = false;
+                }
+            } else {
+                state.banks[bank].row_active = false;
+            }
+            break;
+        }
+
+        case SDRAM_CMD_NOP:
+        case SDRAM_CMD_AUTO_REFRESH:
+        case SDRAM_CMD_LOAD_MODE:
+        default:
+            // No action needed for the behavioral model
+            break;
+    }
 }
+
 #endif
 
 // ---------------------------------------------------------------------------
@@ -112,23 +324,144 @@ static void connect_sdram(Vgpu_top* /*top*/, SdramModel& /*sdram*/) {
 // ---------------------------------------------------------------------------
 
 #ifdef VERILATOR
-/// Drive a sequence of register writes into the register file.
+/// Number of core clock cycles to advance per SPI half-clock period.
+/// SPI_SCK runs at clk_core / (2 * SPI_HALF_PERIOD_TICKS).
+/// A value of 2 gives an SPI clock that is 1/4 of the core clock, which is
+/// comfortably within the SPI slave's timing budget and ensures clean
+/// CDC synchronization of the transaction_done flag.
+static constexpr int SPI_HALF_PERIOD_TICKS = 2;
+
+/// Number of core clock cycles to wait after CS_n deassertion for the SPI
+/// slave's CDC synchronizer (2-FF + edge detector = 3 sys_clk stages) to
+/// propagate the transaction_done pulse into the core clock domain.
+/// A small margin is added for the command FIFO write path.
+static constexpr int SPI_CDC_SETTLE_TICKS = 6;
+
+/// Drive a single SPI half-clock period: advance the simulation by
+/// SPI_HALF_PERIOD_TICKS core clock cycles, calling connect_sdram() on
+/// each tick to keep the SDRAM model synchronized.
+static void spi_half_period(Vgpu_top* top, VerilatedFstC* trace,
+                            uint64_t& sim_time, SdramModel& sdram,
+                            SdramConnState& conn) {
+    for (int i = 0; i < SPI_HALF_PERIOD_TICKS; i++) {
+        tick(top, trace, sim_time);
+        connect_sdram(top, sdram, conn);
+    }
+}
+
+/// Transmit a single 72-bit SPI write transaction via bit-banged SPI pins.
 ///
-/// Each RegWrite is driven into the register file's SPI-side write port,
-/// replicating the register-write sequences that INT-021 RenderMeshPatch
-/// and ClearFramebuffer commands produce.
+/// The SPI slave (spi_slave.sv) uses Mode 0 (CPOL=0, CPHA=0): data is
+/// sampled on the rising edge of spi_sck, MSB first.  The 72-bit frame
+/// is {rw(1), addr(7), data(64)}.  For a write, rw=0.
 ///
-/// The harness must respect the command FIFO backpressure signal to avoid
-/// overflowing the register file's write queue.
-static void execute_script(Vgpu_top* /*top*/, VerilatedFstC* /*trace*/,
-                           uint64_t& /*sim_time*/, SdramModel& /*sdram*/,
-                           const RegWrite* /*script*/, size_t /*count*/) {
-    // TODO: For each RegWrite in the script:
-    //   1. Wait until the command FIFO is not full (backpressure).
-    //   2. Drive the register address and data onto the register file's
-    //      write interface.
-    //   3. Pulse the write-enable signal for one cycle.
-    //   4. Call tick() and connect_sdram() to advance simulation.
+/// After the 72 bits are clocked in, spi_cs_n is deasserted and the
+/// function waits for the CDC synchronizer in spi_slave to propagate the
+/// transaction_done pulse into the core clock domain (SPI_CDC_SETTLE_TICKS).
+///
+/// connect_sdram() is called on every tick() throughout the transaction to
+/// keep the SDRAM model synchronized.
+static void spi_write_transaction(Vgpu_top* top, VerilatedFstC* trace,
+                                  uint64_t& sim_time, SdramModel& sdram,
+                                  SdramConnState& conn,
+                                  uint8_t addr, uint64_t data) {
+    // Compose the 72-bit SPI frame: rw=0 (write), addr[6:0], data[63:0]
+    // Stored as an array of bits, MSB first.
+    // Bit 71 = rw (0 for write)
+    // Bits 70:64 = addr[6:0]
+    // Bits 63:0 = data[63:0]
+
+    // Ensure CS is deasserted and SCK is low before starting
+    top->spi_cs_n = 1;
+    top->spi_sck = 0;
+    top->spi_mosi = 0;
+    spi_half_period(top, trace, sim_time, sdram, conn);
+
+    // Assert CS (active-low) to start the transaction
+    top->spi_cs_n = 0;
+    spi_half_period(top, trace, sim_time, sdram, conn);
+
+    // Clock out 72 bits MSB-first
+    for (int bit = 71; bit >= 0; bit--) {
+        uint8_t mosi_val = 0;
+
+        if (bit == 71) {
+            // rw bit: 0 for write
+            mosi_val = 0;
+        } else if (bit >= 64) {
+            // addr[6:0]: bits 70..64 of the frame
+            int addr_bit = bit - 64;  // 6..0
+            mosi_val = (addr >> addr_bit) & 1;
+        } else {
+            // data[63:0]: bits 63..0 of the frame
+            mosi_val = (data >> bit) & 1;
+        }
+
+        // Set MOSI while SCK is low (setup time)
+        top->spi_mosi = mosi_val;
+        spi_half_period(top, trace, sim_time, sdram, conn);
+
+        // Rising edge of SCK — SPI slave samples MOSI here
+        top->spi_sck = 1;
+        spi_half_period(top, trace, sim_time, sdram, conn);
+
+        // Falling edge of SCK
+        top->spi_sck = 0;
+    }
+
+    // Deassert CS to complete the transaction
+    top->spi_cs_n = 1;
+    top->spi_mosi = 0;
+
+    // Wait for the CDC synchronizer in spi_slave.sv to propagate the
+    // transaction_done flag into the core clock domain.  The synchronizer
+    // is a 2-FF chain plus an edge detector (3 sys_clk stages), and the
+    // command FIFO write takes one additional cycle.
+    for (int i = 0; i < SPI_CDC_SETTLE_TICKS; i++) {
+        tick(top, trace, sim_time);
+        connect_sdram(top, sdram, conn);
+    }
+}
+
+/// Drive a sequence of register writes into the register file via SPI.
+///
+/// Each RegWrite is transmitted as a 72-bit SPI write transaction through
+/// the spi_sck/spi_mosi/spi_cs_n top-level pins, replicating the
+/// register-write sequences that INT-021 RenderMeshPatch and
+/// ClearFramebuffer commands produce.
+///
+/// The harness respects the command FIFO backpressure signal
+/// (gpio_cmd_full, active-high) to avoid overflowing the register file's
+/// write queue.  When gpio_cmd_full is asserted, the function spins on
+/// tick()/connect_sdram() until the FIFO drains below the almost-full
+/// threshold.
+///
+/// connect_sdram() is called on every tick() throughout execution to keep
+/// the behavioral SDRAM model synchronized with the SDRAM controller.
+static void execute_script(Vgpu_top* top, VerilatedFstC* trace,
+                           uint64_t& sim_time, SdramModel& sdram,
+                           SdramConnState& conn,
+                           const RegWrite* script, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        // Wait for command FIFO backpressure to clear.
+        // gpio_cmd_full is connected to fifo_wr_almost_full in gpu_top.
+        uint64_t bp_timeout = 0;
+        while (top->gpio_cmd_full) {
+            tick(top, trace, sim_time);
+            connect_sdram(top, sdram, conn);
+            bp_timeout++;
+            if (bp_timeout > 100000) {
+                fprintf(stderr,
+                        "ERROR: execute_script backpressure timeout at "
+                        "entry %zu (addr=0x%02x)\n", i, script[i].addr);
+                return;
+            }
+        }
+
+        // Transmit the register write via SPI
+        spi_write_transaction(top, trace, sim_time, sdram, conn,
+                              script[i].addr, script[i].data);
+    }
 }
 #endif
 
@@ -210,7 +543,8 @@ int main(int argc, char** argv) {
     // 4. Drive command script
     // -----------------------------------------------------------------------
     // TODO: Select command script based on test name (argv or compile-time).
-    // TODO: Call execute_script(top, trace, sim_time, sdram, script, count);
+    // TODO: Call execute_script(top, trace, sim_time, sdram, conn, script, count);
+    //   (where conn is an SdramConnState instance, created alongside the SdramModel)
 
     // -----------------------------------------------------------------------
     // 5. Run clock until rendering completes

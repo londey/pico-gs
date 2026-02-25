@@ -39,6 +39,15 @@ Verification methods:
 
 <!-- TOC-START -->
 - [Test Strategy](test_strategy.md)
+- [VER-001: Rasterizer Unit Testbench](ver_001_rasterizer.md)
+- [VER-002: Early Z-Test Unit Testbench](ver_002_early_z.md)
+- [VER-003: Register File Unit Testbench](ver_003_register_file.md)
+- [VER-004: Color Combiner Unit Testbench](ver_004_color_combiner.md)
+- [VER-005: Texture Decoder Unit Testbench](ver_005_texture_decoder.md)
+- [VER-010: Gouraud Triangle Golden Image Test](ver_010_gouraud_triangle.md)
+- [VER-011: Depth-Tested Overlapping Triangles Golden Image Test](ver_011_depth_tested_triangles.md)
+- [VER-012: Textured Triangle Golden Image Test](ver_012_textured_triangle.md)
+- [VER-013: Color-Combined Output Golden Image Test](ver_013_color_combined_output.md)
 <!-- TOC-END -->
 
 ## Planned Verification Documents

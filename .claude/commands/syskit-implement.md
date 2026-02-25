@@ -14,9 +14,9 @@ You are orchestrating implementation of tasks from the current implementation pl
 
 ### Step 0: Context Check
 
-If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, or IMPLEMENT_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
+If this conversation already contains output from a previous syskit command (look for any `*_SUMMARY` markers or previous `/syskit-*` command invocations), STOP and tell the user:
 
-"This conversation already has syskit command history in context. Start a fresh conversation to run `/syskit-implement` — all progress is saved to disk and will be picked up automatically."
+"Each implementation task needs its own fresh conversation to avoid context pollution between tasks. All progress is saved to disk and will be picked up automatically."
 
 If the user explicitly included `--continue` in their command, skip this check and proceed.
 

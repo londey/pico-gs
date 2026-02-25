@@ -17,9 +17,9 @@ You are refining previously proposed specification changes based on the user's r
 
 ### Step 0: Context Check
 
-If this conversation already contains output from a previous syskit command (look for IMPACT_SUMMARY, PROPOSE_SUMMARY, CHUNK_SUMMARY, PLAN_SUMMARY, IMPLEMENT_SUMMARY, or REFINE_SUMMARY markers, or previous `/syskit-*` command invocations), STOP and tell the user:
+If this conversation already contains output from a previous syskit command (look for any `*_SUMMARY` markers or previous `/syskit-*` command invocations), STOP and tell the user:
 
-"This conversation already has syskit command history in context. Start a fresh conversation to run `/syskit-refine` — all progress is saved to disk and will be picked up automatically."
+"Refine needs a fresh conversation to cleanly re-read your current doc state. All progress is saved to disk and will be picked up automatically."
 
 If the user explicitly included `--continue` in their command, skip this check and proceed.
 
@@ -130,6 +130,4 @@ Tell the user:
 
 "Changes approved. Status updated in `.syskit/analysis/<folder>/proposed_changes.md`.
 
-Next step: run `/syskit-plan` to create an implementation task breakdown.
-
-Tip: Start a new conversation before running the next command to free up context."
+Next step: run `/syskit-plan` to create an implementation task breakdown. You can run it right here in this conversation or start a new one."

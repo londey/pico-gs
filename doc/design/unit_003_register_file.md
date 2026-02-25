@@ -234,10 +234,9 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - Verify reset: all registers return to defaults
 - VER-003 (Register File Unit Testbench)
 - VER-010 (Gouraud Triangle Golden Image Test)
-- VER-003 (Register File Unit Testbench)
-- VER-010 (Gouraud Triangle Golden Image Test)
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
-- VER-003 (Register File Unit Testbench)
+- VER-012 (Textured Triangle Golden Image Test)
+- VER-013 (Color-Combined Output Golden Image Test)
 
 ## Design Notes
 

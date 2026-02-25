@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified build script for pico-gs project
-# Builds FPGA bitstream, RP2350 firmware, and processes assets
+# Builds FPGA bitstream, RP2350 firmware, runs tests, and collects outputs
 
 set -e  # Exit on error
 
@@ -19,6 +19,7 @@ OUTPUT_DIR="${REPO_ROOT}/build"
 # Default build targets
 BUILD_FIRMWARE=true
 BUILD_FPGA=true
+BUILD_TEST=true
 RELEASE_MODE=false
 FLASH_FIRMWARE=false
 FLASH_FPGA=false
@@ -52,6 +53,15 @@ while [[ $# -gt 0 ]]; do
             BUILD_REGISTERS=true
             shift
             ;;
+        --test-only)
+            BUILD_FIRMWARE=false
+            BUILD_FPGA=false
+            shift
+            ;;
+        --no-test)
+            BUILD_TEST=false
+            shift
+            ;;
         --release)
             RELEASE_MODE=true
             shift
@@ -73,12 +83,14 @@ while [[ $# -gt 0 ]]; do
             echo "  --fpga-only         Build only FPGA bitstream"
             echo "  --pc-only           Build only PC debug host (pico-gs-pc)"
             echo "  --registers-only    Regenerate register definitions from SystemRDL"
+            echo "  --test-only         Run tests only (skip all builds)"
+            echo "  --no-test           Skip tests (build only)"
             echo "  --release           Build in release mode (optimized)"
             echo "  --flash-firmware    Flash firmware to RP2350 after build"
             echo "  --flash-fpga        Program FPGA after build"
             echo "  --help              Show this help message"
             echo ""
-            echo "Default: Build everything in debug mode"
+            echo "Default: Build everything and run all tests"
             exit 0
             ;;
         *)
@@ -101,7 +113,7 @@ fi
 
 # Step 1: Build RP2350 firmware (asset conversion happens automatically via build.rs)
 if [ "$BUILD_FIRMWARE" = true ]; then
-    echo -e "${YELLOW}[1/3] Building RP2350 firmware (includes asset conversion)...${NC}"
+    echo -e "${YELLOW}[1/5] Building RP2350 firmware (includes asset conversion)...${NC}"
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
         cargo build --release -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
@@ -120,8 +132,10 @@ if [ "${BUILD_PC:-false}" = true ]; then
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
         cargo build --release -p pico-gs-pc
+        PC_BINARY="${REPO_ROOT}/target/release/pico-gs-pc"
     else
         cargo build -p pico-gs-pc
+        PC_BINARY="${REPO_ROOT}/target/debug/pico-gs-pc"
     fi
     echo -e "${GREEN}✓ PC debug host built${NC}"
     echo ""
@@ -129,30 +143,58 @@ fi
 
 # Step 2: Build FPGA bitstream
 if [ "$BUILD_FPGA" = true ]; then
-    echo -e "${YELLOW}[2/3] Building FPGA bitstream...${NC}"
+    echo -e "${YELLOW}[2/5] Building FPGA bitstream...${NC}"
     cd "${SPI_GPU}"
-    make clean
     make bitstream
     FPGA_BITSTREAM="${SPI_GPU}/build/gpu_top.bit"
     echo -e "${GREEN}✓ Bitstream built: ${FPGA_BITSTREAM}${NC}"
     echo ""
 fi
 
-# Step 3: Copy outputs to unified build directory
-echo -e "${YELLOW}[3/3] Collecting build outputs...${NC}"
-mkdir -p "${OUTPUT_DIR}"
-
-if [ "$BUILD_FIRMWARE" = true ] && [ -f "$FIRMWARE_ELF" ]; then
-    cp "$FIRMWARE_ELF" "${OUTPUT_DIR}/pico-gs-rp2350.elf"
-    echo "  Firmware: ${OUTPUT_DIR}/pico-gs-rp2350.elf"
+# Step 3: Rust tests
+if [ "$BUILD_TEST" = true ]; then
+    echo -e "${YELLOW}[3/5] Running Rust tests...${NC}"
+    cd "${REPO_ROOT}"
+    cargo test -p pico-gs-core
+    echo -e "${GREEN}✓ Rust tests passed${NC}"
+    echo ""
 fi
 
-if [ "$BUILD_FPGA" = true ] && [ -f "$FPGA_BITSTREAM" ]; then
-    cp "$FPGA_BITSTREAM" "${OUTPUT_DIR}/gpu_top.bit"
-    echo "  FPGA Bitstream: ${OUTPUT_DIR}/gpu_top.bit"
+# Step 4: RTL tests (lint + unit testbenches)
+if [ "$BUILD_TEST" = true ]; then
+    echo -e "${YELLOW}[4/5] Running RTL tests (lint + unit testbenches)...${NC}"
+    cd "${SPI_GPU}"
+    make test
+    echo -e "${GREEN}✓ RTL tests passed${NC}"
+    echo ""
 fi
 
-echo -e "${GREEN}✓ Build outputs collected in ${OUTPUT_DIR}${NC}"
+# Step 5: Collect build outputs into structured directory
+echo -e "${YELLOW}[5/5] Collecting build outputs...${NC}"
+mkdir -p "${OUTPUT_DIR}/firmware" "${OUTPUT_DIR}/fpga" "${OUTPUT_DIR}/pc" "${OUTPUT_DIR}/tests"
+
+if [ "$BUILD_FIRMWARE" = true ] && [ -n "${FIRMWARE_ELF:-}" ] && [ -f "$FIRMWARE_ELF" ]; then
+    cp "$FIRMWARE_ELF" "${OUTPUT_DIR}/firmware/pico-gs-rp2350.elf"
+    echo "  Firmware: ${OUTPUT_DIR}/firmware/pico-gs-rp2350.elf"
+fi
+
+if [ "$BUILD_FPGA" = true ] && [ -f "${SPI_GPU}/build/gpu_top.bit" ]; then
+    cp "${SPI_GPU}/build/gpu_top.json"   "${OUTPUT_DIR}/fpga/" 2>/dev/null || true
+    cp "${SPI_GPU}/build/gpu_top.config" "${OUTPUT_DIR}/fpga/" 2>/dev/null || true
+    cp "${SPI_GPU}/build/gpu_top.bit"    "${OUTPUT_DIR}/fpga/"
+    cp "${SPI_GPU}/build/yosys.log"      "${OUTPUT_DIR}/fpga/" 2>/dev/null || true
+    echo "  FPGA Bitstream:  ${OUTPUT_DIR}/fpga/gpu_top.bit"
+    echo "  FPGA Synthesis:  ${OUTPUT_DIR}/fpga/gpu_top.json"
+    echo "  FPGA PNR:        ${OUTPUT_DIR}/fpga/gpu_top.config"
+    echo "  FPGA Log:        ${OUTPUT_DIR}/fpga/yosys.log"
+fi
+
+if [ "${BUILD_PC:-false}" = true ] && [ -n "${PC_BINARY:-}" ] && [ -f "$PC_BINARY" ]; then
+    cp "$PC_BINARY" "${OUTPUT_DIR}/pc/pico-gs-pc"
+    echo "  PC Debug Host: ${OUTPUT_DIR}/pc/pico-gs-pc"
+fi
+
+echo -e "${GREEN}✓ Build outputs collected in ${OUTPUT_DIR}/${NC}"
 echo ""
 
 # Optional: Flash firmware

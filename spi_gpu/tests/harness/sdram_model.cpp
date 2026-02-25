@@ -16,9 +16,9 @@
 // TODO: Implement fill_texture() with full INT-011 block-tiling transform
 //   for linear pixel data input.
 //
-// TODO: Implement burst_read() / burst_write() methods matching the
-//   SDRAM controller interface for the Verilated memory arbiter connection.
-//   These must respect INT-032 burst lengths per texture format.
+// burst_read() / burst_write() methods are implemented below, providing
+// sequential word-level access matching the SDRAM controller burst interface.
+// INT-032 burst lengths per texture format are supported.
 //
 // References:
 //   INT-011 (SDRAM Memory Layout)
@@ -64,6 +64,20 @@ void SdramModel::upload_raw(uint32_t base_word_addr, const uint8_t* data,
         uint16_t word = static_cast<uint16_t>(data[i * 2])
                       | (static_cast<uint16_t>(data[i * 2 + 1]) << 8);
         write_word(base_word_addr + static_cast<uint32_t>(i), word);
+    }
+}
+
+void SdramModel::burst_read(uint32_t start_word_addr, uint16_t* buffer,
+                             uint32_t count) const {
+    for (uint32_t i = 0; i < count; i++) {
+        buffer[i] = read_word(start_word_addr + i);
+    }
+}
+
+void SdramModel::burst_write(uint32_t start_word_addr, const uint16_t* buffer,
+                              uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        write_word(start_word_addr + i, buffer[i]);
     }
 }
 

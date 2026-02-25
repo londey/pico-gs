@@ -1,11 +1,10 @@
 # VER-013: Color-Combined Output Golden Image Test
 
-> **Implementation Blocked** -- This test is blocked by two independent prerequisites:
-> 1. The integration simulation harness (`spi_gpu/tests/harness/`) is not yet implemented (see Task 010).
-> 2. UNIT-010 (Color Combiner) has not yet reached Stable status -- the combiner equation pipeline timing and register decoding are still under design (WIP flag in `unit_010_color_combiner.md`).
+> **Implementation Blocked** -- This test is blocked by an outstanding prerequisite:
+> UNIT-010 (Color Combiner) has not yet reached Stable status -- the combiner equation pipeline timing and register decoding are still under design (WIP flag in `unit_010_color_combiner.md`).
 >
-> The VER document is created now to capture the test scene specification before implementation begins.
-> The golden image file `spi_gpu/tests/golden/color_combined.ppm` will be created after both prerequisites are met and the simulation output is visually approved.
+> The VER document captures the test scene specification.
+> The golden image file `spi_gpu/tests/golden/color_combined.ppm` will be created after UNIT-010 reaches Stable status and the simulation output is visually approved.
 
 ## Verification Method
 
@@ -25,7 +24,7 @@ The test confirms that the color combiner correctly evaluates the MODULATE equat
 ## Preconditions
 
 - UNIT-010 (Color Combiner) has reached Stable status: the WIP flag has been removed from `doc/design/unit_010_color_combiner.md`, indicating that combiner equation pipeline timing and register decoding are finalized.
-- Integration simulation harness (`spi_gpu/tests/harness/`) is implemented and compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths).
+- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths).
 - Golden image `spi_gpu/tests/golden/color_combined.ppm` has been approved and committed.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `color_combiner.sv`) compile without errors under `verilator --lint-only -Wall`.
@@ -169,9 +168,9 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness (to be created in Task 010).
+- `spi_gpu/tests/harness/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/color_combined.ppm`: Approved golden image (to be created after both UNIT-010 stabilization and harness implementation, once the simulation output is visually inspected and approved).
+- `spi_gpu/tests/golden/color_combined.ppm`: Approved golden image (to be created after UNIT-010 stabilization, once the simulation output is visually inspected and approved).
 
 ## Notes
 
@@ -179,7 +178,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   The combiner equation pipeline timing and register decoding are under active design.
   Once UNIT-010 is stabilized, the exact CC_MODE bit encoding for the two-cycle MODULATE + pass-through configuration must be verified against the finalized register decode logic.
 - See `doc/verification/test_strategy.md` (Golden Image Approval Testing section) for the approval workflow: run the simulation, visually inspect the output PPM, copy to the `golden/` directory, and commit.
-- **Makefile target:** Run this test with: `cd spi_gpu && make test-color-combined` (Makefile target to be added in Task 011).
+- **Makefile target:** Run this test with: `cd spi_gpu && make test-color-combined`.
 - **Relationship to VER-012:** VER-012 tests texture sampling in isolation (vertex colors are white, so MODULATE produces `texture * 1.0 = texture`).
   VER-013 exercises the same texture path but with non-trivial vertex colors, confirming that the color combiner correctly multiplies the two input sources.
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
@@ -188,4 +187,4 @@ The integration harness drives the following register-write sequence into UNIT-0
   VER-004 verifies individual combiner modes and arithmetic at the unit level; VER-013 verifies the MODULATE mode through the full integrated pipeline including texture sampling and vertex color interpolation.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 640x480 framebuffer, so the background color is part of the pixel-exact comparison.
-- This is the most deeply dependent of the four golden image tests (VER-010 through VER-013), requiring both the integration harness and a stable UNIT-010 implementation.
+- Of the four golden image tests (VER-010 through VER-013), this test has the deepest dependency chain: it requires a stable UNIT-010 implementation in addition to the shared integration harness infrastructure.

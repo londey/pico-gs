@@ -1,9 +1,5 @@
 # VER-010: Gouraud Triangle Golden Image Test
 
-> **Implementation Blocked** -- This test requires the integration simulation harness (`spi_gpu/tests/harness/`) which is not yet implemented (see Task 010).
-> The VER document is created now to capture the test scene specification before implementation begins.
-> The golden image file `spi_gpu/tests/golden/gouraud_triangle.ppm` will be created after the harness is implemented and its output is visually approved.
-
 ## Verification Method
 
 **Test:** Verified by executing a Verilator golden image simulation that renders a Gouraud-shaded triangle through the full GPU RTL hierarchy and compares the output pixel-exactly against an approved golden image.
@@ -21,7 +17,7 @@
 
 ## Preconditions
 
-- Integration simulation harness (`spi_gpu/tests/harness/`) is implemented and compiles successfully under Verilator.
+- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator.
 - Golden image `spi_gpu/tests/golden/gouraud_triangle.ppm` has been approved and committed.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`) compile without errors under `verilator --lint-only -Wall`.
@@ -87,15 +83,15 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness (to be created in Task 010).
+- `spi_gpu/tests/harness/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model, drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/gouraud_triangle.ppm`: Approved golden image (to be created after the initial simulation run is visually inspected and approved).
+- `spi_gpu/tests/golden/gouraud_triangle.ppm`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
 
 - See `doc/verification/test_strategy.md` (Golden Image Approval Testing section) for the approval workflow: run the simulation, visually inspect the output PPM, copy to the `golden/` directory, and commit.
 - Golden image approval workflow: after the harness is implemented and this test first runs successfully, inspect the rendered output visually, copy `spi_gpu/tests/sim_out/gouraud_triangle.ppm` to `spi_gpu/tests/golden/gouraud_triangle.ppm`, and commit with a message describing the approved image.
-- Run this test with: `cd spi_gpu && make test-gouraud` (Makefile target to be added in Task 011).
+- Run this test with: `cd spi_gpu && make test-gouraud`.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 640x480 framebuffer, so the background color is part of the pixel-exact comparison.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.

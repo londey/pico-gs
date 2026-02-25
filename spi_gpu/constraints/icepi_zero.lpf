@@ -115,11 +115,15 @@ LOCATE COMP "tmds_data_n[2]" SITE "R16";
 LOCATE COMP "tmds_clk_p" SITE "R12";
 LOCATE COMP "tmds_clk_n" SITE "T13";
 
-# TMDS I/O standards (LVCMOS33D pseudo-differential)
-IOBUF PORT "tmds_data_p[*]" IO_TYPE=LVCMOS33D DRIVE=4;
-IOBUF PORT "tmds_data_n[*]" IO_TYPE=LVCMOS33D DRIVE=4;
-IOBUF PORT "tmds_clk_p" IO_TYPE=LVCMOS33D DRIVE=4;
-IOBUF PORT "tmds_clk_n" IO_TYPE=LVCMOS33D DRIVE=4;
+# TMDS I/O standards
+# NOTE: Using LVCMOS33 (single-ended) because the RTL drives _p and _n
+# as separate outputs with logic inversion.  When proper OLVDS primitives
+# are instantiated (see dvi_output.sv TODO), switch back to LVCMOS33D
+# and remove the explicit _n pin constraints.
+IOBUF PORT "tmds_data_p[*]" IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "tmds_data_n[*]" IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "tmds_clk_p" IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "tmds_clk_n" IO_TYPE=LVCMOS33 DRIVE=4;
 
 # ==============================================================================
 # Reset (active-low)

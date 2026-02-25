@@ -90,12 +90,10 @@ Formal testbenches:
 - Test degenerate triangles (zero area, single-pixel, off-screen)
 - Verify SRAM arbiter handshake (req/ack/ready protocol)
 - VER-001 (Rasterizer Unit Testbench)
-- VER-001 (Rasterizer Unit Testbench)
-- VER-010 (Gouraud Triangle Golden Image Test)
-- VER-001 (Rasterizer Unit Testbench)
 - VER-010 (Gouraud Triangle Golden Image Test)
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
-- VER-001 (Rasterizer Unit Testbench)
+- VER-012 (Textured Triangle Golden Image Test)
+- VER-013 (Color-Combined Output Golden Image Test)
 
 ## Design Notes
 
