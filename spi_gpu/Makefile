@@ -54,7 +54,8 @@ VERILATOR_FLAGS = --binary -f verilator.f
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
 	test-texture-decoder lint-memory lint harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
-	test-gouraud test-depth-test test-textured test-color-combined
+	test-gouraud test-depth-test test-textured test-color-combined \
+	test-gouraud-init test-depth-test-init
 
 # Default target
 all: bitstream
@@ -203,30 +204,58 @@ test-register-file: test-register-file-v10
 		--top-module tb_register_file -o tb_register_file
 	./obj_dir/tb_register_file
 
-# VER-010: Gouraud triangle golden image test (requires integration harness)
-test-gouraud:
-	@echo "VER-010: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
-	@exit 1
+# VER-010: Gouraud triangle golden image test
+test-gouraud: $(BUILD_DIR)/harness
+	mkdir -p $(TB_DIR)/sim_out
+	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.ppm
+	diff -q $(TB_DIR)/sim_out/gouraud_triangle.ppm $(TB_DIR)/golden/gouraud_triangle.ppm
 
-# VER-011: Depth-tested triangles golden image test (requires integration harness)
-test-depth-test:
-	@echo "VER-011: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
-	@exit 1
+# VER-011: Depth-tested triangles golden image test
+test-depth-test: $(BUILD_DIR)/harness
+	mkdir -p $(TB_DIR)/sim_out
+	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.ppm
+	diff -q $(TB_DIR)/sim_out/depth_test.ppm $(TB_DIR)/golden/depth_test.ppm
 
-# VER-012: Textured triangle golden image test (requires integration harness)
+# VER-010 initial approval: run simulation and generate output for visual inspection.
+# After inspecting the output, copy to golden/ and commit to enable test-gouraud.
+test-gouraud-init: $(BUILD_DIR)/harness
+	mkdir -p $(TB_DIR)/sim_out
+	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.ppm
+	@echo "Output written to $(TB_DIR)/sim_out/gouraud_triangle.ppm"
+	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/gouraud_triangle.ppm $(TB_DIR)/golden/"
+
+# VER-011 initial approval: run simulation and generate output for visual inspection.
+# After inspecting the output, copy to golden/ and commit to enable test-depth-test.
+test-depth-test-init: $(BUILD_DIR)/harness
+	mkdir -p $(TB_DIR)/sim_out
+	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.ppm
+	@echo "Output written to $(TB_DIR)/sim_out/depth_test.ppm"
+	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/depth_test.ppm $(TB_DIR)/golden/"
+
+# VER-012: Textured triangle golden image test (blocked)
 test-textured:
-	@echo "VER-012: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
+	@echo "VER-012: Blocked pending texture cache RTL completion."
 	@exit 1
 
-# VER-013: Color-combined output golden image test (requires integration harness + UNIT-010 stable)
+# VER-013: Color-combined output golden image test (blocked)
 test-color-combined:
-	@echo "VER-013: Integration harness not yet implemented. See spi_gpu/tests/harness/README.md"
+	@echo "VER-013: Blocked pending UNIT-010 (Color Combiner) stabilization."
 	@exit 1
 
-# Run all RTL tests. Unit testbenches (VER-001 through VER-005) run fully.
-# Golden image tests (VER-010 through VER-013) are stubs until harness is implemented.
+# Run all RTL tests. Unit testbenches (VER-001 through VER-005) run unconditionally.
+# Golden image tests (VER-010, VER-011) run when approved golden images exist.
 test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder
-	@echo "Unit testbenches passed. Golden image tests (VER-010 to VER-013) require integration harness."
+	@echo "Unit testbenches passed."
+	@if [ -f $(TB_DIR)/golden/gouraud_triangle.ppm ]; then \
+		$(MAKE) test-gouraud; \
+	else \
+		echo "VER-010: Golden image not yet approved. Run 'make test-gouraud' after approval."; \
+	fi
+	@if [ -f $(TB_DIR)/golden/depth_test.ppm ]; then \
+		$(MAKE) test-depth-test; \
+	else \
+		echo "VER-011: Golden image not yet approved. Run 'make test-depth-test' after approval."; \
+	fi
 
 # Lint memory subsystem RTL
 lint-memory:
@@ -302,10 +331,43 @@ HARNESS_SOURCES = \
 	$(HARNESS_DIR)/sdram_model.cpp \
 	$(HARNESS_DIR)/ppm_writer.cpp
 
+# RTL sources for the integration harness Verilator build.
+# Same as RTL_SOURCES but with pll_core_sim.sv (passthrough stub) replacing
+# pll_core.sv (ECP5 EHXPLLL vendor primitive that Verilator cannot simulate).
+HARNESS_RTL_SOURCES = \
+	$(RTL_DIR)/$(TOP_MODULE).sv \
+	$(RTL_DIR)/core/pll_core_sim.sv \
+	$(RTL_DIR)/core/reset_sync.sv \
+	$(RTL_DIR)/spi/spi_slave.sv \
+	$(RTL_DIR)/spi/register_file.sv \
+	$(RTL_DIR)/utils/async_fifo.sv \
+	$(RTL_DIR)/spi/command_fifo.sv \
+	$(RTL_DIR)/memory/sdram_controller.sv \
+	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/display/timing_generator.sv \
+	$(RTL_DIR)/display/tmds_encoder.sv \
+	$(RTL_DIR)/display/dvi_output.sv \
+	$(RTL_DIR)/display/display_controller.sv \
+	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/utils/sync_fifo.sv
+
 harness-scaffold: $(BUILD_DIR)
 	$(CXX) -std=c++17 -Wall -Wextra -I$(HARNESS_DIR) \
 		$(HARNESS_SOURCES) -o $(BUILD_DIR)/harness_scaffold
 	$(BUILD_DIR)/harness_scaffold
+
+# Integration test harness binary (full Verilator simulation).
+# Compiles all RTL via Verilator with the PLL simulation stub, then links
+# the harness C++ files against the Verilated model.
+$(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(HARNESS_RTL_SOURCES) \
+		--top-module gpu_top \
+		--exe $(HARNESS_SOURCES) \
+		-CFLAGS "-I../$(HARNESS_DIR)" \
+		-o harness
+	cp obj_dir/harness $(BUILD_DIR)/harness
 
 # Verilator simulation (placeholder for cocotb)
 sim:
@@ -316,6 +378,7 @@ sim:
 clean:
 	rm -rf $(BUILD_DIR) obj_dir
 	rm -f *.vcd *.fst *.ppm
+	rm -rf $(TB_DIR)/sim_out/*.ppm
 
 # Help
 help:
@@ -336,10 +399,10 @@ help:
 	@echo "  test-register-file - VER-003: Register file unit testbench"
 	@echo "  test-color-combiner - VER-004: Color combiner unit testbench"
 	@echo "  test-texture-decoder - VER-005: Texture decoder unit testbench"
-	@echo "  test-gouraud     - VER-010: Gouraud triangle golden image (stub)"
-	@echo "  test-depth-test  - VER-011: Depth-tested triangles golden image (stub)"
-	@echo "  test-textured    - VER-012: Textured triangle golden image (stub)"
-	@echo "  test-color-combined - VER-013: Color-combined golden image (stub)"
+	@echo "  test-gouraud     - VER-010: Gouraud triangle golden image"
+	@echo "  test-depth-test  - VER-011: Depth-tested triangles golden image"
+	@echo "  test-textured    - VER-012: Textured triangle golden image (blocked)"
+	@echo "  test-color-combined - VER-013: Color-combined golden image (blocked)"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
