@@ -522,13 +522,22 @@ int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     Verilated::traceEverOn(true);
 
-    // TODO: Instantiate Verilator model
-    //   Vgpu_top* top = new Vgpu_top;
+    auto* contextp = new VerilatedContext;
+    auto* top = new Vgpu_top{contextp};
 
-    // TODO: Open FST trace file (optional, controlled by command-line flag)
-    //   VerilatedFstC* trace = new VerilatedFstC;
-    //   top->trace(trace, 99);
-    //   trace->open("harness.fst");
+    // Optional FST trace file, enabled by the --trace command-line flag.
+    VerilatedFstC* trace = nullptr;
+    bool trace_enabled = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--trace") == 0) {
+            trace_enabled = true;
+        }
+    }
+    if (trace_enabled) {
+        trace = new VerilatedFstC;
+        top->trace(trace, 99);
+        trace->open("harness.fst");
+    }
 
     uint64_t sim_time = 0;
 
@@ -537,35 +546,34 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     SdramModel sdram(SDRAM_WORDS);
 
-    // TODO: Pre-load texture data into SDRAM model for textured tests
-    //   (VER-012, VER-013). Use sdram.fill_texture(base_word, fmt, data,
-    //   size, width_log2) with the appropriate format and base address
-    //   per INT-014.
+    // Pre-load texture data into SDRAM model for textured tests
+    // (VER-012, VER-013). Use sdram.fill_texture(base_word, fmt, data,
+    // size, width_log2) with the appropriate format and base address
+    // per INT-014.  (Not yet implemented — texture tests are not wired.)
 
     // -----------------------------------------------------------------------
-    // 3. Reset the GPU
+    // 3. Parse command-line arguments
     // -----------------------------------------------------------------------
-    // TODO: Call reset(top, trace, sim_time, 100);
-
-    // -----------------------------------------------------------------------
-    // 4. Drive command script
-    // -----------------------------------------------------------------------
-    // Select command script based on test name (argv[1] or argv[2]).
-    // Default: VER-010 (Gouraud triangle).
-    // Supported test names: "ver010", "ver011"
-    //
     // Usage:
-    //   ./harness [output.ppm]                  — runs VER-010 (default)
-    //   ./harness [output.ppm] [test_name]      — runs the named test
-    //   ./harness --test ver011 [output.ppm]    — runs the named test
+    //   ./harness <test_name> [output.ppm]
+    //
+    // Where <test_name> is one of: gouraud, depth_test, textured,
+    // color_combined.  If [output.ppm] is not provided, the default is
+    // spi_gpu/tests/sim_out/<test_name>.ppm.
+    //
+    // Additional flags:
+    //   --test <name>   — alternative way to specify test name
+    //   --trace         — enable FST waveform trace output
 
-    const char* test_name = "ver010";
-    const char* output_file = "output.ppm";
+    const char* test_name = nullptr;
+    const char* output_file = nullptr;
 
     // Simple argument parsing: look for --test flag or positional args.
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
             test_name = argv[++i];
+        } else if (strcmp(argv[i], "--trace") == 0) {
+            // Already handled above; skip.
         } else if (strstr(argv[i], ".ppm") != nullptr) {
             output_file = argv[i];
         } else {
@@ -574,75 +582,101 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Test name is required.
+    if (test_name == nullptr) {
+        fprintf(stderr,
+                "Usage: %s <test_name> [output.ppm] [--trace]\n"
+                "  test_name: gouraud, depth_test, textured, color_combined\n",
+                argv[0]);
+        delete top;
+        delete contextp;
+        return 1;
+    }
+
+    // Default output path: spi_gpu/tests/sim_out/<test_name>.ppm
+    char default_output[256];
+    if (output_file == nullptr) {
+        snprintf(default_output, sizeof(default_output),
+                 "spi_gpu/tests/sim_out/%s.ppm", test_name);
+        output_file = default_output;
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Reset the GPU
+    // -----------------------------------------------------------------------
     SdramConnState conn;
+    reset(top, trace, sim_time, 100);
+
+    // -----------------------------------------------------------------------
+    // 5. Drive command script
+    // -----------------------------------------------------------------------
 
     /// Number of idle cycles to run between sequential script phases to
     /// ensure the rendering pipeline has fully drained.  This is a
     /// conservative value; the actual pipeline latency is much shorter.
     static constexpr uint64_t PIPELINE_DRAIN_CYCLES = 1'000'000;
 
-    if (strcmp(test_name, "ver011") == 0) {
+    if (strcmp(test_name, "depth_test") == 0) {
         // VER-011: Depth-tested overlapping triangles.
         // Requires three sequential phases with pipeline drain between each.
-
-        // Phase 1: Z-buffer clear pass
-        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
-        //       ver_011_zclear_script, ver_011_zclear_script_len);
-
-        // Drain pipeline after Z-clear
-        // TODO: for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
-        //     tick(top, trace, sim_time);
-        //     connect_sdram(top, sdram, conn);
-        // }
-
-        // Phase 2: Triangle A (far, red)
-        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
-        //       ver_011_tri_a_script, ver_011_tri_a_script_len);
-
-        // Drain pipeline after Triangle A
-        // TODO: for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
-        //     tick(top, trace, sim_time);
-        //     connect_sdram(top, sdram, conn);
-        // }
-
-        // Phase 3: Triangle B (near, blue)
-        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
-        //       ver_011_tri_b_script, ver_011_tri_b_script_len);
-
         printf("Running VER-011 (depth-tested overlapping triangles).\n");
 
-        // Suppress unused-variable warnings until TODO blocks are activated.
-        (void)ver_011_zclear_script;
-        (void)ver_011_zclear_script_len;
-        (void)ver_011_tri_a_script;
-        (void)ver_011_tri_a_script_len;
-        (void)ver_011_tri_b_script;
-        (void)ver_011_tri_b_script_len;
-        (void)PIPELINE_DRAIN_CYCLES;
-    } else {
-        // Default: VER-010 (Gouraud triangle).
-        const RegWrite* script = ver_010_script;
-        size_t script_count = ver_010_script_len;
+        // Phase 1: Z-buffer clear pass
+        execute_script(top, trace, sim_time, sdram, conn,
+                       ver_011_zclear_script, ver_011_zclear_script_len);
 
-        // TODO: Call execute_script(top, trace, sim_time, sdram, conn,
-        //       script, script_count);
-        (void)script;
-        (void)script_count;
+        // Drain pipeline after Z-clear
+        for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
+            tick(top, trace, sim_time);
+            connect_sdram(top, sdram, conn);
+        }
 
+        // Phase 2: Triangle A (far, red)
+        execute_script(top, trace, sim_time, sdram, conn,
+                       ver_011_tri_a_script, ver_011_tri_a_script_len);
+
+        // Drain pipeline after Triangle A
+        for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
+            tick(top, trace, sim_time);
+            connect_sdram(top, sdram, conn);
+        }
+
+        // Phase 3: Triangle B (near, blue)
+        execute_script(top, trace, sim_time, sdram, conn,
+                       ver_011_tri_b_script, ver_011_tri_b_script_len);
+
+    } else if (strcmp(test_name, "gouraud") == 0) {
+        // VER-010: Gouraud-shaded triangle.
         printf("Running VER-010 (Gouraud triangle).\n");
+
+        execute_script(top, trace, sim_time, sdram, conn,
+                       ver_010_script, ver_010_script_len);
+
+    } else {
+        fprintf(stderr, "Unknown test: %s\n", test_name);
+        top->final();
+        if (trace) {
+            trace->close();
+            delete trace;
+        }
+        delete top;
+        delete contextp;
+        return 1;
     }
 
-    (void)conn;
+    // -----------------------------------------------------------------------
+    // 6. Run clock until rendering completes
+    // -----------------------------------------------------------------------
+    // Run a fixed cycle budget after the last script entry to allow the
+    // rendering pipeline to drain.  connect_sdram() is called each cycle
+    // to keep the behavioral SDRAM model synchronized.
+    for (uint64_t i = 0; i < PIPELINE_DRAIN_CYCLES && !contextp->gotFinish(); i++) {
+        tick(top, trace, sim_time);
+        connect_sdram(top, sdram, conn);
+    }
 
     // -----------------------------------------------------------------------
-    // 5. Run clock until rendering completes
-    // -----------------------------------------------------------------------
-    // TODO: Monitor the GPU's rendering-complete status signal (or wait for
-    //   a fixed number of cycles after the last register write).
-    // TODO: Call tick() and connect_sdram() each cycle.
-
-    // -----------------------------------------------------------------------
-    // 6. Extract framebuffer and write PPM
+    // 7. Extract framebuffer and write PPM
     // -----------------------------------------------------------------------
     // Framebuffer A base word address (INT-011): 0x000000 / 2 = 0
     uint32_t fb_base_word = 0;
@@ -651,17 +685,29 @@ int main(int argc, char** argv) {
     if (!ppm_writer::write_ppm(output_file, FB_WIDTH, FB_HEIGHT, fb)) {
         fprintf(stderr, "ERROR: Failed to write PPM file: %s\n", output_file);
         delete[] fb;
+        top->final();
+        if (trace) {
+            trace->close();
+            delete trace;
+        }
+        delete top;
+        delete contextp;
         return 1;
     }
 
     printf("Golden image written to: %s\n", output_file);
 
     // -----------------------------------------------------------------------
-    // 7. Cleanup
+    // 8. Cleanup
     // -----------------------------------------------------------------------
     delete[] fb;
-    // TODO: delete top;
-    // TODO: if (trace) { trace->close(); delete trace; }
+    top->final();
+    if (trace) {
+        trace->close();
+        delete trace;
+    }
+    delete top;
+    delete contextp;
 
     return 0;
 

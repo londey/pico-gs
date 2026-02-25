@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_003_register_file.md `e3f1525ba1e8fc1a` 2026-02-24
+// Spec-ref: unit_003_register_file.md `e3f1525ba1e8fc1a` 2026-02-25
 // Register File - GPU State and Vertex State Machine (INT-010 v10.0)
 // Decodes register addresses and manages vertex submission
 // Implements the vertex state machine that triggers triangle rasterization
