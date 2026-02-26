@@ -22,6 +22,7 @@ None (top-level area)
 ## Child Requirements
 
 - REQ-010.01 (PC Debug Host)
+- REQ-010.02 (Verilator Interactive Simulator)
 
 ## Allocated To
 

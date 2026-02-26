@@ -26,11 +26,11 @@ If the user explicitly included `--continue` in their command, skip this check a
 
 ### Step 1: Check Git Status
 
-Run `git status -- doc/` to check for uncommitted changes in the doc directory.
+Run `git status -- doc/ ARCHITECTURE.md` to check for uncommitted changes in the doc directory or ARCHITECTURE.md.
 
-If there are uncommitted changes in `doc/`, **stop and tell the user:**
+If there are uncommitted changes, **stop and tell the user:**
 
-"There are uncommitted changes in `doc/`. Please commit or stash them before running `/syskit-propose`, so that proposed changes can be reviewed with `git diff` and reverted cleanly if needed."
+"There are uncommitted changes in `doc/` or `ARCHITECTURE.md`. Please commit or stash them before running `/syskit-propose`, so that proposed changes can be reviewed with `git diff` and reverted cleanly if needed."
 
 ### Step 2: Load the Impact Analysis
 
@@ -132,7 +132,7 @@ The subagent will return a summary in `VALIDATION_SUMMARY_START`/`VALIDATION_SUM
 
 Tell the user:
 
-"Proposed changes have been applied directly to the doc files. Review the changes using `git diff doc/` or the VSCode source control panel.
+"Proposed changes have been applied directly to the doc files. Review the changes using `git diff doc/ ARCHITECTURE.md` or the VSCode source control panel.
 
 **Summary:**
 <paste the change summary table from the subagent's returned summary>
@@ -143,7 +143,7 @@ Reply with:
 - **'approve'** to keep all changes and proceed to planning
 - **'approve \<filename\>'** to keep changes to a specific file and revert others
 - **'revise \<filename\>'** to discuss modifications to a specific file
-- **'reject'** to revert all changes (`git checkout -- doc/`)
+- **'reject'** to revert all changes (`git checkout -- doc/ ARCHITECTURE.md`)
 
 Or review at your leisure and use these commands in a new session:
 - **`/syskit-refine --feedback \"<your feedback>\"`** to iterate on the proposed changes
@@ -154,7 +154,7 @@ Or review at your leisure and use these commands in a new session:
 - **approve:** Update `Status: Pending Approval` to `Status: Approved` in `.syskit/analysis/<folder>/proposed_changes.md`. Proceed to Step 9.
 - **approve \<filename\>:** Revert all other files with `git checkout -- doc/<other files>`, keep the specified file(s). Update `Status: Pending Approval` to `Status: Approved` in `.syskit/analysis/<folder>/proposed_changes.md`. Proceed to Step 9.
 - **revise \<filename\>:** Discuss the specific file with the user, make adjustments, then re-present.
-- **reject:** Run `git checkout -- doc/` to revert all changes. Tell the user the proposal has been discarded.
+- **reject:** Run `git checkout -- doc/ ARCHITECTURE.md` to revert all changes. Tell the user the proposal has been discarded.
 
 ### Step 9: Next Steps
 

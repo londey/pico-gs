@@ -98,6 +98,7 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - [REQ-009.02: Gamepad Input](req_009.02_gamepad_input.md)
 - [REQ-009: Keyboard and Controller Input](req_009_input.md)
 - [REQ-010.01: PC Debug Host](req_010.01_pc_debug_host.md)
+- [REQ-010.02: Verilator Interactive Simulator](req_010.02_verilator_interactive_simulator.md)
 - [REQ-010: GPU Debug GUI](req_010_debug_gui.md)
 - [REQ-011.01: Performance Targets](req_011.01_performance_targets.md)
 - [REQ-011.02: Resource Constraints](req_011.02_resource_constraints.md)

@@ -58,6 +58,15 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.
 - **Applicable to:** VER-010 through VER-013.
 
+### Verilator Interactive Simulator (Development Tool)
+
+- **Description:** A standalone Verilator application (REQ-010.02, `make sim-interactive`) that drives the GPU RTL via the same `SIM_DIRECT_CMD` injection path used by the integration harness, but renders the display controller's live pixel output to an SDL3 window rather than reading back a static framebuffer.
+  Command sequences are driven by Lua scripts loaded at runtime; the base register helper script (`spi_gpu/sim/lua/gpu_regs.lua`) provides documented per-register-type helper functions.
+- **Role:** Development and exploratory debug tool — complements the golden image regression tests but does not replace them.
+  The golden image tests (VER-010 through VER-013) remain the formal regression check; the interactive simulator provides live visual feedback during development.
+- **Not applicable to:** Any VER-NNN document.
+  The interactive simulator is not a regression verification method; it produces no artifact that can be automatically compared against a reference.
+
 ## Coverage Goals
 
 ### Requirement Coverage

@@ -27,7 +27,8 @@ None
 
 ### Internal Interfaces
 
-- Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata
+- Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata.
+  In Verilator simulation with `SIM_DIRECT_CMD` defined, these signals are driven by the injection path in gpu_top.sv (see UNIT-002), which bypasses UNIT-001 but presents the identical cmd_* bus to UNIT-003 — no change to register_file.sv itself is required.
 - Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses
 - Outputs render target configuration (fb_config) to UNIT-007 (SRAM Arbiter) and the pixel pipeline
 - Outputs display configuration (fb_display) to UNIT-008 (Display Controller)
@@ -238,6 +239,8 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
+- The interactive Verilator simulator (UNIT-037) generalises the VER-010 through VER-013 injection approach into a live interactive tool.
+  It drives cmd_valid/cmd_rw/cmd_addr/cmd_wdata via the `SIM_DIRECT_CMD` path in UNIT-002 and observes the display output tap signals produced downstream of UNIT-008; UNIT-003 itself is not modified.
 
 ## Design Notes
 

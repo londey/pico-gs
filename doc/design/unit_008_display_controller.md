@@ -47,6 +47,20 @@ Scanline FIFO and display pipeline
 - RGB888 pixel data to UNIT-009 (DVI TMDS Encoder)
 - Display sync signals (hsync, vsync, data enable)
 
+**Simulation-observable pixel tap signals (gpu_top.sv, after the horizontal resize stage):**
+
+| Signal | Width | Description |
+|--------|-------|-------------|
+| `disp_pixel_red` | 8 | Red channel (RGB888) at display controller output |
+| `disp_pixel_green` | 8 | Green channel (RGB888) at display controller output |
+| `disp_pixel_blue` | 8 | Blue channel (RGB888) at display controller output |
+| `disp_enable` | 1 | Data enable — high during active display region |
+| `disp_vsync_out` | 1 | Vertical sync output — rising edge marks frame start |
+
+These signals are the post-LUT, post-color-grading RGB888 values driven into UNIT-009 in hardware.
+In the Verilator interactive simulator (UNIT-037), the SDL3 display window reads these signals directly, bypassing UNIT-009 entirely.
+UNIT-009 need not be instantiated in the simulation top-level wrapper.
+
 ### Internal State
 
 - Scanline FIFO (prefetch buffer for display scanout)
@@ -224,6 +238,12 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
 ## Design Notes
 
 Migrated from speckit module specification.
+
+**SDRAM Behavioral Model (Verilator Simulation):**
+In the Verilator interactive simulator (UNIT-037), the physical W9825G6KH SDRAM is replaced by a C++ behavioral model.
+The model presents the same mem_req/mem_we/mem_addr/mem_wdata/mem_rdata/mem_ack/mem_ready/mem_burst_* handshake interface to UNIT-007 (Memory Arbiter).
+To ensure the prefetch FSM and LUT DMA controller behave correctly, the model must replicate CAS latency CL=3, row activation timing (tRCD), auto-refresh blocking periods, and burst completion sequencing as specified in UNIT-007's SDRAM interface notes.
+A model that omits these timing behaviors will cause FIFO underruns or incorrect LUT loads during interactive simulation.
 
 **Boot Screen Interaction (DD-019):**
 The display controller begins scanout immediately after PLL lock and reset release.

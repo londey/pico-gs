@@ -100,6 +100,10 @@ Formal testbenches:
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
 
+The Verilator interactive simulator (REQ-010.02, `make sim-interactive`) extends the golden image harness concept to a live interactive tool.
+It injects commands via `SIM_DIRECT_CMD` ports into the same register-file input path that VER-010–VER-013 use, but renders output live to an SDL3 window rather than comparing against a static reference image.
+The interactive sim is a companion development tool, not a replacement for the golden image regression tests.
+
 ## Design Notes
 
 Migrated from speckit module specification.

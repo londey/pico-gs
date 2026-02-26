@@ -230,9 +230,22 @@ module gpu_top (
         .rdata(spi_rdata)
     );
 
-    // Pack SPI transaction into FIFO format
-    assign fifo_wr_en = spi_valid;
-    assign fifo_wr_data = {spi_rw, spi_addr, spi_wdata};
+    // Pack SPI transaction into FIFO format (synthesis) or sim injection (simulation)
+    `ifdef SIM_DIRECT_CMD
+        // Sim-only: direct command injection bypasses UNIT-001 (see UNIT-002, UNIT-037)
+        // Signals driven by the Verilator C++ wrapper (gpu_sim.cpp)
+        /* verilator lint_off UNDRIVEN */
+        logic        sim_cmd_valid  /* verilator public */;  // Sim write enable
+        logic        sim_cmd_rw     /* verilator public */;  // R/W flag (matches INT-012 bit 71)
+        logic [6:0]  sim_cmd_addr   /* verilator public */;  // Register address (matches INT-012 bits 70:64)
+        logic [63:0] sim_cmd_wdata  /* verilator public */;  // Write data (matches INT-012 bits 63:0)
+        /* verilator lint_on UNDRIVEN */
+        assign fifo_wr_en   = sim_cmd_valid;
+        assign fifo_wr_data = {sim_cmd_rw, sim_cmd_addr, sim_cmd_wdata};
+    `else
+        assign fifo_wr_en   = spi_valid;
+        assign fifo_wr_data = {spi_rw, spi_addr, spi_wdata};
+    `endif
 
     // Command FIFO instantiation (with boot pre-population)
     command_fifo u_cmd_fifo (
@@ -668,7 +681,8 @@ module gpu_top (
         .vsync_out(disp_vsync_out)
     );
 
-    // DVI Output instantiation
+    // DVI Output instantiation (excluded in sim mode; see UNIT-037)
+    `ifndef SIM_DIRECT_CMD
     dvi_output u_dvi_out (
         .clk_pixel(clk_pixel),
         .clk_tmds(clk_tmds),
@@ -688,6 +702,16 @@ module gpu_top (
         .tmds_clk_p(tmds_clk_p),
         .tmds_clk_n(tmds_clk_n)
     );
+    `else
+    // In SIM_DIRECT_CMD mode, UNIT-009 (DVI TMDS Encoder) is not
+    // instantiated. The SDL3 display window reads pixel tap signals
+    // (disp_pixel_red/green/blue, disp_enable, disp_vsync_out) directly.
+    // Tie off TMDS outputs to avoid undriven warnings.
+    assign tmds_data_p = 3'b0;
+    assign tmds_data_n = 3'b0;
+    assign tmds_clk_p  = 1'b0;
+    assign tmds_clk_n  = 1'b0;
+    `endif
 
     // GPIO VSYNC output
     assign gpio_vsync = disp_vsync_out;

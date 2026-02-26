@@ -25,11 +25,11 @@ If the user explicitly included `--continue` in their command, skip this check a
 
 ### Step 1: Check for Pending Proposed Changes
 
-Run `git status -- doc/` to check for uncommitted changes in the doc directory.
+Run `git status -- doc/ ARCHITECTURE.md` to check for uncommitted changes in the doc directory or ARCHITECTURE.md.
 
-If there are **no** uncommitted changes in `doc/`, **stop and tell the user:**
+If there are **no** uncommitted changes, **stop and tell the user:**
 
-"No uncommitted changes found in `doc/`. Run `/syskit-propose` first to generate specification changes, then use `/syskit-refine` to iterate on them."
+"No uncommitted changes found in `doc/` or `ARCHITECTURE.md`. Run `/syskit-propose` first to generate specification changes, then use `/syskit-refine` to iterate on them."
 
 ### Step 2: Load the Analysis Context
 
@@ -61,7 +61,7 @@ From the user's feedback (`$ARGUMENTS.feedback`), identify which documents are l
 2. Match against the change summary table to identify relevant files
 3. If the feedback is broad or doesn't reference specific documents, include all documents from the change summary
 
-Run `git diff --name-only -- doc/` to get the list of files with uncommitted changes. Cross-reference with the feedback to build the final list of files the subagent should examine and potentially modify.
+Run `git diff --name-only -- doc/ ARCHITECTURE.md` to get the list of files with uncommitted changes. Cross-reference with the feedback to build the final list of files the subagent should examine and potentially modify.
 
 ### Step 4: Delegate Refinement
 
@@ -94,11 +94,11 @@ After the subagent(s) return:
 
 ### Step 6: Present Changes for Review
 
-Run `git diff --stat -- doc/` to get the updated change summary.
+Run `git diff --stat -- doc/ ARCHITECTURE.md` to get the updated change summary.
 
 Tell the user:
 
-"Refinement applied based on your feedback. Review the updated changes using `git diff doc/` or the VSCode source control panel.
+"Refinement applied based on your feedback. Review the updated changes using `git diff doc/ ARCHITECTURE.md` or the VSCode source control panel.
 
 **Feedback addressed:**
 $ARGUMENTS.feedback
@@ -112,7 +112,7 @@ $ARGUMENTS.feedback
 Reply with:
 - **'approve'** to accept all changes (updates status and proceeds to planning)
 - **'approve \<filename\>'** to keep changes to specific file(s) and revert others
-- **'reject'** to revert ALL changes including the original proposal (`git checkout -- doc/`)
+- **'reject'** to revert ALL changes including the original proposal (`git checkout -- doc/ ARCHITECTURE.md`)
 - **Further feedback** to describe additional issues (will require another `/syskit-refine` run in a new session)
 
 Or review at your leisure and run `/syskit-approve` in a new session when ready."
@@ -121,7 +121,7 @@ Or review at your leisure and run `/syskit-approve` in a new session when ready.
 
 - **approve:** Update `Status: Pending Approval` to `Status: Approved` in `.syskit/analysis/<folder>/proposed_changes.md`. Proceed to Step 8.
 - **approve \<filename\>:** Revert non-specified files with `git checkout -- doc/<other files>`, keep the specified file(s). Update Status to "Approved". Proceed to Step 8.
-- **reject:** Run `git checkout -- doc/` to revert all changes (including the original proposal). Tell the user the changes have been discarded.
+- **reject:** Run `git checkout -- doc/ ARCHITECTURE.md` to revert all changes (including the original proposal). Tell the user the changes have been discarded.
 - **Further feedback:** Tell the user to start a new conversation and run `/syskit-refine --feedback "<their new feedback>"`.
 
 ### Step 8: Next Steps

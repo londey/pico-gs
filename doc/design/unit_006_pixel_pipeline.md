@@ -319,6 +319,11 @@ Planned formal testbenches (VER documents not yet created; see `doc/verification
 
 ## Design Notes
 
+**Verilator interactive simulator:** The interactive GPU simulator (REQ-010.02) substitutes a behavioral SDRAM model for the physical W9825G6KH.
+The model must faithfully implement W9825G6KH burst mode, CAS latency (CL=3), row activation timing, and auto-refresh behavior so that texture cache fills, Z-buffer accesses, and framebuffer writes from this unit behave correctly in simulation.
+A simplified or incorrectly-timed SDRAM model will cause the pixel pipeline to malfunction during interactive simulation; performance observations from the interactive sim (fill rate, frame time) will not precisely reflect hardware timing.
+See UNIT-007 for the SDRAM controller interface signals that the behavioral model must implement.
+
 The pipeline operates at 100 MHz in a unified clock domain with the SDRAM controller.
 This eliminates CDC FIFOs and synchronizers for all memory transactions (framebuffer, Z-buffer, texture), simplifying the design and reducing latency.
 

@@ -74,4 +74,9 @@ The FT232H supports SPI clocks up to 30 MHz. Default is 25 MHz (matching RP2350)
 
 ## Design Notes
 
-FT232H pin mapping must match the iCEBreaker/ECP5 SPI connection. The exact GPIO pin assignments for CS, CMD_FULL, CMD_EMPTY, and VSYNC depend on the physical wiring and should be configurable via command-line arguments or config file.
+FT232H pin mapping must match the iCEBreaker/ECP5 SPI connection.
+The exact GPIO pin assignments for CS, CMD_FULL, CMD_EMPTY, and VSYNC depend on the physical wiring and should be configurable via command-line arguments or config file.
+
+**Distinction from Verilator interactive simulator:** This unit drives real FPGA hardware over the FT232H USB-SPI bridge.
+The Verilator interactive simulator (REQ-010.02) is a separate, parallel PC-side tool that drives the Verilator GPU RTL model via direct C++ FIFO injection without using FT232H hardware or the `SpiTransport` / `FlowControl` traits this unit provides.
+The two tools are complementary: this unit is used with physical FPGA hardware; the simulator requires no hardware.

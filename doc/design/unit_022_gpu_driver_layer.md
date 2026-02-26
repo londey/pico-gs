@@ -159,6 +159,10 @@ Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and RE
 
 ## Design Notes
 
+**Verilator interactive simulator:** The interactive GPU simulator (REQ-010.02) drives the GPU RTL model via direct C++ FIFO injection rather than through `GpuDriver`.
+If a `SimTransport` implementing `SpiTransport` (INT-040) is added to the workspace, `GpuDriver<SimTransport>` could run against the Verilator sim without modification, validating host-side driver logic against the RTL model.
+Whether to implement this integration path is a design decision to be captured in `design_decisions.md`.
+
 Migrated from speckit module specification.
 
 Dithering is configured via the DITHER_EN field in RENDER_MODE (0x30, bit 10).

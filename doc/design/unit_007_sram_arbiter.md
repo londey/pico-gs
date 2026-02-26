@@ -216,6 +216,34 @@ Each lower-priority port is only ready when no higher-priority port is requestin
 
 Migrated from speckit module specification.
 
+**SDRAM Behavioral Model for Verilator Simulation:**
+The Verilator interactive simulator (UNIT-037) replaces the physical W9825G6KH SDRAM controller with a C++ behavioral model.
+The model must implement the complete SDRAM controller interface consumed by UNIT-007:
+
+| Signal | Direction (model perspective) | Required behavior |
+|--------|-------------------------------|-------------------|
+| `mem_req` | Input | Accept request |
+| `mem_we` | Input | Distinguish read/write |
+| `mem_addr` | Input | Index into model's memory array |
+| `mem_wdata` | Input | Capture write data |
+| `mem_burst_len` | Input | Drive correct number of sequential words |
+| `mem_rdata` | Output | Return read data (16-bit per burst word) |
+| `mem_rdata_32` | Output | Return assembled 32-bit read (single-word mode) |
+| `mem_ack` | Output | Assert at correct cycle (CL=3 for reads after READ command) |
+| `mem_ready` | Output | Deassert during simulated refresh intervals |
+| `mem_burst_data_valid` | Output | Pulse once per burst word after CAS latency |
+| `mem_burst_wdata_req` | Output | Pulse once per burst write word |
+| `mem_burst_done` | Output | Assert on last burst word |
+| `mem_burst_cancel` | Input | Accept preemption from arbiter; issue simulated PRECHARGE, then ack |
+
+The model must replicate:
+- **CAS latency CL=3**: first `mem_burst_data_valid` arrives 3 cycles after the READ command cycle.
+- **Row activation (tRCD)**: 2 additional cycles before READ/WRITE; row changes after PRECHARGE incur a new tRCD overhead.
+- **Auto-refresh**: periodic `mem_ready` deassertion (~1 per 781 cycles) to exercise the arbiter's refresh-stall path.
+- **Burst cancel/PRECHARGE**: on `mem_burst_cancel`, complete the current 16-bit word, then assert `mem_ack` after a simulated PRECHARGE delay.
+
+An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazards in the display prefetch FSM (UNIT-008) and texture cache (UNIT-006).
+
 **Unified clock update:** With the GPU core clock unified to 100 MHz (matching the SDRAM controller clock), the arbiter operates in a single clock domain.
 Previously, if the GPU core ran at a different frequency than the memory, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the memory controller.
 The unified 100 MHz clock eliminates this requirement entirely, reducing latency and simplifying timing analysis.

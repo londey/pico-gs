@@ -36,6 +36,42 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-023: SimTransport for pico-gs-core against Verilator Interactive Simulator
+
+**Date:** 2026-02-26
+**Status:** Accepted
+
+### Context
+
+The Verilator interactive simulator (REQ-010.02, UNIT-037) needs to drive the GPU RTL model for live visual debugging.
+A key question is whether this simulator should implement a Rust `SimTransport` satisfying the `SpiTransport` trait (INT-040), which would allow `pico-gs-core` driver code (UNIT-022) to run against the Verilator sim without modification.
+Both UNIT-022 Design Notes and INT-040 Notes require this decision to be captured before UNIT-037 implementation begins.
+
+### Decision
+
+The Verilator interactive simulator is implemented as a standalone C++/Lua binary that drives the GPU RTL out-of-band via `SIM_DIRECT_CMD` injection ports, bypassing SPI serial framing entirely.
+It does NOT implement a Rust `SimTransport` satisfying INT-040 in the initial version.
+
+### Rationale
+
+A standalone C++ application is simpler to build, avoids Rust/C FFI complexity, and delivers the core use case (live visual debug with Lua scripting) immediately.
+The `SIM_DIRECT_CMD` path presents the same logical 72-bit format (`{rw[0], addr[6:0], data[63:0]}`) to the FIFO write port that the SPI slave would present after deserializing a transaction, so the RTL behavior is exercised faithfully.
+A `SimTransport` wrapper could be added later if there is a demonstrated need to run `pico-gs-core` driver code (UNIT-022) against the sim without modification; that path is deferred until the need arises.
+
+### Consequences
+
+- `pico-gs-core` tests cannot currently run against the Verilator sim model.
+- UNIT-037 is a standalone C++/Lua binary outside the Rust workspace; it does not participate in `cargo build` or `cargo test`.
+- UNIT-022 and INT-040 correctly reference this decision; their notes about a future `SimTransport` remain valid as a deferred option.
+- If the need for a `SimTransport` is later demonstrated, a new design decision (superseding this one) would be created and UNIT-037 extended accordingly.
+
+### References
+
+- REQ-010.02 (Verilator Interactive Simulator)
+- UNIT-022 Design Notes (GPU Driver Layer)
+- INT-040 Notes (Host Platform HAL)
+
+
 ## DD-022: SystemVerilog Code Style Conformance Remediation
 
 **Date:** 2026-02-16

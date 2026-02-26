@@ -101,4 +101,4 @@ Next: run `/syskit-implement` in a new conversation to continue with the next pe
 
 3. If no, run `.syskit/scripts/manifest.sh` to update the manifest, then report: "All tasks complete. Manifest updated."
 
-Also remind to update any design documents if implementation details changed.
+Also remind to update any design or verification documents if implementation details changed the behavior of verified requirements or design units.

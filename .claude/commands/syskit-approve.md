@@ -44,17 +44,17 @@ If `Status:` is not "Pending Approval", tell the user the current status and sug
 
 ### Step 2: Check for Uncommitted Changes
 
-Run `git status -- doc/` to verify there are uncommitted changes in the doc directory.
+Run `git status -- doc/ ARCHITECTURE.md` to verify there are uncommitted changes in the doc directory or ARCHITECTURE.md.
 
-If there are **no** uncommitted changes in `doc/`:
+If there are **no** uncommitted changes:
 
-Tell the user: "No uncommitted changes found in `doc/`. The proposed changes may have already been committed or reverted. Check `git log -- doc/` for recent commits, or re-run `/syskit-propose` to regenerate changes."
+Tell the user: "No uncommitted changes found in `doc/` or `ARCHITECTURE.md`. The proposed changes may have already been committed or reverted. Check `git log -- doc/` for recent commits, or re-run `/syskit-propose` to regenerate changes."
 
 ### Step 3: Show Change Summary
 
 Read the change summary table from `proposed_changes.md` (the `## Change Summary` section, typically a markdown table).
 
-Run `git diff --stat -- doc/` to get a compact summary of what files changed.
+Run `git diff --stat -- doc/ ARCHITECTURE.md` to get a compact summary of what files changed.
 
 Present to the user:
 
@@ -67,19 +67,19 @@ Present to the user:
 **Files changed:**
 <paste git diff --stat output>
 
-Review the full diff with `git diff doc/` or your editor's source control panel.
+Review the full diff with `git diff doc/ ARCHITECTURE.md` or your editor's source control panel.
 
 Reply with:
 - **'approve'** to accept all changes and proceed to planning
 - **'approve \<filename\>'** to keep changes to specific file(s) and revert others
-- **'reject'** to revert all changes (`git checkout -- doc/`)
+- **'reject'** to revert all changes (`git checkout -- doc/ ARCHITECTURE.md`)
 - **'refine'** to describe issues and run `/syskit-refine` instead"
 
 ### Step 4: Handle Response
 
 - **approve:** Update `Status: Pending Approval` to `Status: Approved` in `.syskit/analysis/<folder>/proposed_changes.md`. Proceed to Step 5.
 - **approve \<filename\>:** Revert all other changed doc files with `git checkout -- doc/<other files>`, keeping only the specified file(s). Update `Status: Pending Approval` to `Status: Approved` in `proposed_changes.md`. Proceed to Step 5.
-- **reject:** Run `git checkout -- doc/` to revert all changes. Tell the user the proposal has been discarded.
+- **reject:** Run `git checkout -- doc/ ARCHITECTURE.md` to revert all changes. Tell the user the proposal has been discarded.
 - **refine:** Tell the user to start a new conversation and run `/syskit-refine --feedback "<their feedback>"` to iterate on the changes.
 
 ### Step 5: Next Steps

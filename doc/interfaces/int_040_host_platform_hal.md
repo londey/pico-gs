@@ -192,3 +192,7 @@ pub struct GpuDriver<S: SpiTransport> {
 }
 ```
 This replaces the current `GpuHandle` which owns rp235x-hal types directly.
+
+**Verilator interactive simulator:** The Verilator-based interactive GPU simulator (REQ-010.02) drives the GPU RTL model out-of-band — it uses direct C++ FIFO injection via `SIM_DIRECT_CMD` ports rather than the `SpiTransport` / `FlowControl` traits defined here.
+The simulator is a standalone C++/Lua binary and is not a platform crate in the Rust workspace; it does not implement this interface.
+A future `SimTransport` implementing `SpiTransport` could allow `pico-gs-core` driver code (UNIT-022) to run against the sim without modification; whether to implement this shall be captured as a design decision in `design_decisions.md` before UNIT-037 implementation begins.

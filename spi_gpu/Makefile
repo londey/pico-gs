@@ -49,7 +49,8 @@ ECPPACK_FLAGS = --compress
 # Simulation flags (shared flags in verilator.f)
 VERILATOR_FLAGS = --binary -f verilator.f
 
-.PHONY: all synth pnr bitstream program sim test-async-fifo test-command-fifo test-sync-fifo \
+.PHONY: all synth pnr bitstream program sim sim-interactive \
+	test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
 	test-texture-decoder lint-memory lint harness-scaffold clean help \
@@ -375,6 +376,80 @@ $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR)
 		-o harness
 	cp obj_dir/harness $(BUILD_DIR)/harness
 
+# =========================================================================
+# Interactive GPU Simulator (UNIT-037)
+# =========================================================================
+#
+# Spec-ref: unit_037_verilator_interactive_sim.md `3247c7b012e2aedb` 2026-02-26
+#
+# Verilator interactive simulator with SDL3 display and Lua scripting.
+# Drives the GPU RTL via SIM_DIRECT_CMD injection ports (bypasses SPI).
+# Excludes dvi_output.sv and tmds_encoder.sv (UNIT-009) from the build.
+#
+# Prerequisites:
+#   - SDL3 (libsdl3-dev or equivalent)
+#   - Lua 5.4 (liblua5.4-dev or equivalent)
+#   - sol2 (header-only; install to a system include path or set SOL2_DIR)
+#
+# Usage:
+#   make sim-interactive SCRIPT=spi_gpu/sim/lua/my_script.lua
+
+SIM_DIR = sim
+SIM_SOURCES = $(SIM_DIR)/gpu_sim.cpp $(SIM_DIR)/sdram_model_sim.cpp
+
+# RTL sources for the interactive sim build.
+# Same as HARNESS_RTL_SOURCES but WITHOUT dvi_output.sv and tmds_encoder.sv
+# (UNIT-009). Uses pll_core_sim.sv (passthrough stub) instead of pll_core.sv.
+SIM_RTL_SOURCES = \
+	$(RTL_DIR)/$(TOP_MODULE).sv \
+	$(RTL_DIR)/core/pll_core_sim.sv \
+	$(RTL_DIR)/core/reset_sync.sv \
+	$(RTL_DIR)/spi/spi_slave.sv \
+	$(RTL_DIR)/spi/register_file.sv \
+	$(RTL_DIR)/utils/async_fifo.sv \
+	$(RTL_DIR)/spi/command_fifo.sv \
+	$(RTL_DIR)/memory/sdram_controller.sv \
+	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/display/timing_generator.sv \
+	$(RTL_DIR)/display/display_controller.sv \
+	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/utils/sync_fifo.sv
+
+# Optional: set SOL2_DIR if sol2 headers are not in a system include path.
+# Example: make sim-interactive SOL2_DIR=/usr/local/include
+SOL2_DIR ?=
+
+# Build sol2/lua include flags
+SOL2_CFLAGS = $(if $(SOL2_DIR),-I$(SOL2_DIR))
+
+# SDL3 and Lua pkg-config flags (adjust package names for your system)
+SDL3_CFLAGS  := $(shell pkg-config --cflags sdl3 2>/dev/null)
+SDL3_LDFLAGS := $(shell pkg-config --libs sdl3 2>/dev/null)
+LUA_CFLAGS   := $(shell pkg-config --cflags lua5.4 2>/dev/null || pkg-config --cflags lua54 2>/dev/null || pkg-config --cflags lua 2>/dev/null)
+LUA_LDFLAGS  := $(shell pkg-config --libs lua5.4 2>/dev/null || pkg-config --libs lua54 2>/dev/null || pkg-config --libs lua 2>/dev/null)
+
+# Interactive simulator build target.
+# Compiles the GPU RTL (with SIM_DIRECT_CMD) and links against SDL3 + Lua.
+$(BUILD_DIR)/gpu_sim: $(SIM_SOURCES) $(SIM_RTL_SOURCES) | $(BUILD_DIR)
+	$(VERILATOR) --cc --exe --build -f verilator_sim.f \
+		--pins-inout-enables \
+		$(SIM_RTL_SOURCES) \
+		--top-module gpu_top \
+		$(SIM_SOURCES) \
+		-CFLAGS "-std=c++17 -I../$(SIM_DIR) $(SOL2_CFLAGS) $(SDL3_CFLAGS) $(LUA_CFLAGS)" \
+		-LDFLAGS "$(SDL3_LDFLAGS) $(LUA_LDFLAGS) -lpthread" \
+		-o gpu_sim
+	cp obj_dir/gpu_sim $(BUILD_DIR)/gpu_sim
+
+sim-interactive: $(BUILD_DIR)/gpu_sim
+	@if [ -z "$(SCRIPT)" ]; then \
+		echo "Usage: make sim-interactive SCRIPT=<path.lua>"; \
+		echo "  e.g.: make sim-interactive SCRIPT=spi_gpu/sim/lua/test.lua"; \
+		exit 1; \
+	fi
+	$(BUILD_DIR)/gpu_sim --script $(SCRIPT)
+
 # Verilator simulation (placeholder for cocotb)
 sim:
 	@echo "Simulation target - use Verilator testbenches in $(TB_DIR)/"
@@ -423,6 +498,9 @@ help:
 	@echo "  lint             - Lint all RTL sources"
 	@echo "  lint-memory      - Lint memory subsystem RTL"
 	@echo "  harness-scaffold - Compile integration harness scaffold (no RTL)"
+	@echo ""
+	@echo "Interactive simulator (UNIT-037):"
+	@echo "  sim-interactive  - Build and run interactive GPU sim (requires SCRIPT=<path>)"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean            - Remove build artifacts"

@@ -27,6 +27,7 @@ None
 ### Internal Interfaces
 
 - Write side: receives decoded transactions from UNIT-001 (SPI Slave Controller), typically in SPI-derived clock domain
+- Write side (sim only): `SIM_DIRECT_CMD` injection port available in Verilator simulation — bypasses UNIT-001 entirely (see Simulation Injection Port below)
 - Read side: feeds UNIT-003 (Register File) in the GPU system clock domain
 - wr_almost_full status fed back to host via UNIT-003 status register for flow control
 
@@ -42,6 +43,18 @@ None
 | `wr_rst_n` | 1 | Write-side reset, active-low |
 | `wr_en` | 1 | Write enable |
 | `wr_data` | WIDTH (72) | Write data (SPI transaction: rw + addr + data) |
+
+**Simulation Injection Port (`\`ifdef SIM_DIRECT_CMD`, gpu_top.sv write-side mux):**
+
+| Signal | Width | Description |
+|--------|-------|-------------|
+| `sim_cmd_valid` | 1 | Sim write enable; qualified with `SIM_DIRECT_CMD` guard |
+| `sim_cmd_rw` | 1 | R/W flag (matches bit 71 of INT-012 logical encoding) |
+| `sim_cmd_addr` | 7 | Register address (matches bits 70:64 of INT-012) |
+| `sim_cmd_wdata` | 64 | Write data (matches bits 63:0 of INT-012) |
+
+When `SIM_DIRECT_CMD` is defined, `gpu_top.sv` multiplexes the FIFO write port: `sim_cmd_valid` drives `wr_en` and the three decoded fields are assembled into `wr_data[71:0]` in place of UNIT-001's output.
+In normal synthesis, the `\`ifdef` block is absent and the write port is driven exclusively by UNIT-001.
 
 **Read Clock Domain:**
 
@@ -153,6 +166,8 @@ The boot screen rasterization (two clear triangles + one Gouraud triangle) compl
 - Verify boot command content: after reset, read all BOOT_COUNT entries and confirm each matches the expected register address and data values from the boot sequence
 - Verify boot-to-normal transition: after all boot commands are consumed, confirm FIFO reports empty; then perform normal SPI write/read operations and confirm correct behavior
 - Verify write pointer initialization: after reset, confirm the first SPI-originated write is stored at mem[BOOT_COUNT] (not mem[0])
+- **SIM_DIRECT_CMD injection**: When `SIM_DIRECT_CMD` is defined, the interactive Verilator simulator (see UNIT-037) drives `sim_cmd_valid/rw/addr/wdata` directly and confirms entries appear at the read side without involving UNIT-001.
+  This path is exercised by the interactive sim, not by the unit testbench; SPI path coverage is provided separately by VER-003 and the UNIT-001 testbench.
 
 ## Design Notes
 
