@@ -148,7 +148,7 @@ module register_file (
     // ========================================================================
 
     // Vertex state machine
-    reg [1:0] vertex_count;             // 0, 1, or 2 (wraps at 3)
+    reg [1:0] vertex_count /* verilator public */; // 0, 1, or 2 (wraps at 3)
 
     // Per-vertex buffered attributes
     reg [15:0] vertex_x     [0:2];      // Latched X positions
@@ -165,10 +165,10 @@ module register_file (
     reg [63:0] current_uv01;            // UV0_UV1 register value
 
     // Configuration registers (64-bit storage)
-    reg [63:0] render_mode_reg;         // RENDER_MODE register
+    reg [63:0] render_mode_reg /* verilator public */; // RENDER_MODE register
     reg [63:0] z_range_reg;             // Z_RANGE register
     reg [63:0] stipple_pattern_reg;     // STIPPLE_PATTERN register
-    reg [63:0] fb_config_reg;           // FB_CONFIG register
+    reg [63:0] fb_config_reg /* verilator public */; // FB_CONFIG register
     reg [63:0] fb_display_reg;          // FB_DISPLAY register (active value, post-vsync)
     // Suppress unused-signal warning for reserved bits [63:52] and [15:2]
     wire [11:0] _unused_fb_disp_hi = fb_display_reg[63:52];

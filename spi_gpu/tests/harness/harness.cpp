@@ -27,6 +27,9 @@
 #ifdef VERILATOR
 #include "Vgpu_top.h"
 #include "Vgpu_top___024root.h"
+#include "Vgpu_top_gpu_top.h"
+#include "Vgpu_top_rasterizer.h"
+#include "Vgpu_top_register_file.h"
 #include "verilated.h"
 #include "verilated_fst_c.h"
 #endif
@@ -726,13 +729,13 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     std::cout << std::format(
         "DIAG (post-script): rast state={}, tri_valid={}, vertex_count={}\n",
-        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__state),
-        static_cast<unsigned>(top->rootp->gpu_top__DOT__tri_valid),
-        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_register_file__DOT__vertex_count)
+        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->state),
+        static_cast<unsigned>(top->rootp->gpu_top->tri_valid),
+        static_cast<unsigned>(top->rootp->gpu_top->u_register_file->vertex_count)
     );
     std::cout << std::format(
         "DIAG (post-script): render_mode=0x{:x}\n",
-        static_cast<uint64_t>(top->rootp->gpu_top__DOT__u_register_file__DOT__render_mode_reg)
+        static_cast<uint64_t>(top->rootp->gpu_top->u_register_file->render_mode_reg)
     );
 
     // -----------------------------------------------------------------------
@@ -760,9 +763,9 @@ int main(int argc, char** argv) {
             tick(top.get(), trace.get(), sim_time);
             connect_sdram(top.get(), sdram, conn);
 
-            unsigned rast_state = top->rootp->gpu_top__DOT__u_rasterizer__DOT__state;
+            unsigned rast_state = top->rootp->gpu_top->u_rasterizer->state;
 
-            if (top->rootp->gpu_top__DOT__tri_valid) {
+            if (top->rootp->gpu_top->tri_valid) {
                 tri_valid_seen++;
                 if (tri_valid_seen <= 5) {
                     std::cout << std::format("DIAG: tri_valid pulse at drain cycle {}\n", i);
@@ -781,29 +784,29 @@ int main(int argc, char** argv) {
                 diag_printed = true;
                 std::cout << std::format(
                     "DIAG: SETUP — vertices: ({},{}) ({},{}) ({},{})\n",
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__x0),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__y0),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__x1),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__y1),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__x2),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__y2)
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->x0),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->y0),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->x1),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->y1),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->x2),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->y2)
                 );
                 std::cout << std::format(
                     "DIAG: SETUP — colors: r0={} g0={} b0={}, "
                     "r1={} g1={} b1={}, r2={} g2={} b2={}\n",
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__r0),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__g0),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__b0),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__r1),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__g1),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__b1),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__r2),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__g2),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__b2)
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->r0),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->g0),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->b0),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->r1),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->g1),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->b1),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->r2),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->g2),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->b2)
                 );
                 std::cout << std::format(
                     "DIAG: SETUP — inv_area_reg={}\n",
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__inv_area_reg)
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->inv_area_reg)
                 );
             }
 
@@ -811,10 +814,10 @@ int main(int argc, char** argv) {
             if (rast_state == 2 && edge_test_count == 0) { // ITER_START = 2
                 std::cout << std::format(
                     "DIAG: ITER_START — bbox: x[{}..{}] y[{}..{}]\n",
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_min_x),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_max_x),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_min_y),
-                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_max_y)
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->bbox_min_x),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->bbox_max_x),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->bbox_min_y),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->bbox_max_y)
                 );
             }
 
@@ -833,7 +836,7 @@ int main(int argc, char** argv) {
                     std::cout << std::format(
                         "DIAG: RANGE_TEST #{} — interp_z=0x{:04X}\n",
                         range_test_count,
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z)
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_z)
                     );
                 }
             }
@@ -852,7 +855,7 @@ int main(int argc, char** argv) {
                     std::cout << std::format(
                         "DIAG: ZBUF_TEST #{} — interp_z=0x{:04X}\n",
                         zbuf_test_count,
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z)
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_z)
                     );
                 }
             }
@@ -869,20 +872,20 @@ int main(int argc, char** argv) {
                         "port1_addr=0x{:06X}, port1_wdata=0x{:08X}, "
                         "interp_rgb=({},{},{})\n",
                         write_pixel_count,
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__curr_x),
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__curr_y),
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__arb_port1_addr),
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__arb_port1_wdata),
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_r
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->curr_x),
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->curr_y),
+                        static_cast<unsigned>(top->rootp->gpu_top->arb_port1_addr),
+                        static_cast<unsigned>(top->rootp->gpu_top->arb_port1_wdata),
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_r
                         ),
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_g
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_g
                         ),
-                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_b)
+                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_b)
                     );
                 }
             }
 
-            if (top->rootp->gpu_top__DOT__arb_port1_req) {
+            if (top->rootp->gpu_top->arb_port1_req) {
                 port1_req_count++;
             }
 
@@ -896,7 +899,7 @@ int main(int argc, char** argv) {
                 for (uint64_t j = 0; j < 1000; j++) {
                     tick(top.get(), trace.get(), sim_time);
                     connect_sdram(top.get(), sdram, conn);
-                    if (top->rootp->gpu_top__DOT__arb_port1_req) {
+                    if (top->rootp->gpu_top->arb_port1_req) {
                         port1_req_count++;
                     }
                 }
@@ -929,20 +932,20 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     std::cout << std::format(
         "DIAG: Rasterizer state after drain: {}\n",
-        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__state)
+        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->state)
     );
     std::cout << std::format(
         "DIAG: tri_valid={}, vertex_count={}\n",
-        static_cast<unsigned>(top->rootp->gpu_top__DOT__tri_valid),
-        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_register_file__DOT__vertex_count)
+        static_cast<unsigned>(top->rootp->gpu_top->tri_valid),
+        static_cast<unsigned>(top->rootp->gpu_top->u_register_file->vertex_count)
     );
     std::cout << std::format(
         "DIAG: render_mode=0x{:x}\n",
-        static_cast<uint64_t>(top->rootp->gpu_top__DOT__u_register_file__DOT__render_mode_reg)
+        static_cast<uint64_t>(top->rootp->gpu_top->u_register_file->render_mode_reg)
     );
     std::cout << std::format(
         "DIAG: fb_config=0x{:x}\n",
-        static_cast<uint64_t>(top->rootp->gpu_top__DOT__u_register_file__DOT__fb_config_reg)
+        static_cast<uint64_t>(top->rootp->gpu_top->u_register_file->fb_config_reg)
     );
 
     // -----------------------------------------------------------------------

@@ -130,7 +130,7 @@ module rasterizer (
         RANGE_TEST      = 4'd12  // Depth range + early Z bypass check
     } state_t;
 
-    state_t state;
+    state_t state /* verilator public */;
     state_t next_state;
 
     // ========================================================================
@@ -138,23 +138,23 @@ module rasterizer (
     // ========================================================================
 
     // Vertex positions (screen space, integer pixels)
-    reg [9:0] x0, y0;
-    reg [9:0] x1, y1;
-    reg [9:0] x2, y2;
+    reg [9:0] x0 /* verilator public */, y0 /* verilator public */;
+    reg [9:0] x1 /* verilator public */, y1 /* verilator public */;
+    reg [9:0] x2 /* verilator public */, y2 /* verilator public */;
 
     // Vertex depths and colors
     reg [15:0] z0, z1, z2;
-    reg [7:0]  r0, g0, b0;
-    reg [7:0]  r1, g1, b1;
-    reg [7:0]  r2, g2, b2;
+    reg [7:0]  r0 /* verilator public */, g0 /* verilator public */, b0 /* verilator public */;
+    reg [7:0]  r1 /* verilator public */, g1 /* verilator public */, b1 /* verilator public */;
+    reg [7:0]  r2 /* verilator public */, g2 /* verilator public */, b2 /* verilator public */;
 
     // Barycentric interpolation
-    reg [15:0] inv_area_reg;  // 1/area (0.16 fixed point)
+    reg [15:0] inv_area_reg /* verilator public */;  // 1/area (0.16 fixed point)
     reg [3:0]  area_shift_reg;  // Edge barrel shift count
 
     // Bounding box
-    reg [9:0] bbox_min_x, bbox_max_x;
-    reg [9:0] bbox_min_y, bbox_max_y;
+    reg [9:0] bbox_min_x /* verilator public */, bbox_max_x /* verilator public */;
+    reg [9:0] bbox_min_y /* verilator public */, bbox_max_y /* verilator public */;
 
     // Edge function coefficients
     // Edge equation: E(x,y) = A*x + B*y + C
@@ -171,7 +171,7 @@ module rasterizer (
     // Iteration Registers
     // ========================================================================
 
-    reg [9:0] curr_x, curr_y;
+    reg [9:0] curr_x /* verilator public */, curr_y /* verilator public */;
 
     // Edge function values at current pixel
     reg signed [31:0] e0, e1, e2;
@@ -185,8 +185,8 @@ module rasterizer (
     reg [16:0] w0, w1, w2;
 
     // Interpolated values
-    reg [15:0] interp_z;
-    reg [7:0]  interp_r, interp_g, interp_b;
+    reg [15:0] interp_z /* verilator public */;
+    reg [7:0]  interp_r /* verilator public */, interp_g /* verilator public */, interp_b /* verilator public */;
 
     // Low bits of interpolated colors discarded during RGB888→RGB565 conversion
     wire [2:0] _unused_interp_r_low = interp_r[2:0];

@@ -127,7 +127,7 @@ module gpu_top (
     wire [63:0] reg_cmd_rdata;
 
     // Triangle output signals (from register_file vertex state machine)
-    wire        tri_valid;
+    wire        tri_valid /* verilator public */;
     wire [2:0][15:0] tri_x;
     wire [2:0][15:0] tri_y;
     wire [2:0][15:0] tri_z;
@@ -405,10 +405,10 @@ module gpu_top (
     wire        arb_port0_ack;
     wire        arb_port0_ready;
 
-    wire        arb_port1_req;
+    wire        arb_port1_req /* verilator public */;
     wire        arb_port1_we;
-    wire [23:0] arb_port1_addr;
-    wire [31:0] arb_port1_wdata;
+    wire [23:0] arb_port1_addr /* verilator public */;
+    wire [31:0] arb_port1_wdata /* verilator public */;
     wire [7:0]  arb_port1_burst_len;
     wire [15:0] arb_port1_burst_wdata;
     wire [31:0] arb_port1_rdata;
