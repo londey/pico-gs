@@ -2,30 +2,24 @@
 /.specify
 
 # Rust
-/target
 **/*.rs.bk
 *.rlib
 *.prof*
 
-# FPGA/RTL Build Artifacts
-build/
-spi_gpu/build/
-obj_dir/
+# All build outputs consolidated under build/
+/build/
+
+# Safety net: catch waveform files if test binary runs from wrong directory
 *.vcd
 *.fst
+
+# FPGA-specific file types (outside build/)
 *.config
 *.bit
 *.svf
-# Only ignore JSON files in build directories or FPGA-specific outputs
-build/**/*.json
+*.asc
 *.asc.json
 *_out.json
-obj_dir/**/*.json
-*.asc
-# Only ignore binary files in build/target directories
-build/**/*.bin
-target/**/*.bin
-obj_dir/**/*.bin
 
 # Generated assets (regenerated on build)
 assets/compiled/

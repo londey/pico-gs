@@ -140,7 +140,7 @@ Then explain the change workflow for future changes:
 5. **`/syskit-plan`** — Break approved spec changes into implementation tasks
 6. **`/syskit-implement`** — Execute tasks one by one with verification
 
-Tell the user: "You're set up. When you want to make a change, start with `/syskit-impact` and describe what you want to change."
+Tell the user: "You're set up. When you want to make a change, start with `/syskit-impact` and describe what you want to change. If you need to investigate a topic first, use `/syskit-technical-report` to document your findings before proposing changes."
 
 ---
 
@@ -191,4 +191,5 @@ Ask the user what they'd like to do:
 
 - Create a new requirement, interface, or design unit to get hands-on practice
 - Run `/syskit-impact` on a change they have in mind
+- Run `/syskit-technical-report` to investigate a topic and document findings
 - Ask questions about the existing specifications

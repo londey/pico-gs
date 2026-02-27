@@ -10,7 +10,9 @@ PACKAGE = CABGA256
 RTL_DIR = src
 TB_DIR = tests
 CONSTRAINTS_DIR = constraints
-BUILD_DIR = build
+BUILD_DIR = ../build/fpga
+OBJ_DIR = ../build/verilator
+SIM_OUT_DIR = ../build/sim_out
 
 # Source files
 RTL_SOURCES = \
@@ -47,7 +49,7 @@ NEXTPNR_FLAGS = --$(DEVICE) --package $(PACKAGE) --freq 100 --timing-allow-fail
 ECPPACK_FLAGS = --compress
 
 # Simulation flags (shared flags in verilator.f)
-VERILATOR_FLAGS = --binary -f verilator.f
+VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 
 .PHONY: all synth pnr bitstream program sim sim-interactive \
 	test-async-fifo test-command-fifo test-sync-fifo \
@@ -61,9 +63,15 @@ VERILATOR_FLAGS = --binary -f verilator.f
 # Default target
 all: bitstream
 
-# Create build directory
+# Create build directories
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+$(SIM_OUT_DIR):
+	mkdir -p $(SIM_OUT_DIR)
 
 # Synthesis with Yosys
 synth: $(BUILD_DIR)
@@ -82,94 +90,94 @@ program: bitstream
 	$(OPENFPGALOADER) -c ft2232 $(BUILD_DIR)/$(PROJECT).bit
 
 # Async FIFO testbench
-test-async-fifo:
+test-async-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/utils/async_fifo.sv \
 		$(TB_DIR)/utils/tb_async_fifo.sv \
 		--top-module tb_async_fifo -o tb_async_fifo
-	./obj_dir/tb_async_fifo
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_async_fifo)
 
 # Command FIFO testbench
-test-command-fifo:
+test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/utils/async_fifo.sv \
 		$(RTL_DIR)/spi/command_fifo.sv \
 		$(TB_DIR)/spi/tb_command_fifo.sv \
 		--top-module tb_command_fifo -o tb_command_fifo
-	./obj_dir/tb_command_fifo
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_command_fifo)
 
 # Synchronous FIFO testbench
-test-sync-fifo:
+test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/utils/sync_fifo.sv \
 		$(TB_DIR)/utils/tb_sync_fifo.sv \
 		--top-module tb_sync_fifo -o tb_sync_fifo
-	./obj_dir/tb_sync_fifo
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_sync_fifo)
 
 # SDRAM controller testbench (init sequence, read/write, refresh, burst)
-test-sdram-controller:
+test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(TB_DIR)/memory/tb_sdram_controller.sv \
 		--top-module tb_sdram_controller -o tb_sdram_controller
-	./obj_dir/tb_sdram_controller
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_sdram_controller)
 
 # SRAM arbiter testbench (burst grant, preemption, data routing)
-test-sram-arbiter:
+test-sram-arbiter: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv \
 		$(TB_DIR)/memory/tb_sram_arbiter.sv \
 		--top-module tb_sram_arbiter -o tb_sram_arbiter
-	./obj_dir/tb_sram_arbiter
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_sram_arbiter)
 
 # Display controller burst testbench (scanline prefetch, burst reads)
-test-display-burst:
+test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/utils/sync_fifo.sv \
 		$(RTL_DIR)/display/display_controller.sv \
 		$(TB_DIR)/display/tb_display_burst.sv \
 		--top-module tb_display_burst -o tb_display_burst
-	./obj_dir/tb_display_burst
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_display_burst)
 
 # Texture cache burst testbench (cache fill via burst SRAM reads)
-test-texture-cache-burst:
+test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/texture_cache.sv \
 		$(TB_DIR)/render/tb_texture_cache_burst.sv \
 		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
-	./obj_dir/tb_texture_cache_burst
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_texture_cache_burst)
 
 # Integration testbench: controller + arbiter burst data path
-test-burst-integration:
+test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv \
 		$(TB_DIR)/memory/tb_burst_integration.sv \
 		--top-module tb_burst_integration -o tb_burst_integration
-	./obj_dir/tb_burst_integration
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_burst_integration)
 
 # Run all burst-related testbenches
 test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
 
 # Register file v10 testbench (vertex submission, MEM_FILL, RENDER_MODE, ID, CC_MODE, FB_CONFIG, FB_CONTROL)
-test-register-file-v10:
+test-register-file-v10: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/spi/register_file.sv \
 		$(TB_DIR)/spi/register_file_v10_tb.sv \
 		--top-module register_file_v10_tb -o tb_register_file_v10
-	./obj_dir/tb_register_file_v10
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file_v10)
 
 # VER-004: Color combiner unit testbench (deferred: UNIT-010 WIP)
-test-color-combiner:
+test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/color_combiner.sv \
 		$(TB_DIR)/render/color_combiner_tb.sv \
 		--top-module color_combiner_tb -o tb_color_combiner
-	./obj_dir/tb_color_combiner
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_color_combiner)
 
 # VER-005: Texture decoder unit testbench
-test-texture-decoder:
+test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/texture_rgb565.sv \
 		$(RTL_DIR)/render/texture_rgba8888.sv \
@@ -178,60 +186,56 @@ test-texture-decoder:
 		$(RTL_DIR)/render/stipple.sv \
 		$(TB_DIR)/render/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
-	./obj_dir/tb_texture_decoder
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_texture_decoder)
 
 # VER-001: Rasterizer unit testbench
-test-rasterizer:
+test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/early_z.sv \
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
-	./obj_dir/tb_rasterizer
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_rasterizer)
 
 # VER-002: Early Z-test unit testbench
-test-early-z:
+test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/early_z.sv \
 		$(TB_DIR)/render/tb_early_z.sv \
 		--top-module tb_early_z -o tb_early_z
-	./obj_dir/tb_early_z
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_early_z)
 
 # VER-003: Register file unit testbench
-test-register-file: test-register-file-v10
+test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/spi/register_file.sv \
 		$(TB_DIR)/spi/tb_register_file.sv \
 		--top-module tb_register_file -o tb_register_file
-	./obj_dir/tb_register_file
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file)
 
 # VER-010: Gouraud triangle golden image test
-test-gouraud: $(BUILD_DIR)/harness
-	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.png
-	diff -q $(TB_DIR)/sim_out/gouraud_triangle.png $(TB_DIR)/golden/gouraud_triangle.png
+test-gouraud: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
+	diff -q $(SIM_OUT_DIR)/gouraud_triangle.png $(TB_DIR)/golden/gouraud_triangle.png
 
 # VER-011: Depth-tested triangles golden image test
-test-depth-test: $(BUILD_DIR)/harness
-	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.png
-	diff -q $(TB_DIR)/sim_out/depth_test.png $(TB_DIR)/golden/depth_test.png
+test-depth-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
+	diff -q $(SIM_OUT_DIR)/depth_test.png $(TB_DIR)/golden/depth_test.png
 
 # VER-010 initial approval: run simulation and generate output for visual inspection.
 # After inspecting the output, copy to golden/ and commit to enable test-gouraud.
-test-gouraud-init: $(BUILD_DIR)/harness
-	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness gouraud $(TB_DIR)/sim_out/gouraud_triangle.png
-	@echo "Output written to $(TB_DIR)/sim_out/gouraud_triangle.png"
-	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/gouraud_triangle.png $(TB_DIR)/golden/"
+test-gouraud-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
+	@echo "Output written to $(SIM_OUT_DIR)/gouraud_triangle.png"
+	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/gouraud_triangle.png $(TB_DIR)/golden/"
 
 # VER-011 initial approval: run simulation and generate output for visual inspection.
 # After inspecting the output, copy to golden/ and commit to enable test-depth-test.
-test-depth-test-init: $(BUILD_DIR)/harness
-	mkdir -p $(TB_DIR)/sim_out
-	$(BUILD_DIR)/harness depth_test $(TB_DIR)/sim_out/depth_test.png
-	@echo "Output written to $(TB_DIR)/sim_out/depth_test.png"
-	@echo "Inspect visually, then: cp $(TB_DIR)/sim_out/depth_test.png $(TB_DIR)/golden/"
+test-depth-test-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
+	@echo "Output written to $(SIM_OUT_DIR)/depth_test.png"
+	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/depth_test.png $(TB_DIR)/golden/"
 
 # VER-012: Textured triangle golden image test (blocked)
 test-textured:
@@ -354,7 +358,7 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/utils/sync_fifo.sv
 
 harness-scaffold: $(BUILD_DIR)
-	$(CXX) -std=c++17 -Wall -Wextra -I$(HARNESS_DIR) \
+	$(CXX) -std=c++20 -Wall -Wextra -I$(HARNESS_DIR) \
 		$(HARNESS_SOURCES) -o $(BUILD_DIR)/harness_scaffold
 	$(BUILD_DIR)/harness_scaffold
 
@@ -366,15 +370,16 @@ harness-scaffold: $(BUILD_DIR)
 # main() conflicting with the harness's own main().
 # Uses --pins-inout-enables so the inout sdram_dq port is split into
 # sdram_dq (input), sdram_dq__out (output), sdram_dq__en (output enable).
-$(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR)
+$(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR) $(OBJ_DIR)
 	$(VERILATOR) --cc --exe --build -f verilator.f \
+		--Mdir $(OBJ_DIR) \
 		--pins-inout-enables \
 		$(HARNESS_RTL_SOURCES) \
 		--top-module gpu_top \
 		$(HARNESS_SOURCES) \
-		-CFLAGS "-I../$(HARNESS_DIR)" \
+		-CFLAGS "-I$(abspath $(HARNESS_DIR))" \
 		-o harness
-	cp obj_dir/harness $(BUILD_DIR)/harness
+	cp $(OBJ_DIR)/harness $(BUILD_DIR)/harness
 
 # =========================================================================
 # Interactive GPU Simulator (UNIT-037)
@@ -431,16 +436,17 @@ LUA_LDFLAGS  := $(shell pkg-config --libs lua5.4 2>/dev/null || pkg-config --lib
 
 # Interactive simulator build target.
 # Compiles the GPU RTL (with SIM_DIRECT_CMD) and links against SDL3 + Lua.
-$(BUILD_DIR)/gpu_sim: $(SIM_SOURCES) $(SIM_RTL_SOURCES) | $(BUILD_DIR)
+$(BUILD_DIR)/gpu_sim: $(SIM_SOURCES) $(SIM_RTL_SOURCES) | $(BUILD_DIR) $(OBJ_DIR)
 	$(VERILATOR) --cc --exe --build -f verilator_sim.f \
+		--Mdir $(OBJ_DIR) \
 		--pins-inout-enables \
 		$(SIM_RTL_SOURCES) \
 		--top-module gpu_top \
 		$(SIM_SOURCES) \
-		-CFLAGS "-std=c++17 -I../$(SIM_DIR) $(SOL2_CFLAGS) $(SDL3_CFLAGS) $(LUA_CFLAGS)" \
+		-CFLAGS "-std=c++20 -I$(abspath $(SIM_DIR)) $(SOL2_CFLAGS) $(SDL3_CFLAGS) $(LUA_CFLAGS)" \
 		-LDFLAGS "$(SDL3_LDFLAGS) $(LUA_LDFLAGS) -lpthread" \
 		-o gpu_sim
-	cp obj_dir/gpu_sim $(BUILD_DIR)/gpu_sim
+	cp $(OBJ_DIR)/gpu_sim $(BUILD_DIR)/gpu_sim
 
 sim-interactive: $(BUILD_DIR)/gpu_sim
 	@if [ -z "$(SCRIPT)" ]; then \
@@ -457,9 +463,8 @@ sim:
 
 # Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR) obj_dir
+	rm -rf $(BUILD_DIR) $(OBJ_DIR) $(SIM_OUT_DIR)
 	rm -f *.vcd *.fst *.png
-	rm -rf $(TB_DIR)/sim_out/*.png
 
 # Help
 help:

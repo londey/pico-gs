@@ -343,6 +343,7 @@ flowchart LR
     UNIT_034["UNIT-034: Build.rs Orchestrator"]
     UNIT_035["UNIT-035: PC SPI Driver (FT232H)"]
     UNIT_036["UNIT-036: PC Input Handler"]
+    UNIT_037["UNIT-037: Verilator Interactive Simulator App"]
     UNIT_001 -->|INT-001| UNIT_022
     UNIT_001 -->|INT-001| UNIT_035
     UNIT_003 -->|INT-010| UNIT_001
@@ -389,4 +390,5 @@ flowchart LR
 | UNIT-034 | Build.rs Orchestrator | Asset pipeline entry point |
 | UNIT-035 | PC SPI Driver (FT232H) | SPI transport implementation for PC platform via Adafruit FT232H breakout board |
 | UNIT-036 | PC Input Handler | Terminal keyboard input handling for the PC debug host platform. |
+| UNIT-037 | Verilator Interactive Simulator App | Standalone C++/Lua Verilator application for GPU development and debugging without FPGA hardware or an RP2350. |
 <!-- syskit-arch-end -->

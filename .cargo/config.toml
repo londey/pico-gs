@@ -3,6 +3,9 @@
 # Target-specific configuration for RP2350 firmware (host_app).
 # The asset_build_tool builds for the host machine and is unaffected by this config.
 
+[build]
+target-dir = "build/cargo"
+
 [target.thumbv8m.main-none-eabihf]
 runner = "probe-rs run --chip RP2350"
 rustflags = [

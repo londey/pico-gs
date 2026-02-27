@@ -156,6 +156,11 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 
 <!-- MANUAL ADDITIONS START -->
 
+## C++ Code Style
+
+When writing or modifying C++ code (`.cpp`, `.hpp`), follow the guidelines in `.claude/skills/claude_skill_cpp/SKILL.md`.
+Target **C++20** (`-std=c++20`).
+
 ## Markdown Style
 
 - Use semantic line breaks: start each sentence on its own line.

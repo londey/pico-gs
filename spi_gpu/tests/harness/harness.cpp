@@ -588,7 +588,7 @@ int main(int argc, char** argv) {
     //
     // Where <test_name> is one of: gouraud, depth_test, textured,
     // color_combined.  If [output.png] is not provided, the default is
-    // spi_gpu/tests/sim_out/<test_name>.png.
+    // <test_name>.png in the current working directory.
     //
     // Additional flags:
     //   --test <name>   — alternative way to specify test name
@@ -622,11 +622,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Default output path: spi_gpu/tests/sim_out/<test_name>.png
+    // Default output path: <test_name>.png in the current working directory.
+    // The Makefile runs the harness from build/sim_out/, so the default
+    // output lands there alongside any waveform traces.
     char default_output[256];
     if (output_file == nullptr) {
         snprintf(default_output, sizeof(default_output),
-                 "spi_gpu/tests/sim_out/%s.png", test_name);
+                 "%s.png", test_name);
         output_file = default_output;
     }
 

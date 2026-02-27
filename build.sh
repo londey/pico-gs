@@ -117,10 +117,10 @@ if [ "$BUILD_FIRMWARE" = true ]; then
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
         cargo build --release -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
-        FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/release/pico-gs-rp2350"
+        FIRMWARE_ELF="${REPO_ROOT}/build/cargo/thumbv8m.main-none-eabihf/release/pico-gs-rp2350"
     else
         cargo build -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
-        FIRMWARE_ELF="${REPO_ROOT}/target/thumbv8m.main-none-eabihf/debug/pico-gs-rp2350"
+        FIRMWARE_ELF="${REPO_ROOT}/build/cargo/thumbv8m.main-none-eabihf/debug/pico-gs-rp2350"
     fi
     echo -e "${GREEN}✓ Firmware built: ${FIRMWARE_ELF}${NC}"
     echo ""
@@ -132,10 +132,10 @@ if [ "${BUILD_PC:-false}" = true ]; then
     cd "${REPO_ROOT}"
     if [ "$RELEASE_MODE" = true ]; then
         cargo build --release -p pico-gs-pc
-        PC_BINARY="${REPO_ROOT}/target/release/pico-gs-pc"
+        PC_BINARY="${REPO_ROOT}/build/cargo/release/pico-gs-pc"
     else
         cargo build -p pico-gs-pc
-        PC_BINARY="${REPO_ROOT}/target/debug/pico-gs-pc"
+        PC_BINARY="${REPO_ROOT}/build/cargo/debug/pico-gs-pc"
     fi
     echo -e "${GREEN}✓ PC debug host built${NC}"
     echo ""
@@ -146,7 +146,7 @@ if [ "$BUILD_FPGA" = true ]; then
     echo -e "${YELLOW}[2/5] Building FPGA bitstream...${NC}"
     cd "${SPI_GPU}"
     make bitstream
-    FPGA_BITSTREAM="${SPI_GPU}/build/gpu_top.bit"
+    FPGA_BITSTREAM="${REPO_ROOT}/build/fpga/gpu_top.bit"
     echo -e "${GREEN}✓ Bitstream built: ${FPGA_BITSTREAM}${NC}"
     echo ""
 fi
@@ -178,11 +178,7 @@ if [ "$BUILD_FIRMWARE" = true ] && [ -n "${FIRMWARE_ELF:-}" ] && [ -f "$FIRMWARE
     echo "  Firmware: ${OUTPUT_DIR}/firmware/pico-gs-rp2350.elf"
 fi
 
-if [ "$BUILD_FPGA" = true ] && [ -f "${SPI_GPU}/build/gpu_top.bit" ]; then
-    cp "${SPI_GPU}/build/gpu_top.json"   "${OUTPUT_DIR}/fpga/" 2>/dev/null || true
-    cp "${SPI_GPU}/build/gpu_top.config" "${OUTPUT_DIR}/fpga/" 2>/dev/null || true
-    cp "${SPI_GPU}/build/gpu_top.bit"    "${OUTPUT_DIR}/fpga/"
-    cp "${SPI_GPU}/build/yosys.log"      "${OUTPUT_DIR}/fpga/" 2>/dev/null || true
+if [ "$BUILD_FPGA" = true ] && [ -f "${OUTPUT_DIR}/fpga/gpu_top.bit" ]; then
     echo "  FPGA Bitstream:  ${OUTPUT_DIR}/fpga/gpu_top.bit"
     echo "  FPGA Synthesis:  ${OUTPUT_DIR}/fpga/gpu_top.json"
     echo "  FPGA PNR:        ${OUTPUT_DIR}/fpga/gpu_top.config"

@@ -68,4 +68,5 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-034: Build.rs Orchestrator](unit_034_buildrs_orchestrator.md)
 - [UNIT-035: PC SPI Driver (FT232H)](unit_035_pc_spi_driver.md)
 - [UNIT-036: PC Input Handler](unit_036_pc_input_handler.md)
+- [UNIT-037: Verilator Interactive Simulator App](unit_037_verilator_interactive_sim.md)
 <!-- TOC-END -->
