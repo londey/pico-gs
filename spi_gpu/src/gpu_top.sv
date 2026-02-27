@@ -113,7 +113,7 @@ module gpu_top (
     wire        fifo_wr_en;
     wire [71:0] fifo_wr_data;
     wire        fifo_wr_full;
-    wire        fifo_wr_almost_full;
+    wire        fifo_wr_almost_full /* verilator public */;
     wire        fifo_rd_en;
     wire [71:0] fifo_rd_data;
     wire        fifo_rd_empty;
@@ -627,16 +627,16 @@ module gpu_top (
     // Timing generator signals
     wire        disp_hsync;
     wire        disp_vsync;
-    wire        disp_enable;
+    wire        disp_enable /* verilator public */;
     wire [9:0]  disp_pixel_x;
     wire [9:0]  disp_pixel_y;
     wire        disp_frame_start;
 
     // Display controller signals
-    wire [7:0]  disp_pixel_red;
-    wire [7:0]  disp_pixel_green;
-    wire [7:0]  disp_pixel_blue;
-    wire        disp_vsync_out;
+    wire [7:0]  disp_pixel_red /* verilator public */;
+    wire [7:0]  disp_pixel_green /* verilator public */;
+    wire [7:0]  disp_pixel_blue /* verilator public */;
+    wire        disp_vsync_out /* verilator public */;
 
     // Timing Generator instantiation
     timing_generator u_timing_gen (
