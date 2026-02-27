@@ -18,6 +18,27 @@ RUN apt-get update && apt-get install -y \
     libftdi1-dev \
     libudev-dev \
     usbutils \
+    # C++ build tools (cmake needed for SDL3 from source)
+    cmake \
+    pkg-config \
+    # X11/Wayland dev libraries (required by SDL3 build)
+    libx11-dev \
+    libxext-dev \
+    libxrandr-dev \
+    libxcursor-dev \
+    libxi-dev \
+    libxss-dev \
+    libxtst-dev \
+    libwayland-dev \
+    libxkbcommon-dev \
+    # Audio/misc SDL3 optional deps
+    libasound2-dev \
+    libpulse-dev \
+    libdbus-1-dev \
+    libdrm-dev \
+    libgbm-dev \
+    # Lua 5.4 (used by interactive GPU simulator)
+    liblua5.4-dev \
     # Python (used by some FPGA tools)
     python3 \
     python3-pip \
@@ -35,6 +56,22 @@ RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
+
+# Install SDL3 from source (not yet packaged for Ubuntu 24.04)
+# Used by the interactive GPU simulator (spi_gpu/sim/gpu_sim.cpp)
+RUN cd /tmp \
+    && git clone --depth 1 --branch release-3.4.2 https://github.com/libsdl-org/SDL.git \
+    && cmake -S SDL -B SDL/build -DCMAKE_INSTALL_PREFIX=/usr/local -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+    && cmake --build SDL/build -j$(nproc) \
+    && cmake --install SDL/build \
+    && rm -rf /tmp/SDL
+
+# Install sol2 header-only Lua binding library
+# Used by the interactive GPU simulator (spi_gpu/sim/gpu_sim.cpp)
+RUN cd /tmp \
+    && git clone --depth 1 --branch v3.3.0 https://github.com/ThePhD/sol2.git \
+    && cp -r sol2/include/* /usr/local/include/ \
+    && rm -rf /tmp/sol2
 
 # Install Node.js 20.x LTS (required for Claude Code CLI)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
