@@ -28,69 +28,57 @@
 
 #include "sdram_model.hpp"
 
-#include <cstring>
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 
-SdramModel::SdramModel(uint32_t num_words)
-    : mem_(new uint16_t[num_words])
-    , num_words_(num_words)
-{
-    // Initialize to zero (simulates power-on state; real SDRAM is undefined).
-    std::memset(mem_, 0, num_words * sizeof(uint16_t));
-}
-
-SdramModel::~SdramModel() {
-    delete[] mem_;
-}
+SdramModel::SdramModel(uint32_t num_words) : mem_(num_words, 0) {}
 
 uint16_t SdramModel::read_word(uint32_t word_addr) const {
-    if (word_addr >= num_words_) {
+    if (word_addr >= mem_.size()) {
         return 0;
     }
     return mem_[word_addr];
 }
 
 void SdramModel::write_word(uint32_t word_addr, uint16_t data) {
-    if (word_addr >= num_words_) {
+    if (word_addr >= mem_.size()) {
         return;
     }
     mem_[word_addr] = data;
 }
 
-void SdramModel::upload_raw(uint32_t base_word_addr, const uint8_t* data,
-                            size_t size_bytes) {
+void SdramModel::upload_raw(uint32_t base_word_addr, std::span<const uint8_t> data) {
     // Write raw bytes as 16-bit little-endian words.
-    size_t num_words = size_bytes / 2;
+    size_t num_words = data.size() / 2;
     for (size_t i = 0; i < num_words; i++) {
-        uint16_t word = static_cast<uint16_t>(data[i * 2])
-                      | (static_cast<uint16_t>(data[i * 2 + 1]) << 8);
+        uint16_t word =
+            static_cast<uint16_t>(data[i * 2]) | (static_cast<uint16_t>(data[i * 2 + 1]) << 8);
         write_word(base_word_addr + static_cast<uint32_t>(i), word);
     }
 }
 
-void SdramModel::burst_read(uint32_t start_word_addr, uint16_t* buffer,
-                             uint32_t count) const {
-    for (uint32_t i = 0; i < count; i++) {
+void SdramModel::burst_read(uint32_t start_word_addr, std::span<uint16_t> buffer) const {
+    for (uint32_t i = 0; i < buffer.size(); i++) {
         buffer[i] = read_word(start_word_addr + i);
     }
 }
 
-void SdramModel::burst_write(uint32_t start_word_addr, const uint16_t* buffer,
-                              uint32_t count) {
-    for (uint32_t i = 0; i < count; i++) {
+void SdramModel::burst_write(uint32_t start_word_addr, std::span<const uint16_t> buffer) {
+    for (uint32_t i = 0; i < buffer.size(); i++) {
         write_word(start_word_addr + i, buffer[i]);
     }
 }
 
-void SdramModel::fill_texture(uint32_t base_word_addr, TexFormat fmt,
-                               const uint8_t* pixel_data, size_t data_size,
-                               uint32_t width_log2) {
+void SdramModel::fill_texture(
+    uint32_t base_word_addr, TexFormat fmt, std::span<const uint8_t> pixel_data, uint32_t width_log2
+) {
     // Block-compressed formats (BC1, BC2, BC3, BC4): input data is already
     // in block order (each block is a self-contained unit), so linear
     // upload is correct.
-    if (fmt == TexFormat::BC1 || fmt == TexFormat::BC2 ||
-        fmt == TexFormat::BC3 || fmt == TexFormat::BC4) {
-        upload_raw(base_word_addr, pixel_data, data_size);
+    if (fmt == TexFormat::BC1 || fmt == TexFormat::BC2 || fmt == TexFormat::BC3 ||
+        fmt == TexFormat::BC4) {
+        upload_raw(base_word_addr, pixel_data);
         return;
     }
 
@@ -106,22 +94,23 @@ void SdramModel::fill_texture(uint32_t base_word_addr, TexFormat fmt,
     //   block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x
     //   word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
 
-    uint32_t width  = 1u << width_log2;
+    uint32_t width = 1u << width_log2;
 
     if (fmt == TexFormat::RGB565) {
         // RGB565: 2 bytes per pixel, one 16-bit SDRAM word per pixel.
-        uint32_t height = static_cast<uint32_t>(data_size / 2) / width;
-        const uint16_t* src = reinterpret_cast<const uint16_t*>(pixel_data);
+        uint32_t height = static_cast<uint32_t>(pixel_data.size() / 2) / width;
+        // Raw loop retained: reinterpret_cast span access with block-tiled
+        // address arithmetic does not map cleanly to a standard algorithm.
+        const auto* src = reinterpret_cast<const uint16_t*>(pixel_data.data());
 
         for (uint32_t y = 0; y < height; y++) {
             for (uint32_t x = 0; x < width; x++) {
-                uint32_t block_x   = x >> 2;
-                uint32_t block_y   = y >> 2;
-                uint32_t local_x   = x & 3;
-                uint32_t local_y   = y & 3;
+                uint32_t block_x = x >> 2;
+                uint32_t block_y = y >> 2;
+                uint32_t local_x = x & 3;
+                uint32_t local_y = y & 3;
                 uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
-                uint32_t word_addr = base_word_addr + block_idx * 16
-                                   + (local_y * 4 + local_x);
+                uint32_t word_addr = base_word_addr + block_idx * 16 + (local_y * 4 + local_x);
 
                 // Source pixel in linear row-major order (little-endian u16).
                 uint16_t pixel = src[y * width + x];
@@ -136,25 +125,26 @@ void SdramModel::fill_texture(uint32_t base_word_addr, TexFormat fmt,
         // the block occupies two consecutive word addresses:
         //   low_word_addr  = base + block_idx * 32 + (local_y * 4 + local_x) * 2
         //   high_word_addr = low_word_addr + 1
-        uint32_t height = static_cast<uint32_t>(data_size / 4) / width;
-        const uint32_t* src = reinterpret_cast<const uint32_t*>(pixel_data);
+        uint32_t height = static_cast<uint32_t>(pixel_data.size() / 4) / width;
+        // Raw loop retained: block-tiled scatter with dual-word writes per
+        // texel does not map to a standard algorithm.
+        const auto* src = reinterpret_cast<const uint32_t*>(pixel_data.data());
 
         for (uint32_t y = 0; y < height; y++) {
             for (uint32_t x = 0; x < width; x++) {
-                uint32_t block_x   = x >> 2;
-                uint32_t block_y   = y >> 2;
-                uint32_t local_x   = x & 3;
-                uint32_t local_y   = y & 3;
+                uint32_t block_x = x >> 2;
+                uint32_t block_y = y >> 2;
+                uint32_t local_x = x & 3;
+                uint32_t local_y = y & 3;
                 uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
                 // 32 words per block for RGBA8888 (16 texels x 2 words each).
-                uint32_t word_addr = base_word_addr + block_idx * 32
-                                   + (local_y * 4 + local_x) * 2;
+                uint32_t word_addr = base_word_addr + block_idx * 32 + (local_y * 4 + local_x) * 2;
 
                 // Source pixel in linear row-major order (little-endian u32).
                 uint32_t pixel = src[y * width + x];
-                uint16_t low_word  = static_cast<uint16_t>(pixel & 0xFFFF);
+                uint16_t low_word = static_cast<uint16_t>(pixel & 0xFFFF);
                 uint16_t high_word = static_cast<uint16_t>(pixel >> 16);
-                write_word(word_addr,     low_word);
+                write_word(word_addr, low_word);
                 write_word(word_addr + 1, high_word);
             }
         }
@@ -168,20 +158,20 @@ void SdramModel::fill_texture(uint32_t base_word_addr, TexFormat fmt,
         //   word_offset = (local_y * 4 + local_x) / 2
         //   byte_lane   = (local_y * 4 + local_x) % 2
         //
-        // We process pixel pairs to build complete 16-bit words.
-        uint32_t height = static_cast<uint32_t>(data_size) / width;
+        // Raw loop retained: read-modify-write with block-tiled scatter
+        // and per-byte lane selection does not map to a standard algorithm.
+        uint32_t height = static_cast<uint32_t>(pixel_data.size()) / width;
 
         for (uint32_t y = 0; y < height; y++) {
             for (uint32_t x = 0; x < width; x++) {
-                uint32_t block_x   = x >> 2;
-                uint32_t block_y   = y >> 2;
-                uint32_t local_x   = x & 3;
-                uint32_t local_y   = y & 3;
+                uint32_t block_x = x >> 2;
+                uint32_t block_y = y >> 2;
+                uint32_t local_x = x & 3;
+                uint32_t local_y = y & 3;
                 uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
                 uint32_t texel_idx = local_y * 4 + local_x;
                 // 8 words per block for R8 (16 bytes / 2 bytes per word).
-                uint32_t word_addr = base_word_addr + block_idx * 8
-                                   + texel_idx / 2;
+                uint32_t word_addr = base_word_addr + block_idx * 8 + texel_idx / 2;
 
                 uint8_t pixel = pixel_data[y * width + x];
 
@@ -192,17 +182,20 @@ void SdramModel::fill_texture(uint32_t base_word_addr, TexFormat fmt,
                     existing = (existing & 0xFF00) | pixel;
                 } else {
                     // Odd texel index: high byte
-                    existing = (existing & 0x00FF)
-                             | (static_cast<uint16_t>(pixel) << 8);
+                    existing = (existing & 0x00FF) | (static_cast<uint16_t>(pixel) << 8);
                 }
                 write_word(word_addr, existing);
             }
         }
     } else {
-        // Unknown format: fall back to linear upload.
-        fprintf(stderr, "WARNING: fill_texture: unknown format %u, "
-                "falling back to linear upload.\n",
-                static_cast<unsigned>(fmt));
-        upload_raw(base_word_addr, pixel_data, data_size);
+        // Unknown format -- should not be reachable since the switch in
+        // burst_len_for_format/bytes_per_block covers all enum values.
+        fprintf(
+            stderr,
+            "WARNING: fill_texture: unknown format %u, "
+            "falling back to linear upload.\n",
+            static_cast<unsigned>(fmt)
+        );
+        upload_raw(base_word_addr, pixel_data);
     }
 }
