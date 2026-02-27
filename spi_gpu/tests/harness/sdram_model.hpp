@@ -31,8 +31,7 @@
 //       the Verilated memory arbiter issues burst read requests during
 //       texture cache miss fills.
 
-#ifndef SDRAM_MODEL_H
-#define SDRAM_MODEL_H
+#pragma once
 
 #include <cstdint>
 #include <cstddef>
@@ -185,5 +184,3 @@ private:
     uint16_t* mem_;
     uint32_t  num_words_;
 };
-
-#endif // SDRAM_MODEL_H

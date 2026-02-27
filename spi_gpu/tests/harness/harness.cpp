@@ -24,8 +24,8 @@
 #include "verilated_fst_c.h"
 #endif
 
-#include "sdram_model.h"
-#include "png_writer.h"
+#include "sdram_model.hpp"
+#include "png_writer.hpp"
 
 // ---------------------------------------------------------------------------
 // Register-write command script entry

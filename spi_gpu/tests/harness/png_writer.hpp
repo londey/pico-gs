@@ -15,8 +15,7 @@
 //   G8 = (G6 << 2) | (G6 >> 4)
 //   B8 = (B5 << 3) | (B5 >> 2)
 
-#ifndef PNG_WRITER_H
-#define PNG_WRITER_H
+#pragma once
 
 #include <cstdint>
 
@@ -47,5 +46,3 @@ bool write_png(const char* filename, int width, int height,
 void rgb565_to_rgb888(uint16_t rgb565, uint8_t& r, uint8_t& g, uint8_t& b);
 
 } // namespace png_writer
-
-#endif // PNG_WRITER_H

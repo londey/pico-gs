@@ -9,7 +9,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#include "png_writer.h"
+#include "png_writer.hpp"
 
 #include <cstdlib>
 

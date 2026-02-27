@@ -26,7 +26,7 @@
 //   INT-014 (Texture Memory Layout)
 //   INT-032 (Texture Cache Architecture)
 
-#include "sdram_model.h"
+#include "sdram_model.hpp"
 
 #include <cstring>
 #include <cstdio>
