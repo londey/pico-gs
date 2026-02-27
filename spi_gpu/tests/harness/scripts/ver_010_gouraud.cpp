@@ -20,22 +20,21 @@
 //   INT-010 (GPU Register Map) — register definitions
 //   INT-021 (Render Command Format) — command sequence
 
-#include <cstdint>
-
 // This file is #include'd from harness.cpp after the RegWrite struct
 // definition.  It provides the VER-010 command script array.
+// <cstdint> is already included by harness.cpp.
 
 // ---------------------------------------------------------------------------
 // INT-010 Register Addresses (verified against register_file.sv localparams)
 // ---------------------------------------------------------------------------
 
-static constexpr uint8_t REG_COLOR            = 0x00;  // ADDR_COLOR
-static constexpr uint8_t REG_AREA_SETUP       = 0x05;  // ADDR_AREA_SETUP
-static constexpr uint8_t REG_VERTEX_NOKICK    = 0x06;  // ADDR_VERTEX_NOKICK
-static constexpr uint8_t REG_VERTEX_KICK_012  = 0x07;  // ADDR_VERTEX_KICK_012
-static constexpr uint8_t REG_RENDER_MODE      = 0x30;  // ADDR_RENDER_MODE
-static constexpr uint8_t REG_FB_CONFIG        = 0x40;  // ADDR_FB_CONFIG
-static constexpr uint8_t REG_FB_CONTROL       = 0x43;  // ADDR_FB_CONTROL
+static constexpr uint8_t REG_COLOR = 0x00;           // ADDR_COLOR
+static constexpr uint8_t REG_AREA_SETUP = 0x05;      // ADDR_AREA_SETUP
+static constexpr uint8_t REG_VERTEX_NOKICK = 0x06;   // ADDR_VERTEX_NOKICK
+static constexpr uint8_t REG_VERTEX_KICK_012 = 0x07; // ADDR_VERTEX_KICK_012
+static constexpr uint8_t REG_RENDER_MODE = 0x30;     // ADDR_RENDER_MODE
+static constexpr uint8_t REG_FB_CONFIG = 0x40;       // ADDR_FB_CONFIG
+static constexpr uint8_t REG_FB_CONTROL = 0x43;      // ADDR_FB_CONTROL
 
 // ---------------------------------------------------------------------------
 // VERTEX data packing (from register_file.sv ADDR_VERTEX_NOKICK decode):
@@ -55,13 +54,11 @@ static constexpr uint8_t REG_FB_CONTROL       = 0x43;  // ADDR_FB_CONTROL
 /// @param z  Depth value (16-bit unsigned, 0 = near).
 /// @return   64-bit packed vertex data for VERTEX_NOKICK or VERTEX_KICK_012.
 static constexpr uint64_t pack_vertex(int x, int y, uint16_t z) {
-    uint16_t x_q12_4 = static_cast<uint16_t>(x * 16);  // Q12.4 fixed-point
-    uint16_t y_q12_4 = static_cast<uint16_t>(y * 16);  // Q12.4 fixed-point
-    uint16_t q       = 0;                               // 1/W = 0 (not used)
-    return (static_cast<uint64_t>(q)       << 48) |
-           (static_cast<uint64_t>(z)       << 32) |
-           (static_cast<uint64_t>(y_q12_4) << 16) |
-           (static_cast<uint64_t>(x_q12_4));
+    uint16_t x_q12_4 = static_cast<uint16_t>(x * 16); // Q12.4 fixed-point
+    uint16_t y_q12_4 = static_cast<uint16_t>(y * 16); // Q12.4 fixed-point
+    uint16_t q = 0;                                   // 1/W = 0 (not used)
+    return (static_cast<uint64_t>(q) << 48) | (static_cast<uint64_t>(z) << 32) |
+           (static_cast<uint64_t>(y_q12_4) << 16) | (static_cast<uint64_t>(x_q12_4));
 }
 
 // ---------------------------------------------------------------------------
@@ -85,10 +82,8 @@ static constexpr uint64_t pack_vertex(int x, int y, uint16_t z) {
 /// @param a  Alpha channel (0-255).
 /// @return   32-bit ARGB value.
 static constexpr uint32_t argb(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xFF) {
-    return (static_cast<uint32_t>(a) << 24) |
-           (static_cast<uint32_t>(r) << 16) |
-           (static_cast<uint32_t>(g) << 8)  |
-           (static_cast<uint32_t>(b));
+    return (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(r) << 16) |
+           (static_cast<uint32_t>(g) << 8) | (static_cast<uint32_t>(b));
 }
 
 /// Pack diffuse (primary) and specular (secondary) colors into the 64-bit
@@ -98,8 +93,7 @@ static constexpr uint32_t argb(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xFF
 /// @param specular  32-bit ARGB secondary color (goes into [31:0]).
 /// @return          64-bit packed COLOR register value.
 static constexpr uint64_t pack_color(uint32_t diffuse, uint32_t specular = 0xFF000000) {
-    return (static_cast<uint64_t>(diffuse) << 32) |
-           (static_cast<uint64_t>(specular));
+    return (static_cast<uint64_t>(diffuse) << 32) | (static_cast<uint64_t>(specular));
 }
 
 // ---------------------------------------------------------------------------
@@ -118,11 +112,10 @@ static constexpr uint64_t pack_color(uint32_t diffuse, uint32_t specular = 0xFF0
 /// @param width_log2   Log2 of surface width (e.g. 9 for 512).
 /// @param height_log2  Log2 of surface height (e.g. 9 for 512).
 /// @return             64-bit FB_CONFIG register value.
-static constexpr uint64_t pack_fb_config(uint16_t color_base, uint16_t z_base,
-                                          uint8_t width_log2, uint8_t height_log2) {
+static constexpr uint64_t
+pack_fb_config(uint16_t color_base, uint16_t z_base, uint8_t width_log2, uint8_t height_log2) {
     return (static_cast<uint64_t>(height_log2 & 0xF) << 36) |
-           (static_cast<uint64_t>(width_log2  & 0xF) << 32) |
-           (static_cast<uint64_t>(z_base) << 16) |
+           (static_cast<uint64_t>(width_log2 & 0xF) << 32) | (static_cast<uint64_t>(z_base) << 16) |
            (static_cast<uint64_t>(color_base));
 }
 
@@ -142,12 +135,10 @@ static constexpr uint64_t pack_fb_config(uint16_t color_base, uint16_t z_base,
 /// @param width   Scissor width in pixels.
 /// @param height  Scissor height in pixels.
 /// @return        64-bit FB_CONTROL register value.
-static constexpr uint64_t pack_fb_control(uint16_t x, uint16_t y,
-                                           uint16_t width, uint16_t height) {
+static constexpr uint64_t pack_fb_control(uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
     return (static_cast<uint64_t>(height & 0x3FF) << 30) |
-           (static_cast<uint64_t>(width  & 0x3FF) << 20) |
-           (static_cast<uint64_t>(y      & 0x3FF) << 10) |
-           (static_cast<uint64_t>(x      & 0x3FF));
+           (static_cast<uint64_t>(width & 0x3FF) << 20) | (static_cast<uint64_t>(y & 0x3FF) << 10) |
+           (static_cast<uint64_t>(x & 0x3FF));
 }
 
 // ---------------------------------------------------------------------------
@@ -173,13 +164,12 @@ static constexpr uint64_t pack_fb_control(uint16_t x, uint16_t y,
 /// @param x1,y1  Vertex 1 screen coordinates (integer pixels).
 /// @param x2,y2  Vertex 2 screen coordinates (integer pixels).
 /// @return        64-bit AREA_SETUP register value: [19:16]=shift, [15:0]=inv_area.
-static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1,
-                                              int x2, int y2) {
+static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1, int x2, int y2) {
     // Signed area = x0*(y1-y2) + x1*(y2-y0) + x2*(y0-y1)
     // 2*area is the absolute value (rasterizer uses CCW winding, area > 0)
-    int64_t twice_area = static_cast<int64_t>(x0) * (y1 - y2)
-                       + static_cast<int64_t>(x1) * (y2 - y0)
-                       + static_cast<int64_t>(x2) * (y0 - y1);
+    int64_t twice_area = static_cast<int64_t>(x0) * (y1 - y2) +
+                         static_cast<int64_t>(x1) * (y2 - y0) +
+                         static_cast<int64_t>(x2) * (y0 - y1);
     if (twice_area < 0) {
         twice_area = -twice_area;
     }
@@ -189,7 +179,9 @@ static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1,
     // The largest coefficient determines the maximum safe shift:
     // we need max_coeff >> shift >= 1 so each pixel step produces a
     // distinct shifted edge value.
-    auto abs_val = [](int v) -> int { return v < 0 ? -v : v; };
+    auto abs_val = [](int v) -> int {
+        return v < 0 ? -v : v;
+    };
     int max_coeff = 0;
     // Edge 0: V1 → V2
     max_coeff = abs_val(y1 - y2) > max_coeff ? abs_val(y1 - y2) : max_coeff;
@@ -229,10 +221,10 @@ static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1,
     // but at least shift_min and at most shift_max.
     uint32_t shift = shift_max;
     if (shift < shift_min) {
-        shift = shift_min;  // must fit in 16 bits
+        shift = shift_min; // must fit in 16 bits
     }
     if (shift > 15) {
-        shift = 15;  // clamp to 4-bit field
+        shift = 15; // clamp to 4-bit field
     }
 
     // Compute inv_area = round(65536 / (twice_area >> shift))
@@ -242,8 +234,7 @@ static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1,
         inv_area = static_cast<uint16_t>((65536ULL + shifted_area / 2) / shifted_area);
     }
 
-    return (static_cast<uint64_t>(shift & 0xF) << 16) |
-           (static_cast<uint64_t>(inv_area));
+    return (static_cast<uint64_t>(shift & 0xF) << 16) | (static_cast<uint64_t>(inv_area));
 }
 
 // ---------------------------------------------------------------------------
@@ -255,10 +246,9 @@ static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1,
 //   [4]     = COLOR_WRITE_EN
 // ---------------------------------------------------------------------------
 
-static constexpr uint64_t RENDER_MODE_GOURAUD_COLOR =
-    (1ULL << 0) |   // GOURAUD_EN = 1
-    (1ULL << 4);    // COLOR_WRITE_EN = 1
-    // Z_TEST_EN = 0, Z_WRITE_EN = 0, all other bits = 0
+static constexpr uint64_t RENDER_MODE_GOURAUD_COLOR = (1ULL << 0) | // GOURAUD_EN = 1
+                                                      (1ULL << 4);  // COLOR_WRITE_EN = 1
+// Z_TEST_EN = 0, Z_WRITE_EN = 0, all other bits = 0
 
 // ---------------------------------------------------------------------------
 // VER-010 Command Script
@@ -275,7 +265,7 @@ static constexpr uint64_t RENDER_MODE_GOURAUD_COLOR =
 static const RegWrite ver_010_script[] = {
     // 1. Configure framebuffer: color base = 0, z base = 0,
     //    width_log2 = 9 (512-wide surface), height_log2 = 9
-    {REG_FB_CONFIG,  pack_fb_config(0x0000, 0x0000, 9, 9)},
+    {REG_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 9, 9)},
 
     // 2. Configure scissor to cover full 640x480 viewport
     //    (default reset value has height=0 which would clip everything)
@@ -289,16 +279,16 @@ static const RegWrite ver_010_script[] = {
     {REG_AREA_SETUP, compute_area_setup(320, 40, 560, 400, 80, 400)},
 
     // 4. Submit V0: red vertex at top center (320, 40)
-    {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00))},  // Red diffuse
-    {REG_VERTEX_NOKICK,  pack_vertex(320, 40, 0x0000)},
+    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00))}, // Red diffuse
+    {REG_VERTEX_NOKICK, pack_vertex(320, 40, 0x0000)},
 
     // 5. Submit V1: blue vertex at bottom right (560, 400)
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF))},  // Blue diffuse
-    {REG_VERTEX_NOKICK,  pack_vertex(560, 400, 0x0000)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF))}, // Blue diffuse
+    {REG_VERTEX_NOKICK, pack_vertex(560, 400, 0x0000)},
 
     // 6. Submit V2: green vertex at bottom left (80, 400)
     //    VERTEX_KICK_012 triggers rasterization of the triangle (V0, V1, V2).
-    {REG_COLOR,          pack_color(argb(0x00, 0xFF, 0x00))},  // Green diffuse
+    {REG_COLOR, pack_color(argb(0x00, 0xFF, 0x00))}, // Green diffuse
     {REG_VERTEX_KICK_012, pack_vertex(80, 400, 0x0000)},
 
     // 7. Dummy trailing command — ensures the KICK_012 above is consumed
@@ -316,8 +306,7 @@ static const RegWrite ver_010_script[] = {
     //
     //    TODO: Fix the FIFO read interface in gpu_top to implement proper
     //    first-word-fall-through (FWFT) behavior.
-    {REG_COLOR, 0x0000000000000000ULL},  // Dummy NOP (COLOR write, benign)
+    {REG_COLOR, 0x0000000000000000ULL}, // Dummy NOP (COLOR write, benign)
 };
 
-static constexpr size_t ver_010_script_len =
-    sizeof(ver_010_script) / sizeof(ver_010_script[0]);
+static constexpr size_t ver_010_script_len = sizeof(ver_010_script) / sizeof(ver_010_script[0]);

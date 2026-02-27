@@ -10,12 +10,17 @@
 //   INT-021 (Render Command Format)
 //   INT-032 (Texture Cache Architecture)
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <format>
+#include <iostream>
+#include <memory>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
 
 // Verilator-generated header for the top-level GPU module.
 // Guarded so this file can be compiled standalone for CI scaffold checks.
@@ -26,8 +31,8 @@
 #include "verilated_fst_c.h"
 #endif
 
-#include "sdram_model.hpp"
 #include "png_writer.hpp"
+#include "sdram_model.hpp"
 
 // ---------------------------------------------------------------------------
 // Register-write command script entry
@@ -37,7 +42,7 @@
 /// addr is the INT-010 register index; data is the value to write (up to 64
 /// bits for MEM_DATA, but most registers use only 16 bits).
 struct RegWrite {
-    uint8_t  addr;
+    uint8_t addr;
     uint64_t data;
 };
 
@@ -45,6 +50,14 @@ struct RegWrite {
 // Command scripts (one per golden image test)
 // ---------------------------------------------------------------------------
 
+// The script .cpp files below are #include'd directly into this translation
+// unit.  They contain only static constexpr data definitions (register-write
+// arrays and helper functions) and are not independent translation units.
+// This is an intentional scaffold pattern: each script encapsulates the
+// register-write sequence for one golden image test, keeping the harness
+// main() small while avoiding a separate compilation/linking step for what
+// is essentially constant data.  Do not restructure the include-pattern
+// unless the harness architecture is being redesigned.
 #include "scripts/ver_010_gouraud.cpp"
 #include "scripts/ver_011_depth_test.cpp"
 
@@ -58,8 +71,8 @@ struct RegWrite {
 /// RGB565 = 2 bytes).  The extraction function must match this addressing
 /// (not the INT-011 4x4 block-tiled scheme, which is used for display
 /// scanout but not by the current rasterizer implementation).
-static constexpr int FB_WIDTH      = 640;
-static constexpr int FB_HEIGHT     = 480;
+static constexpr int FB_WIDTH = 640;
+static constexpr int FB_HEIGHT = 480;
 
 /// SDRAM address space: 32 MB = 16M 16-bit words.
 static constexpr uint32_t SDRAM_WORDS = 16 * 1024 * 1024;
@@ -106,8 +119,7 @@ static void tick(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time) {
 /// falling edge pair via tick()).  After the hold period, rst_n is driven
 /// high and one additional tick() is issued so the design sees the clean
 /// deassertion on a rising clock edge.
-static void reset(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time,
-                  int cycles) {
+static void reset(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time, int cycles) {
     // Assert reset (active-low)
     top->rst_n = 0;
     for (int i = 0; i < cycles; i++) {
@@ -128,13 +140,16 @@ static void reset(Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time,
 
 // SDRAM command encoding: {csn, rasn, casn, wen}
 // Matches sdram_controller.sv localparam definitions.
-static constexpr uint8_t SDRAM_CMD_NOP          = 0b0111;
-static constexpr uint8_t SDRAM_CMD_ACTIVATE     = 0b0011;
-static constexpr uint8_t SDRAM_CMD_READ         = 0b0101;
-static constexpr uint8_t SDRAM_CMD_WRITE        = 0b0100;
-static constexpr uint8_t SDRAM_CMD_PRECHARGE    = 0b0010;
+static constexpr uint8_t SDRAM_CMD_NOP = 0b0111;
+static constexpr uint8_t SDRAM_CMD_ACTIVATE = 0b0011;
+static constexpr uint8_t SDRAM_CMD_READ = 0b0101;
+static constexpr uint8_t SDRAM_CMD_WRITE = 0b0100;
+static constexpr uint8_t SDRAM_CMD_PRECHARGE = 0b0010;
 static constexpr uint8_t SDRAM_CMD_AUTO_REFRESH = 0b0001;
-static constexpr uint8_t SDRAM_CMD_LOAD_MODE    = 0b0000;
+static constexpr uint8_t SDRAM_CMD_LOAD_MODE = 0b0000;
+
+/// Number of SDRAM banks.
+static constexpr int SDRAM_BANK_COUNT = 4;
 
 // CAS latency (CL=3, matching sdram_controller.sv)
 static constexpr int CAS_LATENCY = 3;
@@ -145,43 +160,30 @@ static constexpr int READ_PIPE_DEPTH = 8;
 
 /// Per-bank active row tracking for SDRAM model connection.
 struct SdramBankState {
-    bool     row_active;    ///< Whether a row is currently activated
-    uint32_t active_row;    ///< Row address of the activated row (13 bits)
+    bool row_active = false; ///< Whether a row is currently activated
+    uint32_t active_row = 0; ///< Row address of the activated row (13 bits)
 };
 
 /// Read pipeline entry for CAS latency modeling.
 /// Scheduled reads appear on the DQ bus CAS_LATENCY cycles after the READ
 /// command is issued.
 struct ReadPipeEntry {
-    bool     valid;         ///< Entry is valid (data pending)
-    uint32_t word_addr;     ///< SDRAM word address to read from SdramModel
-    int      countdown;     ///< Cycles remaining before data appears on bus
+    bool valid = false;     ///< Entry is valid (data pending)
+    uint32_t word_addr = 0; ///< SDRAM word address to read from SdramModel
+    int countdown = 0;      ///< Cycles remaining before data appears on bus
 };
 
 /// SDRAM connection state persisted across clock cycles.
 /// This struct is instantiated once and passed by reference to connect_sdram()
 /// on every tick().
 struct SdramConnState {
-    SdramBankState banks[4];                   ///< 4 SDRAM banks
-    ReadPipeEntry  read_pipe[READ_PIPE_DEPTH]; ///< CAS latency delay FIFO
-    int            read_pipe_head;             ///< Next write slot in pipe
-    bool           initialized;                ///< Set after first call
-    uint64_t       write_count;                ///< Diagnostic: total SDRAM WRITEs
-    uint64_t       activate_count;             ///< Diagnostic: total ACTIVATEs
-    uint64_t       read_count;                 ///< Diagnostic: total READs
-
-    SdramConnState() : read_pipe_head(0), initialized(false),
-                       write_count(0), activate_count(0), read_count(0) {
-        for (int i = 0; i < 4; i++) {
-            banks[i].row_active = false;
-            banks[i].active_row = 0;
-        }
-        for (int i = 0; i < READ_PIPE_DEPTH; i++) {
-            read_pipe[i].valid = false;
-            read_pipe[i].word_addr = 0;
-            read_pipe[i].countdown = 0;
-        }
-    }
+    std::array<SdramBankState, SDRAM_BANK_COUNT> banks{};   ///< 4 SDRAM banks
+    std::array<ReadPipeEntry, READ_PIPE_DEPTH> read_pipe{}; ///< CAS latency delay FIFO
+    int read_pipe_head = 0;                                 ///< Next write slot in pipe
+    bool initialized = false;                               ///< Set after first call
+    uint64_t write_count = 0;                               ///< Diagnostic: total SDRAM WRITEs
+    uint64_t activate_count = 0;                            ///< Diagnostic: total ACTIVATEs
+    uint64_t read_count = 0;                                ///< Diagnostic: total READs
 };
 
 /// Connect the behavioral SDRAM model to the Verilated memory controller ports.
@@ -207,20 +209,19 @@ struct SdramConnState {
 ///   sdram_dq      — input  (testbench drives read data to controller)
 ///   sdram_dq__out — output (controller drives write data from controller)
 ///   sdram_dq__en  — output enable (1 = controller driving, 0 = tristate)
-static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
-                          SdramConnState& state) {
+static void connect_sdram(Vgpu_top* top, SdramModel& sdram, SdramConnState& state) {
     // Step 1: Advance read pipeline — decrement countdowns, drive matured data
     bool read_data_valid = false;
     uint16_t read_data = 0;
 
-    for (int i = 0; i < READ_PIPE_DEPTH; i++) {
-        if (state.read_pipe[i].valid) {
-            state.read_pipe[i].countdown--;
-            if (state.read_pipe[i].countdown <= 0) {
+    for (auto& entry : state.read_pipe) {
+        if (entry.valid) {
+            entry.countdown--;
+            if (entry.countdown <= 0) {
                 // Data is ready — read from model and mark entry consumed
-                read_data = sdram.read_word(state.read_pipe[i].word_addr);
+                read_data = sdram.read_word(entry.word_addr);
                 read_data_valid = true;
-                state.read_pipe[i].valid = false;
+                entry.valid = false;
             }
         }
     }
@@ -230,28 +231,22 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
     //   sdram_dq      — input  (testbench drives read data to controller)
     //   sdram_dq__out — output (controller drives write data)
     //   sdram_dq__en  — output enable (1 = controller driving)
-    if (read_data_valid) {
-        top->sdram_dq = read_data;
-    } else {
-        top->sdram_dq = 0;
-    }
+    top->sdram_dq = read_data_valid ? read_data : 0;
 
     // Step 2: Decode current-cycle SDRAM command
-    uint8_t cmd = static_cast<uint8_t>(
-        ((top->sdram_csn  & 1) << 3) |
-        ((top->sdram_rasn & 1) << 2) |
-        ((top->sdram_casn & 1) << 1) |
-        ((top->sdram_wen  & 1) << 0)
+    auto cmd = static_cast<uint8_t>(
+        ((top->sdram_csn & 1) << 3) | ((top->sdram_rasn & 1) << 2) | ((top->sdram_casn & 1) << 1) |
+        ((top->sdram_wen & 1) << 0)
     );
 
-    uint8_t  bank = static_cast<uint8_t>(top->sdram_ba & 0x3);
-    uint16_t addr = static_cast<uint16_t>(top->sdram_a & 0x1FFF);
+    auto bank = static_cast<uint8_t>(top->sdram_ba & 0x3);
+    auto addr = static_cast<uint16_t>(top->sdram_a & 0x1FFF);
 
     switch (cmd) {
         case SDRAM_CMD_ACTIVATE: {
             // Record active row for the selected bank
             state.banks[bank].row_active = true;
-            state.banks[bank].active_row = addr;  // A[12:0] = row address
+            state.banks[bank].active_row = addr; // A[12:0] = row address
             state.activate_count++;
             break;
         }
@@ -267,9 +262,7 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
             // But since the controller already decomposes byte addresses and
             // drives column addresses directly, we reconstruct the flat word
             // address that corresponds to the SdramModel's 16-bit word array.
-            uint32_t word_addr = (static_cast<uint32_t>(bank) << 23)
-                               | (row << 9)
-                               | col;
+            uint32_t word_addr = (static_cast<uint32_t>(bank) << 23) | (row << 9) | col;
 
             // Find an empty slot in the read pipeline
             int slot = state.read_pipe_head;
@@ -299,12 +292,10 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
             // (SDRAM captures write data on the same cycle as the WRITE command)
             uint32_t col = addr & 0x1FF;
             uint32_t row = state.banks[bank].active_row;
-            uint32_t word_addr = (static_cast<uint32_t>(bank) << 23)
-                               | (row << 9)
-                               | col;
+            uint32_t word_addr = (static_cast<uint32_t>(bank) << 23) | (row << 9) | col;
 
-            uint16_t wdata = static_cast<uint16_t>(top->sdram_dq__out & 0xFFFF);
-            uint8_t  dqm   = static_cast<uint8_t>(top->sdram_dqm & 0x3);
+            auto wdata = static_cast<uint16_t>(top->sdram_dq__out & 0xFFFF);
+            auto dqm = static_cast<uint8_t>(top->sdram_dqm & 0x3);
             state.write_count++;
 
             // Apply byte mask (DQM): DQM[1] masks upper byte, DQM[0] masks lower byte
@@ -330,8 +321,8 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram,
             // Close row(s). A10=1 means all banks, A10=0 means selected bank.
             if (addr & (1 << 10)) {
                 // Precharge all banks
-                for (int i = 0; i < 4; i++) {
-                    state.banks[i].row_active = false;
+                for (auto& b : state.banks) {
+                    b.row_active = false;
                 }
             } else {
                 state.banks[bank].row_active = false;
@@ -371,9 +362,9 @@ static constexpr int SPI_CDC_SETTLE_TICKS = 6;
 /// Drive a single SPI half-clock period: advance the simulation by
 /// SPI_HALF_PERIOD_TICKS core clock cycles, calling connect_sdram() on
 /// each tick to keep the SDRAM model synchronized.
-static void spi_half_period(Vgpu_top* top, VerilatedFstC* trace,
-                            uint64_t& sim_time, SdramModel& sdram,
-                            SdramConnState& conn) {
+static void spi_half_period(
+    Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time, SdramModel& sdram, SdramConnState& conn
+) {
     for (int i = 0; i < SPI_HALF_PERIOD_TICKS; i++) {
         tick(top, trace, sim_time);
         connect_sdram(top, sdram, conn);
@@ -392,10 +383,15 @@ static void spi_half_period(Vgpu_top* top, VerilatedFstC* trace,
 ///
 /// connect_sdram() is called on every tick() throughout the transaction to
 /// keep the SDRAM model synchronized.
-static void spi_write_transaction(Vgpu_top* top, VerilatedFstC* trace,
-                                  uint64_t& sim_time, SdramModel& sdram,
-                                  SdramConnState& conn,
-                                  uint8_t addr, uint64_t data) {
+static void spi_write_transaction(
+    Vgpu_top* top,
+    VerilatedFstC* trace,
+    uint64_t& sim_time,
+    SdramModel& sdram,
+    SdramConnState& conn,
+    uint8_t addr,
+    uint64_t data
+) {
     // Compose the 72-bit SPI frame: rw=0 (write), addr[6:0], data[63:0]
     // Stored as an array of bits, MSB first.
     // Bit 71 = rw (0 for write)
@@ -421,7 +417,7 @@ static void spi_write_transaction(Vgpu_top* top, VerilatedFstC* trace,
             mosi_val = 0;
         } else if (bit >= 64) {
             // addr[6:0]: bits 70..64 of the frame
-            int addr_bit = bit - 64;  // 6..0
+            int addr_bit = bit - 64; // 6..0
             mosi_val = (addr >> addr_bit) & 1;
         } else {
             // data[63:0]: bits 63..0 of the frame
@@ -469,11 +465,15 @@ static void spi_write_transaction(Vgpu_top* top, VerilatedFstC* trace,
 ///
 /// connect_sdram() is called on every tick() throughout execution to keep
 /// the behavioral SDRAM model synchronized with the SDRAM controller.
-static void execute_script(Vgpu_top* top, VerilatedFstC* trace,
-                           uint64_t& sim_time, SdramModel& sdram,
-                           SdramConnState& conn,
-                           const RegWrite* script, size_t count) {
-    for (size_t i = 0; i < count; i++) {
+static void execute_script(
+    Vgpu_top* top,
+    VerilatedFstC* trace,
+    uint64_t& sim_time,
+    SdramModel& sdram,
+    SdramConnState& conn,
+    std::span<const RegWrite> script
+) {
+    for (size_t i = 0; i < script.size(); i++) {
         // Wait for command FIFO backpressure to clear.
         // gpio_cmd_full is connected to fifo_wr_almost_full in gpu_top.
         uint64_t bp_timeout = 0;
@@ -482,16 +482,18 @@ static void execute_script(Vgpu_top* top, VerilatedFstC* trace,
             connect_sdram(top, sdram, conn);
             bp_timeout++;
             if (bp_timeout > 100000) {
-                fprintf(stderr,
-                        "ERROR: execute_script backpressure timeout at "
-                        "entry %zu (addr=0x%02x)\n", i, script[i].addr);
+                std::cerr << std::format(
+                    "ERROR: execute_script backpressure timeout at "
+                    "entry {} (addr=0x{:02x})\n",
+                    i,
+                    script[i].addr
+                );
                 return;
             }
         }
 
         // Transmit the register write via SPI
-        spi_write_transaction(top, trace, sim_time, sdram, conn,
-                              script[i].addr, script[i].data);
+        spi_write_transaction(top, trace, sim_time, sdram, conn, script[i].addr, script[i].data);
     }
 }
 #endif
@@ -512,12 +514,11 @@ static void execute_script(Vgpu_top* top, VerilatedFstC* trace,
 /// address (the bank/row/col decomposition is invertible for the standard
 /// SDRAM geometry).
 ///
-/// Returns a heap-allocated array of FB_WIDTH * FB_HEIGHT uint16_t RGB565
-/// pixels in row-major order. Caller must free the array.
+/// Returns a vector of FB_WIDTH * FB_HEIGHT uint16_t RGB565 pixels in
+/// row-major order.
 [[maybe_unused]]
-static uint16_t* extract_framebuffer(const SdramModel& sdram,
-                                     uint32_t base_word) {
-    uint16_t* fb = new uint16_t[FB_WIDTH * FB_HEIGHT];
+static std::vector<uint16_t> extract_framebuffer(const SdramModel& sdram, uint32_t base_word) {
+    std::vector<uint16_t> fb(FB_WIDTH * FB_HEIGHT);
 
     for (int y = 0; y < FB_HEIGHT; y++) {
         for (int x = 0; x < FB_WIDTH; x++) {
@@ -530,9 +531,8 @@ static uint16_t* extract_framebuffer(const SdramModel& sdram,
             // addresses, word_addr in the SdramModel equals the byte
             // address (the controller's column LSB is always 0 for
             // 16-bit aligned accesses).
-            uint32_t word_addr = base_word
-                               + static_cast<uint32_t>(y) * 1280
-                               + static_cast<uint32_t>(x) * 2;
+            uint32_t word_addr =
+                base_word + static_cast<uint32_t>(y) * 1280 + static_cast<uint32_t>(x) * 2;
 
             fb[y * FB_WIDTH + x] = sdram.read_word(word_addr);
         }
@@ -540,6 +540,28 @@ static uint16_t* extract_framebuffer(const SdramModel& sdram,
 
     return fb;
 }
+
+// ---------------------------------------------------------------------------
+// Pipeline drain helper
+// ---------------------------------------------------------------------------
+
+#ifdef VERILATOR
+/// Run clock cycles to drain the rendering pipeline, calling
+/// connect_sdram() each cycle.
+static void drain_pipeline(
+    Vgpu_top* top,
+    VerilatedFstC* trace,
+    uint64_t& sim_time,
+    SdramModel& sdram,
+    SdramConnState& conn,
+    uint64_t cycle_count
+) {
+    for (uint64_t c = 0; c < cycle_count; c++) {
+        tick(top, trace, sim_time);
+        connect_sdram(top, sdram, conn);
+    }
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Main
@@ -550,23 +572,21 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // 1. Initialize Verilator
     // -----------------------------------------------------------------------
-    auto* contextp = new VerilatedContext;
+    auto contextp = std::make_unique<VerilatedContext>();
     contextp->commandArgs(argc, argv);
     contextp->traceEverOn(true);
 
-    auto* top = new Vgpu_top{contextp};
+    auto top = std::make_unique<Vgpu_top>(contextp.get());
 
     // Optional FST trace file, enabled by the --trace command-line flag.
-    VerilatedFstC* trace = nullptr;
-    bool trace_enabled = false;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--trace") == 0) {
-            trace_enabled = true;
-        }
-    }
+    std::unique_ptr<VerilatedFstC> trace;
+    auto args = std::span(argv, static_cast<size_t>(argc));
+    bool trace_enabled = std::any_of(args.begin() + 1, args.end(), [](const char* arg) {
+        return std::string_view(arg) == "--trace";
+    });
     if (trace_enabled) {
-        trace = new VerilatedFstC;
-        top->trace(trace, 99);
+        trace = std::make_unique<VerilatedFstC>();
+        top->trace(trace.get(), 99);
         trace->open("harness.fst");
     }
 
@@ -596,49 +616,46 @@ int main(int argc, char** argv) {
     //   --test <name>   — alternative way to specify test name
     //   --trace         — enable FST waveform trace output
 
-    const char* test_name = nullptr;
-    const char* output_file = nullptr;
+    std::string test_name;
+    std::string output_file;
 
     // Simple argument parsing: look for --test flag or positional args.
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
+        std::string_view arg(argv[i]);
+        if (arg == "--test" && i + 1 < argc) {
             test_name = argv[++i];
-        } else if (strcmp(argv[i], "--trace") == 0) {
+        } else if (arg == "--trace") {
             // Already handled above; skip.
-        } else if (strstr(argv[i], ".png") != nullptr) {
-            output_file = argv[i];
+        } else if (arg.find(".png") != std::string_view::npos) {
+            output_file = arg;
         } else {
             // Treat bare argument as test name if not a .png file
-            test_name = argv[i];
+            test_name = arg;
         }
     }
 
     // Test name is required.
-    if (test_name == nullptr) {
-        fprintf(stderr,
-                "Usage: %s <test_name> [output.png] [--trace]\n"
-                "  test_name: gouraud, depth_test, textured, color_combined\n",
-                argv[0]);
-        delete top;
-        delete contextp;
+    if (test_name.empty()) {
+        std::cerr << std::format(
+            "Usage: {} <test_name> [output.png] [--trace]\n"
+            "  test_name: gouraud, depth_test, textured, color_combined\n",
+            argv[0]
+        );
         return 1;
     }
 
     // Default output path: <test_name>.png in the current working directory.
     // The Makefile runs the harness from build/sim_out/, so the default
     // output lands there alongside any waveform traces.
-    char default_output[256];
-    if (output_file == nullptr) {
-        snprintf(default_output, sizeof(default_output),
-                 "%s.png", test_name);
-        output_file = default_output;
+    if (output_file.empty()) {
+        output_file = std::format("{}.png", test_name);
     }
 
     // -----------------------------------------------------------------------
     // 4. Reset the GPU
     // -----------------------------------------------------------------------
     SdramConnState conn;
-    reset(top, trace, sim_time, 100);
+    reset(top.get(), trace.get(), sim_time, 100);
 
     // -----------------------------------------------------------------------
     // 4b. Wait for SDRAM controller initialization
@@ -654,12 +671,10 @@ int main(int argc, char** argv) {
     // at boot time).
     {
         static constexpr uint64_t SDRAM_INIT_WAIT = 25'000;
-        printf("Waiting %llu cycles for SDRAM controller init...\n",
-               (unsigned long long)SDRAM_INIT_WAIT);
-        for (uint64_t i = 0; i < SDRAM_INIT_WAIT; i++) {
-            tick(top, trace, sim_time);
-            connect_sdram(top, sdram, conn);
-        }
+        std::cout << std::format(
+            "Waiting {} cycles for SDRAM controller init...\n", SDRAM_INIT_WAIT
+        );
+        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, SDRAM_INIT_WAIT);
     }
 
     // -----------------------------------------------------------------------
@@ -671,63 +686,54 @@ int main(int argc, char** argv) {
     /// conservative value; the actual pipeline latency is much shorter.
     static constexpr uint64_t PIPELINE_DRAIN_CYCLES = 10'000'000;
 
-    if (strcmp(test_name, "depth_test") == 0) {
+    if (test_name == "depth_test") {
         // VER-011: Depth-tested overlapping triangles.
         // Requires three sequential phases with pipeline drain between each.
-        printf("Running VER-011 (depth-tested overlapping triangles).\n");
+        std::cout << "Running VER-011 (depth-tested overlapping triangles).\n";
 
         // Phase 1: Z-buffer clear pass
-        execute_script(top, trace, sim_time, sdram, conn,
-                       ver_011_zclear_script, ver_011_zclear_script_len);
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_011_zclear_script);
 
         // Drain pipeline after Z-clear
-        for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
-            tick(top, trace, sim_time);
-            connect_sdram(top, sdram, conn);
-        }
+        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
 
         // Phase 2: Triangle A (far, red)
-        execute_script(top, trace, sim_time, sdram, conn,
-                       ver_011_tri_a_script, ver_011_tri_a_script_len);
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_011_tri_a_script);
 
         // Drain pipeline after Triangle A
-        for (uint64_t c = 0; c < PIPELINE_DRAIN_CYCLES; c++) {
-            tick(top, trace, sim_time);
-            connect_sdram(top, sdram, conn);
-        }
+        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
 
         // Phase 3: Triangle B (near, blue)
-        execute_script(top, trace, sim_time, sdram, conn,
-                       ver_011_tri_b_script, ver_011_tri_b_script_len);
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_011_tri_b_script);
 
-    } else if (strcmp(test_name, "gouraud") == 0) {
+    } else if (test_name == "gouraud") {
         // VER-010: Gouraud-shaded triangle.
-        printf("Running VER-010 (Gouraud triangle).\n");
+        std::cout << "Running VER-010 (Gouraud triangle).\n";
 
-        execute_script(top, trace, sim_time, sdram, conn,
-                       ver_010_script, ver_010_script_len);
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_010_script);
 
     } else {
-        fprintf(stderr, "Unknown test: %s\n", test_name);
+        std::cerr << std::format("Unknown test: {}\n", test_name);
         top->final();
         if (trace) {
             trace->close();
-            delete trace;
         }
-        delete top;
-        delete contextp;
         return 1;
     }
 
     // -----------------------------------------------------------------------
     // 5b. Diagnostic: check state right after script execution
     // -----------------------------------------------------------------------
-    printf("DIAG (post-script): rast state=%u, tri_valid=%u, vertex_count=%u\n",
-           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__state,
-           (unsigned)top->rootp->gpu_top__DOT__tri_valid,
-           (unsigned)top->rootp->gpu_top__DOT__u_register_file__DOT__vertex_count);
-    printf("DIAG (post-script): render_mode=0x%llx\n",
-           (unsigned long long)top->rootp->gpu_top__DOT__u_register_file__DOT__render_mode_reg);
+    std::cout << std::format(
+        "DIAG (post-script): rast state={}, tri_valid={}, vertex_count={}\n",
+        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__state),
+        static_cast<unsigned>(top->rootp->gpu_top__DOT__tri_valid),
+        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_register_file__DOT__vertex_count)
+    );
+    std::cout << std::format(
+        "DIAG (post-script): render_mode=0x{:x}\n",
+        static_cast<uint64_t>(top->rootp->gpu_top__DOT__u_register_file__DOT__render_mode_reg)
+    );
 
     // -----------------------------------------------------------------------
     // 6. Run clock until rendering completes
@@ -747,114 +753,132 @@ int main(int argc, char** argv) {
         uint64_t zbuf_test_count = 0;
         uint64_t zbuf_test_fail_count = 0;
         uint64_t write_wait_count = 0;
-        uint64_t range_fail_count = 0;
+        [[maybe_unused]] uint64_t range_fail_count = 0;
         bool rast_started = false;
         bool diag_printed = false;
         for (uint64_t i = 0; i < PIPELINE_DRAIN_CYCLES && !contextp->gotFinish(); i++) {
-            tick(top, trace, sim_time);
-            connect_sdram(top, sdram, conn);
+            tick(top.get(), trace.get(), sim_time);
+            connect_sdram(top.get(), sdram, conn);
 
             unsigned rast_state = top->rootp->gpu_top__DOT__u_rasterizer__DOT__state;
 
             if (top->rootp->gpu_top__DOT__tri_valid) {
                 tri_valid_seen++;
                 if (tri_valid_seen <= 5) {
-                    printf("DIAG: tri_valid pulse at drain cycle %llu\n",
-                           (unsigned long long)i);
+                    std::cout << std::format("DIAG: tri_valid pulse at drain cycle {}\n", i);
                 }
             }
 
             if (rast_state != 0 && !rast_started) {
                 rast_started = true;
-                printf("DIAG: Rasterizer started at drain cycle %llu, state=%u\n",
-                       (unsigned long long)i, rast_state);
+                std::cout << std::format(
+                    "DIAG: Rasterizer started at drain cycle {}, state={}\n", i, rast_state
+                );
             }
 
             // Print bbox and vertex data once after SETUP
-            if (rast_state == 1 && !diag_printed) {  // SETUP = 1
+            if (rast_state == 1 && !diag_printed) { // SETUP = 1
                 diag_printed = true;
-                printf("DIAG: SETUP — vertices: (%u,%u) (%u,%u) (%u,%u)\n",
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__x0,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__y0,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__x1,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__y1,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__x2,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__y2);
-                printf("DIAG: SETUP — colors: r0=%u g0=%u b0=%u, r1=%u g1=%u b1=%u, r2=%u g2=%u b2=%u\n",
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__r0,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__g0,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__b0,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__r1,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__g1,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__b1,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__r2,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__g2,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__b2);
-                printf("DIAG: SETUP — inv_area_reg=%u\n",
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__inv_area_reg);
+                std::cout << std::format(
+                    "DIAG: SETUP — vertices: ({},{}) ({},{}) ({},{})\n",
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__x0),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__y0),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__x1),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__y1),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__x2),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__y2)
+                );
+                std::cout << std::format(
+                    "DIAG: SETUP — colors: r0={} g0={} b0={}, "
+                    "r1={} g1={} b1={}, r2={} g2={} b2={}\n",
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__r0),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__g0),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__b0),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__r1),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__g1),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__b1),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__r2),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__g2),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__b2)
+                );
+                std::cout << std::format(
+                    "DIAG: SETUP — inv_area_reg={}\n",
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__inv_area_reg)
+                );
             }
 
             // Print bbox once after SETUP completes
-            if (rast_state == 2 && edge_test_count == 0) {  // ITER_START = 2
-                printf("DIAG: ITER_START — bbox: x[%u..%u] y[%u..%u]\n",
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_min_x,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_max_x,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_min_y,
-                       (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_max_y);
+            if (rast_state == 2 && edge_test_count == 0) { // ITER_START = 2
+                std::cout << std::format(
+                    "DIAG: ITER_START — bbox: x[{}..{}] y[{}..{}]\n",
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_min_x),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_max_x),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_min_y),
+                    static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__bbox_max_y)
+                );
             }
 
-            if (rast_state == 3) {  // EDGE_TEST = 3
+            if (rast_state == 3) { // EDGE_TEST = 3
                 edge_test_count++;
             }
 
-            if (rast_state == 5) {  // INTERPOLATE = 5
+            if (rast_state == 5) { // INTERPOLATE = 5
                 edge_pass_count++;
             }
 
-            if (rast_state == 12) {  // RANGE_TEST = 12
+            if (rast_state == 12) { // RANGE_TEST = 12
                 range_test_count++;
                 // Print first few range test diagnostics
                 if (range_test_count <= 3) {
-                    printf("DIAG: RANGE_TEST #%llu — interp_z=0x%04X\n",
-                           (unsigned long long)range_test_count,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z);
+                    std::cout << std::format(
+                        "DIAG: RANGE_TEST #{} — interp_z=0x{:04X}\n",
+                        range_test_count,
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z)
+                    );
                 }
             }
 
-            if (rast_state == 6) {  // ZBUF_READ = 6
+            if (rast_state == 6) { // ZBUF_READ = 6
                 zbuf_read_count++;
             }
 
-            if (rast_state == 7) {  // ZBUF_WAIT = 7
+            if (rast_state == 7) { // ZBUF_WAIT = 7
                 zbuf_wait_count++;
             }
 
-            if (rast_state == 8) {  // ZBUF_TEST = 8
+            if (rast_state == 8) { // ZBUF_TEST = 8
                 zbuf_test_count++;
                 if (zbuf_test_count <= 3) {
-                    printf("DIAG: ZBUF_TEST #%llu — interp_z=0x%04X\n",
-                           (unsigned long long)zbuf_test_count,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z);
+                    std::cout << std::format(
+                        "DIAG: ZBUF_TEST #{} — interp_z=0x{:04X}\n",
+                        zbuf_test_count,
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_z)
+                    );
                 }
             }
 
-            if (rast_state == 10) {  // WRITE_WAIT = 10
+            if (rast_state == 10) { // WRITE_WAIT = 10
                 write_wait_count++;
             }
 
-            if (rast_state == 9) {  // WRITE_PIXEL = 9
+            if (rast_state == 9) { // WRITE_PIXEL = 9
                 write_pixel_count++;
                 if (write_pixel_count <= 3) {
-                    printf("DIAG: WRITE_PIXEL #%llu at (%u,%u), "
-                           "port1_addr=0x%06X, port1_wdata=0x%08X, interp_rgb=(%u,%u,%u)\n",
-                           (unsigned long long)write_pixel_count,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__curr_x,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__curr_y,
-                           (unsigned)top->rootp->gpu_top__DOT__arb_port1_addr,
-                           (unsigned)top->rootp->gpu_top__DOT__arb_port1_wdata,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_r,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_g,
-                           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_b);
+                    std::cout << std::format(
+                        "DIAG: WRITE_PIXEL #{} at ({},{}), "
+                        "port1_addr=0x{:06X}, port1_wdata=0x{:08X}, "
+                        "interp_rgb=({},{},{})\n",
+                        write_pixel_count,
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__curr_x),
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__curr_y),
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__arb_port1_addr),
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__arb_port1_wdata),
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_r
+                        ),
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_g
+                        ),
+                        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__interp_b)
+                    );
                 }
             }
 
@@ -862,14 +886,16 @@ int main(int argc, char** argv) {
                 port1_req_count++;
             }
 
-            // Once the rasterizer returns to IDLE and we've started, we can stop early
+            // Once the rasterizer returns to IDLE and we've started, we can
+            // stop early
             if (rast_started && rast_state == 0 && i > 100) {
-                printf("DIAG: Rasterizer returned to IDLE at drain cycle %llu\n",
-                       (unsigned long long)i);
+                std::cout << std::format(
+                    "DIAG: Rasterizer returned to IDLE at drain cycle {}\n", i
+                );
                 // Continue for a short period to drain any pending writes
                 for (uint64_t j = 0; j < 1000; j++) {
-                    tick(top, trace, sim_time);
-                    connect_sdram(top, sdram, conn);
+                    tick(top.get(), trace.get(), sim_time);
+                    connect_sdram(top.get(), sdram, conn);
                     if (top->rootp->gpu_top__DOT__arb_port1_req) {
                         port1_req_count++;
                     }
@@ -877,44 +903,58 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        printf("DIAG: tri_valid seen %llu times during drain\n",
-               (unsigned long long)tri_valid_seen);
-        printf("DIAG: edge_test=%llu, edge_pass=%llu, write_pixel=%llu, port1_req=%llu\n",
-               (unsigned long long)edge_test_count,
-               (unsigned long long)edge_pass_count,
-               (unsigned long long)write_pixel_count,
-               (unsigned long long)port1_req_count);
-        printf("DIAG: range_test=%llu, zbuf_read=%llu, zbuf_wait=%llu, zbuf_test=%llu, "
-               "zbuf_test_fail=%llu, write_wait=%llu\n",
-               (unsigned long long)range_test_count,
-               (unsigned long long)zbuf_read_count,
-               (unsigned long long)zbuf_wait_count,
-               (unsigned long long)zbuf_test_count,
-               (unsigned long long)zbuf_test_fail_count,
-               (unsigned long long)write_wait_count);
+        std::cout << std::format("DIAG: tri_valid seen {} times during drain\n", tri_valid_seen);
+        std::cout << std::format(
+            "DIAG: edge_test={}, edge_pass={}, write_pixel={}, "
+            "port1_req={}\n",
+            edge_test_count,
+            edge_pass_count,
+            write_pixel_count,
+            port1_req_count
+        );
+        std::cout << std::format(
+            "DIAG: range_test={}, zbuf_read={}, zbuf_wait={}, zbuf_test={}, "
+            "zbuf_test_fail={}, write_wait={}\n",
+            range_test_count,
+            zbuf_read_count,
+            zbuf_wait_count,
+            zbuf_test_count,
+            zbuf_test_fail_count,
+            write_wait_count
+        );
     }
 
     // -----------------------------------------------------------------------
     // 6b. Diagnostic: Rasterizer state check
     // -----------------------------------------------------------------------
-    printf("DIAG: Rasterizer state after drain: %u\n",
-           (unsigned)top->rootp->gpu_top__DOT__u_rasterizer__DOT__state);
-    printf("DIAG: tri_valid=%u, vertex_count=%u\n",
-           (unsigned)top->rootp->gpu_top__DOT__tri_valid,
-           (unsigned)top->rootp->gpu_top__DOT__u_register_file__DOT__vertex_count);
-    printf("DIAG: render_mode=0x%llx\n",
-           (unsigned long long)top->rootp->gpu_top__DOT__u_register_file__DOT__render_mode_reg);
-    printf("DIAG: fb_config=0x%llx\n",
-           (unsigned long long)top->rootp->gpu_top__DOT__u_register_file__DOT__fb_config_reg);
+    std::cout << std::format(
+        "DIAG: Rasterizer state after drain: {}\n",
+        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_rasterizer__DOT__state)
+    );
+    std::cout << std::format(
+        "DIAG: tri_valid={}, vertex_count={}\n",
+        static_cast<unsigned>(top->rootp->gpu_top__DOT__tri_valid),
+        static_cast<unsigned>(top->rootp->gpu_top__DOT__u_register_file__DOT__vertex_count)
+    );
+    std::cout << std::format(
+        "DIAG: render_mode=0x{:x}\n",
+        static_cast<uint64_t>(top->rootp->gpu_top__DOT__u_register_file__DOT__render_mode_reg)
+    );
+    std::cout << std::format(
+        "DIAG: fb_config=0x{:x}\n",
+        static_cast<uint64_t>(top->rootp->gpu_top__DOT__u_register_file__DOT__fb_config_reg)
+    );
 
     // -----------------------------------------------------------------------
     // 6c. Diagnostic: SDRAM command counts
     // -----------------------------------------------------------------------
-    printf("DIAG: SDRAM commands: %llu ACTIVATEs, %llu WRITEs, %llu READs\n",
-           (unsigned long long)conn.activate_count,
-           (unsigned long long)conn.write_count,
-           (unsigned long long)conn.read_count);
-    printf("DIAG: Total sim cycles: %llu\n", (unsigned long long)sim_time / 2);
+    std::cout << std::format(
+        "DIAG: SDRAM commands: {} ACTIVATEs, {} WRITEs, {} READs\n",
+        conn.activate_count,
+        conn.write_count,
+        conn.read_count
+    );
+    std::cout << std::format("DIAG: Total sim cycles: {}\n", sim_time / 2);
 
     // -----------------------------------------------------------------------
     // 7. Diagnostic: count non-zero words in the SDRAM model
@@ -933,11 +973,13 @@ int main(int argc, char** argv) {
                 non_zero++;
             }
         }
-        printf("DIAG: Non-zero SDRAM words (full scan): %u / %u\n",
-               non_zero, SDRAM_WORDS);
+        std::cout << std::format(
+            "DIAG: Non-zero SDRAM words (full scan): {} / {}\n", non_zero, SDRAM_WORDS
+        );
         if (non_zero > 0) {
-            printf("DIAG: First non-zero at word 0x%06X = 0x%04X\n",
-                   first_nz_addr, first_nz_val);
+            std::cout << std::format(
+                "DIAG: First non-zero at word 0x{:06X} = 0x{:04X}\n", first_nz_addr, first_nz_val
+            );
         }
     }
 
@@ -946,39 +988,29 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // Framebuffer A base word address (INT-011): 0x000000 / 2 = 0
     uint32_t fb_base_word = 0;
-    uint16_t* fb = extract_framebuffer(sdram, fb_base_word);
+    auto fb = extract_framebuffer(sdram, fb_base_word);
 
     try {
-        png_writer::write_png(
-            output_file, FB_WIDTH, FB_HEIGHT,
-            std::span<const uint16_t>(fb, FB_WIDTH * FB_HEIGHT)
-        );
+        png_writer::write_png(output_file.c_str(), FB_WIDTH, FB_HEIGHT, fb);
     } catch (const std::runtime_error& e) {
-        fprintf(stderr, "ERROR: %s: %s\n", e.what(), output_file);
-        delete[] fb;
+        std::cerr << std::format("ERROR: {}: {}\n", e.what(), output_file);
         top->final();
         if (trace) {
             trace->close();
-            delete trace;
         }
-        delete top;
-        delete contextp;
         return 1;
     }
 
-    printf("Golden image written to: %s\n", output_file);
+    std::cout << std::format("Golden image written to: {}\n", output_file);
 
     // -----------------------------------------------------------------------
     // 8. Cleanup
     // -----------------------------------------------------------------------
-    delete[] fb;
     top->final();
     if (trace) {
         trace->close();
-        delete trace;
     }
-    delete top;
-    delete contextp;
+    // Smart pointers handle deallocation automatically.
 
     return 0;
 
@@ -987,23 +1019,23 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
-    printf("Harness scaffold compiled successfully (no Verilator model).\n");
-    printf("To run a full simulation, build with Verilator.\n");
+    std::cout << "Harness scaffold compiled successfully (no Verilator model).\n";
+    std::cout << "To run a full simulation, build with Verilator.\n";
 
     // Quick smoke test of the PNG writer and SDRAM model.
     SdramModel sdram(1024);
-    sdram.write_word(0, 0xF800);  // Red pixel (RGB565)
-    sdram.write_word(1, 0x07E0);  // Green pixel
-    sdram.write_word(2, 0x001F);  // Blue pixel
+    sdram.write_word(0, 0xF800); // Red pixel (RGB565)
+    sdram.write_word(1, 0x07E0); // Green pixel
+    sdram.write_word(2, 0x001F); // Blue pixel
 
-    uint16_t test_fb[4] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
+    std::array<uint16_t, 4> test_fb = {0xF800, 0x07E0, 0x001F, 0xFFFF};
     try {
         png_writer::write_png("test_scaffold.png", 2, 2, test_fb);
     } catch (const std::runtime_error& e) {
-        fprintf(stderr, "ERROR: PNG writer smoke test failed: %s\n", e.what());
+        std::cerr << std::format("ERROR: PNG writer smoke test failed: {}\n", e.what());
         return 1;
     }
-    printf("PNG writer smoke test passed (test_scaffold.png).\n");
+    std::cout << "PNG writer smoke test passed (test_scaffold.png).\n";
 
     return 0;
 #endif

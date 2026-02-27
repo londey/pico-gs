@@ -25,7 +25,8 @@
 //   3. RENDER_MODE   — Z clear: Z_TEST=1, Z_WRITE=1, Z_COMPARE=ALWAYS, COLOR_WRITE=0
 //   4. Z-clear triangle covering the full screen with Z=0xFFFF
 //   5. (pipeline idle)
-//   6. RENDER_MODE   — depth-tested: GOURAUD=1, Z_TEST=1, Z_WRITE=1, COLOR_WRITE=1, Z_COMPARE=LEQUAL
+//   6. RENDER_MODE   — depth-tested: GOURAUD=1, Z_TEST=1, Z_WRITE=1, COLOR_WRITE=1,
+//   Z_COMPARE=LEQUAL
 //   7. Triangle A vertices (red, Z=0x8000)
 //   8. (pipeline idle)
 //   9. Triangle B vertices (blue, Z=0x4000)
@@ -37,11 +38,10 @@
 //   INT-010 (GPU Register Map) — register definitions
 //   INT-021 (Render Command Format) — command sequence
 
-#include <cstdint>
-
 // This file is #include'd from harness.cpp after the RegWrite struct
 // definition and the ver_010_gouraud.cpp script (which provides the
 // helper functions and register address constants).
+// <cstdint> is already included by harness.cpp.
 
 // ---------------------------------------------------------------------------
 // RENDER_MODE encoding helpers for VER-011
@@ -68,21 +68,19 @@
 ///   Z_TEST_EN=1 (bit 2), Z_WRITE_EN=1 (bit 3), COLOR_WRITE_EN=0 (bit 4),
 ///   Z_COMPARE=ALWAYS (3'b110 = 6, shifted to bits [15:13]).
 /// Encoding: (1<<2) | (1<<3) | (6<<13) = 0x04 | 0x08 | 0xC000 = 0xC00C.
-static constexpr uint64_t RENDER_MODE_ZCLEAR =
-    (1ULL << 2)  |  // Z_TEST_EN
-    (1ULL << 3)  |  // Z_WRITE_EN
-    (6ULL << 13);   // Z_COMPARE = ALWAYS (3'b110)
+static constexpr uint64_t RENDER_MODE_ZCLEAR = (1ULL << 2) | // Z_TEST_EN
+                                               (1ULL << 3) | // Z_WRITE_EN
+                                               (6ULL << 13); // Z_COMPARE = ALWAYS (3'b110)
 
 /// Depth-tested rendering RENDER_MODE:
 ///   GOURAUD_EN=1 (bit 0), Z_TEST_EN=1 (bit 2), Z_WRITE_EN=1 (bit 3),
 ///   COLOR_WRITE_EN=1 (bit 4), Z_COMPARE=LEQUAL (3'b001 = 1, bits [15:13]).
 /// Encoding: (1<<0) | (1<<2) | (1<<3) | (1<<4) | (1<<13) = 0x001D | 0x2000 = 0x201D.
-static constexpr uint64_t RENDER_MODE_DEPTH_TEST =
-    (1ULL << 0)  |  // GOURAUD_EN
-    (1ULL << 2)  |  // Z_TEST_EN
-    (1ULL << 3)  |  // Z_WRITE_EN
-    (1ULL << 4)  |  // COLOR_WRITE_EN
-    (1ULL << 13);   // Z_COMPARE = LEQUAL (3'b001)
+static constexpr uint64_t RENDER_MODE_DEPTH_TEST = (1ULL << 0) | // GOURAUD_EN
+                                                   (1ULL << 2) | // Z_TEST_EN
+                                                   (1ULL << 3) | // Z_WRITE_EN
+                                                   (1ULL << 4) | // COLOR_WRITE_EN
+                                                   (1ULL << 13); // Z_COMPARE = LEQUAL (3'b001)
 
 // ---------------------------------------------------------------------------
 // Z-buffer base address (INT-011 memory map)
@@ -120,7 +118,7 @@ static constexpr uint16_t ZBUFFER_BASE_512 = 0x0800;
 static const RegWrite ver_011_zclear_script[] = {
     // 1. Configure framebuffer: color base = 0, z base = 0x800 (ZBUFFER_ADDR),
     //    width_log2 = 9 (512-wide surface), height_log2 = 9
-    {REG_FB_CONFIG,  pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9)},
+    {REG_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9)},
 
     // 2. Configure scissor to cover full 640x480 viewport
     {REG_FB_CONTROL, pack_fb_control(0, 0, 640, 480)},
@@ -133,24 +131,24 @@ static const RegWrite ver_011_zclear_script[] = {
     //
     //    Triangle 1: (0,0) - (639,0) - (0,479) covers lower-left half
     {REG_AREA_SETUP, compute_area_setup(0, 0, 639, 0, 0, 479)},
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(0, 0, 0xFFFF)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(0, 0, 0xFFFF)},
 
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(639, 0, 0xFFFF)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(639, 0, 0xFFFF)},
 
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
 
     //    Triangle 2: (639,0) - (639,479) - (0,479) covers upper-right half
     {REG_AREA_SETUP, compute_area_setup(639, 0, 639, 479, 0, 479)},
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(639, 0, 0xFFFF)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(639, 0, 0xFFFF)},
 
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(639, 479, 0xFFFF)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(639, 479, 0xFFFF)},
 
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
@@ -180,16 +178,16 @@ static const RegWrite ver_011_tri_a_script[] = {
     {REG_AREA_SETUP, compute_area_setup(100, 100, 400, 100, 250, 380)},
 
     // 2. Submit V0: red at (100, 100), Z=0x8000
-    {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(100, 100, 0x8000)},
+    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(100, 100, 0x8000)},
 
     // 3. Submit V1: red at (400, 100), Z=0x8000
-    {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(400, 100, 0x8000)},
+    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(400, 100, 0x8000)},
 
     // 4. Submit V2: red at (250, 380), Z=0x8000
     //    VERTEX_KICK_012 triggers rasterization of Triangle A (V0, V1, V2).
-    {REG_COLOR,          pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(250, 380, 0x8000)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
@@ -216,16 +214,16 @@ static const RegWrite ver_011_tri_b_script[] = {
     {REG_AREA_SETUP, compute_area_setup(200, 80, 500, 80, 350, 360)},
 
     // 1. Submit V0: blue at (200, 80), Z=0x4000
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(200, 80, 0x4000)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(200, 80, 0x4000)},
 
     // 2. Submit V1: blue at (500, 80), Z=0x4000
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK,  pack_vertex(500, 80, 0x4000)},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
+    {REG_VERTEX_NOKICK, pack_vertex(500, 80, 0x4000)},
 
     // 3. Submit V2: blue at (350, 360), Z=0x4000
     //    VERTEX_KICK_012 triggers rasterization of Triangle B (V0, V1, V2).
-    {REG_COLOR,          pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(350, 360, 0x4000)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
