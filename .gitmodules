@@ -7,3 +7,6 @@
 [submodule ".claude/skills/claude-skill-verilog"]
 	path = .claude/skills/claude-skill-verilog
 	url = git@github.com:londey/claude-skill-verilog.git
+[submodule ".claude/skills/claude_skill_cpp"]
+	path = .claude/skills/claude_skill_cpp
+	url = git@github.com:londey/claude_skill_cpp.git
