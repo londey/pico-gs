@@ -8,7 +8,7 @@
 //   - Auto-refresh: 6-cycle blocking period every 781 cycles
 //   - Burst cancel: complete current word, then PRECHARGE delay
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `3247c7b012e2aedb` 2026-02-26
+// Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
 //
 // References:
 //   UNIT-007 (Memory Arbiter) -- SDRAM interface specification
@@ -16,7 +16,7 @@
 //   UNIT-006 (Pixel Pipeline) -- Texture cache fill timing requirements
 //   REQ-010.02 (Verilator Interactive Simulator)
 
-#include "sdram_model_sim.h"
+#include "sdram_model_sim.hpp"
 
 SdramModelSim::SdramModelSim() {
     reset();

@@ -108,7 +108,7 @@ UNIT-009 RTL remains unchanged; its functionality is covered by its own unit tes
 ## Implementation
 
 - `spi_gpu/sim/gpu_sim.cpp`: Main C++ simulation application (SDL3 window, Verilated model, Lua interpreter, injection loop)
-- `spi_gpu/sim/sdram_model_sim.h`: SDRAM behavioral model header
+- `spi_gpu/sim/sdram_model_sim.hpp`: SDRAM behavioral model header
 - `spi_gpu/sim/sdram_model_sim.cpp`: SDRAM behavioral model implementation
 - `spi_gpu/sim/lua/gpu_regs.lua`: Base Lua register helper script (REQ-010.02-LUA)
 - `spi_gpu/sim/gpu_sim_top.sv`: Simulation top-level wrapper (excludes UNIT-009, exposes pixel tap signals)

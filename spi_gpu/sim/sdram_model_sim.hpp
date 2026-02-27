@@ -12,7 +12,7 @@
 // mask prefetch FSM and texture cache timing hazards as documented in
 // UNIT-007 and UNIT-008.
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `3247c7b012e2aedb` 2026-02-26
+// Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
 //
 // References:
 //   UNIT-007 (Memory Arbiter) -- SDRAM Behavioral Model spec
@@ -20,8 +20,7 @@
 //   UNIT-006 (Pixel Pipeline) -- Texture cache fill timing
 //   REQ-010.02 (Verilator Interactive Simulator)
 
-#ifndef SDRAM_MODEL_SIM_H
-#define SDRAM_MODEL_SIM_H
+#pragma once
 
 #include <cstdint>
 #include <unordered_map>
@@ -150,5 +149,3 @@ private:
     /// Sparse memory storage (word_addr -> 16-bit value).
     std::unordered_map<uint32_t, uint16_t> mem_;
 };
-
-#endif // SDRAM_MODEL_SIM_H

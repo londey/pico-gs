@@ -10,7 +10,7 @@
 // sdram_csn, etc.) using --pins-inout-enables, matching the integration
 // harness approach. The SdramModelSim provides the backing memory store.
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `3247c7b012e2aedb` 2026-02-26
+// Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
 //
 // References:
 //   REQ-010.02 (Verilator Interactive Simulator)
@@ -35,7 +35,7 @@
 #include "verilated.h"
 
 // Behavioral SDRAM model (provides memory storage)
-#include "sdram_model_sim.h"
+#include "sdram_model_sim.hpp"
 
 // SDL3 display
 #include <SDL3/SDL.h>
