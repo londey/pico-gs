@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     # C++ build tools (cmake needed for SDL3 from source)
     cmake \
     pkg-config \
+    clang-format \
     # X11/Wayland dev libraries (required by SDL3 build)
     libx11-dev \
     libxext-dev \
