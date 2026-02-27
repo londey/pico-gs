@@ -18,19 +18,27 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <stdexcept>
 
 namespace png_writer {
+
+/// 8-bit RGB color channels unpacked from a single RGB565 pixel.
+struct Rgb888 {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+};
 
 /// Write a PNG file from an array of RGB565 pixels.
 ///
 /// @param filename     Output file path.
 /// @param width        Image width in pixels.
 /// @param height       Image height in pixels.
-/// @param framebuffer  Array of width * height RGB565 pixels in row-major
+/// @param framebuffer  Span of width * height RGB565 pixels in row-major
 ///                     order (top-left pixel first).
-/// @return true on success, false on error.
-bool write_png(const char* filename, int width, int height,
-               const uint16_t* framebuffer);
+/// @throws std::runtime_error on failure.
+void write_png(const char* filename, int width, int height, std::span<const uint16_t> framebuffer);
 
 /// Convert a single RGB565 pixel to separate R, G, B 8-bit channels.
 ///
@@ -40,9 +48,7 @@ bool write_png(const char* filename, int width, int height,
 ///   B5 -> B8: (B5 << 3) | (B5 >> 2)
 ///
 /// @param rgb565  Input pixel in RGB565 format.
-/// @param r       Output red channel (0-255).
-/// @param g       Output green channel (0-255).
-/// @param b       Output blue channel (0-255).
-void rgb565_to_rgb888(uint16_t rgb565, uint8_t& r, uint8_t& g, uint8_t& b);
+/// @return Rgb888 struct with r, g, b channels (0-255 each).
+Rgb888 rgb565_to_rgb888(uint16_t rgb565);
 
 } // namespace png_writer

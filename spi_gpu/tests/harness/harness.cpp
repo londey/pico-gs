@@ -14,6 +14,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <span>
+#include <stdexcept>
 
 // Verilator-generated header for the top-level GPU module.
 // Guarded so this file can be compiled standalone for CI scaffold checks.
@@ -946,8 +948,13 @@ int main(int argc, char** argv) {
     uint32_t fb_base_word = 0;
     uint16_t* fb = extract_framebuffer(sdram, fb_base_word);
 
-    if (!png_writer::write_png(output_file, FB_WIDTH, FB_HEIGHT, fb)) {
-        fprintf(stderr, "ERROR: Failed to write PNG file: %s\n", output_file);
+    try {
+        png_writer::write_png(
+            output_file, FB_WIDTH, FB_HEIGHT,
+            std::span<const uint16_t>(fb, FB_WIDTH * FB_HEIGHT)
+        );
+    } catch (const std::runtime_error& e) {
+        fprintf(stderr, "ERROR: %s: %s\n", e.what(), output_file);
         delete[] fb;
         top->final();
         if (trace) {
@@ -990,8 +997,10 @@ int main(int argc, char** argv) {
     sdram.write_word(2, 0x001F);  // Blue pixel
 
     uint16_t test_fb[4] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-    if (!png_writer::write_png("test_scaffold.png", 2, 2, test_fb)) {
-        fprintf(stderr, "ERROR: PNG writer smoke test failed.\n");
+    try {
+        png_writer::write_png("test_scaffold.png", 2, 2, test_fb);
+    } catch (const std::runtime_error& e) {
+        fprintf(stderr, "ERROR: PNG writer smoke test failed: %s\n", e.what());
         return 1;
     }
     printf("PNG writer smoke test passed (test_scaffold.png).\n");
