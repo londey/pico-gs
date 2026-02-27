@@ -377,7 +377,7 @@ $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR) $
 		$(HARNESS_RTL_SOURCES) \
 		--top-module gpu_top \
 		$(HARNESS_SOURCES) \
-		-CFLAGS "-I$(abspath $(HARNESS_DIR))" \
+		-CFLAGS "-std=c++20 -I$(abspath $(HARNESS_DIR))" \
 		-o harness
 	cp $(OBJ_DIR)/harness $(BUILD_DIR)/harness
 
