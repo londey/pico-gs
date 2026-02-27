@@ -27,13 +27,13 @@
 
 /// SDRAM behavioral model state machine states.
 enum class SdramState : uint8_t {
-    IDLE,           ///< Waiting for mem_req
-    ACTIVATE,       ///< Row activation (tRCD=2 cycles)
-    READ_CAS,       ///< CAS latency wait (CL=3 cycles)
-    READ_BURST,     ///< Delivering burst read data (1 word/cycle)
-    WRITE_BURST,    ///< Accepting burst write data (1 word/cycle)
-    PRECHARGE,      ///< PRECHARGE delay after burst cancel (2 cycles)
-    REFRESH,        ///< Auto-refresh (6 cycles, mem_ready deasserted)
+    IDLE,        ///< Waiting for mem_req
+    ACTIVATE,    ///< Row activation (tRCD=2 cycles)
+    READ_CAS,    ///< CAS latency wait (CL=3 cycles)
+    READ_BURST,  ///< Delivering burst read data (1 word/cycle)
+    WRITE_BURST, ///< Accepting burst write data (1 word/cycle)
+    PRECHARGE,   ///< PRECHARGE delay after burst cancel (2 cycles)
+    REFRESH,     ///< Auto-refresh (6 cycles, mem_ready deasserted)
 };
 
 /// Behavioral SDRAM model for the Verilator interactive simulator.
@@ -69,23 +69,23 @@ public:
 
     // -- Input signals (set by the testbench / Verilator wrapper before eval) --
 
-    uint8_t  mem_req          = 0;  ///< Memory access request
-    uint8_t  mem_we           = 0;  ///< Write enable (0=read, 1=write)
-    uint32_t mem_addr         = 0;  ///< Byte address (24-bit)
-    uint32_t mem_wdata        = 0;  ///< Write data (single-word, 32-bit)
-    uint8_t  mem_burst_len    = 0;  ///< Burst length in 16-bit words (0=single)
-    uint16_t mem_burst_wdata  = 0;  ///< Write data (burst mode, 16-bit)
-    uint8_t  mem_burst_cancel = 0;  ///< Cancel active burst
+    uint8_t mem_req = 0;          ///< Memory access request
+    uint8_t mem_we = 0;           ///< Write enable (0=read, 1=write)
+    uint32_t mem_addr = 0;        ///< Byte address (24-bit)
+    uint32_t mem_wdata = 0;       ///< Write data (single-word, 32-bit)
+    uint8_t mem_burst_len = 0;    ///< Burst length in 16-bit words (0=single)
+    uint16_t mem_burst_wdata = 0; ///< Write data (burst mode, 16-bit)
+    uint8_t mem_burst_cancel = 0; ///< Cancel active burst
 
     // -- Output signals (driven by the model after eval) --
 
-    uint16_t mem_rdata              = 0;  ///< Read data (16-bit, burst mode)
-    uint32_t mem_rdata_32           = 0;  ///< Assembled 32-bit read (single-word)
-    uint8_t  mem_ack                = 0;  ///< Access complete
-    uint8_t  mem_ready              = 1;  ///< Ready for new request
-    uint8_t  mem_burst_data_valid   = 0;  ///< Valid 16-bit word available (burst read)
-    uint8_t  mem_burst_wdata_req    = 0;  ///< Request next 16-bit write word
-    uint8_t  mem_burst_done         = 0;  ///< Burst transfer complete
+    uint16_t mem_rdata = 0;           ///< Read data (16-bit, burst mode)
+    uint32_t mem_rdata_32 = 0;        ///< Assembled 32-bit read (single-word)
+    uint8_t mem_ack = 0;              ///< Access complete
+    uint8_t mem_ready = 1;            ///< Ready for new request
+    uint8_t mem_burst_data_valid = 0; ///< Valid 16-bit word available (burst read)
+    uint8_t mem_burst_wdata_req = 0;  ///< Request next 16-bit write word
+    uint8_t mem_burst_done = 0;       ///< Burst transfer complete
 
     /// Construct the SDRAM behavioral model.
     SdramModelSim();
@@ -95,8 +95,8 @@ public:
     /// Must be called once per rising clock edge. Updates all output
     /// signals based on current input signals and internal state.
     ///
-    /// @param sim_time  Current simulation time (for diagnostics).
-    void eval(uint64_t sim_time);
+    /// @param sim_time  Current simulation time (reserved for future diagnostics).
+    void eval([[maybe_unused]] uint64_t sim_time);
 
     /// Read a 32-bit value from two consecutive 16-bit words at the given
     /// byte address. Useful for framebuffer readback in the sim app.
@@ -123,28 +123,32 @@ public:
     void reset();
 
     /// Return the current state machine state (for test inspection).
-    SdramState current_state() const { return state_; }
+    SdramState current_state() const {
+        return state_;
+    }
 
     /// Return the current refresh counter value (for test inspection).
-    int refresh_counter() const { return refresh_counter_; }
+    int refresh_counter() const {
+        return refresh_counter_;
+    }
 
 private:
     // -- Internal state --
 
-    SdramState state_          = SdramState::IDLE;
+    SdramState state_ = SdramState::IDLE;
 
-    int delay_counter_         = 0;   ///< Countdown for tRCD, CL, tPRECHARGE, refresh
-    int refresh_counter_       = 0;   ///< Cycles since last auto-refresh
+    int delay_counter_ = 0;   ///< Countdown for tRCD, CL, tPRECHARGE, refresh
+    int refresh_counter_ = 0; ///< Cycles since last auto-refresh
 
-    uint32_t burst_addr_       = 0;   ///< Current word address within burst
-    int      burst_remaining_  = 0;   ///< Words remaining in current burst
-    uint8_t  burst_is_write_   = 0;   ///< Current burst is a write (not read)
-    uint8_t  burst_is_single_  = 0;   ///< Current access is single-word (burst_len==0)
-    uint8_t  single_read_phase_ = 0;  ///< Phase counter for single-word 32-bit assembly
+    uint32_t burst_addr_ = 0;       ///< Current word address within burst
+    int burst_remaining_ = 0;       ///< Words remaining in current burst
+    uint8_t burst_is_write_ = 0;    ///< Current burst is a write (not read)
+    uint8_t burst_is_single_ = 0;   ///< Current access is single-word (burst_len==0)
+    uint8_t single_read_phase_ = 0; ///< Phase counter for single-word 32-bit assembly
 
-    uint16_t single_low_word_  = 0;   ///< Low 16-bit word for single-word 32-bit read
+    uint16_t single_low_word_ = 0; ///< Low 16-bit word for single-word 32-bit read
 
-    uint8_t  cancel_pending_   = 0;   ///< Burst cancel was requested
+    uint8_t cancel_pending_ = 0; ///< Burst cancel was requested
 
     /// Sparse memory storage (word_addr -> 16-bit value).
     std::unordered_map<uint32_t, uint16_t> mem_;
