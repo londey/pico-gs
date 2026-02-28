@@ -104,7 +104,7 @@ cargo build -p pico-gs-pc
 
 After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` → `cargo build --release`
 
-## SystemVerilog Code Style
+## Verilog/SystemVerilog Code Style
 
 - All modules, wires, registers require comments; active-low signals use `_n` suffix
 - `always_ff`: simple `reg <= next_reg` non-blocking assignments only.
