@@ -260,12 +260,13 @@ A 512×512 framebuffer occupies 512 KB; a double-buffered framebuffer plus Z-buf
 
 | Consumer | Rate (512×480 @ 60 Hz) | Priority | Notes |
 |---|---|---|---|
-| Display scanout | ~30 MB/s | Highest | Burst reads, 1 word/pixel |
+| Display scanout | ~30 MB/s | Highest | Burst reads, 1 word/pixel; rate scales with `1<<FB_WIDTH_LOG2` |
 | FB color writes | Variable | 2 | Burst-coalesced |
 | Z-buffer R/W | Variable | 3 | Cached (tile cache) |
 | Texture fills | Variable | Lowest | Cached (texture cache) |
 
-Display scanout consumes ~15% of peak bandwidth, leaving ~170 MB/s for rendering.
+Display scanout consumes ~15% of peak bandwidth at 512×480 (the default configuration), leaving ~170 MB/s for rendering.
+At 256×240 with LINE_DOUBLE enabled, display scanout halves to ~15 MB/s, freeing additional bandwidth for rendering.
 
 ### Z-Buffer Tile Cache
 

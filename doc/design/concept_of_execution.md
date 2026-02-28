@@ -152,12 +152,15 @@ The host boot sequence executes entirely on Core 0 before the render loop begins
 
 **GPU SDRAM layout** (32 MB external SDRAM, W9825G6KH, on the FPGA):
 
+The layout below reflects the default 512×512 surface configuration (FB_CONFIG.WIDTH_LOG2=9, HEIGHT_LOG2=9).
+See INT-011 for the canonical block-tiled address formula and alternative surface sizes.
+
 | Region | Address | Size |
 |--------|---------|------|
-| Framebuffer A | `0x000000` | 1,228,800 bytes (640x480x4) |
-| Framebuffer B | `0x12C000` | 1,228,800 bytes (640x480x4) |
-| Z-Buffer | `0x258000` | 1,228,800 bytes (640x480x4, padded) |
-| Texture Memory | `0x384000` | Remaining space |
+| Framebuffer A | `0x000000` | 524,288 bytes (512×512×2, RGB565) |
+| Framebuffer B | `0x080000` | 524,288 bytes (512×512×2, RGB565) |
+| Z-Buffer | `0x100000` | 524,288 bytes (512×512×2, Z16) |
+| Texture Memory | `0x180000` | Remaining space |
 
 **RP2350 SRAM** (~520 KB total): The firmware is entirely `no_std` with no heap allocator. All state is statically allocated: the command queue is a 64-entry static `spsc::Queue` (~16.5 KB at ~264 bytes per RenderMeshPatch), Core 1 has a 4 KB stack plus ~8 KB working RAM (DMA input buffers, vertex cache, clip workspace, SPI output buffers), and mesh data is const flash data from the asset pipeline (no runtime mesh generation). Texture data is stored in flash (linked into the firmware binary). The `GpuVertex` struct packs to ~24 bytes.
 

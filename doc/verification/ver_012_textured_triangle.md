@@ -80,7 +80,11 @@ The integration harness drives the following register-write sequence into UNIT-0
    - All other mode bits = 0 (no dithering, no alpha blend, no stipple, no culling)
 
 4. **Configure framebuffer:**
-   Write `FB_CONFIG` for the color framebuffer base address and dimensions (640x480).
+   Write `FB_CONFIG` (address `0x40`) with:
+   - `fb_color_base` = chosen color buffer base address (SDRAM-aligned).
+   - `fb_width_log2 = 9` (surface width = 512 pixels).
+   - `fb_height_log2 = 9` (surface height = 512 pixels).
+   The harness framebuffer readback in step 9 must use `WIDTH_LOG2 = 9` for the block-tiled address calculation (INT-011).
 
 5. **Submit vertex 0:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque -- modulated with texture).
@@ -101,7 +105,8 @@ The integration harness drives the following register-write sequence into UNIT-0
    Run the simulation until the `frag_done` signal (or equivalent pipeline-idle indicator) asserts, indicating all fragments have been processed and written to the behavioral SDRAM model.
 
 9. **Read back framebuffer:**
-   The harness reads the simulated framebuffer contents from the behavioral SDRAM model (using the 4x4 block-tiled address layout per INT-011) and serializes the pixel data as a PPM file at `spi_gpu/tests/sim_out/textured_triangle.ppm`.
+   The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4x4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 4.
+   The pixel data is serialized as a PPM file at `spi_gpu/tests/sim_out/textured_triangle.ppm`.
 
 10. **Pixel-exact comparison:**
     Compare the simulation output against the approved golden image:
@@ -152,4 +157,6 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **VER-012 together with VER-005** (Texture Decoder Unit Testbench) jointly satisfies REQ-003.01 per the requirement document's Verification Method section.
   VER-005 verifies individual format decoders at the unit level; VER-012 verifies the full texture sampling path through the integrated pipeline.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
-  The golden image includes the full 640x480 framebuffer, so the background color is part of the pixel-exact comparison.
+  The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
+  See `test_strategy.md` for the re-approval workflow.

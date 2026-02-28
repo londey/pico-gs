@@ -30,8 +30,8 @@ None
 - Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata.
   In Verilator simulation with `SIM_DIRECT_CMD` defined, these signals are driven by the injection path in gpu_top.sv (see UNIT-002), which bypasses UNIT-001 but presents the identical cmd_* bus to UNIT-003 — no change to register_file.sv itself is required.
 - Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses
-- Outputs render target configuration (fb_config) to UNIT-007 (SRAM Arbiter) and the pixel pipeline
-- Outputs display configuration (fb_display) to UNIT-008 (Display Controller)
+- Outputs render target configuration (fb_config, including `fb_width_log2` and `fb_height_log2`) to UNIT-005 (Rasterizer), UNIT-006 (Pixel Pipeline), and UNIT-007 (Memory Arbiter)
+- Outputs display configuration (fb_display, including `fb_display_width_log2` and `fb_line_double`) to UNIT-008 (Display Controller)
 - Outputs mode flags (gouraud, textured, z_test, z_write, color_write, dither_en, alpha_blend, cull_mode, z_compare, stipple_en, alpha_test_func, alpha_ref) to rasterizer pipeline
 - Outputs Z range clipping parameters (z_range_min, z_range_max) to pixel pipeline (UNIT-006)
 - Outputs scissor rectangle (scissor_x, scissor_y, scissor_width, scissor_height) to pixel pipeline (UNIT-006)
@@ -179,8 +179,12 @@ The register file maintains a 3-entry vertex ring buffer indexed by vertex_count
 - **TEX0_CFG (0x10), TEX1_CFG (0x11):** Any write invalidates the corresponding texture cache in UNIT-006.
 - **FB_DISPLAY (0x41):** Blocking register — write blocks the GPU pipeline until the next vsync, then applies atomically.
   Outputs fb_display_addr, fb_lut_addr, fb_display_width_log2, fb_line_double, color_grade_enable to UNIT-008.
+  `fb_display_width_log2` drives the horizontal scaler source width in UNIT-008 (`source_width = 1 << fb_display_width_log2`).
+  `fb_line_double` enables vertical line doubling in UNIT-008 (240 source rows output twice to fill 480 display lines).
   If COLOR_GRADE_ENABLE=1 and LUT_ADDR!=0, the hardware auto-loads the LUT from SDRAM during vblank.
 - **FB_CONFIG (0x40):** Non-blocking render target switch.
+  `fb_width_log2` drives the tiled address stride in UNIT-005 (Rasterizer) and UNIT-006 (Pixel Pipeline): stride = `1 << fb_width_log2` tiles per row.
+  `fb_height_log2` drives the bounding box scissor upper bound in UNIT-005: Y clamp = `(1 << fb_height_log2) - 1`.
 - **FB_CONTROL (0x43):** Scissor rectangle configuration.
 
 **Cycle Counter:**

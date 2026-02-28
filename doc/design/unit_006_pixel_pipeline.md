@@ -179,7 +179,7 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
 ### Tiled Framebuffer Address Calculation
 
 The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
-For a pixel at (x, y) in a surface with width 2^WIDTH_LOG2 pixels:
+For a pixel at (x, y) in a surface with width `2^WIDTH_LOG2` pixels, where `WIDTH_LOG2 = fb_width_log2` from UNIT-003 (Register File):
 
 ```
 block_x   = x >> 2
@@ -189,6 +189,9 @@ local_y   = y & 3
 block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x
 byte_addr = base + block_idx * 32 + (local_y * 4 + local_x) * 2
 ```
+
+`WIDTH_LOG2` is taken from the `fb_width_log2` output of UNIT-003 at the time of the write.
+It is never hardcoded; different render passes (e.g. rendering to a 256-wide off-screen target vs. the 512-wide display framebuffer) use whatever value FB_CONFIG.WIDTH_LOG2 holds.
 
 Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes.
 

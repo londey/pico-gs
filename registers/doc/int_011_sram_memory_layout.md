@@ -344,21 +344,36 @@ Each RGB888 entry: 3 bytes in order R[7:0], G[7:0], B[7:0]
 
 ```
 Priority: HIGHEST
-Pattern: Sequential burst reads, tile-by-tile along each scanline
-Bandwidth: 512 × 2 × 60 × 480 = ~29.5 MB/s (16-bit words, 512-wide surface)
-Access: Burst read, 16 words per 4×4 tile, tiles in row-major order per scanline
-Timing: Must complete before next scanline starts
+Pattern: Sequential burst reads, tile-by-tile along each source scanline
+Source width: 1 << FB_DISPLAY.FB_WIDTH_LOG2 pixels (configurable; see INT-010)
+Bandwidth: source_width × 2 × 60 × source_height = variable
+  512-wide (WIDTH_LOG2=9), 480 rows:  512 × 2 × 60 × 480 ≈ 29.5 MB/s
+  256-wide (WIDTH_LOG2=8), 240 rows:  256 × 2 × 60 × 240 ≈  7.4 MB/s (with LINE_DOUBLE=1)
+Access: Burst read, 16 words per 4×4 tile, tiles in row-major order per source scanline
+Timing: Must complete before next scanline starts; see tile count calculation below
 ```
 
-**4×4 Tile Access**: The display controller reads tiles in row-major order along each scanline.
+**Configurable Source Width:**
+The display controller (UNIT-008) reads `source_width = 1 << FB_DISPLAY.FB_WIDTH_LOG2` RGB565 pixels per source scanline.
+After fetching, a Bresenham nearest-neighbor scaler stretches the `source_width` pixels to the 640-pixel DVI output (INT-002, REQ-006.01) without additional SDRAM reads.
+The output is always 640×480 regardless of the source surface dimensions.
+
+**4×4 Tile Access**: The display controller reads tiles in row-major order along each source scanline.
 For each 4-pixel-wide tile, 16 consecutive 16-bit words are read in a burst from SDRAM.
 Each burst fits within a single SDRAM row (16 words = 32 bytes, well within a 512-column row).
 SDRAM timing per tile: ACTIVATE (1 cycle) + tRCD (2 cycles) + READ (1 cycle) + CL (3 cycles) + 16 data words = ~23 cycles.
 
-A 512-pixel scanline consists of 128 tiles (512 / 4).
-Total cycles per scanline ≈ 128 × 23 = ~2,944 cycles.
+Number of tiles per source scanline = `source_width / 4 = 1 << (FB_WIDTH_LOG2 - 2)`.
+- 512-wide source: 128 tiles; total cycles per scanline ≈ 128 × 23 = ~2,944 cycles.
+- 256-wide source: 64 tiles; total cycles per scanline ≈ 64 × 23 = ~1,472 cycles.
+
 Available time per scanline at 100 MHz = 3,200 cycles (32 µs × 100 MHz).
 FIFO prefetch during blanking keeps scanout ahead of the display beam.
+
+**LINE_DOUBLE Impact:**
+When `FB_DISPLAY.LINE_DOUBLE=1`, each source scanline is read from SDRAM only once and output twice (rows `2s` and `2s+1` from the same source row `s`).
+This halves display SDRAM reads: 240 source rows × `source_width/4` tiles instead of 480 rows.
+For a 256×240 surface with LINE_DOUBLE=1, display bandwidth ≈ 7.4 MB/s — less than one-quarter of the 512-wide reference.
 
 **Scanline Timing**:
 - Pixel clock: 25.000 MHz (derived as 4:1 divisor from 100 MHz core clock)
@@ -457,15 +472,18 @@ The 4×4 block-tiled layout ensures most accesses are 16-word bursts within a si
 
 | Consumer | Bandwidth | % of Total | Notes |
 |----------|-----------|------------|-------|
-| Display scanout | ~30 MB/s | 15% | 16-word tile bursts; 512-wide surface at 60 Hz |
+| Display scanout | ~30 MB/s (max) | 15% | 16-word tile bursts; 512-wide surface at 60 Hz (LINE_DOUBLE=0) |
+| Display scanout | ~7.4 MB/s (min) | 3.7% | 256-wide surface with LINE_DOUBLE=1 at 60 Hz |
 | Framebuffer write | ~40 MB/s | 20% | 16-word tile bursts; coalesced writes |
 | Z-buffer R/W | ~10 MB/s | 5% | Tile cache absorbs 85–95% of Z traffic |
 | Texture fetch | ~5–15 MB/s | 2.5–7.5% | Sequential cache fills; >90% hit rate |
 | Auto-refresh | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
-| **Headroom** | ~100–115 MB/s | ~51–57% | Available for fill rate, overdraw |
+| **Headroom** | ~100–115 MB/s | ~51–57% | Available for fill rate, overdraw (at 512-wide reference) |
 
-**Note**: Display scanout bandwidth reflects 512-wide (not 640-wide) surface at 60 Hz.
-The display controller stretches horizontally to fill the 640-pixel DVI output without additional SDRAM reads.
+**Note**: Display scanout bandwidth is proportional to `(1 << FB_WIDTH_LOG2) × source_rows × 2 × 60`.
+The 512-wide surface (WIDTH_LOG2=9, 480 rows, LINE_DOUBLE=0) is the reference case (~30 MB/s).
+Smaller surfaces or LINE_DOUBLE=1 reduce display bandwidth and free more arbitration time for rendering.
+The display controller always stretches the source image to the full 640-pixel DVI output using a Bresenham nearest-neighbor scaler, without additional SDRAM reads (INT-010, INT-002).
 
 ### Fill Rate Estimate
 
@@ -672,7 +690,9 @@ For lowest latency input response:
 0x060000  Textures      (~31.6 MB)
 ```
 
-Display controller uses LINE_DOUBLE=1 in FB_DISPLAY to output each row twice for 480-line fill.
+Display controller uses `FB_DISPLAY.LINE_DOUBLE=1` (INT-010) to output each source row twice, filling 480 display lines from 240 source rows.
+`FB_DISPLAY.FB_WIDTH_LOG2=8` configures the horizontal scaler source width to 256 pixels; the scaler stretches to 640 output pixels (2.5× horizontal scale).
+`FB_CONFIG.WIDTH_LOG2=8`, `FB_CONFIG.HEIGHT_LOG2=8` configure the rasterizer stride and scissor for the 256×256 render surface.
 
 ---
 

@@ -38,7 +38,7 @@ Scanline FIFO and display pipeline
 ### Inputs
 
 - Framebuffer pixel data (RGB565) from SDRAM via scanline FIFO
-- Register state: FB_DISPLAY (includes framebuffer address, LUT address, color grading enable)
+- Register state: FB_DISPLAY (includes framebuffer address, LUT address, color grading enable, FB_DISPLAY.FB_WIDTH_LOG2, FB_DISPLAY.LINE_DOUBLE)
 - LUT data from SDRAM (384 bytes via DMA at vsync trigger)
 - Display timing signals (hsync, vsync, pixel clock at 25.000 MHz)
 
@@ -63,10 +63,18 @@ UNIT-009 need not be instantiated in the simulation top-level wrapper.
 
 ### Internal State
 
-- Scanline FIFO (prefetch buffer for display scanout)
+- Scanline FIFO (prefetch buffer for display scanout; depth sized for one full source scanline at maximum FB_WIDTH_LOG2=9, i.e. 512 RGB565 words)
 - Scanline prefetch FSM state (PREFETCH_IDLE, PREFETCH_BURST, PREFETCH_DONE)
-- Burst read address register (auto-incrementing within scanline)
+- Burst read address register (auto-incrementing within source scanline)
 - Burst remaining counter (16-bit words remaining in current burst)
+- **Horizontal scaler state** (Bresenham accumulator):
+  - `h_accum` [9:0]: Bresenham accumulator; initialized to `source_width / 2` at scanline start
+  - `h_src_pos` [8:0]: Current source pixel index within scanline FIFO (0 to source_width-1)
+  - Scaler advances `h_src_pos` by 1 whenever `h_accum >= 640`; `h_accum` wraps modulo 640 and adds `source_width` on each output pixel
+  - `source_width` = `1 << FB_DISPLAY.FB_WIDTH_LOG2`
+- **Line doubling state** (LINE_DOUBLE):
+  - `line_double_second` [0]: 0 = first emission of source row, 1 = second emission (repeat)
+  - When `FB_DISPLAY.LINE_DOUBLE=1`: source row index `v_src = v_count >> 1`; `line_double_second` toggles each output row; source scanline is re-read from FIFO (or from a line buffer) on the repeated row
 - Color grading LUT: 3 sub-LUTs in 1 EBR block (512×36 configuration), double-buffered
   - Red LUT: 32 entries × 24 bits (RGB888)
   - Green LUT: 64 entries × 24 bits (RGB888)
@@ -83,8 +91,15 @@ UNIT-009 need not be instantiated in the simulation top-level wrapper.
 
 **Display Scanout Pipeline:**
 
-1. **Framebuffer Read**: Fetch RGB565 pixels from SDRAM at FB_DISPLAY address via burst reads, buffered through scanline FIFO
-2. **Color Grading LUT** (if FB_DISPLAY[0] COLOR_GRADE_ENABLE=1):
+1. **Framebuffer Read**: Fetch `1 << FB_DISPLAY.FB_WIDTH_LOG2` RGB565 source pixels per source scanline from SDRAM via burst reads, buffered through scanline FIFO.
+   - When `LINE_DOUBLE=0`: source scanline `s = v_count` (480 unique source rows for a 480-line surface, or a subset of the surface for shorter surfaces)
+   - When `LINE_DOUBLE=1`: source scanline `s = v_count >> 1` (240 unique source rows; each row is emitted twice to fill 480 display lines without re-reading SDRAM)
+2. **Horizontal Scaling** (Bresenham nearest-neighbor, always active):
+   - Source width: `source_width = 1 << FB_DISPLAY.FB_WIDTH_LOG2` (e.g. 512 for WIDTH_LOG2=9, 256 for WIDTH_LOG2=8)
+   - Output width: always 640 pixels (DVI output requirement, INT-002)
+   - Bresenham accumulator: `accum` initialized to `source_width >> 1` at scanline start; each output pixel: emit FIFO[h_src_pos], add `source_width` to `accum`; when `accum >= 640`, advance `h_src_pos` by 1 and subtract 640 from `accum`
+   - When `source_width == 640`: scaler passes through 1:1 with no stretching (accumulator always increments h_src_pos by 1)
+3. **Color Grading LUT** (if FB_DISPLAY[0] COLOR_GRADE_ENABLE=1):
    a. Extract RGB565 components: R5=pixel[15:11], G6=pixel[10:5], B5=pixel[4:0]
    b. Parallel LUT lookups (1 cycle EBR read):
       - `lut_r_out = red_lut[R5]` → RGB888
@@ -101,26 +116,30 @@ UNIT-009 need not be instantiated in the simulation top-level wrapper.
 **Scanline Prefetch with Burst Reads:**
 
 The scanline prefetch FSM reads framebuffer data from SDRAM into the scanline FIFO.
-Each scanline of 640 RGB565 pixels requires 1280 bytes (640 × 16-bit words).
+Each source scanline consists of `1 << FB_DISPLAY.FB_WIDTH_LOG2` RGB565 pixels (`source_width * 2` bytes).
 The prefetch FSM issues burst read requests to UNIT-007 (Memory Arbiter) to read multiple sequential 16-bit words per arbiter grant, reducing arbitration overhead.
+When `LINE_DOUBLE=1`, a source scanline is prefetched once and its FIFO contents are used for both the first and second output rows; SDRAM is not re-read for the repeated row.
 
 Prefetch FSM states:
 ```
 PREFETCH_IDLE:
   - Wait for scanline FIFO to fall below the refill threshold
-  - Latch next read address from current framebuffer base + scanline offset
+  - If LINE_DOUBLE=1 and line_double_second=1: reuse FIFO contents (no SDRAM read), skip to PREFETCH_DONE
+  - Otherwise: latch next read address from framebuffer base + (source_row × source_width tiles)
+    where source_row = v_count >> LINE_DOUBLE (shift by 1 if LINE_DOUBLE, else v_count directly)
   - Transition to PREFETCH_BURST
 
 PREFETCH_BURST:
   - Assert port0_req with port0_burst_len set to burst length (number of sequential 16-bit words)
   - Address auto-increments within the SDRAM controller for each beat of the burst
   - On each port0_ack: push received data into scanline FIFO, decrement remaining burst count
+  - Total words to fetch per source scanline = source_width = 1 << FB_DISPLAY.FB_WIDTH_LOG2
   - When burst completes (remaining count == 0):
     * If scanline FIFO is full or scanline read complete: transition to PREFETCH_IDLE
     * If more data needed and FIFO has space: issue next burst (remain in PREFETCH_BURST)
 
 PREFETCH_DONE:
-  - All pixels for current scanline have been prefetched
+  - All pixels for current source scanline have been prefetched
   - Wait for next scanline boundary, then transition to PREFETCH_IDLE
 ```
 
@@ -132,7 +151,8 @@ The scanline FIFO depth must accommodate at least one full burst plus SDRAM acce
 - Single-word mode: each SDRAM read requires a full arbitration cycle (request, grant, row activate + CAS latency, ack) — higher overhead per word than burst mode
 - Burst mode: first word has the same setup cost, but subsequent words in the burst require only 1 cycle each (address auto-increments, no re-arbitration)
 - For a burst of N 16-bit words: burst mode completes in approximately (row activate + CAS latency + N) cycles vs. single-word mode requiring full access setup per word
-- Display scanout at 640 pixels per line benefits substantially because the entire scanline is a sequential address range
+- Display scanout per source scanline benefits substantially because all `source_width` pixels are a sequential address range in the 4×4 block-tiled layout; the entire scanline is fetched with a small number of 16-word tile bursts
+- With `LINE_DOUBLE=1`, each source scanline is read only once from SDRAM regardless of the doubled output, halving display bandwidth compared to LINE_DOUBLE=0 at the same source height
 
 **LUT DMA Burst Support:**
 
@@ -214,6 +234,16 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
   - Verify prefetch FSM transitions to PREFETCH_IDLE when FIFO is full
   - Verify no FIFO underrun during active display with burst reads enabled
   - Verify burst reads do not cross scanline address boundaries
+  - Verify source scanline length equals `1 << FB_DISPLAY.FB_WIDTH_LOG2` (not a hardcoded 640)
+- **Horizontal scaler verification** (Bresenham nearest-neighbor):
+  - Verify 512→640 scaling: output 640 pixels from a 512-pixel source; check pixel 0, 127, 319, 511, 639 map to correct source positions
+  - Verify 256→640 scaling: output 640 pixels from a 256-pixel source; confirm no missing or duplicated source pixels relative to expected Bresenham positions
+  - Verify 640→640 passthrough: scaler produces 1:1 copy without artifact
+  - Verify accumulator initialised to `source_width >> 1` at scanline start (mid-point bias)
+- **LINE_DOUBLE verification**:
+  - Verify when LINE_DOUBLE=1: source scanline `s` used for output rows `2s` and `2s+1`
+  - Verify no SDRAM re-read for the second output row (SDRAM read count halved vs LINE_DOUBLE=0)
+  - Verify when LINE_DOUBLE=0: each output row reads a unique source row
 - **LUT DMA burst read verification**:
   - Verify LUT DMA uses burst requests for the 192 sequential 16-bit SDRAM reads
   - Verify LUT DMA burst completes within vblank period
@@ -232,18 +262,38 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
   - Burst remaining counter: ~10 FFs
   - Burst request logic: ~20 LUTs
   - Total burst addition: ~70 LUTs, ~50 FFs
+- **Horizontal scaler (Bresenham)**:
+  - Accumulator register + comparator: ~20 FFs, ~30 LUTs
+  - Source pixel index counter: ~10 FFs
+  - Total scaler addition: ~30 LUTs, ~30 FFs
+- **LINE_DOUBLE control**:
+  - Row-repeat flag + source-row address mux: ~10 FFs, ~10 LUTs
 - Scanline FIFO: 1 EBR block (1024×16, inferred as DP16KD)
-- **Total**: 2 EBR, ~520 LUTs, ~230 FFs
+- **Total**: 2 EBR, ~570 LUTs, ~270 FFs
 
 ## Design Notes
 
 Migrated from speckit module specification.
+
+**Horizontal Scaling and LINE_DOUBLE:**
+The display controller always outputs 640 pixels per active scanline to meet the DVI timing requirement (INT-002, REQ-006.01).
+The source framebuffer width `1 << FB_DISPLAY.FB_WIDTH_LOG2` can be smaller than 640 (e.g. 512 for WIDTH_LOG2=9, 256 for WIDTH_LOG2=8).
+A Bresenham nearest-neighbor accumulator maps 640 output pixel positions to source FIFO positions without any multiply hardware.
+The accumulator is initialised to `source_width >> 1` (mid-point bias) at the start of each scanline, which ensures symmetric rounding of the scaling ratio.
+
+When `FB_DISPLAY.LINE_DOUBLE=1`, only 240 source rows are read (source row `s = v_count >> 1`).
+The scanline FIFO contents are reused for both output rows `2s` and `2s+1`; the SDRAM read for row `2s+1` is skipped entirely.
+This halves the display scanout SDRAM bandwidth compared to a full-height surface, freeing more arbiter time for triangle rendering.
+
+The scaler and LINE_DOUBLE control operate in the `clk_pixel` domain (25 MHz), downstream of the scanline FIFO.
+The FIFO crossing and burst prefetch operate in `clk_core` (100 MHz) as before.
 
 **SDRAM Behavioral Model (Verilator Simulation):**
 In the Verilator interactive simulator (UNIT-037), the physical W9825G6KH SDRAM is replaced by a C++ behavioral model.
 The model presents the same mem_req/mem_we/mem_addr/mem_wdata/mem_rdata/mem_ack/mem_ready/mem_burst_* handshake interface to UNIT-007 (Memory Arbiter).
 To ensure the prefetch FSM and LUT DMA controller behave correctly, the model must replicate CAS latency CL=3, row activation timing (tRCD), auto-refresh blocking periods, and burst completion sequencing as specified in UNIT-007's SDRAM interface notes.
 A model that omits these timing behaviors will cause FIFO underruns or incorrect LUT loads during interactive simulation.
+When testing LINE_DOUBLE behavior, the behavioral model must track whether the second output row correctly avoids issuing SDRAM reads.
 
 **Boot Screen Interaction (DD-019):**
 The display controller begins scanout immediately after PLL lock and reset release.

@@ -77,7 +77,7 @@ The GPU is controlled via a 7-bit address space providing 128 register locations
 1. **SPI transactions** from the host (primary, steady-state source)
 2. **Pre-populated boot commands** baked into the FIFO memory at bitstream generation time (autonomous, power-on only; see DD-019)
 
-The boot sequence uses registers COLOR (0x00), VERTEX_KICK_012 (0x07), RENDER_MODE (0x30), FB_DRAW (0x40), and FB_DISPLAY (0x41) to render a self-test screen.
+The boot sequence uses registers COLOR (0x00), VERTEX_KICK_012 (0x07), RENDER_MODE (0x30), FB_CONFIG (0x40), and FB_DISPLAY (0x41) to render a self-test screen.
 All register semantics are identical regardless of command source.
 
 **Major Features**:
@@ -159,12 +159,12 @@ All register semantics are identical regardless of command source.
 | 0x32 | - | - | Reserved |
 | 0x33-0x3F | - | - | Reserved (rendering config) |
 | **Framebuffer** ||||
-| 0x40 | FB_DRAW | R/W | Draw target framebuffer address |
-| 0x41 | FB_DISPLAY | R/W | **Display scanout + LUT control (non-blocking)** |
-| 0x42 | FB_ZBUFFER | R/W | Z-buffer address (Z_COMPARE in RENDER_MODE) |
+| 0x40 | FB_CONFIG | R/W | **Render target: color/Z base addresses + surface dimensions (WIDTH_LOG2, HEIGHT_LOG2)** |
+| 0x41 | FB_DISPLAY | R/W | **Display scanout + LUT control + FB_WIDTH_LOG2 + LINE_DOUBLE (non-blocking)** |
+| 0x42 | - | - | Reserved (previously FB_ZBUFFER; Z base address now in FB_CONFIG) |
 | 0x43 | FB_CONTROL | R/W | **Scissor rectangle** |
 | 0x44-0x46 | - | - | Reserved |
-| 0x47 | FB_DISPLAY_SYNC | R/W | **Display scanout + LUT control (vsync-blocking)** |
+| 0x47 | FB_DISPLAY_SYNC | R/W | **Display scanout + LUT control (vsync-blocking, same format as FB_DISPLAY)** |
 | 0x48-0x4F | - | - | Reserved (framebuffer config) |
 | **Performance Timestamp** ||||
 | 0x50 | PERF_TIMESTAMP | R/W | **Write: capture cycle counter to SDRAM[22:0]; Read: live counter** |
@@ -836,7 +836,7 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
 | Depth-only shadow | 0 | 1 | 1 | 0 | LEQUAL | DISABLED | CULL_CW |
 
 **Notes**:
-- Z_COMPARE moved from FB_ZBUFFER[34:32] for better grouping with Z_TEST_EN/Z_WRITE_EN
+- Z_COMPARE is in RENDER_MODE[15:13]; the Z-buffer base address is in FB_CONFIG[31:16] (Z_BASE)
 - ALPHA_BLEND expanded from 2 bits to 3 bits for future blend modes (e.g., multiply, screen, etc.)
 - Dithering typically enabled for all 3D rendering, disabled for UI
 - Z_WRITE_EN should be 0 for transparent objects (still test depth, don't write it)
@@ -895,19 +895,35 @@ See RENDER_MODE register (0x30) for current dithering control.
 
 ## Framebuffer & Z-Buffer Registers (0x40-0x4F)
 
-### 0x40: FB_DRAW
+### 0x40: FB_CONFIG
 
-Address where triangles are rendered. Must be 4K aligned.
+Render target configuration: color and Z-buffer base addresses with power-of-two surface dimensions.
 
 ```
-[63:32]   Reserved (write as 0)
-[31:12]   Base address bits [31:12]
-[11:0]    Ignored (assumed 0)
+[63:40]   Reserved (write as 0)
+[39:36]   HEIGHT_LOG2: log₂(surface height in pixels), 0-15
+          Effective height = 1 << HEIGHT_LOG2 pixels
+          Rasterizer uses this to compute bounding box Y scissor: clamp Y to (1<<HEIGHT_LOG2)-1
+[35:32]   WIDTH_LOG2: log₂(surface width in pixels), 0-15
+          Effective width = 1 << WIDTH_LOG2 pixels
+          Rasterizer and pixel pipeline use this for 4×4 block-tiled address calculation:
+            stride = 1 << (WIDTH_LOG2 - 2) tiles per row
+[31:16]   Z_BASE: Z-buffer base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 - 0x1FFFE00 (32 MiB SDRAM)
+[15:0]    COLOR_BASE: Color buffer base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 - 0x1FFFE00 (32 MiB SDRAM)
 ```
+
+**Consuming Units**:
+- **UNIT-005 (Rasterizer)**: uses WIDTH_LOG2 for tiled stride, HEIGHT_LOG2 for Y scissor bound
+- **UNIT-006 (Pixel Pipeline)**: uses WIDTH_LOG2 for tiled address calculation on all framebuffer and Z-buffer writes/reads
+- FB_CONFIG is independent of FB_DISPLAY so that render-to-texture passes can reprogram the draw surface mid-frame without affecting the displayed framebuffer
 
 **Notes**:
-- Default after reset: 0x000000
-- Changing FB_DRAW mid-frame allows render-to-texture
+- Default after reset: COLOR_BASE=0x000000, Z_BASE=0x000000, WIDTH_LOG2=0, HEIGHT_LOG2=0
+- Changing FB_CONFIG mid-frame allows render-to-texture (render to an off-screen surface, then bind as texture)
+- Both color buffer and Z-buffer share the same surface dimensions; a paired Z-buffer at Z_BASE always has the same WIDTH_LOG2/HEIGHT_LOG2 as the color buffer
+- Address encoding (×512) matches texture BASE_ADDR encoding
 
 **Reset Value**: 0x0000000000000000
 
@@ -915,17 +931,28 @@ Address where triangles are rendered. Must be 4K aligned.
 
 ### 0x41: FB_DISPLAY (Non-Blocking)
 
-Display scanout framebuffer address with optional color grading LUT auto-load. Non-blocking write (returns immediately).
+Display scanout framebuffer address with horizontal scaling, vertical line doubling, and optional color grading LUT auto-load.
+Non-blocking write (returns immediately); changes take effect at next vsync.
 
 ```
-[63:48]   Reserved (write as 0)
+[63:52]   Reserved (write as 0)
+[51:48]   FB_WIDTH_LOG2: Display framebuffer source width log₂, 0-15
+          Source width = 1 << FB_WIDTH_LOG2 pixels (e.g. 9 → 512, 8 → 256)
+          The display controller fetches this many RGB565 words per source scanline.
+          A Bresenham accumulator stretches the source scanline to 640 output pixels.
+          Latched independently from FB_CONFIG so the display surface and render surface
+          can have different widths simultaneously (double-buffered rendering).
 [47:32]   FB_ADDR: Framebuffer base address >> 9 (512-byte aligned, 16 bits)
           Effective address range: 0x000000 - 0x1FFFE00 (32 MiB SDRAM)
           Same encoding as texture BASE_ADDR
 [31:16]   LUT_ADDR: Color grading LUT base address >> 9 (512-byte aligned, 16 bits)
           Effective address range: 0x000000 - 0x1FFFE00
           Special value: 0x0000 = skip LUT auto-load, keep current LUT
-[15:1]    Reserved (write as 0)
+[15:2]    Reserved (write as 0)
+[1]       LINE_DOUBLE: 1 = vertical line doubling enabled; 0 = normal (1:1 vertical)
+          When set: only 240 source rows are read from SDRAM; each is output twice
+          to fill 480 display lines. The scanline FIFO is reused for the repeated row
+          (no additional SDRAM read). Halves display scanout SDRAM bandwidth.
 [0]       COLOR_GRADE_ENABLE: 1=color grading enabled, 0=bypass (RGB565→RGB888 expansion)
 ```
 
@@ -966,29 +993,11 @@ Each RGB888 entry: 3 bytes (R[23:16], G[15:8], B[7:0])
 
 ---
 
-### 0x42: FB_ZBUFFER (Simplified)
+### 0x42: Reserved
 
-Z-buffer base address. Compare function moved to RENDER_MODE.
-
-```
-[63:32]   Reserved (write as 0)
-[31:12]   Z-buffer base address bits [31:12] (4K aligned)
-[11:0]    Ignored (assumed 0)
-```
-
-**Z-Buffer Memory Format**: 32-bit words with 16-bit depth:
-```
-[31:16] = unused (should be 0)
-[15:0]  = depth value (0 = near, 0xFFFF = far)
-```
-
-**Notes**:
-- Z_COMPARE function now in RENDER_MODE[15:13]
-- Z_WRITE_EN and Z_TEST_EN now in RENDER_MODE[3:2]
-- This register now only holds the buffer address
-- Must be 4K aligned (same as framebuffer)
-
-**Reset Value**: 0x0000000000000000 (address 0x000000)
+Previously FB_ZBUFFER (Z-buffer base address).
+The Z-buffer base address (`Z_BASE`) is now part of **FB_CONFIG (0x40)**, field `[31:16]`.
+Writes to 0x42 are ignored; reads return 0.
 
 ---
 
@@ -1025,17 +1034,20 @@ Scissor rectangle for fragment clipping.
 
 ### 0x47: FB_DISPLAY_SYNC (V-Sync Blocking)
 
-Display scanout framebuffer address with optional color grading LUT auto-load. **Blocking write** (waits for vsync).
+Display scanout framebuffer address with horizontal scaling, vertical line doubling, and optional color grading LUT auto-load. **Blocking write** (waits for vsync).
+Same register format as FB_DISPLAY (0x41); the only difference is blocking vs. non-blocking behavior.
 
 ```
-[63:48]   Reserved (write as 0)
+[63:52]   Reserved (write as 0)
+[51:48]   FB_WIDTH_LOG2: Display framebuffer source width log₂, 0-15 (same semantics as FB_DISPLAY)
 [47:32]   FB_ADDR: Framebuffer base address >> 9 (512-byte aligned, 16 bits)
           Effective address range: 0x000000 - 0x1FFFE00 (32 MiB SDRAM)
           Same encoding as texture BASE_ADDR
 [31:16]   LUT_ADDR: Color grading LUT base address >> 9 (512-byte aligned, 16 bits)
           Effective address range: 0x000000 - 0x1FFFE00
           Special value: 0x0000 = skip LUT auto-load, keep current LUT
-[15:1]    Reserved (write as 0)
+[15:2]    Reserved (write as 0)
+[1]       LINE_DOUBLE: 1 = vertical line doubling enabled (same semantics as FB_DISPLAY)
 [0]       COLOR_GRADE_ENABLE: 1=color grading enabled, 0=bypass (RGB565→RGB888 expansion)
 ```
 
@@ -1391,41 +1403,42 @@ gpu_write(REG_TEX0_WRAP, 0x0);  // REPEAT
 ### Example 3: Z-Buffer with Compare Functions
 
 ```c
-// Configure Z-buffer at 0x258000 with LEQUAL compare
-gpu_write(REG_FB_ZBUFFER,
-    (0x001ULL << 32) |  // Z_COMPARE: LEQUAL (≤)
-    0x258000            // Z-buffer base address
+// Configure render target: color at 0x000000, Z at 0x258000, 512×512 surface
+gpu_write(REG_FB_CONFIG,
+    ((uint64_t)9 << 36) |         // HEIGHT_LOG2 = 9 (512 rows)
+    ((uint64_t)9 << 32) |         // WIDTH_LOG2  = 9 (512 columns)
+    ((0x258000 >> 9) << 16) |     // Z_BASE = 0x258000
+    (0x000000 >> 9)               // COLOR_BASE = 0x000000
 );
 
-// Enable Z-test and Z-write in TRI_MODE
-gpu_write(REG_TRI_MODE,
-    (1 << 3) |  // Z_WRITE
-    (1 << 2) |  // Z_TEST
+// Enable Z-test, Z-write, and Gouraud shading in RENDER_MODE
+gpu_write(REG_RENDER_MODE,
+    (1 << 3) |  // Z_WRITE_EN
+    (1 << 2) |  // Z_TEST_EN
     (1 << 0)    // GOURAUD
 );
 
-// Clear Z-buffer to maximum depth
-// First, configure to always pass and write far plane
-gpu_write(REG_FB_ZBUFFER,
-    (0x006ULL << 32) |  // Z_COMPARE: ALWAYS
-    0x258000
+// Clear Z-buffer to maximum depth using Z_COMPARE=ALWAYS
+gpu_write(REG_RENDER_MODE,
+    (1 << 3) |  // Z_WRITE_EN
+    (6 << 13)   // Z_COMPARE = ALWAYS
 );
 
-// Draw full-screen triangles with Z=0x1FFFFFF (far)
-uint32_t far_z = 0x1FFFFFF;
+// Draw full-screen triangles with Z=0xFFFF (far)
+uint16_t far_z = 0xFFFF;
 gpu_write(REG_COLOR, 0x00000000);
-gpu_write(REG_VERTEX, PACK_XYZ(0, 0, far_z));
-gpu_write(REG_VERTEX, PACK_XYZ(639, 0, far_z));
-gpu_write(REG_VERTEX, PACK_XYZ(639, 479, far_z));
-
-gpu_write(REG_VERTEX, PACK_XYZ(0, 0, far_z));
-gpu_write(REG_VERTEX, PACK_XYZ(639, 479, far_z));
-gpu_write(REG_VERTEX, PACK_XYZ(0, 479, far_z));
+gpu_write(REG_VERTEX_NOKICK, PACK_XYZ(0,   0,   far_z));
+gpu_write(REG_VERTEX_NOKICK, PACK_XYZ(511, 0,   far_z));
+gpu_write(REG_VERTEX_KICK,   PACK_XYZ(511, 479, far_z));
+gpu_write(REG_VERTEX_NOKICK, PACK_XYZ(0,   0,   far_z));
+gpu_write(REG_VERTEX_NOKICK, PACK_XYZ(511, 479, far_z));
+gpu_write(REG_VERTEX_KICK,   PACK_XYZ(0,   479, far_z));
 
 // Restore LEQUAL compare
-gpu_write(REG_FB_ZBUFFER,
-    (0x001ULL << 32) |  // Z_COMPARE: LEQUAL
-    0x258000
+gpu_write(REG_RENDER_MODE,
+    (1 << 3) |  // Z_WRITE_EN
+    (1 << 2) |  // Z_TEST_EN
+    (1 << 13)   // Z_COMPARE = LEQUAL
 );
 ```
 
@@ -1498,9 +1511,8 @@ After hardware reset or power-on:
 | MAT_COLOR1 | 0x0000000000000000 | Transparent black |
 | FOG_COLOR | 0x0000000000000000 | Transparent black |
 | RENDER_MODE | 0x0000000000000401 | GOURAUD=1, DITHER_EN=1, Z_COMPARE=LEQUAL, all else 0 |
-| FB_DRAW | 0x0000000000000000 | Address 0x000000 |
-| FB_DISPLAY | 0x0000000000000000 | FB=0x000000, LUT=0x0, color grading disabled |
-| FB_ZBUFFER | 0x0000000000000000 | Address 0x000000 (Z_COMPARE in RENDER_MODE) |
+| FB_CONFIG | 0x0000000000000000 | COLOR_BASE=0x000000, Z_BASE=0x000000, WIDTH_LOG2=0, HEIGHT_LOG2=0 |
+| FB_DISPLAY | 0x0000000000000000 | FB=0x000000, LUT=0x0, FB_WIDTH_LOG2=0, LINE_DOUBLE=0, color grading disabled |
 | FB_CONTROL | 0x00000000_3FF003FF | Full screen scissor 1024×1024 |
 | FB_DISPLAY_SYNC | N/A | Write-only blocking register |
 | PERF_TIMESTAMP | 0x0000000000000000 | Cycle counter starts at 0 |

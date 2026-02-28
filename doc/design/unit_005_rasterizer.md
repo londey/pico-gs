@@ -47,7 +47,7 @@ None
   - 3× primary vertex color (RGBA8888 UNORM8 from COLOR register, used as VER_COLOR0)
   - 3× secondary vertex color (RGBA8888 UNORM8 from COLOR1 register, used as VER_COLOR1)
   - 3× UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1)
-- Register state (TRI_MODE, FB_DRAW, FB_ZBUFFER)
+- Register state (TRI_MODE, FB_CONFIG including FB_CONFIG.WIDTH_LOG2 and FB_CONFIG.HEIGHT_LOG2)
 
 ### Outputs
 
@@ -75,7 +75,9 @@ None
 4. **Interpolation** (INTERPOLATE, per inside pixel): Compute both vertex colors (color0 and color1, each RGB888) and Z depth from barycentric weights using 17×8 and 17×16 multiplies (each fits in a single MULT18X18D). The secondary color (color1) interpolation uses the same barycentric weights as the primary color.
 5. **Pixel Advance** (ITER_NEXT): Step to next pixel using **incremental addition only** — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
    No multiplies are needed in the per-pixel inner loop.
-6. **Memory Address**: Framebuffer and Z-buffer addresses use shift-add for y×640 (640 = 512 + 128) instead of multiplication
+6. **Scissor Bounds**: Bounding box is clamped to `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y, using the register values for the current render surface.
+7. **Memory Address**: Framebuffer and Z-buffer addresses use the 4×4 block-tiled formula from INT-011, with stride driven by `FB_CONFIG.WIDTH_LOG2` from the register file (UNIT-003).
+   No fixed-width multiply is used; the stride computation is purely shift-based (`block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x`).
 
 ## Implementation
 
@@ -88,7 +90,7 @@ Formal testbenches:
 - **VER-010** through **VER-013** (golden image integration tests exercise the full rasterizer-to-framebuffer path)
 
 - Verify edge function computation for known triangles (clockwise/counter-clockwise winding)
-- Test bounding box clamping at screen edges (0, 639, 479)
+- Test bounding box clamping at the configured surface boundary — `(1<<FB_CONFIG.WIDTH_LOG2)-1` in X and `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y — not at a fixed 640×480
 - Verify barycentric interpolation produces correct colors at vertices and midpoints
 - Test Z-buffer read-compare-write sequence with near/far values
 - Verify RGB888-to-RGB565 conversion in framebuffer writes
@@ -113,8 +115,9 @@ At one fragment evaluation per clock cycle in the inner edge-walking loop, the r
 Fragment output to the pixel pipeline (UNIT-006) is synchronous within the same 100 MHz clock domain, and downstream SRAM access through the arbiter (UNIT-007) incurs no CDC latency.
 Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM arbitration contention with display scanout, Z-buffer, and texture fetch (see INT-011 bandwidth budget).
 
-**Burst-friendly access patterns:** The edge-walking algorithm emits fragments in scanline order (left-to-right within each row of the bounding box), producing sequential screen-space positions.
-This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM arbiter (UNIT-007) to exploit SRAM burst write mode for framebuffer writes and burst read/write mode for Z-buffer accesses, improving effective SRAM throughput for runs of horizontally adjacent fragments.
+**Burst-friendly access patterns:** The edge-walking algorithm emits fragments in scanline order (left-to-right within each row of the bounding box), producing sequential screen-space positions within each 4×4 tile.
+This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM arbiter (UNIT-007) to exploit SDRAM burst write mode for framebuffer writes and burst read/write mode for Z-buffer accesses, improving effective SDRAM throughput for runs of horizontally adjacent fragments.
+The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tiles per row as `1 << (WIDTH_LOG2 - 2)`.
 
 **Incremental edge stepping (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
 The rasterizer exploits this by computing edge values at the bounding box origin once per triangle (using multiplies in ITER_START), then stepping incrementally with pure addition in the per-pixel loop.

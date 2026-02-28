@@ -41,7 +41,15 @@ The triangle is large enough to cover a significant portion of the 640x480 frame
 
 The integration harness drives the following register-write sequence into UNIT-003 (Register File), replicating the register writes that a `RenderMeshPatch` command produces per INT-021:
 
-1. **Configure render mode:**
+1. **Configure framebuffer:**
+   Write `FB_CONFIG` (address `0x40`) with:
+   - `fb_color_base` = chosen color buffer base address (SDRAM-aligned).
+   - `fb_width_log2 = 9` (surface width = 512 pixels).
+   - `fb_height_log2 = 9` (surface height = 512 pixels).
+   This establishes the surface dimensions used by the rasterizer for scissor bounds and tiled address stride.
+   The harness framebuffer readback in step 6 must use these same `fb_width_log2` / `fb_height_log2` values for the block-tiled address calculation (INT-011).
+
+2. **Configure render mode:**
    Write `RENDER_MODE` (address `0x30`) with:
    - `GOURAUD_EN = 1` (bit 0)
    - `Z_TEST_EN = 0` (bit 2)
@@ -49,25 +57,26 @@ The integration harness drives the following register-write sequence into UNIT-0
    - `COLOR_WRITE_EN = 1` (bit 4)
    - All other mode bits = 0 (no texturing, no dithering, no alpha blend, no stipple, no culling)
 
-2. **Submit vertex 0:**
+3. **Submit vertex 0:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black in upper 32 bits, COLOR0=red in lower 32 bits).
    - Write `VERTEX_NOKICK` (address `0x06`) with V0 position (X=320, Y=40, Z=0x0000 packed per register format).
 
-3. **Submit vertex 1:**
+4. **Submit vertex 1:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_00FF00FF` (COLOR1=black, COLOR0=green).
    - Write `VERTEX_NOKICK` (address `0x06`) with V1 position (X=80, Y=400, Z=0x0000).
 
-4. **Submit vertex 2 (with kick):**
+5. **Submit vertex 2 (with kick):**
    - Write `COLOR` (address `0x00`) with `0x000000FF_0000FFFF` (COLOR1=black, COLOR0=blue).
    - Write `VERTEX_KICK_012` (address `0x07`) with V2 position (X=560, Y=400, Z=0x0000).
 
-5. **Wait for completion:**
+6. **Wait for completion:**
    Run the simulation until the `frag_done` signal (or equivalent pipeline-idle indicator) asserts, indicating all fragments have been processed and written to the behavioral SDRAM model.
 
-6. **Read back framebuffer:**
-   The harness reads the simulated framebuffer contents from the behavioral SDRAM model (using the 4x4 block-tiled address layout per INT-011) and serializes the pixel data as a PPM file at `spi_gpu/tests/sim_out/gouraud_triangle.ppm`.
+7. **Read back framebuffer:**
+   The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4x4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 1.
+   The pixel data is serialized as a PPM file at `spi_gpu/tests/sim_out/gouraud_triangle.ppm`.
 
-7. **Pixel-exact comparison:**
+8. **Pixel-exact comparison:**
    Compare the simulation output against the approved golden image:
    ```
    diff -q spi_gpu/tests/sim_out/gouraud_triangle.ppm spi_gpu/tests/golden/gouraud_triangle.ppm
@@ -93,7 +102,9 @@ The integration harness drives the following register-write sequence into UNIT-0
 - Golden image approval workflow: after the harness is implemented and this test first runs successfully, inspect the rendered output visually, copy `spi_gpu/tests/sim_out/gouraud_triangle.ppm` to `spi_gpu/tests/golden/gouraud_triangle.ppm`, and commit with a message describing the approved image.
 - Run this test with: `cd spi_gpu && make test-gouraud`.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
-  The golden image includes the full 640x480 framebuffer, so the background color is part of the pixel-exact comparison.
+  The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), since pixel positions in the framebuffer may shift.
+  See `test_strategy.md` for the re-approval workflow.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
   Dithered rendering is tested separately in VER-013.
 - Z-testing and Z-writing are disabled to isolate color interpolation correctness from depth buffer behavior.

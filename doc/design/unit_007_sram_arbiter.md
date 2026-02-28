@@ -249,6 +249,12 @@ Previously, if the GPU core ran at a different frequency than the memory, CDC sy
 The unified 100 MHz clock eliminates this requirement entirely, reducing latency and simplifying timing analysis.
 All four requestor ports (UNIT-008 display read, UNIT-006 framebuffer write, UNIT-006 Z-buffer read/write, UNIT-006 texture read for up to 2 samplers) are now synchronous to the same `clk_core` that drives the SDRAM controller.
 
+**Display scanout burst length:** The display controller (UNIT-008) issues burst reads of `source_width / 4` bursts × 16 words per burst for each source scanline, where `source_width = 1 << FB_DISPLAY.FB_WIDTH_LOG2`.
+For a 512-wide source (WIDTH_LOG2=9): 128 tile bursts × 16 words = 2,048 SDRAM reads per scanline.
+For a 256-wide source (WIDTH_LOG2=8): 64 tile bursts × 16 words = 1,024 SDRAM reads per scanline.
+The arbiter's Port 0 burst policy (no preemption limit, highest priority) is unchanged; only the number of bursts per frame varies with the configured source width.
+When `LINE_DOUBLE=1`, each source scanline burst occurs only once per two display rows, halving the display scanout SDRAM bandwidth.
+
 **SDRAM update:** The downstream interface connects to an SDRAM controller (W9825G6KH) instead of an async SRAM controller.
 Key behavioral differences:
 - SDRAM reads have higher latency (CAS latency CL=3 + row activation tRCD=2) compared to async SRAM (~2 cycles)

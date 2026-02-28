@@ -68,8 +68,10 @@ This ensures commands are never dropped, matching the flow control behavior desc
 ### SDL3 Display Loop
 
 Each clock tick, the C++ main loop reads `disp_pixel_red`, `disp_pixel_green`, `disp_pixel_blue`, and `disp_enable` from the Verilated model.
-When `disp_enable` is high, the current pixel's RGB888 values are written into a 640x480 RGBA8888 pixel buffer.
+When `disp_enable` is high, the current pixel's RGB888 values are written into a 640×480 RGBA8888 pixel buffer.
 The pixel position `(x, y)` is tracked by counting `disp_enable` assertions within a frame (`x = count % 640`, `y = count / 640`).
+The tracking uses 640 because `disp_pixel_*` and `disp_enable` are sourced from UNIT-008 after its horizontal resize stage: UNIT-008 always scales the source framebuffer (width = `1 << fb_display_width_log2`) to the 640-pixel DVI output width using a Bresenham nearest-neighbor scaler, so the SDL3 loop always receives 640 active pixels per scanline regardless of the configured source width.
+When `fb_line_double` is set in FB_DISPLAY, UNIT-008 outputs each source row twice; `disp_enable` is asserted for both copies, and the SDL3 loop writes both rows to consecutive y positions in the pixel buffer.
 On a rising edge of `disp_vsync_out`, the completed frame is uploaded to an SDL3 streaming texture via `SDL_UpdateTexture` and presented via `SDL_RenderPresent`.
 SDL event polling (`SDL_PollEvent`) is performed periodically to handle window close events.
 
@@ -84,6 +86,8 @@ The API exposes two core primitives:
 
 User scripts load the base register helper library via `require "gpu_regs"` (see REQ-010.02-LUA).
 The helper script provides one documented function per GPU register type, each accepting named fields, packing them into the correct 64-bit data word per `registers/rdl/gpu_regs.rdl`, and calling `gpu.write_reg()` with the correct address.
+The `gpu.set_fb_config()` helper must accept `width_log2` and `height_log2` fields and pack them into the correct bit positions of the FB_CONFIG register (INT-010).
+The `gpu.set_fb_display()` helper must accept `fb_width_log2` and `line_double` fields and pack them into the correct bit positions of the FB_DISPLAY register (INT-010).
 
 ### SDRAM Behavioral Model
 
@@ -94,6 +98,10 @@ The model must replicate the following timing behaviors to avoid masking real ti
 - **Row activation (tRCD=2)**: 2 additional cycles before READ/WRITE after ACTIVATE.
 - **Auto-refresh**: periodic `mem_ready` deassertion (~1 per 781 cycles).
 - **Burst cancel/PRECHARGE**: on `mem_burst_cancel`, complete the current 16-bit word, then assert `mem_ack` after a simulated PRECHARGE delay.
+
+The model stores the complete SDRAM address space as a flat byte array.
+Framebuffer readback utilities in the integration harness must use the block-tiled address formula from INT-011 with the `WIDTH_LOG2` value that was written to FB_CONFIG (or FB_DISPLAY for the display controller), not a hardcoded stride constant.
+This ensures the model correctly resolves pixel addresses for any configured surface width (`fb_width_log2 = 8` for 256-wide, `9` for 512-wide, etc.).
 
 See UNIT-007 "SDRAM Behavioral Model for Verilator Simulation" for the complete signal table and required behaviors.
 The model's timing parameters are not reproduced here to avoid duplication; UNIT-007 is the authoritative source.

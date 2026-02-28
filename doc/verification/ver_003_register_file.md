@@ -163,3 +163,7 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 - The register file is clocked at the unified 100 MHz `clk_core` domain.
 - FB_DISPLAY blocking behavior involves interaction with the display controller's vblank signal; the testbench must provide a stimulus model for vblank timing.
 - The PERF_TIMESTAMP fire-and-forget behavior (back-to-back writes overwrite the pending request) is documented in UNIT-003 but may require integration-level verification beyond the unit testbench scope.
+- Steps 10 and 15 verify that the register file correctly extracts and outputs `fb_width_log2`, `fb_height_log2`, `fb_display_width_log2`, and `fb_line_double` fields.
+  VER-003 does not cover downstream consumption of these signals.
+  Coverage of the rasterizer's use of `fb_width_log2` and `fb_height_log2` is provided by VER-001.
+  Coverage of the display controller's use of `fb_display_width_log2` and `fb_line_double` is provided by VER-010 through VER-013.

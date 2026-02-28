@@ -56,6 +56,7 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
   - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011) and texture layout (INT-014).
   - Accepts a command script (encoded per INT-021 register-write sequences) and drives UNIT-003 register-file inputs.
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.
+    The framebuffer readback uses the WIDTH_LOG2 value written to FB_CONFIG in the test command script; each test must write an explicit FB_CONFIG that establishes the surface dimensions before rendering.
 - **Applicable to:** VER-010 through VER-013.
 
 ### Verilator Interactive Simulator (Development Tool)

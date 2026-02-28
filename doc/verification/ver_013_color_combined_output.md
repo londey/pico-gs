@@ -121,7 +121,11 @@ The integration harness drives the following register-write sequence into UNIT-0
    - All other mode bits = 0 (no dithering, no alpha blend, no stipple, no culling)
 
 5. **Configure framebuffer:**
-   Write `FB_CONFIG` for the color framebuffer base address and dimensions (640x480).
+   Write `FB_CONFIG` (address `0x40`) with:
+   - `fb_color_base` = chosen color buffer base address (SDRAM-aligned).
+   - `fb_width_log2 = 9` (surface width = 512 pixels).
+   - `fb_height_log2 = 9` (surface height = 512 pixels).
+   The harness framebuffer readback in step 10 must use `WIDTH_LOG2 = 9` for the block-tiled address calculation (INT-011).
 
 6. **Submit vertex 0:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black in upper 32 bits, COLOR0=red in lower 32 bits).
@@ -142,7 +146,8 @@ The integration harness drives the following register-write sequence into UNIT-0
    Run the simulation until the `frag_done` signal (or equivalent pipeline-idle indicator) asserts, indicating all fragments have been processed through the color combiner and written to the behavioral SDRAM model.
 
 10. **Read back framebuffer:**
-    The harness reads the simulated framebuffer contents from the behavioral SDRAM model (using the 4x4 block-tiled address layout per INT-011) and serializes the pixel data as a PPM file at `spi_gpu/tests/sim_out/color_combined.ppm`.
+    The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4x4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 5.
+    The pixel data is serialized as a PPM file at `spi_gpu/tests/sim_out/color_combined.ppm`.
 
 11. **Pixel-exact comparison:**
     Compare the simulation output against the approved golden image:
@@ -186,5 +191,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **VER-013 together with VER-004** (Color Combiner Unit Testbench) jointly satisfy REQ-004.01 per the requirement document's Verification Method section.
   VER-004 verifies individual combiner modes and arithmetic at the unit level; VER-013 verifies the MODULATE mode through the full integrated pipeline including texture sampling and vertex color interpolation.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
-  The golden image includes the full 640x480 framebuffer, so the background color is part of the pixel-exact comparison.
+  The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
+  See `test_strategy.md` for the re-approval workflow.
 - Of the four golden image tests (VER-010 through VER-013), this test has the deepest dependency chain: it requires a stable UNIT-010 implementation in addition to the shared integration harness infrastructure.
