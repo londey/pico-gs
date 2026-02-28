@@ -98,18 +98,14 @@ static constexpr uint16_t ZBUFFER_BASE_512 = 0x0800;
 // and renders a screen-covering triangle with Z=0xFFFF at all vertices.
 // COLOR_WRITE is disabled so only the Z-buffer is modified.
 //
-// The clear triangle covers at least the full 512x480 visible area:
+// The clear triangle covers the full 512x480 visible area:
 //   V0 = (0, 0)      — top-left corner
-//   V1 = (639, 0)    — top-right corner (beyond 512 for full coverage)
+//   V1 = (511, 0)    — top-right corner
 //   V2 = (0, 479)    — bottom-left corner
 //
 // This is not a full-screen quad; it covers the lower-left half of the
-// viewport.  A second triangle could be added for full coverage, but the
-// rasterizer clips to the scissor rectangle so any pixels outside the
-// actual framebuffer surface are discarded.  For a 512-wide surface with
-// 480 visible rows, a single large triangle from (0,0)-(639,0)-(0,479)
-// covers all pixels within the scissor rect when the triangle spans
-// beyond the edges.
+// viewport.  Two triangles are used to form a rectangle covering the
+// full viewport.
 //
 // NOTE: To guarantee full Z-buffer coverage, we use two triangles that
 // together form a rectangle covering the full viewport.
@@ -120,8 +116,8 @@ static const RegWrite ver_011_zclear_script[] = {
     //    width_log2 = 9 (512-wide surface), height_log2 = 9
     {REG_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9)},
 
-    // 2. Configure scissor to cover full 640x480 viewport
-    {REG_FB_CONTROL, pack_fb_control(0, 0, 640, 480)},
+    // 2. Configure scissor to cover full 512x480 viewport
+    {REG_FB_CONTROL, pack_fb_control(0, 0, 512, 480)},
 
     // 3. Set render mode: Z clear pass (ALWAYS compare, Z write only)
     {REG_RENDER_MODE, RENDER_MODE_ZCLEAR},
@@ -129,24 +125,24 @@ static const RegWrite ver_011_zclear_script[] = {
     // 4. Z-clear triangle covering the screen: all vertices use black color
     //    (irrelevant since COLOR_WRITE=0) and Z=0xFFFF.
     //
-    //    Triangle 1: (0,0) - (639,0) - (0,479) covers lower-left half
-    {REG_AREA_SETUP, compute_area_setup(0, 0, 639, 0, 0, 479)},
+    //    Triangle 1: (0,0) - (511,0) - (0,479) covers lower-left half
+    {REG_AREA_SETUP, compute_area_setup(0, 0, 511, 0, 0, 479)},
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(0, 0, 0xFFFF)},
 
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(639, 0, 0xFFFF)},
+    {REG_VERTEX_NOKICK, pack_vertex(511, 0, 0xFFFF)},
 
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
 
-    //    Triangle 2: (639,0) - (639,479) - (0,479) covers upper-right half
-    {REG_AREA_SETUP, compute_area_setup(639, 0, 639, 479, 0, 479)},
+    //    Triangle 2: (511,0) - (511,479) - (0,479) covers upper-right half
+    {REG_AREA_SETUP, compute_area_setup(511, 0, 511, 479, 0, 479)},
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(639, 0, 0xFFFF)},
+    {REG_VERTEX_NOKICK, pack_vertex(511, 0, 0xFFFF)},
 
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(639, 479, 0xFFFF)},
+    {REG_VERTEX_NOKICK, pack_vertex(511, 479, 0xFFFF)},
 
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
@@ -164,31 +160,31 @@ static constexpr size_t ver_011_zclear_script_len =
 // Configures RENDER_MODE for depth-tested Gouraud rendering (LEQUAL), then
 // submits Triangle A with flat red color at all vertices.
 //
-// Vertex positions (screen-space integer coordinates):
-//   A0: (100, 100)   — top left
-//   A1: (400, 100)   — top right
-//   A2: (250, 380)   — bottom center
+// Vertex positions (screen-space integer coordinates, scaled for 512-wide FB):
+//   A0: (80, 100)    — top left
+//   A1: (320, 100)   — top right
+//   A2: (200, 380)   — bottom center
 // ---------------------------------------------------------------------------
 
 static const RegWrite ver_011_tri_a_script[] = {
     // 1. Set render mode: depth-tested Gouraud rendering
     {REG_RENDER_MODE, RENDER_MODE_DEPTH_TEST},
 
-    // 1b. Set AREA_SETUP for Triangle A: (100,100)-(400,100)-(250,380)
-    {REG_AREA_SETUP, compute_area_setup(100, 100, 400, 100, 250, 380)},
+    // 1b. Set AREA_SETUP for Triangle A: (80,100)-(320,100)-(200,380)
+    {REG_AREA_SETUP, compute_area_setup(80, 100, 320, 100, 200, 380)},
 
-    // 2. Submit V0: red at (100, 100), Z=0x8000
+    // 2. Submit V0: red at (80, 100), Z=0x8000
     {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(100, 100, 0x8000)},
+    {REG_VERTEX_NOKICK, pack_vertex(80, 100, 0x8000)},
 
-    // 3. Submit V1: red at (400, 100), Z=0x8000
+    // 3. Submit V1: red at (320, 100), Z=0x8000
     {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(400, 100, 0x8000)},
+    {REG_VERTEX_NOKICK, pack_vertex(320, 100, 0x8000)},
 
-    // 4. Submit V2: red at (250, 380), Z=0x8000
+    // 4. Submit V2: red at (200, 380), Z=0x8000
     //    VERTEX_KICK_012 triggers rasterization of Triangle A (V0, V1, V2).
     {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_KICK_012, pack_vertex(250, 380, 0x8000)},
+    {REG_VERTEX_KICK_012, pack_vertex(200, 380, 0x8000)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
     {REG_COLOR, 0x0000000000000000ULL},
@@ -203,28 +199,28 @@ static constexpr size_t ver_011_tri_a_script_len =
 // Submits Triangle B with flat blue color at all vertices.
 // RENDER_MODE is already configured from Triangle A (LEQUAL, depth-tested).
 //
-// Vertex positions (screen-space integer coordinates):
-//   B0: (200, 80)    — top left
-//   B1: (500, 80)    — top right
-//   B2: (350, 360)   — bottom center
+// Vertex positions (screen-space integer coordinates, scaled for 512-wide FB):
+//   B0: (160, 80)    — top left
+//   B1: (400, 80)    — top right
+//   B2: (280, 360)   — bottom center
 // ---------------------------------------------------------------------------
 
 static const RegWrite ver_011_tri_b_script[] = {
-    // 0b. Set AREA_SETUP for Triangle B: (200,80)-(500,80)-(350,360)
-    {REG_AREA_SETUP, compute_area_setup(200, 80, 500, 80, 350, 360)},
+    // 0b. Set AREA_SETUP for Triangle B: (160,80)-(400,80)-(280,360)
+    {REG_AREA_SETUP, compute_area_setup(160, 80, 400, 80, 280, 360)},
 
-    // 1. Submit V0: blue at (200, 80), Z=0x4000
+    // 1. Submit V0: blue at (160, 80), Z=0x4000
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(200, 80, 0x4000)},
+    {REG_VERTEX_NOKICK, pack_vertex(160, 80, 0x4000)},
 
-    // 2. Submit V1: blue at (500, 80), Z=0x4000
+    // 2. Submit V1: blue at (400, 80), Z=0x4000
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_NOKICK, pack_vertex(500, 80, 0x4000)},
+    {REG_VERTEX_NOKICK, pack_vertex(400, 80, 0x4000)},
 
-    // 3. Submit V2: blue at (350, 360), Z=0x4000
+    // 3. Submit V2: blue at (280, 360), Z=0x4000
     //    VERTEX_KICK_012 triggers rasterization of Triangle B (V0, V1, V2).
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
-    {REG_VERTEX_KICK_012, pack_vertex(350, 360, 0x4000)},
+    {REG_VERTEX_KICK_012, pack_vertex(280, 360, 0x4000)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
     {REG_COLOR, 0x0000000000000000ULL},

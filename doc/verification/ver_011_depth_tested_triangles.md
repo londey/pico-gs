@@ -52,17 +52,17 @@ In the overlap region, Triangle B must occlude Triangle A because its Z value is
 
 | Vertex | Screen Position (12.4 fixed) | Primary Color (RGBA8888) | Z Value |
 |--------|------------------------------|--------------------------|---------|
-| A0 | (100, 100) | `0xFF0000FF` (red, opaque) | `0x8000` |
-| A1 | (400, 100) | `0xFF0000FF` (red, opaque) | `0x8000` |
-| A2 | (250, 380) | `0xFF0000FF` (red, opaque) | `0x8000` |
+| A0 | (80, 100) | `0xFF0000FF` (red, opaque) | `0x8000` |
+| A1 | (320, 100) | `0xFF0000FF` (red, opaque) | `0x8000` |
+| A2 | (200, 380) | `0xFF0000FF` (red, opaque) | `0x8000` |
 
 **Triangle B (near, rendered second):**
 
 | Vertex | Screen Position (12.4 fixed) | Primary Color (RGBA8888) | Z Value |
 |--------|------------------------------|--------------------------|---------|
-| B0 | (200, 80) | `0x0000FFFF` (blue, opaque) | `0x4000` |
-| B1 | (500, 80) | `0x0000FFFF` (blue, opaque) | `0x4000` |
-| B2 | (350, 360) | `0x0000FFFF` (blue, opaque) | `0x4000` |
+| B0 | (160, 80) | `0x0000FFFF` (blue, opaque) | `0x4000` |
+| B1 | (400, 80) | `0x0000FFFF` (blue, opaque) | `0x4000` |
+| B2 | (280, 360) | `0x0000FFFF` (blue, opaque) | `0x4000` |
 
 Both triangles use flat shading (constant Z and constant color across all vertices) to simplify the expected result:
 - Pixels covered only by Triangle A are red.
@@ -97,21 +97,21 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 4. **Render Triangle A (far):**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black, COLOR0=red).
-   - Write `VERTEX_NOKICK` (address `0x06`) with A0 position (X=100, Y=100, Z=`0x8000`).
+   - Write `VERTEX_NOKICK` (address `0x06`) with A0 position (X=80, Y=100, Z=`0x8000`).
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black, COLOR0=red).
-   - Write `VERTEX_NOKICK` (address `0x06`) with A1 position (X=400, Y=100, Z=`0x8000`).
+   - Write `VERTEX_NOKICK` (address `0x06`) with A1 position (X=320, Y=100, Z=`0x8000`).
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black, COLOR0=red).
-   - Write `VERTEX_KICK_012` (address `0x07`) with A2 position (X=250, Y=380, Z=`0x8000`).
+   - Write `VERTEX_KICK_012` (address `0x07`) with A2 position (X=200, Y=380, Z=`0x8000`).
 
 5. **Wait for Triangle A to complete** (pipeline idle).
 
 6. **Render Triangle B (near):**
    - Write `COLOR` (address `0x00`) with `0x000000FF_0000FFFF` (COLOR1=black, COLOR0=blue).
-   - Write `VERTEX_NOKICK` (address `0x06`) with B0 position (X=200, Y=80, Z=`0x4000`).
+   - Write `VERTEX_NOKICK` (address `0x06`) with B0 position (X=160, Y=80, Z=`0x4000`).
    - Write `COLOR` (address `0x00`) with `0x000000FF_0000FFFF` (COLOR1=black, COLOR0=blue).
-   - Write `VERTEX_NOKICK` (address `0x06`) with B1 position (X=500, Y=80, Z=`0x4000`).
+   - Write `VERTEX_NOKICK` (address `0x06`) with B1 position (X=400, Y=80, Z=`0x4000`).
    - Write `COLOR` (address `0x00`) with `0x000000FF_0000FFFF` (COLOR1=black, COLOR0=blue).
-   - Write `VERTEX_KICK_012` (address `0x07`) with B2 position (X=350, Y=360, Z=`0x4000`).
+   - Write `VERTEX_KICK_012` (address `0x07`) with B2 position (X=280, Y=360, Z=`0x4000`).
 
 7. **Wait for completion:**
    Run the simulation until the `frag_done` signal (or equivalent pipeline-idle indicator) asserts, indicating all fragments have been processed and written to the behavioral SDRAM model.

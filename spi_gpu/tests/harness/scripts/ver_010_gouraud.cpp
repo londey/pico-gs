@@ -255,10 +255,11 @@ static constexpr uint64_t RENDER_MODE_GOURAUD_COLOR = (1ULL << 0) | // GOURAUD_E
 // ---------------------------------------------------------------------------
 
 // Vertex positions (screen-space integer coordinates, CCW winding):
-//   V0: (320, 40)   — top center      — red
-//   V1: (560, 400)  — bottom right    — blue
-//   V2: (80, 400)   — bottom left     — green
+//   V0: (256, 40)   — top center      — red
+//   V1: (448, 400)  — bottom right    — blue
+//   V2: (64, 400)   — bottom left     — green
 //
+// Coordinates are scaled for a 512-wide framebuffer (fb_width_log2=9).
 // The rasterizer uses a standard edge function test (e0 >= 0 && e1 >= 0 && e2 >= 0)
 // which requires counter-clockwise (CCW) winding.  The signed area must be positive.
 
@@ -267,29 +268,28 @@ static const RegWrite ver_010_script[] = {
     //    width_log2 = 9 (512-wide surface), height_log2 = 9
     {REG_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 9, 9)},
 
-    // 2. Configure scissor to cover full 640x480 viewport
+    // 2. Configure scissor to cover full 512x480 viewport
     //    (default reset value has height=0 which would clip everything)
-    {REG_FB_CONTROL, pack_fb_control(0, 0, 640, 480)},
+    {REG_FB_CONTROL, pack_fb_control(0, 0, 512, 480)},
 
     // 3. Set render mode: Gouraud shading + color write, no Z test/write
     {REG_RENDER_MODE, RENDER_MODE_GOURAUD_COLOR},
 
-    // 3b. Set AREA_SETUP for the triangle (320,40)-(560,400)-(80,400)
-    //     2*area = 172800, max_coeff = 480, shift = 8, inv_area = 97
-    {REG_AREA_SETUP, compute_area_setup(320, 40, 560, 400, 80, 400)},
+    // 3b. Set AREA_SETUP for the triangle (256,40)-(448,400)-(64,400)
+    {REG_AREA_SETUP, compute_area_setup(256, 40, 448, 400, 64, 400)},
 
-    // 4. Submit V0: red vertex at top center (320, 40)
+    // 4. Submit V0: red vertex at top center (256, 40)
     {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00))}, // Red diffuse
-    {REG_VERTEX_NOKICK, pack_vertex(320, 40, 0x0000)},
+    {REG_VERTEX_NOKICK, pack_vertex(256, 40, 0x0000)},
 
-    // 5. Submit V1: blue vertex at bottom right (560, 400)
+    // 5. Submit V1: blue vertex at bottom right (448, 400)
     {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF))}, // Blue diffuse
-    {REG_VERTEX_NOKICK, pack_vertex(560, 400, 0x0000)},
+    {REG_VERTEX_NOKICK, pack_vertex(448, 400, 0x0000)},
 
-    // 6. Submit V2: green vertex at bottom left (80, 400)
+    // 6. Submit V2: green vertex at bottom left (64, 400)
     //    VERTEX_KICK_012 triggers rasterization of the triangle (V0, V1, V2).
     {REG_COLOR, pack_color(argb(0x00, 0xFF, 0x00))}, // Green diffuse
-    {REG_VERTEX_KICK_012, pack_vertex(80, 400, 0x0000)},
+    {REG_VERTEX_KICK_012, pack_vertex(64, 400, 0x0000)},
 
     // 7. Dummy trailing command — ensures the KICK_012 above is consumed
     //    from the FIFO before it goes empty.

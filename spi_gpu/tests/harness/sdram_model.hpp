@@ -197,22 +197,21 @@ public:
     /// @param buffer           Input buffer of data to write.
     void burst_write(uint32_t start_word_addr, std::span<const uint16_t> buffer);
 
-    /// Read back a framebuffer region from SDRAM using the INT-011 4x4
-    /// block-tiled address layout.
+    /// Read back a framebuffer region from SDRAM using flat linear
+    /// addressing matching the rasterizer's WRITE_PIXEL formula.
     ///
-    /// Pixels in the framebuffer are stored in 4x4 block-tiled order per
-    /// INT-011.  This function reverses the tiling to produce a linear
-    /// row-major array of RGB565 pixels suitable for PNG output.
+    /// The rasterizer (UNIT-005) writes pixels at byte addresses:
+    ///   fb_addr = fb_base + y * 1280 + x * 2
+    /// where 1280 is the hardcoded byte stride (640-pixel row pitch, each
+    /// pixel is 16-bit RGB565).  The SDRAM model's word-address space maps
+    /// 1:1 to byte addresses for even addresses, so:
+    ///   word_addr = base_word + y * 1280 + x * 2
     ///
-    /// The block-tiled address calculation (INT-011):
-    ///   block_x   = pixel_x >> 2
-    ///   block_y   = pixel_y >> 2
-    ///   local_x   = pixel_x & 3
-    ///   local_y   = pixel_y & 3
-    ///   block_idx = (block_y << (width_log2 - 2)) | block_x
-    ///   word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
+    /// The width_log2 parameter determines how many columns per row are
+    /// read (the image width), which may be narrower than the 640-pixel
+    /// stride.
     ///
-    /// @param base_word   Framebuffer base address in 16-bit word units.
+    /// @param base_word   Framebuffer base address in SDRAM model word units.
     /// @param width_log2  log2(surface width); e.g. 9 for 512-wide.
     /// @param height      Surface height in pixels to read back.
     /// @return  Vector of (1 << width_log2) * height uint16_t RGB565 pixels

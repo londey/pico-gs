@@ -69,8 +69,10 @@ struct RegWrite {
 // ---------------------------------------------------------------------------
 
 /// Framebuffer surface dimensions.
-/// The rasterizer (UNIT-005) writes pixels using the INT-011 4x4 block-tiled
-/// address layout, with stride derived from fb_width_log2.
+/// The rasterizer (UNIT-005) writes pixels using flat linear addressing with
+/// a hardcoded 640-pixel (1280-byte) stride: fb_addr = base + y*1280 + x*2.
+/// fb_width_log2 controls the bounding-box clamp (scissor) but does not
+/// affect the memory stride.
 ///
 /// FB_WIDTH_LOG2 matches the fb_width_log2 value written to FB_CONFIG in the
 /// test scripts (ver_010_gouraud.cpp, ver_011_depth_test.cpp).
@@ -506,22 +508,17 @@ static void execute_script(
 // Framebuffer extraction
 // ---------------------------------------------------------------------------
 
-/// Extract the visible framebuffer region from the SDRAM model using the
-/// INT-011 4x4 block-tiled address layout.
+/// Extract the visible framebuffer region from the SDRAM model using flat
+/// linear addressing matching the rasterizer's WRITE_PIXEL formula.
 ///
-/// Delegates to SdramModel::read_framebuffer() which implements the
-/// block-tiled address formula from INT-011:
-///   block_x   = pixel_x >> 2
-///   block_y   = pixel_y >> 2
-///   local_x   = pixel_x & 3
-///   local_y   = pixel_y & 3
-///   block_idx = (block_y << (width_log2 - 2)) | block_x
-///   word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
+/// Delegates to SdramModel::read_framebuffer() which reads pixels at:
+///   word_addr = base_word + y * 1280 + x * 2
+/// matching the rasterizer's hardcoded 640-pixel (1280-byte) stride.
 ///
 /// @param sdram       Behavioral SDRAM model.
-/// @param base_word   Framebuffer base address in SDRAM word units.
+/// @param base_word   Framebuffer base address in SDRAM model word units.
 /// @param width_log2  Log2 of surface width (e.g. 9 for 512 pixels).
-///                    Must match the fb_width_log2 value written to FB_CONFIG.
+///                    Determines the image width (columns read per row).
 /// @param height      Surface height in pixels to read back.
 /// @return  Vector of (1 << width_log2) * height uint16_t RGB565 pixels
 ///          in row-major order.

@@ -76,20 +76,27 @@ SdramModel::read_framebuffer(uint32_t base_word, int width_log2, int height) con
 
     std::vector<uint16_t> fb(static_cast<size_t>(width) * height);
 
-    // INT-011 block-tiled readback.
-    // Each 4x4 pixel block is stored as 16 consecutive 16-bit words.
-    // block_idx = (block_y << (width_log2 - 2)) | block_x
-    // word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
+    // Flat linear readback matching the rasterizer's WRITE_PIXEL address formula.
+    //
+    // The rasterizer (UNIT-005) currently computes framebuffer byte addresses as:
+    //   fb_addr = fb_base + y * 1280 + x * 2
+    // where the byte stride 1280 = (y << 10) + (y << 8) corresponds to a
+    // 640-pixel row pitch (each pixel is 16-bit RGB565 = 2 bytes).
+    //
+    // The SDRAM controller (via connect_sdram) maps byte addresses into the
+    // SdramModel's word-address space such that word_addr equals the byte
+    // address for even addresses.  Therefore:
+    //   word_addr = base_word + y * 1280 + x * 2
+    //
+    // The width_log2 parameter determines how many columns are read per row
+    // (the image width), which may be narrower than the 640-pixel stride.
+    static constexpr uint32_t BYTE_STRIDE = 1280; // 640 pixels * 2 bytes
     for (int py = 0; py < height; ++py) {
         for (int px = 0; px < width; ++px) {
-            int block_x = px >> 2;
-            int block_y = py >> 2;
-            int local_x = px & 3;
-            int local_y = py & 3;
-            int block_idx = (block_y << (width_log2 - 2)) | block_x;
             uint32_t word_addr =
-                base_word + static_cast<uint32_t>(block_idx) * 16 +
-                static_cast<uint32_t>(local_y * 4 + local_x);
+                base_word +
+                static_cast<uint32_t>(py) * BYTE_STRIDE +
+                static_cast<uint32_t>(px) * 2;
 
             fb[py * width + px] = read_word(word_addr);
         }

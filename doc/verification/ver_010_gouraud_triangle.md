@@ -30,12 +30,12 @@ The test renders a single Gouraud-shaded triangle with three vertices at known s
 
 | Vertex | Screen Position (12.4 fixed) | Primary Color (RGBA8888) | Description |
 |--------|------------------------------|--------------------------|-------------|
-| V0 | (320, 40) | `0xFF0000FF` (red, opaque) | Top center |
-| V1 | (80, 400) | `0x00FF00FF` (green, opaque) | Bottom left |
-| V2 | (560, 400) | `0x0000FFFF` (blue, opaque) | Bottom right |
+| V0 | (256, 40) | `0xFF0000FF` (red, opaque) | Top center |
+| V1 | (64, 400) | `0x00FF00FF` (green, opaque) | Bottom left |
+| V2 | (448, 400) | `0x0000FFFF` (blue, opaque) | Bottom right |
 
 Secondary vertex colors (COLOR1) are set to black (`0x000000FF`) for all three vertices (not used in this test).
-The triangle is large enough to cover a significant portion of the 640x480 framebuffer, providing thorough coverage of the color interpolation logic across many pixels.
+The triangle is large enough to cover a significant portion of the 512x480 viewport, providing thorough coverage of the color interpolation logic across many pixels.
 
 ### Harness Command Sequence
 
@@ -59,15 +59,15 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 3. **Submit vertex 0:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black in upper 32 bits, COLOR0=red in lower 32 bits).
-   - Write `VERTEX_NOKICK` (address `0x06`) with V0 position (X=320, Y=40, Z=0x0000 packed per register format).
+   - Write `VERTEX_NOKICK` (address `0x06`) with V0 position (X=256, Y=40, Z=0x0000 packed per register format).
 
 4. **Submit vertex 1:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_00FF00FF` (COLOR1=black, COLOR0=green).
-   - Write `VERTEX_NOKICK` (address `0x06`) with V1 position (X=80, Y=400, Z=0x0000).
+   - Write `VERTEX_NOKICK` (address `0x06`) with V1 position (X=64, Y=400, Z=0x0000).
 
 5. **Submit vertex 2 (with kick):**
    - Write `COLOR` (address `0x00`) with `0x000000FF_0000FFFF` (COLOR1=black, COLOR0=blue).
-   - Write `VERTEX_KICK_012` (address `0x07`) with V2 position (X=560, Y=400, Z=0x0000).
+   - Write `VERTEX_KICK_012` (address `0x07`) with V2 position (X=448, Y=400, Z=0x0000).
 
 6. **Wait for completion:**
    Run the simulation until the `frag_done` signal (or equivalent pipeline-idle indicator) asserts, indicating all fragments have been processed and written to the behavioral SDRAM model.
