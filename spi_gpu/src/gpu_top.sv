@@ -592,38 +592,114 @@ module gpu_top (
     assign arb_port2_burst_len = 8'b0;
     assign arb_port2_burst_wdata = 16'b0;
 
-    // Port 3: Timestamp SDRAM write (shared with future texture reads, DD-026)
+    // Port 3: Texture cache fill reads + PERF_TIMESTAMP writes (DD-026)
     //
-    // Simple FSM: latch ts_mem_wr pulse from register_file, hold arbiter
-    // request until acknowledged.  Single-word write, no burst.
+    // Port 3 is shared between:
+    //   - Texture cache fill burst reads from pixel_pipeline (UNIT-006)
+    //   - PERF_TIMESTAMP single-word SDRAM writes from register_file (UNIT-003)
+    //
+    // Texture fill requests take priority; timestamp writes are
+    // fire-and-forget with coalescing semantics.
+    //
+    // Grant tracking:
+    //   tex_req_granted — set when texture request wins port 3 grant;
+    //                     cleared on arb_port3_ack
+    //   ts_req_granted  — set when timestamp write wins port 3 grant;
+    //                     cleared on arb_port3_ack
+
+    // Texture cache port 3 wires (from pixel_pipeline, UNIT-006)
+    // These will be connected to pixel_pipeline texture ports once the
+    // texture cache is implemented.  Until then they are tied off.
+    wire        tex_req;
+    wire [23:0] tex_addr;
+    wire [7:0]  tex_burst_len;
+    wire [15:0] tex_burst_rdata;
+    wire        tex_burst_data_valid;
+    wire        tex_ack;
+
+    // Stub: texture cache not yet connected; no texture requests
+    assign tex_req       = 1'b0;
+    assign tex_addr      = 24'b0;
+    assign tex_burst_len = 8'b0;
+
+    // Timestamp pending register (fire-and-forget, coalescing)
     reg         ts_pending;
     reg  [23:0] ts_arb_addr;
     reg  [31:0] ts_arb_wdata;
 
-    always_ff @(posedge clk_core or negedge rst_n_core) begin
-        if (!rst_n_core) begin
-            ts_pending  <= 1'b0;
-            ts_arb_addr <= 24'd0;
-            ts_arb_wdata <= 32'd0;
-        end else begin
-            if (ts_mem_wr) begin
-                // Latch new timestamp write request
-                ts_pending  <= 1'b1;
-                ts_arb_addr <= {ts_mem_addr, 1'b0};  // 23-bit word addr → 24-bit half-word addr
-                ts_arb_wdata <= ts_mem_data;
-            end else if (ts_pending && arb_port3_ack) begin
-                // Arbiter accepted the write
-                ts_pending <= 1'b0;
+    // Grant tracking registers
+    reg         tex_req_granted;
+    reg         ts_req_granted;
+
+    // Next-state signals for timestamp pending FSM
+    logic        next_ts_pending;
+    logic [23:0] next_ts_arb_addr;
+    logic [31:0] next_ts_arb_wdata;
+    logic        next_tex_req_granted;
+    logic        next_ts_req_granted;
+
+    always_comb begin
+        next_ts_pending       = ts_pending;
+        next_ts_arb_addr      = ts_arb_addr;
+        next_ts_arb_wdata     = ts_arb_wdata;
+        next_tex_req_granted  = tex_req_granted;
+        next_ts_req_granted   = ts_req_granted;
+
+        // Latch new timestamp write request (coalescing: overwrites pending)
+        if (ts_mem_wr) begin
+            next_ts_pending  = 1'b1;
+            next_ts_arb_addr = {ts_mem_addr, 1'b0};  // 23-bit word addr -> 24-bit half-word addr
+            next_ts_arb_wdata = ts_mem_data;
+        end
+
+        // Track which request was granted on port 3
+        if (tex_req && arb_port3_ready) begin
+            next_tex_req_granted = 1'b1;
+        end
+        if (ts_pending && !tex_req && arb_port3_ready) begin
+            next_ts_req_granted = 1'b1;
+        end
+
+        // Clear grant flags and pending state on ack
+        if (arb_port3_ack) begin
+            if (tex_req_granted) begin
+                next_tex_req_granted = 1'b0;
+            end
+            if (ts_req_granted) begin
+                next_ts_req_granted = 1'b0;
+                next_ts_pending     = 1'b0;
             end
         end
     end
 
-    assign arb_port3_req = ts_pending;
-    assign arb_port3_we = 1'b1;
-    assign arb_port3_addr = ts_arb_addr;
-    assign arb_port3_wdata = ts_arb_wdata;
-    assign arb_port3_burst_len = 8'b0;
-    assign arb_port3_burst_wdata = 16'b0;
+    always_ff @(posedge clk_core or negedge rst_n_core) begin
+        if (!rst_n_core) begin
+            ts_pending       <= 1'b0;
+            ts_arb_addr      <= 24'd0;
+            ts_arb_wdata     <= 32'd0;
+            tex_req_granted  <= 1'b0;
+            ts_req_granted   <= 1'b0;
+        end else begin
+            ts_pending       <= next_ts_pending;
+            ts_arb_addr      <= next_ts_arb_addr;
+            ts_arb_wdata     <= next_ts_arb_wdata;
+            tex_req_granted  <= next_tex_req_granted;
+            ts_req_granted   <= next_ts_req_granted;
+        end
+    end
+
+    // Priority mux: texture cache fill requests take priority over timestamp writes
+    assign arb_port3_req       = tex_req || (ts_pending && !tex_req);
+    assign arb_port3_we        = tex_req ? 1'b0      : 1'b1;  // texture=read, timestamp=write
+    assign arb_port3_addr      = tex_req ? tex_addr   : ts_arb_addr;
+    assign arb_port3_wdata     = tex_req ? 32'b0      : ts_arb_wdata;
+    assign arb_port3_burst_len = tex_req ? tex_burst_len : 8'b0;
+    assign arb_port3_burst_wdata = 16'b0;  // no burst writes on port 3
+
+    // Route burst read data back to texture cache (UNIT-006)
+    assign tex_burst_rdata      = arb_port3_burst_rdata;
+    assign tex_burst_data_valid = tex_req_granted && arb_port3_burst_data_valid;
+    assign tex_ack              = tex_req_granted && arb_port3_ack;
 
     // ========================================================================
     // Display Pipeline (Phase 4 - Implemented)
@@ -907,6 +983,13 @@ module gpu_top (
     wire [19:0] _unused_fill_count  = mem_fill_count;
     wire [15:0] _unused_fb_lut_addr = fb_lut_addr;
     wire        _unused_color_grade = color_grade_enable;
+    // Port 3 texture stub outputs (consumed when texture cache is connected)
+    wire [15:0] _unused_tex_burst_rdata = tex_burst_rdata;
+    wire        _unused_tex_burst_dv    = tex_burst_data_valid;
+    wire        _unused_tex_ack         = tex_ack;
+    // Arbiter port 3 outputs unused until texture cache burst reads are live
+    wire [31:0] _unused_p3_rdata       = arb_port3_rdata;
+    wire        _unused_p3_bwdata_req  = arb_port3_burst_wdata_req;
     /* verilator lint_on UNUSEDSIGNAL */
 
     pixel_pipeline u_pixel_pipeline (
