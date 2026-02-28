@@ -48,6 +48,7 @@ Verification methods:
 - [VER-011: Depth-Tested Overlapping Triangles Golden Image Test](ver_011_depth_tested_triangles.md)
 - [VER-012: Textured Triangle Golden Image Test](ver_012_textured_triangle.md)
 - [VER-013: Color-Combined Output Golden Image Test](ver_013_color_combined_output.md)
+- [VER-014: Textured Cube Golden Image Test](ver_014_textured_cube.md)
 <!-- TOC-END -->
 
 ## Planned Verification Documents
@@ -65,7 +66,7 @@ Each file should be created from `ver_000_template.md` and placed in this direct
 | VER-004 | `ver_004_color_combiner.md` | `color_combiner_tb` | REQ-004.01, UNIT-010 (blocked: UNIT-010 is WIP) |
 | VER-005 | `ver_005_texture_decoder.md` | `texture_decoder_tb` | REQ-003.01, UNIT-006 |
 
-### Golden Image Integration Tests (VER-010 through VER-013)
+### Golden Image Integration Tests (VER-010 through VER-014)
 
 | ID | Filename (to create) | Scene | Verifies |
 |----|----------------------|-------|---------|
@@ -73,5 +74,6 @@ Each file should be created from `ver_000_template.md` and placed in this direct
 | VER-011 | `ver_011_depth_tested_triangles.md` | Depth-tested overlapping triangles | REQ-005.02 |
 | VER-012 | `ver_012_textured_triangle.md` | Textured triangle | REQ-003.01 |
 | VER-013 | `ver_013_color_combined_output.md` | Blended/color-combined output | REQ-004.01 |
+| VER-014 | `ver_014_textured_cube.md` | Perspective-projected textured cube (12 triangles, Z-tested) | REQ-003.01, REQ-005.02 |
 
 These tests require the common integration simulation harness (`spi_gpu/tests/harness/`) described in `test_strategy.md`.

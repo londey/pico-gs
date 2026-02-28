@@ -87,7 +87,7 @@ None
 
 Formal testbenches:
 - **VER-001** (`tb_rasterizer` — Verilator unit testbench; covers REQ-002.03 rasterization algorithm)
-- **VER-010** through **VER-013** (golden image integration tests exercise the full rasterizer-to-framebuffer path)
+- **VER-010** through **VER-014** (golden image integration tests exercise the full rasterizer-to-framebuffer path)
 
 - Verify edge function computation for known triangles (clockwise/counter-clockwise winding)
 - Test bounding box clamping at the configured surface boundary — `(1<<FB_CONFIG.WIDTH_LOG2)-1` in X and `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y — not at a fixed 640×480
@@ -101,9 +101,10 @@ Formal testbenches:
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
+- VER-014 (Textured Cube Golden Image Test) — exercises the rasterizer across multiple triangles with varying depth and projection angles under perspective
 
 The Verilator interactive simulator (REQ-010.02, `make sim-interactive`) extends the golden image harness concept to a live interactive tool.
-It injects commands via `SIM_DIRECT_CMD` ports into the same register-file input path that VER-010–VER-013 use, but renders output live to an SDL3 window rather than comparing against a static reference image.
+It injects commands via `SIM_DIRECT_CMD` ports into the same register-file input path that VER-010–VER-014 use, but renders output live to an SDL3 window rather than comparing against a static reference image.
 The interactive sim is a companion development tool, not a replacement for the golden image regression tests.
 
 ## Design Notes
