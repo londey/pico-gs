@@ -468,72 +468,166 @@ module texture_decoder_tb;
                 {5'd31, 6'd63, 5'd31, 2'b11});
 
         // ============================================================
-        // Test 10: Format-select mux wiring
+        // Test 10: Format-select mux wiring (VER-005 step 10)
         // ============================================================
-        $display("--- Test 10: Format-select mux ---");
+        $display("--- Test 10: Format-select mux (7-format, 3-bit) ---");
 
-        // Set up known unique output from each decoder by using specific inputs.
-        // We already have data loaded in the decoders from prior tests.
-        // Feed distinctive data to each decoder and verify the mux selects correctly.
+        // Set up DISTINCTIVE data for each decoder so all 7 outputs are
+        // provably unique.  This ensures the mux test can detect any
+        // miswiring (two decoders producing identical output would mask a
+        // mux routing error).
+        //
+        // Expected RGBA5652 outputs (texel 0 for all decoders):
+        //   BC1  (0): green       -> {R5=0,  G6=63, B5=0,  A2=11}
+        //   BC2  (1): white a=10  -> {R5=31, G6=63, B5=31, A2=10}
+        //   BC3  (2): cyan  a=10  -> {R5=0,  G6=63, B5=31, A2=10}
+        //   BC4  (3): grey  a=11  -> {R5=16, G6=32, B5=16, A2=11}
+        //   RGB  (4): blue        -> {R5=0,  G6=0,  B5=31, A2=11}
+        //   RGBA (5): custom      -> {R5=16, G6=16, B5=24, A2=11}
+        //   R8   (6): grey 0x60   -> {R5=12, G6=24, B5=12, A2=11}
 
-        // BC1 (format 0): use red pixel from test 6
-        bc1_data[15:0]  = 16'hF800;
-        bc1_data[31:16] = 16'h001F;
-        bc1_data[39:32] = 8'h00;     // texel 0 = index 0 = red
-        bc1_data[63:40] = 24'h0;
+        // --- BC1 (format 0): pure green, 4-color opaque mode ---
+        // color0 = 0x07E0 (R5=0, G6=63, B5=0), color1 = 0x0000
+        // color0 > color1 -> 4-color mode; texel 0 index=0 -> color0
+        bc1_data = 64'h0;
+        bc1_data[15:0]  = 16'h07E0;  // color0 = green
+        bc1_data[31:16] = 16'h0000;  // color1 = black
+        bc1_data[63:32] = 32'h0;     // all texels index 0
         bc1_texel_idx = 4'd0;
 
-        // RGB565 (format 4): use red pixel from test 1
+        // --- BC2 (format 1): white with A4=0x8 -> A2=10 ---
+        // Color block: color0=0xFFFF (white), color1=0x0, all indices=0
+        // Alpha: texel 0 = 4'h8 (A4[3:2]=2'b10)
+        bc2_block_data = 128'h0;
+        bc2_block_data[3:0]    = 4'h8;     // texel 0 alpha = 0x8
+        bc2_block_data[79:64]  = 16'hFFFF; // color0 = white
+        bc2_block_data[95:80]  = 16'h0000; // color1 = black
+        bc2_block_data[127:96] = 32'h0;    // all texels index 0
+        bc2_texel_idx = 4'd0;
+
+        // --- BC3 (format 2): cyan with alpha0=0x80 -> A8[7:6]=10 ---
+        // Alpha: alpha0=0x80, alpha1=0x00, texel 0 alpha_index=000 -> alpha0=0x80
+        // Color block: color0=0x07FF (R5=0, G6=63, B5=31=cyan), color1=0x0
+        bc3_block_data = 128'h0;
+        bc3_block_data[7:0]    = 8'h80;    // alpha0 = 0x80
+        bc3_block_data[15:8]   = 8'h00;    // alpha1 = 0x00
+        bc3_block_data[63:16]  = 48'h0;    // all alpha indices = 0 (-> alpha0)
+        bc3_block_data[79:64]  = 16'h07FF; // color0 = cyan (R=0, G=63, B=31)
+        bc3_block_data[95:80]  = 16'h0000; // color1 = black
+        bc3_block_data[127:96] = 32'h0;    // all texels index 0
+        bc3_texel_idx = 4'd0;
+
+        // --- BC4 (format 3): red0=0x80, texel 0 idx=0 -> R8=0x80 ---
+        // R5=0x80[7:3]=16, G6=0x80[7:2]=32, B5=16, A2=11
+        bc4_block_data = 64'h0;
+        bc4_block_data[7:0]  = 8'h80;  // red0 = 0x80
+        bc4_block_data[15:8] = 8'h00;  // red1 = 0x00
+        // texel 0: 3-bit index = 000 -> palette[0] = red0 = 0x80
+        bc4_texel_idx = 4'd0;
+
+        // --- RGB565 (format 4): pure blue = 0x001F ---
         rgb565_block_data = 256'h0;
-        rgb565_block_data[15:0] = 16'hF800;
+        rgb565_block_data[15:0] = 16'h001F;  // R=0, G=0, B=31
         rgb565_texel_idx = 4'd0;
 
-        // R8 (format 6): use 0xA0 from test 3
+        // --- RGBA8888 (format 5): R=0x80, G=0x40, B=0xC0, A=0xFF ---
+        // R5=0x80[7:3]=16, G6=0x40[7:2]=16, B5=0xC0[7:3]=24, A2=0xFF[7:6]=11
+        rgba8888_block_data = 512'h0;
+        rgba8888_block_data[31:0] = {8'hFF, 8'hC0, 8'h40, 8'h80};
+        rgba8888_texel_idx = 4'd0;
+
+        // --- R8 (format 6): R8=0x60 ---
+        // R5=0x60[7:3]=12, G6=0x60[7:2]=24, B5=12, A2=11
         r8_block_data = 128'h0;
-        r8_block_data[7:0] = 8'hA0;
+        r8_block_data[7:0] = 8'h60;
         r8_texel_idx = 4'd0;
 
         #10;
 
-        // Verify mux for format 0 (BC1)
+        // Pre-computed expected RGBA5652 for each decoder (constants, not wires)
+        // to double-check both mux routing AND decoder correctness.
+
+        // Verify mux for format 0 (BC1): expect pure green, opaque
         mux_tex_format = 3'd0;
         #10;
-        check18("mux format=0 (BC1)", mux_result, bc1_rgba5652);
+        check18("mux fmt=0 (BC1) routes decoder", mux_result, bc1_rgba5652);
+        check18("mux fmt=0 (BC1) expected value", mux_result,
+                {5'd0, 6'd63, 5'd0, 2'b11});
 
-        // Verify mux for format 1 (BC2)
+        // Verify mux for format 1 (BC2): expect white, A2=10
         mux_tex_format = 3'd1;
         #10;
-        check18("mux format=1 (BC2)", mux_result, bc2_rgba5652);
+        check18("mux fmt=1 (BC2) routes decoder", mux_result, bc2_rgba5652);
+        check18("mux fmt=1 (BC2) expected value", mux_result,
+                {5'd31, 6'd63, 5'd31, 2'b10});
 
-        // Verify mux for format 2 (BC3)
+        // Verify mux for format 2 (BC3): expect cyan, A2=10
         mux_tex_format = 3'd2;
         #10;
-        check18("mux format=2 (BC3)", mux_result, bc3_rgba5652);
+        check18("mux fmt=2 (BC3) routes decoder", mux_result, bc3_rgba5652);
+        check18("mux fmt=2 (BC3) expected value", mux_result,
+                {5'd0, 6'd63, 5'd31, 2'b10});
 
-        // Verify mux for format 3 (BC4)
+        // Verify mux for format 3 (BC4): expect grey, A2=11
         mux_tex_format = 3'd3;
         #10;
-        check18("mux format=3 (BC4)", mux_result, bc4_rgba5652);
+        check18("mux fmt=3 (BC4) routes decoder", mux_result, bc4_rgba5652);
+        check18("mux fmt=3 (BC4) expected value", mux_result,
+                {5'd16, 6'd32, 5'd16, 2'b11});
 
-        // Verify mux for format 4 (RGB565)
+        // Verify mux for format 4 (RGB565): expect pure blue, opaque
         mux_tex_format = 3'd4;
         #10;
-        check18("mux format=4 (RGB565)", mux_result, rgb565_rgba5652);
+        check18("mux fmt=4 (RGB565) routes decoder", mux_result, rgb565_rgba5652);
+        check18("mux fmt=4 (RGB565) expected value", mux_result,
+                {5'd0, 6'd0, 5'd31, 2'b11});
 
-        // Verify mux for format 5 (RGBA8888)
+        // Verify mux for format 5 (RGBA8888): expect {16,16,24,11}
         mux_tex_format = 3'd5;
         #10;
-        check18("mux format=5 (RGBA8888)", mux_result, rgba8888_rgba5652);
+        check18("mux fmt=5 (RGBA8888) routes decoder", mux_result, rgba8888_rgba5652);
+        check18("mux fmt=5 (RGBA8888) expected value", mux_result,
+                {5'd16, 6'd16, 5'd24, 2'b11});
 
-        // Verify mux for format 6 (R8)
+        // Verify mux for format 6 (R8): expect {12,24,12,11}
         mux_tex_format = 3'd6;
         #10;
-        check18("mux format=6 (R8)", mux_result, r8_rgba5652);
+        check18("mux fmt=6 (R8) routes decoder", mux_result, r8_rgba5652);
+        check18("mux fmt=6 (R8) expected value", mux_result,
+                {5'd12, 6'd24, 5'd12, 2'b11});
 
         // Verify mux for format 7 (reserved -> zero)
         mux_tex_format = 3'd7;
         #10;
-        check18("mux format=7 (reserved)", mux_result, 18'b0);
+        check18("mux fmt=7 (reserved) -> zero", mux_result, 18'b0);
+
+        // ============================================================
+        // Test 11: RGBA5652 bit layout verification (VER-005 step 11)
+        // ============================================================
+        $display("--- Test 11: RGBA5652 bit layout ---");
+
+        // Confirm RGBA5652 = {R5[17:13], G6[12:7], B5[6:2], A2[1:0]}
+        // per INT-032 specification.
+        // Use the RGB565 decoder with a known pixel to verify bit positions.
+        // Input: R5=5'b10101, G6=6'b101010, B5=5'b01010 -> 0xAA8A (RGB565)
+        rgb565_block_data = 256'h0;
+        rgb565_block_data[15:0] = {5'b10101, 6'b101010, 5'b01010}; // 0xAA8A
+        rgb565_texel_idx = 4'd0;
+        #10;
+
+        // Verify each field position individually
+        check18("rgba5652 R5 at [17:13]", {13'b0, rgb565_rgba5652[17:13]},
+                {13'b0, 5'b10101});
+        check18("rgba5652 G6 at [12:7]",  {12'b0, rgb565_rgba5652[12:7]},
+                {12'b0, 6'b101010});
+        check18("rgba5652 B5 at [6:2]",   {13'b0, rgb565_rgba5652[6:2]},
+                {13'b0, 5'b01010});
+        check18("rgba5652 A2 at [1:0]",   {16'b0, rgb565_rgba5652[1:0]},
+                {16'b0, 2'b11});
+
+        // Cross-check: full 18-bit value matches {R5, G6, B5, A2=11}
+        check18("rgba5652 full layout", rgb565_rgba5652,
+                {5'b10101, 6'b101010, 5'b01010, 2'b11});
 
         // ============================================================
         // Summary
