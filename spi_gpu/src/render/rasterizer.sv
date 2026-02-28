@@ -1,18 +1,19 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `a09b6f5b00a61391` 2026-02-28
+// Spec-ref: unit_005_rasterizer.md `e6944c4c3ff25580` 2026-02-28
 
 // Triangle Rasterizer
-// Converts triangles to pixels using edge functions and barycentric interpolation
-// Implements Gouraud shading with Z-buffering
+// Converts triangles to pixels using edge functions and incremental
+// derivative interpolation (DD-024).
 //
-// Format: R5G6B5 framebuffer (16-bit color) + 16-bit Z-buffer
-// Memory: 32-bit words with 16-bit data in lower half (upper half unused/padding)
+// Format: Fragment output bus carries interpolated attributes in extended
+// precision (Q4.12 color, 16-bit Z, Q4.12 UV, Q3.12 Q/W).
 //
-// Multiplier strategy:
-//   Setup uses a shared pair of 11×11 multipliers, sequenced over 6 cycles
-//   (edge C coefficients + initial edge evaluation). Per-pixel interpolation
-//   uses 15 dedicated multipliers (3 bary weights + 9 color + 3 Z).
-//   Total: 2 (shared setup) + 15 (per-pixel) = 17 MULT18X18D.
+// Multiplier strategy (DD-024):
+//   Setup uses a shared pair of 11x11 multipliers, sequenced over 6 cycles
+//   (edge C coefficients + initial edge evaluation).
+//   All per-pixel attribute interpolation is performed by incremental
+//   addition only -- no per-pixel multiplies.
+//   Total: 2 (shared setup) = 2 MULT18X18D.
 
 module rasterizer (
     input  wire         clk,
@@ -26,87 +27,56 @@ module rasterizer (
     input  wire [15:0]  v0_x,           // 12.4 fixed point
     input  wire [15:0]  v0_y,           // 12.4 fixed point
     input  wire [15:0]  v0_z,           // 16-bit depth
-    input  wire [23:0]  v0_color,       // RGB888
+    input  wire [31:0]  v0_color0,      // RGBA8888 primary color
+    input  wire [31:0]  v0_color1,      // RGBA8888 secondary color
+    input  wire [31:0]  v0_uv0,         // UV0 {U[31:16], V[15:0]} Q4.12
+    input  wire [31:0]  v0_uv1,         // UV1 {U[31:16], V[15:0]} Q4.12
+    input  wire [15:0]  v0_q,           // Q/W (Q3.12 perspective denominator)
 
     // Vertex 1
     input  wire [15:0]  v1_x,
     input  wire [15:0]  v1_y,
     input  wire [15:0]  v1_z,
-    input  wire [23:0]  v1_color,
+    input  wire [31:0]  v1_color0,
+    input  wire [31:0]  v1_color1,
+    input  wire [31:0]  v1_uv0,
+    input  wire [31:0]  v1_uv1,
+    input  wire [15:0]  v1_q,
 
     // Vertex 2
     input  wire [15:0]  v2_x,
     input  wire [15:0]  v2_y,
     input  wire [15:0]  v2_z,
-    input  wire [23:0]  v2_color,
+    input  wire [31:0]  v2_color0,
+    input  wire [31:0]  v2_color1,
+    input  wire [31:0]  v2_uv0,
+    input  wire [31:0]  v2_uv1,
+    input  wire [15:0]  v2_q,
 
-    // Barycentric interpolation (from CPU)
-    input  wire [15:0]  inv_area,       // 1/area (0.16 fixed point)
-    input  wire [3:0]   area_shift,     // Edge value barrel shift count (0-15)
+    // Inverse area for derivative scaling (from CPU / UNIT-004)
+    input  wire [15:0]  inv_area,       // 1/area (UQ0.16 fixed point)
 
-    // Framebuffer write interface (to SRAM arbiter port 1)
-    output reg          fb_req,
-    output wire         fb_we,          // Always 1 (write-only)
-    output reg  [23:0]  fb_addr,
-    output reg  [31:0]  fb_wdata,
-    input  wire [31:0]  fb_rdata,       // Not used for framebuffer writes
-    input  wire         fb_ack,
-    input  wire         fb_ready,
-
-    // Z-buffer interface (to SRAM arbiter port 2)
-    output reg          zb_req,
-    output reg          zb_we,          // 0 for read, 1 for write
-    output reg  [23:0]  zb_addr,
-    output wire [31:0]  zb_wdata,       // Combinational output
-    input  wire [31:0]  zb_rdata,
-    input  wire         zb_ack,
-    input  wire         zb_ready,
-
-    // Configuration
-    input  wire [31:12] fb_base_addr,   // Framebuffer base address
-    input  wire [31:12] zb_base_addr,   // Z-buffer base address
-
-    // Rendering mode (from register file)
-    input  wire         mode_z_test,    // Z-test enabled (RENDER_MODE[2])
-    input  wire         mode_z_write,   // Z-write enabled (RENDER_MODE[3])
-    input  wire         mode_color_write, // Color buffer write enabled (RENDER_MODE[4])
-    input  wire [2:0]   z_compare,      // Z-test compare function (RENDER_MODE[15:13])
-
-    // Depth range clipping (from Z_RANGE register)
-    input  wire [15:0]  z_range_min,    // Z range minimum (inclusive)
-    input  wire [15:0]  z_range_max,    // Z range maximum (inclusive)
+    // Fragment output bus (to UNIT-006 Pixel Pipeline)
+    output reg          frag_valid,     // Fragment data valid
+    input  wire         frag_ready,     // Downstream ready to accept
+    output reg  [9:0]   frag_x,         // Fragment X position
+    output reg  [9:0]   frag_y,         // Fragment Y position
+    output reg  [15:0]  frag_z,         // Interpolated 16-bit depth
+    output reg  [63:0]  frag_color0,    // Q4.12 RGBA {R[63:48], G[47:32], B[31:16], A[15:0]}
+    output reg  [63:0]  frag_color1,    // Q4.12 RGBA {R[63:48], G[47:32], B[31:16], A[15:0]}
+    output reg  [31:0]  frag_uv0,       // Q4.12 {U[31:16], V[15:0]}
+    output reg  [31:0]  frag_uv1,       // Q4.12 {U[31:16], V[15:0]}
+    output reg  [15:0]  frag_q,         // Q3.12 perspective denominator
 
     // Framebuffer surface dimensions (from FB_CONFIG register via UNIT-003)
-    // Supported values: 8 (256 px) or 9 (512 px); higher values overflow 10-bit wires.
-    // INT-010 constrains these to 4-bit fields; the reference implementation uses 8 or 9.
     input  wire [3:0]   fb_width_log2,  // log2(surface width), e.g. 9 for 512 pixels
     input  wire [3:0]   fb_height_log2  // log2(surface height), e.g. 9 for 512 pixels
 );
 
     // ========================================================================
-    // Unused Input Declarations
-    // ========================================================================
-
-    // fb_rdata and fb_ready are part of the arbiter port interface but the
-    // rasterizer only writes to the framebuffer, never reads.
-    wire _unused_fb_rdata = |fb_rdata;
-    wire _unused_fb_ready = fb_ready;
-
-    // zb_rdata upper 16 bits are unused (Z-buffer stores 16-bit depth in [15:0])
-    wire [15:0] _unused_zb_rdata_high = zb_rdata[31:16];
-
-    // zb_ready is not used (rasterizer relies on ack handshake)
-    wire _unused_zb_ready = zb_ready;
-
-    // Only bits [23:12] of base addresses are relevant for 24-bit SRAM space
-    wire [7:0] _unused_fb_base_high = fb_base_addr[31:24];
-    wire [7:0] _unused_zb_base_high = zb_base_addr[31:24];
-
-    // ========================================================================
     // Constants
     // ========================================================================
 
-    // Fixed-point fractional bits (retained for documentation)
     localparam [3:0] FRAC_BITS = 4'd4;
     wire [3:0] _unused_frac_bits = FRAC_BITS;
 
@@ -116,21 +86,16 @@ module rasterizer (
 
     typedef enum logic [3:0] {
         IDLE            = 4'd0,
-        SETUP           = 4'd1,  // Edge A/B/bbox + edge0_C (shared mul)
-        SETUP_2         = 4'd13, // edge1_C (shared mul)
-        SETUP_3         = 4'd14, // edge2_C (shared mul)
-        ITER_START      = 4'd2,  // e0_init (shared mul) + set curr_x/curr_y
-        INIT_E1         = 4'd4,  // e1_init (shared mul)
-        INIT_E2         = 4'd15, // e2_init (shared mul)
-        EDGE_TEST       = 4'd3,  // Inside test + barycentric weights
-        INTERPOLATE     = 4'd5,  // Interpolate Z and color
-        ZBUF_READ       = 4'd6,  // Read Z-buffer value
-        ZBUF_WAIT       = 4'd7,  // Wait for Z-buffer read
-        ZBUF_TEST       = 4'd8,  // Compare interpolated Z with Z-buffer
-        WRITE_PIXEL     = 4'd9,  // Write to framebuffer and Z-buffer
-        WRITE_WAIT      = 4'd10, // Wait for write completion
-        ITER_NEXT       = 4'd11, // Move to next pixel
-        RANGE_TEST      = 4'd12  // Depth range + early Z bypass check
+        SETUP           = 4'd1,   // Edge A/B/bbox + edge0_C (shared mul)
+        SETUP_2         = 4'd13,  // edge1_C (shared mul)
+        SETUP_3         = 4'd14,  // edge2_C (shared mul)
+        ITER_START      = 4'd2,   // e0_init (shared mul) + derivative latch + attr init
+        INIT_E1         = 4'd4,   // e1_init (shared mul)
+        INIT_E2         = 4'd15,  // e2_init (shared mul)
+        EDGE_TEST       = 4'd3,   // Inside test
+        INTERPOLATE     = 4'd5,   // Emit fragment (attributes already accumulated)
+        FRAG_WAIT       = 4'd6,   // Wait for frag_ready handshake
+        ITER_NEXT       = 4'd11   // Move to next pixel
     } state_t;
 
     state_t state /* verilator public */;
@@ -145,24 +110,40 @@ module rasterizer (
     reg [9:0] x1 /* verilator public */, y1 /* verilator public */;
     reg [9:0] x2 /* verilator public */, y2 /* verilator public */;
 
-    // Vertex depths and colors
+    // Vertex depths
     reg [15:0] z0, z1, z2;
-    reg [7:0]  r0 /* verilator public */, g0 /* verilator public */, b0 /* verilator public */;
-    reg [7:0]  r1 /* verilator public */, g1 /* verilator public */, b1 /* verilator public */;
-    reg [7:0]  r2 /* verilator public */, g2 /* verilator public */, b2 /* verilator public */;
 
-    // Barycentric interpolation
-    reg [15:0] inv_area_reg /* verilator public */;  // 1/area (0.16 fixed point)
-    reg [3:0]  area_shift_reg;  // Edge barrel shift count
+    // Vertex color0 (RGBA, 8-bit per channel)
+    reg [7:0] c0_r0, c0_g0, c0_b0, c0_a0;
+    reg [7:0] c0_r1, c0_g1, c0_b1, c0_a1;
+    reg [7:0] c0_r2, c0_g2, c0_b2, c0_a2;
+
+    // Vertex color1 (RGBA, 8-bit per channel)
+    reg [7:0] c1_r0, c1_g0, c1_b0, c1_a0;
+    reg [7:0] c1_r1, c1_g1, c1_b1, c1_a1;
+    reg [7:0] c1_r2, c1_g2, c1_b2, c1_a2;
+
+    // Vertex UV0 (Q4.12 signed per component)
+    reg signed [15:0] uv0_u0, uv0_v0;
+    reg signed [15:0] uv0_u1, uv0_v1;
+    reg signed [15:0] uv0_u2, uv0_v2;
+
+    // Vertex UV1 (Q4.12 signed per component)
+    reg signed [15:0] uv1_u0, uv1_v0;
+    reg signed [15:0] uv1_u1, uv1_v1;
+    reg signed [15:0] uv1_u2, uv1_v2;
+
+    // Vertex Q/W (Q3.12)
+    reg [15:0] q0, q1, q2;
+
+    // Inverse area for derivative scaling
+    reg [15:0] inv_area_reg /* verilator public */;
 
     // Bounding box
     reg [9:0] bbox_min_x /* verilator public */, bbox_max_x /* verilator public */;
     reg [9:0] bbox_min_y /* verilator public */, bbox_max_y /* verilator public */;
 
     // Edge function coefficients
-    // Edge equation: E(x,y) = A*x + B*y + C
-    // A/B are differences of 10-bit coords → 11-bit signed (fits single MULT18X18D)
-    // C is product of 10-bit coords → 21-bit signed
     reg signed [10:0] edge0_A, edge0_B;
     reg signed [20:0] edge0_C;
     reg signed [10:0] edge1_A, edge1_B;
@@ -179,32 +160,47 @@ module rasterizer (
     // Edge function values at current pixel
     reg signed [31:0] e0, e1, e2;
 
-    // Edge function values at start of current row (for incremental Y stepping)
+    // Edge function values at start of current row
     reg signed [31:0] e0_row, e1_row, e2_row;
 
-    // Barycentric weights (1.16 fixed point: 1 integer bit + 16 fractional bits)
-    // 17-bit unsigned ensures each w*attr multiply fits in a single MULT18X18D
-    // (17-bit unsigned → 18-bit signed input, paired with 8-bit color or 16-bit Z).
-    reg [16:0] w0, w1, w2;
+    // ========================================================================
+    // Attribute Accumulators (incremental interpolation, DD-024)
+    // ========================================================================
+    // Each attribute: acc (current pixel), row (row start), dx, dy
+    // Color channels stored as 8.16 signed fixed-point (32-bit)
+    // Z stored as 16.16 unsigned-origin signed fixed-point (32-bit)
+    // UV stored as Q4.28 signed fixed-point (Q4.12 vertex + 16 guard bits)
+    // Q stored as Q3.28 signed fixed-point (Q3.12 vertex + 16 guard bits)
 
-    // Interpolated values
-    reg [15:0] interp_z /* verilator public */;
-    reg [7:0]  interp_r /* verilator public */, interp_g /* verilator public */, interp_b /* verilator public */;
+    // Color0 RGBA
+    reg signed [31:0] c0r_acc, c0r_row, c0r_dx, c0r_dy;
+    reg signed [31:0] c0g_acc, c0g_row, c0g_dx, c0g_dy;
+    reg signed [31:0] c0b_acc, c0b_row, c0b_dx, c0b_dy;
+    reg signed [31:0] c0a_acc, c0a_row, c0a_dx, c0a_dy;
 
-    // Low bits of interpolated colors discarded during RGB888→RGB565 conversion
-    wire [2:0] _unused_interp_r_low = interp_r[2:0];
-    wire [1:0] _unused_interp_g_low = interp_g[1:0];
-    wire [2:0] _unused_interp_b_low = interp_b[2:0];
+    // Color1 RGBA
+    reg signed [31:0] c1r_acc, c1r_row, c1r_dx, c1r_dy;
+    reg signed [31:0] c1g_acc, c1g_row, c1g_dx, c1g_dy;
+    reg signed [31:0] c1b_acc, c1b_row, c1b_dx, c1b_dy;
+    reg signed [31:0] c1a_acc, c1a_row, c1a_dx, c1a_dy;
 
-    // zbuf_value register removed: early_z reads directly from zb_rdata[15:0]
-    // to avoid a one-cycle stale-data timing issue (see early_z instantiation).
+    // Z
+    reg signed [31:0] z_acc, z_row, z_dx, z_dy;
+
+    // UV0
+    reg signed [31:0] uv0u_acc, uv0u_row, uv0u_dx, uv0u_dy;
+    reg signed [31:0] uv0v_acc, uv0v_row, uv0v_dx, uv0v_dy;
+
+    // UV1
+    reg signed [31:0] uv1u_acc, uv1u_row, uv1u_dx, uv1u_dy;
+    reg signed [31:0] uv1v_acc, uv1v_row, uv1v_dx, uv1v_dy;
+
+    // Q/W
+    reg signed [31:0] q_acc, q_row, q_dx, q_dy;
 
     // ========================================================================
-    // Shared Setup Multiplier (2 × 11×11 signed, muxed across 6 setup phases)
+    // Shared Setup Multiplier (2 x 11x11 signed, muxed across 6 setup phases)
     // ========================================================================
-    //
-    // Phases 0-2 (SETUP, SETUP_2, SETUP_3): compute edge C = a1*b1 - a2*b2
-    // Phases 3-5 (ITER_START, INIT_E1, INIT_E2): compute e_init = a1*b1 + a2*b2 + C
 
     logic signed [10:0] smul_a1, smul_b1;
     logic signed [10:0] smul_a2, smul_b2;
@@ -212,14 +208,12 @@ module rasterizer (
     wire  signed [21:0] smul_p2 = smul_a2 * smul_b2;
 
     always_comb begin
-        // Default: zero inputs (no latches)
         smul_a1 = 11'sd0;
         smul_b1 = 11'sd0;
         smul_a2 = 11'sd0;
         smul_b2 = 11'sd0;
 
         case (state)
-            // Edge C coefficients: C = x_a * y_b - x_c * y_d
             SETUP: begin
                 smul_a1 = $signed({1'b0, x1}); smul_b1 = $signed({1'b0, y2});
                 smul_a2 = $signed({1'b0, x2}); smul_b2 = $signed({1'b0, y1});
@@ -232,7 +226,6 @@ module rasterizer (
                 smul_a1 = $signed({1'b0, x0}); smul_b1 = $signed({1'b0, y1});
                 smul_a2 = $signed({1'b0, x1}); smul_b2 = $signed({1'b0, y0});
             end
-            // Initial edge values: e_init = A*min_x + B*min_y + C
             ITER_START: begin
                 smul_a1 = edge0_A; smul_b1 = $signed({1'b0, bbox_min_x});
                 smul_a2 = edge0_B; smul_b2 = $signed({1'b0, bbox_min_y});
@@ -250,115 +243,305 @@ module rasterizer (
     end
 
     // ========================================================================
-    // Barycentric Weight Computation (combinational, latched in EDGE_TEST)
+    // Derivative Precomputation (combinational wires)
     // ========================================================================
+    //
+    // For each attribute f with values at v0, v1, v2 and edge coefficients:
+    //   delta10 = f1 - f0, delta20 = f2 - f0
+    //   raw_dx = delta10 * edge1_A + delta20 * edge2_A
+    //   df/dx = (raw_dx * inv_area) >> 16
+    // Similarly for df/dy using edge1_B, edge2_B.
+    //
+    // Color channels (8-bit): 9-bit deltas * 11-bit coeffs = 20-bit products
+    // Wide channels (16-bit): 17-bit deltas * 11-bit coeffs = 28-bit products
 
-    // Barrel-shift edge values to fit in 16 bits for large triangles.
-    // The host sets area_shift = max(0, ceil(log2(2*area+1)) - 16)
-    // and compensates inv_area accordingly.
-    wire [31:0] e0_shifted_full = e0[31:0] >> area_shift_reg;
-    wire [31:0] e1_shifted_full = e1[31:0] >> area_shift_reg;
-    wire [31:0] e2_shifted_full = e2[31:0] >> area_shift_reg;
-    wire [15:0] e0_shifted = e0_shifted_full[15:0];
-    wire [15:0] e1_shifted = e1_shifted_full[15:0];
-    wire [15:0] e2_shifted = e2_shifted_full[15:0];
+    // Attribute vertex deltas
+    wire signed [8:0] d10_c0r = $signed({1'b0, c0_r1}) - $signed({1'b0, c0_r0});
+    wire signed [8:0] d20_c0r = $signed({1'b0, c0_r2}) - $signed({1'b0, c0_r0});
+    wire signed [8:0] d10_c0g = $signed({1'b0, c0_g1}) - $signed({1'b0, c0_g0});
+    wire signed [8:0] d20_c0g = $signed({1'b0, c0_g2}) - $signed({1'b0, c0_g0});
+    wire signed [8:0] d10_c0b = $signed({1'b0, c0_b1}) - $signed({1'b0, c0_b0});
+    wire signed [8:0] d20_c0b = $signed({1'b0, c0_b2}) - $signed({1'b0, c0_b0});
+    wire signed [8:0] d10_c0a = $signed({1'b0, c0_a1}) - $signed({1'b0, c0_a0});
+    wire signed [8:0] d20_c0a = $signed({1'b0, c0_a2}) - $signed({1'b0, c0_a0});
 
-    // Upper bits of shifted edge values discarded (host ensures shifted value fits 16 bits)
-    wire [15:0] _unused_e0_shifted_hi = e0_shifted_full[31:16];
-    wire [15:0] _unused_e1_shifted_hi = e1_shifted_full[31:16];
-    wire [15:0] _unused_e2_shifted_hi = e2_shifted_full[31:16];
+    wire signed [8:0] d10_c1r = $signed({1'b0, c1_r1}) - $signed({1'b0, c1_r0});
+    wire signed [8:0] d20_c1r = $signed({1'b0, c1_r2}) - $signed({1'b0, c1_r0});
+    wire signed [8:0] d10_c1g = $signed({1'b0, c1_g1}) - $signed({1'b0, c1_g0});
+    wire signed [8:0] d20_c1g = $signed({1'b0, c1_g2}) - $signed({1'b0, c1_g0});
+    wire signed [8:0] d10_c1b = $signed({1'b0, c1_b1}) - $signed({1'b0, c1_b0});
+    wire signed [8:0] d20_c1b = $signed({1'b0, c1_b2}) - $signed({1'b0, c1_b0});
+    wire signed [8:0] d10_c1a = $signed({1'b0, c1_a1}) - $signed({1'b0, c1_a0});
+    wire signed [8:0] d20_c1a = $signed({1'b0, c1_a2}) - $signed({1'b0, c1_a0});
 
-    // Full 16×16 products in 16.16 format; truncated to [16:0] (1.16 fixed point)
-    // when latched into w0/w1/w2 registers.
-    wire [31:0] w0_full = e0_shifted * inv_area_reg;
-    wire [31:0] w1_full = e1_shifted * inv_area_reg;
-    wire [31:0] w2_full = e2_shifted * inv_area_reg;
+    wire signed [16:0] d10_z    = $signed({1'b0, z1})     - $signed({1'b0, z0});
+    wire signed [16:0] d20_z    = $signed({1'b0, z2})     - $signed({1'b0, z0});
+    wire signed [16:0] d10_uv0u = {uv0_u1[15], uv0_u1} - {uv0_u0[15], uv0_u0};
+    wire signed [16:0] d20_uv0u = {uv0_u2[15], uv0_u2} - {uv0_u0[15], uv0_u0};
+    wire signed [16:0] d10_uv0v = {uv0_v1[15], uv0_v1} - {uv0_v0[15], uv0_v0};
+    wire signed [16:0] d20_uv0v = {uv0_v2[15], uv0_v2} - {uv0_v0[15], uv0_v0};
+    wire signed [16:0] d10_uv1u = {uv1_u1[15], uv1_u1} - {uv1_u0[15], uv1_u0};
+    wire signed [16:0] d20_uv1u = {uv1_u2[15], uv1_u2} - {uv1_u0[15], uv1_u0};
+    wire signed [16:0] d10_uv1v = {uv1_v1[15], uv1_v1} - {uv1_v0[15], uv1_v0};
+    wire signed [16:0] d20_uv1v = {uv1_v2[15], uv1_v2} - {uv1_v0[15], uv1_v0};
+    wire signed [16:0] d10_q    = $signed({1'b0, q1})     - $signed({1'b0, q0});
+    wire signed [16:0] d20_q    = $signed({1'b0, q2})     - $signed({1'b0, q0});
 
-    // Upper bits [31:17] discarded during 1.16 truncation
-    wire [14:0] _unused_w0_hi = w0_full[31:17];
-    wire [14:0] _unused_w1_hi = w1_full[31:17];
-    wire [14:0] _unused_w2_hi = w2_full[31:17];
+    // ---- Color derivative computation (8-bit channel) ----
+    // raw = d10 * coeff1 + d20 * coeff2  (20-bit products, 21-bit sum)
+    // derivative = (raw * inv_area) >>> 16  (37-bit scaled, take [31:0] after shift)
 
-    // Shifted edge values used in multiply; original e[15:0] no longer directly used
-    // for weight computation (but e values still used for inside-triangle test)
+    // Color0 R dx/dy
+    wire signed [20:0] raw_c0r_dx = (d10_c0r * edge1_A) + (d20_c0r * edge2_A);
+    wire signed [20:0] raw_c0r_dy = (d10_c0r * edge1_B) + (d20_c0r * edge2_B);
+    wire signed [36:0] scl_c0r_dx = raw_c0r_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c0r_dy = raw_c0r_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c0r_dx = 32'(scl_c0r_dx >>> 16);
+    wire signed [31:0] pre_c0r_dy = 32'(scl_c0r_dy >>> 16);
+
+    // Color0 G dx/dy
+    wire signed [20:0] raw_c0g_dx = (d10_c0g * edge1_A) + (d20_c0g * edge2_A);
+    wire signed [20:0] raw_c0g_dy = (d10_c0g * edge1_B) + (d20_c0g * edge2_B);
+    wire signed [36:0] scl_c0g_dx = raw_c0g_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c0g_dy = raw_c0g_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c0g_dx = 32'(scl_c0g_dx >>> 16);
+    wire signed [31:0] pre_c0g_dy = 32'(scl_c0g_dy >>> 16);
+
+    // Color0 B dx/dy
+    wire signed [20:0] raw_c0b_dx = (d10_c0b * edge1_A) + (d20_c0b * edge2_A);
+    wire signed [20:0] raw_c0b_dy = (d10_c0b * edge1_B) + (d20_c0b * edge2_B);
+    wire signed [36:0] scl_c0b_dx = raw_c0b_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c0b_dy = raw_c0b_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c0b_dx = 32'(scl_c0b_dx >>> 16);
+    wire signed [31:0] pre_c0b_dy = 32'(scl_c0b_dy >>> 16);
+
+    // Color0 A dx/dy
+    wire signed [20:0] raw_c0a_dx = (d10_c0a * edge1_A) + (d20_c0a * edge2_A);
+    wire signed [20:0] raw_c0a_dy = (d10_c0a * edge1_B) + (d20_c0a * edge2_B);
+    wire signed [36:0] scl_c0a_dx = raw_c0a_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c0a_dy = raw_c0a_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c0a_dx = 32'(scl_c0a_dx >>> 16);
+    wire signed [31:0] pre_c0a_dy = 32'(scl_c0a_dy >>> 16);
+
+    // Color1 R dx/dy
+    wire signed [20:0] raw_c1r_dx = (d10_c1r * edge1_A) + (d20_c1r * edge2_A);
+    wire signed [20:0] raw_c1r_dy = (d10_c1r * edge1_B) + (d20_c1r * edge2_B);
+    wire signed [36:0] scl_c1r_dx = raw_c1r_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c1r_dy = raw_c1r_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c1r_dx = 32'(scl_c1r_dx >>> 16);
+    wire signed [31:0] pre_c1r_dy = 32'(scl_c1r_dy >>> 16);
+
+    // Color1 G dx/dy
+    wire signed [20:0] raw_c1g_dx = (d10_c1g * edge1_A) + (d20_c1g * edge2_A);
+    wire signed [20:0] raw_c1g_dy = (d10_c1g * edge1_B) + (d20_c1g * edge2_B);
+    wire signed [36:0] scl_c1g_dx = raw_c1g_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c1g_dy = raw_c1g_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c1g_dx = 32'(scl_c1g_dx >>> 16);
+    wire signed [31:0] pre_c1g_dy = 32'(scl_c1g_dy >>> 16);
+
+    // Color1 B dx/dy
+    wire signed [20:0] raw_c1b_dx = (d10_c1b * edge1_A) + (d20_c1b * edge2_A);
+    wire signed [20:0] raw_c1b_dy = (d10_c1b * edge1_B) + (d20_c1b * edge2_B);
+    wire signed [36:0] scl_c1b_dx = raw_c1b_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c1b_dy = raw_c1b_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c1b_dx = 32'(scl_c1b_dx >>> 16);
+    wire signed [31:0] pre_c1b_dy = 32'(scl_c1b_dy >>> 16);
+
+    // Color1 A dx/dy
+    wire signed [20:0] raw_c1a_dx = (d10_c1a * edge1_A) + (d20_c1a * edge2_A);
+    wire signed [20:0] raw_c1a_dy = (d10_c1a * edge1_B) + (d20_c1a * edge2_B);
+    wire signed [36:0] scl_c1a_dx = raw_c1a_dx * $signed({1'b0, inv_area_reg});
+    wire signed [36:0] scl_c1a_dy = raw_c1a_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_c1a_dx = 32'(scl_c1a_dx >>> 16);
+    wire signed [31:0] pre_c1a_dy = 32'(scl_c1a_dy >>> 16);
+
+    // ---- Wide derivative computation (16-bit channel: Z unsigned, UV/Q signed) ----
+    // raw = d10 * coeff1 + d20 * coeff2  (28-bit products, 29-bit sum)
+    // derivative = (raw * inv_area) >>> 16  (45-bit scaled, take [31:0] after shift)
+
+    // Z dx/dy
+    wire signed [28:0] raw_z_dx = (d10_z * edge1_A) + (d20_z * edge2_A);
+    wire signed [28:0] raw_z_dy = (d10_z * edge1_B) + (d20_z * edge2_B);
+    wire signed [44:0] scl_z_dx = raw_z_dx * $signed({1'b0, inv_area_reg});
+    wire signed [44:0] scl_z_dy = raw_z_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_z_dx = 32'(scl_z_dx >>> 16);
+    wire signed [31:0] pre_z_dy = 32'(scl_z_dy >>> 16);
+
+    // UV0 U dx/dy
+    wire signed [28:0] raw_uv0u_dx = (d10_uv0u * edge1_A) + (d20_uv0u * edge2_A);
+    wire signed [28:0] raw_uv0u_dy = (d10_uv0u * edge1_B) + (d20_uv0u * edge2_B);
+    wire signed [44:0] scl_uv0u_dx = raw_uv0u_dx * $signed({1'b0, inv_area_reg});
+    wire signed [44:0] scl_uv0u_dy = raw_uv0u_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_uv0u_dx = 32'(scl_uv0u_dx >>> 16);
+    wire signed [31:0] pre_uv0u_dy = 32'(scl_uv0u_dy >>> 16);
+
+    // UV0 V dx/dy
+    wire signed [28:0] raw_uv0v_dx = (d10_uv0v * edge1_A) + (d20_uv0v * edge2_A);
+    wire signed [28:0] raw_uv0v_dy = (d10_uv0v * edge1_B) + (d20_uv0v * edge2_B);
+    wire signed [44:0] scl_uv0v_dx = raw_uv0v_dx * $signed({1'b0, inv_area_reg});
+    wire signed [44:0] scl_uv0v_dy = raw_uv0v_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_uv0v_dx = 32'(scl_uv0v_dx >>> 16);
+    wire signed [31:0] pre_uv0v_dy = 32'(scl_uv0v_dy >>> 16);
+
+    // UV1 U dx/dy
+    wire signed [28:0] raw_uv1u_dx = (d10_uv1u * edge1_A) + (d20_uv1u * edge2_A);
+    wire signed [28:0] raw_uv1u_dy = (d10_uv1u * edge1_B) + (d20_uv1u * edge2_B);
+    wire signed [44:0] scl_uv1u_dx = raw_uv1u_dx * $signed({1'b0, inv_area_reg});
+    wire signed [44:0] scl_uv1u_dy = raw_uv1u_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_uv1u_dx = 32'(scl_uv1u_dx >>> 16);
+    wire signed [31:0] pre_uv1u_dy = 32'(scl_uv1u_dy >>> 16);
+
+    // UV1 V dx/dy
+    wire signed [28:0] raw_uv1v_dx = (d10_uv1v * edge1_A) + (d20_uv1v * edge2_A);
+    wire signed [28:0] raw_uv1v_dy = (d10_uv1v * edge1_B) + (d20_uv1v * edge2_B);
+    wire signed [44:0] scl_uv1v_dx = raw_uv1v_dx * $signed({1'b0, inv_area_reg});
+    wire signed [44:0] scl_uv1v_dy = raw_uv1v_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_uv1v_dx = 32'(scl_uv1v_dx >>> 16);
+    wire signed [31:0] pre_uv1v_dy = 32'(scl_uv1v_dy >>> 16);
+
+    // Q dx/dy
+    wire signed [28:0] raw_q_dx = (d10_q * edge1_A) + (d20_q * edge2_A);
+    wire signed [28:0] raw_q_dy = (d10_q * edge1_B) + (d20_q * edge2_B);
+    wire signed [44:0] scl_q_dx = raw_q_dx * $signed({1'b0, inv_area_reg});
+    wire signed [44:0] scl_q_dy = raw_q_dy * $signed({1'b0, inv_area_reg});
+    wire signed [31:0] pre_q_dx = 32'(scl_q_dx >>> 16);
+    wire signed [31:0] pre_q_dy = 32'(scl_q_dy >>> 16);
+
+    // Unused high bits of scaled derivative products (Verilator lint)
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [4:0] _unused_scl_c0r = {scl_c0r_dx[36], scl_c0r_dx[15:0] == 16'd0 ? 1'b0 : 1'b1,
+                                   scl_c0r_dy[36], scl_c0r_dy[15:0] == 16'd0 ? 1'b0 : 1'b1, 1'b0};
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // ========================================================================
-    // Interpolation Combinational Logic
+    // Initial attribute values at bbox origin (combinational)
     // ========================================================================
+    // attr_init = f0_scaled + df/dx * bbox_min_x + df/dy * bbox_min_y
+    // For 8-bit color: f0 placed at integer position: {8'b0, f0, 16'b0}
+    // For 16-bit: f0 placed at integer position: {f0, 16'b0}
 
-    // Intermediates for barycentric interpolation
-    // With 17-bit weights (1.16): color products are 25-bit (9.16), Z products are 33-bit (17.16)
-    // Sum of 3 color terms: 27-bit; sum of 3 Z terms: 35-bit
-    logic [26:0] sum_r, sum_g, sum_b;  // 17-bit weight × 8-bit color, sum of 3
-    logic [34:0] sum_z;                // 17-bit weight × 16-bit depth, sum of 3
-    logic [7:0]  next_interp_r, next_interp_g, next_interp_b;
-    logic [15:0] next_interp_z;
+    wire signed [10:0] bbox_sx = $signed({1'b0, bbox_min_x});
+    wire signed [10:0] bbox_sy = $signed({1'b0, bbox_min_y});
 
-    // Low 16 bits of interpolation sums are fractional residue (discarded after shift)
-    wire [15:0] _unused_sum_r_low = sum_r[15:0];
-    wire [15:0] _unused_sum_g_low = sum_g[15:0];
-    wire [15:0] _unused_sum_b_low = sum_b[15:0];
-    wire [15:0] _unused_sum_z_low = sum_z[15:0];
+    // Color0 init
+    wire signed [31:0] init_c0r = $signed({8'b0, c0_r0, 16'b0}) + pre_c0r_dx * bbox_sx + pre_c0r_dy * bbox_sy;
+    wire signed [31:0] init_c0g = $signed({8'b0, c0_g0, 16'b0}) + pre_c0g_dx * bbox_sx + pre_c0g_dy * bbox_sy;
+    wire signed [31:0] init_c0b = $signed({8'b0, c0_b0, 16'b0}) + pre_c0b_dx * bbox_sx + pre_c0b_dy * bbox_sy;
+    wire signed [31:0] init_c0a = $signed({8'b0, c0_a0, 16'b0}) + pre_c0a_dx * bbox_sx + pre_c0a_dy * bbox_sy;
+
+    // Color1 init
+    wire signed [31:0] init_c1r = $signed({8'b0, c1_r0, 16'b0}) + pre_c1r_dx * bbox_sx + pre_c1r_dy * bbox_sy;
+    wire signed [31:0] init_c1g = $signed({8'b0, c1_g0, 16'b0}) + pre_c1g_dx * bbox_sx + pre_c1g_dy * bbox_sy;
+    wire signed [31:0] init_c1b = $signed({8'b0, c1_b0, 16'b0}) + pre_c1b_dx * bbox_sx + pre_c1b_dy * bbox_sy;
+    wire signed [31:0] init_c1a = $signed({8'b0, c1_a0, 16'b0}) + pre_c1a_dx * bbox_sx + pre_c1a_dy * bbox_sy;
+
+    // Z init
+    wire signed [31:0] init_z = $signed({z0, 16'b0}) + pre_z_dx * bbox_sx + pre_z_dy * bbox_sy;
+
+    // UV0 init
+    wire signed [31:0] init_uv0u = $signed({uv0_u0, 16'b0}) + pre_uv0u_dx * bbox_sx + pre_uv0u_dy * bbox_sy;
+    wire signed [31:0] init_uv0v = $signed({uv0_v0, 16'b0}) + pre_uv0v_dx * bbox_sx + pre_uv0v_dy * bbox_sy;
+
+    // UV1 init
+    wire signed [31:0] init_uv1u = $signed({uv1_u0, 16'b0}) + pre_uv1u_dx * bbox_sx + pre_uv1u_dy * bbox_sy;
+    wire signed [31:0] init_uv1v = $signed({uv1_v0, 16'b0}) + pre_uv1v_dx * bbox_sx + pre_uv1v_dy * bbox_sy;
+
+    // Q init
+    wire signed [31:0] init_q = $signed({q0, 16'b0}) + pre_q_dx * bbox_sx + pre_q_dy * bbox_sy;
+
+    // ========================================================================
+    // Fragment Output Promotion (8-bit accumulator -> Q4.12)
+    // ========================================================================
+    // UNORM8 [0,255] in 8.16 accumulator: integer part at [23:16].
+    // Promote to Q4.12: {4'b0, unorm8, unorm8[7:4]}
+    // 0 -> 0x0000, 255 -> 0x0FFF (approximately 1.0 in Q4.12)
+    // Clamp negative to 0, overflow to 255.
+
+    logic [15:0] out_c0r, out_c0g, out_c0b, out_c0a;
+    logic [15:0] out_c1r, out_c1g, out_c1b, out_c1a;
 
     always_comb begin
-        sum_r = w0 * r0 + w1 * r1 + w2 * r2;
-        sum_g = w0 * g0 + w1 * g1 + w2 * g2;
-        sum_b = w0 * b0 + w1 * b1 + w2 * b2;
-        sum_z = w0 * z0 + w1 * z1 + w2 * z2;
+        // Color0 promotion
+        if (c0r_acc[31]) begin
+            out_c0r = 16'h0000;
+        end else if (c0r_acc[31:24] != 8'd0) begin
+            out_c0r = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c0r = {4'b0, c0r_acc[23:16], c0r_acc[23:20]};
+        end
 
-        // Shift right by 16 (remove fractional bits) and saturate
-        // Color: [26:16] is integer part, valid range [0, 255]
-        next_interp_r = (sum_r[26:24] != 3'b0) ? 8'd255 : sum_r[23:16];
-        next_interp_g = (sum_g[26:24] != 3'b0) ? 8'd255 : sum_g[23:16];
-        next_interp_b = (sum_b[26:24] != 3'b0) ? 8'd255 : sum_b[23:16];
-        // Z: [34:16] is integer part, valid range [0, 65535]
-        next_interp_z = (sum_z[34:32] != 3'b0) ? 16'hFFFF : sum_z[31:16];
+        if (c0g_acc[31]) begin
+            out_c0g = 16'h0000;
+        end else if (c0g_acc[31:24] != 8'd0) begin
+            out_c0g = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c0g = {4'b0, c0g_acc[23:16], c0g_acc[23:20]};
+        end
+
+        if (c0b_acc[31]) begin
+            out_c0b = 16'h0000;
+        end else if (c0b_acc[31:24] != 8'd0) begin
+            out_c0b = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c0b = {4'b0, c0b_acc[23:16], c0b_acc[23:20]};
+        end
+
+        if (c0a_acc[31]) begin
+            out_c0a = 16'h0000;
+        end else if (c0a_acc[31:24] != 8'd0) begin
+            out_c0a = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c0a = {4'b0, c0a_acc[23:16], c0a_acc[23:20]};
+        end
+
+        // Color1 promotion
+        if (c1r_acc[31]) begin
+            out_c1r = 16'h0000;
+        end else if (c1r_acc[31:24] != 8'd0) begin
+            out_c1r = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c1r = {4'b0, c1r_acc[23:16], c1r_acc[23:20]};
+        end
+
+        if (c1g_acc[31]) begin
+            out_c1g = 16'h0000;
+        end else if (c1g_acc[31:24] != 8'd0) begin
+            out_c1g = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c1g = {4'b0, c1g_acc[23:16], c1g_acc[23:20]};
+        end
+
+        if (c1b_acc[31]) begin
+            out_c1b = 16'h0000;
+        end else if (c1b_acc[31:24] != 8'd0) begin
+            out_c1b = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c1b = {4'b0, c1b_acc[23:16], c1b_acc[23:20]};
+        end
+
+        if (c1a_acc[31]) begin
+            out_c1a = 16'h0000;
+        end else if (c1a_acc[31:24] != 8'd0) begin
+            out_c1a = {4'b0, 8'hFF, 4'hF};
+        end else begin
+            out_c1a = {4'b0, c1a_acc[23:16], c1a_acc[23:20]};
+        end
+    end
+
+    // Z output: extract [31:16], clamp to [0, 0xFFFF]
+    logic [15:0] out_z;
+    always_comb begin
+        if (z_acc[31]) begin
+            out_z = 16'h0000;
+        end else begin
+            out_z = z_acc[31:16];
+        end
     end
 
     // ========================================================================
-    // Memory Write Enables
-    // ========================================================================
-
-    assign fb_we = 1'b1;  // Framebuffer always writes
-
-    // Z-buffer write data - 16-bit depth in lower half
-    assign zb_wdata = {16'h0000, interp_z};
-
-    // ========================================================================
-    // Early Z Module
-    // ========================================================================
-
-    wire ez_range_pass;
-    wire ez_z_test_pass;
-    wire ez_z_bypass;
-
-    // The early_z zbuffer_z input is driven directly from the arbiter's
-    // registered read-data port (zb_rdata) rather than the rasterizer's
-    // local zbuf_value register.  This avoids a one-cycle stale-data bug:
-    // the arbiter latches port2_rdata on the same clock edge as zb_ack,
-    // so zbuf_value (latched in ZBUF_WAIT on the zb_ack edge) captures
-    // the OLD port2_rdata.  In ZBUF_TEST (one cycle after zb_ack),
-    // port2_rdata has been updated and zb_rdata[15:0] is correct.
-    early_z u_early_z (
-        .fragment_z(interp_z),
-        .zbuffer_z(zb_rdata[15:0]),
-        .z_range_min(z_range_min),
-        .z_range_max(z_range_max),
-        .z_test_en(mode_z_test),
-        .z_compare(z_compare),
-        .range_pass(ez_range_pass),
-        .z_test_pass(ez_z_test_pass),
-        .z_bypass(ez_z_bypass)
-    );
-
-    // ========================================================================
     // Inlined Vertex Conversion and Bounding Box Wires
-    // (Verilator 5.x false-positives on function parameters prevent the use
-    // of helper functions, so these are computed as combinational wires.)
     // ========================================================================
 
-    // Convert 12.4 fixed-point input ports to 10-bit integer pixel coordinates.
-    // Used in IDLE state to latch vertex positions into x0..y2 registers.
     wire [9:0] px0 = v0_x[13:4];
     wire [9:0] py0 = v0_y[13:4];
     wire [9:0] px1 = v1_x[13:4];
@@ -380,8 +563,7 @@ module rasterizer (
     wire [1:0] _unused_v2y_hi = v2_y[15:14];
     wire [3:0] _unused_v2y_lo = v2_y[3:0];
 
-    // Bounding box computation from latched registers (x0..x2, y0..y2).
-    // Used in SETUP state after vertex positions have been latched.
+    // Bounding box computation
     wire [9:0] min_x_01 = (x0 < x1) ? x0 : x1;
     wire [9:0] raw_min_x = (min_x_01 < x2) ? min_x_01 : x2;
     wire [9:0] max_x_01 = (x0 > x1) ? x0 : x1;
@@ -391,9 +573,7 @@ module rasterizer (
     wire [9:0] max_y_01 = (y0 > y1) ? y0 : y1;
     wire [9:0] raw_max_y = (max_y_01 > y2) ? max_y_01 : y2;
 
-    // Scissor bounds derived from FB_CONFIG register (UNIT-005 step 6, INT-011)
-    // surf_max_* is the last valid pixel index: (1 << log2) - 1.
-    // For supported log2 values (8 or 9), this fits within 10 bits.
+    // Scissor bounds from FB_CONFIG register (UNIT-005 step 6, INT-011)
     wire [9:0] surf_max_x = (10'd1 << fb_width_log2)  - 10'd1;
     wire [9:0] surf_max_y = (10'd1 << fb_height_log2) - 10'd1;
     wire [9:0] clamped_min_x = (raw_min_x > surf_max_x) ? surf_max_x : raw_min_x;
@@ -418,7 +598,6 @@ module rasterizer (
     // ========================================================================
 
     always_comb begin
-        // Default: hold current state
         next_state = state;
 
         case (state)
@@ -428,7 +607,6 @@ module rasterizer (
                 end
             end
 
-            // Serialized setup: 3 cycles for edge C, 3 cycles for e_init
             SETUP:      next_state = SETUP_2;
             SETUP_2:    next_state = SETUP_3;
             SETUP_3:    next_state = ITER_START;
@@ -437,72 +615,29 @@ module rasterizer (
             INIT_E2:    next_state = EDGE_TEST;
 
             EDGE_TEST: begin
-                // Edge values already computed — check inside and branch directly
                 if (e0 >= 32'sd0 && e1 >= 32'sd0 && e2 >= 32'sd0) begin
                     next_state = INTERPOLATE;
                 end else begin
-                    // Outside triangle - skip to next pixel
                     next_state = ITER_NEXT;
                 end
             end
 
             INTERPOLATE: begin
-                next_state = RANGE_TEST;
+                next_state = FRAG_WAIT;
             end
 
-            RANGE_TEST: begin
-                // Depth range test and early Z bypass decision
-                if (!ez_range_pass) begin
-                    // Fragment outside depth range - discard
-                    next_state = ITER_NEXT;
-                end else if (ez_z_bypass) begin
-                    // Z-test disabled or ALWAYS - skip Z-buffer read
-                    next_state = WRITE_PIXEL;
-                end else begin
-                    // Proceed to Z-buffer read and test
-                    next_state = ZBUF_READ;
-                end
-            end
-
-            ZBUF_READ: begin
-                next_state = ZBUF_WAIT;
-            end
-
-            ZBUF_WAIT: begin
-                if (zb_ack) begin
-                    next_state = ZBUF_TEST;
-                end
-            end
-
-            ZBUF_TEST: begin
-                // Z-test using early_z compare result
-                if (ez_z_test_pass) begin
-                    next_state = WRITE_PIXEL;
-                end else begin
-                    // Failed Z-test - skip pixel
-                    next_state = ITER_NEXT;
-                end
-            end
-
-            WRITE_PIXEL: begin
-                next_state = WRITE_WAIT;
-            end
-
-            WRITE_WAIT: begin
-                // Wait for all active writes to complete
-                if ((!fb_req || fb_ack) && (!zb_req || zb_ack)) begin
+            FRAG_WAIT: begin
+                if (frag_valid && frag_ready) begin
                     next_state = ITER_NEXT;
                 end
             end
 
             ITER_NEXT: begin
-                // Move to next pixel in bounding box
                 if (curr_x < bbox_max_x) begin
                     next_state = EDGE_TEST;
                 end else if (curr_y < bbox_max_y) begin
                     next_state = EDGE_TEST;
                 end else begin
-                    // Finished rasterizing triangle
                     next_state = IDLE;
                 end
             end
@@ -520,52 +655,57 @@ module rasterizer (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             tri_ready <= 1'b1;
-            fb_req <= 1'b0;
-            fb_addr <= 24'b0;
-            fb_wdata <= 32'b0;
-            zb_req <= 1'b0;
-            zb_we <= 1'b0;
-            zb_addr <= 24'b0;
-            area_shift_reg <= 4'd0;
+            frag_valid <= 1'b0;
+            frag_x <= 10'b0;
+            frag_y <= 10'b0;
+            frag_z <= 16'b0;
+            frag_color0 <= 64'b0;
+            frag_color1 <= 64'b0;
+            frag_uv0 <= 32'b0;
+            frag_uv1 <= 32'b0;
+            frag_q <= 16'b0;
 
         end else begin
             case (state)
                 IDLE: begin
                     tri_ready <= 1'b1;
+                    frag_valid <= 1'b0;
 
                     if (tri_valid && tri_ready) begin
-                        // Latch triangle vertices (12.4 fixed-point to integer pixel)
-                        x0 <= px0;
-                        y0 <= py0;
-                        z0 <= v0_z;
-                        r0 <= v0_color[23:16];
-                        g0 <= v0_color[15:8];
-                        b0 <= v0_color[7:0];
+                        // Latch triangle vertices
+                        x0 <= px0; y0 <= py0; z0 <= v0_z;
+                        c0_r0 <= v0_color0[31:24]; c0_g0 <= v0_color0[23:16];
+                        c0_b0 <= v0_color0[15:8];  c0_a0 <= v0_color0[7:0];
+                        c1_r0 <= v0_color1[31:24]; c1_g0 <= v0_color1[23:16];
+                        c1_b0 <= v0_color1[15:8];  c1_a0 <= v0_color1[7:0];
+                        uv0_u0 <= v0_uv0[31:16]; uv0_v0 <= v0_uv0[15:0];
+                        uv1_u0 <= v0_uv1[31:16]; uv1_v0 <= v0_uv1[15:0];
+                        q0 <= v0_q;
 
-                        x1 <= px1;
-                        y1 <= py1;
-                        z1 <= v1_z;
-                        r1 <= v1_color[23:16];
-                        g1 <= v1_color[15:8];
-                        b1 <= v1_color[7:0];
+                        x1 <= px1; y1 <= py1; z1 <= v1_z;
+                        c0_r1 <= v1_color0[31:24]; c0_g1 <= v1_color0[23:16];
+                        c0_b1 <= v1_color0[15:8];  c0_a1 <= v1_color0[7:0];
+                        c1_r1 <= v1_color1[31:24]; c1_g1 <= v1_color1[23:16];
+                        c1_b1 <= v1_color1[15:8];  c1_a1 <= v1_color1[7:0];
+                        uv0_u1 <= v1_uv0[31:16]; uv0_v1 <= v1_uv0[15:0];
+                        uv1_u1 <= v1_uv1[31:16]; uv1_v1 <= v1_uv1[15:0];
+                        q1 <= v1_q;
 
-                        x2 <= px2;
-                        y2 <= py2;
-                        z2 <= v2_z;
-                        r2 <= v2_color[23:16];
-                        g2 <= v2_color[15:8];
-                        b2 <= v2_color[7:0];
+                        x2 <= px2; y2 <= py2; z2 <= v2_z;
+                        c0_r2 <= v2_color0[31:24]; c0_g2 <= v2_color0[23:16];
+                        c0_b2 <= v2_color0[15:8];  c0_a2 <= v2_color0[7:0];
+                        c1_r2 <= v2_color1[31:24]; c1_g2 <= v2_color1[23:16];
+                        c1_b2 <= v2_color1[15:8];  c1_a2 <= v2_color1[7:0];
+                        uv0_u2 <= v2_uv0[31:16]; uv0_v2 <= v2_uv0[15:0];
+                        uv1_u2 <= v2_uv1[31:16]; uv1_v2 <= v2_uv1[15:0];
+                        q2 <= v2_q;
 
-                        // Latch barycentric inv_area (0.16 fixed, lower 16 bits)
                         inv_area_reg <= inv_area[15:0];
-                        area_shift_reg <= area_shift;
-
                         tri_ready <= 1'b0;
                     end
                 end
 
                 SETUP: begin
-                    // Phase 0: All edge A/B (subtractions) + bbox + edge0_C (shared mul)
                     edge0_A <= $signed({1'b0, y1}) - $signed({1'b0, y2});
                     edge0_B <= $signed({1'b0, x2}) - $signed({1'b0, x1});
                     edge0_C <= 21'(smul_p1 - smul_p2);
@@ -576,7 +716,6 @@ module rasterizer (
                     edge2_A <= $signed({1'b0, y0}) - $signed({1'b0, y1});
                     edge2_B <= $signed({1'b0, x1}) - $signed({1'b0, x0});
 
-                    // Calculate bounding box (from latched registers, clamped to screen)
                     bbox_min_x <= clamped_min_x;
                     bbox_max_x <= clamped_max_x;
                     bbox_min_y <= clamped_min_y;
@@ -584,149 +723,138 @@ module rasterizer (
                 end
 
                 SETUP_2: begin
-                    // Phase 1: edge1_C (shared mul)
                     edge1_C <= 21'(smul_p1 - smul_p2);
                 end
 
                 SETUP_3: begin
-                    // Phase 2: edge2_C (shared mul)
                     edge2_C <= 21'(smul_p1 - smul_p2);
                 end
 
                 ITER_START: begin
-                    // Phase 3: e0_init (shared mul) + set iteration start
                     curr_x <= bbox_min_x;
                     curr_y <= bbox_min_y;
 
                     e0     <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
                     e0_row <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
+
+                    // Latch precomputed derivatives
+                    c0r_dx <= pre_c0r_dx; c0r_dy <= pre_c0r_dy;
+                    c0g_dx <= pre_c0g_dx; c0g_dy <= pre_c0g_dy;
+                    c0b_dx <= pre_c0b_dx; c0b_dy <= pre_c0b_dy;
+                    c0a_dx <= pre_c0a_dx; c0a_dy <= pre_c0a_dy;
+                    c1r_dx <= pre_c1r_dx; c1r_dy <= pre_c1r_dy;
+                    c1g_dx <= pre_c1g_dx; c1g_dy <= pre_c1g_dy;
+                    c1b_dx <= pre_c1b_dx; c1b_dy <= pre_c1b_dy;
+                    c1a_dx <= pre_c1a_dx; c1a_dy <= pre_c1a_dy;
+                    z_dx   <= pre_z_dx;   z_dy   <= pre_z_dy;
+                    uv0u_dx <= pre_uv0u_dx; uv0u_dy <= pre_uv0u_dy;
+                    uv0v_dx <= pre_uv0v_dx; uv0v_dy <= pre_uv0v_dy;
+                    uv1u_dx <= pre_uv1u_dx; uv1u_dy <= pre_uv1u_dy;
+                    uv1v_dx <= pre_uv1v_dx; uv1v_dy <= pre_uv1v_dy;
+                    q_dx   <= pre_q_dx;   q_dy   <= pre_q_dy;
+
+                    // Initialize attribute accumulators at bbox origin
+                    c0r_acc <= init_c0r; c0r_row <= init_c0r;
+                    c0g_acc <= init_c0g; c0g_row <= init_c0g;
+                    c0b_acc <= init_c0b; c0b_row <= init_c0b;
+                    c0a_acc <= init_c0a; c0a_row <= init_c0a;
+                    c1r_acc <= init_c1r; c1r_row <= init_c1r;
+                    c1g_acc <= init_c1g; c1g_row <= init_c1g;
+                    c1b_acc <= init_c1b; c1b_row <= init_c1b;
+                    c1a_acc <= init_c1a; c1a_row <= init_c1a;
+                    z_acc   <= init_z;   z_row   <= init_z;
+                    uv0u_acc <= init_uv0u; uv0u_row <= init_uv0u;
+                    uv0v_acc <= init_uv0v; uv0v_row <= init_uv0v;
+                    uv1u_acc <= init_uv1u; uv1u_row <= init_uv1u;
+                    uv1v_acc <= init_uv1v; uv1v_row <= init_uv1v;
+                    q_acc   <= init_q;   q_row   <= init_q;
                 end
 
                 INIT_E1: begin
-                    // Phase 4: e1_init (shared mul)
                     e1     <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
                     e1_row <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
                 end
 
                 INIT_E2: begin
-                    // Phase 5: e2_init (shared mul)
                     e2     <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
                     e2_row <= 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
                 end
 
                 EDGE_TEST: begin
-                    // Edge values e0/e1/e2 are already valid from INIT_E2 or
-                    // ITER_NEXT (incremental stepping — no multiplies needed here).
-                    // Check inside and compute barycentric weights in one cycle.
-                    if (e0 >= 32'sd0 && e1 >= 32'sd0 && e2 >= 32'sd0) begin
-                        // Inside triangle - latch barycentric weights (1.16 fixed)
-                        // Truncate 32-bit product to 17-bit so downstream interpolation
-                        // multiplies (17×8 color, 17×16 Z) fit in single MULT18X18D.
-                        w0 <= w0_full[16:0];
-                        w1 <= w1_full[16:0];
-                        w2 <= w2_full[16:0];
-                    end
+                    // No datapath operations; next-state logic handles transitions.
                 end
 
                 INTERPOLATE: begin
-                    // Interpolate using barycentric coordinates
-                    // Results computed in the combinational interpolation block
-                    interp_r <= next_interp_r;
-                    interp_g <= next_interp_g;
-                    interp_b <= next_interp_b;
-                    interp_z <= next_interp_z;
+                    // Emit fragment on output bus
+                    frag_valid <= 1'b1;
+                    frag_x <= curr_x;
+                    frag_y <= curr_y;
+                    frag_z <= out_z;
+                    frag_color0 <= {out_c0r, out_c0g, out_c0b, out_c0a};
+                    frag_color1 <= {out_c1r, out_c1g, out_c1b, out_c1a};
+                    frag_uv0 <= {uv0u_acc[31:16], uv0v_acc[31:16]};
+                    frag_uv1 <= {uv1u_acc[31:16], uv1v_acc[31:16]};
+                    frag_q <= q_acc[31:16];
                 end
 
-                RANGE_TEST: begin
-                    // No datapath operations; next-state logic handles transitions
-                end
-
-                ZBUF_READ: begin
-                    // Read Z-buffer - direct 16-bit read (one value per 32-bit word)
-                    // Only bits [23:12] of base address are relevant for 24-bit SRAM space
-                    // Byte address = base + y*1280 + x*2 (16-bit values, 640-pixel stride)
-                    // 1280 = 1024 + 256, so y*1280 = (y<<10) + (y<<8) — avoids multiplier
-                    zb_addr <= {zb_base_addr[23:12], 12'b0} + {4'b0, curr_y, 10'b0} + {6'b0, curr_y, 8'b0} + {13'd0, curr_x, 1'b0};
-                    zb_we <= 1'b0;  // Read operation
-                    zb_req <= 1'b1;
-                end
-
-                ZBUF_WAIT: begin
-                    if (zb_ack) begin
-                        zb_req <= 1'b0;
-                    end
-                end
-
-                ZBUF_TEST: begin
-                    // No datapath operations; next-state logic handles transitions
-                end
-
-                WRITE_PIXEL: begin
-                    // Framebuffer write (gated by COLOR_WRITE_EN)
-                    if (mode_color_write) begin
-                        // Write to framebuffer - R5G6B5 format (16-bit color)
-                        // Byte address = base + y*1280 + x*2 (16-bit pixels, 640-pixel stride)
-                        // 1280 = 1024 + 256, so y*1280 = (y<<10) + (y<<8) — avoids multiplier
-                        fb_addr <= {fb_base_addr[23:12], 12'b0} + {4'b0, curr_y, 10'b0} + {6'b0, curr_y, 8'b0} + {13'd0, curr_x, 1'b0};
-                        fb_wdata <= {16'h0000,                          // Upper 16 bits unused
-                                     interp_r[7:3],                     // R5
-                                     interp_g[7:2],                     // G6
-                                     interp_b[7:3]};                    // B5
-                        fb_req <= 1'b1;
-                    end
-
-                    // Z-buffer write (gated by Z_WRITE_EN)
-                    if (mode_z_write) begin
-                        // Byte address = base + y*1280 + x*2 (16-bit Z values, 640-pixel stride)
-                        // 1280 = 1024 + 256, so y*1280 = (y<<10) + (y<<8) — avoids multiplier
-                        zb_addr <= {zb_base_addr[23:12], 12'b0} + {4'b0, curr_y, 10'b0} + {6'b0, curr_y, 8'b0} + {13'd0, curr_x, 1'b0};
-                        zb_we <= 1'b1;  // Write operation
-                        zb_req <= 1'b1;
-                    end
-                end
-
-                WRITE_WAIT: begin
-                    // Deassert each write request independently when its ack
-                    // arrives.  The arbiter services one port at a time, so
-                    // fb_ack and zb_ack never fire on the same cycle when both
-                    // ports are active.  Clearing each req on its own ack
-                    // prevents a deadlock where the higher-priority port
-                    // (port 1 / fb) is re-granted indefinitely while the
-                    // lower-priority port (port 2 / zb) starves.
-                    if (fb_ack) begin
-                        fb_req <= 1'b0;
-                    end
-                    if (zb_ack) begin
-                        zb_req <= 1'b0;
+                FRAG_WAIT: begin
+                    if (frag_valid && frag_ready) begin
+                        frag_valid <= 1'b0;
                     end
                 end
 
                 ITER_NEXT: begin
-                    // Move to next pixel in bounding box with incremental edge updates.
-                    // Edge functions are linear: E(x+1,y) = E(x,y) + A,
-                    // E(x,y+1) = E(x,y) + B. Pure addition — no multiplies.
                     if (curr_x < bbox_max_x) begin
-                        // Step right: add A coefficients
+                        // Step right: add A coefficients and dx derivatives
                         curr_x <= curr_x + 10'd1;
                         e0 <= e0 + 32'($signed(edge0_A));
                         e1 <= e1 + 32'($signed(edge1_A));
                         e2 <= e2 + 32'($signed(edge2_A));
+
+                        c0r_acc <= c0r_acc + c0r_dx;
+                        c0g_acc <= c0g_acc + c0g_dx;
+                        c0b_acc <= c0b_acc + c0b_dx;
+                        c0a_acc <= c0a_acc + c0a_dx;
+                        c1r_acc <= c1r_acc + c1r_dx;
+                        c1g_acc <= c1g_acc + c1g_dx;
+                        c1b_acc <= c1b_acc + c1b_dx;
+                        c1a_acc <= c1a_acc + c1a_dx;
+                        z_acc <= z_acc + z_dx;
+                        uv0u_acc <= uv0u_acc + uv0u_dx;
+                        uv0v_acc <= uv0v_acc + uv0v_dx;
+                        uv1u_acc <= uv1u_acc + uv1u_dx;
+                        uv1v_acc <= uv1v_acc + uv1v_dx;
+                        q_acc <= q_acc + q_dx;
                     end else if (curr_y < bbox_max_y) begin
-                        // New row: step row-start values by B, reset X to row start
+                        // New row
                         curr_x <= bbox_min_x;
                         curr_y <= curr_y + 10'd1;
+
                         e0_row <= e0_row + 32'($signed(edge0_B));
                         e1_row <= e1_row + 32'($signed(edge1_B));
                         e2_row <= e2_row + 32'($signed(edge2_B));
                         e0 <= e0_row + 32'($signed(edge0_B));
                         e1 <= e1_row + 32'($signed(edge1_B));
                         e2 <= e2_row + 32'($signed(edge2_B));
+
+                        c0r_row <= c0r_row + c0r_dy; c0r_acc <= c0r_row + c0r_dy;
+                        c0g_row <= c0g_row + c0g_dy; c0g_acc <= c0g_row + c0g_dy;
+                        c0b_row <= c0b_row + c0b_dy; c0b_acc <= c0b_row + c0b_dy;
+                        c0a_row <= c0a_row + c0a_dy; c0a_acc <= c0a_row + c0a_dy;
+                        c1r_row <= c1r_row + c1r_dy; c1r_acc <= c1r_row + c1r_dy;
+                        c1g_row <= c1g_row + c1g_dy; c1g_acc <= c1g_row + c1g_dy;
+                        c1b_row <= c1b_row + c1b_dy; c1b_acc <= c1b_row + c1b_dy;
+                        c1a_row <= c1a_row + c1a_dy; c1a_acc <= c1a_row + c1a_dy;
+                        z_row <= z_row + z_dy; z_acc <= z_row + z_dy;
+                        uv0u_row <= uv0u_row + uv0u_dy; uv0u_acc <= uv0u_row + uv0u_dy;
+                        uv0v_row <= uv0v_row + uv0v_dy; uv0v_acc <= uv0v_row + uv0v_dy;
+                        uv1u_row <= uv1u_row + uv1u_dy; uv1u_acc <= uv1u_row + uv1u_dy;
+                        uv1v_row <= uv1v_row + uv1v_dy; uv1v_acc <= uv1v_row + uv1v_dy;
+                        q_row <= q_row + q_dy; q_acc <= q_row + q_dy;
                     end
                 end
 
-                default: begin
-                    // No datapath operations for unknown states
-                end
+                default: begin end
             endcase
         end
     end

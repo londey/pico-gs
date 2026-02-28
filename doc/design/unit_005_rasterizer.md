@@ -76,7 +76,7 @@ None
 2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at bounding box origin using the same shared multiplier pair (cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
    Compute per-attribute derivatives using the precomputed `inv_area` from UNIT-004: for each attribute `f` at vertices v0, v1, v2, compute `df/dx = (f1-f0)*A01 + (f2-f0)*A02` and `df/dy = (f1-f0)*B01 + (f2-f0)*B02` (scaled by inv_area), using the shared multiplier pair in the same 3-cycle window.
    Initialize accumulated attribute values at the bounding box origin.
-   Attributes subject to derivative precomputation: color0 (RGBA, 8-bit per channel), color1 (RGBA, 8-bit per channel), Z (16-bit), UV0 (UQ0.16 per component), UV1 (UQ0.16 per component), and Q/W (Q3.12).
+   Attributes subject to derivative precomputation: color0 (RGBA, 8-bit per channel), color1 (RGBA, 8-bit per channel), Z (16-bit), UV0 (Q4.12 per component), UV1 (Q4.12 per component), and Q/W (Q3.12).
 3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); no multiply required.
 4. **Interpolation** (INTERPOLATE, per inside pixel): Add the precomputed dx derivatives to the accumulated attribute values when stepping right in X; add the dy derivatives when advancing to a new row.
    No per-pixel multiplies are required — all attribute interpolation is performed by incremental addition only.
@@ -144,5 +144,5 @@ Both interpolated vertex colors are output to UNIT-006 for use as VER_COLOR0 and
 Q/W is output to UNIT-006 for perspective-correct UV division before texture lookup.
 
 **Fragment output interface:** The rasterizer emits per-fragment data to UNIT-006 (Pixel Pipeline) via a valid/ready handshake (see DD-025).
-The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0, UV1 (UQ0.16 per component), and interpolated Q/W (Q3.12).
+The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0, UV1 (Q4.12 per component), and interpolated Q/W (Q3.12).
 The rasterizer does not access SDRAM directly; all framebuffer, Z-buffer, and texture memory accesses are the responsibility of UNIT-006 through UNIT-007.

@@ -192,7 +192,6 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(RTL_DIR)/render/early_z.sv \
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
@@ -309,7 +308,8 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
-	$(RTL_DIR)/render/stipple.sv
+	$(RTL_DIR)/render/stipple.sv \
+	$(RTL_DIR)/render/rasterizer.sv
 
 # Lint all RTL sources. Leaf modules linted individually for precise diagnostics.
 # Modules with sub-instances linted with their dependencies.
@@ -337,11 +337,6 @@ lint:
 		$(RTL_DIR)/display/tmds_encoder.sv \
 		$(RTL_DIR)/display/dvi_output.sv \
 		--top-module dvi_output 2>&1 || fail=1; \
-	echo "Linting rasterizer.sv (with early_z)..."; \
-	$(VERILATOR) --lint-only -Wall \
-		$(RTL_DIR)/render/early_z.sv \
-		$(RTL_DIR)/render/rasterizer.sv \
-		--top-module rasterizer 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
 	echo "Lint passed."
 

@@ -216,20 +216,23 @@ Step 3: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 
 ### 0x01: UV0_UV1
 
-Latches texture coordinates for texture units 0 and 1. Values are pre-divided by W for perspective correction. **Note**: 1/W (Q) is stored in VERTEX registers.
+Latches texture coordinates for texture units 0 and 1.
+Values are pre-divided by W for perspective correction.
+**Note**: 1/W (Q) is stored in VERTEX registers.
 
 ```
-[63:48]   UV1_VQ = V1/W (1.15 signed fixed-point)
-[47:32]   UV1_UQ = U1/W (1.15 signed fixed-point)
-[31:16]   UV0_VQ = V0/W (1.15 signed fixed-point)
-[15:0]    UV0_UQ = U0/W (1.15 signed fixed-point)
+[63:48]   UV1_VQ = V1/W (Q4.12 signed fixed-point)
+[47:32]   UV1_UQ = U1/W (Q4.12 signed fixed-point)
+[31:16]   UV0_VQ = V0/W (Q4.12 signed fixed-point)
+[15:0]    UV0_UQ = U0/W (Q4.12 signed fixed-point)
 ```
 
-**Fixed-Point Format (1.15)**:
+**Fixed-Point Format (Q4.12)**:
 - Bit 15: Sign
-- Bits 14:0: Fractional value
-- Range: -1.0 to +0.99997
-- Resolution: 1/32768 ≈ 0.00003
+- Bits 14:12: Integer part (3 bits)
+- Bits 11:0: Fractional value
+- Range: -8.0 to +7.999
+- Resolution: 1/4096 ≈ 0.000244
 
 **Notes**:
 - Host must compute U/W, V/W per vertex for each texture unit

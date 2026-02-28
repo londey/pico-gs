@@ -99,7 +99,7 @@ The pixel pipeline stub existed but had no live connection to consume rasterizer
 ### Decision
 
 Refactor the rasterizer to emit per-fragment data to UNIT-006 via a valid/ready handshake instead of performing direct SDRAM writes.
-The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0 and UV1 (UQ0.16 per component), and interpolated Q/W (Q3.12).
+The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0 and UV1 (Q4.12 per component), and interpolated Q/W (Q3.12).
 SDRAM arbiter ports 1 and 2 transfer to UNIT-006 ownership.
 The rasterizer asserts `frag_valid` when a fragment is ready; it stalls (holds state) when UNIT-006 deasserts `frag_ready`.
 

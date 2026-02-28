@@ -56,8 +56,8 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `v2_z` | 16 | Vertex 2 depth |
 | `v2_color0` | 24 | Vertex 2 primary RGB888 color (diffuse) |
 | `v2_color1` | 24 | Vertex 2 secondary RGB888 color (specular/emissive) |
-| `v0_uv0`, `v1_uv0`, `v2_uv0` | 3x32 | Vertex UV0 coordinates (UQ0.16 per component) |
-| `v0_uv1`, `v1_uv1`, `v2_uv1` | 3x32 | Vertex UV1 coordinates (UQ0.16 per component) |
+| `v0_uv0`, `v1_uv0`, `v2_uv0` | 3x32 | Vertex UV0 coordinates (Q4.12 per component) |
+| `v0_uv1`, `v1_uv1`, `v2_uv1` | 3x32 | Vertex UV1 coordinates (Q4.12 per component) |
 | `v0_q`, `v1_q`, `v2_q` | 3x16 | Vertex 1/W (Q3.12 fixed point) for perspective correction |
 | `inv_area` | 16 | 1/area (0.16 fixed point) from CPU |
 | `fb_base_addr` | 20 | Framebuffer base address [31:12] |
@@ -106,8 +106,8 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 - z0..z2 [15:0]: Depth values
 - r0_0..r2_0, g0_0..g2_0, b0_0..b2_0 [7:0]: Per-vertex primary RGB components (color0, diffuse)
 - r0_1..r2_1, g0_1..g2_1, b0_1..b2_1 [7:0]: Per-vertex secondary RGB components (color1, specular/emissive)
-- uv0_u0..uv0_u2, uv0_v0..uv0_v2 [15:0]: Per-vertex UV0 components (UQ0.16)
-- uv1_u0..uv1_u2, uv1_v0..uv1_v2 [15:0]: Per-vertex UV1 components (UQ0.16)
+- uv0_u0..uv0_u2, uv0_v0..uv0_v2 [15:0]: Per-vertex UV0 components (Q4.12)
+- uv1_u0..uv1_u2, uv1_v0..uv1_v2 [15:0]: Per-vertex UV1 components (Q4.12)
 - q0..q2 [15:0]: Per-vertex 1/W values (Q3.12)
 
 **Edge Function Coefficients:**
