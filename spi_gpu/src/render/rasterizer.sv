@@ -1,12 +1,22 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `e6944c4c3ff25580` 2026-02-28
+// Spec-ref: unit_005_rasterizer.md `1c5792df36e87edb` 2026-02-28
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and incremental
 // derivative interpolation (DD-024).
 //
+// Fragment output interface (DD-025):
+//   Per-fragment data is emitted to UNIT-006 (Pixel Pipeline) via a
+//   valid/ready handshake.  The rasterizer asserts frag_valid when a
+//   fragment is ready; it stalls (holds state) when the pixel pipeline
+//   deasserts frag_ready.  See DD-025 for the rationale for choosing
+//   valid/ready over alternatives.
+//
 // Format: Fragment output bus carries interpolated attributes in extended
 // precision (Q4.12 color, 16-bit Z, Q4.12 UV, Q3.12 Q/W).
+//   Color packing: 4x16-bit Q4.12 channels packed into 64-bit bus.
+//   Each 16-bit channel: 1 sign + 3 integer + 12 fractional bits.
+//   UNORM8 [0,255] promoted to Q4.12 [0x0000, 0x0FFF].
 //
 // Multiplier strategy (DD-024):
 //   Setup uses a shared pair of 11x11 multipliers, sequenced over 6 cycles
@@ -93,8 +103,7 @@ module rasterizer (
         INIT_E1         = 4'd4,   // e1_init (shared mul)
         INIT_E2         = 4'd15,  // e2_init (shared mul)
         EDGE_TEST       = 4'd3,   // Inside test
-        INTERPOLATE     = 4'd5,   // Emit fragment (attributes already accumulated)
-        FRAG_WAIT       = 4'd6,   // Wait for frag_ready handshake
+        INTERPOLATE     = 4'd5,   // Emit fragment + wait for frag_ready (DD-025 handshake)
         ITER_NEXT       = 4'd11   // Move to next pixel
     } state_t;
 
@@ -623,10 +632,9 @@ module rasterizer (
             end
 
             INTERPOLATE: begin
-                next_state = FRAG_WAIT;
-            end
-
-            FRAG_WAIT: begin
+                // DD-025: valid/ready handshake.  Stay in INTERPOLATE while
+                // the downstream pixel pipeline is not ready (frag_ready=0).
+                // Advance only when both frag_valid and frag_ready are high.
                 if (frag_valid && frag_ready) begin
                     next_state = ITER_NEXT;
                 end
@@ -785,22 +793,27 @@ module rasterizer (
                 end
 
                 INTERPOLATE: begin
-                    // Emit fragment on output bus
-                    frag_valid <= 1'b1;
-                    frag_x <= curr_x;
-                    frag_y <= curr_y;
-                    frag_z <= out_z;
-                    frag_color0 <= {out_c0r, out_c0g, out_c0b, out_c0a};
-                    frag_color1 <= {out_c1r, out_c1g, out_c1b, out_c1a};
-                    frag_uv0 <= {uv0u_acc[31:16], uv0v_acc[31:16]};
-                    frag_uv1 <= {uv1u_acc[31:16], uv1v_acc[31:16]};
-                    frag_q <= q_acc[31:16];
-                end
-
-                FRAG_WAIT: begin
-                    if (frag_valid && frag_ready) begin
+                    // DD-025 valid/ready handshake: latch fragment outputs on
+                    // the first cycle (frag_valid still 0 from previous clear),
+                    // then hold all values stable during back-pressure.
+                    // Attribute accumulators are NOT updated until ITER_NEXT,
+                    // so outputs remain consistent while frag_ready=0.
+                    if (!frag_valid) begin
+                        // First cycle: latch outputs and assert valid
+                        frag_valid <= 1'b1;
+                        frag_x <= curr_x;
+                        frag_y <= curr_y;
+                        frag_z <= out_z;
+                        frag_color0 <= {out_c0r, out_c0g, out_c0b, out_c0a};
+                        frag_color1 <= {out_c1r, out_c1g, out_c1b, out_c1a};
+                        frag_uv0 <= {uv0u_acc[31:16], uv0v_acc[31:16]};
+                        frag_uv1 <= {uv1u_acc[31:16], uv1v_acc[31:16]};
+                        frag_q <= q_acc[31:16];
+                    end else if (frag_ready) begin
+                        // Handshake completes: deassert valid
                         frag_valid <= 1'b0;
                     end
+                    // else: back-pressure (frag_valid=1, frag_ready=0), hold
                 end
 
                 ITER_NEXT: begin

@@ -465,7 +465,7 @@ module tb_rasterizer;
         wait(tri_ready == 0);
         tri_valid = 0;
 
-        // Wait a few cycles for rasterizer to reach FRAG_WAIT
+        // Wait a few cycles for rasterizer to reach INTERPOLATE (DD-025 handshake)
         repeat(20) @(posedge clk);
 
         // If frag_valid is asserted and we haven't accepted, pixel_count should be 0
