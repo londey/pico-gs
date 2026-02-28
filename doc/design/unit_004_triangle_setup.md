@@ -44,22 +44,22 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `clk` | 1 | Unified 100 MHz system clock (`clk_core`) |
 | `rst_n` | 1 | Active-low reset |
 | `tri_valid` | 1 | Triangle ready to rasterize |
-| `v0_x`, `v0_y` | 16 each | Vertex 0 position (12.4 fixed point) |
-| `v0_z` | 16 | Vertex 0 depth |
+| `v0_x`, `v0_y` | 16 each | Vertex 0 position (Q12.4) |
+| `v0_z` | 16 | Vertex 0 depth (16-bit unsigned) |
 | `v0_color0` | 24 | Vertex 0 primary RGB888 color (diffuse) |
 | `v0_color1` | 24 | Vertex 0 secondary RGB888 color (specular/emissive) |
-| `v1_x`, `v1_y` | 16 each | Vertex 1 position (12.4 fixed point) |
-| `v1_z` | 16 | Vertex 1 depth |
+| `v1_x`, `v1_y` | 16 each | Vertex 1 position (Q12.4) |
+| `v1_z` | 16 | Vertex 1 depth (16-bit unsigned) |
 | `v1_color0` | 24 | Vertex 1 primary RGB888 color (diffuse) |
 | `v1_color1` | 24 | Vertex 1 secondary RGB888 color (specular/emissive) |
-| `v2_x`, `v2_y` | 16 each | Vertex 2 position (12.4 fixed point) |
-| `v2_z` | 16 | Vertex 2 depth |
+| `v2_x`, `v2_y` | 16 each | Vertex 2 position (Q12.4) |
+| `v2_z` | 16 | Vertex 2 depth (16-bit unsigned) |
 | `v2_color0` | 24 | Vertex 2 primary RGB888 color (diffuse) |
 | `v2_color1` | 24 | Vertex 2 secondary RGB888 color (specular/emissive) |
 | `v0_uv0`, `v1_uv0`, `v2_uv0` | 3x32 | Vertex UV0 coordinates (Q4.12 per component) |
 | `v0_uv1`, `v1_uv1`, `v2_uv1` | 3x32 | Vertex UV1 coordinates (Q4.12 per component) |
 | `v0_q`, `v1_q`, `v2_q` | 3x16 | Vertex 1/W (Q3.12 fixed point) for perspective correction |
-| `inv_area` | 16 | 1/area (0.16 fixed point) from CPU |
+| `inv_area` | 16 | 1/area (UQ0.16) from CPU |
 | `fb_base_addr` | 20 | Framebuffer base address [31:12] |
 | `zb_base_addr` | 20 | Z-buffer base address [31:12] |
 | `downstream_ready` | 1 | UNIT-005 ready to accept setup data |
@@ -86,7 +86,7 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `setup_v0_uv0`, `setup_v1_uv0`, `setup_v2_uv0` | 3x32 | Vertex UV0 coordinates (passed through) |
 | `setup_v0_uv1`, `setup_v1_uv1`, `setup_v2_uv1` | 3x32 | Vertex UV1 coordinates (passed through) |
 | `setup_v0_q`, `setup_v1_q`, `setup_v2_q` | 3x16 | Vertex 1/W values (passed through for perspective correction) |
-| `setup_inv_area` | 16 | 1/area (0.16 fixed point) passed through |
+| `setup_inv_area` | 16 | 1/area (UQ0.16) passed through |
 
 ### Internal State
 
@@ -106,8 +106,8 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 - z0..z2 [15:0]: Depth values
 - r0_0..r2_0, g0_0..g2_0, b0_0..b2_0 [7:0]: Per-vertex primary RGB components (color0, diffuse)
 - r0_1..r2_1, g0_1..g2_1, b0_1..b2_1 [7:0]: Per-vertex secondary RGB components (color1, specular/emissive)
-- uv0_u0..uv0_u2, uv0_v0..uv0_v2 [15:0]: Per-vertex UV0 components (Q4.12)
-- uv1_u0..uv1_u2, uv1_v0..uv1_v2 [15:0]: Per-vertex UV1 components (Q4.12)
+- uv0_u0..uv0_u2, uv0_v0..uv0_v2 [15:0]: Per-vertex UV0 components (Q4.12 signed: sign at [15], integer [14:12], fractional [11:0])
+- uv1_u0..uv1_u2, uv1_v0..uv1_v2 [15:0]: Per-vertex UV1 components (Q4.12 signed: same layout)
 - q0..q2 [15:0]: Per-vertex 1/W values (Q3.12)
 
 **Edge Function Coefficients:**

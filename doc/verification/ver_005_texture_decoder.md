@@ -55,6 +55,8 @@ The testbench drives known input data through each texture format decoder and th
    - B5=0 produces Q4.12 B=0x0000; B5=31 produces Q4.12 B=0x1FFF.
    - A2=00 produces Q4.12 A=0x0000; A2=01 produces 0x0555; A2=10 produces 0x0AAA; A2=11 produces 0x1000.
    Verify that all Q4.12 output values span the [0.0, 1.0] range as specified in INT-032.
+   The RTL implementation of these formulas is the `promote_unorm8_to_q412` and related named functions in `fp_types_pkg.sv`.
+   The expected output values for each boundary pattern are derived from the formulas in INT-032 and serve as the acceptance test for those functions.
 
 5. **Stipple test: verify fragment discard logic.**
    - When STIPPLE_EN=1 and the pattern bit at index `(y & 7) * 8 + (x & 7)` is 0: verify discard is asserted.
@@ -115,6 +117,8 @@ The testbench drives known input data through each texture format decoder and th
 ## Notes
 
 - See INT-032 (Texture Cache Architecture) for the RGBA5652 format definition, conversion tables from each source format, Q4.12 promotion formulas, and the 3-bit `tex_format` encoding table.
+  The `fp_types_pkg.sv` package (`spi_gpu/src/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_unorm8_to_q412`) that implement the INT-032 formulas in RTL.
+  If Step 4 promotion output differs from the INT-032 formula, verify the `fp_types_pkg.sv` function implementation against INT-032 before updating test vectors.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd spi_gpu && make test-texture-decoder`.
 - REQ-003.01 coverage is jointly satisfied by VER-005 (unit test for the decode path in isolation) and VER-012 (golden image integration test exercising the full texture sampling pipeline including cache, rasterizer, and framebuffer output).

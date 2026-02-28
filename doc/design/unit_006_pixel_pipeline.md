@@ -72,7 +72,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 ### Inputs
 
 - Fragment position (x, y) from rasterizer (UNIT-005)
-- Interpolated UV coordinates per texture unit (up to 2 sets: UV0, UV1)
+- Interpolated UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0]) — see Stage 1 below for correct format interpretation (known implementation bug F4b)
 - Interpolated vertex colors (SHADE0, SHADE1) as Q4.12 from rasterizer (UNIT-005)
 - Interpolated Z depth value (16-bit unsigned)
 - Register state (TEX0_CFG, TEX1_CFG, CC_MODE, CONST_COLOR, RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, STIPPLE_PATTERN)
@@ -127,6 +127,10 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
   - Z-buffer write deferred to final stage (ensures only visible fragments update Z)
 
 **Stage 1: Texture Cache Lookup (per enabled texture unit, up to 2, REQ-003.08):**
+- UV coordinates arrive from UNIT-005 in Q4.12 format (16-bit signed: sign at [15], integer [14:12], fractional [11:0]).
+  The fractional part used for texel addressing is bits [11:0] of the Q4.12 value (12 bits, resolution 2⁻¹²).
+  NOTE: The current `pixel_pipeline.sv` implementation incorrectly comments UV as Q1.15 and extracts bits [14:0] as the fractional part.
+  This is a known bug (audit finding F4b); the correct interpretation is Q4.12 with fractional bits [11:0].
 - Apply UV wrapping mode (REQ-003.05, TEXn_CFG.U_WRAP / V_WRAP) for TEX0 and TEX1
 - Compute block_x = pixel_x >> 2, block_y = pixel_y >> 2
 - Compute cache set = (block_x[7:0] ^ block_y[7:0]) (XOR set indexing, 8-bit for 256 sets)

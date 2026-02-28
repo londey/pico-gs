@@ -89,7 +89,9 @@ Each cache line stores a single decompressed 4×4 texel block (16 texels) in RGB
 
 **Onward Conversion to Q4.12:**
 
-After cache read, RGBA5652 texels are promoted to Q4.12 signed fixed-point format for pipeline processing (REQ-004.02):
+After cache read, RGBA5652 texels are promoted to Q4.12 signed fixed-point format for pipeline processing (REQ-004.02).
+This document is the authoritative source for the promotion formulas.
+The RTL implementation of these formulas lives in `spi_gpu/src/fp_types_pkg.sv` as named conversion functions (e.g., `promote_r5_to_q412`, `promote_g6_to_q412`, `promote_a2_to_q412`); the `texel_promote.sv` module imports `fp_types_pkg` and applies these functions.
 
 - R5 to Q4.12: Expand to UNORM [0.0, 1.0] using MSB replication: `{3'b0, R5, R5[4:1], 3'b0}`
 - G6 to Q4.12: Expand to UNORM [0.0, 1.0] using MSB replication: `{3'b0, G6, G6[5:0], 2'b0}`
@@ -97,6 +99,12 @@ After cache read, RGBA5652 texels are promoted to Q4.12 signed fixed-point forma
 - A2 to Q4.12: Four-level expansion: 00→0x0000, 01→0x0555, 10→0x0AAA, 11→0x1000
 
 All Q4.12 values represent signed fixed-point in range [−8.0, +7.999], where UNORM [0, 1] maps to [0x0000, 0x1000].
+
+**UV Coordinate Format at Cache Lookup:**
+
+UV coordinates consumed by Stage 1 (Texture Cache Lookup) arrive from UNIT-005 (Rasterizer) in Q4.12 format (16-bit signed: sign at [15], integer bits at [14:12], fractional bits at [11:0]).
+The block address and set index computation uses the integer portion `uv[14:12]` for the block coordinate, and the sub-texel fractional portion `uv[11:0]` for bilinear weight computation.
+Note: the current `pixel_pipeline.sv` implementation contains an incorrect Q1.15 comment and bit extraction at this stage (audit finding F4b); the correct format is Q4.12 as defined here.
 
 #### Bilinear Interleaving
 

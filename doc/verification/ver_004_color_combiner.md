@@ -130,3 +130,5 @@ The testbench drives controlled fragment inputs and combiner mode configurations
 - The color combiner operates at the unified 100 MHz `clk_core` domain.
   The testbench uses a matching 100 MHz clock for cycle-accurate verification.
 - Q4.12 rounding tolerance of +/-1 LSB per channel accounts for the truncation inherent in `(a * b) >> 12` fixed-point multiplication.
+- The Q4.12 arithmetic constants ONE (0x1000) and ZERO (0x0000) used in the testbench are sourced from `fp_types_pkg.sv` (`spi_gpu/src/fp_types_pkg.sv`), which centralizes all fixed-point type definitions and constants for the render pipeline.
+  When configuring pass-through or identity combiner modes (C=ONE, B=ZERO, D=ZERO), the testbench must use the constant values defined in `fp_types_pkg.sv` to remain consistent with the RTL under test.

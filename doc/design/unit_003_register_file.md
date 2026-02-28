@@ -65,14 +65,14 @@ None
 |--------|-------|-------------|
 | `cmd_rdata` | 64 | Read data (combinational, addressed by cmd_addr) |
 | `tri_valid` | 1 | One-cycle pulse when 3rd vertex submitted |
-| `tri_x[0:2]` | 3x16 | Vertex X coordinates (S12.4 fixed) |
-| `tri_y[0:2]` | 3x16 | Vertex Y coordinates (S12.4 fixed) |
+| `tri_x[0:2]` | 3x16 | Vertex X coordinates (Q12.4) |
+| `tri_y[0:2]` | 3x16 | Vertex Y coordinates (Q12.4) |
 | `tri_z[0:2]` | 3x16 | Vertex Z depth values (16-bit unsigned) |
-| `tri_q[0:2]` | 3x16 | Vertex 1/W values (S3.12 fixed) |
+| `tri_q[0:2]` | 3x16 | Vertex 1/W values (Q3.12) |
 | `tri_color0[0:2]` | 3x32 | Vertex COLOR0 RGBA8888 per vertex |
 | `tri_color1[0:2]` | 3x32 | Vertex COLOR1 RGBA8888 per vertex |
-| `tri_uv0[0:2]` | 3x32 | Vertex UV0 coordinates per vertex |
-| `tri_uv1[0:2]` | 3x32 | Vertex UV1 coordinates per vertex |
+| `tri_uv0[0:2]` | 3x32 | Vertex UV0 coordinates per vertex, packed {U[31:16], V[15:0]} in Q4.12 per component |
+| `tri_uv1[0:2]` | 3x32 | Vertex UV1 coordinates per vertex, packed {U[31:16], V[15:0]} in Q4.12 per component |
 | `mode_gouraud` | 1 | Gouraud shading enabled (RENDER_MODE[0]) |
 | `mode_z_test` | 1 | Z-test enabled (RENDER_MODE[2]) |
 | `mode_z_write` | 1 | Z-write enabled (RENDER_MODE[3]) |

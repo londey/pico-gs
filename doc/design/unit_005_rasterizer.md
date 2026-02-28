@@ -58,7 +58,7 @@ None
   - Interpolated Z depth (16-bit)
   - Interpolated primary vertex color (VER_COLOR0) in 10.8 fixed-point (4× 18-bit channels: R, G, B, A)
   - Interpolated secondary vertex color (VER_COLOR1) in 10.8 fixed-point (4× 18-bit channels: R, G, B, A)
-  - Interpolated UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1)
+  - Interpolated UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point
 
 **Note**: The rasterizer does **not** write directly to the framebuffer. All fragment output goes through the pixel pipeline (UNIT-006) for texture blending, dithering, and framebuffer conversion.
 
@@ -76,11 +76,12 @@ None
 2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at bounding box origin using the same shared multiplier pair (cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
    Compute per-attribute derivatives using the precomputed `inv_area` from UNIT-004: for each attribute `f` at vertices v0, v1, v2, compute `df/dx = (f1-f0)*A01 + (f2-f0)*A02` and `df/dy = (f1-f0)*B01 + (f2-f0)*B02` (scaled by inv_area), using the shared multiplier pair in the same 3-cycle window.
    Initialize accumulated attribute values at the bounding box origin.
-   Attributes subject to derivative precomputation: color0 (RGBA, 8-bit per channel), color1 (RGBA, 8-bit per channel), Z (16-bit), UV0 (Q4.12 per component), UV1 (Q4.12 per component), and Q/W (Q3.12).
+   Attributes subject to derivative precomputation: color0 (RGBA, 8-bit per channel), color1 (RGBA, 8-bit per channel), Z (16-bit unsigned), UV0 (Q4.12 per component), UV1 (Q4.12 per component), and Q/W (Q3.12).
 3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); no multiply required.
 4. **Interpolation** (INTERPOLATE, per inside pixel): Add the precomputed dx derivatives to the accumulated attribute values when stepping right in X; add the dy derivatives when advancing to a new row.
    No per-pixel multiplies are required — all attribute interpolation is performed by incremental addition only.
-   Output interpolated values as Q4.12 by promoting the accumulated fixed-point attribute to the pipeline-internal format (see UNIT-006, Stage 3).
+   Output interpolated UV values as Q4.12 by extracting bits [31:16] of the Q4.28 accumulator (which discards the 16 guard bits, recovering the Q4.12 representation).
+   Output interpolated color values by promoting the 8-bit accumulated UNORM to Q4.12 (see UNIT-006, Stage 3).
 5. **Pixel Advance** (ITER_NEXT): Step to next pixel — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
 6. **Scissor Bounds**: Bounding box is clamped to `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y, using the register values for the current render surface.
 
@@ -144,5 +145,7 @@ Both interpolated vertex colors are output to UNIT-006 for use as VER_COLOR0 and
 Q/W is output to UNIT-006 for perspective-correct UV division before texture lookup.
 
 **Fragment output interface:** The rasterizer emits per-fragment data to UNIT-006 (Pixel Pipeline) via a valid/ready handshake (see DD-025).
-The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0, UV1 (Q4.12 per component), and interpolated Q/W (Q3.12).
+The fragment bus carries: (x, y) screen coordinates in Q12.4; interpolated Z (16-bit unsigned); interpolated color0 and color1 (Q4.12 RGBA, 4 × 16-bit channels); interpolated UV0 and UV1 (Q4.12 per component, 16-bit signed each, packed as U[31:16]/V[15:0] in a 32-bit bus); and interpolated Q/W (Q3.12, 16-bit signed).
+UV components use Q4.12 format throughout — sign bit, 3 integer bits, 12 fractional bits — matching the vertex input format from UNIT-003 and the accumulator output extraction `acc[31:16]` (top half of the Q4.28 accumulator).
+The pixel pipeline (UNIT-006) must interpret `frag_u0[15:0]` and `frag_v0[15:0]` as Q4.12: sign bit at [15], integer bits at [14:12], fractional bits at [11:0].
 The rasterizer does not access SDRAM directly; all framebuffer, Z-buffer, and texture memory accesses are the responsibility of UNIT-006 through UNIT-007.

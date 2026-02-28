@@ -54,7 +54,8 @@ The testbench drives known triangle configurations through the triangle setup an
    - The centroid.
    - Edge midpoints.
    Verify that interpolated color, Z, UV0, UV1, and Q values match reference values within 1 ULP of the fixed-point derivative step precision.
-   Reference values are computed offline using the same incremental step model (not the barycentric MAC model).
+   UV0 and UV1 coordinates on the fragment output bus are Q4.12 (16-bit signed, 4 integer bits, 12 fractional bits) as defined in `fp_types_pkg.sv`.
+   Reference values are computed offline using the same incremental step model (not the barycentric MAC model), with UV values represented in Q4.12.
 
 5. **Fragment output bus handshake.**
    Verify that the rasterizer emits fragments using the valid/ready handshake protocol on the fragment output bus.
@@ -77,7 +78,7 @@ The testbench drives known triangle configurations through the triangle setup an
   - All edge function coefficients (A, B, C) for each edge match reference values exactly.
   - Bounding box X coordinate is clamped to `[0, (1 << fb_width_log2) - 1]` and Y coordinate to `[0, (1 << fb_height_log2) - 1]` for each configured surface size (512×512 and 256×256).
   - Fragment emission counts match reference pixel counts exactly for all test triangles.
-  - Interpolated color, Z, UV0, UV1, and Q values at vertices, centroid, and midpoints match reference values within 1 ULP of the fixed-point derivative step precision.
+  - Interpolated color, Z, UV0, UV1 (Q4.12), and Q values at vertices, centroid, and midpoints match reference values within 1 ULP of the fixed-point derivative step precision.
   - Back-pressure on the fragment output bus (`ready = 0`) halts fragment emission without loss or duplication.
   - Degenerate triangles produce the expected fragment count (0 or 1 as specified).
   - Winding order tests produce consistent edge function signs.
@@ -86,7 +87,7 @@ The testbench drives known triangle configurations through the triangle setup an
   - Any edge function coefficient differs from the reference value.
   - Bounding box exceeds the configured surface bounds or is incorrectly computed for any `fb_width_log2` / `fb_height_log2` combination.
   - Fragment count differs from expected value for any test triangle.
-  - Interpolated values exceed the 1 ULP tolerance at any sampled point.
+  - Interpolated color, Z, UV0, UV1 (Q4.12), or Q values exceed the 1 ULP tolerance at any sampled point.
   - Fragment emission continues while `ready = 0`, or any fragment is lost or duplicated around a back-pressure stall.
   - Degenerate triangle produces unexpected fragments.
 
@@ -105,6 +106,7 @@ The testbench drives known triangle configurations through the triangle setup an
   The testbench reference model must use the same incremental step computation; the previously-used barycentric multiply-accumulate reference is no longer applicable.
 - The rasterizer no longer performs direct SDRAM writes.
   Fragment data (x, y, z, color0, color1, uv0, uv1, q) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
+  UV coordinates (`frag_uv0`, `frag_uv1`) are Q4.12 (16-bit signed) on this bus, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   The testbench instantiates a simple ready-signal driver to simulate downstream back-pressure.
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.
   The testbench clock should match this frequency for cycle-accurate fragment throughput verification.

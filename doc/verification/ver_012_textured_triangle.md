@@ -45,8 +45,8 @@ The harness generates a 16x16 RGB565 checker pattern programmatically (no file c
 The test renders a single textured triangle with three vertices at known screen coordinates.
 Each vertex has UV coordinates that map to specific regions of the 16x16 checker texture.
 
-| Vertex | Screen Position (12.4 fixed) | UV Coordinates (U, V) | Description |
-|--------|------------------------------|-----------------------|-------------|
+| Vertex | Screen Position (Q12.4) | UV Coordinates (U, V) — Q4.12 on fragment bus | Description |
+|--------|-------------------------|-----------------------------------------------|-------------|
 | V0 | (320, 60) | (0.5, 0.0) | Top center |
 | V1 | (100, 380) | (0.0, 1.0) | Bottom left |
 | V2 | (540, 380) | (1.0, 1.0) | Bottom right |
@@ -165,3 +165,6 @@ The integration harness drives the following register-write sequence into UNIT-0
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), or after any change to the format-select mux path in UNIT-006.
   See `test_strategy.md` for the re-approval workflow.
+- **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) are Q4.12 (16-bit signed) on the rasterizer→pixel_pipeline fragment bus, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
+  If the UV format mismatch between the rasterizer output and the pixel pipeline's UV consumption logic is corrected (the pixel pipeline must extract the Q4.12 fractional part correctly rather than treating the bus as Q1.15), the rendered checker pattern will change at pixel level.
+  In that case, re-run this test, visually inspect the corrected output, and re-approve the golden image before committing.

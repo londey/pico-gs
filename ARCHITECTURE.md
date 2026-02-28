@@ -140,7 +140,7 @@ Each column shows a value's lifetime from production (first ●) to last consump
 | Dither | ● | ● | | | | | | | ● | |
 | Pixel Write | ● | ● | | | | | | | ● | FB write, Z write |
 
-**Widths:** x, y are S12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
+**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed: sign at [15], integer [14:12], fractional [11:0]); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
 Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
 After dither, color is truncated to RGB565 (16-bit) for framebuffer write.
 
