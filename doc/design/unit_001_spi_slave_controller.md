@@ -14,6 +14,7 @@ Receives 72-bit SPI transactions and writes to register file
 - REQ-001.03 (SPI Electrical Interface)
 - REQ-011.02 (Resource Constraints)
 - REQ-011.03 (Reliability Requirements)
+- REQ-001 (GPU SPI Hardware)
 
 ## Interfaces
 
@@ -25,6 +26,7 @@ Receives 72-bit SPI transactions and writes to register file
 
 - INT-010 (GPU Register Map)
 - INT-012 (SPI Transaction Format)
+- INT-001 (SPI Mode 0 Protocol)
 
 ### Internal Interfaces
 

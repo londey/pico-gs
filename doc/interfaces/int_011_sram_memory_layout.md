@@ -20,3 +20,12 @@ Key requirement areas that depend on this interface:
 - REQ-006.01 (Screen Scan Out) — Area 6: Screen Scan Out
 - REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
 - REQ-013.02 (GPU Memory Map) — Area 13: GPU Communication
+- REQ-003.06 (Texture Sampling)
+- REQ-006.02 (Display Output Timing)
+- REQ-005.05 (Triangle-Based Clearing)
+- REQ-005.03 (Alpha Blending)
+- REQ-011.02 (Resource Constraints)
+- REQ-011.01 (Performance Targets)
+- REQ-005 (Blend / Frame Buffer Store)
+- REQ-006 (Screen Scan Out)
+- REQ-002 (Rasterizer)

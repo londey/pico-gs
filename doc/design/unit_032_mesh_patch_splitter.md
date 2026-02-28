@@ -11,6 +11,7 @@ Mesh splitting with vertex/index limits
 ## Implements Requirements
 
 - REQ-012.02 (OBJ Mesh Processing)
+- REQ-012 (Asset Pipeline)
 
 ## Interfaces
 

@@ -13,6 +13,7 @@ Rust source and binary data generation for compiled assets
 - REQ-012.01 (PNG Asset Processing)
 - REQ-012.02 (OBJ Mesh Processing)
 - REQ-012.03 (Asset Build Orchestration)
+- REQ-012 (Asset Pipeline)
 
 ## Interfaces
 

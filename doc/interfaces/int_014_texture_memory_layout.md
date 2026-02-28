@@ -13,3 +13,6 @@
 - REQ-003.07 (Texture Mipmapping)
 - REQ-012.01 (PNG Texture Import)
 - REQ-014.01 (Texture Upload)
+- REQ-003.08 (Texture Cache)
+- REQ-003 (Texture Samplers)
+- REQ-013.02 (Upload Texture)

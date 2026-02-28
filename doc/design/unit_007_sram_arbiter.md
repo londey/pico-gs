@@ -16,6 +16,8 @@ Arbitrates SDRAM access between display and render
 - REQ-005.08 (Clear Framebuffer)
 - REQ-011.01 (Performance Targets) — SDRAM bandwidth arbitration underpins throughput targets
 - REQ-011.02 (Resource Constraints) — resource-constrained unit
+- REQ-002 (Rasterizer)
+- REQ-005 (Blend / Frame Buffer Store)
 
 ## Interfaces
 

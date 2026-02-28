@@ -10,6 +10,7 @@ Internal
 - **Consumer:** UNIT-026 (Intercore Queue)
 - **Consumer:** UNIT-032 (Mesh Patch Splitter)
 - **Consumer:** UNIT-033 (Codegen Engine)
+- **Consumer:** UNIT-034 (Build.rs Orchestrator)
 
 ## Referenced By
 

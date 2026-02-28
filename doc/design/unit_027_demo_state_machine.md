@@ -13,6 +13,7 @@ Demo selection and switching logic
 - REQ-009.01 (USB Keyboard Input) — parent area 9 (Keyboard and Controller Input)
 - REQ-008.05 (Default Demo Startup) — parent area 8 (Scene Graph/ECS)
 - REQ-008.01 (Scene Management) — parent area 8 (Scene Graph/ECS)
+- REQ-008 (Scene Graph / ECS)
 
 ## Interfaces
 

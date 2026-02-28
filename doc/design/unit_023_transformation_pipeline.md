@@ -15,6 +15,8 @@ MVP matrix transforms
 - REQ-007.01 (Matrix Transformation Pipeline) — parent area 7 (Vertex Transformation)
 - REQ-014.02 (Static Mesh Directional Lighting) — vertex transformation for directional-lit meshes
 - REQ-014.03 (Skinned Mesh) — bone-blended vertex transformation and MVP projection
+- REQ-014 (Render Modes)
+- REQ-007 (Vertex Transformation)
 
 ## Interfaces
 

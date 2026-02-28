@@ -13,6 +13,8 @@ Scanline FIFO and display pipeline
 - REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
 - REQ-006.03 (Color Grading LUT) — area 6: Screen Scan Out
 - REQ-011.01 (Performance Targets) — pixel clock and scanout timing are performance-critical
+- REQ-005 (Blend / Frame Buffer Store)
+- REQ-006 (Screen Scan Out)
 
 ## Interfaces
 

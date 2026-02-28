@@ -28,6 +28,11 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 - REQ-005.09 (Double-Buffered Rendering) — writes to off-screen render target via FB_CONFIG
 - REQ-005.10 (Ordered Dithering)
 - REQ-014.01 (Lightmapped Static Mesh) — dual-texture blending supports lightmap compositing
+- REQ-014 (Render Modes)
+- REQ-002 (Rasterizer)
+- REQ-003 (Texture Samplers)
+- REQ-004 (Fragment Processor / Color Combiner)
+- REQ-005 (Blend / Frame Buffer Store)
 
 ## Interfaces
 
@@ -40,6 +45,7 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 - INT-010 (GPU Register Map)
 - INT-011 (SDRAM Memory Layout)
 - INT-014 (Texture Memory Layout)
+- INT-032 (Texture Cache Architecture)
 
 ### Internal Interfaces
 
@@ -320,6 +326,13 @@ Planned formal testbenches (VER documents not yet created; see `doc/verification
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
 - VER-014 (Textured Cube Golden Image Test) — exercises the full pixel pipeline across cube faces with perspective-correct UV interpolation, early Z-test with Z-buffer comparison across overlapping faces, RGB565 texture cache fills from multiple spatial access patterns, texel promotion to Q4.12, and MODULATE color combiner output
+- VER-014 (Textured Cube Golden Image Test)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
+- VER-012 (Textured Triangle Golden Image Test)
+- VER-013 (Color-Combined Output Golden Image Test)
+- VER-005 (Texture Decoder Unit Testbench)
+- VER-002 (Early Z-Test Unit Testbench)
 
 ## Design Notes
 

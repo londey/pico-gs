@@ -63,6 +63,7 @@ struct RegWrite {
 // unless the harness architecture is being redesigned.
 #include "scripts/ver_010_gouraud.cpp"
 #include "scripts/ver_011_depth_test.cpp"
+#include "scripts/ver_014_textured_cube.cpp"
 
 // ---------------------------------------------------------------------------
 // Simulation constants
@@ -625,7 +626,7 @@ int main(int argc, char** argv) {
     if (test_name.empty()) {
         std::cerr << std::format(
             "Usage: {} <test_name> [output.png] [--trace]\n"
-            "  test_name: gouraud, depth_test, textured, color_combined\n",
+            "  test_name: gouraud, depth_test, textured_cube\n",
             argv[0]
         );
         return 1;
@@ -698,6 +699,42 @@ int main(int argc, char** argv) {
         std::cout << "Running VER-010 (Gouraud triangle).\n";
 
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_010_script);
+
+    } else if (test_name == "textured_cube") {
+        // VER-014: Textured cube.
+        // Requires four sequential phases with pipeline drain between each.
+        std::cout << "Running VER-014 (textured cube).\n";
+
+        // Phase 0: Pre-load checker texture into behavioral SDRAM model
+        {
+            auto checker_data = generate_checker_texture();
+            sdram.fill_texture(
+                TEX0_BASE_WORD,
+                TexFormat::RGB565,
+                checker_data,
+                4  // width_log2 = 4 (16px)
+            );
+            std::cout << std::format(
+                "DIAG: Loaded 16x16 checker texture ({} bytes) at SDRAM word 0x{:06X}\n",
+                checker_data.size(),
+                TEX0_BASE_WORD
+            );
+        }
+
+        // Phase 1: Z-buffer clear pass
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_zclear_script);
+
+        // Drain pipeline after Z-clear
+        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
+
+        // Phase 2: Texture and render-mode configuration
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_setup_script);
+
+        // Brief drain for configuration to settle
+        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, 1000);
+
+        // Phase 3: Submit all twelve cube triangles
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_triangles_script);
 
     } else {
         std::cerr << std::format("Unknown test: {}\n", test_name);

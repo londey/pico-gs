@@ -7,6 +7,7 @@ PNG file loading, RGBA conversion, and texture format encoding (RGBA4444/BC1)
 ## Implements Requirements
 
 - REQ-012.01 (PNG Asset Processing) — area 13: Game Data Preparation/Import
+- REQ-012 (Asset Pipeline)
 
 ## Interfaces
 

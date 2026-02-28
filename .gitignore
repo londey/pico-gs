@@ -13,6 +13,9 @@
 *.vcd
 *.fst
 
+# Harness scaffold smoke-test output
+spi_gpu/test_scaffold.png
+
 # FPGA-specific file types (outside build/)
 *.config
 *.bit

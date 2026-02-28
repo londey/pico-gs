@@ -15,6 +15,7 @@ External Standard
 - **Consumer:** UNIT-001 (SPI Slave Controller)
 - **Consumer:** UNIT-022 (GPU Driver Layer)
 - **Consumer:** UNIT-035 (PC SPI Driver (FT232H))
+- **Provider:** UNIT-001 (SPI Slave Controller)
 
 ## Parent Area
 

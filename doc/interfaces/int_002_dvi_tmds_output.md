@@ -14,11 +14,13 @@ External Standard
 - **Provider:** External
 - **Consumer:** UNIT-009 (DVI TMDS Encoder)
 - **Provider:** UNIT-009 (DVI TMDS Encoder)
+- **Provider:** UNIT-008 (Display Controller)
 
 ## Referenced By
 
 - REQ-006.01 (Display Output) — area 6: Screen Scan Out
 - REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
+- REQ-006 (Screen Scan Out)
 
 ## Specification
 

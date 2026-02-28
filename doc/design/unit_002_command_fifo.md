@@ -13,6 +13,7 @@ Buffers GPU commands with flow control and provides autonomous boot-time command
 - REQ-001.01 (Basic Host Communication)
 - REQ-001.04 (Command Buffer FIFO)
 - REQ-011.02 (Resource Constraints)
+- REQ-001 (GPU SPI Hardware)
 
 ## Interfaces
 

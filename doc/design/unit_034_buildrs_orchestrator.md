@@ -11,12 +11,14 @@ Asset pipeline entry point
 ## Implements Requirements
 
 - REQ-012.03 (Asset Build Orchestration)
+- REQ-012 (Asset Pipeline)
 
 ## Interfaces
 
 ### Provides
 
 - INT-030 (Asset Tool CLI Interface)
+- INT-031 (Asset Binary Format)
 
 ### Consumes
 

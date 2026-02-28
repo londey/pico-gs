@@ -12,6 +12,8 @@ Terminal keyboard input handling for the PC debug host platform.
 
 - REQ-009.01 (USB Keyboard Input) — canonical requirement (covers both RP2350 USB HID and PC terminal); parent area 9 (Keyboard and Controller Input)
 - REQ-010.01 (PC Debug Host) — parent area 10 (GPU Debug GUI)
+- REQ-010 (GPU Debug GUI)
+- REQ-009 (Keyboard and Controller Input)
 
 ## Interfaces
 

@@ -14,6 +14,7 @@ Stores GPU state and vertex data
 - REQ-001.02 (Memory Upload Interface)
 - REQ-001.05 (Vertex Submission Protocol)
 - REQ-011.02 (Resource Constraints)
+- REQ-001 (GPU SPI Hardware)
 
 ## Interfaces
 
@@ -244,6 +245,12 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
 - The interactive Verilator simulator (UNIT-037) generalises the VER-010 through VER-013 injection approach into a live interactive tool.
+- VER-014 (Textured Cube Golden Image Test)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
+- VER-012 (Textured Triangle Golden Image Test)
+- VER-013 (Color-Combined Output Golden Image Test)
+- VER-003 (Register File Unit Testbench)
   It drives cmd_valid/cmd_rw/cmd_addr/cmd_wdata via the `SIM_DIRECT_CMD` path in UNIT-002 and observes the display output tap signals produced downstream of UNIT-008; UNIT-003 itself is not modified.
 
 ## Design Notes

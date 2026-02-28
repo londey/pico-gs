@@ -19,6 +19,7 @@ Internal
 
 - **Provider:** UNIT-022 (GPU Driver Layer)
 - **Consumer:** UNIT-021 (Core 1 Render Executor), pico-gs-pc main loop
+- **Consumer:** UNIT-020 (Core 0 Scene Manager)
 
 ## Referenced By
 
@@ -41,6 +42,7 @@ Internal
 - REQ-014.01 (Lightmapped Static Mesh)
 - REQ-014.02 (Static Mesh with Directional Lighting)
 - REQ-014.03 (Skinned Mesh (3-Bone))
+- REQ-007.01 (Matrix Transformation Pipeline)
 
 Note: REQ-100 (Host Firmware Architecture) and REQ-110 (GPU Initialization) and REQ-120 (Async Data Loading) are retired; their references have been removed.
 

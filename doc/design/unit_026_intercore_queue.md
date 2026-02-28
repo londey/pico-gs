@@ -12,6 +12,7 @@ SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-thread
 
 - REQ-007.01 (Matrix Transformation Pipeline) — parent area 7 (Vertex Transformation)
 - REQ-008.04 (Render Command Queue) — parent area 8 (Scene Graph/ECS)
+- REQ-008 (Scene Graph / ECS)
 
 ## Interfaces
 

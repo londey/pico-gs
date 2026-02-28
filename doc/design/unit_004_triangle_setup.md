@@ -13,6 +13,7 @@ Prepares triangle for rasterization
 - REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
 - REQ-002.03 (Rasterization Algorithm)
+- REQ-002 (Rasterizer)
 
 ## Interfaces
 
@@ -146,6 +147,9 @@ Computes bounding box as min/max of vertex coordinates clamped to screen (640x48
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
+- VER-014 (Textured Cube Golden Image Test)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 
 ## Design Notes
 

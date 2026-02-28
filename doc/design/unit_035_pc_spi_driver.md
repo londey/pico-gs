@@ -13,6 +13,8 @@ SPI transport implementation for PC platform via Adafruit FT232H breakout board
 - REQ-013.01 (GPU Communication Protocol) — parent area 1 (GPU SPI Controller)
 - REQ-010.01 (PC Debug Host) — parent area 10 (GPU Debug GUI)
 - ~~REQ-100 (Host Firmware Architecture)~~ — retired (premature for single-threaded approach)
+- REQ-013 (Host SPI Driver)
+- REQ-010 (GPU Debug GUI)
 
 ## Interfaces
 

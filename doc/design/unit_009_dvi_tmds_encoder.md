@@ -9,6 +9,7 @@ TMDS encoding and differential output
 - REQ-006.01 (Display Output) — area 6: Screen Scan Out
 - REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
 - REQ-011.02 (Resource Constraints) — area 11: System Constraints
+- REQ-006 (Screen Scan Out)
 
 ## Interfaces
 
@@ -17,6 +18,7 @@ TMDS encoding and differential output
 - INT-002 (DVI TMDS Output)
 
 ### Consumes
+- INT-002 (DVI TMDS Output)
 
 None
 

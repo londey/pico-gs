@@ -20,6 +20,8 @@ Edge-walking rasterization engine
 - REQ-005.05 (Triangle-Based Clearing) — rasterizes screen-covering clear triangles
 - REQ-005.07 (Z-Buffer Operations) — generates per-fragment Z values for Z-buffer read/write
 - REQ-011.01 (Performance Targets) — triangle throughput and fill rate are primary performance drivers
+- REQ-002 (Rasterizer)
+- REQ-005 (Blend / Frame Buffer Store)
 
 ## Interfaces
 
@@ -102,6 +104,11 @@ Formal testbenches:
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
 - VER-014 (Textured Cube Golden Image Test) — exercises the rasterizer across multiple triangles with varying depth and projection angles under perspective
+- VER-014 (Textured Cube Golden Image Test)
+- VER-010 (Gouraud Triangle Golden Image Test)
+- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
+- VER-012 (Textured Triangle Golden Image Test)
+- VER-001 (Rasterizer Unit Testbench)
 
 The Verilator interactive simulator (REQ-010.02, `make sim-interactive`) extends the golden image harness concept to a live interactive tool.
 It injects commands via `SIM_DIRECT_CMD` ports into the same register-file input path that VER-010–VER-014 use, but renders output live to an SDL3 window rather than comparing against a static reference image.

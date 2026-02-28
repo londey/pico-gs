@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `9922acb997237266` 2026-02-25
+// Spec-ref: unit_006_pixel_pipeline.md `c5a833b7799789bf` 2026-02-28
 //
 // Texel Promote — RGBA5652 to Q4.12 Conversion
 //
