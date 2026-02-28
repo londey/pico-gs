@@ -785,7 +785,11 @@ module gpu_top (
 
         // Depth range clipping
         .z_range_min(z_range_min),
-        .z_range_max(z_range_max)
+        .z_range_max(z_range_max),
+
+        // Framebuffer surface dimensions (from FB_CONFIG via register file)
+        .fb_width_log2(fb_width_log2),
+        .fb_height_log2(fb_height_log2)
     );
 
 endmodule
