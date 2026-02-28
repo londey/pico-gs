@@ -714,15 +714,18 @@ int main(int argc, char** argv) {
 
     } else if (test_name == "textured_cube") {
         // VER-014: Textured cube golden image test.
-        // Sequence: setup -> Z-clear -> triangles, with pipeline drains between.
+        // Sequence: Z-clear -> setup -> triangles, with pipeline drains between.
+        // The Z-clear pass sets RENDER_MODE to Z-clear mode (no color writes).
+        // The setup script then reconfigures RENDER_MODE for textured depth
+        // rendering before the triangle submissions.
         std::cout << "Running VER-014 (textured cube golden image).\n";
 
-        // Phase 1: Framebuffer config + texture config + render mode
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_setup_script);
-
-        // Phase 2: Z-buffer clear pass
+        // Phase 1: Z-buffer clear pass (sets its own FB_CONFIG and RENDER_MODE)
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_zclear_script);
         drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
+
+        // Phase 2: Texture config + render mode for depth-tested textured rendering
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_setup_script);
 
         // Phase 3: Submit all twelve cube triangles
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_triangles_script);
@@ -902,8 +905,14 @@ int main(int argc, char** argv) {
             }
 
             // Once the rasterizer returns to IDLE and we've started, we can
-            // stop early
-            if (rast_started && rast_state == 0 && i > 100) {
+            // stop early — but only when the command FIFO is also empty and
+            // no more vertices are pending in the register file.  For
+            // multi-triangle tests (VER-014), the rasterizer briefly returns
+            // to IDLE between triangles; checking FIFO empty prevents
+            // premature exit before all triangles have been processed.
+            bool fifo_empty = top->gpio_cmd_empty;
+            unsigned vtx_count = top->rootp->gpu_top->u_register_file->vertex_count;
+            if (rast_started && rast_state == 0 && fifo_empty && vtx_count == 0 && i > 100) {
                 std::cout << std::format(
                     "DIAG: Rasterizer returned to IDLE at drain cycle {}\n", i
                 );
