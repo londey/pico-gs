@@ -26,6 +26,12 @@ Each sampler has a 16,384-texel cache for improved hit rates on larger textures.
 
 ### Details
 
+#### Format Field Width
+
+The `tex_format` signal that selects the decode path is a **3-bit field** (`[4:2]` of TEXn_FMT; see INT-010).
+Seven distinct values (0–6) are defined; value 7 is reserved.
+The 3-bit width is the minimum required to encode all seven formats without aliasing.
+
 #### Cache Line Format (RGBA5652)
 
 Each cache line stores a single decompressed 4×4 texel block (16 texels) in RGBA5652 format:
@@ -227,6 +233,7 @@ See REQ-011.02 for the complete resource budget.
 - Cache is non-coherent (invalidation required on texture change via TEXn_CFG write)
 - BC2/BC3 alpha is truncated to 2 bits in cache (A2); precision loss is acceptable for the intermediate blending step
 - RGBA8888 and R8 formats incur the highest fill latency due to larger burst sizes; prefer compressed formats for performance-sensitive textures
+- The format-select mux in the pixel pipeline routes the SDRAM burst data to the appropriate decoder module (one of six standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[2:0]` (INT-010 TEXn_FMT bits [4:2])
 
 ## Notes
 

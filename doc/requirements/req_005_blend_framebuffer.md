@@ -3,7 +3,7 @@
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Draft
+- **Stability:** Stable
 - **Verification:** Inspection
 
 ## Requirement
@@ -34,16 +34,22 @@ None (top-level area)
 
 ## Allocated To
 
-- UNIT-005 (Rasterizer)
-- UNIT-006 (Pixel Pipeline)
-- UNIT-007 (Memory Arbiter)
-- UNIT-008 (Display Controller)
+- UNIT-006 (Pixel Pipeline) — alpha blending, depth test, dithering, framebuffer and Z-buffer SDRAM writes
+- UNIT-007 (Memory Arbiter) — SDRAM arbitration for framebuffer and Z-buffer ports
+- UNIT-008 (Display Controller) — double-buffer flip and display scanout
 
 ## Interfaces
 
 - INT-010 (GPU Register Map)
 - INT-011 (SDRAM Memory Layout)
 
+## Verification Method
+
+**Inspection:** Verify that framebuffer and Z-buffer SDRAM write paths originate from UNIT-006 (Pixel Pipeline) and not from UNIT-005 (Rasterizer).
+Child requirements carry individual Test-level verification via VER-002 (early Z), VER-011 (depth-tested triangles), and VER-013/VER-014 (blend and full pipeline golden image tests).
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.
+UNIT-005 (Rasterizer) emits fragments to UNIT-006 via a valid/ready handshake bus; it does not perform direct framebuffer or Z-buffer writes.
+All SDRAM writes for this requirement area are owned by UNIT-006 through SDRAM arbiter ports 1 (framebuffer) and 2 (Z-buffer) (see UNIT-007).

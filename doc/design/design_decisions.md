@@ -36,6 +36,151 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-026: Arbiter Port 3 Sharing — Texture Cache vs. PERF_TIMESTAMP Writes
+
+**Date:** 2026-02-28
+**Status:** Proposed
+
+### Context
+
+UNIT-007 (Memory Arbiter) port 3 is used for texture cache fill burst reads by UNIT-006 (Pixel Pipeline).
+UNIT-003 (Register File) also drives `ts_mem_wr` / `ts_mem_addr` / `ts_mem_data` outputs that `gpu_top.sv` must forward to port 3 as single-word SDRAM writes when a `PERF_TIMESTAMP` register write occurs.
+Both sources compete for the same arbiter port, and no sharing mechanism was previously specified.
+
+### Decision
+
+Manage port 3 contention entirely within `gpu_top.sv` using a latch-and-serialize scheme:
+
+1. A pending-write register in `gpu_top.sv` captures `ts_mem_wr` / `ts_mem_addr` / `ts_mem_data` from UNIT-003.
+   If a new `ts_mem_wr` pulse arrives while a previous write is still pending, the new data overwrites the pending register (fire-and-forget; back-to-back timestamps may coalesce).
+2. `gpu_top.sv` drives `port3_req` by OR-ing UNIT-006's texture fill request with the pending timestamp write request.
+   UNIT-006's texture request is checked first; the timestamp write is only injected onto port 3 when UNIT-006 is not asserting a texture request.
+3. No modifications to UNIT-007 (sram_arbiter.sv) are required.
+
+### Rationale
+
+The simplest correct solution that avoids arbiter redesign.
+Texture fills are latency-sensitive (the pipeline stalls during a cache miss) while timestamp writes are fire-and-forget with no consumer waiting on the result.
+Giving texture fills unconditional priority on port 3 preserves cache miss latency.
+The coalescing behavior on back-to-back timestamp writes is acceptable: `PERF_TIMESTAMP` is a diagnostic facility, not a high-frequency counter; a missed timestamp write means a missed profiling sample, not a rendering error.
+
+### Alternatives Considered
+
+1. **Add port 4 to the arbiter for timestamp writes:** Rejected — adds arbiter complexity, additional port routing, and uses additional FPGA resources, all for a diagnostic path.
+2. **Route timestamp writes through port 1 (framebuffer):** Rejected — contaminates the framebuffer port's traffic pattern and complicates UNIT-006's port 1 ownership.
+3. **Use a priority mux at port 3 with explicit arbitration logic:** Rejected — equivalent complexity to the latch-and-serialize scheme but harder to reason about; the `gpu_top.sv` approach is localized and easier to verify.
+
+### Consequences
+
+- Port 3 sharing is a `gpu_top.sv` concern; UNIT-006, UNIT-007, and UNIT-003 are unaffected.
+- `PERF_TIMESTAMP` writes may be delayed (but not lost, unless a second write arrives within the same interval) while a texture fill burst holds port 3.
+- Back-to-back `PERF_TIMESTAMP` writes with no intervening idle cycle on port 3 will coalesce; firmware must space timestamps by at least one RGBA8888 cache fill (32 words, ~35 cycles at 100 MHz worst-case) for reliable capture.
+
+### References
+
+- UNIT-003 (Register File — ts_mem_wr / ts_mem_addr / ts_mem_data)
+- UNIT-006 (Pixel Pipeline — texture cache fill, port 3 burst reads)
+- UNIT-007 (Memory Arbiter — port 3 fixed-priority, max burst 32 words)
+
+---
+
+
+## DD-025: Rasterizer Fragment Output Interface — Valid/Ready Handshake to Pixel Pipeline
+
+**Date:** 2026-02-28
+**Status:** Proposed
+
+### Context
+
+Before this change, the rasterizer (UNIT-005) held ownership of SDRAM arbiter ports 1 (framebuffer write) and 2 (Z-buffer read/write) and performed direct SDRAM writes for each passing fragment.
+This coupling prevented the pixel pipeline (UNIT-006) from being inserted between the rasterizer and SDRAM, blocking texture sampling, color combining, alpha blending, and dithering from being applied to each fragment.
+The pixel pipeline stub existed but had no live connection to consume rasterizer output.
+
+### Decision
+
+Refactor the rasterizer to emit per-fragment data to UNIT-006 via a valid/ready handshake instead of performing direct SDRAM writes.
+The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0 and UV1 (UQ0.16 per component), and interpolated Q/W (Q3.12).
+SDRAM arbiter ports 1 and 2 transfer to UNIT-006 ownership.
+The rasterizer asserts `frag_valid` when a fragment is ready; it stalls (holds state) when UNIT-006 deasserts `frag_ready`.
+
+### Rationale
+
+The valid/ready handshake is the standard backpressure mechanism already used between UNIT-003 and UNIT-004 (`tri_valid` / `tri_ready`).
+Using the same pattern keeps the design consistent and allows the pixel pipeline to stall the rasterizer when the texture cache or Z-buffer tile cache is servicing a miss.
+Transferring port 1 and port 2 ownership to UNIT-006 allows it to control all framebuffer and Z-buffer accesses in coordination with texture cache fills, enabling early Z-test (check Z before issuing texture fetch) and correct write-back ordering.
+
+### Alternatives Considered
+
+1. **FIFO between rasterizer and pixel pipeline:** Increases EBR consumption and adds latency without improving throughput in steady state.
+   The valid/ready handshake is sufficient because the rasterizer stalls cheaply (it just stops incrementing its edge accumulators).
+2. **Keep rasterizer owning port 1 / port 2, add separate port for pixel pipeline:** Requires expanding the arbiter to 5 ports or merging framebuffer and Z-buffer traffic onto one port, both more complex than transferring ownership.
+
+### Consequences
+
+- UNIT-005 no longer accesses SDRAM directly; its implementation is simplified.
+- UNIT-006 must accept backpressure from the arbiter and propagate it upstream to UNIT-005 via `frag_ready`.
+- VER-001 testbench must be updated to drive `frag_ready` and observe the fragment output bus rather than observing SDRAM write transactions.
+- VER-010 and VER-011 golden images may require re-approval if incremental interpolation (DD-024) changes interpolated pixel values.
+
+### References
+
+- UNIT-005 (Rasterizer)
+- UNIT-006 (Pixel Pipeline)
+- UNIT-007 (Memory Arbiter — port 1 and port 2 ownership)
+- DD-024 (Incremental Interpolation — prerequisite for this interface change)
+
+---
+
+
+## DD-024: Incremental Attribute Interpolation Replacing Per-Pixel Barycentric MAC
+
+**Date:** 2026-02-28
+**Status:** Proposed
+
+### Context
+
+The rasterizer previously computed per-pixel attribute values (color, Z, UV, Q) by multiplying 17-bit barycentric weights by per-vertex attribute values on every fragment inside the triangle.
+This required 17×8 multiplies per color channel and 17×16 for Z, consuming approximately 17 MULT18X18D DSP blocks on the ECP5-25K (which has only 28).
+Adding UV0, UV1, and Q/W interpolation for textured rendering would require an additional 3–4 DSP blocks, exhausting the available budget and leaving none for the color combiner (4–6 DSPs) or BC texture decoders (2–4 DSPs each).
+
+### Decision
+
+Replace per-pixel barycentric multiply-accumulate with precomputed attribute derivative increments.
+Once per triangle (during the ITER_START / INIT_E1 / INIT_E2 window, 3 cycles shared with edge evaluation), compute `dAttr/dx` and `dAttr/dy` for each interpolated attribute (color0, color1, Z, UV0, UV1, Q/W) from the three vertex values and `inv_area`.
+In the per-pixel inner loop, update each accumulated attribute value by adding `dAttr/dx` when stepping right in X and `dAttr/dy` when advancing to a new row.
+No multiplies are required in the inner loop.
+
+### Rationale
+
+Edge functions are already stepped incrementally by adding the A and B coefficients; the same technique applies to any linearly varying attribute.
+Attribute derivatives are computed using the same shared 11×11 multiplier pair already used for edge C coefficients, serialized over the same 3-cycle window — no additional DSP blocks are required for setup.
+The per-pixel inner loop becomes pure addition, reducing DSP usage for interpolation from ~17 blocks to 3–4 (the shared setup pair plus any output-stage promotion).
+This frees 13–14 DSP blocks, creating headroom for color combiner (UNIT-010, 4–6 DSPs), BC1/BC4 decoders (2–4 DSPs), and BC2/BC3 decoders (2–4 DSPs).
+
+### Alternatives Considered
+
+1. **Keep barycentric MAC, remove UV/Q interpolation:** Rejected — perspective-correct UV interpolation (REQ-003.06) requires Q/W per fragment; eliminating it would block all textured rendering with correct perspective.
+2. **Use a wider FPGA (ECP5-45K or ECP5-85K):** Rejected — the ECP5-25K on the ICEpi Zero is fixed.
+3. **Move interpolation to a follow-on pipeline stage using sequential DSP reuse:** Rejected — increases pipeline latency and complicates the rasterizer FSM without reducing total DSP count (the multiplies still happen; they are just deferred).
+
+### Consequences
+
+- The rasterizer inner loop (EDGE_TEST → INTERPOLATE → ITER_NEXT) no longer contains multiplies; the critical path is reduced to addition chains.
+- UNIT-005 DSP usage drops from ~17 to 3–4 MULT18X18D blocks; the freed DSPs are allocated to UNIT-006 and UNIT-010.
+- Incremental accumulation introduces small rounding drift across long scanlines; maximum drift is bounded by `scanline_length × (resolution of derivative representation)` and is negligible at 640-pixel width with 16-bit fractional attribute accumulators.
+- VER-001 must verify derivative precomputation accuracy and incremental stepping fidelity rather than the former barycentric weight computation.
+
+### References
+
+- UNIT-005 (Rasterizer — algorithm and DSP budget)
+- UNIT-006 (Pixel Pipeline — DSP headroom for texture decoders)
+- UNIT-010 (Color Combiner — DSP budget)
+- REQ-003.06 (Texture Sampling — perspective-correct UV)
+- REQ-011.02 (Resource Constraints — DSP budget)
+
+---
+
+
 ## DD-023: SimTransport for pico-gs-core against Verilator Interactive Simulator
 
 **Date:** 2026-02-26

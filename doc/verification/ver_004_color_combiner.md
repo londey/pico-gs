@@ -1,9 +1,5 @@
 # VER-004: Color Combiner Unit Testbench
 
-**Status: Implementation Deferred** — UNIT-010 (Color Combiner) is marked WIP.
-This VER document records the intended test scope.
-Integration of this testbench with the CI build is blocked until UNIT-010 reaches Stable status.
-
 ## Verification Method
 
 **Test:** Verified by executing the `color_combiner_tb` Verilator simulation testbench against the color combiner RTL (UNIT-010).
@@ -19,9 +15,9 @@ The testbench drives controlled fragment inputs and combiner mode configurations
 
 ## Preconditions
 
-- UNIT-010 has reached Stable status (WIP flag removed from `doc/design/unit_010_color_combiner.md`).
 - Verilator 5.x installed and available on `$PATH`.
 - `spi_gpu/src/render/color_combiner.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `spi_gpu/src/render/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (color combiner is instantiated inside the pixel pipeline; interface consistency is required before isolating the combiner for unit testing).
 
 ## Procedure
 
@@ -129,9 +125,8 @@ The testbench drives controlled fragment inputs and combiner mode configurations
 
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd spi_gpu && make test-color-combiner`.
-- UNIT-010 (Color Combiner) is currently marked WIP.
-  The testbench `color_combiner_tb.sv` exists and tests a subset of combiner behavior, but `spi_gpu/src/render/color_combiner.sv` is listed as TBD in UNIT-010.
-  Full testbench integration with the CI build is blocked until UNIT-010 reaches Stable status and the combiner pipeline timing is finalized.
+- The color combiner is instantiated inside `pixel_pipeline.sv` (UNIT-006) and receives its `cc_mode` and `const_color` inputs directly from the register file (UNIT-003) outputs.
+  VER-004 tests the combiner in isolation; end-to-end combiner behavior through the full pipeline is verified by VER-013 (color-combined output golden image test).
 - The color combiner operates at the unified 100 MHz `clk_core` domain.
   The testbench uses a matching 100 MHz clock for cycle-accurate verification.
 - Q4.12 rounding tolerance of +/-1 LSB per channel accounts for the truncation inherent in `(a * b) >> 12` fixed-point multiplication.

@@ -89,6 +89,10 @@ The helper script provides one documented function per GPU register type, each a
 The `gpu.set_fb_config()` helper must accept `width_log2` and `height_log2` fields and pack them into the correct bit positions of the FB_CONFIG register (INT-010).
 The `gpu.set_fb_display()` helper must accept `fb_width_log2` and `line_double` fields and pack them into the correct bit positions of the FB_DISPLAY register (INT-010).
 
+With the pixel pipeline integration complete, the following register fields transition from having no RTL effect to being functionally active in the simulated GPU model: `mode_gouraud`, `mode_cull`, `mode_alpha_blend`, `mode_dither_en`, `mode_dither_pattern`, `mode_stipple_en`, `mode_alpha_test`, `mode_alpha_ref`, `tri_uv0`, `tri_uv1`, `tri_q`, `tri_color1`, `tex0_cfg`, `tex1_cfg`, `tex0_cache_inv`, `tex1_cache_inv`, `cc_mode`, and `const_color`.
+Lua scripts that previously wrote these registers without effect will now alter rendered output.
+The `gpu_regs.lua` helper functions for these registers must pack the 3-bit `FORMAT` field into bits [4:2] of TEXn_FMT (not bits [3:2]) to match the widened field after INT-010 `tex_format` expansion (step 5 of the pixel pipeline integration).
+
 ### SDRAM Behavioral Model
 
 A C++ class (`SdramModelSim`) implements the full `mem_*` interface from UNIT-007, substituting for the physical W9825G6KH SDRAM controller.
@@ -102,6 +106,9 @@ The model must replicate the following timing behaviors to avoid masking real ti
 The model stores the complete SDRAM address space as a flat byte array.
 Framebuffer readback utilities in the integration harness must use the block-tiled address formula from INT-011 with the `WIDTH_LOG2` value that was written to FB_CONFIG (or FB_DISPLAY for the display controller), not a hardcoded stride constant.
 This ensures the model correctly resolves pixel addresses for any configured surface width (`fb_width_log2 = 8` for 256-wide, `9` for 512-wide, etc.).
+
+With the pixel pipeline fully integrated (UNIT-006 no longer a stub), the model must implement the complete INT-032 cache miss fill protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE) at the correct burst lengths per format (BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
+A stub or partial fill implementation that served framebuffer rendering without texture cache support is no longer sufficient.
 
 See UNIT-007 "SDRAM Behavioral Model for Verilator Simulation" for the complete signal table and required behaviors.
 The model's timing parameters are not reproduced here to avoid duplication; UNIT-007 is the authoritative source.
@@ -130,6 +137,7 @@ UNIT-009 RTL remains unchanged; its functionality is covered by its own unit tes
 - When the command FIFO is full (`wr_almost_full` asserted), the Lua API and C++ injection layer apply backpressure (block the caller) rather than dropping commands.
 - When `disp_vsync_out` asserts, the SDL3 window presents the completed frame.
 - When `gpu_regs.lua` is loaded in the Lua interpreter, all helper functions listed in REQ-010.02-LUA are available and each function writes the correct register address with correctly packed field data.
+- When a Lua script configures a texture (`TEX0_CFG`, `TEX0_FMT`) and submits a textured triangle, the behavioral SDRAM model services the texture cache miss (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE) and the SDL3 window displays the correct textured output.
 - Lint check: `spi_gpu/sim/gpu_sim_top.sv` compiles cleanly under `verilator --lint-only -Wall -DSIM_DIRECT_CMD`.
 
 ## Design Notes

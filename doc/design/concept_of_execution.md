@@ -4,7 +4,7 @@ This document describes the runtime behavior of the system: how it starts up, ho
 
 ## System Overview
 
-The pico-gs system is a two-chip 3D graphics pipeline. An RP2350 microcontroller (dual Cortex-M33, 150 MHz) acts as the host, Core 0 performs scene management and frustum culling, while Core 1 runs a DMA-pipelined vertex processing engine that transforms vertices, computes lighting, clips triangles, and drives the GPU over a 25 MHz SPI bus to a Lattice ECP5 FPGA. The FPGA implements a fixed-function triangle rasterizer with Gouraud shading, Z-buffering, and texture sampling. It drives a 640x480 DVI output from a double-buffered framebuffer stored in 32 MB of external SDRAM (Winbond W9825G6KH on the ICEpi Zero board). The host and GPU communicate through a register-write protocol: each SPI transaction is a 9-byte frame (1-byte address + 8-byte data) that writes to the GPU register file, which accumulates vertex data and triggers rasterization on every third vertex write.
+The pico-gs system is a two-chip 3D graphics pipeline. An RP2350 microcontroller (dual Cortex-M33, 150 MHz) acts as the host, Core 0 performs scene management and frustum culling, while Core 1 runs a DMA-pipelined vertex processing engine that transforms vertices, computes lighting, clips triangles, and drives the GPU over a 25 MHz SPI bus to a Lattice ECP5 FPGA. The FPGA implements a fixed-function rendering pipeline: a triangle rasterizer emits per-fragment data to a pixel pipeline that performs early Z testing, dual-texture sampling through per-sampler caches, programmable color combining, alpha blending, ordered dithering, and framebuffer write. It drives a 640x480 DVI output from a double-buffered framebuffer stored in 32 MB of external SDRAM (Winbond W9825G6KH on the ICEpi Zero board). The host and GPU communicate through a register-write protocol: each SPI transaction is a 9-byte frame (1-byte address + 8-byte data) that writes to the GPU register file, which accumulates vertex data and triggers rasterization on every third vertex write.
 
 ## Platform Variants
 
@@ -90,23 +90,23 @@ The host boot sequence executes entirely on Core 0 before the render loop begins
  │  Transform vertices (MVP)    │          │       │ (3rd VERTEX write)           │
  │  Gouraud lighting            │          │       ▼                              │
  │  Pack into GpuVertex         │          │  Rasterizer (12-state FSM)           │
- │    │                         │          │       │                              │
- │    ▼                         │  SPI     │       ▼            Mem Arbiter       │
- │  SPSC Queue ═══════════════╗ │  25MHz   │  FB Write ──────► (4 ports) ──►SDRAM│
- │  (64 entries, ~5 KB)       ║ │ ──────►  │  ZB Read/Write ──►            32 MB │
- │                             ║ │  9-byte  │                    ▲                │
- │  Core 1 (GPU Driver)       ║ │  frames  │  Display Ctrl ─────┘                │
- │    ▲                        ║ │          │       │                              │
- │    ║ dequeue                ║ │          │       ▼                              │
- │    ╚════════════════════════╝ │          │  Scanline FIFO ──► DVI Output       │
- │    │                          │          │                     640x480 @ 60 Hz │
- │    ▼                          │          └──────────────────────────────────────┘
- │  gpu.write(addr, data)       │
- │  (CS low, 9 bytes, CS high)  │
+ │    │                         │          │       │ (fragment: x,y,z,color,UV)  │
+ │    ▼                         │  SPI     │       ▼                              │
+ │  SPSC Queue ═══════════════╗ │  25MHz   │  Pixel Pipeline (Z/tex/blend)       │
+ │  (64 entries, ~5 KB)       ║ │ ──────►  │       │            Mem Arbiter       │
+ │                             ║ │  9-byte  │       ▼──────────► (4 ports) ──►SDRAM│
+ │  Core 1 (GPU Driver)       ║ │  frames  │  (FB/Z Write)         │       32 MB │
+ │    ▲                        ║ │          │                    ▲  │              │
+ │    ║ dequeue                ║ │          │  Display Ctrl ─────┘  │              │
+ │    ╚════════════════════════╝ │          │       │                └──Tex Fills  │
+ │    │                          │          │       ▼                              │
+ │    ▼                          │          │  Scanline FIFO ──► DVI Output       │
+ │  gpu.write(addr, data)       │          │                     640x480 @ 60 Hz │
+ │  (CS low, 9 bytes, CS high)  │          └──────────────────────────────────────┘
  └──────────────────────────────┘
 ```
 
-**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered RP2350 SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 32, custom soft FIFO backed by a regular memory array). At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstream that execute a self-test boot screen autonomously (see DD-019); during normal operation, only SPI-sourced commands flow through the FIFO. The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box, performs edge tests, interpolates Z and color, tests against the Z-buffer, and writes passing pixels to the framebuffer in SDRAM. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at the 25 MHz pixel clock (synchronous 4:1 from the 100 MHz core clock).
+**Core 0** runs the scene loop each frame: poll keyboard input, update scene state, perform frustum culling (test overall mesh AABB then per-patch AABBs against the view frustum), and enqueue `RenderMeshPatch` commands for visible patches into the lock-free SPSC queue. **Core 1** dequeues commands and runs the full vertex processing pipeline: DMA-prefetch patch data from flash into a double-buffered RP2350 SRAM input buffer, transform vertices (MVP), compute Gouraud lighting, perform back-face culling, optionally clip triangles (Sutherland-Hodgman) for patches crossing frustum planes, pack GPU register writes into a double-buffered SPI output buffer, and submit via DMA/PIO-driven SPI. Each register write is a 9-byte SPI transaction. **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 32, custom soft FIFO backed by a regular memory array). At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstream that execute a self-test boot screen autonomously (see DD-019); during normal operation, only SPI-sourced commands flow through the FIFO. The register file consumes FIFO entries, latching color/UV/position state. Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box in 4×4 tile order, performs edge tests, and interpolates Z, vertex colors, and UV coordinates per fragment. The rasterizer emits per-fragment data (x, y, z, color0, color1, uv0, uv1) via a valid/ready handshake to the pixel pipeline (UNIT-006). The pixel pipeline performs early Z testing, texture cache lookup and sampling, color combining, alpha blending, dithering, and writes passing pixels and updated depth values to the framebuffer and Z-buffer in SDRAM via the memory arbiter. The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at the 25 MHz pixel clock (synchronous 4:1 from the 100 MHz core clock).
 
 ## Event Handling
 
@@ -164,7 +164,7 @@ See INT-011 for the canonical block-tiled address formula and alternative surfac
 
 **RP2350 SRAM** (~520 KB total): The firmware is entirely `no_std` with no heap allocator. All state is statically allocated: the command queue is a 64-entry static `spsc::Queue` (~16.5 KB at ~264 bytes per RenderMeshPatch), Core 1 has a 4 KB stack plus ~8 KB working RAM (DMA input buffers, vertex cache, clip workspace, SPI output buffers), and mesh data is const flash data from the asset pipeline (no runtime mesh generation). Texture data is stored in flash (linked into the firmware binary). The `GpuVertex` struct packs to ~24 bytes.
 
-**FPGA resources**: The command FIFO is 32 entries deep (72 bits each), implemented as a custom soft FIFO backed by a regular memory array (not a Lattice EBR FIFO macro) so that the bitstream can pre-populate the memory with boot commands (see DD-019). The memory arbiter (UNIT-007) has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1), Z-buffer read/write (port 2), texture read (port 3, lowest). The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SDRAM access latency (including CAS latency and row activation overhead).
+**FPGA resources**: The command FIFO is 32 entries deep (72 bits each), implemented as a custom soft FIFO backed by a regular memory array (not a Lattice EBR FIFO macro) so that the bitstream can pre-populate the memory with boot commands (see DD-019). The memory arbiter (UNIT-007) has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1, owned by pixel pipeline), Z-buffer read/write (port 2, owned by pixel pipeline), texture cache fills and timestamp writes (port 3, lowest — shared with time-division between texture burst reads and timestamp SDRAM writes; see UNIT-007 for the sharing policy). The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SDRAM access latency (including CAS latency and row activation overhead).
 
 **SDRAM sequential access**: The external SDRAM (W9825G6KH) supports efficient sequential column reads and writes within an active row.
 After the initial row activation (ACTIVATE + tRCD = 3 cycles) and CAS latency (CL=3 for reads), consecutive column accesses stream at 1 word per cycle.

@@ -3,7 +3,7 @@
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Draft
+- **Stability:** Stable
 - **Verification:** Inspection
 
 ## Requirement
@@ -29,6 +29,16 @@ None (top-level area)
 - UNIT-006 (Pixel Pipeline)
 - UNIT-010 (Color Combiner)
 
+## Interfaces
+
+- INT-010 (GPU Register Map)
+
+## Verification Method
+
+**Inspection:** Verify that UNIT-010 (Color Combiner) is instantiated within UNIT-006 (Pixel Pipeline) with live connections from the `cc_mode` and `const_color` register file outputs.
+Child requirements REQ-004.01 and REQ-004.02 carry individual Test-level verification via VER-004 (color combiner unit test) and VER-013/VER-014 (golden image integration tests).
+
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.
+UNIT-010 implements the color combiner; its `cc_mode` and `const_color` inputs are wired live from UNIT-003 (Register File) through UNIT-006 (Pixel Pipeline).

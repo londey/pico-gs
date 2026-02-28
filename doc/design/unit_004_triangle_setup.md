@@ -56,6 +56,9 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `v2_z` | 16 | Vertex 2 depth |
 | `v2_color0` | 24 | Vertex 2 primary RGB888 color (diffuse) |
 | `v2_color1` | 24 | Vertex 2 secondary RGB888 color (specular/emissive) |
+| `v0_uv0`, `v1_uv0`, `v2_uv0` | 3x32 | Vertex UV0 coordinates (UQ0.16 per component) |
+| `v0_uv1`, `v1_uv1`, `v2_uv1` | 3x32 | Vertex UV1 coordinates (UQ0.16 per component) |
+| `v0_q`, `v1_q`, `v2_q` | 3x16 | Vertex 1/W (Q3.12 fixed point) for perspective correction |
 | `inv_area` | 16 | 1/area (0.16 fixed point) from CPU |
 | `fb_base_addr` | 20 | Framebuffer base address [31:12] |
 | `zb_base_addr` | 20 | Z-buffer base address [31:12] |
@@ -80,6 +83,9 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `setup_v0_z`, `setup_v1_z`, `setup_v2_z` | 3x16 | Vertex Z depths |
 | `setup_v0_color0`, `setup_v1_color0`, `setup_v2_color0` | 3x24 | Vertex primary RGB888 colors (diffuse) |
 | `setup_v0_color1`, `setup_v1_color1`, `setup_v2_color1` | 3x24 | Vertex secondary RGB888 colors (specular/emissive) |
+| `setup_v0_uv0`, `setup_v1_uv0`, `setup_v2_uv0` | 3x32 | Vertex UV0 coordinates (passed through) |
+| `setup_v0_uv1`, `setup_v1_uv1`, `setup_v2_uv1` | 3x32 | Vertex UV1 coordinates (passed through) |
+| `setup_v0_q`, `setup_v1_q`, `setup_v2_q` | 3x16 | Vertex 1/W values (passed through for perspective correction) |
 | `setup_inv_area` | 16 | 1/area (0.16 fixed point) passed through |
 
 ### Internal State
@@ -100,6 +106,9 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 - z0..z2 [15:0]: Depth values
 - r0_0..r2_0, g0_0..g2_0, b0_0..b2_0 [7:0]: Per-vertex primary RGB components (color0, diffuse)
 - r0_1..r2_1, g0_1..g2_1, b0_1..b2_1 [7:0]: Per-vertex secondary RGB components (color1, specular/emissive)
+- uv0_u0..uv0_u2, uv0_v0..uv0_v2 [15:0]: Per-vertex UV0 components (UQ0.16)
+- uv1_u0..uv1_u2, uv1_v0..uv1_v2 [15:0]: Per-vertex UV1 components (UQ0.16)
+- q0..q2 [15:0]: Per-vertex 1/W values (Q3.12)
 
 **Edge Function Coefficients:**
 - edge0_A/B, edge1_A/B, edge2_A/B [10:0 signed]: Edge slopes (11-bit, differences of 10-bit coords)
@@ -122,7 +131,8 @@ Computes three edge function coefficient sets from the latched vertex positions:
 A and B coefficients (differences) are computed combinationally in SETUP.
 C coefficients (products) are serialized one per cycle through a shared multiplier pair: edge0_C in SETUP, edge1_C in SETUP_2, edge2_C in SETUP_3.
 
-Computes bounding box as min/max of vertex coordinates clamped to screen (640x480).
+Computes bounding box as min/max of vertex coordinates clamped to the configured render surface: `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y.
+The surface dimensions are taken from the `fb_width_log2` and `fb_height_log2` outputs of UNIT-003 at the time of setup; they are never hardcoded.
 
 **Output Handshake (EMIT state):**
 1. Assert `setup_valid` for one cycle with all edge coefficients, bounding box, vertex attributes, and inv_area on the output buses.
@@ -136,12 +146,10 @@ Computes bounding box as min/max of vertex coordinates clamped to screen (640x48
 ## Verification
 
 - Verify edge function computation: known triangle vertices produce correct A/B/C coefficients
-- Verify bounding box clamping: vertices outside 640x480 produce clamped bounds
+- Verify bounding box clamping: vertices outside the configured render surface dimensions (`(1<<FB_CONFIG.WIDTH_LOG2)-1` in X, `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y) produce clamped bounds; verify at multiple surface sizes
 - Verify inside/outside test: sample points inside and outside a known triangle
-- Verify barycentric interpolation: known weights produce correct interpolated colors
-- Verify Z-buffer test: closer fragment passes, farther fragment is discarded
-- Verify pixel output: RGB888 to RGB565 conversion is correct (R[7:3], G[7:2], B[7:3])
-- Verify degenerate triangles: zero-area triangle produces no pixel writes
+- Verify UV0, UV1, and Q passthrough: setup outputs carry the per-vertex uv0, uv1, q values unchanged from input
+- Verify degenerate triangles: zero-area triangle produces no valid setup output
 - Verify setup_valid handshake: setup_valid asserts for one cycle and deasserts when downstream_ready is low
 - VER-010 (Gouraud Triangle Golden Image Test)
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
@@ -161,8 +169,9 @@ The FSM was reduced from 12 states (4-bit) to 3 states (3-bit).
 SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
 See DD-015 for rationale.
 
-**Dual-texture + color combiner update:** Triangle setup now passes through two vertex colors (color0 and color1) per vertex instead of one.
-UV passthrough is reduced from up to 4 sets to up to 2 sets (UV0, UV1 only; UV2_UV3 register removed).
+**Dual-texture + perspective correction update:** Triangle setup passes through two vertex colors (color0 and color1) per vertex, plus UV0, UV1, and Q (1/W) per vertex.
+UV passthrough covers up to 2 sets (UV0, UV1 only; UV2_UV3 register removed).
+The Q/W passthrough enables perspective-correct UV interpolation in UNIT-005: the rasterizer interpolates Q/W as a plain scalar, and UNIT-006 divides the interpolated (UV × Q) by the interpolated Q to recover perspective-correct UV before the texture lookup.
 The second vertex color (color1) supports the color combiner's VER_COLOR1 input for specular highlights, emissive terms, or blend factors.
 
 **Unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.

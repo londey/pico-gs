@@ -288,8 +288,9 @@ The cache controller reuses the same set-associative structure, XOR set indexing
 
 ### Burst Coalescing
 
-A write-coalescing buffer sits between the rasterizer and the SDRAM arbiter.
-When the rasterizer emits a run of adjacent pixels on the same scanline (or within the same 4×4 tile), the buffer collects them and issues a single SDRAM burst write rather than individual single-word transactions.
+A write-coalescing buffer sits between the pixel pipeline and the SDRAM arbiter.
+When the pixel pipeline emits a run of adjacent passing fragments on the same scanline (or within the same 4×4 tile), the buffer collects them and issues a single SDRAM burst write rather than individual single-word transactions.
+The rasterizer walks tiles in 4×4 order and feeds fragments to the pixel pipeline; the coalescing buffer observes the output of the full pixel pipeline (post-depth-test, post-blend) rather than the raw rasterizer output.
 
 Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after the initial overhead, so a 16-pixel tile write completes in ~24 cycles (1.5 cycles/pixel) versus ~9 cycles per individual write.
 
@@ -310,7 +311,8 @@ Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after 
 
 ### Throughput
 
-With native 16-bit addressing, burst coalescing, and Z-buffer caching, the rasterizer sustains approximately 28–35 Mpixels/sec for typical triangle workloads — sufficient for >1× overdraw at 640×480 @ 60 Hz (18.4 Mpixels/sec visible).
+With native 16-bit addressing, burst coalescing, and Z-buffer caching, the pixel pipeline sustains approximately 28–35 Mpixels/sec output throughput for typical triangle workloads — sufficient for >1× overdraw at 640×480 @ 60 Hz (18.4 Mpixels/sec visible).
+The rasterizer feeds the pixel pipeline at up to one fragment per clock; the pipeline may stall on texture cache misses, reducing effective throughput below this peak.
 
 ---
 

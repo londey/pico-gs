@@ -195,5 +195,9 @@ See specification details above.
 
 Migrated from speckit contract: specs/002-rp2350-host-software/contracts/render-commands.md
 
-The Verilator integration simulation harness (used by VER-010 through VER-013 golden image tests) injects render stimulus by driving UNIT-003 register-file inputs directly, replicating the register-write sequences that `RenderMeshPatch` and `ClearFramebuffer` commands produce.
+The Verilator integration simulation harness (used by VER-010 through VER-014 golden image tests) injects render stimulus by driving UNIT-003 register-file inputs directly, replicating the register-write sequences that `RenderMeshPatch` and `ClearFramebuffer` commands produce.
 The harness must faithfully encode all register writes per this interface specification to produce correct simulation results.
+
+**Register fields with behavioral effect after pixel pipeline integration**: The `combiner_mode` field (written to CC_MODE register 0x18), UV0/UV1 coordinates (written to UV0_UV1 register), COLOR1 (specular vertex color, packed into the COLOR register's upper 32 bits), and all RENDER_MODE flags (GOURAUD, ALPHA_BLEND, CULL_MODE, DITHER_EN, STIPPLE_EN, ALPHA_TEST, ALPHA_REF) were previously stored in the register file but had no downstream consumer in the active data path.
+After pixel pipeline integration (UNIT-006), these fields are live inputs to the per-fragment processing stages.
+Test harnesses that previously relied on these fields having no rendering effect must be reviewed; golden images for VER-010 through VER-014 require re-approval after integration (see impact analysis).

@@ -30,15 +30,17 @@ None
 
 - Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata.
   In Verilator simulation with `SIM_DIRECT_CMD` defined, these signals are driven by the injection path in gpu_top.sv (see UNIT-002), which bypasses UNIT-001 but presents the identical cmd_* bus to UNIT-003 — no change to register_file.sv itself is required.
-- Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses
+- Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses (includes tri_uv0, tri_uv1, tri_q, tri_color0, tri_color1 per vertex)
 - Outputs render target configuration (fb_config, including `fb_width_log2` and `fb_height_log2`) to UNIT-005 (Rasterizer), UNIT-006 (Pixel Pipeline), and UNIT-007 (Memory Arbiter)
 - Outputs display configuration (fb_display, including `fb_display_width_log2` and `fb_line_double`) to UNIT-008 (Display Controller)
-- Outputs mode flags (gouraud, textured, z_test, z_write, color_write, dither_en, alpha_blend, cull_mode, z_compare, stipple_en, alpha_test_func, alpha_ref) to rasterizer pipeline
+- Outputs mode flags (mode_gouraud, mode_cull, mode_alpha_blend, mode_dither_en, mode_dither_pattern, mode_stipple_en, mode_alpha_test, mode_alpha_ref, mode_z_test, mode_z_write, mode_z_compare, mode_color_write) to UNIT-005 (Rasterizer) and UNIT-006 (Pixel Pipeline)
 - Outputs Z range clipping parameters (z_range_min, z_range_max) to pixel pipeline (UNIT-006)
 - Outputs scissor rectangle (scissor_x, scissor_y, scissor_width, scissor_height) to pixel pipeline (UNIT-006)
+- Outputs texture configuration (tex0_cfg, tex1_cfg) to pixel pipeline (UNIT-006); any write to TEX0_CFG or TEX1_CFG also triggers cache invalidation for the corresponding sampler
 - Outputs color combiner configuration (cc_mode, const_color) to color combiner (UNIT-010)
 - Outputs mem_fill trigger and parameters to the SDRAM fill unit
 - Outputs fb_display_sync trigger signals to UNIT-008 (Display Controller)
+- Outputs ts_mem_wr / ts_mem_addr / ts_mem_data to gpu_top.sv; gpu_top.sv serializes these onto arbiter port 3 as single-word writes when port 3 is not serving a texture fill request (see DD-026)
 - Reads gpu_busy from rasterizer, vblank from display controller, fifo_depth from UNIT-002 for status register
 
 ## Design Description
@@ -105,6 +107,8 @@ None
 | `color_grade_enable` | 1 | Color grading LUT enabled (FB_DISPLAY[0]) |
 | `cc_mode` | 64 | Color combiner mode (CC_MODE register) |
 | `const_color` | 64 | Constant colors 0+1 packed (CONST_COLOR register) |
+| `tex0_cfg` | 64 | Texture 0 configuration (TEX0_CFG register) |
+| `tex1_cfg` | 64 | Texture 1 configuration (TEX1_CFG register) |
 | `vsync_edge` | 1 | Input: vsync rising edge detector |
 | `ts_mem_wr` | 1 | One-cycle pulse: write cycle counter to SDRAM |
 | `ts_mem_addr` | 23 | SDRAM word address for timestamp write |

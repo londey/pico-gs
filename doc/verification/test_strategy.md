@@ -47,16 +47,23 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
 - **Tool:** Pixel-exact binary diff (`diff -q` or equivalent).
   For cases where hardware rounding differs between RTL revisions, a tolerance of ±1 LSB per channel may be accepted; document any such tolerance in the relevant VER document.
 - **Approved files location:** `spi_gpu/tests/golden/`
-- **Applicable to:** VER-010 (Gouraud triangle), VER-011 (depth-tested overlapping triangles), VER-012 (textured triangle), VER-013 (blended/color-combined output), VER-014 (textured cube).
+- **Applicable to:** VER-010 (Gouraud triangle), VER-011 (depth-tested overlapping triangles), VER-012 (textured triangle), VER-013 (color-combined output), VER-014 (textured cube).
+- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline behavior (UNIT-006), color combiner arithmetic (UNIT-010), or `tex_format` encoding (INT-010) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
+  The commit message must describe the change that caused the image to update.
 
 ### Integration Simulation Harness
 
 - **Description:** The golden image tests share a common C++ simulation harness (`spi_gpu/tests/harness/`) that:
   - Instantiates the full GPU RTL hierarchy under Verilator.
-  - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011) and texture layout (INT-014).
+  - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
+    A partial or stub SDRAM model that does not implement the cache miss fill FSM is not sufficient for VER-012 through VER-014.
   - Accepts a command script (encoded per INT-021 register-write sequences) and drives UNIT-003 register-file inputs.
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.
     The framebuffer readback uses the WIDTH_LOG2 value written to FB_CONFIG in the test command script; each test must write an explicit FB_CONFIG that establishes the surface dimensions before rendering.
+- **Post-integration re-approval:** All five golden image tests (VER-010 through VER-014) require golden image re-approval after the pixel pipeline integration change (UNIT-006 stub → functional, UNIT-005 incremental interpolation redesign, `tex_format` 3-bit widening).
+  VER-010 and VER-011 require re-approval because the incremental interpolation redesign (step 1) may shift interpolated color and Z values.
+  VER-012 requires re-approval because the format-select mux path changes even for RGB565.
+  VER-013 and VER-014 require initial creation and approval because they depend on the now-integrated UNIT-010 (Color Combiner) and pixel pipeline.
 - **Applicable to:** VER-010 through VER-014.
 
 ### Verilator Interactive Simulator (Development Tool)

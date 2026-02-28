@@ -268,3 +268,12 @@ Key behavioral differences:
 Supported texture formats require varying burst sizes per 4×4 cache fill: BC1=4 words, BC4=4 words, R8=8 words, BC2/BC3=8 words, RGB565=16 words, RGBA8888=32 words.
 The max burst length for Port 3 is set to 32 words to cover the largest format (RGBA8888).
 With 16K texels per sampler cache (4-way set-associative), cache miss rates exceed 90% for typical scenes, reducing Port 3 average bandwidth demands substantially.
+
+**Port 3 sharing — texture cache and PERF_TIMESTAMP:** Port 3 is shared between texture cache fill reads (UNIT-006) and `PERF_TIMESTAMP` single-word writes initiated by `gpu_top.sv` on behalf of UNIT-003.
+The sharing is managed in `gpu_top.sv` using a latch-and-serialize scheme (see DD-026):
+- Texture fill requests from UNIT-006 drive `port3_req` directly.
+- `PERF_TIMESTAMP` write requests are latched into a pending register in `gpu_top.sv` when UNIT-003 asserts `ts_mem_wr`.
+- When port 3 is idle and no texture request is pending, `gpu_top.sv` drives the pending timestamp write onto port 3.
+- If a new `ts_mem_wr` arrives while a previous timestamp write is still pending, the new value overwrites the pending write (fire-and-forget semantics; back-to-back timestamps may coalesce).
+- Texture burst requests take priority over pending timestamp writes because UNIT-006 drives port 3 req directly; the timestamp injection logic in `gpu_top.sv` only asserts port 3 req when UNIT-006's texture request is absent.
+This scheme requires no changes to the UNIT-007 arbiter logic itself; sharing is entirely managed at the port 3 driver level in `gpu_top.sv`.

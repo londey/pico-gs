@@ -1,11 +1,5 @@
 # VER-013: Color-Combined Output Golden Image Test
 
-> **Implementation Blocked** -- This test is blocked by an outstanding prerequisite:
-> UNIT-010 (Color Combiner) has not yet reached Stable status -- the combiner equation pipeline timing and register decoding are still under design (WIP flag in `unit_010_color_combiner.md`).
->
-> The VER document captures the test scene specification.
-> The golden image file `spi_gpu/tests/golden/color_combined.ppm` will be created after UNIT-010 reaches Stable status and the simulation output is visually approved.
-
 ## Verification Method
 
 **Test:** Verified by executing a Verilator golden image simulation that renders a textured, vertex-shaded triangle through the full GPU RTL hierarchy -- including the texture cache, texture decoder, color combiner (UNIT-010), and behavioral SDRAM model -- and compares the output pixel-exactly against an approved golden image.
@@ -24,8 +18,10 @@ The test confirms that the color combiner correctly evaluates the MODULATE equat
 ## Preconditions
 
 - UNIT-010 (Color Combiner) has reached Stable status: the WIP flag has been removed from `doc/design/unit_010_color_combiner.md`, indicating that combiner equation pipeline timing and register decoding are finalized.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-010 (Color Combiner) with live connections to `cc_mode` and `const_color` from the register file, along with the texture cache, format-select mux, and FB/Z write logic per UNIT-006.
 - Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths).
 - Golden image `spi_gpu/tests/golden/color_combined.ppm` has been approved and committed.
+  This image is created after the pixel pipeline integration and UNIT-010 stabilization; the simulation output must be visually inspected and approved before the first commit of the golden file.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `color_combiner.sv`) compile without errors under `verilator --lint-only -Wall`.
 
@@ -77,7 +73,6 @@ Per REQ-004.01 FR-009-2 and UNIT-010, the two-stage combiner evaluates `(A - B) 
 - D = ZERO
 - Equation: `(COMBINED - ZERO) * ONE + ZERO = COMBINED`
 
-The exact bit encoding of CC_MODE depends on the finalized UNIT-010 register decode (currently WIP).
 Per INT-010 source select encoding, the single-cycle encoding for MODULATE is:
 - `CC_A_SOURCE[19:16] = 0x0` (TEX_COLOR0)
 - `CC_B_SOURCE[23:20] = 0x7` (ZERO)
@@ -99,7 +94,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    - Write `TEX0_CFG` (address `0x10`) with the texture base address (e.g., `0x00040000`, 4K aligned).
    - Write `TEX0_FMT` (address `0x11`) with:
      - `ENABLE = 1` (bit 0)
-     - `FORMAT = RGB565` (4 << 2, bits [3:2])
+     - `FORMAT = RGB565` (4 << 2, bits [4:2]; 3-bit field per INT-010 post-integration)
      - `WIDTH_LOG2 = 4` (4 << 8, bits [11:8])
      - `HEIGHT_LOG2 = 4` (4 << 12, bits [15:12])
      - `SWIZZLE = 0` (identity, bits [19:16])
@@ -109,7 +104,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 3. **Configure color combiner:**
    Write `CC_MODE` (address `0x18`) with the MODULATE preset encoding as described above.
    For the single-cycle register layout per INT-010: `0x0000000000720020` (A=TEX0, B=ZERO, C=VER0, D=ZERO, with matching alpha selectors).
-   If the two-cycle register layout per UNIT-010 WIP design is finalized, encode cycle 1 as pass-through in bits [63:32].
+   Encode cycle 1 as pass-through in bits [63:32] per the finalized UNIT-010 two-cycle register layout.
 
 4. **Configure render mode:**
    Write `RENDER_MODE` (address `0x30`) with:
@@ -175,13 +170,12 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 - `spi_gpu/tests/harness/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/color_combined.ppm`: Approved golden image (to be created after UNIT-010 stabilization, once the simulation output is visually inspected and approved).
+- `spi_gpu/tests/golden/color_combined.ppm`: Approved golden image (created after the initial simulation run following UNIT-010 stabilization and pixel pipeline integration; visually inspected and approved before commit).
 
 ## Notes
 
-- **UNIT-010 WIP status dependency:** This test cannot be implemented until UNIT-010 (Color Combiner) reaches Stable status.
-  The combiner equation pipeline timing and register decoding are under active design.
-  Once UNIT-010 is stabilized, the exact CC_MODE bit encoding for the two-cycle MODULATE + pass-through configuration must be verified against the finalized register decode logic.
+- **CC_MODE bit encoding:** The exact CC_MODE encoding for the two-cycle MODULATE + pass-through configuration is determined by the finalized UNIT-010 register decode logic.
+  Verify the encoding value `0x0000000000720020` against the UNIT-010 implementation before approving the golden image.
 - See `doc/verification/test_strategy.md` (Golden Image Approval Testing section) for the approval workflow: run the simulation, visually inspect the output PPM, copy to the `golden/` directory, and commit.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-color-combined`.
 - **Relationship to VER-012:** VER-012 tests texture sampling in isolation (vertex colors are white, so MODULATE produces `texture * 1.0 = texture`).
@@ -192,6 +186,6 @@ The integration harness drives the following register-write sequence into UNIT-0
   VER-004 verifies individual combiner modes and arithmetic at the unit level; VER-013 verifies the MODULATE mode through the full integrated pipeline including texture sampling and vertex color interpolation.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005), or after any change to UNIT-010 combiner arithmetic.
   See `test_strategy.md` for the re-approval workflow.
-- Of the four golden image tests (VER-010 through VER-013), this test has the deepest dependency chain: it requires a stable UNIT-010 implementation in addition to the shared integration harness infrastructure.
+- Of the five golden image tests (VER-010 through VER-014), this test has the deepest dependency chain: it requires a stable UNIT-010 implementation and a fully integrated pixel pipeline (UNIT-006) in addition to the shared integration harness infrastructure.

@@ -43,24 +43,31 @@ The testbench drives known triangle configurations through the triangle setup an
 
 3. **Fragment emission count.**
    Drive the rasterizer with a triangle of known area.
-   Count the number of fragment emission pulses (fragment_valid assertions) during edge walking.
+   Count the number of fragment emission pulses (fragment_valid assertions on the output handshake bus) during edge walking.
    Compare the count against a reference pixel count for the test triangle.
    The count must be exact (no tolerance).
 
-4. **Barycentric interpolation accuracy.**
-   For a triangle with distinct vertex colors and Z values, sample the interpolated output at:
-   - Each of the three vertices (barycentric weights should be (1,0,0), (0,1,0), (0,0,1) respectively).
-   - The centroid (barycentric weights should be approximately (1/3, 1/3, 1/3)).
+4. **Incremental interpolation accuracy.**
+   For a triangle with distinct vertex colors, Z values, and UV coordinates, the rasterizer initializes per-attribute derivative values at triangle setup time and advances them incrementally per scan line and per pixel.
+   Sample the interpolated output on the fragment output bus at:
+   - Each of the three vertices.
+   - The centroid.
    - Edge midpoints.
-   Verify that interpolated color and Z values match reference values within 1 ULP of the 17-bit barycentric precision (1.16 fixed point).
+   Verify that interpolated color, Z, UV0, UV1, and Q values match reference values within 1 ULP of the fixed-point derivative step precision.
+   Reference values are computed offline using the same incremental step model (not the barycentric MAC model).
 
-5. **Degenerate triangle handling.**
+5. **Fragment output bus handshake.**
+   Verify that the rasterizer emits fragments using the valid/ready handshake protocol on the fragment output bus.
+   Assert `ready = 0` from the consumer side for several cycles while fragments are being generated, then assert `ready = 1`.
+   Verify that the rasterizer does not advance to the next fragment while `ready = 0` (back-pressure is respected) and that no fragments are dropped when `ready` deasserts and reasserts.
+
+6. **Degenerate triangle handling.**
    Submit the following degenerate cases and verify correct behavior (using `fb_width_log2 = 9`, `fb_height_log2 = 9`):
    - Zero-area triangle (all three vertices collinear): rasterizer should emit zero fragments.
    - Single-pixel triangle (three vertices that enclose exactly one pixel center): rasterizer should emit exactly one fragment.
    - Fully off-screen triangle (all vertices outside the configured surface bounds): rasterizer should emit zero fragments after bounding box clamp results in an empty region.
 
-6. **Winding order.**
+7. **Winding order.**
    Submit the same triangle in both clockwise and counter-clockwise winding order.
    Verify that edge function signs are consistent with the expected winding convention and that fragment emission occurs for the correct winding.
 
@@ -70,7 +77,8 @@ The testbench drives known triangle configurations through the triangle setup an
   - All edge function coefficients (A, B, C) for each edge match reference values exactly.
   - Bounding box X coordinate is clamped to `[0, (1 << fb_width_log2) - 1]` and Y coordinate to `[0, (1 << fb_height_log2) - 1]` for each configured surface size (512×512 and 256×256).
   - Fragment emission counts match reference pixel counts exactly for all test triangles.
-  - Interpolated color and Z values at vertices, centroid, and midpoints match reference values within 1 ULP (least significant bit of the 17-bit barycentric weight).
+  - Interpolated color, Z, UV0, UV1, and Q values at vertices, centroid, and midpoints match reference values within 1 ULP of the fixed-point derivative step precision.
+  - Back-pressure on the fragment output bus (`ready = 0`) halts fragment emission without loss or duplication.
   - Degenerate triangles produce the expected fragment count (0 or 1 as specified).
   - Winding order tests produce consistent edge function signs.
 
@@ -79,6 +87,7 @@ The testbench drives known triangle configurations through the triangle setup an
   - Bounding box exceeds the configured surface bounds or is incorrectly computed for any `fb_width_log2` / `fb_height_log2` combination.
   - Fragment count differs from expected value for any test triangle.
   - Interpolated values exceed the 1 ULP tolerance at any sampled point.
+  - Fragment emission continues while `ready = 0`, or any fragment is lost or duplicated around a back-pressure stall.
   - Degenerate triangle produces unexpected fragments.
 
 ## Test Implementation
@@ -90,8 +99,13 @@ The testbench drives known triangle configurations through the triangle setup an
 
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd spi_gpu && make test-rasterizer`.
-- The testbench exercises the rasterizer in isolation.
+- The testbench exercises the rasterizer in isolation with a stub consumer for the fragment output bus.
   Full pipeline integration (framebuffer writes, Z-buffer interaction) is covered by VER-010 through VER-013 (golden image tests).
+- The rasterizer uses incremental derivative interpolation (per UNIT-005): attribute derivatives (dAttr/dx, dAttr/dy) are precomputed during triangle setup by UNIT-004, then stepped per-pixel by the rasterizer.
+  The testbench reference model must use the same incremental step computation; the previously-used barycentric multiply-accumulate reference is no longer applicable.
+- The rasterizer no longer performs direct SDRAM writes.
+  Fragment data (x, y, z, color0, color1, uv0, uv1, q) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
+  The testbench instantiates a simple ready-signal driver to simulate downstream back-pressure.
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.
   The testbench clock should match this frequency for cycle-accurate fragment throughput verification.
 - Edge function coefficients use serialized computation through a shared pair of 11x11 multipliers (3 setup cycles + 3 initial evaluation cycles).

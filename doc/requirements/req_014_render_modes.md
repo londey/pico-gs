@@ -3,7 +3,7 @@
 ## Classification
 
 - **Priority:** Essential
-- **Stability:** Draft
+- **Stability:** Stable
 - **Verification:** Inspection
 
 ## Requirement
@@ -35,6 +35,13 @@ None (top-level area)
 - UNIT-023 (Transformation Pipeline) — vertex transformation shared by all modes
 - UNIT-024 (Lighting Calculator) — per-vertex lighting for directionally-lit modes
 
+## Verification Method
+
+**Inspection:** Verify that each render mode's GPU register configuration (combiner mode, texture unit config, render mode flags) produces the correct visual output through UNIT-006.
+Child requirements carry Test-level verification; REQ-014.01 (Lightmapped Static Mesh) is the primary integration test target via VER-014.
+
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.
+Render mode flags `mode_gouraud`, `mode_cull`, `mode_alpha_blend`, `mode_dither_en`, `mode_stipple_en`, `mode_alpha_test`, `mode_alpha_ref`, texture config `tex0_cfg`/`tex1_cfg`, and color combiner config `cc_mode`/`const_color` are wired from UNIT-003 (Register File) to UNIT-006 (Pixel Pipeline) and take functional effect during rendering.
+See INT-010 for register field definitions.

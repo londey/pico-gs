@@ -21,8 +21,10 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
 - Golden image `spi_gpu/tests/golden/textured_triangle.ppm` has been approved and committed.
+  This image must be re-approved after the pixel pipeline integration (UNIT-006 stub becomes functional) and after the `tex_format` field widening to 3 bits (step 5 of the pixel pipeline integration change), because the format-select mux path changes even for RGB565.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`) compile without errors under `verilator --lint-only -Wall`.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the texture cache, format-select mux connecting all six decoders, color combiner, and FB/Z write logic per UNIT-006.
 
 ## Procedure
 
@@ -63,7 +65,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    - Write `TEX0_BASE` (address `0x10`) with the texture base address (e.g., `0x00040000`, 4K aligned).
    - Write `TEX0_FMT` (address `0x11`) with:
      - `ENABLE = 1` (bit 0)
-     - `FORMAT = RGB565` (4 << 2, bits [3:2])
+     - `FORMAT = RGB565` (4 << 2, bits [4:2]; 3-bit field per INT-010 post-integration)
      - `WIDTH_LOG2 = 4` (4 << 8, bits [11:8])
      - `HEIGHT_LOG2 = 4` (4 << 12, bits [15:12])
      - `SWIZZLE = 0` (identity, bits [19:16])
@@ -146,6 +148,9 @@ The integration harness drives the following register-write sequence into UNIT-0
   For RGB565 format, the burst length is 16 (32 bytes = 16 x 16-bit uncompressed texels in a 4x4 block).
   The fill FSM transitions through IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE.
   Burst lengths for other formats are documented in INT-032: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
+- **tex_format 3-bit field:** After the pixel pipeline integration, the FORMAT field in TEXn_FMT is 3 bits wide (bits [4:2]), supporting all seven texture formats (BC1=0 through R8=6) as defined in INT-032.
+  The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
+  The format-select mux in the integrated pixel pipeline connects all six format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
@@ -158,5 +163,5 @@ The integration harness drives the following register-write sequence into UNIT-0
   VER-005 verifies individual format decoders at the unit level; VER-012 verifies the full texture sampling path through the integrated pipeline.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), or after any change to the format-select mux path in UNIT-006.
   See `test_strategy.md` for the re-approval workflow.

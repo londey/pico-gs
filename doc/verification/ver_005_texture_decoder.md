@@ -9,6 +9,9 @@ The testbench drives known input data through each texture format decoder and th
 
 - REQ-003.01 (Textured Triangle)
 - REQ-003.03 (Compressed Textures)
+- REQ-003.06 (BC2 Texture Decoding)
+- REQ-003.07 (BC3 Texture Decoding)
+- REQ-003.08 (BC4 Texture Decoding)
 
 ## Verified Design Units
 
@@ -21,6 +24,9 @@ The testbench drives known input data through each texture format decoder and th
   - `spi_gpu/src/render/texture_rgb565.sv`
   - `spi_gpu/src/render/texture_rgba8888.sv`
   - `spi_gpu/src/render/texture_r8.sv`
+  - `spi_gpu/src/render/texture_bc2.sv`
+  - `spi_gpu/src/render/texture_bc3.sv`
+  - `spi_gpu/src/render/texture_bc4.sv`
   - `spi_gpu/src/render/texel_promote.sv`
   - `spi_gpu/src/render/stipple.sv`
 - Test vector data is embedded directly in the testbench source (no external vector files required).
@@ -60,36 +66,58 @@ The testbench drives known input data through each texture format decoder and th
    - When color0 > color1: verify 4-color palette interpolation (C0, C1, lerp 1/3, lerp 2/3) and all texels opaque (A2=11).
    - When color0 <= color1: verify 3-color plus transparent mode (C0, C1, lerp 1/2, transparent with A2=00).
 
-7. **RGBA5652 encoding format verification.**
-   Confirm the RGBA5652 bit layout matches INT-032: R5 in bits [17:13], G6 in bits [12:7], B5 in bits [6:2], A2 in bits [1:0].
+7. **BC2 decoder: verify explicit 4-bit alpha and BC1-style color block.**
+   Provide a known 16-byte BC2 block where the 8-byte alpha section contains explicit 4-bit alpha values for all 16 texels and the 8-byte color section contains a standard BC1 color block.
+   For each texel, verify that A2 is the correct truncation of the 4-bit explicit alpha (`alpha4[3:2]`), and that R5, G6, B5 are decoded from the BC1 color section using the same 4-color interpolation path as BC1 (BC2 never uses the transparent mode).
+
+8. **BC3 decoder: verify interpolated 8-bit alpha and BC1-style color block.**
+   Provide a known 16-byte BC3 block.
+   When alpha0 > alpha1: verify the 8-alpha interpolation table (alpha0, alpha1, and 6 interpolated values) is applied correctly for each texel index.
+   When alpha0 <= alpha1: verify the 6-alpha plus black-and-white table (alpha0, alpha1, 4 interpolated, 0x00, 0xFF).
+   Verify that the BC1 color section is decoded correctly for R, G, B channels in both cases.
+
+9. **BC4 decoder: verify single-channel alpha-as-red replication.**
+   Provide a known 8-byte BC4 block (single channel, same bit layout as the alpha section of BC3).
+   Verify the 8-value interpolation table is applied for the red channel.
+   Verify that the decoded red value is replicated to G and B channels (same replication as R8 format) and that A2=11 (opaque) for all texels.
+
+10. **Format-select mux wiring (integration path).**
+    For each of the seven `tex_format` encodings (0=BC1 through 6=R8, per INT-032), drive the format select input to the decoder mux and verify that the correct decoder module output is propagated to the mux output.
+    Decoder outputs for non-selected formats must not affect the result.
+    The `tex_format` input is 3 bits wide (per INT-032 Step 5 expansion from 2-bit).
+
+11. **RGBA5652 encoding format verification.**
+    Confirm the RGBA5652 bit layout matches INT-032: R5 in bits [17:13], G6 in bits [12:7], B5 in bits [6:2], A2 in bits [1:0].
 
 ## Expected Results
 
 - **Pass Criteria:**
-  - All decoded texel values exactly match software-computed reference values for every tested format (RGB565, RGBA8888, R8).
+  - All decoded texel values exactly match software-computed reference values for every tested format (RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4).
   - texel_promote output values match the INT-032 specified Q4.12 expansion formulas exactly (no rounding tolerance; promotion is combinational bit manipulation).
   - Stipple discard signal matches expected value for all tested (x, y, pattern, enable) combinations.
   - RGBA5652 bit field positions match INT-032 format definition.
+  - Format-select mux routes the correct decoder output for all seven `tex_format` encodings.
   - All test assertions pass with zero failures.
 
 - **Fail Criteria:**
-  - Any decoded RGBA5652 texel differs from its expected reference value.
+  - Any decoded RGBA5652 texel differs from its expected reference value for any format.
   - Any texel_promote Q4.12 output differs from the expected bit-exact value.
   - Stipple discard is incorrect for any tested input combination.
+  - Format-select mux produces incorrect output for any `tex_format` encoding.
   - The testbench reports one or more assertion failures.
 
 ## Test Implementation
 
-- `spi_gpu/tests/render/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, texel_promote, and stipple modules.
-  Instantiates each decoder as a separate DUT, drives known input block data with specific texel indices, and checks output RGBA5652 values against expected constants.
+- `spi_gpu/tests/render/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, texel_promote, stipple, and format-select mux.
+  Instantiates each decoder as a separate DUT plus the format-select mux, drives known input block data with specific texel indices, and checks output RGBA5652 values against expected constants.
   Uses embedded test vectors (no external file dependencies).
 
 ## Notes
 
-- See INT-032 (Texture Cache Architecture) for the RGBA5652 format definition, conversion tables from each source format, and Q4.12 promotion formulas.
+- See INT-032 (Texture Cache Architecture) for the RGBA5652 format definition, conversion tables from each source format, Q4.12 promotion formulas, and the 3-bit `tex_format` encoding table.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd spi_gpu && make test-texture-decoder`.
-- **BC2, BC3, and BC4 decoders are not yet covered by this testbench.**
-  These compressed format decoders should be added in a follow-on VER document or by extending VER-005 once the RTL modules (`texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`) reach testable status.
 - REQ-003.01 coverage is jointly satisfied by VER-005 (unit test for the decode path in isolation) and VER-012 (golden image integration test exercising the full texture sampling pipeline including cache, rasterizer, and framebuffer output).
-- The `texture_decoder_tb` testbench exercises only combinational decoder logic; it does not test the texture cache fill FSM or SDRAM burst protocol (those are covered by VER-012 and future cache-specific VER documents).
+- The `texture_decoder_tb` testbench exercises only combinational decoder logic and the format-select mux; it does not test the texture cache fill FSM or SDRAM burst protocol (those are covered by VER-012 and future cache-specific VER documents).
+- The `tex_format` field is 3 bits wide, encoding 7 formats (BC1=0, BC2=1, BC3=2, BC4=3, RGBA4444=4, RGB565=5, RGBA8888=6, R8=7 — or as defined in INT-032).
+  The testbench format-select mux test (step 10) must exercise all valid `tex_format` encodings.

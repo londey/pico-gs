@@ -336,6 +336,18 @@ Planned formal testbenches (VER documents not yet created; see `doc/verification
 
 ## Design Notes
 
+**Arbiter port ownership:** UNIT-006 owns arbiter ports 1, 2, and 3 (UNIT-007):
+- Port 1: framebuffer write (RGB565, tiled 4×4)
+- Port 2: Z-buffer read/write (tile-cache backed, write-back)
+- Port 3: texture cache fill reads (burst, format-dependent burst_len)
+
+Port 3 is shared with `PERF_TIMESTAMP` writes initiated by `gpu_top.sv` on behalf of UNIT-003.
+Timestamp writes are fire-and-forget single-word writes at the lowest priority on port 3; the pixel pipeline's texture burst requests have effective precedence because the arbiter serves port 3 requests in arrival order and texture bursts hold port 3 for up to 32 words.
+See DD-026 for the port 3 sharing rationale and the latch-and-serialize scheme used in `gpu_top.sv`.
+
+**Texture format encoding:** The `tex_format` field in TEX0_CFG and TEX1_CFG is 3 bits wide, encoding 7 formats as defined in INT-010 and INT-032: BC1=0, BC2=1, BC3=2, BC4=3, RGB565=4, RGBA8888=5, R8=6.
+All 7 format decoders are connected to the texture cache via a format-select mux driven by this 3-bit field.
+
 **Verilator interactive simulator:** The interactive GPU simulator (REQ-010.02) substitutes a behavioral SDRAM model for the physical W9825G6KH.
 The model must faithfully implement W9825G6KH burst mode, CAS latency (CL=3), row activation timing, and auto-refresh behavior so that texture cache fills, Z-buffer accesses, and framebuffer writes from this unit behave correctly in simulation.
 A simplified or incorrectly-timed SDRAM model will cause the pixel pipeline to malfunction during interactive simulation; performance observations from the interactive sim (fill rate, frame time) will not precisely reflect hardware timing.

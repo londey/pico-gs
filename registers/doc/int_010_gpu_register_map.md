@@ -86,7 +86,7 @@ All register semantics are identical regardless of command source.
 - **DOT3 bump mapping with interpolated light direction**
 - **Dual vertex colors: diffuse (VER_COLOR0) + specular (VER_COLOR1)**
 - **Trilinear texture filtering for smooth LOD transitions**
-- RGBA4444 and BC1 block-compressed texture formats (see INT-014)
+- Seven texture formats: BC1, BC2, BC3, BC4 (block-compressed) and RGB565, RGBA8888, R8 (uncompressed); see INT-014
 - Swizzle patterns for channel reordering
 - **Unified RENDER_MODE register (TRI_MODE + ALPHA_BLEND + Z-modes + dithering)**
 - **Scissor rectangle for pixel clipping**
@@ -280,7 +280,7 @@ Per-pixel (GPU):
 - Light direction interpolated linearly across triangle (like vertex colors)
 - Interpolated vector may not be unit length, but acceptable for DOT3
 - Requires texture unit configured with BLEND=DOT3 mode
-- Normal map texture typically uses RGBA4444 or BC1 encoding
+- Normal map texture typically uses BC4 (single R channel for compressed grayscale normals), BC1, or RGB565 encoding
 
 **Reset Value**: 0x0000000000000000 (zero vector)
 
@@ -481,12 +481,16 @@ Texture format, dimensions, swizzle, **blend mode**, **filtering**, and mipmap l
           01 = BILINEAR (smooth, 2×2 tap filter)
           10 = TRILINEAR (smooth + mipmap blend, requires MIP_LEVELS>1)
           11 = Reserved
-[5:4]     Reserved (write as 0)
-[3:2]     FORMAT: Texture format encoding
-          00 = RGBA4444 (16 bits per pixel, see INT-014)
-          01 = BC1 (block compressed, 64 bits per 4x4 block, see INT-014)
-          10 = Reserved (future format)
-          11 = Reserved (future format)
+[5]       Reserved (write as 0)
+[4:2]     FORMAT: Texture format encoding (3 bits; see INT-014 for block layout)
+          000 = BC1      (4 bpp block-compressed, 8 bytes per 4×4 block)
+          001 = BC2      (8 bpp block-compressed with explicit 4-bit alpha, 16 bytes per 4×4 block)
+          010 = BC3      (8 bpp block-compressed with interpolated alpha, 16 bytes per 4×4 block)
+          011 = BC4      (4 bpp single-channel block-compressed, 8 bytes per 4×4 block)
+          100 = RGB565   (16 bpp uncompressed, 32 bytes per 4×4 block)
+          101 = RGBA8888 (32 bpp uncompressed, 64 bytes per 4×4 block)
+          110 = R8       (8 bpp single-channel uncompressed, 16 bytes per 4×4 block)
+          111 = Reserved (write as 0)
 [1]       Reserved (write as 0)
 [0]       ENABLE: 0=disabled, 1=enabled
 ```
@@ -511,11 +515,17 @@ Step 4: Apply alpha blend with framebuffer if ALPHA_BLEND mode enabled
 
 **Note**: Sequential texture blending has been replaced by the color combiner. See CC_MODE (0x18) for combining equations.
 
+**Behavioral Note**: tex0_cfg and tex1_cfg (the full 64-bit TEXn_FMT register value) are consumed by the pixel pipeline (UNIT-006) after pixel pipeline integration.
+Writing TEXn_FMT with ENABLE=1 and a valid FORMAT activates texture sampling for that unit; the hardware routes the cache miss fill FSM to the appropriate decoder based on FORMAT[4:2].
+Writing any TEXn_FMT register also invalidates the corresponding sampler's texture cache (see INT-032).
+
 **Format Notes**:
-- BC1 textures (FORMAT=01) require width and height to be multiples of 4
-- Attempting to use non-multiple-of-4 dimensions with BC1 results in undefined behavior
-- Swizzle patterns apply after texture decode (see INT-014)
-- See INT-014 for detailed texture memory layout specifications
+- Block-compressed formats (BC1–BC4, FORMAT 000–011) require width and height to be multiples of 4.
+  Attempting to use non-multiple-of-4 dimensions with block-compressed formats produces undefined behavior.
+- Uncompressed formats (RGB565, RGBA8888, R8, FORMAT 100–110) require power-of-two dimensions.
+- Swizzle patterns apply after texture decode (see INT-014).
+- The texture cache (INT-032) converts all source formats to RGBA5652 on fill; FORMAT determines the burst length and decoder used on cache miss.
+- See INT-014 for detailed texture memory layout and per-format block size specifications.
 
 **Mipmap Notes**:
 - MIP_LEVELS=0 or MIP_LEVELS=1: Single level only, no mipmap addressing
@@ -556,15 +566,17 @@ Step 4: Apply alpha blend with framebuffer if ALPHA_BLEND mode enabled
 | 0xC | 111A | RGB=1 (white), preserve alpha |
 | 0xD-0xF | Reserved | Default to RGBA |
 
-**Example**: 64x64 texture, RGBA4444, enabled, bilinear, multiply blend, no mipmaps
-→ WIDTH_LOG2=6, HEIGHT_LOG2=6, FORMAT=00, FILTER=01, BLEND=000, MIP_LEVELS=1
-→ write 0x00000000_00100661 | (0x0 << 24) | (0x1 << 6) = 0x00000000_001006A1
+**Example**: 64×64 texture, RGB565, enabled, bilinear, no mipmaps
+→ WIDTH_LOG2=6, HEIGHT_LOG2=6, FORMAT=100 (RGB565), FILTER=01, MIP_LEVELS=1
+→ TEXn_FMT = (1 << 20) | (0 << 16) | (6 << 12) | (6 << 8) | (0x1 << 6) | (0x4 << 2) | 0x1
+→ write 0x00000000_001006D1
 
-**Example**: 256x256 texture, BC1, enabled, trilinear, DOT3 blend, 9 mipmap levels
-→ WIDTH_LOG2=8, HEIGHT_LOG2=8, FORMAT=01, FILTER=10, BLEND=100 (DOT3), MIP_LEVELS=9
-→ write 0x00000000_00900883 | (0x4 << 24) | (0x2 << 6) = 0x00000000_049008C3
+**Example**: 256×256 texture, BC1, enabled, trilinear, 9 mipmap levels
+→ WIDTH_LOG2=8, HEIGHT_LOG2=8, FORMAT=000 (BC1), FILTER=10, MIP_LEVELS=9
+→ TEXn_FMT = (9 << 20) | (0 << 16) | (8 << 12) | (8 << 8) | (0x2 << 6) | (0x0 << 2) | 0x1
+→ write 0x00000000_00988881
 
-**Reset Value**: 0x0000000000000000 (disabled, RGBA4444, 8×8, multiply, nearest)
+**Reset Value**: 0x0000000000000000 (disabled, BC1, 8×8, nearest, no mipmaps)
 
 ---
 
@@ -847,6 +859,10 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
   if signed_area < 0: triangle is CCW
   if signed_area == 0: degenerate (always culled)
   ```
+
+**Behavioral Note**: All fields in RENDER_MODE are consumed by the pixel pipeline (UNIT-006) after pixel pipeline integration.
+GOURAUD, ALPHA_BLEND, CULL_MODE, DITHER_EN, DITHER_PATTERN, STIPPLE_EN, ALPHA_TEST, ALPHA_REF are live inputs to the pixel pipeline's per-fragment processing stages.
+Writes to any of these fields have immediate effect on fragments that enter the pipeline after the write clears the command FIFO.
 
 **Reset Value**: 0x0000000000000411 (GOURAUD=1, COLOR_WRITE_EN=1, DITHER_EN=1, DITHER_PATTERN=0, Z_COMPARE=LEQUAL, all else 0)
 
@@ -1322,33 +1338,27 @@ See INT-014 for full BC1 decompression algorithm.
 ### Example 1: Multi-Texture Rendering (Diffuse + Lightmap)
 
 ```c
-// Configure texture unit 0: diffuse map (RGBA4444) at 0x384000, 256x256
+// Configure texture unit 0: diffuse map (RGB565) at 0x384000, 256x256
 gpu_write(REG_TEX0_BASE, 0x384000);
 gpu_write(REG_TEX0_FMT,
-    (0x0 << 16) |  // Swizzle: RGBA
-    (8 << 8) |     // HEIGHT_LOG2: 256
-    (8 << 4) |     // WIDTH_LOG2: 256
-    (0x0 << 1) |   // FORMAT: RGBA4444
+    (0x0 << 16) |  // Swizzle: RGBA (identity)
+    (8 << 12) |    // HEIGHT_LOG2: 256 (bits [15:12])
+    (8 << 8) |     // WIDTH_LOG2: 256 (bits [11:8])
+    (0x1 << 6) |   // FILTER: BILINEAR (bits [7:6])
+    (0x4 << 2) |   // FORMAT: RGB565 (bits [4:2], value 100 = 4)
     (1 << 0)       // ENABLE: yes
 );
-gpu_write(REG_TEX0_BLEND, 0x00);  // MULTIPLY (ignored for tex0)
-gpu_write(REG_TEX0_WRAP, 0x0);    // REPEAT on both axes
 
 // Configure texture unit 1: lightmap (BC1) at 0x3C4000, 256x256
 gpu_write(REG_TEX1_BASE, 0x3C4000);
 gpu_write(REG_TEX1_FMT,
-    (0x0 << 16) |  // Swizzle: RGBA
-    (8 << 8) |     // HEIGHT_LOG2: 256
-    (8 << 4) |     // WIDTH_LOG2: 256
-    (0x1 << 1) |   // FORMAT: BC1
+    (0x0 << 16) |  // Swizzle: RGBA (identity)
+    (8 << 12) |    // HEIGHT_LOG2: 256 (bits [15:12])
+    (8 << 8) |     // WIDTH_LOG2: 256 (bits [11:8])
+    (0x1 << 6) |   // FILTER: BILINEAR (bits [7:6])
+    (0x0 << 2) |   // FORMAT: BC1 (bits [4:2], value 000 = 0)
     (1 << 0)       // ENABLE: yes
 );
-gpu_write(REG_TEX1_BLEND, 0x00);  // MULTIPLY (modulate with tex0)
-gpu_write(REG_TEX1_WRAP, 0x0);    // REPEAT on both axes
-
-// Disable texture units 2 and 3
-gpu_write(REG_TEX2_FMT, 0x0);
-gpu_write(REG_TEX3_FMT, 0x0);
 
 // Set rendering mode: Gouraud + textured + Z-buffer
 gpu_write(REG_TRI_MODE,
@@ -1389,13 +1399,13 @@ for (int i = 0; i < 8192 / 8; i++) {
 // Configure texture unit 0 for BC1 compressed format
 gpu_write(REG_TEX0_BASE, 0x404000);
 gpu_write(REG_TEX0_FMT,
-    (0x0 << 16) |  // Swizzle: RGBA
-    (7 << 8) |     // HEIGHT_LOG2: 128
-    (7 << 4) |     // WIDTH_LOG2: 128
-    (0x1 << 1) |   // FORMAT: BC1
+    (0x0 << 16) |  // Swizzle: RGBA (identity)
+    (7 << 12) |    // HEIGHT_LOG2: 128 (bits [15:12])
+    (7 << 8) |     // WIDTH_LOG2: 128 (bits [11:8])
+    (0x2 << 6) |   // FILTER: TRILINEAR (bits [7:6])
+    (0x0 << 2) |   // FORMAT: BC1 (bits [4:2], value 000 = 0)
     (1 << 0)       // ENABLE: yes
 );
-gpu_write(REG_TEX0_WRAP, 0x0);  // REPEAT
 ```
 
 ---
@@ -1472,19 +1482,20 @@ gpu_write(REG_ALPHA_BLEND, 0x00);  // DISABLED
 ### Example 5: Channel Swizzling (Grayscale)
 
 ```c
-// Use a single-channel grayscale texture (RGBA4444)
+// Use a single-channel grayscale texture (R8 format)
 // Swizzle 0x7: RRR1 (replicate R to RGB, alpha=1)
 gpu_write(REG_TEX0_BASE, 0x384000);
 gpu_write(REG_TEX0_FMT,
-    (0x7 << 16) |  // Swizzle: RRR1 (grayscale to RGB)
-    (8 << 8) |     // HEIGHT_LOG2: 256
-    (8 << 4) |     // WIDTH_LOG2: 256
-    (0x0 << 1) |   // FORMAT: RGBA4444
+    (0x7 << 16) |  // Swizzle: RRR1 (grayscale to RGB, bits [19:16])
+    (8 << 12) |    // HEIGHT_LOG2: 256 (bits [15:12])
+    (8 << 8) |     // WIDTH_LOG2: 256 (bits [11:8])
+    (0x1 << 6) |   // FILTER: BILINEAR (bits [7:6])
+    (0x6 << 2) |   // FORMAT: R8 (bits [4:2], value 110 = 6)
     (1 << 0)       // ENABLE: yes
 );
 
 // When sampled, if texture R=128:
-// Output will be RGBA=(128, 128, 128, 255)
+// Raw output: RGBA=(128, 0, 0, 255); after RRR1 swizzle: RGBA=(128, 128, 128, 255)
 ```
 
 ---
@@ -1503,7 +1514,7 @@ After hardware reset or power-on:
 | VERTEX_KICK_012 | N/A | Write-only trigger |
 | VERTEX_KICK_021 | N/A | Write-only trigger |
 | TEX0-TEX1 BASE | 0x0000000000000000 | Address 0x000000 |
-| TEX0-TEX1 FMT | 0x0000000000000000 | Disabled, RGBA4444, nearest, 8×8 |
+| TEX0-TEX1 FMT | 0x0000000000000000 | Disabled, BC1, nearest, 8×8, no mipmaps |
 | TEX0-TEX1 MIP_BIAS | 0x0000000000000000 | No bias |
 | TEX0-TEX1 WRAP | 0x0000000000000000 | REPEAT both axes |
 | CC_MODE | 0x0000000000720020 | TEX0 × VER_COLOR0 (default textured Gouraud) |

@@ -160,7 +160,13 @@ The integration harness drives the following register-write sequence into UNIT-0
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
 - VER-011 provides full-pipeline confirmation of Z-buffer behavior; VER-002 (`tb_early_z`) provides unit-level confirmation.
   Together they jointly satisfy REQ-005.02 per the requirement document's Verification Method section.
+- **The Z-buffer read and write paths are owned by the pixel pipeline (UNIT-006)**, not the rasterizer (UNIT-005), after pixel pipeline integration.
+  The rasterizer emits fragments via the valid/ready handshake interface; the pixel pipeline's FSM reads the Z-buffer (arbiter port 2), invokes `early_z.sv`, and conditionally writes back updated Z values and color pixels.
+  This test exercises the integrated pipeline including arbiter port 2 ownership by UNIT-006.
+- **The golden image requires re-approval after pixel pipeline integration.**
+  The incremental interpolation redesign (step 1) may shift Z-interpolated values by 1 ULP at some pixels, and the transfer of Z-buffer write ownership from the rasterizer to the pixel pipeline (step 2) changes the timing of Z-buffer updates.
+  After integration, re-run the test, visually inspect the output, and re-commit the golden image.
 - The background of the framebuffer (pixels outside both triangles) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
+- The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
   See `test_strategy.md` for the re-approval workflow.

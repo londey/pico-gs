@@ -66,20 +66,23 @@ None
 
 - Edge-walking state machine registers
 - Edge function accumulators (e0, e1, e2) and row-start registers (e0_row, e1_row, e2_row) for incremental stepping
-- Barycentric weight registers (17-bit, 1.16 fixed point)
+- Per-attribute derivative registers (dAttr/dx, dAttr/dy) for color0, color1, Z, UV0, UV1, and Q; computed once per triangle during setup
+- Accumulated attribute values (attr_x) per active fragment position; stepped with additions in the inner loop
 - Current scanline and span tracking
 
 ### Algorithm / Behavior
 
-1. **Edge Setup** (SETUP → SETUP_2 → SETUP_3, 3 cycles): Compute edge coefficients A (11-bit), B (11-bit) in cycle 1; compute edge C coefficients (21-bit) serialized over 3 cycles using a shared pair of 11×11 multipliers; compute bounding box
-2. **Initial Evaluation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at bounding box origin serialized over 3 cycles using the same shared multiplier pair (cold path, once per triangle); latch into e0/e1/e2 and row-start registers
-3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); if inside, compute 17-bit barycentric weights (1.16 fixed point) from edge values × inv_area
-4. **Interpolation** (INTERPOLATE, per inside pixel): Compute both vertex colors (color0 and color1, each RGB888) and Z depth from barycentric weights using 17×8 and 17×16 multiplies (each fits in a single MULT18X18D). The secondary color (color1) interpolation uses the same barycentric weights as the primary color.
-5. **Pixel Advance** (ITER_NEXT): Step to next pixel using **incremental addition only** — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
-   No multiplies are needed in the per-pixel inner loop.
+1. **Edge Setup** (SETUP → SETUP_2 → SETUP_3, 3 cycles): Compute edge coefficients A (11-bit), B (11-bit) in cycle 1; compute edge C coefficients (21-bit) serialized over 3 cycles using a shared pair of 11×11 multipliers; compute bounding box.
+2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at bounding box origin using the same shared multiplier pair (cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
+   Compute per-attribute derivatives using the precomputed `inv_area` from UNIT-004: for each attribute `f` at vertices v0, v1, v2, compute `df/dx = (f1-f0)*A01 + (f2-f0)*A02` and `df/dy = (f1-f0)*B01 + (f2-f0)*B02` (scaled by inv_area), using the shared multiplier pair in the same 3-cycle window.
+   Initialize accumulated attribute values at the bounding box origin.
+   Attributes subject to derivative precomputation: color0 (RGBA, 8-bit per channel), color1 (RGBA, 8-bit per channel), Z (16-bit), UV0 (UQ0.16 per component), UV1 (UQ0.16 per component), and Q/W (Q3.12).
+3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); no multiply required.
+4. **Interpolation** (INTERPOLATE, per inside pixel): Add the precomputed dx derivatives to the accumulated attribute values when stepping right in X; add the dy derivatives when advancing to a new row.
+   No per-pixel multiplies are required — all attribute interpolation is performed by incremental addition only.
+   Output interpolated values as Q4.12 by promoting the accumulated fixed-point attribute to the pipeline-internal format (see UNIT-006, Stage 3).
+5. **Pixel Advance** (ITER_NEXT): Step to next pixel — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
 6. **Scissor Bounds**: Bounding box is clamped to `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y, using the register values for the current render surface.
-7. **Memory Address**: Framebuffer and Z-buffer addresses use the 4×4 block-tiled formula from INT-011, with stride driven by `FB_CONFIG.WIDTH_LOG2` from the register file (UNIT-003).
-   No fixed-width multiply is used; the stride computation is purely shift-based (`block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x`).
 
 ## Implementation
 
@@ -93,11 +96,10 @@ Formal testbenches:
 
 - Verify edge function computation for known triangles (clockwise/counter-clockwise winding)
 - Test bounding box clamping at the configured surface boundary — `(1<<FB_CONFIG.WIDTH_LOG2)-1` in X and `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y — not at a fixed 640×480
-- Verify barycentric interpolation produces correct colors at vertices and midpoints
-- Test Z-buffer read-compare-write sequence with near/far values
-- Verify RGB888-to-RGB565 conversion in framebuffer writes
+- Verify derivative precomputation: for a known triangle, confirm dColor/dx, dColor/dy, dZ/dx, dZ/dy, dUV/dx, dUV/dy, dQ/dx, dQ/dy match expected values derived from vertex attributes and inv_area
+- Verify incremental interpolation: step across a rasterized triangle and confirm accumulated color0, color1, Z, UV0, UV1, Q/W values at each fragment match analytic values within rounding tolerance
+- Verify the fragment output bus carries correct (x, y, z, color0, color1, uv0, uv1, q) values and valid/ready handshake operates correctly
 - Test degenerate triangles (zero area, single-pixel, off-screen)
-- Verify SRAM arbiter handshake (req/ack/ready protocol)
 - VER-001 (Rasterizer Unit Testbench)
 - VER-010 (Gouraud Triangle Golden Image Test)
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
@@ -127,15 +129,20 @@ Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM
 This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM arbiter (UNIT-007) to exploit SDRAM burst write mode for framebuffer writes and burst read/write mode for Z-buffer accesses, improving effective SDRAM throughput for runs of horizontally adjacent fragments.
 The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tiles per row as `1 << (WIDTH_LOG2 - 2)`.
 
-**Incremental edge stepping (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
-The rasterizer exploits this by computing edge values at the bounding box origin once per triangle (using multiplies in ITER_START), then stepping incrementally with pure addition in the per-pixel loop.
-Barycentric weights are truncated to 17-bit (1.16 fixed point) so that downstream interpolation multiplies (17×8 for color, 17×16 for Z) each fit in a single ECP5 MULT18X18D block.
-Additionally, the 12 cold-path setup multipliers (6 for edge C coefficients, 6 for initial edge evaluation) are serialized through a shared pair of 11×11 multipliers over 6 cycles total (3 for setup, 3 for initial evaluation).
-Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum, the extra 4 setup cycles have zero impact on sustained performance.
-This reduces total DSP usage from 47 to 17 MULT18X18D blocks (ECP5-25K has 28 available), leaving 11 blocks free for texture sampling and color combiner.
+**Incremental interpolation (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
+The rasterizer exploits this by computing edge values and all attribute derivatives at the bounding box origin once per triangle (using multiplies in the ITER_START / INIT_E1 / INIT_E2 window), then stepping all edge and attribute accumulators incrementally with pure addition in the per-pixel inner loop.
+No per-pixel multiplies are required for either edge testing or attribute interpolation.
+See DD-024 for the rationale behind replacing per-pixel barycentric multiply-accumulate with precomputed derivative increments.
+The 12 cold-path setup multipliers (6 for edge C coefficients, 6 for initial edge evaluation + derivative precomputation) are serialized through a shared pair of 11×11 multipliers over 6 cycles total (3 for setup, 3 for derivative init).
+Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum, the extra setup cycles have zero impact on sustained performance.
+This reduces total DSP usage to 3–4 MULT18X18D blocks (the shared setup pair, plus any fractional-multiply needed for Q promotion at output), freeing 13–14 blocks compared to the previous barycentric MAC approach, and leaving ample headroom for the color combiner (UNIT-010, 4–6 DSPs) and texture cache decoders (UNIT-006, 2–4 DSPs per BC decoder).
 
-**Dual-texture + color combiner update:** The rasterizer now interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment instead of one.
-UV interpolation is reduced from up to 4 sets to up to 2 sets (UV0, UV1).
-The additional color interpolation requires 3 extra MULT18X18D blocks (17×8 per R/G/B channel of color1), increasing per-pixel DSP usage modestly.
-The reduction from 4 to 2 UV sets frees interpolation resources that offset this increase.
-Both interpolated vertex colors are output to UNIT-006 for use as VER_COLOR0 and VER_COLOR1 inputs to the color combiner.
+**Dual-texture + color combiner update:** The rasterizer interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment, plus UV0, UV1, Z, and Q/W (perspective-correct denominator).
+UV interpolation covers up to 2 sets (UV0, UV1); UV2_UV3 is removed.
+Under the incremental interpolation scheme, adding color1 and Q/W interpolation costs only additional accumulator registers and derivative storage — no additional DSP multipliers in the inner loop.
+Both interpolated vertex colors are output to UNIT-006 for use as VER_COLOR0 and VER_COLOR1 inputs to the color combiner (UNIT-010).
+Q/W is output to UNIT-006 for perspective-correct UV division before texture lookup.
+
+**Fragment output interface:** The rasterizer emits per-fragment data to UNIT-006 (Pixel Pipeline) via a valid/ready handshake (see DD-025).
+The fragment bus carries: (x, y) screen coordinates, interpolated Z (16-bit), interpolated color0 and color1 (Q4.12 RGBA), interpolated UV0, UV1 (UQ0.16 per component), and interpolated Q/W (Q3.12).
+The rasterizer does not access SDRAM directly; all framebuffer, Z-buffer, and texture memory accesses are the responsibility of UNIT-006 through UNIT-007.

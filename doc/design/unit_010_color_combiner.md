@@ -1,7 +1,5 @@
 # UNIT-010: Color Combiner
 
-**Status: WIP — combiner equation pipeline timing and register decoding are under design.**
-
 ## Purpose
 
 Two-stage pipelined programmable color combiner that produces a final fragment color from multiple input sources.
@@ -131,7 +129,6 @@ UNIT-006 (Pixel Pipeline)          UNIT-010 (Color Combiner)         Fragment Ou
 ## Verification
 
 Formal testbench: **VER-004** (`color_combiner_tb` — Verilator unit testbench; covers REQ-004.01 color combiner equation).
-Note: VER-004 implementation is deferred until UNIT-010 WIP status is resolved and combiner pipeline timing is finalized.
 
 - Verify cycle 0 modulate: `TEX0 * SHADE0` produces expected Q4.12 output
 - Verify cycle 0 decal: `TEX0` passes through unchanged (C=ONE, B=D=ZERO)
@@ -156,11 +153,18 @@ The separation allows the combiner equation design to evolve independently from 
 
 The architecture is directly inspired by the N64 RDP's two-cycle combiner, adapted to use Q4.12 (16-bit signed) arithmetic instead of the N64's 9-bit fixed-point.
 
-**Resource estimate (preliminary):**
+**Resource estimate:**
 - 4–6 DSP slices (16×16 multipliers for per-channel multiply in each of 2 cycles)
 - ~800–1200 LUTs (input muxes, subtraction, addition, saturation)
 - 0 EBR (combinational/registered logic only)
 
-**Open questions:**
-- Exact pipeline register staging to meet 100 MHz timing closure
-- Whether RGB and Alpha C selectors share decode logic or are fully independent
+**Pipeline staging for 100 MHz timing closure:**
+The two combiner cycles are each split into two pipeline stages (4 stages total):
+- Stage A: source mux + A-B subtraction (registered output)
+- Stage B: multiply by C, add D, saturate (registered output, result forwarded as COMBINED for the next pair)
+This staging limits the critical path to a single 16×16 multiply plus adder per stage, meeting 100 MHz closure on ECP5-25K.
+Each of the 4 RGBA channel paths is independent (no cross-channel dependency in `(A-B)*C+D`), so channel paths can be placed in parallel DSP columns.
+
+**RGB and Alpha C decode:** RGB and Alpha use independent C selector decode logic because the RGB C slot accepts 15 sources (including alpha-broadcast sources such as TEX0.A) while the Alpha C slot uses the same 9-source CC_SOURCE enum.
+The decode is split: a 4-bit `rgb_c_source` field selects from the 15 RGB C sources; a 4-bit `cc_source` field selects from the 9 shared sources for A, B, D, and Alpha C.
+The additional broadcast sources (TEX0.A, TEX1.A, SHADE0.A, CONST0.A, COMBINED.A, SHADE1.A) are implemented as simple wires replicating the Alpha channel of the corresponding source to all three RGB channels before the RGB C mux.

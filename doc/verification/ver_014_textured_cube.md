@@ -23,8 +23,11 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
 - A known test texture (16×16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets are generated programmatically by the test harness and are not committed.
 - Golden image `spi_gpu/tests/golden/textured_cube.ppm` has been approved and committed.
+  This image must be re-approved after the pixel pipeline integration, after the incremental interpolation redesign (UNIT-005), and after the `tex_format` field widening to 3 bits (INT-010), because UV interpolation, format-select mux path, and COMBINE_MODE are all functionally active for the first time.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `triangle_setup.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `early_z.sv`) compile without errors under `verilator --lint-only -Wall`.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the early Z stage, texture cache, format-select mux connecting all six decoders, MODULATE combiner (UNIT-010), and FB/Z write logic per UNIT-006.
+- UNIT-010 (Color Combiner) has reached Stable status (WIP flag removed from `doc/design/unit_010_color_combiner.md`).
 - The Z-buffer is initialized to `0xFFFF` via a Z-buffer clear pass before rendering (see Z-Buffer Clear Step below).
 
 ## Procedure
@@ -96,7 +99,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    - Write `TEX0_BASE` (address `0x10`) with the texture base address (e.g., `0x00040000`, 4K aligned).
    - Write `TEX0_FMT` (address `0x11`) with:
      - `ENABLE = 1` (bit 0)
-     - `FORMAT = RGB565` (4 << 2, bits [3:2])
+     - `FORMAT = RGB565` (4 << 2, bits [4:2]; 3-bit field per INT-010 post-integration)
      - `WIDTH_LOG2 = 4` (4 << 8, bits [11:8])
      - `HEIGHT_LOG2 = 4` (4 << 12, bits [15:12])
      - `SWIZZLE = 0` (identity, bits [19:16])
@@ -113,7 +116,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    - `COLOR_WRITE_EN = 1` (bit 4)
    - `Z_COMPARE = LEQUAL` (default comparison function)
    - `TEX0_EN` via TEX0_FMT (texture unit 0 enabled above)
-   - `COMBINE_MODE = MODULATE` (TEX0 × SHADE0)
+   - `COMBINE_MODE = MODULATE` (TEX0 × SHADE0; this field is functionally active after pixel pipeline integration)
    - All other mode bits = 0 (no dithering, no alpha blend, no stipple, no culling)
 
 5. **Configure framebuffer and Z-buffer:**
@@ -188,8 +191,10 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Winding and back-face submission:** Back-face triangles are submitted first in depth order to validate that depth testing correctly discards their fragments when front-face triangles are rendered subsequently.
   The test does not enable hardware back-face culling — occlusion must be achieved entirely through Z-testing.
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for deterministic, reproducible output.
+- **tex_format 3-bit field:** After the pixel pipeline integration, the FORMAT field in TEXn_FMT is 3 bits wide (bits [4:2]), supporting all seven texture formats (BC1=0 through R8=6) as defined in INT-032.
+  The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured-cube`.
 - **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PPM, copy it to `spi_gpu/tests/golden/textured_cube.ppm`, and commit.
-  The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes or the perspective-correct interpolation logic is modified.
+  The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes, the perspective-correct interpolation logic is modified (UNIT-005 incremental interpolation redesign), the format-select mux path in UNIT-006 changes, or the COMBINE_MODE=MODULATE pipeline behavior changes in UNIT-010.
 - **VER-014 together with VER-005** (Texture Decoder Unit Testbench) and **VER-012** (Textured Triangle) provide supplementary integration coverage of REQ-003.01.
   VER-014 additionally provides supplementary integration coverage of REQ-005.02 alongside VER-011.

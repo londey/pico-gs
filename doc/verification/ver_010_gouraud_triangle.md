@@ -88,7 +88,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   The rendered image should show a triangle with smooth color gradients: red at the top vertex, green at the bottom-left vertex, and blue at the bottom-right vertex, with linearly interpolated colors across the interior.
 
 - **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
-  Common failure modes include incorrect barycentric interpolation, incorrect RGB888-to-RGB565 conversion, off-by-one edge walking, or incorrect edge function setup.
+  Common failure modes include incorrect incremental interpolation (incorrect derivative step values or accumulation), incorrect RGB888-to-RGB565 conversion, off-by-one edge walking, or incorrect edge function setup.
 
 ## Test Implementation
 
@@ -103,7 +103,10 @@ The integration harness drives the following register-write sequence into UNIT-0
 - Run this test with: `cd spi_gpu && make test-gouraud`.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), since pixel positions in the framebuffer may shift.
+- **The golden image requires re-approval after pixel pipeline integration.**
+  Two changes affect pixel values: (1) the rasterizer now uses incremental derivative interpolation instead of the barycentric multiply-accumulate method, which may shift interpolated color values by 1 ULP at some pixel locations; (2) the `GOURAUD_EN=1` flag written in the harness command sequence is now functionally active in the pixel pipeline (UNIT-006), whereas it previously had no effect on the stub pipeline.
+  After integration, re-run the test, visually inspect the output, and re-commit the golden image.
+- The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), since pixel positions in the framebuffer may shift.
   See `test_strategy.md` for the re-approval workflow.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
   Dithered rendering is tested separately in VER-013.
