@@ -1,4 +1,4 @@
-// Integration test harness for VER-010 through VER-013 golden image tests.
+// Integration test harness for VER-010 through VER-014 golden image tests.
 //
 // This file provides a compilable skeleton that documents the intended
 // architecture of the full integration harness. Each section is annotated
@@ -585,11 +585,6 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     SdramModel sdram(SDRAM_WORDS);
 
-    // Pre-load texture data into SDRAM model for textured tests
-    // (VER-012, VER-013). Use sdram.fill_texture(base_word, fmt, data,
-    // size, width_log2) with the appropriate format and base address
-    // per INT-014.  (Not yet implemented — texture tests are not wired.)
-
     // -----------------------------------------------------------------------
     // 3. Parse command-line arguments
     // -----------------------------------------------------------------------
@@ -626,7 +621,7 @@ int main(int argc, char** argv) {
     if (test_name.empty()) {
         std::cerr << std::format(
             "Usage: {} <test_name> [output.png] [--trace]\n"
-            "  test_name: gouraud, depth_test, textured_cube\n",
+            "  test_name: gouraud, depth_test, textured, color_combined, textured_cube\n",
             argv[0]
         );
         return 1;
@@ -637,6 +632,23 @@ int main(int argc, char** argv) {
     // output lands there alongside any waveform traces.
     if (output_file.empty()) {
         output_file = std::format("{}.png", test_name);
+    }
+
+    // Pre-load the 16x16 RGB565 checker texture for VER-014 (textured_cube).
+    // The texture base address matches TEX0_BASE_ADDR in ver_014_textured_cube.cpp.
+    // The checker pattern is generated programmatically per test_strategy.md.
+    // This pre-load must happen before the simulation clock starts so that
+    // texture cache misses during rendering find data already in the SDRAM model.
+    if (test_name == "textured_cube") {
+        auto checker_pixels = generate_checker_texture();
+        sdram.fill_texture(
+            TEX0_BASE_WORD,
+            TexFormat::RGB565,
+            std::span<const uint8_t>(checker_pixels),
+            4 // width_log2 = 4 (16-pixel-wide texture)
+        );
+        std::cout << "VER-014: Checker texture pre-loaded at word address 0x"
+                  << std::hex << TEX0_BASE_WORD << std::dec << "\n";
     }
 
     // -----------------------------------------------------------------------
@@ -701,37 +713,16 @@ int main(int argc, char** argv) {
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_010_script);
 
     } else if (test_name == "textured_cube") {
-        // VER-014: Textured cube.
-        // Requires four sequential phases with pipeline drain between each.
-        std::cout << "Running VER-014 (textured cube).\n";
+        // VER-014: Textured cube golden image test.
+        // Sequence: setup -> Z-clear -> triangles, with pipeline drains between.
+        std::cout << "Running VER-014 (textured cube golden image).\n";
 
-        // Phase 0: Pre-load checker texture into behavioral SDRAM model
-        {
-            auto checker_data = generate_checker_texture();
-            sdram.fill_texture(
-                TEX0_BASE_WORD,
-                TexFormat::RGB565,
-                checker_data,
-                4  // width_log2 = 4 (16px)
-            );
-            std::cout << std::format(
-                "DIAG: Loaded 16x16 checker texture ({} bytes) at SDRAM word 0x{:06X}\n",
-                checker_data.size(),
-                TEX0_BASE_WORD
-            );
-        }
-
-        // Phase 1: Z-buffer clear pass
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_zclear_script);
-
-        // Drain pipeline after Z-clear
-        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
-
-        // Phase 2: Texture and render-mode configuration
+        // Phase 1: Framebuffer config + texture config + render mode
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_setup_script);
 
-        // Brief drain for configuration to settle
-        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, 1000);
+        // Phase 2: Z-buffer clear pass
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_zclear_script);
+        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
 
         // Phase 3: Submit all twelve cube triangles
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_triangles_script);
@@ -1014,10 +1005,11 @@ int main(int argc, char** argv) {
     // WIDTH_LOG2 = 9 matches the fb_width_log2 written to FB_CONFIG in
     // ver_010_gouraud.cpp and ver_011_depth_test.cpp (REQ-005.06).
     uint32_t fb_base_word = 0;
-    auto fb = extract_framebuffer(sdram, fb_base_word, FB_WIDTH_LOG2, FB_HEIGHT);
+    int fb_height = (test_name == "textured_cube") ? 512 : FB_HEIGHT;
+    auto fb = extract_framebuffer(sdram, fb_base_word, FB_WIDTH_LOG2, fb_height);
 
     try {
-        png_writer::write_png(output_file.c_str(), FB_WIDTH, FB_HEIGHT, fb);
+        png_writer::write_png(output_file.c_str(), FB_WIDTH, fb_height, fb);
     } catch (const std::runtime_error& e) {
         std::cerr << std::format("ERROR: {}: {}\n", e.what(), output_file);
         top->final();
