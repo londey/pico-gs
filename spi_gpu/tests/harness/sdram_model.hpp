@@ -197,6 +197,29 @@ public:
     /// @param buffer           Input buffer of data to write.
     void burst_write(uint32_t start_word_addr, std::span<const uint16_t> buffer);
 
+    /// Read back a framebuffer region from SDRAM using the INT-011 4x4
+    /// block-tiled address layout.
+    ///
+    /// Pixels in the framebuffer are stored in 4x4 block-tiled order per
+    /// INT-011.  This function reverses the tiling to produce a linear
+    /// row-major array of RGB565 pixels suitable for PNG output.
+    ///
+    /// The block-tiled address calculation (INT-011):
+    ///   block_x   = pixel_x >> 2
+    ///   block_y   = pixel_y >> 2
+    ///   local_x   = pixel_x & 3
+    ///   local_y   = pixel_y & 3
+    ///   block_idx = (block_y << (width_log2 - 2)) | block_x
+    ///   word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
+    ///
+    /// @param base_word   Framebuffer base address in 16-bit word units.
+    /// @param width_log2  log2(surface width); e.g. 9 for 512-wide.
+    /// @param height      Surface height in pixels to read back.
+    /// @return  Vector of (1 << width_log2) * height uint16_t RGB565 pixels
+    ///          in row-major order.
+    std::vector<uint16_t>
+    read_framebuffer(uint32_t base_word, int width_log2, int height) const;
+
     /// Return the total number of 16-bit words in the model.
     uint32_t size() const {
         return static_cast<uint32_t>(mem_.size());

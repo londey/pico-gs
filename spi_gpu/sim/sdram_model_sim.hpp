@@ -12,7 +12,7 @@
 // mask prefetch FSM and texture cache timing hazards as documented in
 // UNIT-007 and UNIT-008.
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
+// Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
 //
 // References:
 //   UNIT-007 (Memory Arbiter) -- SDRAM Behavioral Model spec
@@ -118,6 +118,10 @@ public:
     /// @param word_addr  16-bit word address.
     /// @param data       16-bit value to store.
     void write_word(uint32_t word_addr, uint16_t data);
+
+    // Framebuffer readback for the interactive sim is performed by Lua scripts using
+    // the block-tiled address formula from INT-011. WIDTH_LOG2 is passed from
+    // the fb_config Lua call. No C++ readback helper is required here.
 
     /// Reset all internal state (state machine, counters, outputs).
     void reset();

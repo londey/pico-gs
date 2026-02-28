@@ -385,7 +385,7 @@ $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR) $
 # Interactive GPU Simulator (UNIT-037)
 # =========================================================================
 #
-# Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
+# Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
 #
 # Verilator interactive simulator with SDL3 display and Lua scripting.
 # Drives the GPU RTL via SIM_DIRECT_CMD injection ports (bypasses SPI).

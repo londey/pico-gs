@@ -9,7 +9,7 @@
 //   5. Single-word 32-bit read assembly.
 //   6. Burst write correctness.
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
+// Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
 //
 // References:
 //   UNIT-007 (Memory Arbiter) -- SDRAM interface and timing requirements

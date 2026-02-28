@@ -1,6 +1,6 @@
 -- gpu_regs.lua — GPU register helper functions for Verilator interactive simulator
 --
--- Spec-ref: unit_037_verilator_interactive_sim.md `0a4e064809b6fae3` 2026-02-27
+-- Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
 --
 -- Implements REQ-010.02-LUA: one documented helper function per GPU register type.
 -- Field packing matches registers/rdl/gpu_regs.rdl (register map v11.0).

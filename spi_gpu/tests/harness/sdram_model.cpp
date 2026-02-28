@@ -70,6 +70,34 @@ void SdramModel::burst_write(uint32_t start_word_addr, std::span<const uint16_t>
     }
 }
 
+std::vector<uint16_t>
+SdramModel::read_framebuffer(uint32_t base_word, int width_log2, int height) const {
+    int width = 1 << width_log2;
+
+    std::vector<uint16_t> fb(static_cast<size_t>(width) * height);
+
+    // INT-011 block-tiled readback.
+    // Each 4x4 pixel block is stored as 16 consecutive 16-bit words.
+    // block_idx = (block_y << (width_log2 - 2)) | block_x
+    // word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
+    for (int py = 0; py < height; ++py) {
+        for (int px = 0; px < width; ++px) {
+            int block_x = px >> 2;
+            int block_y = py >> 2;
+            int local_x = px & 3;
+            int local_y = py & 3;
+            int block_idx = (block_y << (width_log2 - 2)) | block_x;
+            uint32_t word_addr =
+                base_word + static_cast<uint32_t>(block_idx) * 16 +
+                static_cast<uint32_t>(local_y * 4 + local_x);
+
+            fb[py * width + px] = read_word(word_addr);
+        }
+    }
+
+    return fb;
+}
+
 void SdramModel::fill_texture(
     uint32_t base_word_addr, TexFormat fmt, std::span<const uint8_t> pixel_data, uint32_t width_log2
 ) {
