@@ -32,6 +32,14 @@ RTL_SOURCES = \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
+	$(RTL_DIR)/render/texture_bc1.sv \
+	$(RTL_DIR)/render/texture_bc2.sv \
+	$(RTL_DIR)/render/texture_bc3.sv \
+	$(RTL_DIR)/render/texture_bc4.sv \
+	$(RTL_DIR)/render/texture_rgb565.sv \
+	$(RTL_DIR)/render/texture_rgba8888.sv \
+	$(RTL_DIR)/render/texture_r8.sv \
+	$(RTL_DIR)/render/texture_cache.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/fb_promote.sv \
@@ -313,6 +321,7 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/render/texture_bc1.sv \
 	$(RTL_DIR)/render/texture_cache.sv \
 	$(RTL_DIR)/render/color_combiner.sv \
 	$(RTL_DIR)/render/texture_rgb565.sv \
@@ -353,12 +362,21 @@ lint:
 		--top-module dvi_output 2>&1 || fail=1; \
 	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
-		$(RTL_DIR)/render/stipple.sv \
 		$(RTL_DIR)/render/early_z.sv \
-		$(RTL_DIR)/render/texel_promote.sv \
-		$(RTL_DIR)/render/fb_promote.sv \
+		$(RTL_DIR)/render/stipple.sv \
+		$(RTL_DIR)/render/texture_bc1.sv \
+		$(RTL_DIR)/render/texture_bc2.sv \
+		$(RTL_DIR)/render/texture_bc3.sv \
+		$(RTL_DIR)/render/texture_bc4.sv \
+		$(RTL_DIR)/render/texture_rgb565.sv \
+		$(RTL_DIR)/render/texture_rgba8888.sv \
+		$(RTL_DIR)/render/texture_r8.sv \
+		$(RTL_DIR)/render/texture_cache.sv \
+		$(RTL_DIR)/render/color_combiner.sv \
 		$(RTL_DIR)/render/alpha_blend.sv \
 		$(RTL_DIR)/render/dither.sv \
+		$(RTL_DIR)/render/texel_promote.sv \
+		$(RTL_DIR)/render/fb_promote.sv \
 		$(RTL_DIR)/render/pixel_pipeline.sv \
 		--top-module pixel_pipeline 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
@@ -393,6 +411,14 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
+	$(RTL_DIR)/render/texture_bc1.sv \
+	$(RTL_DIR)/render/texture_bc2.sv \
+	$(RTL_DIR)/render/texture_bc3.sv \
+	$(RTL_DIR)/render/texture_bc4.sv \
+	$(RTL_DIR)/render/texture_rgb565.sv \
+	$(RTL_DIR)/render/texture_rgba8888.sv \
+	$(RTL_DIR)/render/texture_r8.sv \
+	$(RTL_DIR)/render/texture_cache.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/fb_promote.sv \
@@ -464,6 +490,14 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
+	$(RTL_DIR)/render/texture_bc1.sv \
+	$(RTL_DIR)/render/texture_bc2.sv \
+	$(RTL_DIR)/render/texture_bc3.sv \
+	$(RTL_DIR)/render/texture_bc4.sv \
+	$(RTL_DIR)/render/texture_rgb565.sv \
+	$(RTL_DIR)/render/texture_rgba8888.sv \
+	$(RTL_DIR)/render/texture_r8.sv \
+	$(RTL_DIR)/render/texture_cache.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/fb_promote.sv \

@@ -147,8 +147,8 @@ module pixel_pipeline (
     wire [15:0] _unused_frag_v1 = frag_v1;
     // TEXn_CFG: bits [6:4] (FORMAT) used by tex0_format/tex1_format;
     // remaining bits unused until full texture cache integration
-    wire [24:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:7], reg_tex0_cfg[3:0]};
-    wire [24:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:0]};
+    wire [28:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:7], reg_tex0_cfg[3:0]};
+    wire [28:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:0]};
     wire [11:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8]}[11:0];
     wire [11:0] _unused_fb_cfg_bits = reg_fb_config[31:20];
