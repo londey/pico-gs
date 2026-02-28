@@ -185,6 +185,119 @@ module color_combiner_tb;
         4'd7, 4'd6, 4'd7, 4'd0    // rgb:   D=ZERO, C=ONE, B=ZERO, A=COMBINED
     };
 
+    // ====================================================================
+    // CC_MODE preset tasks
+    // ====================================================================
+
+    // MODULATE: cycle 0 = TEX0 * SHADE0, cycle 1 = passthrough
+    task set_modulate_cc_mode();
+        begin
+            cc_mode = {
+                PASSTHROUGH_CYCLE,
+                pack_cycle(CC_TEX0, CC_ZERO, CC_C_SHADE0, CC_ZERO,
+                           CC_TEX0, CC_ZERO, CC_SHADE0,   CC_ZERO)
+            };
+        end
+    endtask
+
+    // DECAL: cycle 0 = TEX0 passthrough, cycle 1 = passthrough
+    task set_decal_cc_mode();
+        begin
+            cc_mode = {
+                PASSTHROUGH_CYCLE,
+                pack_cycle(CC_TEX0, CC_ZERO, CC_C_ONE, CC_ZERO,
+                           CC_TEX0, CC_ZERO, CC_ONE,   CC_ZERO)
+            };
+        end
+    endtask
+
+    // LIGHTMAP: cycle 0 = TEX0 * TEX1, cycle 1 = passthrough
+    task set_lightmap_cc_mode();
+        begin
+            cc_mode = {
+                PASSTHROUGH_CYCLE,
+                pack_cycle(CC_TEX0, CC_ZERO, CC_C_TEX1, CC_ZERO,
+                           CC_TEX0, CC_ZERO, CC_TEX1,   CC_ZERO)
+            };
+        end
+    endtask
+
+    // SPECULAR ADD: cycle 0 = TEX0 * SHADE0, cycle 1 = COMBINED + SHADE1
+    task set_specular_add_cc_mode();
+        begin
+            cc_mode = {
+                pack_cycle(CC_COMBINED, CC_ZERO, CC_C_ONE,    CC_SHADE1,
+                           CC_COMBINED, CC_ZERO, CC_ONE,      CC_SHADE1),
+                pack_cycle(CC_TEX0,     CC_ZERO, CC_C_SHADE0, CC_ZERO,
+                           CC_TEX0,     CC_ZERO, CC_SHADE0,   CC_ZERO)
+            };
+        end
+    endtask
+
+    // FOG: cycle 0 = TEX0 * ONE (passthrough), cycle 1 = lerp(COMBINED, CONST1, SHADE0.A)
+    //   lerp formula: (COMBINED - CONST1) * SHADE0.A + CONST1
+    task set_fog_cc_mode();
+        begin
+            cc_mode = {
+                pack_cycle(CC_COMBINED, CC_CONST1, CC_C_SHADE0_ALPHA, CC_CONST1,
+                           CC_COMBINED, CC_CONST1, CC_SHADE0,         CC_CONST1),
+                pack_cycle(CC_TEX0,     CC_ZERO,   CC_C_ONE,          CC_ZERO,
+                           CC_TEX0,     CC_ZERO,   CC_ONE,            CC_ZERO)
+            };
+        end
+    endtask
+
+    // ====================================================================
+    // Reference model: (A - B) * C + D in Q4.12 with truncation and UNORM saturation
+    // ====================================================================
+    // Matches DUT arithmetic:
+    //   1. diff = A - B (17-bit signed)
+    //   2. product = (diff * C) — take bits [27:12] (arithmetic right shift 12)
+    //   3. sum = product + D (17-bit signed for overflow detection)
+    //   4. Saturate to Q4.12 UNORM [0x0000, 0x1000]
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic [15:0] ref_combiner(
+        input [15:0] a_val,
+        input [15:0] b_val,
+        input [15:0] c_val,
+        input [15:0] d_val
+    );
+        reg signed [16:0] diff;
+        reg signed [33:0] prod;
+        reg signed [15:0] shifted;
+        reg signed [16:0] sum;
+        reg signed [15:0] sat;
+        begin
+            // Step 1: 17-bit signed subtraction
+            diff = {a_val[15], a_val} - {b_val[15], b_val};
+
+            // Step 2: 17x16 multiply, extract [27:12] (truncation, not rounding)
+            prod = diff * $signed(c_val);
+            shifted = $signed(prod[27:12]);
+
+            // Step 3: 17-bit signed addition with D for overflow detection
+            sum = {shifted[15], shifted} + {d_val[15], d_val};
+
+            // Step 4a: Saturate 17-bit sum to 16-bit Q4.12
+            if (sum[16] != sum[15]) begin
+                sat = sum[16] ? 16'sh8000 : 16'sh7FFF;
+            end else begin
+                sat = sum[15:0];
+            end
+
+            // Step 4b: UNORM saturation to [0x0000, 0x1000]
+            if (sat[15]) begin
+                ref_combiner = 16'h0000;
+            end else if (sat > 16'sh1000) begin
+                ref_combiner = 16'h1000;
+            end else begin
+                ref_combiner = sat[15:0];
+            end
+        end
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
     // Helper: drive one fragment and wait for pipeline output (4 stages)
     task drive_fragment();
         begin
@@ -341,7 +454,7 @@ module color_combiner_tb;
         // Test 4 (VER-004 Proc 4): CONST0 and CONST1 promotion
         // CONST_COLOR: CONST0 in [31:0], CONST1 in [63:32]
         // Byte layout per channel: [7:0]=R, [15:8]=G, [23:16]=B, [31:24]=A
-        // Promotion: {3'b000, u8, u8[7:4], 1'b0}
+        // Promotion: {4'b0000, u8, u8[7:4]} (MSB replication, per UNIT-010)
         // ============================================================
         $display("--- Test 4: CONST0 and CONST1 promotion ---");
 
@@ -360,13 +473,13 @@ module color_combiner_tb;
 
         drive_fragment();
 
-        // R=0x80: {000, 10000000, 1000, 0} = 0x0410
+        // R=0x80: {0000, 10000000, 1000} = 0x0808
         check16("const0 R", combined_color[63:48], promote_u8(8'h80));
-        // G=0x40: {000, 01000000, 0100, 0} = 0x0208
+        // G=0x40: {0000, 01000000, 0100} = 0x0404
         check16("const0 G", combined_color[47:32], promote_u8(8'h40));
-        // B=0xC0: {000, 11000000, 1100, 0} = 0x0618
+        // B=0xC0: {0000, 11000000, 1100} = 0x0C0C
         check16("const0 B", combined_color[31:16], promote_u8(8'hC0));
-        // A=0xFF: {000, 11111111, 1111, 0} = 0x0FFE
+        // A=0xFF: {0000, 11111111, 1111} = 0x0FFF
         check16("const0 A", combined_color[15:0],  promote_u8(8'hFF));
 
         // Passthrough CONST1
@@ -378,13 +491,13 @@ module color_combiner_tb;
 
         drive_fragment();
 
-        // R=0x20: {000, 00100000, 0010, 0} = 0x0104
+        // R=0x20: {0000, 00100000, 0010} = 0x0202
         check16("const1 R", combined_color[63:48], promote_u8(8'h20));
-        // G=0x60: {000, 01100000, 0110, 0} = 0x030C
+        // G=0x60: {0000, 01100000, 0110} = 0x0606
         check16("const1 G", combined_color[47:32], promote_u8(8'h60));
-        // B=0xA0: {000, 10100000, 1010, 0} = 0x0514
+        // B=0xA0: {0000, 10100000, 1010} = 0x0A0A
         check16("const1 B", combined_color[31:16], promote_u8(8'hA0));
-        // A=0x00: {000, 00000000, 0000, 0} = 0x0000
+        // A=0x00: {0000, 00000000, 0000} = 0x0000
         check16("const1 A", combined_color[15:0],  promote_u8(8'h00));
 
         // ============================================================
@@ -675,6 +788,99 @@ module color_combiner_tb;
         frag_x = 16'h0;
         frag_y = 16'h0;
         frag_z = 16'h0;
+
+        // ============================================================
+        // Pipeline throughput test
+        // Submit 8 consecutive fragments with back-to-back valid.
+        // Verify 4-cycle latency to first output, then one output
+        // per clock in steady state.
+        // ============================================================
+        $display("--- Pipeline throughput ---");
+
+        // Use simple decal passthrough for throughput test
+        set_decal_cc_mode();
+        tex_color0 = pack_q412(Q412_HALF, Q412_HALF, Q412_HALF, Q412_HALF);
+
+        // Flush pipeline: wait 8 cycles with frag_valid=0, then
+        // wait for negedge so we are cleanly between clock edges
+        // before asserting frag_valid for the throughput burst.
+        frag_valid = 0;
+        repeat (8) @(posedge clk);
+        @(negedge clk);
+
+        // Drive 8 back-to-back fragments
+        begin
+            integer out_count;
+            integer first_out_cycle;
+            integer last_out_cycle;
+            integer cycle_count;
+
+            out_count = 0;
+            first_out_cycle = 0;
+            last_out_cycle = 0;
+            cycle_count = 0;
+
+            // Assert frag_valid for 8 consecutive cycles.
+            // Sample out_frag_valid at the negedge following each posedge,
+            // ensuring NBA from the posedge has settled.
+            frag_valid = 1;
+            repeat (8) begin
+                @(posedge clk);      // Advance clock (always_ff triggers)
+                @(negedge clk);      // Wait half-cycle for NBA to settle
+                cycle_count = cycle_count + 1;
+                $display("  cycle %0d @ %0t: out=%0b s0b=%0b s1a=%0b s1b=%0b",
+                         cycle_count, $time, out_frag_valid,
+                         dut.s0b_frag_valid, dut.s1a_frag_valid, dut.s1b_frag_valid);
+                if (out_frag_valid) begin
+                    out_count = out_count + 1;
+                    if (first_out_cycle == 0) begin
+                        first_out_cycle = cycle_count;
+                    end
+                    last_out_cycle = cycle_count;
+                end
+            end
+            frag_valid = 0;
+
+            // Continue clocking to drain pipeline
+            repeat (8) begin
+                @(posedge clk);
+                @(negedge clk);
+                cycle_count = cycle_count + 1;
+                if (out_frag_valid) begin
+                    out_count = out_count + 1;
+                    if (first_out_cycle == 0) begin
+                        first_out_cycle = cycle_count;
+                    end
+                    last_out_cycle = cycle_count;
+                end
+            end
+
+            // Verify: first output at cycle 4 (4-stage pipeline latency)
+            if (first_out_cycle == 4) begin
+                pass_count = pass_count + 1;
+            end else begin
+                $display("FAIL: pipeline latency - expected first output at cycle 4, got cycle %0d", first_out_cycle);
+                fail_count = fail_count + 1;
+            end
+
+            // Verify: total 8 outputs received
+            if (out_count == 8) begin
+                pass_count = pass_count + 1;
+            end else begin
+                $display("FAIL: pipeline throughput - expected 8 outputs, got %0d", out_count);
+                fail_count = fail_count + 1;
+            end
+
+            // Verify: outputs are consecutive (one per clock in steady state)
+            // 8 outputs from first_out_cycle to last_out_cycle should span 7 cycles
+            if ((last_out_cycle - first_out_cycle) == 7) begin
+                pass_count = pass_count + 1;
+            end else begin
+                $display("FAIL: pipeline steady-state - expected 8 outputs in 8 consecutive cycles, span=%0d",
+                         last_out_cycle - first_out_cycle);
+                fail_count = fail_count + 1;
+            end
+        end
 
         // ============================================================
         // Summary

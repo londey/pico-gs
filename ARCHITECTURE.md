@@ -347,8 +347,10 @@ flowchart LR
     UNIT_035["UNIT-035: PC SPI Driver (FT232H)"]
     UNIT_036["UNIT-036: PC Input Handler"]
     UNIT_037["UNIT-037: Verilator Interactive Simulator App"]
+    UNIT_001 -->|INT-001| UNIT_001
     UNIT_001 -->|INT-001| UNIT_022
     UNIT_001 -->|INT-001| UNIT_035
+    UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
     UNIT_003 -->|INT-010| UNIT_004
     UNIT_003 -->|INT-010| UNIT_005
@@ -361,6 +363,11 @@ flowchart LR
     UNIT_026 -->|INT-021| UNIT_020
     UNIT_026 -->|INT-021| UNIT_021
     UNIT_026 -->|INT-021| UNIT_027
+    UNIT_034 -->|INT-031| UNIT_026
+    UNIT_034 -->|INT-031| UNIT_032
+    UNIT_034 -->|INT-031| UNIT_033
+    UNIT_034 -->|INT-031| UNIT_034
+    UNIT_006 -->|INT-032| UNIT_006
     UNIT_036 -->|INT-040| UNIT_022
 ```
 
