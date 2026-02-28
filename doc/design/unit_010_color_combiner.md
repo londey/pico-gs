@@ -124,7 +124,7 @@ UNIT-006 (Pixel Pipeline)          UNIT-010 (Color Combiner)         Fragment Ou
 
 ## Implementation
 
-- `spi_gpu/src/render/color_combiner.sv`: Two-stage programmable color combiner (TBD)
+- `spi_gpu/src/render/color_combiner.sv`: Two-stage programmable color combiner with 4-stage pipeline (2 per combiner cycle: mux+subtract, then multiply+add+saturate)
 
 ## Verification
 

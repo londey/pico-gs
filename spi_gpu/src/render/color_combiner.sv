@@ -1,10 +1,13 @@
-// Spec-ref: unit_010_color_combiner.md `f35a485765c52814` 2026-02-25
+// Spec-ref: unit_010_color_combiner.md `cc16cb8dc69d0bab` 2026-02-28
 //
 // Color Combiner — Two-Stage Pipelined Programmable Color Combiner
 //
 // Evaluates (A - B) * C + D independently for RGB and Alpha in two
-// pipelined stages.  Cycle 0 output is stored as COMBINED and fed
-// to cycle 1 via the CC_COMBINED input source.
+// combiner cycles, each split into two pipeline stages (4 stages total):
+//   Stage 0A: Cycle 0 source mux + A-B subtraction
+//   Stage 0B: Cycle 0 multiply by C, add D, saturate -> COMBINED
+//   Stage 1A: Cycle 1 source mux + A-B subtraction (COMBINED available)
+//   Stage 1B: Cycle 1 multiply by C, add D, saturate -> final output
 //
 // All arithmetic is Q4.12 signed fixed-point (16-bit per channel).
 // Saturation clamps output to UNORM range [0x0000, 0x1000].
@@ -116,48 +119,37 @@ module color_combiner (
     // ====================================================================
     // CONST Color Promotion: RGBA8888 UNORM8 -> Q4.12
     // ====================================================================
-    // Per channel: {3'b0, u8, u8[7:4], 1'b0} maps [0,255] to [0x0000, 0x0FF0]
+    // Per channel: {4'b0, u8, u8[7:4]} maps [0,255] to [0x0000, 0x0FFF]
     // approaching 1.0 (0x1000).  MSB replication fills fractional bits.
+    // The 4-bit zero prefix (sign + 3 integer bits) ensures the promoted
+    // value stays within the UNORM [0.0, 1.0) range of Q4.12.
     //
     // CONST0 from const_color[31:0], CONST1 from const_color[63:32]
 
     // CONST0 Q4.12 promotion
-    wire [15:0] const0_r_q = {3'b000, const_color[7:0],   const_color[7:4],   1'b0};
-    wire [15:0] const0_g_q = {3'b000, const_color[15:8],  const_color[15:12],  1'b0};
-    wire [15:0] const0_b_q = {3'b000, const_color[23:16], const_color[23:20], 1'b0};
-    wire [15:0] const0_a_q = {3'b000, const_color[31:24], const_color[31:28], 1'b0};
+    wire [15:0] const0_r_q = {4'b0000, const_color[7:0],   const_color[7:4]};
+    wire [15:0] const0_g_q = {4'b0000, const_color[15:8],  const_color[15:12]};
+    wire [15:0] const0_b_q = {4'b0000, const_color[23:16], const_color[23:20]};
+    wire [15:0] const0_a_q = {4'b0000, const_color[31:24], const_color[31:28]};
 
     // CONST1 Q4.12 promotion
-    wire [15:0] const1_r_q = {3'b000, const_color[39:32], const_color[39:36], 1'b0};
-    wire [15:0] const1_g_q = {3'b000, const_color[47:40], const_color[47:44], 1'b0};
-    wire [15:0] const1_b_q = {3'b000, const_color[55:48], const_color[55:52], 1'b0};
-    wire [15:0] const1_a_q = {3'b000, const_color[63:56], const_color[63:60], 1'b0};
+    wire [15:0] const1_r_q = {4'b0000, const_color[39:32], const_color[39:36]};
+    wire [15:0] const1_g_q = {4'b0000, const_color[47:40], const_color[47:44]};
+    wire [15:0] const1_b_q = {4'b0000, const_color[55:48], const_color[55:52]};
+    wire [15:0] const1_a_q = {4'b0000, const_color[63:56], const_color[63:60]};
 
     // Packed Q4.12 RGBA constants
     wire [63:0] const0_q = {const0_r_q, const0_g_q, const0_b_q, const0_a_q};
     wire [63:0] const1_q = {const1_r_q, const1_g_q, const1_b_q, const1_a_q};
 
     // ====================================================================
-    // Pipeline State
-    // ====================================================================
-
-    // COMBINED register: cycle 0 result, fed to cycle 1 as COMBINED source
-    reg [63:0] combined_reg;
-
-    // Stage 0 pipeline: fragment position/valid through cycle 0
-    reg [15:0] s0_frag_x;
-    reg [15:0] s0_frag_y;
-    reg [15:0] s0_frag_z;
-    reg        s0_frag_valid;
-
-    // ====================================================================
     // Backpressure logic
     // ====================================================================
-    // Simple stall: accept new input only when output can advance.
-    // OPEN QUESTION: Pipeline staging for timing closure may require adding
-    // additional skid-buffer logic here. Starting with direct passthrough.
+    // When out_ready is deasserted, all pipeline stage registers hold their
+    // values (stall).  We accept new input only when the pipeline can advance.
 
-    assign in_ready = out_ready;
+    wire pipeline_enable = out_ready;
+    assign in_ready = pipeline_enable;
 
     // ====================================================================
     // CC_MODE Field Extraction
@@ -278,64 +270,25 @@ module color_combiner (
             end
         end
     endfunction
-
-    // ====================================================================
-    // Per-Channel (A - B) * C + D Computation
-    // ====================================================================
-    // Returns a Q4.12 result, saturated to [0x0000, 0x1000].
-    //
-    // Arithmetic:
-    //   ab_diff    = A - B             (signed 16-bit, may be negative)
-    //   ab_c_prod  = ab_diff * C       (signed 32-bit)
-    //   ab_c_q     = ab_c_prod >> 12   (extract Q4.12 from product)
-    //   result     = saturate(ab_c_q + D)
-
-    function automatic [15:0] combine_channel(
-        input signed [15:0] a_ch,
-        input signed [15:0] b_ch,
-        input signed [15:0] c_ch,
-        input signed [15:0] d_ch
-    );
-        reg signed [15:0] ab_diff;
-        reg signed [31:0] ab_c_product;
-        reg signed [15:0] ab_c_shifted;
-        reg signed [16:0] sum;
-        reg signed [15:0] sum_sat;
-        begin
-            ab_diff       = a_ch - b_ch;
-            ab_c_product  = ab_diff * c_ch;
-            ab_c_shifted  = $signed(ab_c_product[27:12]);
-            sum           = {ab_c_shifted[15], ab_c_shifted} + {d_ch[15], d_ch};
-            // Saturate the 17-bit sum to 16-bit Q4.12 range
-            if (sum[16] != sum[15]) begin
-                // Overflow: clamp based on sign
-                if (sum[16]) begin
-                    sum_sat = 16'sh8000;  // most negative Q4.12
-                end else begin
-                    sum_sat = 16'sh7FFF;  // most positive Q4.12
-                end
-            end else begin
-                sum_sat = sum[15:0];
-            end
-            combine_channel = saturate_unorm(sum_sat);
-        end
-    endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
-    // Cycle 0: Combinational Logic
+    // Stage 0A: Cycle 0 Source Mux + A-B Subtraction (combinational)
     // ====================================================================
-    // For cycle 0, COMBINED source is zero (no previous cycle output).
+    // For cycle 0, the COMBINED source is zero (no previous cycle output).
+    // This stage selects A, B, C, D and computes diff = A - B per channel.
+    // C and D are passed through to Stage 0B.
 
-    reg [63:0] cycle0_result;
+    reg signed [16:0] s0a_diff_r, s0a_diff_g, s0a_diff_b, s0a_diff_a;
+    reg signed [15:0] s0a_c_r,    s0a_c_g,    s0a_c_b,    s0a_c_a;
+    reg signed [15:0] s0a_d_r,    s0a_d_g,    s0a_d_b,    s0a_d_a;
 
-    always_comb begin : cycle0_compute
+    always_comb begin : stage0a_compute
         reg signed [15:0] a_r, a_g, a_b, a_a;
         reg signed [15:0] b_r, b_g, b_b, b_a;
-        reg signed [15:0] c_r, c_g, c_b, c_a;
-        reg signed [15:0] d_r, d_g, d_b, d_a;
 
-        // Select RGB A, B, D channels from cc_source_e mux
+        // Select RGB A, B channels from cc_source_e mux
+        // Cycle 0 COMBINED = ZERO (no previous cycle)
         a_r = mux_channel(c0_rgb_a_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         a_g = mux_channel(c0_rgb_a_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         a_b = mux_channel(c0_rgb_a_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
@@ -344,42 +297,130 @@ module color_combiner (
         b_g = mux_channel(c0_rgb_b_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         b_b = mux_channel(c0_rgb_b_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
-        d_r = mux_channel(c0_rgb_d_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        d_g = mux_channel(c0_rgb_d_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        d_b = mux_channel(c0_rgb_d_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        // Select RGB C from cc_rgb_c_source_e (extended 15-way mux)
+        s0a_c_r = mux_rgb_c_channel(c0_rgb_c_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_c_g = mux_rgb_c_channel(c0_rgb_c_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_c_b = mux_rgb_c_channel(c0_rgb_c_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
-        // Select RGB C channels from cc_rgb_c_source_e mux (extended)
-        c_r = mux_rgb_c_channel(c0_rgb_c_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        c_g = mux_rgb_c_channel(c0_rgb_c_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        c_b = mux_rgb_c_channel(c0_rgb_c_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        // Select RGB D from cc_source_e mux
+        s0a_d_r = mux_channel(c0_rgb_d_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_d_g = mux_channel(c0_rgb_d_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_d_b = mux_channel(c0_rgb_d_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
         // Select Alpha A, B, C, D from cc_source_e mux (channel index 0 = Alpha)
         a_a = mux_channel(c0_alpha_a_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         b_a = mux_channel(c0_alpha_b_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        c_a = mux_channel(c0_alpha_c_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        d_a = mux_channel(c0_alpha_d_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_c_a = mux_channel(c0_alpha_c_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_d_a = mux_channel(c0_alpha_d_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
-        // Compute (A - B) * C + D per channel, saturate to UNORM
-        cycle0_result[63:48] = combine_channel(a_r, b_r, c_r, d_r);  // R
-        cycle0_result[47:32] = combine_channel(a_g, b_g, c_g, d_g);  // G
-        cycle0_result[31:16] = combine_channel(a_b, b_b, c_b, d_b);  // B
-        cycle0_result[15:0]  = combine_channel(a_a, b_a, c_a, d_a);  // A
+        // Compute A - B (sign-extend to 17 bits for full range)
+        s0a_diff_r = {a_r[15], a_r} - {b_r[15], b_r};
+        s0a_diff_g = {a_g[15], a_g} - {b_g[15], b_g};
+        s0a_diff_b = {a_b[15], a_b} - {b_b[15], b_b};
+        s0a_diff_a = {a_a[15], a_a} - {b_a[15], b_a};
     end
 
     // ====================================================================
-    // Cycle 1: Combinational Logic
+    // Stage 0A -> 0B Pipeline Registers
     // ====================================================================
-    // Uses combined_reg (registered cycle 0 output) as COMBINED source.
 
-    reg [63:0] cycle1_result;
+    reg signed [16:0] s0b_diff_r, s0b_diff_g, s0b_diff_b, s0b_diff_a;
+    reg signed [15:0] s0b_c_r,    s0b_c_g,    s0b_c_b,    s0b_c_a;
+    reg signed [15:0] s0b_d_r,    s0b_d_g,    s0b_d_b,    s0b_d_a;
+    reg        [15:0] s0b_frag_x;
+    reg        [15:0] s0b_frag_y;
+    reg        [15:0] s0b_frag_z;
+    reg               s0b_frag_valid;
 
-    always_comb begin : cycle1_compute
+    // ====================================================================
+    // Stage 0B: Cycle 0 Multiply + Add + Saturate (combinational)
+    // ====================================================================
+    // product = (diff * C) >> 12, result = saturate(product + D)
+
+    reg [63:0] s0b_result;
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    always_comb begin : stage0b_compute
+        reg signed [33:0] prod_r, prod_g, prod_b, prod_a;
+        reg signed [15:0] shifted_r, shifted_g, shifted_b, shifted_a;
+        reg signed [16:0] sum_r, sum_g, sum_b, sum_a;
+        reg signed [15:0] sat_r, sat_g, sat_b, sat_a;
+
+        // 17x16 -> 33-bit signed multiply; take bits [27:12] for Q4.12 result
+        // Bits [33:28] and [11:0] are inherently unused in Q4.12 extraction.
+        prod_r = s0b_diff_r * s0b_c_r;
+        prod_g = s0b_diff_g * s0b_c_g;
+        prod_b = s0b_diff_b * s0b_c_b;
+        prod_a = s0b_diff_a * s0b_c_a;
+
+        shifted_r = $signed(prod_r[27:12]);
+        shifted_g = $signed(prod_g[27:12]);
+        shifted_b = $signed(prod_b[27:12]);
+        shifted_a = $signed(prod_a[27:12]);
+
+        // Add D with sign extension to 17 bits for overflow detection
+        sum_r = {shifted_r[15], shifted_r} + {s0b_d_r[15], s0b_d_r};
+        sum_g = {shifted_g[15], shifted_g} + {s0b_d_g[15], s0b_d_g};
+        sum_b = {shifted_b[15], shifted_b} + {s0b_d_b[15], s0b_d_b};
+        sum_a = {shifted_a[15], shifted_a} + {s0b_d_a[15], s0b_d_a};
+
+        // Saturate 17-bit sum to 16-bit Q4.12
+        if (sum_r[16] != sum_r[15]) begin
+            sat_r = sum_r[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_r = sum_r[15:0];
+        end
+
+        if (sum_g[16] != sum_g[15]) begin
+            sat_g = sum_g[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_g = sum_g[15:0];
+        end
+
+        if (sum_b[16] != sum_b[15]) begin
+            sat_b = sum_b[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_b = sum_b[15:0];
+        end
+
+        if (sum_a[16] != sum_a[15]) begin
+            sat_a = sum_a[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_a = sum_a[15:0];
+        end
+
+        // UNORM saturation: clamp to [0x0000, 0x1000]
+        s0b_result[63:48] = saturate_unorm(sat_r);
+        s0b_result[47:32] = saturate_unorm(sat_g);
+        s0b_result[31:16] = saturate_unorm(sat_b);
+        s0b_result[15:0]  = saturate_unorm(sat_a);
+    end
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // ====================================================================
+    // Stage 0B -> 1A Pipeline Registers (COMBINED register)
+    // ====================================================================
+
+    reg [63:0] combined_reg;     // Cycle 0 result, fed to cycle 1 as COMBINED source
+    reg [15:0] s1a_frag_x;
+    reg [15:0] s1a_frag_y;
+    reg [15:0] s1a_frag_z;
+    reg        s1a_frag_valid;
+
+    // ====================================================================
+    // Stage 1A: Cycle 1 Source Mux + A-B Subtraction (combinational)
+    // ====================================================================
+    // COMBINED source = combined_reg (registered cycle 0 output).
+
+    reg signed [16:0] s1a_diff_r, s1a_diff_g, s1a_diff_b, s1a_diff_a;
+    reg signed [15:0] s1a_c_r,    s1a_c_g,    s1a_c_b,    s1a_c_a;
+    reg signed [15:0] s1a_d_r,    s1a_d_g,    s1a_d_b,    s1a_d_a;
+
+    always_comb begin : stage1a_compute
         reg signed [15:0] a_r, a_g, a_b, a_a;
         reg signed [15:0] b_r, b_g, b_b, b_a;
-        reg signed [15:0] c_r, c_g, c_b, c_a;
-        reg signed [15:0] d_r, d_g, d_b, d_a;
 
-        // Select RGB A, B, D channels (COMBINED = combined_reg from cycle 0)
+        // Select RGB A, B channels (COMBINED = combined_reg from cycle 0)
         a_r = mux_channel(c1_rgb_a_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         a_g = mux_channel(c1_rgb_a_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         a_b = mux_channel(c1_rgb_a_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
@@ -388,65 +429,217 @@ module color_combiner (
         b_g = mux_channel(c1_rgb_b_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         b_b = mux_channel(c1_rgb_b_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
-        d_r = mux_channel(c1_rgb_d_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        d_g = mux_channel(c1_rgb_d_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        d_b = mux_channel(c1_rgb_d_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        // Select RGB D from cc_source_e mux
+        s1a_d_r = mux_channel(c1_rgb_d_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_d_g = mux_channel(c1_rgb_d_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_d_b = mux_channel(c1_rgb_d_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
-        // Select RGB C channels from extended mux (COMBINED = combined_reg)
-        c_r = mux_rgb_c_channel(c1_rgb_c_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        c_g = mux_rgb_c_channel(c1_rgb_c_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        c_b = mux_rgb_c_channel(c1_rgb_c_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        // Select RGB C from cc_rgb_c_source_e (extended mux, COMBINED = combined_reg)
+        s1a_c_r = mux_rgb_c_channel(c1_rgb_c_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_c_g = mux_rgb_c_channel(c1_rgb_c_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_c_b = mux_rgb_c_channel(c1_rgb_c_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
         // Select Alpha A, B, C, D (channel index 0 = Alpha)
         a_a = mux_channel(c1_alpha_a_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
         b_a = mux_channel(c1_alpha_b_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        c_a = mux_channel(c1_alpha_c_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        d_a = mux_channel(c1_alpha_d_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_c_a = mux_channel(c1_alpha_c_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_d_a = mux_channel(c1_alpha_d_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
 
-        // Compute (A - B) * C + D per channel, saturate to UNORM
-        cycle1_result[63:48] = combine_channel(a_r, b_r, c_r, d_r);  // R
-        cycle1_result[47:32] = combine_channel(a_g, b_g, c_g, d_g);  // G
-        cycle1_result[31:16] = combine_channel(a_b, b_b, c_b, d_b);  // B
-        cycle1_result[15:0]  = combine_channel(a_a, b_a, c_a, d_a);  // A
+        // Compute A - B (sign-extend to 17 bits)
+        s1a_diff_r = {a_r[15], a_r} - {b_r[15], b_r};
+        s1a_diff_g = {a_g[15], a_g} - {b_g[15], b_g};
+        s1a_diff_b = {a_b[15], a_b} - {b_b[15], b_b};
+        s1a_diff_a = {a_a[15], a_a} - {b_a[15], b_a};
     end
 
     // ====================================================================
-    // Pipeline Registers
+    // Stage 1A -> 1B Pipeline Registers
     // ====================================================================
-    // Stage 0: Register cycle 0 result as COMBINED for cycle 1.
-    //          Pipeline fragment position/valid through.
-    // Stage 1: Register cycle 1 result as final output.
+
+    reg signed [16:0] s1b_diff_r, s1b_diff_g, s1b_diff_b, s1b_diff_a;
+    reg signed [15:0] s1b_c_r,    s1b_c_g,    s1b_c_b,    s1b_c_a;
+    reg signed [15:0] s1b_d_r,    s1b_d_g,    s1b_d_b,    s1b_d_a;
+    reg        [15:0] s1b_frag_x;
+    reg        [15:0] s1b_frag_y;
+    reg        [15:0] s1b_frag_z;
+    reg               s1b_frag_valid;
+
+    // ====================================================================
+    // Stage 1B: Cycle 1 Multiply + Add + Saturate (combinational)
+    // ====================================================================
+
+    reg [63:0] s1b_result;
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    always_comb begin : stage1b_compute
+        reg signed [33:0] prod_r, prod_g, prod_b, prod_a;
+        reg signed [15:0] shifted_r, shifted_g, shifted_b, shifted_a;
+        reg signed [16:0] sum_r, sum_g, sum_b, sum_a;
+        reg signed [15:0] sat_r, sat_g, sat_b, sat_a;
+
+        // 17x16 -> 33-bit signed multiply; take bits [27:12] for Q4.12 result
+        // Bits [33:28] and [11:0] are inherently unused in Q4.12 extraction.
+        prod_r = s1b_diff_r * s1b_c_r;
+        prod_g = s1b_diff_g * s1b_c_g;
+        prod_b = s1b_diff_b * s1b_c_b;
+        prod_a = s1b_diff_a * s1b_c_a;
+
+        shifted_r = $signed(prod_r[27:12]);
+        shifted_g = $signed(prod_g[27:12]);
+        shifted_b = $signed(prod_b[27:12]);
+        shifted_a = $signed(prod_a[27:12]);
+
+        // Add D with sign extension to 17 bits for overflow detection
+        sum_r = {shifted_r[15], shifted_r} + {s1b_d_r[15], s1b_d_r};
+        sum_g = {shifted_g[15], shifted_g} + {s1b_d_g[15], s1b_d_g};
+        sum_b = {shifted_b[15], shifted_b} + {s1b_d_b[15], s1b_d_b};
+        sum_a = {shifted_a[15], shifted_a} + {s1b_d_a[15], s1b_d_a};
+
+        // Saturate 17-bit sum to 16-bit Q4.12
+        if (sum_r[16] != sum_r[15]) begin
+            sat_r = sum_r[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_r = sum_r[15:0];
+        end
+
+        if (sum_g[16] != sum_g[15]) begin
+            sat_g = sum_g[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_g = sum_g[15:0];
+        end
+
+        if (sum_b[16] != sum_b[15]) begin
+            sat_b = sum_b[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_b = sum_b[15:0];
+        end
+
+        if (sum_a[16] != sum_a[15]) begin
+            sat_a = sum_a[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_a = sum_a[15:0];
+        end
+
+        // UNORM saturation: clamp to [0x0000, 0x1000]
+        s1b_result[63:48] = saturate_unorm(sat_r);
+        s1b_result[47:32] = saturate_unorm(sat_g);
+        s1b_result[31:16] = saturate_unorm(sat_b);
+        s1b_result[15:0]  = saturate_unorm(sat_a);
+    end
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // ====================================================================
+    // Pipeline Registers (all 4 stages)
+    // ====================================================================
+    // Stage 0A -> 0B: Register A-B diff, C, D (cycle 0 subtract output)
+    // Stage 0B -> 1A: Register cycle 0 result as COMBINED; pipeline frag
+    // Stage 1A -> 1B: Register A-B diff, C, D (cycle 1 subtract output)
+    // Stage 1B -> Out: Register final combined color
     //
-    // OPEN QUESTION (UNIT-010): Exact pipeline register staging to meet
-    // 100 MHz timing closure.  Starting with one register stage per
-    // combiner cycle.  Additional pipeline stages may be added between
-    // the multiply and add operations if timing requires it.
+    // All registers are gated by pipeline_enable (out_ready).
+    // When pipeline_enable = 0, all stages hold (stall).
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            // Stage 0A -> 0B registers
+            s0b_diff_r     <= 17'sd0;
+            s0b_diff_g     <= 17'sd0;
+            s0b_diff_b     <= 17'sd0;
+            s0b_diff_a     <= 17'sd0;
+            s0b_c_r        <= 16'sd0;
+            s0b_c_g        <= 16'sd0;
+            s0b_c_b        <= 16'sd0;
+            s0b_c_a        <= 16'sd0;
+            s0b_d_r        <= 16'sd0;
+            s0b_d_g        <= 16'sd0;
+            s0b_d_b        <= 16'sd0;
+            s0b_d_a        <= 16'sd0;
+            s0b_frag_x     <= 16'd0;
+            s0b_frag_y     <= 16'd0;
+            s0b_frag_z     <= 16'd0;
+            s0b_frag_valid <= 1'b0;
+
+            // Stage 0B -> 1A registers (COMBINED)
             combined_reg   <= 64'd0;
-            s0_frag_x      <= 16'd0;
-            s0_frag_y      <= 16'd0;
-            s0_frag_z      <= 16'd0;
-            s0_frag_valid  <= 1'b0;
+            s1a_frag_x     <= 16'd0;
+            s1a_frag_y     <= 16'd0;
+            s1a_frag_z     <= 16'd0;
+            s1a_frag_valid <= 1'b0;
+
+            // Stage 1A -> 1B registers
+            s1b_diff_r     <= 17'sd0;
+            s1b_diff_g     <= 17'sd0;
+            s1b_diff_b     <= 17'sd0;
+            s1b_diff_a     <= 17'sd0;
+            s1b_c_r        <= 16'sd0;
+            s1b_c_g        <= 16'sd0;
+            s1b_c_b        <= 16'sd0;
+            s1b_c_a        <= 16'sd0;
+            s1b_d_r        <= 16'sd0;
+            s1b_d_g        <= 16'sd0;
+            s1b_d_b        <= 16'sd0;
+            s1b_d_a        <= 16'sd0;
+            s1b_frag_x     <= 16'd0;
+            s1b_frag_y     <= 16'd0;
+            s1b_frag_z     <= 16'd0;
+            s1b_frag_valid <= 1'b0;
+
+            // Stage 1B -> Output registers
             combined_color <= 64'd0;
             out_frag_x     <= 16'd0;
             out_frag_y     <= 16'd0;
             out_frag_z     <= 16'd0;
             out_frag_valid <= 1'b0;
-        end else begin
-            // Stage 0 -> Stage 1 boundary
-            combined_reg   <= cycle0_result;
-            s0_frag_x      <= frag_x;
-            s0_frag_y      <= frag_y;
-            s0_frag_z      <= frag_z;
-            s0_frag_valid  <= frag_valid & in_ready;
-            // Stage 1 -> Output boundary
-            combined_color <= cycle1_result;
-            out_frag_x     <= s0_frag_x;
-            out_frag_y     <= s0_frag_y;
-            out_frag_z     <= s0_frag_z;
-            out_frag_valid <= s0_frag_valid;
+        end else if (pipeline_enable) begin
+            // Stage 0A -> 0B: Register subtraction results and C/D operands
+            s0b_diff_r     <= s0a_diff_r;
+            s0b_diff_g     <= s0a_diff_g;
+            s0b_diff_b     <= s0a_diff_b;
+            s0b_diff_a     <= s0a_diff_a;
+            s0b_c_r        <= s0a_c_r;
+            s0b_c_g        <= s0a_c_g;
+            s0b_c_b        <= s0a_c_b;
+            s0b_c_a        <= s0a_c_a;
+            s0b_d_r        <= s0a_d_r;
+            s0b_d_g        <= s0a_d_g;
+            s0b_d_b        <= s0a_d_b;
+            s0b_d_a        <= s0a_d_a;
+            s0b_frag_x     <= frag_x;
+            s0b_frag_y     <= frag_y;
+            s0b_frag_z     <= frag_z;
+            s0b_frag_valid <= frag_valid & pipeline_enable;
+
+            // Stage 0B -> 1A: Register cycle 0 result as COMBINED
+            combined_reg   <= s0b_result;
+            s1a_frag_x     <= s0b_frag_x;
+            s1a_frag_y     <= s0b_frag_y;
+            s1a_frag_z     <= s0b_frag_z;
+            s1a_frag_valid <= s0b_frag_valid;
+
+            // Stage 1A -> 1B: Register subtraction results and C/D operands
+            s1b_diff_r     <= s1a_diff_r;
+            s1b_diff_g     <= s1a_diff_g;
+            s1b_diff_b     <= s1a_diff_b;
+            s1b_diff_a     <= s1a_diff_a;
+            s1b_c_r        <= s1a_c_r;
+            s1b_c_g        <= s1a_c_g;
+            s1b_c_b        <= s1a_c_b;
+            s1b_c_a        <= s1a_c_a;
+            s1b_d_r        <= s1a_d_r;
+            s1b_d_g        <= s1a_d_g;
+            s1b_d_b        <= s1a_d_b;
+            s1b_d_a        <= s1a_d_a;
+            s1b_frag_x     <= s1a_frag_x;
+            s1b_frag_y     <= s1a_frag_y;
+            s1b_frag_z     <= s1a_frag_z;
+            s1b_frag_valid <= s1a_frag_valid;
+
+            // Stage 1B -> Output: Register final combined color
+            combined_color <= s1b_result;
+            out_frag_x     <= s1b_frag_x;
+            out_frag_y     <= s1b_frag_y;
+            out_frag_z     <= s1b_frag_z;
+            out_frag_valid <= s1b_frag_valid;
         end
     end
 
