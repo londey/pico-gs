@@ -1,5 +1,7 @@
 `default_nettype none
 
+// Spec-ref: unit_006_pixel_pipeline.md `e530bac5b9c72705` 2026-02-28
+//
 // Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative texture cache for one sampler.
 // Stores decompressed 4x4 texel blocks in RGBA5652 format (18 bits/texel).
@@ -7,8 +9,13 @@
 //
 // Cache Fill FSM: IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
 //   - FETCH issues burst read with format-dependent burst_len:
-//       BC1 (format 01):     burst_len=4  (8 bytes, 4 x 16-bit words)
-//       RGBA4444 (format 00): burst_len=16 (32 bytes, 16 x 16-bit words)
+//       BC1 (format 0):      burst_len=4  (8 bytes, 4 x 16-bit words)
+//       BC2 (format 1):      burst_len=8  (16 bytes, 8 x 16-bit words)
+//       BC3 (format 2):      burst_len=8  (16 bytes, 8 x 16-bit words)
+//       BC4 (format 3):      burst_len=4  (8 bytes, 4 x 16-bit words)
+//       RGB565 (format 4):   burst_len=16 (32 bytes, 16 x 16-bit words)
+//       RGBA8888 (format 5): burst_len=32 (64 bytes, 32 x 16-bit words)
+//       R8 (format 6):       burst_len=8  (16 bytes, 8 x 16-bit words)
 //   - DECOMPRESS converts raw data to 16 RGBA5652 texels
 //   - WRITE_BANKS stores texels to 4 interleaved EBR banks
 //
@@ -26,7 +33,7 @@ module texture_cache (
     input  wire [9:0]   pixel_x,        // Pixel X coordinate (for block/set calculation)
     input  wire [9:0]   pixel_y,        // Pixel Y coordinate (for block/set calculation)
     input  wire [23:0]  tex_base_addr,  // Texture base address in SRAM (from TEXn_BASE)
-    input  wire [1:0]   tex_format,     // Texture format: 00=RGBA4444, 01=BC1
+    input  wire [2:0]   tex_format,     // Texture format (3-bit): 0=BC1,1=BC2,2=BC3,3=BC4,4=RGB565,5=RGBA8888,6=R8
     input  wire [7:0]   tex_width_log2, // Texture width as log2 (e.g., 8 for 256)
 
     // ====================================================================
@@ -78,9 +85,14 @@ module texture_cache (
     localparam NUM_SETS  = 64;   // 6-bit set index
     localparam NUM_LINES = 256;  // 64 sets * 4 ways
 
-    // Burst lengths per format
-    localparam [7:0] BURST_LEN_BC1     = 8'd4;   // 8 bytes = 4 x 16-bit words
-    localparam [7:0] BURST_LEN_RGBA4444 = 8'd16;  // 32 bytes = 16 x 16-bit words
+    // Burst lengths per format (number of 16-bit words)
+    localparam [7:0] BURST_LEN_BC1      = 8'd4;   // 8 bytes = 4 x 16-bit words
+    localparam [7:0] BURST_LEN_BC2      = 8'd8;   // 16 bytes = 8 x 16-bit words
+    localparam [7:0] BURST_LEN_BC3      = 8'd8;   // 16 bytes = 8 x 16-bit words
+    localparam [7:0] BURST_LEN_BC4      = 8'd4;   // 8 bytes = 4 x 16-bit words
+    localparam [7:0] BURST_LEN_RGB565   = 8'd16;  // 32 bytes = 16 x 16-bit words
+    localparam [7:0] BURST_LEN_RGBA8888 = 8'd32;  // 64 bytes = 32 x 16-bit words
+    localparam [7:0] BURST_LEN_R8       = 8'd8;   // 16 bytes = 8 x 16-bit words
 
     // ====================================================================
     // Cache Fill FSM States
@@ -100,10 +112,10 @@ module texture_cache (
     // Burst Data Buffer (up to 16 x 16-bit words)
     // ====================================================================
 
-    reg [15:0] burst_buf [0:15];  // Burst data buffer
-    reg [4:0]  burst_word_count;  // Words received so far (0..16)
+    reg [15:0] burst_buf [0:31];  // Burst data buffer (up to 32 words for RGBA8888)
+    reg [5:0]  burst_word_count;  // Words received so far (0..32)
     reg [7:0]  burst_len_reg;     // Target burst length for current fill
-    reg [1:0]  fill_format;       // Latched texture format for current fill
+    reg [2:0]  fill_format;       // Latched texture format for current fill
     reg [23:0] fill_addr;         // Latched SRAM start address for current fill
 
     // ====================================================================
@@ -200,9 +212,14 @@ module texture_cache (
 
     always_comb begin
         case (tex_format)
-            2'b01:   burst_len_next = BURST_LEN_BC1;      // BC1: 4 words
-            2'b00:   burst_len_next = BURST_LEN_RGBA4444;  // RGBA4444: 16 words
-            default: burst_len_next = BURST_LEN_BC1;       // Default to BC1
+            3'd0:    burst_len_next = BURST_LEN_BC1;       // BC1: 4 words
+            3'd1:    burst_len_next = BURST_LEN_BC2;       // BC2: 8 words
+            3'd2:    burst_len_next = BURST_LEN_BC3;       // BC3: 8 words
+            3'd3:    burst_len_next = BURST_LEN_BC4;       // BC4: 4 words
+            3'd4:    burst_len_next = BURST_LEN_RGB565;    // RGB565: 16 words
+            3'd5:    burst_len_next = BURST_LEN_RGBA8888;  // RGBA8888: 32 words
+            3'd6:    burst_len_next = BURST_LEN_R8;        // R8: 8 words
+            default: burst_len_next = 8'd0;                // Reserved
         endcase
     end
 
@@ -216,17 +233,27 @@ module texture_cache (
     wire [3:0] _unused_bpr_high = blocks_per_row_log2[7:4]; // only [3:0] used for shift amount
     wire [15:0] block_index = ({8'b0, block_y} << blocks_per_row_log2[3:0]) + {8'b0, block_x};
 
-    // SRAM byte address depends on format:
-    //   RGBA4444: base + block_index * 32  (32 bytes per block)
-    //   BC1:      base + block_index * 8   (8 bytes per block)
+    // SRAM byte address depends on format block size:
+    //   BC1:      base + block_index * 8   (8 bytes per block) → word_addr * 4
+    //   BC2:      base + block_index * 16  (16 bytes per block) → word_addr * 8
+    //   BC3:      base + block_index * 16  (16 bytes per block) → word_addr * 8
+    //   BC4:      base + block_index * 8   (8 bytes per block) → word_addr * 4
+    //   RGB565:   base + block_index * 32  (32 bytes per block) → word_addr * 16
+    //   RGBA8888: base + block_index * 64  (64 bytes per block) → word_addr * 32
+    //   R8:       base + block_index * 16  (16 bytes per block) → word_addr * 8
     // Convert to 16-bit SRAM word address (byte_addr / 2)
     reg [23:0] block_sram_addr;
 
     always_comb begin
         case (tex_format)
-            2'b00:   block_sram_addr = tex_base_addr + {4'b0, block_index, 4'b0000};  // * 32 / 2 = * 16
-            2'b01:   block_sram_addr = tex_base_addr + {6'b0, block_index, 2'b00};    // * 8 / 2 = * 4
-            default: block_sram_addr = tex_base_addr + {6'b0, block_index, 2'b00};
+            3'd0:    block_sram_addr = tex_base_addr + {6'b0, block_index, 2'b00};    // BC1: * 8 / 2 = * 4
+            3'd1:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // BC2: * 16 / 2 = * 8
+            3'd2:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // BC3: * 16 / 2 = * 8
+            3'd3:    block_sram_addr = tex_base_addr + {6'b0, block_index, 2'b00};    // BC4: * 8 / 2 = * 4
+            3'd4:    block_sram_addr = tex_base_addr + {4'b0, block_index, 4'b0000};  // RGB565: * 32 / 2 = * 16
+            3'd5:    block_sram_addr = tex_base_addr + {3'b0, block_index, 5'b00000}; // RGBA8888: * 64 / 2 = * 32
+            3'd6:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // R8: * 16 / 2 = * 8
+            default: block_sram_addr = tex_base_addr;
         endcase
     end
 
@@ -262,26 +289,8 @@ module texture_cache (
 
     reg [17:0] decomp_texels [0:15];
 
-    // ====================================================================
-    // RGBA4444 → RGBA5652 Conversion (combinational)
-    // One texel at a time, called from decompress logic
-    // ====================================================================
-
-    function automatic [17:0] rgba4444_to_rgba5652(input [15:0] pixel);
-        // RGBA4444: [15:12]=R4 [11:8]=G4 [7:4]=B4 [3:0]=A4
-        // R4→R5: {R4, R4[3]}, G4→G6: {G4, G4[3:2]}, B4→B5: {B4, B4[3]}, A4→A2: A4[3:2]
-        // pixel[1:0] intentionally unused (sub-nibble alpha bits discarded per INT-032)
-        logic [1:0] _unused_alpha_low;
-        begin
-            _unused_alpha_low = pixel[1:0];
-            rgba4444_to_rgba5652 = {
-                pixel[15:12], pixel[15],      // R5
-                pixel[11:8],  pixel[11:10],   // G6
-                pixel[7:4],   pixel[7],       // B5
-                pixel[3:2]                    // A2
-            };
-        end
-    endfunction
+    // (RGBA4444 conversion function removed — format no longer supported.
+    //  All seven formats use 3-bit tex_format encoding per INT-032.)
 
     // ====================================================================
     // BC1 → RGBA5652 Decompression (combinational for all 16 texels)
@@ -353,7 +362,7 @@ module texture_cache (
             FILL_FETCH: begin
                 if (sram_ack) begin
                     // Burst complete (natural or preempted)
-                    if ({3'b0, burst_word_count} >= burst_len_reg) begin
+                    if ({2'b0, burst_word_count} >= burst_len_reg) begin
                         // All words received — decompress
                         fill_next_state = FILL_DECOMPRESS;
                     end else begin
@@ -399,16 +408,16 @@ module texture_cache (
             sram_req        <= 1'b0;
             sram_addr       <= 24'b0;
             sram_burst_len  <= 8'b0;
-            burst_word_count <= 5'b0;
+            burst_word_count <= 6'b0;
             burst_len_reg   <= 8'b0;
-            fill_format     <= 2'b0;
+            fill_format     <= 3'b0;
             fill_addr       <= 24'b0;
             write_count     <= 4'b0;
             fill_set_index  <= 6'b0;
             fill_tag        <= 24'b0;
             fill_victim_way <= 2'b0;
 
-            for (idx = 0; idx < 16; idx = idx + 1) begin
+            for (idx = 0; idx < 32; idx = idx + 1) begin
                 burst_buf[idx] <= 16'b0;
             end
 
@@ -427,7 +436,7 @@ module texture_cache (
                         fill_set_index  <= set_index;
                         fill_tag        <= lookup_tag;
                         fill_victim_way <= victim_way;
-                        burst_word_count <= 5'b0;
+                        burst_word_count <= 6'b0;
 
                         // Issue burst read request
                         sram_req       <= 1'b1;
@@ -438,9 +447,9 @@ module texture_cache (
 
                 FILL_FETCH: begin
                     // Capture burst data words as they arrive
-                    if (sram_burst_data_valid && burst_word_count < 5'd16) begin
-                        burst_buf[burst_word_count[3:0]] <= sram_burst_rdata;
-                        burst_word_count <= burst_word_count + 5'd1;
+                    if (sram_burst_data_valid && burst_word_count < 6'd32) begin
+                        burst_buf[burst_word_count[4:0]] <= sram_burst_rdata;
+                        burst_word_count <= burst_word_count + 6'd1;
                     end
 
                     // On completion (natural or preempted)
@@ -454,8 +463,8 @@ module texture_cache (
                     // Re-issue burst for remaining words after preemption
                     if (sram_ready) begin
                         sram_req       <= 1'b1;
-                        sram_addr      <= fill_addr + {19'b0, burst_word_count};
-                        sram_burst_len <= burst_len_reg - {3'b0, burst_word_count};
+                        sram_addr      <= fill_addr + {18'b0, burst_word_count};
+                        sram_burst_len <= burst_len_reg - {2'b0, burst_word_count};
                     end
                 end
 
@@ -502,14 +511,7 @@ module texture_cache (
 
         if (fill_state == FILL_DECOMPRESS || fill_state == FILL_WRITE) begin
             case (fill_format)
-                2'b00: begin
-                    // RGBA4444: each burst word is one 16-bit pixel, 16 total
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_texels[t] = rgba4444_to_rgba5652(burst_buf[t]);
-                    end
-                end
-
-                2'b01: begin
+                3'd0: begin
                     // BC1: 4 words → color0, color1, indices[15:0], indices[31:16]
                     bc1_color0  = burst_buf[0];
                     bc1_color1  = burst_buf[1];
@@ -541,8 +543,20 @@ module texture_cache (
                     end
                 end
 
+                3'd4: begin
+                    // RGB565: each burst word is one 16-bit pixel, 16 total
+                    // Store as RGBA5652 with A=opaque (A2=11)
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_texels[t] = {burst_buf[t], 2'b11};
+                    end
+                end
+
                 default: begin
-                    // No-op: leave zeros
+                    // Formats BC2(1), BC3(2), BC4(3), RGBA8888(5), R8(6):
+                    // Decompression delegated to standalone decoder modules
+                    // in the pixel pipeline. Cache fill stores raw data for
+                    // these formats. For now, leave zeros (placeholder for
+                    // integration with per-format decoders).
                 end
             endcase
         end

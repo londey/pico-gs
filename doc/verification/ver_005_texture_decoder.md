@@ -119,5 +119,5 @@ The testbench drives known input data through each texture format decoder and th
 - Run this test with: `cd spi_gpu && make test-texture-decoder`.
 - REQ-003.01 coverage is jointly satisfied by VER-005 (unit test for the decode path in isolation) and VER-012 (golden image integration test exercising the full texture sampling pipeline including cache, rasterizer, and framebuffer output).
 - The `texture_decoder_tb` testbench exercises only combinational decoder logic and the format-select mux; it does not test the texture cache fill FSM or SDRAM burst protocol (those are covered by VER-012 and future cache-specific VER documents).
-- The `tex_format` field is 3 bits wide, encoding 7 formats (BC1=0, BC2=1, BC3=2, BC4=3, RGBA4444=4, RGB565=5, RGBA8888=6, R8=7 — or as defined in INT-032).
+- The `tex_format` field is 3 bits wide, encoding 7 formats (BC1=0, BC2=1, BC3=2, BC4=3, RGB565=4, RGBA8888=5, R8=6) as defined in INT-032.
   The testbench format-select mux test (step 10) must exercise all valid `tex_format` encodings.

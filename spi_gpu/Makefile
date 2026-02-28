@@ -187,6 +187,10 @@ test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # VER-005: Texture decoder unit testbench
 test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/texture_bc1.sv \
+		$(RTL_DIR)/render/texture_bc2.sv \
+		$(RTL_DIR)/render/texture_bc3.sv \
+		$(RTL_DIR)/render/texture_bc4.sv \
 		$(RTL_DIR)/render/texture_rgb565.sv \
 		$(RTL_DIR)/render/texture_rgba8888.sv \
 		$(RTL_DIR)/render/texture_r8.sv \

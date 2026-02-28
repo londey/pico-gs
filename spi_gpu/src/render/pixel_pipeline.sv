@@ -145,8 +145,10 @@ module pixel_pipeline (
     wire [15:0] _unused_frag_v0 = frag_v0;
     wire [15:0] _unused_frag_u1 = frag_u1;
     wire [15:0] _unused_frag_v1 = frag_v1;
-    wire [31:0] _unused_tex0_cfg = reg_tex0_cfg;
-    wire [31:0] _unused_tex1_cfg = reg_tex1_cfg;
+    // TEXn_CFG: bits [6:4] (FORMAT) used by tex0_format/tex1_format;
+    // remaining bits unused until full texture cache integration
+    wire [24:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:7], reg_tex0_cfg[3:0]};
+    wire [24:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:0]};
     wire [11:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8]}[11:0];
     wire [11:0] _unused_fb_cfg_bits = reg_fb_config[31:20];
@@ -280,12 +282,140 @@ module pixel_pipeline (
     );
 
     // ====================================================================
+    // Texture Format Field Extraction (INT-010: TEXn_CFG FORMAT bits [6:4])
+    // ====================================================================
+
+    wire [2:0] tex0_format = reg_tex0_cfg[6:4];
+    wire [2:0] tex1_format = reg_tex1_cfg[6:4];
+
+    // ====================================================================
+    // Stage 2: Texture Decoders (per-format, combinational)
+    // ====================================================================
+    // Each decoder takes a block of raw texture data and a texel index,
+    // and outputs a single RGBA5652 texel. The format-select mux chooses
+    // the correct decoder output based on tex_format[2:0].
+    //
+    // Texture cache fill provides block data; until the cache is
+    // connected, stub block data (all-ones) produces white opaque texels.
+
+    // Stub block data (white opaque, used until texture cache connected)
+    wire [63:0]  stub_bc1_data     = 64'hFFFF_FFFF_FFFF_FFFF;
+    wire [127:0] stub_bc2_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
+    wire [127:0] stub_bc3_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
+    wire [63:0]  stub_bc4_data     = 64'hFFFF_FFFF_FFFF_FFFF;
+    wire [255:0] stub_rgb565_data  = {16{16'hFFFF}};
+    wire [511:0] stub_rgba8888_data = {16{32'hFFFF_FFFF}};
+    wire [127:0] stub_r8_data      = {16{8'hFF}};
+    wire [3:0]   stub_texel_idx    = 4'd0;
+
+    // -- BC1 decoder (FORMAT=0) --
+    wire [17:0] bc1_rgba5652;
+
+    texture_bc1 u_tex0_bc1 (
+        .bc1_data  (stub_bc1_data),
+        .texel_idx (stub_texel_idx),
+        .rgba5652  (bc1_rgba5652)
+    );
+
+    // -- BC2 decoder (FORMAT=1) --
+    wire [17:0] bc2_rgba5652;
+
+    texture_bc2 u_tex0_bc2 (
+        .block_data (stub_bc2_data),
+        .texel_idx  (stub_texel_idx),
+        .rgba5652   (bc2_rgba5652)
+    );
+
+    // -- BC3 decoder (FORMAT=2) --
+    wire [17:0] bc3_rgba5652;
+
+    texture_bc3 u_tex0_bc3 (
+        .block_data (stub_bc3_data),
+        .texel_idx  (stub_texel_idx),
+        .rgba5652   (bc3_rgba5652)
+    );
+
+    // -- BC4 decoder (FORMAT=3) --
+    wire [17:0] bc4_rgba5652;
+
+    texture_bc4 u_tex0_bc4 (
+        .block_data (stub_bc4_data),
+        .texel_idx  (stub_texel_idx),
+        .rgba5652   (bc4_rgba5652)
+    );
+
+    // -- RGB565 decoder (FORMAT=4) --
+    wire [17:0] rgb565_rgba5652;
+
+    texture_rgb565 u_tex0_rgb565 (
+        .block_data (stub_rgb565_data),
+        .texel_idx  (stub_texel_idx),
+        .rgba5652   (rgb565_rgba5652)
+    );
+
+    // -- RGBA8888 decoder (FORMAT=5) --
+    wire [17:0] rgba8888_rgba5652;
+
+    texture_rgba8888 u_tex0_rgba8888 (
+        .block_data (stub_rgba8888_data),
+        .texel_idx  (stub_texel_idx),
+        .rgba5652   (rgba8888_rgba5652)
+    );
+
+    // -- R8 decoder (FORMAT=6) --
+    wire [17:0] r8_rgba5652;
+
+    texture_r8 u_tex0_r8 (
+        .block_data (stub_r8_data),
+        .texel_idx  (stub_texel_idx),
+        .rgba5652   (r8_rgba5652)
+    );
+
+    // ====================================================================
+    // Format-Select Mux (3-bit tex_format selects decoder output)
+    // ====================================================================
+    // Routes the correct decoder output for the configured texture format.
+    // Seven valid encodings (0-6); encoding 7 is reserved (outputs zero).
+
+    reg [17:0] tex0_mux_rgba5652;
+
+    always_comb begin
+        case (tex0_format)
+            3'd0:    tex0_mux_rgba5652 = bc1_rgba5652;
+            3'd1:    tex0_mux_rgba5652 = bc2_rgba5652;
+            3'd2:    tex0_mux_rgba5652 = bc3_rgba5652;
+            3'd3:    tex0_mux_rgba5652 = bc4_rgba5652;
+            3'd4:    tex0_mux_rgba5652 = rgb565_rgba5652;
+            3'd5:    tex0_mux_rgba5652 = rgba8888_rgba5652;
+            3'd6:    tex0_mux_rgba5652 = r8_rgba5652;
+            default: tex0_mux_rgba5652 = 18'b0;
+        endcase
+    end
+
+    // For TEX1, use the same decoder outputs with tex1_format select.
+    // (In final integration, TEX1 will have its own decoder instances
+    // fed from its own cache. For now, reuse the shared outputs.)
+    reg [17:0] tex1_mux_rgba5652;
+
+    always_comb begin
+        case (tex1_format)
+            3'd0:    tex1_mux_rgba5652 = bc1_rgba5652;
+            3'd1:    tex1_mux_rgba5652 = bc2_rgba5652;
+            3'd2:    tex1_mux_rgba5652 = bc3_rgba5652;
+            3'd3:    tex1_mux_rgba5652 = bc4_rgba5652;
+            3'd4:    tex1_mux_rgba5652 = rgb565_rgba5652;
+            3'd5:    tex1_mux_rgba5652 = rgba8888_rgba5652;
+            3'd6:    tex1_mux_rgba5652 = r8_rgba5652;
+            default: tex1_mux_rgba5652 = 18'b0;
+        endcase
+    end
+
+    // ====================================================================
     // Stage 3: Texel Promote (RGBA5652 -> Q4.12)
     // ====================================================================
-    // Stub: white opaque texels (texture cache not yet connected).
-    // RGBA5652 all-ones: R5=31, G6=63, B5=31, A2=3 = 18'h3FFFF
+    // Promote format-selected RGBA5652 texels to Q4.12 for color combiner.
 
-    wire [17:0] tex0_rgba5652 = 18'h3FFFF;  // Stub: white opaque
+    wire [17:0] tex0_rgba5652 = tex0_mux_rgba5652;
     wire [15:0] tex0_r_q412, tex0_g_q412, tex0_b_q412, tex0_a_q412;
 
     texel_promote u_tex0_promote (
@@ -296,7 +426,7 @@ module pixel_pipeline (
         .a_q412   (tex0_a_q412)
     );
 
-    wire [17:0] tex1_rgba5652 = 18'h3FFFF;  // Stub: white opaque
+    wire [17:0] tex1_rgba5652 = tex1_mux_rgba5652;
     wire [15:0] tex1_r_q412, tex1_g_q412, tex1_b_q412, tex1_a_q412;
 
     texel_promote u_tex1_promote (

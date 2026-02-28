@@ -1,5 +1,7 @@
 // Testbench for texture format decoders and related pixel pipeline modules:
-//   texture_rgb565, texture_rgba8888, texture_r8, texel_promote, stipple
+//   texture_bc1, texture_bc2, texture_bc3, texture_bc4,
+//   texture_rgb565, texture_rgba8888, texture_r8,
+//   texel_promote, stipple, format-select mux
 
 `timescale 1ns/1ps
 
@@ -41,6 +43,62 @@ module texture_decoder_tb;
         end
     endtask
     /* verilator lint_on UNUSEDSIGNAL */
+
+    // ========================================================================
+    // texture_bc1 DUT
+    // ========================================================================
+
+    reg  [63:0]  bc1_data;
+    reg  [3:0]   bc1_texel_idx;
+    wire [17:0]  bc1_rgba5652;
+
+    texture_bc1 uut_bc1 (
+        .bc1_data(bc1_data),
+        .texel_idx(bc1_texel_idx),
+        .rgba5652(bc1_rgba5652)
+    );
+
+    // ========================================================================
+    // texture_bc2 DUT
+    // ========================================================================
+
+    reg  [127:0] bc2_block_data;
+    reg  [3:0]   bc2_texel_idx;
+    wire [17:0]  bc2_rgba5652;
+
+    texture_bc2 uut_bc2 (
+        .block_data(bc2_block_data),
+        .texel_idx(bc2_texel_idx),
+        .rgba5652(bc2_rgba5652)
+    );
+
+    // ========================================================================
+    // texture_bc3 DUT
+    // ========================================================================
+
+    reg  [127:0] bc3_block_data;
+    reg  [3:0]   bc3_texel_idx;
+    wire [17:0]  bc3_rgba5652;
+
+    texture_bc3 uut_bc3 (
+        .block_data(bc3_block_data),
+        .texel_idx(bc3_texel_idx),
+        .rgba5652(bc3_rgba5652)
+    );
+
+    // ========================================================================
+    // texture_bc4 DUT
+    // ========================================================================
+
+    reg  [63:0]  bc4_block_data;
+    reg  [3:0]   bc4_texel_idx;
+    wire [17:0]  bc4_rgba5652;
+
+    texture_bc4 uut_bc4 (
+        .block_data(bc4_block_data),
+        .texel_idx(bc4_texel_idx),
+        .rgba5652(bc4_rgba5652)
+    );
 
     // ========================================================================
     // texture_rgb565 DUT
@@ -119,6 +177,26 @@ module texture_decoder_tb;
         .stipple_pattern(stip_pattern),
         .discard(stip_discard)
     );
+
+    // ========================================================================
+    // Format-Select Mux (3-bit tex_format, 7 decoder outputs)
+    // ========================================================================
+
+    reg  [2:0]   mux_tex_format;
+    reg  [17:0]  mux_result;
+
+    always_comb begin
+        case (mux_tex_format)
+            3'd0:    mux_result = bc1_rgba5652;
+            3'd1:    mux_result = bc2_rgba5652;
+            3'd2:    mux_result = bc3_rgba5652;
+            3'd3:    mux_result = bc4_rgba5652;
+            3'd4:    mux_result = rgb565_rgba5652;
+            3'd5:    mux_result = rgba8888_rgba5652;
+            3'd6:    mux_result = r8_rgba5652;
+            default: mux_result = 18'b0;
+        endcase
+    end
 
     // ========================================================================
     // Test body
@@ -246,6 +324,216 @@ module texture_decoder_tb;
         stip_frag_y = 3'd0;
         #10;
         check_bit("stipple disabled pass", stip_discard, 1'b0);
+
+        // ============================================================
+        // Test 6: texture_bc1 — 4-color opaque mode
+        // ============================================================
+        $display("--- Test 6: texture_bc1 (4-color opaque) ---");
+
+        // Construct a BC1 block:
+        //   color0 = 0xF800 (pure red: R5=31, G6=0, B5=0)
+        //   color1 = 0x001F (pure blue: R5=0, G6=0, B5=31)
+        //   color0 > color1, so 4-color opaque mode
+        //   Index word: texel 0 = index 0 (color0), texel 1 = index 1 (color1),
+        //               texel 2 = index 2 (lerp 1/3), texel 3 = index 3 (lerp 2/3)
+        //   indices = {texel3[1:0], texel2[1:0], texel1[1:0], texel0[1:0], ...}
+        //   For texels 0-3: indices[7:0] = 8'b11_10_01_00 = 8'hE4
+        //   Remaining texels all index 0.
+        bc1_data = 64'h0;
+        bc1_data[15:0]  = 16'hF800;  // color0 = red
+        bc1_data[31:16] = 16'h001F;  // color1 = blue
+        bc1_data[39:32] = 8'hE4;     // texels 0-3: indices 0,1,2,3
+        bc1_data[63:40] = 24'h0;     // texels 4-15: index 0
+
+        // texel 0: index 0 -> color0 = red, A2=11
+        bc1_texel_idx = 4'd0;
+        #10;
+        check18("bc1 4c texel0 (color0=red)", bc1_rgba5652,
+                {5'd31, 6'd0, 5'd0, 2'b11});
+
+        // texel 1: index 1 -> color1 = blue, A2=11
+        bc1_texel_idx = 4'd1;
+        #10;
+        check18("bc1 4c texel1 (color1=blue)", bc1_rgba5652,
+                {5'd0, 6'd0, 5'd31, 2'b11});
+
+        // texel 2: index 2 -> lerp(1/3) = (2*red + blue + 1)/3
+        // R: (2*31 + 0 + 1)/3 = 63/3 = 21
+        // G: (2*0 + 0 + 1)/3 = 1/3 = 0
+        // B: (2*0 + 31 + 1)/3 = 32/3 = 10
+        bc1_texel_idx = 4'd2;
+        #10;
+        check18("bc1 4c texel2 (lerp 1/3)", bc1_rgba5652,
+                {5'd21, 6'd0, 5'd10, 2'b11});
+
+        // texel 3: index 3 -> lerp(2/3) = (red + 2*blue + 1)/3
+        // R: (31 + 0 + 1)/3 = 32/3 = 10
+        // G: (0 + 0 + 1)/3 = 0
+        // B: (0 + 62 + 1)/3 = 63/3 = 21
+        bc1_texel_idx = 4'd3;
+        #10;
+        check18("bc1 4c texel3 (lerp 2/3)", bc1_rgba5652,
+                {5'd10, 6'd0, 5'd21, 2'b11});
+
+        // ============================================================
+        // Test 7: texture_bc1 — 3-color + transparent mode
+        // ============================================================
+        $display("--- Test 7: texture_bc1 (3-color + transparent) ---");
+
+        // color0 = 0x001F (blue), color1 = 0xF800 (red)
+        // color0 < color1, so 3-color + transparent mode
+        // texel 0: index 0 (color0=blue), texel 1: index 1 (color1=red)
+        // texel 2: index 2 (lerp 1/2), texel 3: index 3 (transparent)
+        bc1_data = 64'h0;
+        bc1_data[15:0]  = 16'h001F;  // color0 = blue
+        bc1_data[31:16] = 16'hF800;  // color1 = red
+        bc1_data[39:32] = 8'hE4;     // texels 0-3: indices 0,1,2,3
+
+        // texel 0: color0 = blue, opaque
+        bc1_texel_idx = 4'd0;
+        #10;
+        check18("bc1 3c texel0 (blue)", bc1_rgba5652,
+                {5'd0, 6'd0, 5'd31, 2'b11});
+
+        // texel 1: color1 = red, opaque
+        bc1_texel_idx = 4'd1;
+        #10;
+        check18("bc1 3c texel1 (red)", bc1_rgba5652,
+                {5'd31, 6'd0, 5'd0, 2'b11});
+
+        // texel 2: index 2 -> lerp(1/2) = (blue + red + 1)/2
+        // R: (0 + 31 + 1)/2 = 16
+        // G: (0 + 0 + 1)/2 = 0
+        // B: (31 + 0 + 1)/2 = 16
+        bc1_texel_idx = 4'd2;
+        #10;
+        check18("bc1 3c texel2 (lerp 1/2)", bc1_rgba5652,
+                {5'd16, 6'd0, 5'd16, 2'b11});
+
+        // texel 3: index 3 -> transparent (A2=00)
+        bc1_texel_idx = 4'd3;
+        #10;
+        check18("bc1 3c texel3 (transparent)", bc1_rgba5652,
+                {5'd0, 6'd0, 5'd0, 2'b00});
+
+        // ============================================================
+        // Test 8: texture_bc2 — explicit alpha + BC1 color
+        // ============================================================
+        $display("--- Test 8: texture_bc2 ---");
+
+        // BC2 block: 128 bits
+        //   [63:0]   = alpha data: 4 rows of u16, each row has 4 x 4-bit alpha
+        //   [127:64] = BC1 color block (always 4-color opaque)
+        // Set texel 0 alpha = 0xF (4'b1111 -> A2 = 2'b11)
+        // Set texel 1 alpha = 0x0 (4'b0000 -> A2 = 2'b00)
+        // Color: color0=0xFFFF (white), color1=0x0000 (black)
+        //   All texels index 0 -> color0 (white)
+        bc2_block_data = 128'h0;
+        bc2_block_data[3:0]    = 4'hF;     // texel 0 alpha = 0xF
+        bc2_block_data[7:4]    = 4'h0;     // texel 1 alpha = 0x0
+        bc2_block_data[79:64]  = 16'hFFFF; // color0 = white
+        bc2_block_data[95:80]  = 16'h0000; // color1 = black
+        bc2_block_data[127:96] = 32'h0;    // all texels index 0
+
+        bc2_texel_idx = 4'd0;
+        #10;
+        // White with full alpha: RGB565 white = {31,63,31}, A2=11
+        check18("bc2 texel0 alpha=F", bc2_rgba5652,
+                {5'd31, 6'd63, 5'd31, 2'b11});
+
+        bc2_texel_idx = 4'd1;
+        #10;
+        // White with zero alpha: A4=0 -> A2=00
+        check18("bc2 texel1 alpha=0", bc2_rgba5652,
+                {5'd31, 6'd63, 5'd31, 2'b00});
+
+        // ============================================================
+        // Test 9: texture_bc4 — single channel
+        // ============================================================
+        $display("--- Test 9: texture_bc4 ---");
+
+        // BC4 block: 64 bits
+        //   [7:0]   = red0 = 0xFF (255)
+        //   [15:8]  = red1 = 0x00 (0)
+        //   [63:16] = 3-bit indices, texel 0 = index 0 -> red0 = 255
+        bc4_block_data = 64'h0;
+        bc4_block_data[7:0]  = 8'hFF;  // red0
+        bc4_block_data[15:8] = 8'h00;  // red1
+        // texel 0: index = bits [18:16] = 000 -> palette[0] = red0 = 255
+
+        bc4_texel_idx = 4'd0;
+        #10;
+        // R8=0xFF: R5=11111, G6=111111, B5=11111, A2=11
+        check18("bc4 texel0 red0=0xFF", bc4_rgba5652,
+                {5'd31, 6'd63, 5'd31, 2'b11});
+
+        // ============================================================
+        // Test 10: Format-select mux wiring
+        // ============================================================
+        $display("--- Test 10: Format-select mux ---");
+
+        // Set up known unique output from each decoder by using specific inputs.
+        // We already have data loaded in the decoders from prior tests.
+        // Feed distinctive data to each decoder and verify the mux selects correctly.
+
+        // BC1 (format 0): use red pixel from test 6
+        bc1_data[15:0]  = 16'hF800;
+        bc1_data[31:16] = 16'h001F;
+        bc1_data[39:32] = 8'h00;     // texel 0 = index 0 = red
+        bc1_data[63:40] = 24'h0;
+        bc1_texel_idx = 4'd0;
+
+        // RGB565 (format 4): use red pixel from test 1
+        rgb565_block_data = 256'h0;
+        rgb565_block_data[15:0] = 16'hF800;
+        rgb565_texel_idx = 4'd0;
+
+        // R8 (format 6): use 0xA0 from test 3
+        r8_block_data = 128'h0;
+        r8_block_data[7:0] = 8'hA0;
+        r8_texel_idx = 4'd0;
+
+        #10;
+
+        // Verify mux for format 0 (BC1)
+        mux_tex_format = 3'd0;
+        #10;
+        check18("mux format=0 (BC1)", mux_result, bc1_rgba5652);
+
+        // Verify mux for format 1 (BC2)
+        mux_tex_format = 3'd1;
+        #10;
+        check18("mux format=1 (BC2)", mux_result, bc2_rgba5652);
+
+        // Verify mux for format 2 (BC3)
+        mux_tex_format = 3'd2;
+        #10;
+        check18("mux format=2 (BC3)", mux_result, bc3_rgba5652);
+
+        // Verify mux for format 3 (BC4)
+        mux_tex_format = 3'd3;
+        #10;
+        check18("mux format=3 (BC4)", mux_result, bc4_rgba5652);
+
+        // Verify mux for format 4 (RGB565)
+        mux_tex_format = 3'd4;
+        #10;
+        check18("mux format=4 (RGB565)", mux_result, rgb565_rgba5652);
+
+        // Verify mux for format 5 (RGBA8888)
+        mux_tex_format = 3'd5;
+        #10;
+        check18("mux format=5 (RGBA8888)", mux_result, rgba8888_rgba5652);
+
+        // Verify mux for format 6 (R8)
+        mux_tex_format = 3'd6;
+        #10;
+        check18("mux format=6 (R8)", mux_result, r8_rgba5652);
+
+        // Verify mux for format 7 (reserved -> zero)
+        mux_tex_format = 3'd7;
+        #10;
+        check18("mux format=7 (reserved)", mux_result, 18'b0);
 
         // ============================================================
         // Summary
