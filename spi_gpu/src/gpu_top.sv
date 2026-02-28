@@ -662,6 +662,9 @@ module gpu_top (
         .frame_start(disp_frame_start),
         // x512 byte addr → [31:12] (4KB-aligned base address)
         .fb_display_base({7'b0, fb_display_addr[15:3]}),
+        // Framebuffer surface dimensions (from FB_DISPLAY register)
+        .fb_display_width_log2(fb_display_width_log2),
+        .fb_line_double(fb_line_double),
         // Memory interface — single-word (display controller port names preserved)
         .sram_req(arb_port0_req),
         .sram_we(arb_port0_we),

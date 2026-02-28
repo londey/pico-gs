@@ -6,12 +6,12 @@
 //
 // Test plan:
 //   1. Reset state (with arbiter disabled)
-//   2. Single scanline burst read (640 pixels) — display active
+//   2. Single scanline burst read (512 pixels, WIDTH_LOG2=9) — display active
 //   3. Multiple scanlines with fetch_y increment
 //   4. FIFO full pauses burst issuing (display disabled)
 //   5. Burst does not cross scanline boundary
 //   6. Frame reset (frame_start_edge resets fetch_y)
-//   7. RGB565 to RGB888 expansion correctness
+//   7. RGB565 to RGB888 expansion correctness (through Bresenham scaler)
 
 module tb_display_burst;
     /* verilator lint_off UNUSEDSIGNAL */
@@ -21,6 +21,12 @@ module tb_display_burst;
     integer pass_count = 0;
     integer fail_count = 0;
     integer i;
+
+    // Source width for tests: 512 pixels (fb_display_width_log2=9)
+    localparam SOURCE_WIDTH = 512;
+    localparam WIDTH_LOG2   = 4'd9;
+    // 512 pixels × 2 SRAM words/pixel = 1024 words / 128 per burst = 8 bursts
+    localparam BURSTS_PER_SCANLINE = 8;
 
     // ========================================================================
     // DUT Signals
@@ -35,6 +41,8 @@ module tb_display_burst;
     reg         frame_start;
 
     reg  [31:12] fb_display_base;
+    reg  [3:0]   fb_display_width_log2;
+    reg          fb_line_double;
 
     wire        sram_req;
     wire        sram_we;
@@ -67,6 +75,8 @@ module tb_display_burst;
         .pixel_y                (pixel_y),
         .frame_start            (frame_start),
         .fb_display_base        (fb_display_base),
+        .fb_display_width_log2  (fb_display_width_log2),
+        .fb_line_double         (fb_line_double),
         .sram_req               (sram_req),
         .sram_we                (sram_we),
         .sram_addr              (sram_addr),
@@ -227,14 +237,16 @@ module tb_display_burst;
 
     task do_reset;
         begin
-            rst_n           = 1'b0;
-            display_enable  = 1'b0;
-            pixel_x         = 10'd0;
-            pixel_y         = 10'd0;
-            frame_start     = 1'b0;
-            fb_display_base = 20'h00000;
-            sram_rdata      = 32'd0;
-            arbiter_enable  = 1'b0;
+            rst_n                   = 1'b0;
+            display_enable          = 1'b0;
+            pixel_x                 = 10'd0;
+            pixel_y                 = 10'd0;
+            frame_start             = 1'b0;
+            fb_display_base         = 20'h00000;
+            fb_display_width_log2   = WIDTH_LOG2;
+            fb_line_double          = 1'b0;
+            sram_rdata              = 32'd0;
+            arbiter_enable          = 1'b0;
             repeat (10) @(posedge clk);
             rst_n = 1'b1;
             repeat (4) @(posedge clk); #1;
@@ -242,14 +254,16 @@ module tb_display_burst;
     endtask
 
     // ========================================================================
-    // Helper: populate SRAM scanline
+    // Helper: populate SRAM scanline (using source_width stride)
     // ========================================================================
 
     task automatic populate_scanline(input integer y_line, input integer n_pixels, input integer pixel_base_val);
         integer p;
         integer sram_base;
         begin
-            sram_base = y_line * 640 * 2;
+            // SRAM layout: each pixel is 2 x 16-bit words (pixel + padding)
+            // Stride = source_width pixels per scanline
+            sram_base = y_line * SOURCE_WIDTH * 2;
             for (p = 0; p < n_pixels; p = p + 1) begin
                 sram_mem[sram_base + p * 2]     = pixel_base_val[15:0] + p[15:0];
                 sram_mem[sram_base + p * 2 + 1] = 16'h0000;
@@ -288,36 +302,36 @@ module tb_display_burst;
         check_bit("pixel_blue = 0 after reset", |pixel_blue, 1'b0);
 
         // ============================================================
-        // Test 2: Single Scanline Burst Read (640 pixels)
+        // Test 2: Single Scanline Burst Read (512 pixels)
         // The FIFO must drain concurrently for the DUT to keep issuing
         // bursts (PREFETCH_THRESHOLD = 32).
         // ============================================================
         $display("--- Test 2: Single Scanline Burst Read ---");
 
         do_reset();
-        populate_scanline(0, 640, 16'h0000);
+        populate_scanline(0, SOURCE_WIDTH, 16'h0000);
 
         // Enable display to drain FIFO, then enable arbiter
         display_enable = 1'b1;
         repeat (8) @(posedge clk); // Let display_enable sync
         arbiter_enable = 1'b1;
 
-        // 640 pixels × 2 SRAM words/pixel = 1280 words / 128 per burst = 10 bursts
-        wait_bursts_count(10, 30000, fifo_writes, bursts_seen);
+        // 512 pixels × 2 SRAM words/pixel = 1024 words / 128 per burst = 8 bursts
+        wait_bursts_count(BURSTS_PER_SCANLINE, 30000, fifo_writes, bursts_seen);
 
-        $display("  FIFO writes: %0d (expected 640)", fifo_writes);
-        if (fifo_writes == 640) begin
+        $display("  FIFO writes: %0d (expected %0d)", fifo_writes, SOURCE_WIDTH);
+        if (fifo_writes == SOURCE_WIDTH) begin
             pass_count = pass_count + 1;
         end else begin
-            $display("FAIL: expected 640 FIFO writes, got %0d", fifo_writes);
+            $display("FAIL: expected %0d FIFO writes, got %0d", SOURCE_WIDTH, fifo_writes);
             fail_count = fail_count + 1;
         end
 
-        $display("  Bursts: %0d (expected 10)", bursts_seen);
-        if (bursts_seen == 10) begin
+        $display("  Bursts: %0d (expected %0d)", bursts_seen, BURSTS_PER_SCANLINE);
+        if (bursts_seen == BURSTS_PER_SCANLINE) begin
             pass_count = pass_count + 1;
         end else begin
-            $display("FAIL: expected 10 bursts, got %0d", bursts_seen);
+            $display("FAIL: expected %0d bursts, got %0d", BURSTS_PER_SCANLINE, bursts_seen);
             fail_count = fail_count + 1;
         end
 
@@ -340,15 +354,15 @@ module tb_display_burst;
         $display("--- Test 3: Multiple Scanlines ---");
 
         do_reset();
-        populate_scanline(0, 640, 16'hA000);
-        populate_scanline(1, 640, 16'hB000);
+        populate_scanline(0, SOURCE_WIDTH, 16'hA000);
+        populate_scanline(1, SOURCE_WIDTH, 16'hB000);
 
         display_enable = 1'b1;
         repeat (8) @(posedge clk);
         arbiter_enable = 1'b1;
 
-        // Scanline 0: 10 bursts
-        wait_bursts_count(10, 30000, fifo_writes, bursts_seen);
+        // Scanline 0
+        wait_bursts_count(BURSTS_PER_SCANLINE, 30000, fifo_writes, bursts_seen);
         $display("  Scanline 0: %0d writes, %0d bursts", fifo_writes, bursts_seen);
         repeat (4) @(posedge clk); #1;
         if (dut.fetch_y >= 10'd1) begin
@@ -358,8 +372,8 @@ module tb_display_burst;
             fail_count = fail_count + 1;
         end
 
-        // Scanline 1: 10 more bursts
-        wait_bursts_count(10, 30000, fifo_writes, bursts_seen);
+        // Scanline 1
+        wait_bursts_count(BURSTS_PER_SCANLINE, 30000, fifo_writes, bursts_seen);
         $display("  Scanline 1: %0d writes, %0d bursts", fifo_writes, bursts_seen);
         repeat (4) @(posedge clk); #1;
         $display("  fetch_y: %0d (expected >= 2)", dut.fetch_y);
@@ -380,8 +394,8 @@ module tb_display_burst;
         $display("--- Test 4: FIFO Full Pauses Burst ---");
 
         do_reset();
-        populate_scanline(0, 640, 16'h0000);
-        populate_scanline(1, 640, 16'h0000);
+        populate_scanline(0, SOURCE_WIDTH, 16'h0000);
+        populate_scanline(1, SOURCE_WIDTH, 16'h0000);
 
         // Display OFF — FIFO will not drain
         arbiter_enable = 1'b1;
@@ -410,24 +424,24 @@ module tb_display_burst;
 
         // ============================================================
         // Test 5: Burst Does Not Cross Scanline Boundary
-        // Verify exactly 640 FIFO writes for 10 bursts of scanline 0.
+        // Verify exactly 512 FIFO writes for scanline 0.
         // ============================================================
         $display("--- Test 5: Burst Scanline Boundary ---");
 
         do_reset();
-        populate_scanline(0, 640, 16'hA000);
+        populate_scanline(0, SOURCE_WIDTH, 16'hA000);
 
         display_enable = 1'b1;
         repeat (8) @(posedge clk);
         arbiter_enable = 1'b1;
 
-        wait_bursts_count(10, 30000, fifo_writes, bursts_seen);
+        wait_bursts_count(BURSTS_PER_SCANLINE, 30000, fifo_writes, bursts_seen);
 
-        $display("  Pixels for scanline 0: %0d (expected 640)", fifo_writes);
-        if (fifo_writes == 640) begin
+        $display("  Pixels for scanline 0: %0d (expected %0d)", fifo_writes, SOURCE_WIDTH);
+        if (fifo_writes == SOURCE_WIDTH) begin
             pass_count = pass_count + 1;
         end else begin
-            $display("FAIL: expected 640 pixels, got %0d", fifo_writes);
+            $display("FAIL: expected %0d pixels, got %0d", SOURCE_WIDTH, fifo_writes);
             fail_count = fail_count + 1;
         end
 
@@ -440,14 +454,14 @@ module tb_display_burst;
         $display("--- Test 6: Frame Reset ---");
 
         do_reset();
-        populate_scanline(0, 640, 16'h0000);
+        populate_scanline(0, SOURCE_WIDTH, 16'h0000);
 
         display_enable = 1'b1;
         repeat (8) @(posedge clk);
         arbiter_enable = 1'b1;
 
         // Let scanline 0 complete
-        wait_bursts_count(10, 30000, fifo_writes, bursts_seen);
+        wait_bursts_count(BURSTS_PER_SCANLINE, 30000, fifo_writes, bursts_seen);
         repeat (4) @(posedge clk); #1;
 
         // Disable arbiter so DUT stays in IDLE for frame_start detection
@@ -473,7 +487,8 @@ module tb_display_burst;
         // ============================================================
         // Test 7: RGB565 to RGB888 Expansion
         // Fill FIFO with display OFF, then enable display and check
-        // the first three pixels through the pipeline.
+        // that the first pixel (white) appears correctly through the
+        // Bresenham scaler pipeline.
         // ============================================================
         $display("--- Test 7: RGB565 to RGB888 Expansion ---");
 
@@ -486,8 +501,8 @@ module tb_display_burst;
         sram_mem[2] = 16'h8410;  sram_mem[3] = 16'h0000;
         // Pixel 2: pure red 0xF800
         sram_mem[4] = 16'hF800;  sram_mem[5] = 16'h0000;
-        // Fill rest
-        for (i = 3; i < 640; i = i + 1) begin
+        // Fill rest of scanline
+        for (i = 3; i < SOURCE_WIDTH; i = i + 1) begin
             sram_mem[i * 2]     = 16'h0000;
             sram_mem[i * 2 + 1] = 16'h0000;
         end
@@ -502,7 +517,7 @@ module tb_display_burst;
 
         // Step 3: Wait for first valid pixel on output.
         // Pipeline: display_enable_sync latch (1 pixel_tick) →
-        //           FIFO priming read (1 pixel_tick, reads old rd_data=0) →
+        //           display_enable_rise priming read (1 pixel_tick) →
         //           pixel 0 appears (next pixel_tick).
         // Poll pixel_red to catch the first non-zero output (pixel 0 = white).
         begin
@@ -523,14 +538,24 @@ module tb_display_burst;
         check_val8("white G", pixel_green, 8'hFF);
         check_val8("white B", pixel_blue,  8'hFF);
 
-        // Advance one pixel_tick (4 clk) — next pixel
+        // With 512→640 Bresenham scaling (source_width=512, output=640):
+        // accum init = 256
+        // Output pixel 0: src[0] (white), accum 256+512=768>=640 → overflow, advance
+        // So after this pixel, the scaler advances. The NEXT output pixel will
+        // show src[1] (gray) after the 1-tick FIFO read pipeline delay.
+        // Due to the pipeline, the next tick still outputs src[0] (the FIFO read
+        // for src[1] was just triggered), then src[1] appears after that.
+
+        // Advance one pixel_tick (4 clk) — scaler pipeline: FIFO read in flight
         repeat (4) @(posedge clk); #1;
 
-        // Mid-gray 0x8410: R=0x84, G=0x82, B=0x84
+        // At this tick, fifo_rd_data has been updated to src[1] (gray)
+        // The Bresenham scaler outputs src[1] through fifo_rd_data
         check_val8("gray R", pixel_red,   8'h84);
         check_val8("gray G", pixel_green, 8'h82);
         check_val8("gray B", pixel_blue,  8'h84);
 
+        // Next tick: accum was 128+512=640>=640 → overflow, advance to src[2]
         repeat (4) @(posedge clk); #1;
 
         // Pure red 0xF800: R=0xFF, G=0x00, B=0x00
