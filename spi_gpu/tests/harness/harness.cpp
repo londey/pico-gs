@@ -68,13 +68,15 @@ struct RegWrite {
 // Simulation constants
 // ---------------------------------------------------------------------------
 
-/// Framebuffer dimensions.
+/// Framebuffer surface dimensions.
 /// The rasterizer (UNIT-005) uses a flat linear byte-address scheme with a
-/// 640-pixel stride: fb_addr = fb_base + y*1280 + x*2 (each pixel is 16-bit
-/// RGB565 = 2 bytes).  The extraction function must match this addressing
-/// (not the INT-011 4x4 block-tiled scheme, which is used for display
-/// scanout but not by the current rasterizer implementation).
-static constexpr int FB_WIDTH = 640;
+/// stride derived from fb_width_log2: fb_addr = fb_base + y*(1<<(width_log2+1))
+/// + x*2 (each pixel is 16-bit RGB565 = 2 bytes).
+///
+/// FB_WIDTH_LOG2 matches the fb_width_log2 value written to FB_CONFIG in the
+/// test scripts (ver_010_gouraud.cpp, ver_011_depth_test.cpp).
+static constexpr int FB_WIDTH_LOG2 = 9;
+static constexpr int FB_WIDTH = 1 << FB_WIDTH_LOG2; // 512
 static constexpr int FB_HEIGHT = 480;
 
 /// SDRAM address space: 32 MB = 16M 16-bit words.
@@ -505,29 +507,44 @@ static void execute_script(
 // Framebuffer extraction
 // ---------------------------------------------------------------------------
 
-/// Extract the visible framebuffer region (FB_WIDTH x FB_HEIGHT) from the
-/// SDRAM model using flat linear addressing matching the rasterizer.
+/// Extract the visible framebuffer region from the SDRAM model using flat
+/// linear addressing matching the rasterizer.
 ///
 /// The rasterizer (UNIT-005) computes framebuffer addresses as:
-///   fb_addr = fb_base + y * 640 + x
-/// where the 640-pixel stride comes from shift-add: y*640 = (y<<9) + (y<<7).
-/// This address is sent as a 24-bit byte address to the SDRAM controller,
+///   fb_addr = fb_base + y * stride + x * 2
+/// where the stride in bytes is (1 << (width_log2 + 1)).  For width_log2=9
+/// (512-pixel surface) the stride is 1024 bytes (512 words).
+///
+/// The address is sent as a 24-bit byte address to the SDRAM controller,
 /// which decomposes it into bank/row/column.  The harness connect_sdram()
 /// function reconstructs the same flat address as the SDRAM model word
 /// address (the bank/row/col decomposition is invertible for the standard
 /// SDRAM geometry).
 ///
-/// Returns a vector of FB_WIDTH * FB_HEIGHT uint16_t RGB565 pixels in
-/// row-major order.
+/// @param sdram       Behavioral SDRAM model.
+/// @param base_word   Framebuffer base address in SDRAM word units.
+/// @param width_log2  Log2 of surface width (e.g. 9 for 512 pixels).
+///                    Must match the fb_width_log2 value written to FB_CONFIG.
+/// @param height      Surface height in pixels to read back.
+/// @return  Vector of (1 << width_log2) * height uint16_t RGB565 pixels
+///          in row-major order.
 [[maybe_unused]]
-static std::vector<uint16_t> extract_framebuffer(const SdramModel& sdram, uint32_t base_word) {
-    std::vector<uint16_t> fb(FB_WIDTH * FB_HEIGHT);
+static std::vector<uint16_t>
+extract_framebuffer(const SdramModel& sdram, uint32_t base_word, int width_log2, int height) {
+    int width = 1 << width_log2;
+    // Byte stride = (1 << (width_log2 + 1)); word stride = (1 << width_log2).
+    // The rasterizer uses: fb_addr = base + y * (1 << (width_log2+1)) + x * 2
+    // In word-address terms: word_addr = base_word + y * byte_stride + x * 2
+    // (the SDRAM model is indexed by byte address / word address depending on
+    // the controller decomposition; see connect_sdram() for the mapping).
+    uint32_t byte_stride = static_cast<uint32_t>(1) << (width_log2 + 1);
 
-    for (int y = 0; y < FB_HEIGHT; y++) {
-        for (int x = 0; x < FB_WIDTH; x++) {
+    std::vector<uint16_t> fb(static_cast<size_t>(width) * height);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
             // Byte address matching rasterizer.sv WRITE_PIXEL:
-            //   fb_addr = base + (y << 10) + (y << 8) + (x << 1)
-            //           = base + y * 1280 + x * 2
+            //   fb_addr = base + y * byte_stride + x * 2
             //
             // The SDRAM controller decomposes this byte address into
             // bank/row/column.  For addresses below 4 MB with even byte
@@ -535,9 +552,9 @@ static std::vector<uint16_t> extract_framebuffer(const SdramModel& sdram, uint32
             // address (the controller's column LSB is always 0 for
             // 16-bit aligned accesses).
             uint32_t word_addr =
-                base_word + static_cast<uint32_t>(y) * 1280 + static_cast<uint32_t>(x) * 2;
+                base_word + static_cast<uint32_t>(y) * byte_stride + static_cast<uint32_t>(x) * 2;
 
-            fb[y * FB_WIDTH + x] = sdram.read_word(word_addr);
+            fb[y * width + x] = sdram.read_word(word_addr);
         }
     }
 
@@ -990,8 +1007,10 @@ int main(int argc, char** argv) {
     // 7b. Extract framebuffer and write PNG
     // -----------------------------------------------------------------------
     // Framebuffer A base word address (INT-011): 0x000000 / 2 = 0
+    // WIDTH_LOG2 = 9 matches the fb_width_log2 written to FB_CONFIG in
+    // ver_010_gouraud.cpp and ver_011_depth_test.cpp (REQ-005.06).
     uint32_t fb_base_word = 0;
-    auto fb = extract_framebuffer(sdram, fb_base_word);
+    auto fb = extract_framebuffer(sdram, fb_base_word, FB_WIDTH_LOG2, FB_HEIGHT);
 
     try {
         png_writer::write_png(output_file.c_str(), FB_WIDTH, FB_HEIGHT, fb);
