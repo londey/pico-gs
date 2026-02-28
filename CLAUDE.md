@@ -141,8 +141,9 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
   end
   ```
 - `always_comb`: all combinational logic including next-state computation; default assignments at top to avoid latches
-- One declaration per line; explicit bit widths on all literals; files start with `` `default_nettype none ``
+- One statement per line; one declaration per line; explicit bit widths on all literals; files start with `` `default_nettype none ``
 - Always use `begin`/`end` blocks for `if`/`else`/`case`
+- Prefer to keep modules under ~500 lines; refactor into sub-modules if significantly larger
 - All sequential logic (FSMs, register banks, counters): separate state register (`always_ff`) from next-state logic (`always_comb`). Use enums for FSM state encoding
 - One module per file, filename matches module name; always use named port connections
 - CDC: 2-FF synchronizer for single-bit, gray coding for multi-bit
