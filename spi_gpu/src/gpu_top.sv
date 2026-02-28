@@ -1,7 +1,7 @@
 `default_nettype none
 
 // ICEpi SPI GPU - Top Level Module
-// Version 2.0 - Gouraud Shading Implementation (Texture support deferred)
+// Version 3.0 - Pixel Pipeline Integration
 //
 // This module integrates all GPU subsystems:
 // - Clock generation (PLL)
@@ -9,7 +9,12 @@
 // - SPI interface
 // - Memory subsystem (SDRAM controller and arbiter)
 // - Display pipeline (timing, scanline FIFO, DVI output)
-// - Rendering pipeline (rasterizer, interpolator, Z-buffer)
+// - Rendering pipeline (rasterizer -> pixel pipeline -> color combiner -> FB/Z write)
+//
+// The rasterizer (UNIT-005) emits fragments via valid/ready handshake to
+// the pixel pipeline (UNIT-006), which owns arbiter ports 1 and 2 (DD-025).
+// The color combiner (UNIT-010) sits between the pixel pipeline's pre-combiner
+// output and post-combiner input.
 
 module gpu_top (
     // ==== Clock and Reset ====
@@ -579,15 +584,15 @@ module gpu_top (
     // Temporary port assignments
     // Port 0: Display controller burst signals now driven by u_display_ctrl
 
-    // Port 1: Rasterizer framebuffer (connected, burst support deferred to Task 4)
+    // Port 1: Pixel pipeline framebuffer (single-word, no burst)
     assign arb_port1_burst_len = 8'b0;
     assign arb_port1_burst_wdata = 16'b0;
 
-    // Port 2: Rasterizer Z-buffer (connected, burst support deferred to Task 4)
+    // Port 2: Pixel pipeline Z-buffer (single-word, no burst)
     assign arb_port2_burst_len = 8'b0;
     assign arb_port2_burst_wdata = 16'b0;
 
-    // Port 3: Timestamp SDRAM write (shared with future texture reads)
+    // Port 3: Timestamp SDRAM write (shared with future texture reads, DD-026)
     //
     // Simple FSM: latch ts_mem_wr pulse from register_file, hold arbiter
     // request until acknowledged.  Single-word write, no burst.
@@ -723,10 +728,29 @@ module gpu_top (
     assign vblank = disp_vsync;
 
     // ========================================================================
-    // Rendering Pipeline (Phase 6 - Rasterizer)
+    // Rendering Pipeline (Phase 6 - Rasterizer + Pixel Pipeline + CC)
     // ========================================================================
+    //
+    // Fragment flow: Rasterizer -> Pixel Pipeline -> Color Combiner ->
+    //                Pixel Pipeline (post-CC) -> FB/Z Write
+    //
+    // Port ownership (DD-025):
+    //   Port 1 (framebuffer): owned by pixel pipeline
+    //   Port 2 (Z-buffer):    owned by pixel pipeline
 
     wire rast_ready;
+
+    // Rasterizer fragment output bus (to pixel pipeline)
+    wire        rast_frag_valid;
+    wire        rast_frag_ready;
+    wire [9:0]  rast_frag_x;
+    wire [9:0]  rast_frag_y;
+    wire [15:0] rast_frag_z;
+    wire [63:0] rast_frag_color0;
+    wire [63:0] rast_frag_color1;
+    wire [31:0] rast_frag_uv0;
+    wire [31:0] rast_frag_uv1;
+    wire [15:0] rast_frag_q;
 
     rasterizer u_rasterizer (
         .clk(clk_core),
@@ -740,60 +764,283 @@ module gpu_top (
         .v0_x(tri_x[0]),
         .v0_y(tri_y[0]),
         .v0_z(tri_z[0]),
-        .v0_color(tri_color0[0][23:0]),  // Diffuse RGB
+        .v0_color0(tri_color0[0]),
+        .v0_color1(tri_color1[0]),
+        .v0_uv0(tri_uv0[0]),
+        .v0_uv1(tri_uv1[0]),
+        .v0_q(tri_q[0]),
 
         // Vertex 1
         .v1_x(tri_x[1]),
         .v1_y(tri_y[1]),
         .v1_z(tri_z[1]),
-        .v1_color(tri_color0[1][23:0]),
+        .v1_color0(tri_color0[1]),
+        .v1_color1(tri_color1[1]),
+        .v1_uv0(tri_uv0[1]),
+        .v1_uv1(tri_uv1[1]),
+        .v1_q(tri_q[1]),
 
         // Vertex 2
         .v2_x(tri_x[2]),
         .v2_y(tri_y[2]),
         .v2_z(tri_z[2]),
-        .v2_color(tri_color0[2][23:0]),
+        .v2_color0(tri_color0[2]),
+        .v2_color1(tri_color1[2]),
+        .v2_uv0(tri_uv0[2]),
+        .v2_uv1(tri_uv1[2]),
+        .v2_q(tri_q[2]),
 
         // Barycentric interpolation (from AREA_SETUP register)
         .inv_area(area_inv),
-        .area_shift(area_shift),
 
-        // Framebuffer write (memory arbiter port 1)
-        .fb_req(arb_port1_req),
-        .fb_we(arb_port1_we),
-        .fb_addr(arb_port1_addr),
-        .fb_wdata(arb_port1_wdata),
-        .fb_rdata(arb_port1_rdata),
-        .fb_ack(arb_port1_ack),
-        .fb_ready(arb_port1_ready),
-
-        // Z-buffer (memory arbiter port 2)
-        .zb_req(arb_port2_req),
-        .zb_we(arb_port2_we),
-        .zb_addr(arb_port2_addr),
-        .zb_wdata(arb_port2_wdata),
-        .zb_rdata(arb_port2_rdata),
-        .zb_ack(arb_port2_ack),
-        .zb_ready(arb_port2_ready),
-
-        // Configuration — x512 byte addr → [31:12] (4KB-aligned base address)
-        .fb_base_addr({7'b0, fb_color_base[15:3]}),
-        .zb_base_addr({7'b0, fb_z_base[15:3]}),
-
-        // Rendering mode
-        .mode_z_test(mode_z_test),
-        .mode_z_write(mode_z_write),
-        .mode_color_write(mode_color_write),
-        .z_compare(mode_z_compare),
-
-        // Depth range clipping
-        .z_range_min(z_range_min),
-        .z_range_max(z_range_max),
+        // Fragment output bus (DD-025 valid/ready handshake)
+        .frag_valid(rast_frag_valid),
+        .frag_ready(rast_frag_ready),
+        .frag_x(rast_frag_x),
+        .frag_y(rast_frag_y),
+        .frag_z(rast_frag_z),
+        .frag_color0(rast_frag_color0),
+        .frag_color1(rast_frag_color1),
+        .frag_uv0(rast_frag_uv0),
+        .frag_uv1(rast_frag_uv1),
+        .frag_q(rast_frag_q),
 
         // Framebuffer surface dimensions (from FB_CONFIG via register file)
         .fb_width_log2(fb_width_log2),
         .fb_height_log2(fb_height_log2)
     );
+
+    // ========================================================================
+    // Pixel Pipeline (UNIT-006) — pre-combiner + post-combiner stages
+    // ========================================================================
+
+    // Pixel pipeline -> Color combiner interface
+    wire        pp_cc_valid;
+    wire [63:0] pp_cc_tex_color0;
+    wire [63:0] pp_cc_tex_color1;
+    wire [63:0] pp_cc_shade0;
+    wire [63:0] pp_cc_shade1;
+    wire [9:0]  pp_cc_frag_x;
+    wire [9:0]  pp_cc_frag_y;
+    wire [15:0] pp_cc_frag_z;
+
+    // Color combiner -> Pixel pipeline interface
+    wire        cc_out_valid;
+    wire        cc_in_ready;
+    wire [63:0] cc_out_color;
+    wire [15:0] cc_out_frag_x;
+    wire [15:0] cc_out_frag_y;
+    wire [15:0] cc_out_frag_z;
+
+    // Pipeline status
+    wire        pp_pipeline_empty;
+
+    // Pixel pipeline SDRAM interface wires
+    wire        pp_fb_write_req;
+    wire [23:0] pp_fb_write_addr;
+    wire [15:0] pp_fb_write_data;
+    wire        pp_fb_read_req;
+    wire [23:0] pp_fb_read_addr;
+    wire        pp_zb_read_req;
+    wire [23:0] pp_zb_read_addr;
+    wire        pp_zb_write_req;
+    wire [23:0] pp_zb_write_addr;
+    wire [15:0] pp_zb_write_data;
+
+    // Construct RENDER_MODE register from individual mode flags
+    wire [31:0] render_mode_packed = {
+        16'b0,                          // [31:16] reserved
+        mode_z_compare,                 // [15:13]
+        mode_dither_pattern,            // [12:11]
+        mode_alpha_test,                // [10:9]
+        mode_alpha_ref[0],              // [8] (low bit placeholder)
+        mode_color_write,               // [7]
+        mode_z_write,                   // [6]
+        mode_dither_en,                 // [5]
+        mode_alpha_blend,               // [4:2]
+        mode_z_test,                    // [1]
+        mode_stipple_en                 // [0]
+    };
+
+    // Construct FB_CONFIG register from fields
+    wire [31:0] fb_config_packed = {
+        12'b0,                          // [31:20] reserved
+        fb_width_log2,                  // [19:16]
+        fb_color_base                   // [15:0]
+    };
+
+    // Construct FB_CONTROL register (Z base in low 16 bits)
+    wire [31:0] fb_control_packed = {
+        16'b0,                          // [31:16] reserved
+        fb_z_base                       // [15:0]
+    };
+
+    // Pack Z_RANGE from individual fields
+    wire [31:0] z_range_packed = {z_range_max, z_range_min};
+
+    // Unused rasterizer fragment output signals
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [15:0] _unused_rast_frag_q = rast_frag_q;
+    wire [3:0]  _unused_area_shift  = area_shift;
+    wire [3:0]  _unused_fb_h_log2   = fb_height_log2;
+    wire [1:0]  _unused_mode_cull   = mode_cull;
+    wire [7:0]  _unused_alpha_ref   = mode_alpha_ref;
+    wire [1:0]  _unused_alpha_test  = mode_alpha_test;
+    wire [1:0]  _unused_dither_pat  = mode_dither_pattern;
+    wire        _unused_mode_gouraud = mode_gouraud;
+    wire        _unused_rect_valid  = rect_valid;
+    wire [63:0] _unused_mem_addr    = mem_addr_out;
+    wire [63:0] _unused_mem_data    = mem_data_out;
+    wire        _unused_mem_wr      = mem_data_wr;
+    wire        _unused_mem_rd      = mem_data_rd;
+    wire        _unused_tex0_inv    = tex0_cache_inv;
+    wire        _unused_tex1_inv    = tex1_cache_inv;
+    wire [63:0] _unused_tex0_cfg    = tex0_cfg;
+    wire [63:0] _unused_tex1_cfg    = tex1_cfg;
+    wire [9:0]  _unused_scissor_x   = scissor_x;
+    wire [9:0]  _unused_scissor_y   = scissor_y;
+    wire [9:0]  _unused_scissor_w   = scissor_width;
+    wire [9:0]  _unused_scissor_h   = scissor_height;
+    wire        _unused_fill_trigger = mem_fill_trigger;
+    wire [15:0] _unused_fill_base   = mem_fill_base;
+    wire [15:0] _unused_fill_value  = mem_fill_value;
+    wire [19:0] _unused_fill_count  = mem_fill_count;
+    wire [15:0] _unused_fb_lut_addr = fb_lut_addr;
+    wire        _unused_color_grade = color_grade_enable;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    pixel_pipeline u_pixel_pipeline (
+        .clk(clk_core),
+        .rst_n(rst_n_core),
+
+        // Fragment input from rasterizer (DD-025)
+        .frag_valid(rast_frag_valid),
+        .frag_ready(rast_frag_ready),
+        .frag_x(rast_frag_x),
+        .frag_y(rast_frag_y),
+        .frag_z(rast_frag_z),
+        .frag_u0(rast_frag_uv0[31:16]),
+        .frag_v0(rast_frag_uv0[15:0]),
+        .frag_u1(rast_frag_uv1[31:16]),
+        .frag_v1(rast_frag_uv1[15:0]),
+        .frag_shade0(rast_frag_color0),
+        .frag_shade1(rast_frag_color1),
+
+        // Register configuration
+        .reg_render_mode(render_mode_packed),
+        .reg_z_range(z_range_packed),
+        .reg_stipple(stipple_pattern),
+        .reg_tex0_cfg(32'b0),          // Texture config stub
+        .reg_tex1_cfg(32'b0),          // Texture config stub
+        .reg_fb_config(fb_config_packed),
+        .reg_fb_control(fb_control_packed),
+
+        // Output to color combiner
+        .cc_valid(pp_cc_valid),
+        .cc_tex_color0(pp_cc_tex_color0),
+        .cc_tex_color1(pp_cc_tex_color1),
+        .cc_shade0(pp_cc_shade0),
+        .cc_shade1(pp_cc_shade1),
+        .cc_frag_x(pp_cc_frag_x),
+        .cc_frag_y(pp_cc_frag_y),
+        .cc_frag_z(pp_cc_frag_z),
+
+        // Input from color combiner
+        .cc_in_valid(cc_out_valid),
+        .cc_in_ready(cc_in_ready),
+        .cc_in_color(cc_out_color),
+        .cc_in_frag_x(cc_out_frag_x),
+        .cc_in_frag_y(cc_out_frag_y),
+        .cc_in_frag_z(cc_out_frag_z),
+
+        // Z-buffer interface (arbiter port 2)
+        .zbuf_read_req(pp_zb_read_req),
+        .zbuf_read_addr(pp_zb_read_addr),
+        .zbuf_read_data(arb_port2_rdata[15:0]),
+        .zbuf_read_valid(arb_port2_ack),
+        .zbuf_write_req(pp_zb_write_req),
+        .zbuf_write_addr(pp_zb_write_addr),
+        .zbuf_write_data(pp_zb_write_data),
+
+        // Framebuffer interface (arbiter port 1)
+        .fb_write_req(pp_fb_write_req),
+        .fb_write_addr(pp_fb_write_addr),
+        .fb_write_data(pp_fb_write_data),
+        .fb_read_req(pp_fb_read_req),
+        .fb_read_addr(pp_fb_read_addr),
+        .fb_read_data(arb_port1_rdata[15:0]),
+        .fb_read_valid(arb_port1_ack),
+
+        // Pipeline status
+        .pipeline_empty(pp_pipeline_empty)
+    );
+
+    // ========================================================================
+    // Arbiter Port 1: Framebuffer (owned by pixel pipeline, UNIT-006)
+    // ========================================================================
+    // Mux between FB write and FB read requests.
+    // Only one should be active at a time (FSM serialized).
+
+    assign arb_port1_req   = pp_fb_write_req | pp_fb_read_req;
+    assign arb_port1_we    = pp_fb_write_req;
+    assign arb_port1_addr  = pp_fb_write_req ? pp_fb_write_addr : pp_fb_read_addr;
+    assign arb_port1_wdata = {16'b0, pp_fb_write_data};
+
+    // ========================================================================
+    // Arbiter Port 2: Z-Buffer (owned by pixel pipeline, UNIT-006)
+    // ========================================================================
+    // Mux between ZB read and ZB write requests.
+
+    assign arb_port2_req   = pp_zb_read_req | pp_zb_write_req;
+    assign arb_port2_we    = pp_zb_write_req;
+    assign arb_port2_addr  = pp_zb_write_req ? pp_zb_write_addr : pp_zb_read_addr;
+    assign arb_port2_wdata = {16'b0, pp_zb_write_data};
+
+    // ========================================================================
+    // Color Combiner (UNIT-010)
+    // ========================================================================
+    // Sits between pixel pipeline pre-combiner output and post-combiner input.
+
+    color_combiner u_color_combiner (
+        .clk(clk_core),
+        .rst_n(rst_n_core),
+
+        // Fragment inputs from pixel pipeline
+        .tex_color0(pp_cc_tex_color0),
+        .tex_color1(pp_cc_tex_color1),
+        .shade0(pp_cc_shade0),
+        .shade1(pp_cc_shade1),
+        .frag_x({6'b0, pp_cc_frag_x}),
+        .frag_y({6'b0, pp_cc_frag_y}),
+        .frag_z(pp_cc_frag_z),
+        .frag_valid(pp_cc_valid),
+
+        // Configuration from register file
+        .cc_mode(cc_mode),
+        .const_color(const_color),
+
+        // Output to pixel pipeline post-combiner stages
+        .combined_color(cc_out_color),
+        .out_frag_x(cc_out_frag_x),
+        .out_frag_y(cc_out_frag_y),
+        .out_frag_z(cc_out_frag_z),
+        .out_frag_valid(cc_out_valid),
+
+        // Backpressure
+        .in_ready(),                    // CC accepts when downstream ready
+        .out_ready(cc_in_ready)
+    );
+
+    // ========================================================================
+    // Pipeline Done / Fragment Done (frag_done)
+    // ========================================================================
+    // Observable by the harness: asserts when rasterizer is idle AND pixel
+    // pipeline has no fragments in flight.
+
+    wire frag_done /* verilator public */ = !gpu_busy && pp_pipeline_empty;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire _unused_frag_done = frag_done;
+    /* verilator lint_on UNUSEDSIGNAL */
 
 endmodule
 

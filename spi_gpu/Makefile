@@ -31,6 +31,13 @@ RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/render/pixel_pipeline.sv \
+	$(RTL_DIR)/render/stipple.sv \
+	$(RTL_DIR)/render/texel_promote.sv \
+	$(RTL_DIR)/render/fb_promote.sv \
+	$(RTL_DIR)/render/alpha_blend.sv \
+	$(RTL_DIR)/render/dither.sv \
+	$(RTL_DIR)/render/color_combiner.sv \
 	$(RTL_DIR)/utils/sync_fifo.sv
 
 # Constraint files
@@ -288,8 +295,8 @@ lint-memory:
 # All leaf RTL files that can be linted individually (no sub-module instantiations).
 # Excludes gpu_top.sv (instantiates everything), pll_core.sv (vendor EHXPLLL),
 # command_fifo.sv (instantiates async_fifo), display_controller.sv (instantiates
-# sync_fifo), dvi_output.sv (instantiates tmds_encoder), rasterizer.sv (instantiates
-# early_z).
+# sync_fifo), dvi_output.sv (instantiates tmds_encoder), pixel_pipeline.sv
+# (instantiates sub-modules).
 LEAF_LINT_FILES = \
 	$(RTL_DIR)/core/reset_sync.sv \
 	$(RTL_DIR)/spi/spi_slave.sv \
@@ -309,6 +316,9 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/texture_r8.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/stipple.sv \
+	$(RTL_DIR)/render/alpha_blend.sv \
+	$(RTL_DIR)/render/dither.sv \
+	$(RTL_DIR)/render/fb_promote.sv \
 	$(RTL_DIR)/render/rasterizer.sv
 
 # Lint all RTL sources. Leaf modules linted individually for precise diagnostics.
@@ -337,6 +347,16 @@ lint:
 		$(RTL_DIR)/display/tmds_encoder.sv \
 		$(RTL_DIR)/display/dvi_output.sv \
 		--top-module dvi_output 2>&1 || fail=1; \
+	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/render/stipple.sv \
+		$(RTL_DIR)/render/early_z.sv \
+		$(RTL_DIR)/render/texel_promote.sv \
+		$(RTL_DIR)/render/fb_promote.sv \
+		$(RTL_DIR)/render/alpha_blend.sv \
+		$(RTL_DIR)/render/dither.sv \
+		$(RTL_DIR)/render/pixel_pipeline.sv \
+		--top-module pixel_pipeline 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
 	echo "Lint passed."
 
@@ -368,6 +388,13 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/render/pixel_pipeline.sv \
+	$(RTL_DIR)/render/stipple.sv \
+	$(RTL_DIR)/render/texel_promote.sv \
+	$(RTL_DIR)/render/fb_promote.sv \
+	$(RTL_DIR)/render/alpha_blend.sv \
+	$(RTL_DIR)/render/dither.sv \
+	$(RTL_DIR)/render/color_combiner.sv \
 	$(RTL_DIR)/utils/sync_fifo.sv
 
 harness-scaffold: $(BUILD_DIR)
@@ -432,6 +459,13 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
+	$(RTL_DIR)/render/pixel_pipeline.sv \
+	$(RTL_DIR)/render/stipple.sv \
+	$(RTL_DIR)/render/texel_promote.sv \
+	$(RTL_DIR)/render/fb_promote.sv \
+	$(RTL_DIR)/render/alpha_blend.sv \
+	$(RTL_DIR)/render/dither.sv \
+	$(RTL_DIR)/render/color_combiner.sv \
 	$(RTL_DIR)/utils/sync_fifo.sv
 
 # Optional: set SOL2_DIR if sol2 headers are not in a system include path.
