@@ -281,6 +281,7 @@ The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for di
 
 ## Implementation
 
+- `spi_gpu/src/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
 - `spi_gpu/src/render/pixel_pipeline.sv`: Main implementation
 - `spi_gpu/src/render/texture_bc1.sv`: BC1 decoder
 - `spi_gpu/src/render/texture_bc2.sv`: BC2 decoder

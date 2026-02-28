@@ -29,6 +29,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/display/dvi_output.sv \
 	$(RTL_DIR)/display/display_controller.sv \
+	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
@@ -358,6 +359,7 @@ lint-memory:
 # sync_fifo), dvi_output.sv (instantiates tmds_encoder), pixel_pipeline.sv
 # (instantiates sub-modules).
 LEAF_LINT_FILES = \
+	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/core/reset_sync.sv \
 	$(RTL_DIR)/spi/spi_slave.sv \
 	$(RTL_DIR)/spi/register_file.sv \
@@ -456,6 +458,7 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/display/dvi_output.sv \
 	$(RTL_DIR)/display/display_controller.sv \
+	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
@@ -535,6 +538,7 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/display_controller.sv \
+	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \

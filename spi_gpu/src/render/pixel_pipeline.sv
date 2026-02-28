@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `e530bac5b9c72705` 2026-02-28
+// Spec-ref: unit_006_pixel_pipeline.md `f7ece909bb04a361` 2026-02-28
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
 //
