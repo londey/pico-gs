@@ -76,6 +76,24 @@ package gpu_regs_pkg;
 
     typedef struct {
         logic [15:0] value;
+    } gpu_regs__area_setup_reg__INV_AREA__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__area_setup_reg__AREA_SHIFT__out_t;
+
+    typedef struct {
+        logic [43:0] value;
+    } gpu_regs__area_setup_reg__RSVD__out_t;
+
+    typedef struct {
+        gpu_regs__area_setup_reg__INV_AREA__out_t INV_AREA;
+        gpu_regs__area_setup_reg__AREA_SHIFT__out_t AREA_SHIFT;
+        gpu_regs__area_setup_reg__RSVD__out_t RSVD;
+    } gpu_regs__area_setup_reg__out_t;
+
+    typedef struct {
+        logic [15:0] value;
     } gpu_regs__vertex_reg__X__out_t;
 
     typedef struct {
@@ -562,6 +580,7 @@ package gpu_regs_pkg;
     typedef struct {
         gpu_regs__color_reg__out_t COLOR;
         gpu_regs__uv0_uv1_reg__out_t UV0_UV1;
+        gpu_regs__area_setup_reg__out_t AREA_SETUP;
         gpu_regs__vertex_reg__out_t VERTEX_NOKICK;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_012;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_021;

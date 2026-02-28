@@ -151,7 +151,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
 
     reg uv0_uv1_reg {
         name = "UV0_UV1";
-        desc = "Texture units 0+1 UV coordinates (S3.12 signed fixed-point, range +/-8.0)";
+        desc = "Texture units 0+1 UV coordinates (Q4.12 fixed-point, range +/-8.0)";
         field {} UV0_UQ[15:0]  = 0;
         field {} UV0_VQ[31:16] = 0;
         field {} UV1_UQ[47:32] = 0;
@@ -190,10 +190,10 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
                region; pixels outside are discarded per-fragment.
                KICK_RECT uses this vertex and the previous NOKICK
                vertex as opposite corners of an axis-aligned rectangle.";
-        field {} X[15:0]  = 0;   // S12.4 signed fixed-point, range -2048.0 to +2047.9375
-        field {} Y[31:16] = 0;   // S12.4 signed fixed-point, range -2048.0 to +2047.9375
+        field {} X[15:0]  = 0;   // Q12.4 fixed-point, range -2048.0 to +2047.9375
+        field {} Y[31:16] = 0;   // Q12.4 fixed-point, range -2048.0 to +2047.9375
         field {} Z[47:32] = 0;   // 16-bit unsigned depth
-        field {} Q[63:48] = 0;   // 1/W, S3.12 signed fixed-point
+        field {} Q[63:48] = 0;   // 1/W, Q4.12 fixed-point
     };
     vertex_reg VERTEX_NOKICK    @ 0x030;  // index 0x06
     vertex_reg VERTEX_KICK_012  @ 0x038;  // index 0x07
