@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `4112fcc8c6cf0438` 2026-02-25
+// Spec-ref: unit_005_rasterizer.md `07ed0268274f0ac1` 2026-02-28
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and barycentric interpolation
@@ -74,7 +74,13 @@ module rasterizer (
 
     // Depth range clipping (from Z_RANGE register)
     input  wire [15:0]  z_range_min,    // Z range minimum (inclusive)
-    input  wire [15:0]  z_range_max     // Z range maximum (inclusive)
+    input  wire [15:0]  z_range_max,    // Z range maximum (inclusive)
+
+    // Framebuffer surface dimensions (from FB_CONFIG register via UNIT-003)
+    // Supported values: 8 (256 px) or 9 (512 px); higher values overflow 10-bit wires.
+    // INT-010 constrains these to 4-bit fields; the reference implementation uses 8 or 9.
+    input  wire [3:0]   fb_width_log2,  // log2(surface width), e.g. 9 for 512 pixels
+    input  wire [3:0]   fb_height_log2  // log2(surface height), e.g. 9 for 512 pixels
 );
 
     // ========================================================================
@@ -99,9 +105,6 @@ module rasterizer (
     // ========================================================================
     // Constants
     // ========================================================================
-
-    localparam [9:0] SCREEN_WIDTH  = 10'd640;
-    localparam [9:0] SCREEN_HEIGHT = 10'd480;
 
     // Fixed-point fractional bits (retained for documentation)
     localparam [3:0] FRAC_BITS = 4'd4;
@@ -388,11 +391,15 @@ module rasterizer (
     wire [9:0] max_y_01 = (y0 > y1) ? y0 : y1;
     wire [9:0] raw_max_y = (max_y_01 > y2) ? max_y_01 : y2;
 
-    // Clamp bounding box to screen bounds
-    wire [9:0] clamped_min_x = (raw_min_x >= SCREEN_WIDTH)  ? (SCREEN_WIDTH  - 10'd1) : raw_min_x;
-    wire [9:0] clamped_max_x = (raw_max_x >= SCREEN_WIDTH)  ? (SCREEN_WIDTH  - 10'd1) : raw_max_x;
-    wire [9:0] clamped_min_y = (raw_min_y >= SCREEN_HEIGHT) ? (SCREEN_HEIGHT - 10'd1) : raw_min_y;
-    wire [9:0] clamped_max_y = (raw_max_y >= SCREEN_HEIGHT) ? (SCREEN_HEIGHT - 10'd1) : raw_max_y;
+    // Scissor bounds derived from FB_CONFIG register (UNIT-005 step 6, INT-011)
+    // surf_max_* is the last valid pixel index: (1 << log2) - 1.
+    // For supported log2 values (8 or 9), this fits within 10 bits.
+    wire [9:0] surf_max_x = (10'd1 << fb_width_log2)  - 10'd1;
+    wire [9:0] surf_max_y = (10'd1 << fb_height_log2) - 10'd1;
+    wire [9:0] clamped_min_x = (raw_min_x > surf_max_x) ? surf_max_x : raw_min_x;
+    wire [9:0] clamped_max_x = (raw_max_x > surf_max_x) ? surf_max_x : raw_max_x;
+    wire [9:0] clamped_min_y = (raw_min_y > surf_max_y) ? surf_max_y : raw_min_y;
+    wire [9:0] clamped_max_y = (raw_max_y > surf_max_y) ? surf_max_y : raw_max_y;
 
     // ========================================================================
     // State Register
