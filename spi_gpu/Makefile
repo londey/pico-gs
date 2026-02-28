@@ -58,7 +58,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-texture-decoder lint-memory lint harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
 	test-gouraud test-depth-test test-textured test-color-combined \
-	test-gouraud-init test-depth-test-init
+	test-gouraud-init test-depth-test-init \
+	test-textured-cube test-textured-cube-init
 
 # Default target
 all: bitstream
@@ -237,6 +238,18 @@ test-depth-test-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	@echo "Output written to $(SIM_OUT_DIR)/depth_test.png"
 	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/depth_test.png $(TB_DIR)/golden/"
 
+# VER-014: Textured cube golden image test
+test-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
+	diff -q $(SIM_OUT_DIR)/textured_cube.png $(TB_DIR)/golden/textured_cube.png
+
+# VER-014 initial approval: run simulation and generate output for visual inspection.
+# After inspecting the output, copy to golden/ and commit to enable test-textured-cube.
+test-textured-cube-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
+	@echo "Output written to $(SIM_OUT_DIR)/textured_cube.png"
+	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/textured_cube.png $(TB_DIR)/golden/"
+
 # VER-012: Textured triangle golden image test (blocked)
 test-textured:
 	@echo "VER-012: Blocked pending texture cache RTL completion."
@@ -248,7 +261,7 @@ test-color-combined:
 	@exit 1
 
 # Run all RTL tests. Unit testbenches (VER-001 through VER-005) run unconditionally.
-# Golden image tests (VER-010, VER-011) run when approved golden images exist.
+# Golden image tests (VER-010, VER-011, VER-014) run when approved golden images exist.
 test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder
 	@echo "Unit testbenches passed."
 	@if [ -f $(TB_DIR)/golden/gouraud_triangle.png ]; then \
@@ -260,6 +273,11 @@ test: lint test-rasterizer test-early-z test-register-file test-color-combiner t
 		$(MAKE) test-depth-test; \
 	else \
 		echo "VER-011: Golden image not yet approved. Run 'make test-depth-test' after approval."; \
+	fi
+	@if [ -f $(TB_DIR)/golden/textured_cube.png ]; then \
+		$(MAKE) test-textured-cube; \
+	else \
+		echo "VER-014: Golden image not yet approved. Run 'make test-textured-cube-init' after approval."; \
 	fi
 
 # Lint memory subsystem RTL
@@ -489,6 +507,7 @@ help:
 	@echo "  test-depth-test  - VER-011: Depth-tested triangles golden image"
 	@echo "  test-textured    - VER-012: Textured triangle golden image (blocked)"
 	@echo "  test-color-combined - VER-013: Color-combined golden image (blocked)"
+	@echo "  test-textured-cube - VER-014: Textured cube golden image"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
