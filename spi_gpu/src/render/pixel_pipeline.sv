@@ -91,6 +91,7 @@ module pixel_pipeline (
     output wire [23:0]  zbuf_read_addr,   // Z-buffer read address
     input  wire [15:0]  zbuf_read_data,   // Z-buffer read value
     input  wire         zbuf_read_valid,  // Z-buffer read data valid
+    input  wire         zbuf_ready,       // Z-buffer port ready (from arbiter)
 
     output wire         zbuf_write_req,   // Z-buffer write request
     output wire [23:0]  zbuf_write_addr,  // Z-buffer write address
@@ -107,6 +108,21 @@ module pixel_pipeline (
     output wire [23:0]  fb_read_addr,     // Framebuffer read address
     input  wire [15:0]  fb_read_data,     // RGB565 pixel readback
     input  wire         fb_read_valid,    // Framebuffer read data valid
+    input  wire         fb_ready,         // Framebuffer port ready (from arbiter)
+
+    // ====================================================================
+    // Texture Cache SRAM Interface (via UNIT-007 Memory Arbiter, port 3)
+    // ====================================================================
+    input  wire [23:0]  tex0_base_addr,   // TEX0 base address (word addr)
+    input  wire         tex0_cache_inv,   // Invalidate TEX0 cache
+
+    output wire         tex_sram_req,     // SRAM burst read request
+    output wire [23:0]  tex_sram_addr,    // SRAM burst start address (word addr)
+    output wire [7:0]   tex_sram_burst_len, // Burst length (16-bit words)
+    input  wire [15:0]  tex_sram_burst_rdata,     // 16-bit burst read data
+    input  wire         tex_sram_burst_data_valid, // Burst data valid
+    input  wire         tex_sram_ack,     // Burst complete
+    input  wire         tex_sram_ready,   // Arbiter ready for new request
 
     // ====================================================================
     // Pipeline Status
@@ -130,31 +146,33 @@ module pixel_pipeline (
     // FB_CONFIG Field Extraction
     // ====================================================================
 
-    wire [15:0] fb_color_base = reg_fb_config[15:0];
+    // Base addresses are 15 bits (bit 15 would overflow the 24-bit byte
+    // address space: max base * 512 = 32767 * 512 = 16,776,704 < 2^24).
+    wire [14:0] fb_color_base = reg_fb_config[14:0];
     wire [3:0]  fb_width_log2 = reg_fb_config[19:16];
 
     // FB_CONTROL: Z base address
-    wire [15:0] fb_z_base = reg_fb_control[15:0];
+    wire [14:0] fb_z_base = reg_fb_control[14:0];
 
     // ====================================================================
     // Suppress unused signal warnings for ports not yet connected
     // ====================================================================
 
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [15:0] _unused_frag_u0 = frag_u0;
-    wire [15:0] _unused_frag_v0 = frag_v0;
     wire [15:0] _unused_frag_u1 = frag_u1;
     wire [15:0] _unused_frag_v1 = frag_v1;
-    // TEXn_CFG: bits [6:4] (FORMAT) used by tex0_format/tex1_format;
-    // remaining bits unused until full texture cache integration
-    wire [28:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:7], reg_tex0_cfg[3:0]};
-    wire [28:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:0]};
+    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [11:8] WIDTH_LOG2, [15:12] HEIGHT_LOG2 used;
+    // [31:16] (wrap/mip), [7] (reserved), [3:1] (filter reserved) unused
+    wire [19:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:16], reg_tex0_cfg[7], reg_tex0_cfg[3:1]};
+    wire [27:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:1]};
     wire [11:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8]}[11:0];
-    wire [11:0] _unused_fb_cfg_bits = reg_fb_config[31:20];
-    wire [15:0] _unused_fb_ctrl_bits = reg_fb_control[31:16];
+    wire [12:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15]};
+    wire [16:0] _unused_fb_ctrl_bits = {reg_fb_control[31:16], reg_fb_control[15]};
     wire [5:0]  _unused_cc_in_x_hi = cc_in_frag_x[15:10];
     wire [5:0]  _unused_cc_in_y_hi = cc_in_frag_y[15:10];
+    // lat_z_bypass is latched for future use (Z-write-after-bypass path)
+    // but not yet read in the current FSM.
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
@@ -170,7 +188,9 @@ module pixel_pipeline (
         PP_FB_READ  = 4'd5,   // Issue framebuffer read for alpha blend
         PP_FB_WAIT  = 4'd6,   // Wait for framebuffer read data
         PP_WRITE    = 4'd7,   // Write framebuffer and Z-buffer
-        PP_Z_WRITE  = 4'd8    // Write Z-buffer (after FB write)
+        PP_Z_WRITE    = 4'd8,   // Write Z-buffer (after FB write)
+        PP_TEX_LOOKUP = 4'd9,   // Issue texture cache lookup
+        PP_TEX_WAIT   = 4'd10   // Wait for texture cache fill (on miss)
     } pp_state_t;
 
     pp_state_t state /* verilator public */;
@@ -188,7 +208,8 @@ module pixel_pipeline (
     //   byte_addr = base * 512 + block_idx * 32 + (local_y * 4 + local_x) * 2
     //
     // base is fb_color_base or fb_z_base, each in units of 512 bytes.
-    // The arbiter uses 24-bit half-word addresses (byte_addr >> 1).
+    // The SDRAM controller expects 24-bit byte addresses; bit 0 is unused
+    // (16-bit word alignment). All addresses computed here are byte-aligned.
     //
     // Computed combinationally for the incoming fragment position.
 
@@ -201,18 +222,18 @@ module pixel_pipeline (
                                  ? (fb_width_log2 - 4'd2) : 4'd0;
     wire [23:0] tile_block_idx  = ({16'b0, tile_block_y} << tile_blocks_log2)
                                 | {16'b0, tile_block_x};
-    // Base address: base_x512 * 512 = base_x512 << 9.  As half-word addr: << 8.
-    wire [23:0] fb_base_hw_addr = {fb_color_base[15:0], 8'b0};
-    wire [23:0] zb_base_hw_addr = {fb_z_base[15:0], 8'b0};
-    // Block offset in half-words: block_idx * 32 / 2 = block_idx << 4
-    wire [23:0] tile_block_hw   = tile_block_idx << 4;
-    // Pixel offset within block in half-words: (local_y * 4 + local_x)
-    wire [3:0]  tile_pixel_off  = {tile_local_y, tile_local_x};
+    // Base address in bytes: base * 512 = base << 9
+    wire [23:0] fb_base_addr = {fb_color_base[14:0], 9'b0};
+    wire [23:0] zb_base_addr = {fb_z_base[14:0], 9'b0};
+    // Block offset in bytes: block_idx * 32 = block_idx << 5
+    wire [23:0] tile_block_offset = tile_block_idx << 5;
+    // Pixel offset within block in bytes: (local_y * 4 + local_x) * 2
+    wire [4:0]  tile_pixel_off  = {tile_local_y, tile_local_x, 1'b0};
 
-    wire [23:0] fb_tiled_addr   = fb_base_hw_addr + tile_block_hw
-                                + {20'b0, tile_pixel_off};
-    wire [23:0] zb_tiled_addr   = zb_base_hw_addr + tile_block_hw
-                                + {20'b0, tile_pixel_off};
+    wire [23:0] fb_tiled_addr   = fb_base_addr + tile_block_offset
+                                + {19'b0, tile_pixel_off};
+    wire [23:0] zb_tiled_addr   = zb_base_addr + tile_block_offset
+                                + {19'b0, tile_pixel_off};
 
     // Pre-computed addresses for current fragment (registered)
     reg  [23:0] fb_addr_reg;
@@ -227,7 +248,19 @@ module pixel_pipeline (
     reg  [15:0]  lat_z;
     reg  [63:0]  lat_shade0;
     reg  [63:0]  lat_shade1;
-    reg          lat_z_bypass;
+    /* verilator lint_off UNUSEDSIGNAL */
+    reg          lat_z_bypass;  // Latched for future Z-write-after-bypass path
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // ====================================================================
+    // CC Result Pending Flag
+    // ====================================================================
+    // Set when we emit a fragment to the CC (PP_CC_EMIT), cleared when the
+    // CC result arrives (PP_CC_WAIT + cc_in_valid).  This prevents the
+    // pixel pipeline from consuming a stale CC output that was left in the
+    // CC output register from a previous fragment (the CC holds its output
+    // when pipeline_enable=0, so a stale out_frag_valid=1 can persist).
+    reg          cc_result_pending;
 
     // ====================================================================
     // Post-CC Registers (captured from color combiner output)
@@ -285,8 +318,12 @@ module pixel_pipeline (
     // Texture Format Field Extraction (INT-010: TEXn_CFG FORMAT bits [6:4])
     // ====================================================================
 
-    wire [2:0] tex0_format = reg_tex0_cfg[6:4];
-    wire [2:0] tex1_format = reg_tex1_cfg[6:4];
+    wire        tex0_enable     = reg_tex0_cfg[0];
+    wire [2:0]  tex0_format     = reg_tex0_cfg[6:4];
+    wire [3:0]  tex0_width_log2 = reg_tex0_cfg[11:8];
+    wire [3:0]  tex0_height_log2 = reg_tex0_cfg[15:12];
+    wire        tex1_enable = reg_tex1_cfg[0];
+    wire [2:0]  tex1_format = reg_tex1_cfg[6:4];
 
     // ====================================================================
     // Stage 2: Texture Decoders (per-format, combinational)
@@ -411,11 +448,118 @@ module pixel_pipeline (
     end
 
     // ====================================================================
+    // Texture Cache (TEX0) — 4-way set-associative with burst SRAM fill
+    // ====================================================================
+    // Instantiated here; lookup is driven by the FSM (PP_TEX_LOOKUP state).
+    // The cache replaces the stub data that previously fed the format decoders.
+    // For nearest-neighbor sampling, one texel is selected from the 4 bank
+    // outputs based on sub-block texel position.
+
+    // Latched UV coordinates and cached texel (registered in datapath FSM)
+    reg [15:0] lat_u0;
+    reg [15:0] lat_v0;
+    reg [17:0] lat_tex0_rgba5652;
+
+    // UV → texel coordinate conversion (combinational)
+    // UV is Q1.15 signed: bit [15] = sign, bits [14:0] = fractional part.
+    // texel_coord = floor(frac * 2^tex_dim_log2) = frac >> (15 - dim_log2)
+    wire [14:0] u0_frac = lat_u0[14:0];
+    wire [14:0] v0_frac = lat_v0[14:0];
+    wire [9:0]  texel_x = 10'(u0_frac >> (4'd15 - tex0_width_log2));
+    wire [9:0]  texel_y = 10'(v0_frac >> (4'd15 - tex0_height_log2));
+
+    // Texture cache SRAM interface wires
+    wire        tc_sram_req;
+    wire [23:0] tc_sram_addr;
+    wire [7:0]  tc_sram_burst_len;
+    wire        tc_sram_we;
+    wire [31:0] tc_sram_wdata;
+
+    // Texture cache lookup result wires
+    wire        tc_cache_hit;
+    wire        tc_cache_ready;
+    wire        tc_fill_done;
+    wire [17:0] tc_texel_out_0;
+    wire [17:0] tc_texel_out_1;
+    wire [17:0] tc_texel_out_2;
+    wire [17:0] tc_texel_out_3;
+
+    // Lookup request: asserted when FSM is in TEX_LOOKUP
+    wire tex_lookup_req = (state == PP_TEX_LOOKUP);
+
+    texture_cache u_tex0_cache (
+        .clk                 (clk),
+        .rst_n               (rst_n),
+        .lookup_req          (tex_lookup_req),
+        .pixel_x             (texel_x),
+        .pixel_y             (texel_y),
+        .tex_base_addr       (tex0_base_addr),
+        .tex_format          (tex0_format),
+        .tex_width_log2      ({4'b0, tex0_width_log2}),
+        .invalidate          (tex0_cache_inv),
+        .cache_hit           (tc_cache_hit),
+        .cache_ready         (tc_cache_ready),
+        .fill_done           (tc_fill_done),
+        .texel_out_0         (tc_texel_out_0),
+        .texel_out_1         (tc_texel_out_1),
+        .texel_out_2         (tc_texel_out_2),
+        .texel_out_3         (tc_texel_out_3),
+        .sram_req            (tc_sram_req),
+        .sram_addr           (tc_sram_addr),
+        .sram_burst_len      (tc_sram_burst_len),
+        .sram_we             (tc_sram_we),
+        .sram_wdata          (tc_sram_wdata),
+        .sram_burst_rdata    (tex_sram_burst_rdata),
+        .sram_burst_data_valid(tex_sram_burst_data_valid),
+        .sram_ack            (tex_sram_ack),
+        .sram_ready          (tex_sram_ready)
+    );
+
+    // Route texture cache SRAM signals to pixel pipeline outputs
+    assign tex_sram_req       = tc_sram_req;
+    assign tex_sram_addr      = tc_sram_addr;
+    assign tex_sram_burst_len = tc_sram_burst_len;
+
+    // Nearest-neighbor texel selection from cache output
+    // Select one texel based on sub-block position {texel_y[0], texel_x[0]}
+    reg [17:0] tc_nearest_texel;
+
+    always_comb begin
+        case ({texel_y[0], texel_x[0]})
+            2'b00:   tc_nearest_texel = tc_texel_out_0;
+            2'b01:   tc_nearest_texel = tc_texel_out_1;
+            2'b10:   tc_nearest_texel = tc_texel_out_2;
+            2'b11:   tc_nearest_texel = tc_texel_out_3;
+            default: tc_nearest_texel = 18'b0;
+        endcase
+    end
+
+    // Unused cache outputs (write port is read-only)
+    // tex0_mux_rgba5652 and tex1_mux_rgba5652: replaced by cache output but
+    // kept as reference implementations for formats the cache doesn't decompress.
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire        _unused_tc_sram_we    = tc_sram_we;
+    wire [31:0] _unused_tc_sram_wdata = tc_sram_wdata;
+    wire        _unused_tc_fill_done  = tc_fill_done;
+    wire [17:0] _unused_tex0_mux      = tex0_mux_rgba5652;
+    wire        _unused_lat_u0_sign   = lat_u0[15];
+    wire        _unused_lat_v0_sign   = lat_v0[15];
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // ====================================================================
     // Stage 3: Texel Promote (RGBA5652 -> Q4.12)
     // ====================================================================
     // Promote format-selected RGBA5652 texels to Q4.12 for color combiner.
 
-    wire [17:0] tex0_rgba5652 = tex0_mux_rgba5652;
+    // When texture unit is disabled (ENABLE=0), output white opaque
+    // RGBA5652 so MODULATE degenerates to pass-through of shade color.
+    // White opaque RGBA5652: R5=31, G6=63, B5=31, A2=3.
+    localparam [17:0] RGBA5652_WHITE_OPAQUE = 18'h3FFFF;
+
+    // When texture is enabled, use the cached texel (latched in PP_TEX_LOOKUP).
+    // When disabled, output white opaque so MODULATE degenerates to pass-through.
+    wire [17:0] tex0_rgba5652 = tex0_enable ? lat_tex0_rgba5652
+                                            : RGBA5652_WHITE_OPAQUE;
     wire [15:0] tex0_r_q412, tex0_g_q412, tex0_b_q412, tex0_a_q412;
 
     texel_promote u_tex0_promote (
@@ -426,7 +570,8 @@ module pixel_pipeline (
         .a_q412   (tex0_a_q412)
     );
 
-    wire [17:0] tex1_rgba5652 = tex1_mux_rgba5652;
+    wire [17:0] tex1_rgba5652 = tex1_enable ? tex1_mux_rgba5652
+                                            : RGBA5652_WHITE_OPAQUE;
     wire [15:0] tex1_r_q412, tex1_g_q412, tex1_b_q412, tex1_a_q412;
 
     texel_promote u_tex1_promote (
@@ -527,29 +672,26 @@ module pixel_pipeline (
     // SDRAM Interface Registers
     // ====================================================================
 
-    reg         zb_read_req_r;
-    reg  [23:0] zb_read_addr_r;
-    reg         zb_write_req_r;
-    reg  [23:0] zb_write_addr_r;
+    // Write data registers (latched in PP_WRITE / PP_Z_WRITE states)
     reg  [15:0] zb_write_data_r;
-
-    reg         fb_write_req_r;
-    reg  [23:0] fb_write_addr_r;
     reg  [15:0] fb_write_data_r;
-    reg         fb_read_req_r;
-    reg  [23:0] fb_read_addr_r;
 
-    assign zbuf_read_req   = zb_read_req_r;
-    assign zbuf_read_addr  = zb_read_addr_r;
-    assign zbuf_write_req  = zb_write_req_r;
-    assign zbuf_write_addr = zb_write_addr_r;
+    // Request signals are combinational, asserted while the FSM is in the
+    // corresponding state.  This ensures the arbiter sees the request on the
+    // same cycle the FSM enters the state, avoiding one-shot timing issues.
+    assign zbuf_read_req   = (state == PP_Z_READ);
+    assign zbuf_read_addr  = zb_addr_reg;
+    assign zbuf_write_req  = (state == PP_Z_WRITE);
+    assign zbuf_write_addr = zb_addr_reg;
     assign zbuf_write_data = zb_write_data_r;
 
-    assign fb_write_req    = fb_write_req_r;
-    assign fb_write_addr   = fb_write_addr_r;
+    // FB write request: asserted when in PP_WRITE with color_write_en
+    assign fb_write_req    = (state == PP_WRITE) && color_write_en;
+    assign fb_write_addr   = fb_addr_reg;
     assign fb_write_data   = fb_write_data_r;
-    assign fb_read_req     = fb_read_req_r;
-    assign fb_read_addr    = fb_read_addr_r;
+    // FB read request: asserted when in PP_FB_READ
+    assign fb_read_req     = (state == PP_FB_READ);
+    assign fb_read_addr    = fb_addr_reg;
 
     // ====================================================================
     // Fragment Accept Logic
@@ -599,8 +741,8 @@ module pixel_pipeline (
                         // Fragment discarded, stay idle (consume it)
                         next_state = PP_IDLE;
                     end else if (z_bypass) begin
-                        // Skip Z read, go straight to CC emit
-                        next_state = PP_CC_EMIT;
+                        // Skip Z read; texture lookup if enabled, else CC emit
+                        next_state = tex0_enable ? PP_TEX_LOOKUP : PP_CC_EMIT;
                     end else begin
                         // Need to read Z-buffer for Z-test
                         next_state = PP_Z_READ;
@@ -609,15 +751,18 @@ module pixel_pipeline (
             end
 
             PP_Z_READ: begin
-                // Z read request issued, wait for ack
-                next_state = PP_Z_WAIT;
+                // Hold Z read request until arbiter accepts
+                if (zbuf_ready) begin
+                    next_state = PP_Z_WAIT;
+                end
             end
 
             PP_Z_WAIT: begin
                 if (zbuf_read_valid) begin
                     // Z data received, check Z test
                     if (z_test_pass) begin
-                        next_state = PP_CC_EMIT;
+                        // Texture lookup if enabled, else CC emit
+                        next_state = tex0_enable ? PP_TEX_LOOKUP : PP_CC_EMIT;
                     end else begin
                         // Z test failed, discard fragment
                         next_state = PP_IDLE;
@@ -633,8 +778,11 @@ module pixel_pipeline (
             end
 
             PP_CC_WAIT: begin
-                if (cc_in_valid) begin
-                    // CC result received
+                if (cc_in_valid && cc_result_pending) begin
+                    // CC result received for the current fragment.
+                    // The cc_result_pending guard prevents consuming a stale
+                    // CC output that was held in the output register from a
+                    // previous fragment (the CC stalls when pipeline_enable=0).
                     if (alpha_blend_mode != 3'b000) begin
                         // Alpha blending enabled: need FB read
                         next_state = PP_FB_READ;
@@ -646,8 +794,10 @@ module pixel_pipeline (
             end
 
             PP_FB_READ: begin
-                // FB read request issued, wait for data
-                next_state = PP_FB_WAIT;
+                // Hold FB read request until arbiter accepts
+                if (fb_ready) begin
+                    next_state = PP_FB_WAIT;
+                end
             end
 
             PP_FB_WAIT: begin
@@ -657,17 +807,47 @@ module pixel_pipeline (
             end
 
             PP_WRITE: begin
-                // Write framebuffer (if color_write_en)
-                if (z_write_en && !lat_z_bypass) begin
-                    next_state = PP_Z_WRITE;
-                end else begin
-                    next_state = PP_IDLE;
+                // Write framebuffer (if color_write_en).
+                // Hold request until arbiter accepts (fb_ready=1).
+                // If color write disabled, skip directly.
+                if (!color_write_en || fb_ready) begin
+                    // Z-buffer write proceeds when z_write_en is set,
+                    // regardless of whether the Z read was bypassed.
+                    // z_bypass only skips the Z-buffer READ (ALWAYS compare
+                    // or z_test_en=0), not the WRITE.
+                    if (z_write_en) begin
+                        next_state = PP_Z_WRITE;
+                    end else begin
+                        next_state = PP_IDLE;
+                    end
                 end
             end
 
             PP_Z_WRITE: begin
-                // Write Z-buffer
-                next_state = PP_IDLE;
+                // Write Z-buffer.
+                // Hold request until arbiter accepts (zbuf_write_ready=1).
+                if (zbuf_ready) begin
+                    next_state = PP_IDLE;
+                end
+            end
+
+            PP_TEX_LOOKUP: begin
+                // Texture cache lookup issued combinationally (tex_lookup_req).
+                // On hit: texel data available, proceed to CC emit.
+                // On miss: cache starts fill, wait for completion.
+                if (tc_cache_hit) begin
+                    next_state = PP_CC_EMIT;
+                end else begin
+                    next_state = PP_TEX_WAIT;
+                end
+            end
+
+            PP_TEX_WAIT: begin
+                // Wait for texture cache fill to complete (returns to IDLE).
+                // Then retry lookup — will hit since data was just filled.
+                if (tc_cache_ready) begin
+                    next_state = PP_TEX_LOOKUP;
+                end
             end
 
             default: begin
@@ -688,6 +868,10 @@ module pixel_pipeline (
             lat_shade0     <= 64'b0;
             lat_shade1     <= 64'b0;
             lat_z_bypass   <= 1'b0;
+            lat_u0         <= 16'b0;
+            lat_v0         <= 16'b0;
+            lat_tex0_rgba5652 <= RGBA5652_WHITE_OPAQUE;
+            cc_result_pending <= 1'b0;
             zbuf_data_lat  <= 16'b0;
             fb_data_lat    <= 16'b0;
             fb_addr_reg    <= 24'b0;
@@ -707,23 +891,10 @@ module pixel_pipeline (
             post_cc_y      <= 10'b0;
             post_cc_z      <= 16'b0;
 
-            zb_read_req_r  <= 1'b0;
-            zb_read_addr_r <= 24'b0;
-            zb_write_req_r <= 1'b0;
-            zb_write_addr_r<= 24'b0;
             zb_write_data_r<= 16'b0;
-
-            fb_write_req_r <= 1'b0;
-            fb_write_addr_r<= 24'b0;
             fb_write_data_r<= 16'b0;
-            fb_read_req_r  <= 1'b0;
-            fb_read_addr_r <= 24'b0;
         end else begin
-            // Default: deassert one-shot request signals
-            zb_read_req_r  <= 1'b0;
-            zb_write_req_r <= 1'b0;
-            fb_write_req_r <= 1'b0;
-            fb_read_req_r  <= 1'b0;
+            // Default: deassert one-shot CC valid
             cc_valid       <= 1'b0;
 
             case (state)
@@ -736,6 +907,8 @@ module pixel_pipeline (
                         lat_shade0   <= frag_shade0;
                         lat_shade1   <= frag_shade1;
                         lat_z_bypass <= z_bypass;
+                        lat_u0       <= frag_u0;
+                        lat_v0       <= frag_v0;
 
                         // Latch tiled addresses (combinationally computed)
                         fb_addr_reg  <= fb_tiled_addr;
@@ -749,9 +922,8 @@ module pixel_pipeline (
                 end
 
                 PP_Z_READ: begin
-                    // Issue Z-buffer read
-                    zb_read_req_r  <= 1'b1;
-                    zb_read_addr_r <= zb_addr_reg;
+                    // Z-buffer read request is combinational (zbuf_read_req).
+                    // No registered action needed here.
                 end
 
                 PP_Z_WAIT: begin
@@ -772,22 +944,24 @@ module pixel_pipeline (
                     cc_frag_x     <= lat_x;
                     cc_frag_y     <= lat_y;
                     cc_frag_z     <= lat_z;
+                    // Mark that a fresh CC result is expected
+                    cc_result_pending <= 1'b1;
                 end
 
                 PP_CC_WAIT: begin
-                    if (cc_in_valid) begin
+                    if (cc_in_valid && cc_result_pending) begin
                         // Latch color combiner result
                         post_cc_color <= cc_in_color;
                         post_cc_x     <= cc_in_frag_x[9:0];
                         post_cc_y     <= cc_in_frag_y[9:0];
                         post_cc_z     <= cc_in_frag_z;
+                        cc_result_pending <= 1'b0;
                     end
                 end
 
                 PP_FB_READ: begin
-                    // Issue framebuffer read for alpha blending
-                    fb_read_req_r  <= 1'b1;
-                    fb_read_addr_r <= fb_addr_reg;
+                    // FB read request is combinational (fb_read_req).
+                    // No registered action needed here.
                 end
 
                 PP_FB_WAIT: begin
@@ -797,19 +971,26 @@ module pixel_pipeline (
                 end
 
                 PP_WRITE: begin
-                    // Write framebuffer pixel
-                    if (color_write_en) begin
-                        fb_write_req_r  <= 1'b1;
-                        fb_write_addr_r <= fb_addr_reg;
-                        fb_write_data_r <= rgb565_pixel;
-                    end
+                    // FB write request is combinational (fb_write_req).
+                    // Latch write data for the combinational output mux.
+                    fb_write_data_r <= rgb565_pixel;
                 end
 
                 PP_Z_WRITE: begin
-                    // Write Z-buffer value
-                    zb_write_req_r  <= 1'b1;
-                    zb_write_addr_r <= zb_addr_reg;
+                    // Z-buffer write request is combinational (zbuf_write_req).
+                    // Latch write data for the combinational output mux.
                     zb_write_data_r <= post_cc_z;
+                end
+
+                PP_TEX_LOOKUP: begin
+                    // On cache hit, latch the nearest-neighbor texel
+                    if (tc_cache_hit) begin
+                        lat_tex0_rgba5652 <= tc_nearest_texel;
+                    end
+                end
+
+                PP_TEX_WAIT: begin
+                    // No datapath action; waiting for cache fill to complete
                 end
 
                 default: begin end

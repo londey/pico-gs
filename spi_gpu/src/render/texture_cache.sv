@@ -74,9 +74,9 @@ module texture_cache (
     // Unused Signal Declarations
     // ====================================================================
 
-    // pixel_x/pixel_y: only bits [9:2] used for block coordinates
-    wire [1:0] _unused_pixel_x_low = pixel_x[1:0];
-    wire [1:0] _unused_pixel_y_low = pixel_y[1:0];
+    // pixel_x[0]/pixel_y[0]: sub-texel parity used externally for nearest-neighbor
+    wire _unused_pixel_x_0 = pixel_x[0];
+    wire _unused_pixel_y_0 = pixel_y[0];
 
     // ====================================================================
     // Constants
@@ -197,7 +197,9 @@ module texture_cache (
 
     // Read texels from banks at the hit address
     // Bank address = {set_index, way, sub_texel} matching fill_bank_base layout
-    wire [9:0] read_bank_addr = {set_index, hit_way, 2'b00};
+    // Sub-block quad select: pixel_x[1], pixel_y[1] pick which 2×2 quad
+    // within the 4×4 block to read (0..3 per bank per cache line).
+    wire [9:0] read_bank_addr = {set_index, hit_way, pixel_y[1], pixel_x[1]};
 
     assign texel_out_0 = bank0[read_bank_addr];
     assign texel_out_1 = bank1[read_bank_addr];

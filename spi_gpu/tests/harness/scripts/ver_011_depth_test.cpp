@@ -127,24 +127,24 @@ static const RegWrite ver_011_zclear_script[] = {
     //
     //    Triangle 1: (0,0) - (511,0) - (0,479) covers lower-left half
     {REG_AREA_SETUP, compute_area_setup(0, 0, 511, 0, 0, 479)},
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(0, 0, 0xFFFF)},
 
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(511, 0, 0xFFFF)},
 
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
 
     //    Triangle 2: (511,0) - (511,479) - (0,479) covers upper-right half
     {REG_AREA_SETUP, compute_area_setup(511, 0, 511, 479, 0, 479)},
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(511, 0, 0xFFFF)},
 
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(511, 479, 0xFFFF)},
 
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(0, 479, 0xFFFF)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
@@ -174,16 +174,16 @@ static const RegWrite ver_011_tri_a_script[] = {
     {REG_AREA_SETUP, compute_area_setup(80, 100, 320, 100, 200, 380)},
 
     // 2. Submit V0: red at (80, 100), Z=0x8000
-    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0xFF, 0x00, 0x00), rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(80, 100, 0x8000)},
 
     // 3. Submit V1: red at (320, 100), Z=0x8000
-    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0xFF, 0x00, 0x00), rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(320, 100, 0x8000)},
 
     // 4. Submit V2: red at (200, 380), Z=0x8000
     //    VERTEX_KICK_012 triggers rasterization of Triangle A (V0, V1, V2).
-    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0xFF, 0x00, 0x00), rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(200, 380, 0x8000)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.
@@ -210,16 +210,16 @@ static const RegWrite ver_011_tri_b_script[] = {
     {REG_AREA_SETUP, compute_area_setup(160, 80, 400, 80, 280, 360)},
 
     // 1. Submit V0: blue at (160, 80), Z=0x4000
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0xFF), rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(160, 80, 0x4000)},
 
     // 2. Submit V1: blue at (400, 80), Z=0x4000
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0xFF), rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_NOKICK, pack_vertex(400, 80, 0x4000)},
 
     // 3. Submit V2: blue at (280, 360), Z=0x4000
     //    VERTEX_KICK_012 triggers rasterization of Triangle B (V0, V1, V2).
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF), argb(0x00, 0x00, 0x00))},
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0xFF), rgba(0x00, 0x00, 0x00))},
     {REG_VERTEX_KICK_012, pack_vertex(280, 360, 0x4000)},
 
     // Dummy trailing command — see ver_010_gouraud.cpp for rationale.

@@ -585,12 +585,19 @@ module gpu_top (
     // Port 0: Display controller burst signals now driven by u_display_ctrl
 
     // Port 1: Pixel pipeline framebuffer (single-word, no burst)
-    assign arb_port1_burst_len = 8'b0;
-    assign arb_port1_burst_wdata = 16'b0;
+    // Use burst_len=1 for single-pixel 16-bit writes to avoid the
+    // single-word (32-bit) mode which writes two consecutive SDRAM words
+    // (low half + high half), clobbering the adjacent pixel in the tiled
+    // framebuffer layout.  Reads also use burst_len=1 so the SDRAM
+    // controller returns a single 16-bit word via the burst interface.
+    assign arb_port1_burst_len = (pp_fb_write_req || pp_fb_read_req) ? 8'd1 : 8'd0;
+    assign arb_port1_burst_wdata = pp_fb_write_data;
 
     // Port 2: Pixel pipeline Z-buffer (single-word, no burst)
-    assign arb_port2_burst_len = 8'b0;
-    assign arb_port2_burst_wdata = 16'b0;
+    // Use burst_len=1 for single-pixel 16-bit Z-buffer writes (same
+    // rationale as port 1 — avoid 32-bit single-word mode clobbering).
+    assign arb_port2_burst_len = (pp_zb_write_req || pp_zb_read_req) ? 8'd1 : 8'd0;
+    assign arb_port2_burst_wdata = pp_zb_write_data;
 
     // Port 3: Texture cache fill reads + PERF_TIMESTAMP writes (DD-026)
     //
@@ -608,19 +615,12 @@ module gpu_top (
     //                     cleared on arb_port3_ack
 
     // Texture cache port 3 wires (from pixel_pipeline, UNIT-006)
-    // These will be connected to pixel_pipeline texture ports once the
-    // texture cache is implemented.  Until then they are tied off.
-    wire        tex_req;
-    wire [23:0] tex_addr;
-    wire [7:0]  tex_burst_len;
+    wire        tex_req       = pp_tex_sram_req;
+    wire [23:0] tex_addr      = pp_tex_sram_addr;
+    wire [7:0]  tex_burst_len = pp_tex_sram_burst_len;
     wire [15:0] tex_burst_rdata;
     wire        tex_burst_data_valid;
     wire        tex_ack;
-
-    // Stub: texture cache not yet connected; no texture requests
-    assign tex_req       = 1'b0;
-    assign tex_addr      = 24'b0;
-    assign tex_burst_len = 8'b0;
 
     // Timestamp pending register (fire-and-forget, coalescing)
     reg         ts_pending;
@@ -868,6 +868,7 @@ module gpu_top (
 
         // Barycentric interpolation (from AREA_SETUP register)
         .inv_area(area_inv),
+        .area_shift(area_shift),
 
         // Fragment output bus (DD-025 valid/ready handshake)
         .frag_valid(rast_frag_valid),
@@ -954,10 +955,19 @@ module gpu_top (
     // Pack Z_RANGE from individual fields
     wire [31:0] z_range_packed = {z_range_max, z_range_min};
 
+    // TEX0 base address: register stores base_addr_512 in tex0_cfg[47:32].
+    // Convert to word address: word_addr = base_addr_512 << 8 (512 bytes = 256 words).
+    wire [23:0] tex0_base_addr = {tex0_cfg[47:32], 8'b0};
+
+    // Pixel pipeline texture SRAM interface wires (to arbiter port 3)
+    wire        pp_tex_sram_req;
+    wire [23:0] pp_tex_sram_addr;
+    wire [7:0]  pp_tex_sram_burst_len;
+
     // Unused rasterizer fragment output signals
     /* verilator lint_off UNUSEDSIGNAL */
     wire [15:0] _unused_rast_frag_q = rast_frag_q;
-    wire [3:0]  _unused_area_shift  = area_shift;
+    // area_shift is now connected to the rasterizer
     wire [3:0]  _unused_fb_h_log2   = fb_height_log2;
     wire [1:0]  _unused_mode_cull   = mode_cull;
     wire [7:0]  _unused_alpha_ref   = mode_alpha_ref;
@@ -969,10 +979,9 @@ module gpu_top (
     wire [63:0] _unused_mem_data    = mem_data_out;
     wire        _unused_mem_wr      = mem_data_wr;
     wire        _unused_mem_rd      = mem_data_rd;
-    wire        _unused_tex0_inv    = tex0_cache_inv;
     wire        _unused_tex1_inv    = tex1_cache_inv;
-    wire [63:0] _unused_tex0_cfg    = tex0_cfg;
-    wire [63:0] _unused_tex1_cfg    = tex1_cfg;
+    wire [15:0] _unused_tex0_cfg_upper = tex0_cfg[63:48];
+    wire [63:0] _unused_tex1_cfg_full  = tex1_cfg;
     wire [9:0]  _unused_scissor_x   = scissor_x;
     wire [9:0]  _unused_scissor_y   = scissor_y;
     wire [9:0]  _unused_scissor_w   = scissor_width;
@@ -983,11 +992,7 @@ module gpu_top (
     wire [19:0] _unused_fill_count  = mem_fill_count;
     wire [15:0] _unused_fb_lut_addr = fb_lut_addr;
     wire        _unused_color_grade = color_grade_enable;
-    // Port 3 texture stub outputs (consumed when texture cache is connected)
-    wire [15:0] _unused_tex_burst_rdata = tex_burst_rdata;
-    wire        _unused_tex_burst_dv    = tex_burst_data_valid;
-    wire        _unused_tex_ack         = tex_ack;
-    // Arbiter port 3 outputs unused until texture cache burst reads are live
+    // Arbiter port 3 single-word read data unused (texture uses burst reads)
     wire [31:0] _unused_p3_rdata       = arb_port3_rdata;
     wire        _unused_p3_bwdata_req  = arb_port3_burst_wdata_req;
     /* verilator lint_on UNUSEDSIGNAL */
@@ -1002,10 +1007,10 @@ module gpu_top (
         .frag_x(rast_frag_x),
         .frag_y(rast_frag_y),
         .frag_z(rast_frag_z),
-        .frag_u0(rast_frag_uv0[31:16]),
-        .frag_v0(rast_frag_uv0[15:0]),
-        .frag_u1(rast_frag_uv1[31:16]),
-        .frag_v1(rast_frag_uv1[15:0]),
+        .frag_u0(rast_frag_uv0[15:0]),
+        .frag_v0(rast_frag_uv0[31:16]),
+        .frag_u1(rast_frag_uv1[15:0]),
+        .frag_v1(rast_frag_uv1[31:16]),
         .frag_shade0(rast_frag_color0),
         .frag_shade1(rast_frag_color1),
 
@@ -1013,8 +1018,8 @@ module gpu_top (
         .reg_render_mode(render_mode_packed),
         .reg_z_range(z_range_packed),
         .reg_stipple(stipple_pattern),
-        .reg_tex0_cfg(32'b0),          // Texture config stub
-        .reg_tex1_cfg(32'b0),          // Texture config stub
+        .reg_tex0_cfg(tex0_cfg[31:0]),
+        .reg_tex1_cfg(tex1_cfg[31:0]),
         .reg_fb_config(fb_config_packed),
         .reg_fb_control(fb_control_packed),
 
@@ -1039,8 +1044,9 @@ module gpu_top (
         // Z-buffer interface (arbiter port 2)
         .zbuf_read_req(pp_zb_read_req),
         .zbuf_read_addr(pp_zb_read_addr),
-        .zbuf_read_data(arb_port2_rdata[15:0]),
-        .zbuf_read_valid(arb_port2_ack),
+        .zbuf_read_data(arb_port2_burst_rdata),
+        .zbuf_read_valid(arb_port2_burst_data_valid),
+        .zbuf_ready(arb_port2_ready),
         .zbuf_write_req(pp_zb_write_req),
         .zbuf_write_addr(pp_zb_write_addr),
         .zbuf_write_data(pp_zb_write_data),
@@ -1051,8 +1057,20 @@ module gpu_top (
         .fb_write_data(pp_fb_write_data),
         .fb_read_req(pp_fb_read_req),
         .fb_read_addr(pp_fb_read_addr),
-        .fb_read_data(arb_port1_rdata[15:0]),
-        .fb_read_valid(arb_port1_ack),
+        .fb_read_data(arb_port1_burst_rdata),
+        .fb_read_valid(arb_port1_burst_data_valid),
+        .fb_ready(arb_port1_ready),
+
+        // Texture cache SRAM interface (arbiter port 3)
+        .tex0_base_addr(tex0_base_addr),
+        .tex0_cache_inv(tex0_cache_inv),
+        .tex_sram_req(pp_tex_sram_req),
+        .tex_sram_addr(pp_tex_sram_addr),
+        .tex_sram_burst_len(pp_tex_sram_burst_len),
+        .tex_sram_burst_rdata(tex_burst_rdata),
+        .tex_sram_burst_data_valid(tex_burst_data_valid),
+        .tex_sram_ack(tex_ack),
+        .tex_sram_ready(arb_port3_ready),
 
         // Pipeline status
         .pipeline_empty(pp_pipeline_empty)

@@ -67,23 +67,20 @@ static constexpr uint64_t pack_vertex(int x, int y, uint16_t z) {
 //   current_color0[63:32] → vertex_color0 (diffuse, connected to rasterizer)
 //   current_color0[31:0]  → vertex_color1 (specular, secondary)
 //
-// The rasterizer reads v0_color[23:0] from tri_color0 = vertex_color0:
-//   [23:16] = R,  [15:8] = G,  [7:0] = B
-//
-// So the upper 32-bit word uses ARGB byte order:
-//   {A[31:24], R[23:16], G[15:8], B[7:0]}
+// The rasterizer decodes v0_color0 as RGBA8888:
+//   [31:24] = R,  [23:16] = G,  [15:8] = B,  [7:0] = A
 // ---------------------------------------------------------------------------
 
-/// Pack an ARGB8888 color value.
+/// Pack an RGBA8888 color value matching the rasterizer decode order.
 ///
 /// @param r  Red channel (0-255).
 /// @param g  Green channel (0-255).
 /// @param b  Blue channel (0-255).
 /// @param a  Alpha channel (0-255).
-/// @return   32-bit ARGB value.
-static constexpr uint32_t argb(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xFF) {
-    return (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(r) << 16) |
-           (static_cast<uint32_t>(g) << 8) | (static_cast<uint32_t>(b));
+/// @return   32-bit RGBA value: {R[31:24], G[23:16], B[15:8], A[7:0]}.
+static constexpr uint32_t rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0xFF) {
+    return (static_cast<uint32_t>(r) << 24) | (static_cast<uint32_t>(g) << 16) |
+           (static_cast<uint32_t>(b) << 8) | (static_cast<uint32_t>(a));
 }
 
 /// Pack diffuse (primary) and specular (secondary) colors into the 64-bit
@@ -279,16 +276,16 @@ static const RegWrite ver_010_script[] = {
     {REG_AREA_SETUP, compute_area_setup(256, 40, 448, 400, 64, 400)},
 
     // 4. Submit V0: red vertex at top center (256, 40)
-    {REG_COLOR, pack_color(argb(0xFF, 0x00, 0x00))}, // Red diffuse
+    {REG_COLOR, pack_color(rgba(0xFF, 0x00, 0x00))}, // Red diffuse
     {REG_VERTEX_NOKICK, pack_vertex(256, 40, 0x0000)},
 
     // 5. Submit V1: blue vertex at bottom right (448, 400)
-    {REG_COLOR, pack_color(argb(0x00, 0x00, 0xFF))}, // Blue diffuse
+    {REG_COLOR, pack_color(rgba(0x00, 0x00, 0xFF))}, // Blue diffuse
     {REG_VERTEX_NOKICK, pack_vertex(448, 400, 0x0000)},
 
     // 6. Submit V2: green vertex at bottom left (64, 400)
     //    VERTEX_KICK_012 triggers rasterization of the triangle (V0, V1, V2).
-    {REG_COLOR, pack_color(argb(0x00, 0xFF, 0x00))}, // Green diffuse
+    {REG_COLOR, pack_color(rgba(0x00, 0xFF, 0x00))}, // Green diffuse
     {REG_VERTEX_KICK_012, pack_vertex(64, 400, 0x0000)},
 
     // 7. Dummy trailing command — ensures the KICK_012 above is consumed

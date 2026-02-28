@@ -30,6 +30,7 @@
 #include "Vgpu_top_gpu_top.h"
 #include "Vgpu_top_rasterizer.h"
 #include "Vgpu_top_register_file.h"
+#include "Vgpu_top_pixel_pipeline.h"
 #include "verilated.h"
 #include "verilated_fst_c.h"
 #endif
@@ -64,6 +65,8 @@ struct RegWrite {
 #include "scripts/ver_010_gouraud.cpp"
 #include "scripts/ver_011_depth_test.cpp"
 #include "scripts/ver_014_textured_cube.cpp"
+#include "scripts/ver_012_textured.cpp"
+#include "scripts/ver_013_color_combined.cpp"
 
 // ---------------------------------------------------------------------------
 // Simulation constants
@@ -509,15 +512,15 @@ static void execute_script(
 // Framebuffer extraction
 // ---------------------------------------------------------------------------
 
-/// Extract the visible framebuffer region from the SDRAM model using flat
-/// linear addressing matching the rasterizer's WRITE_PIXEL formula.
+/// Extract the visible framebuffer region from the SDRAM model using
+/// 4x4 block-tiled addressing matching the pixel pipeline's byte-address
+/// formula (UNIT-006).
 ///
-/// Delegates to SdramModel::read_framebuffer() which reads pixels at:
-///   word_addr = base_word + y * 1280 + x * 2
-/// matching the rasterizer's hardcoded 640-pixel (1280-byte) stride.
+/// Delegates to SdramModel::read_framebuffer() which reads pixels using
+/// the tiled layout: byte_addr = base + block_idx*32 + pixel_off*2.
 ///
 /// @param sdram       Behavioral SDRAM model.
-/// @param base_word   Framebuffer base address in SDRAM model word units.
+/// @param base_word   Framebuffer base byte address (fb_color_base << 9).
 /// @param width_log2  Log2 of surface width (e.g. 9 for 512 pixels).
 ///                    Determines the image width (columns read per row).
 /// @param height      Surface height in pixels to read back.
@@ -634,12 +637,12 @@ int main(int argc, char** argv) {
         output_file = std::format("{}.png", test_name);
     }
 
-    // Pre-load the 16x16 RGB565 checker texture for VER-014 (textured_cube).
-    // The texture base address matches TEX0_BASE_ADDR in ver_014_textured_cube.cpp.
+    // Pre-load the 16x16 RGB565 checker texture for textured tests.
+    // The texture base address matches TEX0_BASE_ADDR in the script files.
     // The checker pattern is generated programmatically per test_strategy.md.
     // This pre-load must happen before the simulation clock starts so that
     // texture cache misses during rendering find data already in the SDRAM model.
-    if (test_name == "textured_cube") {
+    if (test_name == "textured_cube" || test_name == "textured") {
         auto checker_pixels = generate_checker_texture();
         sdram.fill_texture(
             TEX0_BASE_WORD,
@@ -647,8 +650,18 @@ int main(int argc, char** argv) {
             std::span<const uint8_t>(checker_pixels),
             4 // width_log2 = 4 (16-pixel-wide texture)
         );
-        std::cout << "VER-014: Checker texture pre-loaded at word address 0x"
+        std::cout << "Checker texture (white/black) pre-loaded at word address 0x"
                   << std::hex << TEX0_BASE_WORD << std::dec << "\n";
+    } else if (test_name == "color_combined") {
+        auto checker_pixels = generate_checker_texture_midgray();
+        sdram.fill_texture(
+            TEX0_BASE_WORD_013,
+            TexFormat::RGB565,
+            std::span<const uint8_t>(checker_pixels),
+            4 // width_log2 = 4 (16-pixel-wide texture)
+        );
+        std::cout << "Checker texture (white/mid-gray) pre-loaded at word address 0x"
+                  << std::hex << TEX0_BASE_WORD_013 << std::dec << "\n";
     }
 
     // -----------------------------------------------------------------------
@@ -730,6 +743,18 @@ int main(int argc, char** argv) {
         // Phase 3: Submit all twelve cube triangles
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_triangles_script);
 
+    } else if (test_name == "textured") {
+        // VER-012: Textured triangle.
+        std::cout << "Running VER-012 (textured triangle).\n";
+
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_012_script);
+
+    } else if (test_name == "color_combined") {
+        // VER-013: Color-combined output (MODULATE: texture * vertex color).
+        std::cout << "Running VER-013 (color-combined output).\n";
+
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_013_script);
+
     } else {
         std::cerr << std::format("Unknown test: {}\n", test_name);
         top->final();
@@ -765,13 +790,6 @@ int main(int argc, char** argv) {
         uint64_t edge_test_count = 0;
         uint64_t edge_pass_count = 0;
         uint64_t port1_req_count = 0;
-        uint64_t range_test_count = 0;
-        uint64_t zbuf_read_count = 0;
-        uint64_t zbuf_wait_count = 0;
-        uint64_t zbuf_test_count = 0;
-        uint64_t zbuf_test_fail_count = 0;
-        uint64_t write_wait_count = 0;
-        [[maybe_unused]] uint64_t range_fail_count = 0;
         bool rast_started = false;
         bool diag_printed = false;
         for (uint64_t i = 0; i < PIPELINE_DRAIN_CYCLES && !contextp->gotFinish(); i++) {
@@ -779,6 +797,13 @@ int main(int argc, char** argv) {
             connect_sdram(top.get(), sdram, conn);
 
             unsigned rast_state = top->rootp->gpu_top->u_rasterizer->state;
+            unsigned pp_state = top->rootp->gpu_top->u_pixel_pipeline->state;
+
+            // Print pixel pipeline state when rasterizer is stuck
+            if (rast_state == 5 && i < 5) {
+                std::cout << std::format(
+                    "DIAG: drain cycle {} — rast=INTERPOLATE, pp_state={}\n", i, pp_state);
+            }
 
             if (top->rootp->gpu_top->tri_valid) {
                 tri_valid_seen++;
@@ -806,19 +831,11 @@ int main(int argc, char** argv) {
                     static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->x2),
                     static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->y2)
                 );
-                std::cout << std::format(
-                    "DIAG: SETUP — colors: r0={} g0={} b0={}, "
-                    "r1={} g1={} b1={}, r2={} g2={} b2={}\n",
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->r0),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->g0),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->b0),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->r1),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->g1),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->b1),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->r2),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->g2),
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->b2)
-                );
+                // Note: per-vertex color registers (r0/g0/b0 etc.) were removed
+                // from the rasterizer after the incremental interpolation
+                // redesign.  Vertex colors are now latched internally as
+                // v0_color0..v2_color0 and not exposed via verilator public.
+                std::cout << "DIAG: SETUP — vertex colors latched (not exposed)\n";
                 std::cout << std::format(
                     "DIAG: SETUP — inv_area_reg={}\n",
                     static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->inv_area_reg)
@@ -844,60 +861,14 @@ int main(int argc, char** argv) {
                 edge_pass_count++;
             }
 
-            if (rast_state == 12) { // RANGE_TEST = 12
-                range_test_count++;
-                // Print first few range test diagnostics
-                if (range_test_count <= 3) {
-                    std::cout << std::format(
-                        "DIAG: RANGE_TEST #{} — interp_z=0x{:04X}\n",
-                        range_test_count,
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_z)
-                    );
-                }
-            }
+            // RANGE_TEST, ZBUF_READ, ZBUF_WAIT, ZBUF_TEST, and
+            // WRITE_PIXEL states moved to pixel_pipeline after integration.
+            // Rasterizer now emits fragments via valid/ready handshake.
 
-            if (rast_state == 6) { // ZBUF_READ = 6
-                zbuf_read_count++;
-            }
-
-            if (rast_state == 7) { // ZBUF_WAIT = 7
-                zbuf_wait_count++;
-            }
-
-            if (rast_state == 8) { // ZBUF_TEST = 8
-                zbuf_test_count++;
-                if (zbuf_test_count <= 3) {
-                    std::cout << std::format(
-                        "DIAG: ZBUF_TEST #{} — interp_z=0x{:04X}\n",
-                        zbuf_test_count,
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_z)
-                    );
-                }
-            }
-
-            if (rast_state == 10) { // WRITE_WAIT = 10
-                write_wait_count++;
-            }
-
-            if (rast_state == 9) { // WRITE_PIXEL = 9
+            // Count fragment emissions via the rasterizer's frag_valid output.
+            // The old WRITE_PIXEL / ZBUF_* states are now in pixel_pipeline.
+            if (rast_state == 5) { // INTERPOLATE = 5 (fragment emission)
                 write_pixel_count++;
-                if (write_pixel_count <= 3) {
-                    std::cout << std::format(
-                        "DIAG: WRITE_PIXEL #{} at ({},{}), "
-                        "port1_addr=0x{:06X}, port1_wdata=0x{:08X}, "
-                        "interp_rgb=({},{},{})\n",
-                        write_pixel_count,
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->curr_x),
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->curr_y),
-                        static_cast<unsigned>(top->rootp->gpu_top->arb_port1_addr),
-                        static_cast<unsigned>(top->rootp->gpu_top->arb_port1_wdata),
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_r
-                        ),
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_g
-                        ),
-                        static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->interp_b)
-                    );
-                }
             }
 
             if (top->rootp->gpu_top->arb_port1_req) {
@@ -936,16 +907,7 @@ int main(int argc, char** argv) {
             write_pixel_count,
             port1_req_count
         );
-        std::cout << std::format(
-            "DIAG: range_test={}, zbuf_read={}, zbuf_wait={}, zbuf_test={}, "
-            "zbuf_test_fail={}, write_wait={}\n",
-            range_test_count,
-            zbuf_read_count,
-            zbuf_wait_count,
-            zbuf_test_count,
-            zbuf_test_fail_count,
-            write_wait_count
-        );
+        // Z-buffer and write-pixel diagnostics are now in pixel_pipeline.
     }
 
     // -----------------------------------------------------------------------
@@ -1014,7 +976,7 @@ int main(int argc, char** argv) {
     // WIDTH_LOG2 = 9 matches the fb_width_log2 written to FB_CONFIG in
     // ver_010_gouraud.cpp and ver_011_depth_test.cpp (REQ-005.06).
     uint32_t fb_base_word = 0;
-    int fb_height = (test_name == "textured_cube") ? 512 : FB_HEIGHT;
+    int fb_height = (test_name == "textured_cube" || test_name == "textured" || test_name == "color_combined") ? 512 : FB_HEIGHT;
     auto fb = extract_framebuffer(sdram, fb_base_word, FB_WIDTH_LOG2, fb_height);
 
     try {

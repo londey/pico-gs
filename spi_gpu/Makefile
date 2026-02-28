@@ -74,7 +74,9 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test test-rasterizer test-early-z test-register-file \
 	test-gouraud test-depth-test test-textured test-color-combined \
 	test-gouraud-init test-depth-test-init \
-	test-textured-cube test-textured-cube-init
+	test-textured-init test-color-combined-init \
+	test-textured-cube test-textured-cube-init \
+	test-fb-promote test-alpha-blend test-dither
 
 # Default target
 all: bitstream
@@ -224,6 +226,30 @@ test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_early_z -o tb_early_z
 	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_early_z)
 
+# VER-006: Framebuffer promote unit testbench (RGB565 -> Q4.12 conversion)
+test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/fb_promote.sv \
+		$(TB_DIR)/render/tb_fb_promote.sv \
+		--top-module tb_fb_promote -o tb_fb_promote
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_fb_promote)
+
+# VER-007: Alpha blend unit testbench (Q4.12 blend modes)
+test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/alpha_blend.sv \
+		$(TB_DIR)/render/tb_alpha_blend.sv \
+		--top-module tb_alpha_blend -o tb_alpha_blend
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_alpha_blend)
+
+# VER-008: Dither unit testbench (ordered dithering matrix)
+test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/dither.sv \
+		$(TB_DIR)/render/tb_dither.sv \
+		--top-module tb_dither -o tb_dither
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_dither)
+
 # VER-003: Register file unit testbench
 test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
@@ -268,29 +294,51 @@ test-textured-cube-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	@echo "Output written to $(SIM_OUT_DIR)/textured_cube.png"
 	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/textured_cube.png $(TB_DIR)/golden/"
 
-# VER-012: Textured triangle golden image test (blocked)
-test-textured:
-	@echo "VER-012: Blocked pending texture cache RTL completion."
-	@exit 1
+# VER-012: Textured triangle golden image test
+test-textured: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
+	diff -q $(SIM_OUT_DIR)/textured_triangle.png $(TB_DIR)/golden/textured_triangle.png
 
-# VER-013: Color-combined output golden image test (blocked)
-test-color-combined:
-	@echo "VER-013: Blocked pending UNIT-010 (Color Combiner) stabilization."
-	@exit 1
+# VER-012 initial approval: run simulation and generate output for visual inspection.
+test-textured-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
+	@echo "Output written to $(SIM_OUT_DIR)/textured_triangle.png"
+	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/textured_triangle.png $(TB_DIR)/golden/"
+
+# VER-013: Color-combined output golden image test
+test-color-combined: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
+	diff -q $(SIM_OUT_DIR)/color_combined.png $(TB_DIR)/golden/color_combined.png
+
+# VER-013 initial approval: run simulation and generate output for visual inspection.
+test-color-combined-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
+	@echo "Output written to $(SIM_OUT_DIR)/color_combined.png"
+	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/color_combined.png $(TB_DIR)/golden/"
 
 # Run all RTL tests. Unit testbenches (VER-001 through VER-005) run unconditionally.
-# Golden image tests (VER-010, VER-011, VER-014) run when approved golden images exist.
-test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder
+# Golden image tests (VER-010 through VER-014) run when approved golden images exist.
+test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-alpha-blend test-dither
 	@echo "Unit testbenches passed."
 	@if [ -f $(TB_DIR)/golden/gouraud_triangle.png ]; then \
 		$(MAKE) test-gouraud; \
 	else \
-		echo "VER-010: Golden image not yet approved. Run 'make test-gouraud' after approval."; \
+		echo "VER-010: Golden image not yet approved. Run 'make test-gouraud-init' after approval."; \
 	fi
 	@if [ -f $(TB_DIR)/golden/depth_test.png ]; then \
 		$(MAKE) test-depth-test; \
 	else \
-		echo "VER-011: Golden image not yet approved. Run 'make test-depth-test' after approval."; \
+		echo "VER-011: Golden image not yet approved. Run 'make test-depth-test-init' after approval."; \
+	fi
+	@if [ -f $(TB_DIR)/golden/textured_triangle.png ]; then \
+		$(MAKE) test-textured; \
+	else \
+		echo "VER-012: Golden image not yet approved. Run 'make test-textured-init' after approval."; \
+	fi
+	@if [ -f $(TB_DIR)/golden/color_combined.png ]; then \
+		$(MAKE) test-color-combined; \
+	else \
+		echo "VER-013: Golden image not yet approved. Run 'make test-color-combined-init' after approval."; \
 	fi
 	@if [ -f $(TB_DIR)/golden/textured_cube.png ]; then \
 		$(MAKE) test-textured-cube; \

@@ -279,8 +279,12 @@ module sram_arbiter (
                 // (burst_wdata routed combinationally via mem_burst_wdata assign)
                 // --------------------------------------------------------
 
-                // Preemption: if higher-priority port requests, cancel burst
-                if (higher_priority_req) begin
+                // Preemption: if higher-priority port requests, cancel burst.
+                // Single-word bursts (burst_len=1) are never preempted:
+                // they complete within a few cycles, and preemption would
+                // discard in-flight read data that the requester cannot
+                // retry, causing a pipeline deadlock (DD-038).
+                if (higher_priority_req && mem_burst_len > 8'd1) begin
                     mem_burst_cancel <= 1'b1;
                 end
 

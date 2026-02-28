@@ -175,8 +175,19 @@ static std::vector<uint8_t> generate_checker_texture() {
 // ---------------------------------------------------------------------------
 
 /// Texture base address (byte address, 4K aligned).
-/// 0x00040000 / 512 = 0x200 in 512-byte units for the BASE_ADDR field.
-static constexpr uint64_t TEX0_BASE_ADDR = 0x00040000ULL;
+/// The SDRAM model maps even byte addresses to mem_[] indices 1:1 via
+/// connect_sdram (word_addr = byte_addr for even addresses).  The 512x512
+/// RGB565 framebuffer spans byte addresses 0x00000 through 0x7FFFE
+/// (block_off up to 16383*32 + 30 = 0x7FFFE).  fill_texture() uses
+/// compact word addressing (TEX0_BASE_WORD + offset), so TEX0_BASE_WORD
+/// must be >= 0x80000 to avoid overlapping the framebuffer mem_[] range.
+///
+/// TEX0_BASE_ADDR = 0x100000 → TEX0_BASE_WORD = 0x80000 (past FB end).
+/// TEX0_BASE_ADDR_512 = 0x0800.  This does NOT conflict with
+/// ZBUFFER_BASE_512=0x0800 because the Z-buffer uses <<9 scaling
+/// (fb_z_base * 512 = 0x100000 byte addr) while the texture cache uses
+/// <<8 scaling (base_addr_512 * 256 = 0x80000 word addr).
+static constexpr uint64_t TEX0_BASE_ADDR = 0x00100000ULL;
 static constexpr uint16_t TEX0_BASE_ADDR_512 = static_cast<uint16_t>(TEX0_BASE_ADDR / 512);
 static constexpr uint32_t TEX0_BASE_WORD = static_cast<uint32_t>(TEX0_BASE_ADDR / 2);
 
@@ -209,8 +220,8 @@ static constexpr uint64_t RENDER_MODE_TEXTURED_DEPTH =
 // correctness from color arithmetic.
 // ---------------------------------------------------------------------------
 
-static constexpr uint64_t COLOR_WHITE = pack_color(argb(0xFF, 0xFF, 0xFF), argb(0x00, 0x00, 0x00));
-static constexpr uint64_t COLOR_BLACK = pack_color(argb(0x00, 0x00, 0x00), argb(0x00, 0x00, 0x00));
+static constexpr uint64_t COLOR_WHITE = pack_color(rgba(0xFF, 0xFF, 0xFF), rgba(0x00, 0x00, 0x00));
+static constexpr uint64_t COLOR_BLACK = pack_color(rgba(0x00, 0x00, 0x00), rgba(0x00, 0x00, 0x00));
 
 // ---------------------------------------------------------------------------
 // Cube vertex positions and Z values (screen space, after perspective

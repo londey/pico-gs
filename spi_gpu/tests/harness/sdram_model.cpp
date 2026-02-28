@@ -76,29 +76,42 @@ SdramModel::read_framebuffer(uint32_t base_word, int width_log2, int height) con
 
     std::vector<uint16_t> fb(static_cast<size_t>(width) * height);
 
-    // Flat linear readback matching the rasterizer's WRITE_PIXEL address formula.
+    // Block-tiled readback matching the pixel pipeline's (UNIT-006) tiled
+    // address formula.
     //
-    // The rasterizer (UNIT-005) currently computes framebuffer byte addresses as:
-    //   fb_addr = fb_base + y * 1280 + x * 2
-    // where the byte stride 1280 = (y << 10) + (y << 8) corresponds to a
-    // 640-pixel row pitch (each pixel is 16-bit RGB565 = 2 bytes).
+    // After pixel pipeline integration, the framebuffer uses 4x4 block-tiled
+    // addressing (INT-011).  The pixel pipeline computes byte addresses:
+    //   fb_base    = fb_color_base << 9   (base * 512 bytes)
+    //   block_x    = pixel_x >> 2
+    //   block_y    = pixel_y >> 2
+    //   local_x    = pixel_x & 3
+    //   local_y    = pixel_y & 3
+    //   blocks_log2 = max(width_log2 - 2, 0)
+    //   block_idx  = (block_y << blocks_log2) | block_x
+    //   block_off  = block_idx << 5   (32 bytes per 4x4 RGB565 block)
+    //   pixel_off  = (local_y * 4 + local_x) * 2
+    //   byte_addr  = fb_base + block_off + pixel_off
     //
-    // The SDRAM controller (via connect_sdram) maps byte addresses into the
-    // SdramModel's word-address space such that word_addr equals the byte
-    // address for even addresses.  Therefore:
-    //   word_addr = base_word + y * 1280 + x * 2
+    // The SDRAM controller decomposes byte addresses into bank/row/col
+    // with col = {addr[8:1], 1'b0}, dropping bit 0.  connect_sdram()
+    // reconstructs word_addr = (bank << 23) | (row << 9) | col, which
+    // for even byte addresses equals the byte address itself.
     //
-    // The width_log2 parameter determines how many columns are read per row
-    // (the image width), which may be narrower than the 640-pixel stride.
-    static constexpr uint32_t BYTE_STRIDE = 1280; // 640 pixels * 2 bytes
+    // base_word is in byte units (fb_color_base << 9).
+    int blocks_log2 = (width_log2 >= 2) ? (width_log2 - 2) : 0;
+
     for (int py = 0; py < height; ++py) {
         for (int px = 0; px < width; ++px) {
-            uint32_t word_addr =
-                base_word +
-                static_cast<uint32_t>(py) * BYTE_STRIDE +
-                static_cast<uint32_t>(px) * 2;
+            uint32_t block_x = static_cast<uint32_t>(px) >> 2;
+            uint32_t block_y = static_cast<uint32_t>(py) >> 2;
+            uint32_t local_x = static_cast<uint32_t>(px) & 3;
+            uint32_t local_y = static_cast<uint32_t>(py) & 3;
+            uint32_t block_idx = (block_y << blocks_log2) | block_x;
+            uint32_t block_off = block_idx << 5;  // 32 bytes per block
+            uint32_t pixel_off = (local_y * 4 + local_x) * 2;
+            uint32_t byte_addr = base_word + block_off + pixel_off;
 
-            fb[py * width + px] = read_word(word_addr);
+            fb[py * width + px] = read_word(byte_addr);
         }
     }
 

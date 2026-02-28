@@ -726,7 +726,9 @@ module register_file (
             fb_config_reg       <= 64'h0;
             fb_display_reg      <= 64'h0;
             fb_control_reg      <= 64'h0000_0000_3FF0_03FF;
-            cc_mode_reg         <= 64'h0000_0000_0072_0020;
+            // MODULATE preset: (TEX0 - ZERO) * SHADE0 + ZERO in cycle 0,
+            // (COMBINED - ZERO) * ONE + ZERO (pass-through) in cycle 1.
+            cc_mode_reg         <= 64'h7670_7670_7371_7371;
             const_color_reg     <= 64'h0;
             tex0_cfg_reg        <= 64'h0;
             tex1_cfg_reg        <= 64'h0;
