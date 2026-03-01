@@ -39,7 +39,8 @@
                 "streetsidesoftware.code-spell-checker",
                 "mutantdino.resourcemonitor",
                 "bierner.markdown-mermaid",
-                "ms-vscode.cpptools-extension-pack"
+                "ms-vscode.cpptools-extension-pack",
+                "MermaidChart.vscode-mermaid-chart"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
