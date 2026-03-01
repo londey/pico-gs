@@ -1,3 +1,5 @@
+// Spec-ref: unit_010_color_combiner.md `0000000000000000` 1970-01-01
+//
 // Testbench for color_combiner module (VER-004)
 //
 // Covers all 14 VER-004 test procedures:
@@ -19,6 +21,8 @@
 `timescale 1ns/1ps
 
 module color_combiner_tb;
+
+    import fp_types_pkg::*;
 
     // Clock and reset
     reg         clk;
@@ -53,12 +57,13 @@ module color_combiner_tb;
     integer pass_count = 0;
     integer fail_count = 0;
 
-    // Q4.12 constants
-    localparam [15:0] Q412_ZERO    = 16'h0000;
+    // Q4.12 arithmetic constants sourced from fp_types_pkg.sv per VER-004 notes.
+    // ONE (0x1000) and ZERO (0x0000) must match the RTL constants in color_combiner.sv.
+    // Q412_ONE and Q412_ZERO are imported from fp_types_pkg; only testbench-local
+    // intermediate values are declared here.
     localparam [15:0] Q412_QUARTER = 16'h0400;  // 0.25
     localparam [15:0] Q412_HALF    = 16'h0800;  // 0.5
     localparam [15:0] Q412_3Q      = 16'h0C00;  // 0.75
-    localparam [15:0] Q412_ONE     = 16'h1000;  // 1.0
 
     // CC_SOURCE encoding (cc_source_e from RDL)
     localparam [3:0] CC_COMBINED = 4'd0;
@@ -286,11 +291,11 @@ module color_combiner_tb;
                 sat = sum[15:0];
             end
 
-            // Step 4b: UNORM saturation to [0x0000, 0x1000]
+            // Step 4b: UNORM saturation to [Q412_ZERO, Q412_ONE]
             if (sat[15]) begin
-                ref_combiner = 16'h0000;
-            end else if (sat > 16'sh1000) begin
-                ref_combiner = 16'h1000;
+                ref_combiner = Q412_ZERO;
+            end else if (sat > Q412_ONE) begin
+                ref_combiner = Q412_ONE;
             end else begin
                 ref_combiner = sat[15:0];
             end
@@ -508,7 +513,7 @@ module color_combiner_tb;
         $display("--- Test 5: COMBINED source ---");
 
         const_color = 64'h0;
-        shade0 = pack_q412(16'h0C00, 16'h0800, 16'h0400, 16'h1000);
+        shade0 = pack_q412(16'h0C00, 16'h0800, 16'h0400, Q412_ONE);
 
         cc_mode = {
             PASSTHROUGH_CYCLE,
@@ -521,7 +526,7 @@ module color_combiner_tb;
         check16("combined=shade0 R", combined_color[63:48], 16'h0C00);
         check16("combined=shade0 G", combined_color[47:32], 16'h0800);
         check16("combined=shade0 B", combined_color[31:16], 16'h0400);
-        check16("combined=shade0 A", combined_color[15:0],  16'h1000);
+        check16("combined=shade0 A", combined_color[15:0],  Q412_ONE);
 
         // ============================================================
         // Test 6 (VER-004 Proc 6): MODULATE mode (TEX0 * SHADE0)

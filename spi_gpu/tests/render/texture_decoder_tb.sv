@@ -5,7 +5,9 @@
 
 `timescale 1ns/1ps
 
-module texture_decoder_tb;
+module texture_decoder_tb
+    import fp_types_pkg::*;
+;
 
     // Test counters
     integer pass_count = 0;
@@ -273,6 +275,14 @@ module texture_decoder_tb;
         // Test 4: texel_promote
         // ============================================================
         $display("--- Test 4: texel_promote ---");
+
+        // Step 4: texel_promote acceptance test.
+        // The RTL under test is texel_promote.sv, which delegates to the named functions
+        // in fp_types_pkg.sv: promote_r5_to_q412, promote_g6_to_q412, promote_b5_to_q412,
+        // promote_a2_to_q412. Expected output values are derived from the INT-032 formulas
+        // and serve as the acceptance test for those package functions.
+        // If any output differs from expected, verify fp_types_pkg.sv against INT-032
+        // before modifying test vectors.
 
         // Test A2=2'b11 -> Q4.12 = 0x1000
         promote_rgba5652 = {5'd0, 6'd0, 5'd0, 2'b11};
