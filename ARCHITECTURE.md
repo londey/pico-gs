@@ -320,55 +320,87 @@ The rasterizer feeds the pixel pipeline at up to one fragment per clock; the pip
 ### Block Diagram
 
 ```mermaid
-flowchart LR
-    UNIT_001["UNIT-001: SPI Slave Controller"]
-    UNIT_002["UNIT-002: Command FIFO"]
-    UNIT_003["UNIT-003: Register File"]
-    UNIT_004["UNIT-004: Triangle Setup"]
-    UNIT_005["UNIT-005: Rasterizer"]
-    UNIT_006["UNIT-006: Pixel Pipeline"]
-    UNIT_007["UNIT-007: Memory Arbiter"]
-    UNIT_008["UNIT-008: Display Controller"]
-    UNIT_009["UNIT-009: DVI TMDS Encoder"]
-    UNIT_010["UNIT-010: Color Combiner"]
-    UNIT_020["UNIT-020: Core 0 Scene Manager"]
-    UNIT_021["UNIT-021: Core 1 Render Executor"]
-    UNIT_022["UNIT-022: GPU Driver Layer"]
-    UNIT_023["UNIT-023: Transformation Pipeline"]
-    UNIT_024["UNIT-024: Lighting Calculator"]
-    UNIT_025["UNIT-025: USB Keyboard Handler"]
-    UNIT_026["UNIT-026: Inter-Core Queue"]
-    UNIT_027["UNIT-027: Demo State Machine"]
-    UNIT_030["UNIT-030: PNG Decoder"]
-    UNIT_031["UNIT-031: OBJ Parser"]
-    UNIT_032["UNIT-032: Mesh Patch Splitter"]
-    UNIT_033["UNIT-033: Codegen Engine"]
-    UNIT_034["UNIT-034: Build.rs Orchestrator"]
-    UNIT_035["UNIT-035: PC SPI Driver (FT232H)"]
-    UNIT_036["UNIT-036: PC Input Handler"]
-    UNIT_037["UNIT-037: Verilator Interactive Simulator App"]
-    UNIT_001 -->|INT-001| UNIT_001
-    UNIT_001 -->|INT-001| UNIT_022
-    UNIT_001 -->|INT-001| UNIT_035
-    UNIT_009 -->|INT-002| UNIT_009
-    UNIT_003 -->|INT-010| UNIT_001
-    UNIT_003 -->|INT-010| UNIT_004
-    UNIT_003 -->|INT-010| UNIT_005
-    UNIT_003 -->|INT-010| UNIT_006
-    UNIT_003 -->|INT-010| UNIT_008
-    UNIT_003 -->|INT-010| UNIT_010
-    UNIT_003 -->|INT-010| UNIT_022
-    UNIT_022 -->|INT-020| UNIT_020
-    UNIT_022 -->|INT-020| UNIT_021
-    UNIT_026 -->|INT-021| UNIT_020
-    UNIT_026 -->|INT-021| UNIT_021
-    UNIT_026 -->|INT-021| UNIT_027
-    UNIT_034 -->|INT-031| UNIT_026
-    UNIT_034 -->|INT-031| UNIT_032
-    UNIT_034 -->|INT-031| UNIT_033
-    UNIT_034 -->|INT-031| UNIT_034
-    UNIT_006 -->|INT-032| UNIT_006
-    UNIT_036 -->|INT-040| UNIT_022
+block
+    columns 4
+
+    block:frontend["Front End"]:2
+        columns 3
+        UNIT_001["UNIT-001<br>SPI Slave Controller"]
+        UNIT_002["UNIT-002<br>Command FIFO"]
+        UNIT_003["UNIT-003<br>Register File"]
+    end
+    block:geometry["Geometry"]:2
+        columns 2
+        UNIT_004["UNIT-004<br>Triangle Setup"]:2
+        block:UNIT_005["UNIT-005: Rasterizer"]:2
+            columns 2
+            UNIT_005_01["UNIT-005.01<br>Edge Setup"]
+            UNIT_005_02["UNIT-005.02<br>Derivative Pre-comp"]
+            UNIT_005_03["UNIT-005.03<br>Attribute Accum"]
+            UNIT_005_04["UNIT-005.04<br>Iteration FSM"]
+        end
+    end
+
+    block:pixel["Pixel Processing"]:2
+        columns 2
+        UNIT_006["UNIT-006<br>Pixel Pipeline"]
+        UNIT_010["UNIT-010<br>Color Combiner"]
+    end
+    block:display["Display + Memory"]:2
+        columns 3
+        UNIT_007["UNIT-007<br>Memory Arbiter"]
+        UNIT_008["UNIT-008<br>Display Controller"]
+        UNIT_009["UNIT-009<br>DVI TMDS Encoder"]
+    end
+
+    block:fw_core0["Firmware — Core 0"]:2
+        columns 2
+        UNIT_020["UNIT-020<br>Scene Manager"]
+        UNIT_027["UNIT-027<br>Demo State Machine"]
+        UNIT_025["UNIT-025<br>USB Keyboard"]
+        UNIT_026["UNIT-026<br>Inter-Core Queue"]
+    end
+    block:fw_core1["Firmware — Core 1"]:2
+        columns 2
+        UNIT_021["UNIT-021<br>Render Executor"]
+        UNIT_022["UNIT-022<br>GPU Driver"]
+        UNIT_023["UNIT-023<br>Transform Pipeline"]
+        UNIT_024["UNIT-024<br>Lighting Calculator"]
+    end
+
+    block:asset["Asset Pipeline (Build-time)"]:3
+        columns 5
+        UNIT_034["UNIT-034<br>Build.rs Orchestrator"]
+        UNIT_030["UNIT-030<br>PNG Decoder"]
+        UNIT_031["UNIT-031<br>OBJ Parser"]
+        UNIT_032["UNIT-032<br>Mesh Patch Splitter"]
+        UNIT_033["UNIT-033<br>Codegen Engine"]
+    end
+    block:pchost["PC Debug Host"]:1
+        columns 1
+        UNIT_035["UNIT-035<br>PC SPI Driver (FT232H)"]
+        UNIT_036["UNIT-036<br>PC Input Handler"]
+        UNIT_037["UNIT-037<br>Verilator Simulator"]
+    end
+
+    UNIT_001 -- "INT-001" --> UNIT_022
+    UNIT_001 -- "INT-001" --> UNIT_035
+    UNIT_003 -- "INT-010" --> UNIT_001
+    UNIT_003 -- "INT-010" --> UNIT_004
+    UNIT_003 -- "INT-010" --> UNIT_005_01
+    UNIT_003 -- "INT-010" --> UNIT_006
+    UNIT_003 -- "INT-010" --> UNIT_008
+    UNIT_003 -- "INT-010" --> UNIT_010
+    UNIT_003 -- "INT-010" --> UNIT_022
+    UNIT_022 -- "INT-020" --> UNIT_020
+    UNIT_022 -- "INT-020" --> UNIT_021
+    UNIT_026 -- "INT-021" --> UNIT_020
+    UNIT_026 -- "INT-021" --> UNIT_021
+    UNIT_026 -- "INT-021" --> UNIT_027
+    UNIT_034 -- "INT-031" --> UNIT_026
+    UNIT_034 -- "INT-031" --> UNIT_032
+    UNIT_034 -- "INT-031" --> UNIT_033
+    UNIT_036 -- "INT-040" --> UNIT_022
 ```
 
 ### Software Units
@@ -379,6 +411,10 @@ flowchart LR
 | UNIT-002 | Command FIFO | Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries. |
 | UNIT-003 | Register File | Stores GPU state and vertex data |
 | UNIT-004 | Triangle Setup | Prepares triangle for rasterization |
+| UNIT-005.01 | Edge Setup | Computes edge function coefficients and bounding box for a triangle. |
+| UNIT-005.02 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
+| UNIT-005.03 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
+| UNIT-005.04 | Iteration FSM | Drives the bounding box walk, edge testing, and fragment output handshake. |
 | UNIT-005 | Rasterizer | Edge-walking rasterization engine |
 | UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture sampling, and format promotion to Q4.12 |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
