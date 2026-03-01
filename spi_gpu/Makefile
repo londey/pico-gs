@@ -62,8 +62,9 @@ ECPPACK = ecppack
 OPENFPGALOADER = openFPGALoader
 VERILATOR = verilator
 
-# Synthesis flags
-YOSYS_FLAGS = -q -l $(BUILD_DIR)/yosys.log
+# Synthesis flags (-q: quiet console, -t: timestamps, -d: per-pass timing)
+YOSYS_FLAGS = -q -t -d -l $(BUILD_DIR)/yosys.log
+SCRIPTS_DIR = scripts
 NEXTPNR_FLAGS = --$(DEVICE) --package $(PACKAGE) --freq 100 --timing-allow-fail
 ECPPACK_FLAGS = --compress
 
@@ -95,9 +96,24 @@ $(OBJ_DIR):
 $(SIM_OUT_DIR):
 	mkdir -p $(SIM_OUT_DIR)
 
-# Synthesis with Yosys
+# Synthesis with Yosys (staged with memory profiling)
 synth: $(BUILD_DIR)
-	$(YOSYS) $(YOSYS_FLAGS) -p "read_verilog -sv $(RTL_SOURCES); synth_ecp5 -nowidelut -top $(TOP_MODULE) -json $(BUILD_DIR)/$(PROJECT).json"
+	@> $(BUILD_DIR)/yosys.log
+	$(YOSYS) $(YOSYS_FLAGS) \
+		-p "read_verilog -sv $(RTL_SOURCES)" \
+		-p "script $(SCRIPTS_DIR)/synth_profile.ys" \
+		-p "write_json $(BUILD_DIR)/$(PROJECT).json" \
+		-p "log === STAGE: done ===" & \
+	YOSYS_PID=$$!; \
+	bash $(SCRIPTS_DIR)/rss_monitor.sh $$YOSYS_PID \
+		$(BUILD_DIR)/rss_profile.csv $(BUILD_DIR)/yosys.log & \
+	MON_PID=$$!; \
+	wait $$YOSYS_PID; YOSYS_RC=$$?; \
+	kill $$MON_PID 2>/dev/null; wait $$MON_PID 2>/dev/null; \
+	bash $(SCRIPTS_DIR)/synth_summary.sh \
+		$(BUILD_DIR)/yosys.log $(BUILD_DIR)/rss_profile.csv \
+		$(BUILD_DIR)/synth_summary.txt; \
+	exit $$YOSYS_RC
 
 # Place and route with nextpnr
 pnr: synth
@@ -670,7 +686,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all              - Build complete bitstream (default)"
-	@echo "  synth            - Run synthesis only"
+	@echo "  synth            - Run synthesis with per-stage memory profiling"
 	@echo "  pnr              - Run place-and-route only"
 	@echo "  bitstream        - Generate bitstream"
 	@echo "  program          - Program FPGA via JTAG"

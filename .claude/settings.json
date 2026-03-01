@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Read(//workspaces/pico-gs/**)",
-      "Bash(yosys --version)"
+      "Bash(wc -l:*)",
+      "Bash(yosys:*)",
+      "Bash(bash /workspaces/pico-gs/spi_gpu/scripts/synth_summary.sh:*)",
+      "Bash(git ls-files -s spi_gpu/scripts/*.sh)"
     ]
   }
 }

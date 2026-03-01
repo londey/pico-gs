@@ -148,6 +148,11 @@ if [ "$BUILD_FPGA" = true ]; then
     make bitstream
     FPGA_BITSTREAM="${REPO_ROOT}/build/fpga/gpu_top.bit"
     echo -e "${GREEN}✓ Bitstream built: ${FPGA_BITSTREAM}${NC}"
+    SYNTH_SUMMARY="${REPO_ROOT}/build/fpga/synth_summary.txt"
+    if [ -f "$SYNTH_SUMMARY" ]; then
+        echo ""
+        cat "$SYNTH_SUMMARY"
+    fi
     echo ""
 fi
 
