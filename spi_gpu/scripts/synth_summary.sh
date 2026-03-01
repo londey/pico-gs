@@ -139,17 +139,155 @@ fi
     fi
     echo "==========================================================================="
 
-    # Print the per-module stat from the check stage.
-    # Look for the last "=== gpu_top ===" section (from stat -top gpu_top -hierarchy).
-    # This shows cells and submodules per module in the hierarchy.
-    HIER_LINE=$(grep -n '=== design hierarchy ===' "$YOSYS_LOG" | tail -1 | cut -d: -f1)
-    if [ -n "$HIER_LINE" ]; then
-        echo ""
-        echo "Per-module cell hierarchy (from final stat -hierarchy):"
-        echo "---"
-        # Extract from "=== design hierarchy ===" to the next blank line
-        tail -n +"$HIER_LINE" "$YOSYS_LOG" \
-            | sed 's/^\[[0-9.]*\] //' \
-            | awk '/^$/ && seen {exit} /^[0-9]/ {exit} {if (NR>1) seen=1; print}'
-    fi
+    # --- FPGA Resource Breakdown ---
+    # Parse pre-flatten per-module stats (between first "Printing statistics" and
+    # "=== STAGE: coarse ===") for $mul, $div, and memory bits per module.
+    # Parse memory mapping decisions from map_ram stage.
+    # Parse post-synthesis MULT18X18D and DP16KD totals.
+
+    echo ""
+    echo "==========================================================================="
+    echo "  FPGA Resource Breakdown"
+    echo "==========================================================================="
+
+    # Extract post-synthesis MULT18X18D and DP16KD counts from the last stat output.
+    # Use the last occurrence of each cell type count in the log.
+    MULT_COUNT=$(grep -oP '\d+(?=\s+MULT18X18D)' "$YOSYS_LOG" | tail -1)
+    BRAM_COUNT=$(grep -oP '\d+(?=\s+DP16KD)' "$YOSYS_LOG" | tail -1)
+    MULT_COUNT=${MULT_COUNT:-0}
+    BRAM_COUNT=${BRAM_COUNT:-0}
+
+    echo ""
+    printf "  Post-synthesis totals (ECP5-25K):\n"
+    printf "    MULT18X18D:  %4d / %4d   (%3d%%)\n" "$MULT_COUNT" 28 "$((MULT_COUNT * 100 / 28))"
+    printf "    DP16KD:      %4d / %4d   (%3d%%)\n" "$BRAM_COUNT" 56 "$((BRAM_COUNT * 100 / 56))"
+
+    # Parse per-module $mul, $div, and memory bits from the pre-flatten stat
+    # output. This section runs between the first "Printing statistics" line
+    # and the "=== STAGE: coarse ===" marker.
+    echo ""
+    echo "  Per-module multiplier sources (pre-flatten RTL):"
+    echo ""
+
+    # Use awk to parse module sections and extract $mul, $div, memory bits.
+    # Only process lines between "Printing statistics" and "STAGE: coarse".
+    awk '
+    # Strip Yosys timestamp prefix: [00000.618070]
+    { sub(/^\[[0-9]+\.[0-9]+\] /, "") }
+
+    /Printing statistics/ && !done_stats { in_stats = 1; next }
+    /=== STAGE: coarse ===/ { in_stats = 0; done_stats = 1 }
+
+    !in_stats { next }
+
+    # Module header: === module_name ===
+    /^=== .+ ===$/ {
+        mod = $0
+        gsub(/^=== | ===$/, "", mod)
+        in_local = 0
+        next
+    }
+
+    # Only parse cell counts from "Local Count, excluding submodules" sections.
+    # This avoids double-counting from the "including submodules" totals.
+    /Local Count, excluding submodules/ { in_local = 1; next }
+    /Count including submodules/ { in_local = 0; next }
+
+    !in_local { next }
+
+    # Cell counts: leading whitespace, number, cell type.
+    # Field layout after timestamp strip: "        112   $mul" → $1=count, $2=type
+    /\$mul$/ && mod != "" {
+        for (i = 1; i <= NF; i++) if ($i == "$mul" && $(i-1)+0 > 0) mul[mod] = $(i-1)+0
+    }
+    /\$div$/ && mod != "" {
+        for (i = 1; i <= NF; i++) if ($i == "$div" && $(i-1)+0 > 0) div[mod] = $(i-1)+0
+    }
+    /memory bits$/ && mod != "" {
+        for (i = 1; i <= NF; i++) if ($i == "memory" && $(i+1) == "bits" && $(i-1)+0 > 0) mem[mod] = $(i-1)+0
+    }
+
+    END {
+        # Collect modules that have any of mul, div, or mem
+        n = 0
+        for (m in mul)  { if (!(m in seen)) { mods[n++] = m; seen[m] = 1 } }
+        for (m in div)  { if (!(m in seen)) { mods[n++] = m; seen[m] = 1 } }
+        for (m in mem)  { if (!(m in seen)) { mods[n++] = m; seen[m] = 1 } }
+
+        # Sort by $mul count descending, then $div, then mem (insertion sort)
+        for (i = 1; i < n; i++) {
+            key = mods[i]
+            km = (key in mul) ? mul[key] : 0
+            kd = (key in div) ? div[key] : 0
+            kb = (key in mem) ? mem[key] : 0
+            j = i - 1
+            while (j >= 0) {
+                jm = (mods[j] in mul) ? mul[mods[j]] : 0
+                jd = (mods[j] in div) ? div[mods[j]] : 0
+                jb = (mods[j] in mem) ? mem[mods[j]] : 0
+                if (jm < km || (jm == km && jd < kd) || (jm == km && jd == kd && jb < kb)) {
+                    mods[j+1] = mods[j]
+                    j--
+                } else break
+            }
+            mods[j+1] = key
+        }
+
+        # Shorten $paramod names: "$paramod$hash\name" → "name"
+        for (i = 0; i < n; i++) {
+            orig = mods[i]
+            if (index(orig, "$paramod") == 1) {
+                short = orig
+                sub(/.*\\/, "", short)
+                mods[i] = short
+                if (orig in mul) { mul[short] = mul[orig]; delete mul[orig] }
+                if (orig in div) { div[short] = div[orig]; delete div[orig] }
+                if (orig in mem) { mem[short] = mem[orig]; delete mem[orig] }
+            }
+        }
+
+        printf "    %-26s %5s  %5s  %10s\n", "Module", "$mul", "$div", "Mem bits"
+        printf "    %-26s %5s  %5s  %10s\n", "--------------------------", "-----", "-----", "----------"
+
+        total_mul = 0; total_div = 0; total_mem = 0
+        for (i = 0; i < n; i++) {
+            m = mods[i]
+            vm = (m in mul) ? mul[m] : 0
+            vd = (m in div) ? div[m] : 0
+            vb = (m in mem) ? mem[m] : 0
+            total_mul += vm; total_div += vd; total_mem += vb
+            ms = (vm > 0) ? sprintf("%d", vm) : "-"
+            ds = (vd > 0) ? sprintf("%d", vd) : "-"
+            bs = (vb > 0) ? sprintf("%d", vb) : "-"
+            printf "    %-26s %5s  %5s  %10s\n", m, ms, ds, bs
+        }
+        printf "    %-26s %5s  %5s  %10s\n", "--------------------------", "-----", "-----", "----------"
+        printf "    %-26s %5d  %5d  %10d\n", "TOTAL", total_mul, total_div, total_mem
+    }
+    ' "$YOSYS_LOG"
+
+    # Parse memory mapping decisions from the map_ram stage.
+    # Lines look like: mapping memory gpu_top.u_display_ctrl...mem via $__DP16KD_
+    echo ""
+    echo "  Memory mapping decisions:"
+    echo ""
+    grep 'mapping memory' "$YOSYS_LOG" \
+        | sed 's/^\[[0-9.]*\] //' \
+        | while IFS= read -r line; do
+            # Extract: "mapping memory <path> via <target>"
+            mem_path=$(echo "$line" | sed 's/mapping memory //;s/ via .*//')
+            mem_target=$(echo "$line" | sed 's/.* via //')
+            # Shorten gpu_top. prefix
+            mem_path=${mem_path#gpu_top.}
+            # Classify as block RAM or distributed RAM
+            case "$mem_target" in
+                *DP16KD*|*PDPW16KD*) ram_type="block RAM" ;;
+                *DPR16X4*|*TRELLIS*) ram_type="distributed RAM" ;;
+                *) ram_type="$mem_target" ;;
+            esac
+            printf "    %-45s → %s (%s)\n" "$mem_path" "$mem_target" "$ram_type"
+        done
+
+    echo ""
+    echo "==========================================================================="
 } | tee "$OUTPUT_FILE"
