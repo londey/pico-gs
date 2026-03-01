@@ -190,6 +190,7 @@ test-register-file-v10: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # VER-004: Color combiner unit testbench (deferred: UNIT-010 WIP)
 test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/color_combiner.sv \
 		$(TB_DIR)/render/color_combiner_tb.sv \
 		--top-module color_combiner_tb -o tb_color_combiner
@@ -373,7 +374,6 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \
 	$(RTL_DIR)/render/texture_cache.sv \
-	$(RTL_DIR)/render/color_combiner.sv \
 	$(RTL_DIR)/render/texture_rgb565.sv \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
@@ -410,8 +410,14 @@ lint:
 		$(RTL_DIR)/display/tmds_encoder.sv \
 		$(RTL_DIR)/display/dvi_output.sv \
 		--top-module dvi_output 2>&1 || fail=1; \
+	echo "Linting color_combiner.sv (with fp_types_pkg)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/color_combiner.sv \
+		--top-module color_combiner 2>&1 || fail=1; \
 	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/early_z.sv \
 		$(RTL_DIR)/render/stipple.sv \
 		$(RTL_DIR)/render/texture_bc1.sv \

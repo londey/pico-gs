@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `f7ece909bb04a361` 2026-02-28
+// Spec-ref: unit_006_pixel_pipeline.md `af6f054089e37f68` 2026-03-01
 //
 // Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative texture cache for one sampler.

@@ -1,4 +1,4 @@
-// Spec-ref: unit_010_color_combiner.md `cc16cb8dc69d0bab` 2026-02-28
+// Spec-ref: unit_010_color_combiner.md `4cb6078ecd12060e` 2026-03-01
 //
 // Color Combiner — Two-Stage Pipelined Programmable Color Combiner
 //
@@ -70,6 +70,8 @@ module color_combiner (
     input  wire        out_ready
 );
 
+    import fp_types_pkg::*;
+
     // ====================================================================
     // CC_SOURCE Encoding (cc_source_e from RDL)
     // ====================================================================
@@ -107,13 +109,12 @@ module color_combiner (
     localparam [3:0] CC_C_SHADE1_ALPHA   = 4'd14;
 
     // ====================================================================
-    // Q4.12 Constants
+    // Q4.12 Constants (sourced from fp_types_pkg.sv)
     // ====================================================================
+    // Q412_ZERO and Q412_ONE are provided by the fp_types_pkg wildcard
+    // import above.  See fp_types_pkg.sv for canonical definitions.
 
-    localparam signed [15:0] Q412_ZERO = 16'sh0000;
-    localparam signed [15:0] Q412_ONE  = 16'sh1000;  // 1.0 in Q4.12
-
-    // Packed 64-bit constant for RGBA zero
+    // Packed 64-bit constant for RGBA zero (4-channel convenience, local)
     localparam [63:0] ZERO_Q412 = 64'h0000_0000_0000_0000;
 
     // ====================================================================

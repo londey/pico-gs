@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `f7ece909bb04a361` 2026-02-28
+// Spec-ref: unit_006_pixel_pipeline.md `af6f054089e37f68` 2026-03-01
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
 //
@@ -129,6 +129,8 @@ module pixel_pipeline (
     // ====================================================================
     output wire         pipeline_empty    // No fragments in flight
 );
+
+    import fp_types_pkg::*;
 
     // ====================================================================
     // RENDER_MODE Field Extraction
@@ -461,12 +463,17 @@ module pixel_pipeline (
     reg [17:0] lat_tex0_rgba5652;
 
     // UV → texel coordinate conversion (combinational)
-    // UV is Q1.15 signed: bit [15] = sign, bits [14:0] = fractional part.
-    // texel_coord = floor(frac * 2^tex_dim_log2) = frac >> (15 - dim_log2)
-    wire [14:0] u0_frac = lat_u0[14:0];
-    wire [14:0] v0_frac = lat_v0[14:0];
-    wire [9:0]  texel_x = 10'(u0_frac >> (4'd15 - tex0_width_log2));
-    wire [9:0]  texel_y = 10'(v0_frac >> (4'd15 - tex0_height_log2));
+    // UV coordinates are Q4.12 (UNIT-005 fragment bus): fractional bits [11:0]
+    // are used for texel addressing. Integer bits [14:12] index the texture
+    // block; sign bit [15] is not used for wrapping (wrap is modular on the
+    // fractional/integer portion before the shift).
+    // texel_coord = floor(frac * 2^tex_dim_log2) = frac >> (12 - dim_log2)
+    // Note: TEXn_CFG.WIDTH_LOG2 and HEIGHT_LOG2 are bounded to [1, 10] per
+    // INT-010, so (4'd12 - tex0_width_log2) cannot underflow.
+    wire [11:0] u0_frac = lat_u0[11:0];
+    wire [11:0] v0_frac = lat_v0[11:0];
+    wire [9:0]  texel_x = 10'(u0_frac >> (4'd12 - tex0_width_log2));
+    wire [9:0]  texel_y = 10'(v0_frac >> (4'd12 - tex0_height_log2));
 
     // Texture cache SRAM interface wires
     wire        tc_sram_req;
@@ -542,8 +549,8 @@ module pixel_pipeline (
     wire [31:0] _unused_tc_sram_wdata = tc_sram_wdata;
     wire        _unused_tc_fill_done  = tc_fill_done;
     wire [17:0] _unused_tex0_mux      = tex0_mux_rgba5652;
-    wire        _unused_lat_u0_sign   = lat_u0[15];
-    wire        _unused_lat_v0_sign   = lat_v0[15];
+    wire [3:0]  _unused_lat_u0_hi     = lat_u0[15:12];
+    wire [3:0]  _unused_lat_v0_hi     = lat_v0[15:12];
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
