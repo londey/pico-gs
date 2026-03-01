@@ -199,6 +199,7 @@ test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # VER-005: Texture decoder unit testbench
 test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/texture_bc1.sv \
 		$(RTL_DIR)/render/texture_bc2.sv \
 		$(RTL_DIR)/render/texture_bc3.sv \
@@ -377,7 +378,6 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/texture_rgb565.sv \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
-	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/alpha_blend.sv \
 	$(RTL_DIR)/render/dither.sv \
@@ -415,6 +415,11 @@ lint:
 		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/color_combiner.sv \
 		--top-module color_combiner 2>&1 || fail=1; \
+	echo "Linting texel_promote.sv (with fp_types_pkg)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/texel_promote.sv \
+		--top-module texel_promote 2>&1 || fail=1; \
 	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(RTL_DIR)/fp_types_pkg.sv \

@@ -106,6 +106,7 @@ test_texture_decoder: $(OBJ_DIR)/Vtb_texture_decoder | $(SIM_OUT_DIR)
 
 # Build texture decoder testbench
 $(OBJ_DIR)/Vtb_texture_decoder: render/texture_decoder_tb.sv \
+		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/texture_rgb565.sv \
 		$(RTL_DIR)/render/texture_rgba8888.sv \
 		$(RTL_DIR)/render/texture_r8.sv \
@@ -114,6 +115,7 @@ $(OBJ_DIR)/Vtb_texture_decoder: render/texture_decoder_tb.sv \
 	$(VERILATOR) $(VERILATOR_FLAGS) --top-module texture_decoder_tb -o Vtb_texture_decoder \
 		-I$(RTL_DIR)/render \
 		render/texture_decoder_tb.sv \
+		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/texture_rgb565.sv \
 		$(RTL_DIR)/render/texture_rgba8888.sv \
 		$(RTL_DIR)/render/texture_r8.sv \
