@@ -9,6 +9,7 @@
 `timescale 1ns/1ps
 
 module tb_rasterizer;
+    import fp_types_pkg::*;
 
     // Clock and reset
     reg clk;
@@ -808,6 +809,9 @@ module tb_rasterizer;
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
                 ref_e1B, ref_e2B, 16'h00A4);
 
+            // UV reference values are Q4.12 (16-bit signed: sign [15], integer [14:12], fractional [11:0])
+            // per UNIT-005 fragment bus spec and fp_types_pkg.sv q4_12_t typedef.
+
             // UV0 U: u0=0x0000, u1=0x1000, u2=0x0000
             ref_uv0u_dx = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
@@ -922,42 +926,42 @@ module tb_rasterizer;
                 interp_fail = 1;
             end
 
-            // Check UV0 U dx
-            $display("    uv0u_dx: DUT=%0d, ref=%0d", dut.uv0u_dx, ref_uv0u_dx);
+            // Check UV0 U dx (Q4.12)
+            $display("    uv0u_dx (Q4.12): DUT=%0d, ref=%0d", dut.uv0u_dx, ref_uv0u_dx);
             if (dut.uv0u_dx == ref_uv0u_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0u_dx mismatch");
+                $display("    FAIL: uv0u_dx (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
 
-            // Check UV0 U dy
-            $display("    uv0u_dy: DUT=%0d, ref=%0d", dut.uv0u_dy, ref_uv0u_dy);
+            // Check UV0 U dy (Q4.12)
+            $display("    uv0u_dy (Q4.12): DUT=%0d, ref=%0d", dut.uv0u_dy, ref_uv0u_dy);
             if (dut.uv0u_dy == ref_uv0u_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0u_dy mismatch");
+                $display("    FAIL: uv0u_dy (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
 
-            // Check UV0 V dx
-            $display("    uv0v_dx: DUT=%0d, ref=%0d", dut.uv0v_dx, ref_uv0v_dx);
+            // Check UV0 V dx (Q4.12)
+            $display("    uv0v_dx (Q4.12): DUT=%0d, ref=%0d", dut.uv0v_dx, ref_uv0v_dx);
             if (dut.uv0v_dx == ref_uv0v_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0v_dx mismatch");
+                $display("    FAIL: uv0v_dx (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
 
-            // Check UV0 V dy
-            $display("    uv0v_dy: DUT=%0d, ref=%0d", dut.uv0v_dy, ref_uv0v_dy);
+            // Check UV0 V dy (Q4.12)
+            $display("    uv0v_dy (Q4.12): DUT=%0d, ref=%0d", dut.uv0v_dy, ref_uv0v_dy);
             if (dut.uv0v_dy == ref_uv0v_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0v_dy mismatch");
+                $display("    FAIL: uv0v_dy (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
@@ -983,9 +987,9 @@ module tb_rasterizer;
             end
 
             if (interp_fail == 0) begin
-                $display("  PASS: All derivative registers match reference model");
+                $display("  PASS: All derivative registers match reference model (UV0, UV1 (Q4.12))");
             end else begin
-                $display("  FAIL: One or more derivative registers differ from reference");
+                $display("  FAIL: One or more derivative registers differ from reference (UV0, UV1 (Q4.12))");
             end
         end
 

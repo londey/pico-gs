@@ -216,6 +216,7 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
