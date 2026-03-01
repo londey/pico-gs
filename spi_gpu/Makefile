@@ -31,6 +31,9 @@ RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/raster_deriv.sv \
+	$(RTL_DIR)/render/raster_attr_accum.sv \
+	$(RTL_DIR)/render/raster_edge_walk.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \
@@ -213,10 +216,40 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module texture_decoder_tb -o tb_texture_decoder
 	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_texture_decoder)
 
+# UNIT-005.02: Raster derivative precomputation unit testbench
+test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/raster_deriv.sv \
+		$(TB_DIR)/render/tb_raster_deriv.sv \
+		--top-module tb_raster_deriv -o tb_raster_deriv
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_raster_deriv)
+
+# UNIT-005.04: Raster edge walk unit testbench
+test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/raster_edge_walk.sv \
+		$(TB_DIR)/render/tb_raster_edge_walk.sv \
+		--top-module tb_raster_edge_walk -o tb_raster_edge_walk
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_raster_edge_walk)
+
+# UNIT-005.02/005.03: Raster attribute accumulator unit testbench
+test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/raster_attr_accum.sv \
+		$(TB_DIR)/render/tb_raster_attr_accum.sv \
+		--top-module tb_raster_attr_accum -o tb_raster_attr_accum
+	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_raster_attr_accum)
+
+# All rasterizer tests: sub-module unit tests + integration test
+test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer
+
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/raster_deriv.sv \
+		$(RTL_DIR)/render/raster_attr_accum.sv \
+		$(RTL_DIR)/render/raster_edge_walk.sv \
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
@@ -322,7 +355,7 @@ test-color-combined-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 
 # Run all RTL tests. Unit testbenches (VER-001 through VER-005) run unconditionally.
 # Golden image tests (VER-010 through VER-014) run when approved golden images exist.
-test: lint test-rasterizer test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-alpha-blend test-dither
+test: lint test-rasterizer-all test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-alpha-blend test-dither
 	@echo "Unit testbenches passed."
 	@if [ -f $(TB_DIR)/golden/gouraud_triangle.png ]; then \
 		$(MAKE) test-gouraud; \
@@ -383,7 +416,9 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/alpha_blend.sv \
 	$(RTL_DIR)/render/dither.sv \
 	$(RTL_DIR)/render/fb_promote.sv \
-	$(RTL_DIR)/render/rasterizer.sv
+	$(RTL_DIR)/render/raster_deriv.sv \
+	$(RTL_DIR)/render/raster_attr_accum.sv \
+	$(RTL_DIR)/render/raster_edge_walk.sv
 
 # Lint all RTL sources. Leaf modules linted individually for precise diagnostics.
 # Modules with sub-instances linted with their dependencies.
@@ -421,6 +456,14 @@ lint:
 		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/texel_promote.sv \
 		--top-module texel_promote 2>&1 || fail=1; \
+	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/raster_deriv.sv \
+		$(RTL_DIR)/render/raster_attr_accum.sv \
+		$(RTL_DIR)/render/raster_edge_walk.sv \
+		$(RTL_DIR)/render/rasterizer.sv \
+		--top-module rasterizer 2>&1 || fail=1; \
 	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(RTL_DIR)/fp_types_pkg.sv \
@@ -472,6 +515,9 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/raster_deriv.sv \
+	$(RTL_DIR)/render/raster_attr_accum.sv \
+	$(RTL_DIR)/render/raster_edge_walk.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \
@@ -552,6 +598,9 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/raster_deriv.sv \
+	$(RTL_DIR)/render/raster_attr_accum.sv \
+	$(RTL_DIR)/render/raster_edge_walk.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \

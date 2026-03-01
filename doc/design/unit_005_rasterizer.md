@@ -87,8 +87,7 @@ None
 
 ## Sub-Units
 
-UNIT-005 decomposes internally into four functional sub-units that share the single `rasterizer.sv` RTL module boundary.
-These sub-units reflect the natural datapath decomposition used in the `always_comb` / `always_ff` block structure.
+UNIT-005 decomposes internally into four functional sub-units, each implemented as a separate RTL module instantiated by the parent `rasterizer.sv` (DD-029).
 Each sub-unit is documented in its own design unit file:
 
 - [UNIT-005.01: Edge Setup](unit_005.01_edge_setup.md)
@@ -98,10 +97,11 @@ Each sub-unit is documented in its own design unit file:
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Main implementation.
-  The sub-unit decomposition (UNIT-005.01 through UNIT-005.04) is reflected in the companion `always_comb` / `always_ff` block structure within this single module.
-  Each sub-unit corresponds to a named `always_comb` next-state block and the corresponding flat `always_ff` register assignments.
-  See DD-028 (UNIT-005 Sub-Unit Decomposition) for the architectural rationale.
+- `spi_gpu/src/render/rasterizer.sv`: Parent module — FSM, shared multiplier, vertex latches, edge setup (UNIT-005.01), sub-module instantiation.
+- `spi_gpu/src/render/raster_deriv.sv`: Purely combinational derivative precomputation (UNIT-005.02 combinational path).
+- `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion (UNIT-005.02 latching / UNIT-005.03).
+- `spi_gpu/src/render/raster_edge_walk.sv`: Iteration position, edge functions, fragment emission (UNIT-005.04).
+- See DD-029 (UNIT-005 RTL Module Decomposition) for the architectural rationale.
 
 ## Verification
 

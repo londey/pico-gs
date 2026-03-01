@@ -36,10 +36,59 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-029: UNIT-005 RTL Module Decomposition
+
+**Date:** 2026-03-01
+**Status:** Accepted
+
+### Context
+
+After applying the `always_ff` refactor (DD-027) and one-statement-per-line formatting, `rasterizer.sv` grew to ~1700 lines — far exceeding the ~500-line module guideline.
+DD-028 chose spec-level-only decomposition, keeping all logic in a single RTL file.
+With the formatting expansion, the readability argument no longer holds; the single-file approach is now a liability.
+
+### Decision
+
+Decompose the rasterizer RTL into a parent module and three sub-modules:
+
+| File | Lines | Content |
+|------|-------|---------|
+| `rasterizer.sv` | ~1100 | FSM, shared multiplier, vertex latches, edge setup, sub-module instantiation |
+| `raster_deriv.sv` | ~340 | Purely combinational derivative precomputation (UNIT-005.02) |
+| `raster_attr_accum.sv` | ~685 | Attribute accumulators, derivative registers, output promotion (UNIT-005.02/005.03) |
+| `raster_edge_walk.sv` | ~275 | Iteration position, edge functions, fragment emission (UNIT-005.04) |
+
+Sub-modules receive decoded control signals (`latch_derivs`, `step_x`, `step_y`, `init_pos_e0`, etc.) rather than the FSM state enum, keeping them decoupled from the FSM encoding.
+The parent module's external port list is unchanged; `gpu_top.sv` requires no modifications.
+
+### Rationale
+
+- The `~500-line guideline and one-statement-per-line rule are incompatible with a single-file design at this register count.
+- The derivative computation is naturally a purely combinational block (~340 lines) with no state — extracting it as a leaf module is a clear win.
+- The attribute accumulator block owns 52 registers with self-contained stepping logic — a clean sequential sub-module boundary.
+- The iteration/edge-walk logic owns 17 registers and the fragment output handshake — another clean sequential boundary.
+- Supersedes DD-028 which rejected RTL splitting before the formatting expansion made the single-file impractical.
+
+### Consequences
+
+- Three new RTL files in `spi_gpu/src/render/`.
+- Makefile `RTL_SOURCES`, `HARNESS_RTL_SOURCES`, `SIM_RTL_SOURCES`, `test-rasterizer`, and lint targets updated.
+- Testbench `tb_rasterizer.sv` internal signal paths updated (e.g., `dut.c0r_dx` → `dut.u_attr_accum.c0r_dx`).
+- `rasterizer.sv` removed from `LEAF_LINT_FILES`; composite lint entry added.
+
+### References
+
+- UNIT-005 (Rasterizer), UNIT-005.01–005.04 (sub-units)
+- DD-028 (superseded)
+- DD-027 (always_ff refactor that preceded this decomposition)
+
+---
+
+
 ## DD-028: UNIT-005 Sub-Unit Decomposition — Spec-Level Split Without RTL Module Split
 
 **Date:** 2026-03-01
-**Status:** Proposed
+**Status:** Superseded by DD-029
 
 ### Context
 
@@ -76,6 +125,44 @@ The spec-level decomposition provides the traceability and readability benefits 
 ### References
 
 - UNIT-005 (Rasterizer)
+
+---
+
+
+## DD-027: Rasterizer `always_ff` Refactor
+
+**Date:** 2026-03-01
+**Status:** Proposed
+
+### Context
+
+The rasterizer datapath `always_ff` block (UNIT-005) contains conditional logic (`if`, nested `case`) embedded in case arms, violating the project guideline that `always_ff` blocks contain only flat `reg <= next_reg` assignments.
+All conditional computation must live in companion `always_comb` next-state blocks.
+
+### Decision
+
+Extract all conditional logic from the rasterizer datapath `always_ff` into four named companion `always_comb` next-state blocks, one per sub-unit (UNIT-005.01 through UNIT-005.04).
+The `always_ff` block becomes a flat list of `reg <= next_reg` assignments.
+No registers are added or removed; no ports change; no observable behavior changes.
+
+### Rationale
+
+Guideline conformance (see CLAUDE.md `always_ff` style rule).
+Improves readability by separating "what happens next" (`always_comb`) from "when it happens" (`always_ff`).
+Verilator's `-Wall` lint checks are expected to improve (fewer inferred-latch false positives).
+RTL module splitting was initially rejected (DD-028) but later adopted (DD-029) after formatting expansion made single-file impractical.
+Lint suppression via pragmas was rejected (hides real issues).
+
+### Consequences
+
+- Source-line references in `doc/requirements/states_and_modes.md` (e.g., `rasterizer.sv` line numbers) will shift after the refactor; those are flagged as a post-refactor follow-on update.
+- The `Spec-ref` hash in `rasterizer.sv` must be refreshed via `impl-stamp.sh UNIT-005`.
+- Verilator lint improvement expected.
+
+### References
+
+- UNIT-005 (Rasterizer)
+- DD-028 (UNIT-005 Sub-Unit Decomposition)
 
 ---
 

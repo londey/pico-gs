@@ -106,6 +106,7 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 
 ## Verilog/SystemVerilog Code Style
 
+- All SystemVerilog files (`.sv`) MUST follow the style guidelines in `.claude/skills/claude-skill-verilog/SKILL.md`
 - All modules, wires, registers require comments; active-low signals use `_n` suffix
 - `always_ff`: simple `reg <= next_reg` non-blocking assignments only.
   Async reset (`if (!rst_n) ... else`) is expected, but the non-reset branch should contain only plain assignments — no `if`, `case`, or other conditional logic.

@@ -847,8 +847,8 @@ module tb_rasterizer;
             $display("  Derivative verification (DUT vs reference):");
 
             // Check color0 R dx
-            $display("    c0r_dx: DUT=%0d, ref=%0d", dut.c0r_dx, ref_c0r_dx);
-            if (dut.c0r_dx == ref_c0r_dx) begin
+            $display("    c0r_dx: DUT=%0d, ref=%0d", dut.u_attr_accum.c0r_dx, ref_c0r_dx);
+            if (dut.u_attr_accum.c0r_dx == ref_c0r_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: c0r_dx mismatch");
@@ -857,8 +857,8 @@ module tb_rasterizer;
             end
 
             // Check color0 R dy
-            $display("    c0r_dy: DUT=%0d, ref=%0d", dut.c0r_dy, ref_c0r_dy);
-            if (dut.c0r_dy == ref_c0r_dy) begin
+            $display("    c0r_dy: DUT=%0d, ref=%0d", dut.u_attr_accum.c0r_dy, ref_c0r_dy);
+            if (dut.u_attr_accum.c0r_dy == ref_c0r_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: c0r_dy mismatch");
@@ -867,8 +867,8 @@ module tb_rasterizer;
             end
 
             // Check color0 G dx
-            $display("    c0g_dx: DUT=%0d, ref=%0d", dut.c0g_dx, ref_c0g_dx);
-            if (dut.c0g_dx == ref_c0g_dx) begin
+            $display("    c0g_dx: DUT=%0d, ref=%0d", dut.u_attr_accum.c0g_dx, ref_c0g_dx);
+            if (dut.u_attr_accum.c0g_dx == ref_c0g_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: c0g_dx mismatch");
@@ -877,8 +877,8 @@ module tb_rasterizer;
             end
 
             // Check color0 G dy
-            $display("    c0g_dy: DUT=%0d, ref=%0d", dut.c0g_dy, ref_c0g_dy);
-            if (dut.c0g_dy == ref_c0g_dy) begin
+            $display("    c0g_dy: DUT=%0d, ref=%0d", dut.u_attr_accum.c0g_dy, ref_c0g_dy);
+            if (dut.u_attr_accum.c0g_dy == ref_c0g_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: c0g_dy mismatch");
@@ -887,8 +887,8 @@ module tb_rasterizer;
             end
 
             // Check color0 B dx
-            $display("    c0b_dx: DUT=%0d, ref=%0d", dut.c0b_dx, ref_c0b_dx);
-            if (dut.c0b_dx == ref_c0b_dx) begin
+            $display("    c0b_dx: DUT=%0d, ref=%0d", dut.u_attr_accum.c0b_dx, ref_c0b_dx);
+            if (dut.u_attr_accum.c0b_dx == ref_c0b_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: c0b_dx mismatch");
@@ -897,8 +897,8 @@ module tb_rasterizer;
             end
 
             // Check color0 B dy
-            $display("    c0b_dy: DUT=%0d, ref=%0d", dut.c0b_dy, ref_c0b_dy);
-            if (dut.c0b_dy == ref_c0b_dy) begin
+            $display("    c0b_dy: DUT=%0d, ref=%0d", dut.u_attr_accum.c0b_dy, ref_c0b_dy);
+            if (dut.u_attr_accum.c0b_dy == ref_c0b_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: c0b_dy mismatch");
@@ -907,8 +907,8 @@ module tb_rasterizer;
             end
 
             // Check Z dx
-            $display("    z_dx:   DUT=%0d, ref=%0d", dut.z_dx, ref_z_dx);
-            if (dut.z_dx == ref_z_dx) begin
+            $display("    z_dx:   DUT=%0d, ref=%0d", dut.u_attr_accum.z_dx, ref_z_dx);
+            if (dut.u_attr_accum.z_dx == ref_z_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: z_dx mismatch");
@@ -917,8 +917,8 @@ module tb_rasterizer;
             end
 
             // Check Z dy
-            $display("    z_dy:   DUT=%0d, ref=%0d", dut.z_dy, ref_z_dy);
-            if (dut.z_dy == ref_z_dy) begin
+            $display("    z_dy:   DUT=%0d, ref=%0d", dut.u_attr_accum.z_dy, ref_z_dy);
+            if (dut.u_attr_accum.z_dy == ref_z_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: z_dy mismatch");
@@ -927,8 +927,8 @@ module tb_rasterizer;
             end
 
             // Check UV0 U dx (Q4.12)
-            $display("    uv0u_dx (Q4.12): DUT=%0d, ref=%0d", dut.uv0u_dx, ref_uv0u_dx);
-            if (dut.uv0u_dx == ref_uv0u_dx) begin
+            $display("    uv0u_dx (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0u_dx, ref_uv0u_dx);
+            if (dut.u_attr_accum.uv0u_dx == ref_uv0u_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: uv0u_dx (Q4.12) mismatch");
@@ -937,8 +937,8 @@ module tb_rasterizer;
             end
 
             // Check UV0 U dy (Q4.12)
-            $display("    uv0u_dy (Q4.12): DUT=%0d, ref=%0d", dut.uv0u_dy, ref_uv0u_dy);
-            if (dut.uv0u_dy == ref_uv0u_dy) begin
+            $display("    uv0u_dy (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0u_dy, ref_uv0u_dy);
+            if (dut.u_attr_accum.uv0u_dy == ref_uv0u_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: uv0u_dy (Q4.12) mismatch");
@@ -947,8 +947,8 @@ module tb_rasterizer;
             end
 
             // Check UV0 V dx (Q4.12)
-            $display("    uv0v_dx (Q4.12): DUT=%0d, ref=%0d", dut.uv0v_dx, ref_uv0v_dx);
-            if (dut.uv0v_dx == ref_uv0v_dx) begin
+            $display("    uv0v_dx (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0v_dx, ref_uv0v_dx);
+            if (dut.u_attr_accum.uv0v_dx == ref_uv0v_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: uv0v_dx (Q4.12) mismatch");
@@ -957,8 +957,8 @@ module tb_rasterizer;
             end
 
             // Check UV0 V dy (Q4.12)
-            $display("    uv0v_dy (Q4.12): DUT=%0d, ref=%0d", dut.uv0v_dy, ref_uv0v_dy);
-            if (dut.uv0v_dy == ref_uv0v_dy) begin
+            $display("    uv0v_dy (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0v_dy, ref_uv0v_dy);
+            if (dut.u_attr_accum.uv0v_dy == ref_uv0v_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: uv0v_dy (Q4.12) mismatch");
@@ -967,8 +967,8 @@ module tb_rasterizer;
             end
 
             // Check Q dx
-            $display("    q_dx:   DUT=%0d, ref=%0d", dut.q_dx, ref_q_dx);
-            if (dut.q_dx == ref_q_dx) begin
+            $display("    q_dx:   DUT=%0d, ref=%0d", dut.u_attr_accum.q_dx, ref_q_dx);
+            if (dut.u_attr_accum.q_dx == ref_q_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: q_dx mismatch");
@@ -977,8 +977,8 @@ module tb_rasterizer;
             end
 
             // Check Q dy
-            $display("    q_dy:   DUT=%0d, ref=%0d", dut.q_dy, ref_q_dy);
-            if (dut.q_dy == ref_q_dy) begin
+            $display("    q_dy:   DUT=%0d, ref=%0d", dut.u_attr_accum.q_dy, ref_q_dy);
+            if (dut.u_attr_accum.q_dy == ref_q_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
                 $display("    FAIL: q_dy mismatch");
