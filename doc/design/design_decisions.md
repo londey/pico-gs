@@ -36,6 +36,50 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-028: UNIT-005 Sub-Unit Decomposition — Spec-Level Split Without RTL Module Split
+
+**Date:** 2026-03-01
+**Status:** Proposed
+
+### Context
+
+The rasterizer (`rasterizer.sv`, UNIT-005) implements four functionally distinct datapaths: edge setup (SETUP → SETUP_2 → SETUP_3), derivative precomputation (ITER_START → INIT_E1 → INIT_E2), attribute accumulation (inner-loop incremental stepping), and the iteration FSM (EDGE_TEST, INTERPOLATE, ITER_NEXT).
+These datapaths have clear input/output boundaries and ownership of distinct register sets.
+The question is whether to express this decomposition as separate RTL modules or only at the specification level.
+
+### Decision
+
+Decompose UNIT-005 into four sub-units (UNIT-005.01 through UNIT-005.04) at the specification level, documented in `unit_005_rasterizer.md`, without splitting the RTL into separate modules.
+The `rasterizer.sv` module boundary is preserved.
+The sub-unit decomposition is reflected in the `always_comb` / `always_ff` block structure within the single module: each sub-unit corresponds to a named `always_comb` next-state block and a corresponding group of flat `always_ff` register assignments.
+
+### Rationale
+
+The four sub-units communicate through shared registers with no valid/ready handshake between them; the boundaries are FSM-state transitions within a single clock domain.
+Splitting into separate RTL modules would require either explicit inter-module port connections (adding port count and hierarchy complexity) or a shared-memory interface through a packed struct.
+Neither adds clarity over a well-structured single module with named `always_comb` blocks.
+The spec-level decomposition provides the traceability and readability benefits of sub-unit thinking without the implementation overhead of module hierarchy.
+
+### Alternatives Considered
+
+1. **Full RTL module split (four sub-modules, wired in `rasterizer_top.sv`):** Rejected for this phase — the communication between sub-units is via direct register references in a single FSM, not a protocol that maps naturally to module ports.
+2. **No decomposition, single monolithic design doc entry:** Rejected — the four sub-units have distinct algorithms, register ownership, and DSP usage that are easier to reason about separately.
+3. **Decompose only the iteration FSM, keep setup/init combined:** Rejected — all four sub-units have equal clarity benefits from named decomposition.
+
+### Consequences
+
+- `unit_005_rasterizer.md` gains a "Sub-Units" section documenting UNIT-005.01–005.04.
+- `doc/design/README.md` TOC is updated to list the sub-units.
+- The `rasterizer.sv` `always_comb` block naming should follow the sub-unit identifiers for traceability.
+- No new RTL files are created; no port lists change.
+
+### References
+
+- UNIT-005 (Rasterizer)
+
+---
+
+
 ## DD-026: Arbiter Port 3 Sharing — Texture Cache vs. PERF_TIMESTAMP Writes
 
 **Date:** 2026-02-28

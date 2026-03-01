@@ -85,33 +85,40 @@ None
 5. **Pixel Advance** (ITER_NEXT): Step to next pixel — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
 6. **Scissor Bounds**: Bounding box is clamped to `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y, using the register values for the current render surface.
 
+## Sub-Units
+
+UNIT-005 decomposes internally into four functional sub-units that share the single `rasterizer.sv` RTL module boundary.
+These sub-units reflect the natural datapath decomposition used in the `always_comb` / `always_ff` block structure.
+Each sub-unit is documented in its own design unit file:
+
+- [UNIT-005.01: Edge Setup](unit_005.01_edge_setup.md)
+- [UNIT-005.02: Derivative Pre-computation](unit_005.02_derivative_precomputation.md)
+- [UNIT-005.03: Attribute Accumulation](unit_005.03_attribute_accumulation.md)
+- [UNIT-005.04: Iteration FSM](unit_005.04_iteration_fsm.md)
+
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Main implementation
+- `spi_gpu/src/render/rasterizer.sv`: Main implementation.
+  The sub-unit decomposition (UNIT-005.01 through UNIT-005.04) is reflected in the companion `always_comb` / `always_ff` block structure within this single module.
+  Each sub-unit corresponds to a named `always_comb` next-state block and the corresponding flat `always_ff` register assignments.
+  See DD-028 (UNIT-005 Sub-Unit Decomposition) for the architectural rationale.
 
 ## Verification
 
-Formal testbenches:
 - **VER-001** (`tb_rasterizer` — Verilator unit testbench; covers REQ-002.03 rasterization algorithm)
-- **VER-010** through **VER-014** (golden image integration tests exercise the full rasterizer-to-framebuffer path)
+- **VER-010** (Gouraud Triangle Golden Image Test)
+- **VER-011** (Depth-Tested Overlapping Triangles Golden Image Test)
+- **VER-012** (Textured Triangle Golden Image Test)
+- **VER-013** (Color-Combined Output Golden Image Test)
+- **VER-014** (Textured Cube Golden Image Test) — exercises the rasterizer across multiple triangles with varying depth and projection angles under perspective
 
+Key verification points:
 - Verify edge function computation for known triangles (clockwise/counter-clockwise winding)
 - Test bounding box clamping at the configured surface boundary — `(1<<FB_CONFIG.WIDTH_LOG2)-1` in X and `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y — not at a fixed 640×480
 - Verify derivative precomputation: for a known triangle, confirm dColor/dx, dColor/dy, dZ/dx, dZ/dy, dUV/dx, dUV/dy, dQ/dx, dQ/dy match expected values derived from vertex attributes and inv_area
 - Verify incremental interpolation: step across a rasterized triangle and confirm accumulated color0, color1, Z, UV0, UV1, Q/W values at each fragment match analytic values within rounding tolerance
 - Verify the fragment output bus carries correct (x, y, z, color0, color1, uv0, uv1, q) values and valid/ready handshake operates correctly
 - Test degenerate triangles (zero area, single-pixel, off-screen)
-- VER-001 (Rasterizer Unit Testbench)
-- VER-010 (Gouraud Triangle Golden Image Test)
-- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
-- VER-012 (Textured Triangle Golden Image Test)
-- VER-013 (Color-Combined Output Golden Image Test)
-- VER-014 (Textured Cube Golden Image Test) — exercises the rasterizer across multiple triangles with varying depth and projection angles under perspective
-- VER-014 (Textured Cube Golden Image Test)
-- VER-010 (Gouraud Triangle Golden Image Test)
-- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
-- VER-012 (Textured Triangle Golden Image Test)
-- VER-001 (Rasterizer Unit Testbench)
 
 The Verilator interactive simulator (REQ-010.02, `make sim-interactive`) extends the golden image harness concept to a live interactive tool.
 It injects commands via `SIM_DIRECT_CMD` ports into the same register-file input path that VER-010–VER-014 use, but renders output live to an SDL3 window rather than comparing against a static reference image.
