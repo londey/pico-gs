@@ -50,21 +50,21 @@ package fp_types_pkg;
     // {3'b000, R5[4:0], R5[4:0], R5[4:2]} = 3+5+5+3 = 16 bits
     // R5=31 -> 0x0FFF (close to 1.0), R5=0 -> 0x0000
     function automatic q4_12_t promote_r5_to_q412(input logic [4:0] r5);
-        return {3'b000, r5[4:0], r5[4:0], r5[4:2]};
+        promote_r5_to_q412 = {3'b000, r5[4:0], r5[4:0], r5[4:2]};
     endfunction
 
     // G6 -> Q4.12: MSB replication to span [0.0, 1.0]
     // {3'b000, G6[5:0], G6[5:0], 1'b0} = 3+6+6+1 = 16 bits
     // G6=63 -> 0x0FFE (close to 1.0), G6=0 -> 0x0000
     function automatic q4_12_t promote_g6_to_q412(input logic [5:0] g6);
-        return {3'b000, g6[5:0], g6[5:0], 1'b0};
+        promote_g6_to_q412 = {3'b000, g6[5:0], g6[5:0], 1'b0};
     endfunction
 
     // B5 -> Q4.12: Same MSB replication as R5
     // {3'b000, B5[4:0], B5[4:0], B5[4:2]} = 3+5+5+3 = 16 bits
     // B5=31 -> 0x0FFF (close to 1.0), B5=0 -> 0x0000
     function automatic q4_12_t promote_b5_to_q412(input logic [4:0] b5);
-        return {3'b000, b5[4:0], b5[4:0], b5[4:2]};
+        promote_b5_to_q412 = {3'b000, b5[4:0], b5[4:0], b5[4:2]};
     endfunction
 
     // A2 -> Q4.12: Four-level expansion, equal spacing across [0.0, 1.0]
@@ -77,11 +77,11 @@ package fp_types_pkg;
     // verilator lint_off UNUSEDSIGNAL
     function automatic q4_12_t promote_a2_to_q412(input logic [1:0] a2);
         case (a2)
-            2'b00:   return 16'sh0000;
-            2'b01:   return 16'sh0555;
-            2'b10:   return 16'sh0AAA;
-            2'b11:   return 16'sh1000;
-            default: return 16'sh0000;
+            2'b00:   promote_a2_to_q412 = 16'sh0000;
+            2'b01:   promote_a2_to_q412 = 16'sh0555;
+            2'b10:   promote_a2_to_q412 = 16'sh0AAA;
+            2'b11:   promote_a2_to_q412 = 16'sh1000;
+            default: promote_a2_to_q412 = 16'sh0000;
         endcase
     endfunction
     // verilator lint_on UNUSEDSIGNAL
@@ -96,7 +96,7 @@ package fp_types_pkg;
     // Used for vertex color promotion (FR-134-3) and CONST_COLOR register
     // promotion (RGBA8888 UNORM8 to Q4.12).
     function automatic q4_12_t promote_unorm8_to_q412(input logic [7:0] unorm8);
-        return {4'b0000, unorm8[7:0], unorm8[7:4]};
+        promote_unorm8_to_q412 = {4'b0000, unorm8[7:0], unorm8[7:4]};
     endfunction
 
 endpackage

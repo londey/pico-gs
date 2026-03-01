@@ -36,6 +36,43 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-034: Yosys-Compatible SystemVerilog Subset for Synthesis
+
+**Date:** 2026-03-01
+**Status:** Accepted
+
+### Context
+
+The FPGA build uses Yosys with `read_verilog -sv` for ECP5 synthesis (see DD-002).
+Yosys supports a subset of SystemVerilog — it handles `package`, `typedef`, `logic`, `always_ff`/`always_comb`, and struct types, but does not support several SystemVerilog-only constructs including the `return` statement in functions.
+Meanwhile, Verilator is used for linting and simulation and accepts full SystemVerilog.
+Code that passes Verilator `--lint-only -Wall` can still fail Yosys synthesis.
+
+### Decision
+
+All synthesizable RTL must stay within the Yosys-supported SystemVerilog subset.
+Key restrictions include:
+- **No `return` in functions** — assign to the function name instead (Verilog-2005 style).
+- **No `interface`/`modport`** — use explicit port lists.
+- **No `unique case`/`priority case`** — use plain `case` with `default`.
+- **No multi-dimensional packed arrays in ports** — flatten to single vectors.
+
+Verilator remains the lint and simulation reference.
+Both tools must accept the same source files.
+
+### Rationale
+
+- Yosys is the only open-source synthesis tool targeting ECP5; there is no alternative in the project's open-source toolchain (Yosys + nextpnr + ecppack).
+- Verilator's broader SystemVerilog support makes it the better lint/sim tool, but synthesis compatibility is the binding constraint.
+- Restricting to the common subset avoids "works in simulation, fails in synthesis" bugs like the `return` statement issue encountered in `fp_types_pkg.sv`.
+
+### Consequences
+
+- RTL authors must verify synthesis with `make synth` (not just `verilator --lint-only`) when using SystemVerilog features.
+- The Verilog style guide (SKILL.md) should document Yosys-incompatible constructs to avoid.
+- Functions use Verilog-2005 function-name assignment instead of `return`.
+
+
 ## DD-033: Power-of-Two Restriction for Render Targets and Textures
 
 **Date:** 2026-03-01
