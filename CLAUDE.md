@@ -1,15 +1,15 @@
 # pico-gs Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-01-31
+## Key Rules
 
-## Active Technologies
-- Rust (stable), target `thumbv8m.main-none-eabihf` (Cortex-M33 with hardware FPU) + `rp235x-hal` ~0.2.x, `cortex-m-rt` 0.7.x, `heapless` 0.8.x, `glam` 0.29.x (no_std), `fixed` 1.28.x, `defmt` 0.3.x, TinyUSB (C FFI for USB host) (002-rp2350-host-software)
-- Flash (4 MB) for mesh data, texture data, and firmware binary; RP2350 SRAM (520 KB) for runtime state (002-rp2350-host-software)
-- Rust stable (1.75+) (003-asset-data-prep)
-- File I/O (input: .png/.obj files, output: .rs source files + .bin data files) (003-asset-data-prep)
-- Rust stable (1.75+) + PNG decoding library, OBJ file parser (003-asset-data-prep)
-
-- (002-rp2350-host-software)
+- `./build.sh` must pass after every change (builds all software, runs all tests).
+- `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
+- `registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `registers/scripts/generate.sh` is what code must reference for register values and constants.
+- All code follows its respective style guide:
+  - SystemVerilog: `.claude/skills/claude-skill-verilog/SKILL.md`
+  - Rust: `.claude/skills/claude-skill-rust/SKILL.md`
+  - C++: `.claude/skills/claude-skill-cpp/SKILL.md`
+- ICEpi Zero board documentation lives in `external/icepi-zero/`; always consult this directory before searching the web.
 
 ## Project Structure
 
@@ -17,7 +17,6 @@ Auto-generated from all feature plans. Last updated: 2026-01-31
 pico-gs/
 ├── crates/
 │   ├── pico-gs-hal/          # Platform abstraction traits (no_std)
-│   │   └── src/lib.rs        # SpiTransport, FlowControl, InputSource traits
 │   ├── pico-gs-core/         # Platform-agnostic GPU driver, rendering, scene (no_std)
 │   │   ├── src/
 │   │   │   ├── gpu/          # GpuDriver<S>, registers, vertex packing
@@ -26,23 +25,12 @@ pico-gs/
 │   │   │   └── scene/        # Scene management, demo definitions
 │   │   └── tests/            # Integration tests
 │   ├── pico-gs-rp2350/       # RP2350 firmware (dual-core, USB keyboard, SPI GPIO)
-│   │   ├── src/
-│   │   │   ├── transport.rs  # Rp2350Transport: SpiTransport + FlowControl
-│   │   │   ├── input.rs      # USB keyboard InputSource
-│   │   │   ├── core1.rs      # Core 1 render loop (SPSC consumer)
-│   │   │   ├── queue.rs      # SPSC queue type aliases
-│   │   │   ├── assets/       # Build-generated mesh/texture includes
-│   │   │   └── main.rs       # Dual-core entry point
+│   │   ├── src/              # Firmware source (transport, input, core1, main)
 │   │   ├── build.rs          # Asset conversion via asset-build-tool
 │   │   ├── assets/           # Source assets (.obj, .png)
 │   │   └── memory.x          # RP2350 linker script
 │   ├── pico-gs-pc/           # PC debug host (FT232H stub, terminal input)
-│   │   └── src/
-│   │       ├── transport.rs  # Ft232hTransport (stub, todo!())
-│   │       ├── input.rs      # TerminalInput (stub)
-│   │       └── main.rs       # Single-threaded entry point
 │   └── asset-build-tool/     # Asset preparation tool (.obj/.png → GPU format)
-│       └── src/
 ├── registers/                # GPU register interface (single source of truth)
 │   ├── rdl/gpu_regs.rdl      # SystemRDL register definitions
 │   ├── src/lib.rs             # Rust crate (gpu-registers, no_std)
@@ -58,6 +46,7 @@ pico-gs/
 │   ├── requirements/         # REQ-NNN documents
 │   ├── interfaces/           # INT-NNN documents (INT-010–014 are stubs → registers/doc/)
 │   └── design/               # UNIT-NNN documents
+├── ARCHITECTURE.md           # Authoritative GPU architecture document
 ├── build.sh                  # Unified build script
 └── Cargo.toml                # Workspace root
 ```
@@ -104,63 +93,14 @@ cargo build -p pico-gs-pc
 
 After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` → `cargo build --release`
 
-## Verilog/SystemVerilog Code Style
+## SystemVerilog Code Style
 
-- All SystemVerilog files (`.sv`) MUST follow the style guidelines in `.claude/skills/claude-skill-verilog/SKILL.md`
-- All modules, wires, registers require comments; active-low signals use `_n` suffix
-- `always_ff`: simple `reg <= next_reg` non-blocking assignments only.
-  Async reset (`if (!rst_n) ... else`) is expected, but the non-reset branch should contain only plain assignments — no `if`, `case`, or other conditional logic.
-  Compute all `next_*` values in a companion `always_comb` block.
-  Exceptions: memory inference patterns, async reset synchronizers.
-  ```systemverilog
-  // GOOD — always_ff is a flat list of assignments
-  always_comb begin
-      next_count = count;
-      next_flag  = 1'b0;
-      if (enable) begin
-          next_count = count + 8'd1;
-          next_flag  = 1'b1;
-      end
-  end
-  always_ff @(posedge clk or negedge rst_n) begin
-      if (!rst_n) begin
-          count <= 8'd0;
-          flag  <= 1'b0;
-      end else begin
-          count <= next_count;
-          flag  <= next_flag;
-      end
-  end
-
-  // BAD — conditional logic buried inside always_ff
-  always_ff @(posedge clk or negedge rst_n) begin
-      if (!rst_n) begin
-          count <= 8'd0;
-      end else if (enable) begin
-          count <= count + 8'd1;
-      end
-  end
-  ```
-- `always_comb`: all combinational logic including next-state computation; default assignments at top to avoid latches
-- One statement per line; one declaration per line; explicit bit widths on all literals; files start with `` `default_nettype none ``
-- Always use `begin`/`end` blocks for `if`/`else`/`case`
-- Prefer to keep modules under ~500 lines; refactor into sub-modules if significantly larger
-- All sequential logic (FSMs, register banks, counters): separate state register (`always_ff`) from next-state logic (`always_comb`). Use enums for FSM state encoding
-- One module per file, filename matches module name; always use named port connections
-- CDC: 2-FF synchronizer for single-bit, gray coding for multi-bit
-- Lint with `verilator --lint-only -Wall`; fix all warnings, do not suppress with pragmas
-
-## Recent Changes
-- 003-asset-data-prep: Added Rust stable (1.75+) + PNG decoding library, OBJ file parser
-- 003-asset-data-prep: Added Rust stable (1.75+)
-- 002-rp2350-host-software: Added Rust (stable), target `thumbv8m.main-none-eabihf` (Cortex-M33 with hardware FPU) + `rp235x-hal` ~0.2.x, `cortex-m-rt` 0.7.x, `heapless` 0.8.x, `glam` 0.29.x (no_std), `fixed` 1.28.x, `defmt` 0.3.x, TinyUSB (C FFI for USB host)
-
-
-<!-- MANUAL ADDITIONS START -->
+- All `.sv` files MUST follow `.claude/skills/claude-skill-verilog/SKILL.md`.
+- Lint with `verilator --lint-only -Wall`; fix all warnings, do not suppress with pragmas.
 
 ## C++ Code Style
 
-When writing or modifying C++ code (`.cpp`, `.hpp`), follow the guidelines in `.claude/skills/claude_skill_cpp/SKILL.md`.
+When writing or modifying C++ code (`.cpp`, `.hpp`), follow `.claude/skills/claude-skill-cpp/SKILL.md`.
 Target **C++20** (`-std=c++20`).
 
 ## Markdown Style
@@ -190,7 +130,6 @@ Key files:
 - `external/icepi-zero/firmware/v1.3/icepi-zero-v1_3.lpf` — Official v1.3 pin constraints (canonical source of truth for all ball assignments)
 - `external/icepi-zero/hardware/v1.3/` — KiCad schematics and PCB files
 - `external/icepi-zero/documentation/manual.pdf` — Board manual
-- `external/icepi-zero/firmware/icepi-zero.lpf` — Symlink pointing to v1.3 LPF
 
 The board uses an **ECP5-25K in CABGA256** package.
 All valid ball coordinates use columns A–T (no column >16 for rows; columns are letters A–T and rows are numbers 1–16).
@@ -226,8 +165,6 @@ Change process:
 3. Run `registers/scripts/generate.sh` to regenerate SV
 4. Review the diff in generated files
 5. Update consuming code (`driver.rs`, `register_file.sv`) if register semantics changed
-
-<!-- MANUAL ADDITIONS END -->
 
 <!-- syskit-start -->
 ## syskit

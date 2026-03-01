@@ -1,66 +1,37 @@
 # pico-gs
-This repository contains the design and implementation of an FPGA based 3D graphics synthesiser for the ICEpi platform.
 
-## Architecture
+A PS1/N64-era 3D graphics processor implemented in SystemVerilog, targeting the **ECP5-25K** FPGA on an [ICEpi Zero v1.3](external/icepi-zero/) board.
+An **RP2350** (Raspberry Pi Pico 2) drives the GPU over SPI; the GPU outputs 640x480 @ 60 Hz DVI.
+Named after the PS2 Graphics Synthesizer.
 
-pico-gs consists of three main components:
-
-- **spi_gpu** - ECP5 FPGA implementing the 3D graphics pipeline (SystemVerilog)
-- **host_app** - RP2350 host firmware driving the GPU (Rust no_std)
-- **asset_build_tool** - Asset preparation pipeline converting OBJ/PNG to GPU formats (Rust)
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the GPU pipeline architecture, block diagram, and memory system.
 
 ## Repository Structure
 
 ```
 pico-gs/
-├── spi_gpu/              # FPGA RTL component
-│   ├── src/              # SystemVerilog sources
-│   ├── tests/            # Verilator testbenches
-│   ├── constraints/      # ECP5 constraints
-│   └── Makefile          # FPGA build system
-├── host_app/             # RP2350 firmware
-│   ├── src/              # Rust firmware sources
-│   ├── tests/            # Firmware unit tests
-│   └── Cargo.toml
-├── asset_build_tool/     # Asset preparation tool
-│   └── src/              # Asset conversion pipeline
-├── assets/
-│   └── compiled/         # Generated GPU data (gitignored)
-├── doc/                  # Syskit specifications
-│   ├── requirements/     # REQ-NNN (what the system must do)
-│   ├── interfaces/       # INT-NNN (contracts between components)
-│   └── design/           # UNIT-NNN (implementation approach)
+├── spi_gpu/              # FPGA RTL (SystemVerilog)
+├── crates/
+│   ├── pico-gs-hal/      # Platform abstraction traits (no_std)
+│   ├── pico-gs-core/     # GPU driver, rendering, scene (no_std)
+│   ├── pico-gs-rp2350/   # RP2350 firmware (dual-core, USB keyboard)
+│   ├── pico-gs-pc/       # PC debug host (FT232H stub)
+│   └── asset-build-tool/ # OBJ/PNG → GPU format converter
+├── registers/            # GPU register interface (SystemRDL source of truth)
+├── doc/                  # Syskit specifications (REQ/INT/UNIT)
+├── ARCHITECTURE.md       # GPU architecture document
 ├── build.sh              # Unified build script
 └── Cargo.toml            # Workspace root
 ```
 
 ## Specifications
 
-This project follows specification-driven development using syskit.
+This project uses [syskit](CLAUDE.md#syskit) for specification-driven development.
+Specifications live in `doc/`:
 
-**Requirements** (`doc/requirements/`) define what the system must do:
-- REQ-001 through REQ-016: SPI GPU features (v1.0 and v2.0)
-- REQ-020 through REQ-029: GPU functional requirements (SPI, rasterization, texture, display)
-- REQ-110 through REQ-123: RP2350 host firmware capabilities
-
-**Interfaces** (`doc/interfaces/`) define contracts:
-- INT-010: GPU Register Map (primary hardware/software contract)
-- INT-011: SRAM Memory Layout (framebuffer, z-buffer, textures)
-- INT-020: GPU Driver API (host firmware SPI driver)
-- INT-021: Render Command Format (inter-core communication)
-
-**Design** (`doc/design/`) documents implementation:
-- UNIT-001 through UNIT-009: FPGA GPU hardware modules
-- UNIT-020 through UNIT-027: Host firmware software components
-- UNIT-030 through UNIT-034: Asset pipeline processing stages
-- design_decisions.md: Architecture Decision Records (ADRs)
-- concept_of_execution.md: Runtime behavior documentation
-
-To explore the specifications:
-1. Start with requirements to understand features
-2. Check interfaces to see contracts between components
-3. Read design units to understand implementation approach
-4. Follow traceability links (REQ → INT → UNIT → code files)
+- **Requirements** (`doc/requirements/`): What the system must do (REQ-NNN)
+- **Interfaces** (`doc/interfaces/`): Contracts between components (INT-NNN)
+- **Design** (`doc/design/`): Implementation approach and decisions (UNIT-NNN)
 
 ## Building
 
@@ -73,7 +44,7 @@ To explore the specifications:
 
 ### Build Commands
 
-Build everything:
+Build everything (software + FPGA + all tests):
 ```bash
 ./build.sh
 ```
@@ -107,14 +78,13 @@ make program      # Flash to FPGA via JTAG
 
 **Firmware:**
 ```bash
-cargo build -p pico-gs-host
-cargo test -p pico-gs-host
+cargo build -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
+cargo test -p pico-gs-core
 ```
 
-**Assets:**
+**Asset tool:**
 ```bash
-cargo build -p asset-prep
-./target/debug/asset-prep mesh host_app/assets/meshes/model.obj -o assets/compiled/meshes
+cargo build -p asset-build-tool
 ```
 
 ## Installing onto Hardware
@@ -194,11 +164,6 @@ The build script can build and flash both targets in one go:
 ## Development
 
 See [CLAUDE.md](CLAUDE.md) for development guidelines and project conventions.
-
-### Conventions
-
-Fixed-point values throughout the project use TI-style Q notation (`Qm.n` for signed, `UQm.n` for unsigned).
-See [CLAUDE.md](CLAUDE.md) for the full definition and examples.
 
 ## License
 

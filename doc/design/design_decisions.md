@@ -36,6 +36,202 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-033: Power-of-Two Restriction for Render Targets and Textures
+
+**Date:** 2026-03-01
+**Status:** Accepted
+
+### Context
+
+The GPU uses 4x4 block-tiled addressing for framebuffers, Z-buffers, and textures.
+Address computation from (x, y) to SDRAM byte offset requires knowing the surface width.
+Hardware multiply on the critical path would consume scarce DSP resources and add latency.
+
+### Decision
+
+All surface widths and heights must be powers of two (non-square permitted).
+Tiled address calculation uses only shifts and masks — no multiply hardware.
+See ARCHITECTURE.md "Surface Tiling" for the address formula.
+
+### Rationale
+
+- The ECP5-25K has limited DSP resources (28 MULT18X18D slices).
+  Shift-and-mask addressing is zero-cost in LUTs and zero-latency.
+- Non-power-of-two widths would require a multiply per pixel address on the critical path.
+- Render targets can be bound directly as texture sources (same tiled format), so the restriction applies uniformly.
+
+### Alternatives Considered
+
+1. **Allow arbitrary widths with multiply-based addressing**: Rejected — consumes DSP resources on the critical path and adds latency to every pixel address computation.
+2. **Allow only specific non-power-of-two sizes (e.g., 640)**: Rejected — still requires multiply or lookup hardware; complexity for marginal benefit since display scaling handles the mismatch.
+
+### Consequences
+
+- The host must choose power-of-two dimensions for all render targets.
+- Display scaling (512→640 or 256→640) handles the mismatch between power-of-two framebuffer and 640x480 DVI output.
+- MEM_FILL clears any surface with a single linear fill because all blocks in a power-of-two surface are contiguous.
+
+### References
+
+- ARCHITECTURE.md: Surface Tiling section
+- UNIT-008 (Display Controller — display scaling)
+
+---
+
+
+## DD-032: Fixed-Point Precision Across GPU Pipeline Stages
+
+**Date:** 2026-03-01
+**Status:** Accepted
+
+### Context
+
+Different GPU pipeline stages require different fixed-point precision to balance accuracy, register width, and DSP utilization on the ECP5-25K's 28 MULT18X18D slices.
+A uniform precision strategy ensures that format boundaries are well-defined and conversion logic is minimized.
+
+### Decision
+
+The following fixed-point formats are used across the GPU pipeline:
+
+| Stage | Format | Width | Notes |
+|-------|--------|-------|-------|
+| Vertex screen coordinates | Q12.4 signed | 16-bit | Per component (x, y) |
+| Fragment depth (Z) | Unsigned | 16-bit | Full range [0, 65535] |
+| Interpolated attributes | Q4.12 signed | 16-bit | color0, color1, UV0, UV1, Q/W |
+| Fragment pipeline processing | Q4.12 signed RGBA | 16-bit/channel | Internal to UNIT-006 |
+| Texture cache internal | RGBA5652 | 18-bit | Matches EBR native 1024x18 config |
+| Framebuffer storage | RGB565 | 16-bit | One SDRAM column per pixel |
+| Z-buffer storage | Unsigned | 16-bit | One SDRAM column per value |
+| Barycentric derivatives | Q4.12 | 16-bit | dAttr/dx, dAttr/dy; computed once per triangle |
+
+All fixed-point values use TI-style Q notation as defined in CLAUDE.md.
+
+### Rationale
+
+- Q4.12 provides 3 integer bits of headroom above 1.0 for additive blending in the color combiner (A−B)×C+D, plus 12 fractional bits to reduce accumulated quantization error through chained stages.
+- The 16-bit total fits within the ECP5 DSP's 18x18 multipliers with room for guard bits.
+- RGB565 framebuffer matches SDRAM native 16-bit column width, enabling one pixel per memory access.
+- See ARCHITECTURE.md "Per-fragment data lanes" for the complete stage-by-stage data width table.
+
+### Alternatives Considered
+
+1. **Floating-point pipeline**: Rejected — the ECP5-25K has no floating-point hardware; soft-float would consume excessive LUTs and be too slow for real-time operation.
+2. **Wider fixed-point (e.g., Q8.24)**: Rejected — exceeds the 18-bit DSP multiplier width, doubles register count, and increases EBR consumption without meaningful visual improvement at 640x480 resolution.
+3. **Uniform 8-bit integer (RGBA8)**: Rejected — visible banding in multi-stage blend chains due to cumulative quantization error (see DD-011).
+
+### Consequences
+
+- All format boundaries (UNORM8 input → Q4.12, Q4.12 → RGB565 output) require explicit promotion/demotion logic.
+- Dithering (DD-012) is applied at the final Q4.12 → RGB565 conversion to mitigate banding.
+- DD-011's "10.8 fixed-point" notation refers to the same Q4.12 format viewed as UQ2.8 (pre-headroom) in the original design; the project uses Q4.12 notation uniformly.
+
+### References
+
+- ARCHITECTURE.md: Per-fragment data lanes table
+- DD-011 (10.8 Fixed-Point Fragment Processing — original rationale)
+- DD-012 (Blue Noise Dithering — final conversion stage)
+
+---
+
+
+## DD-031: SystemRDL as Authoritative Register Definition Source
+
+**Date:** 2026-03-01
+**Status:** Accepted
+
+### Context
+
+The GPU register map is consumed by both SystemVerilog RTL and Rust firmware.
+A single authoritative source prevents divergence between hardware and software register definitions.
+
+### Decision
+
+`registers/rdl/gpu_regs.rdl` (SystemRDL) is the single source of truth for the GPU register map.
+PeakRDL generates the SystemVerilog package and register module into `spi_gpu/src/spi/generated/`.
+`registers/src/lib.rs` provides the hand-maintained Rust constants crate (`gpu-registers`, `no_std`), matching the RDL.
+Register specifications (INT-010 through INT-014) live in `registers/doc/`, outside syskit management.
+
+Change process:
+1. Edit `registers/rdl/gpu_regs.rdl` and update `registers/src/lib.rs` to match
+2. Update the corresponding markdown spec in `registers/doc/`
+3. Run `registers/scripts/generate.sh` to regenerate SV
+4. Review generated diffs
+5. Update consuming code (`driver.rs`, `register_file.sv`) if register semantics changed
+
+### Rationale
+
+- SystemRDL is machine-readable and supports automated code generation, eliminating manual transcription errors between hardware and software.
+- Keeping specs in `registers/doc/` (not `doc/interfaces/`) avoids syskit workflow overhead for frequent register iterations during active hardware development.
+- The generated SV is checked into the repository so builds do not depend on PeakRDL being installed.
+
+### Alternatives Considered
+
+1. **Hand-maintained SV constants (no codegen)**: Rejected — drift risk between SV and Rust register definitions; manual synchronization is error-prone.
+2. **Syskit-managed register specifications**: Rejected — the syskit impact/propose/approve workflow adds overhead unsuited to the rapid iteration cycle of register development.
+3. **Generate Rust constants from RDL too**: Deferred — the Rust crate is small enough to maintain by hand; PeakRDL Rust output quality is evolving.
+
+### Consequences
+
+- All register changes start with the RDL file.
+- INT-010 through INT-014 in `doc/interfaces/` are stubs that redirect to `registers/doc/`.
+- Code referencing register values must use the generated SV package or the `gpu-registers` Rust crate, not hardcoded constants.
+
+### References
+
+- `registers/rdl/gpu_regs.rdl` (SystemRDL source)
+- `registers/scripts/generate.sh` (code generation script)
+- `registers/src/lib.rs` (Rust constants crate)
+
+---
+
+
+## DD-030: Code Style Conformance with Skill Guides
+
+**Date:** 2026-03-01
+**Status:** Accepted
+
+### Context
+
+The project has three language-specific style guides maintained as Claude skill files.
+The relationship between these guides and CLAUDE.md inline rules needs a clear authority hierarchy to prevent duplication and divergence.
+
+### Decision
+
+All code must conform to its respective skill guide:
+- SystemVerilog: `.claude/skills/claude-skill-verilog/SKILL.md`
+- Rust: `.claude/skills/claude-skill-rust/SKILL.md`
+- C++: `.claude/skills/claude-skill-cpp/SKILL.md`
+
+CLAUDE.md references these guides but does not reproduce their content ("reference, don't reproduce").
+Project-specific overlays (e.g., `defmt` for embedded logging, `thiserror` for library error types, `no_std` enum patterns) are documented in CLAUDE.md as supplements to the skill guides, not replacements.
+
+### Rationale
+
+- Centralizing style authority in skill files prevents divergence between CLAUDE.md inline rules and the skill file content.
+- Skill files are loaded on demand by the development tool, providing full context without bloating CLAUDE.md.
+- Project-specific overlays in CLAUDE.md capture conventions that are unique to pico-gs and not applicable to general-purpose style guides.
+
+### Alternatives Considered
+
+1. **Inline all style rules in CLAUDE.md**: Rejected — CLAUDE.md has an effective line budget; embedding full style guides (300+ lines each) would exceed the budget and create maintenance duplication.
+2. **No central style enforcement (rely on linters only)**: Rejected — linters catch syntax and formatting but not architectural patterns (e.g., FSM structure, error handling strategy, module organization).
+
+### Consequences
+
+- Any style rule change must be made in the skill file, not CLAUDE.md.
+- CLAUDE.md's Code Style sections contain only project-specific additions that supplement the skill guides.
+- New contributors and tools should read the skill file for full style requirements.
+
+### References
+
+- `.claude/skills/claude-skill-verilog/SKILL.md`
+- `.claude/skills/claude-skill-rust/SKILL.md`
+- `.claude/skills/claude-skill-cpp/SKILL.md`
+- CLAUDE.md: Code Style sections (project-specific overlays)
+
+---
+
+
 ## DD-029: UNIT-005 RTL Module Decomposition
 
 **Date:** 2026-03-01
@@ -43,9 +239,8 @@ When adding a new decision, copy this template:
 
 ### Context
 
-After applying the `always_ff` refactor (DD-027) and one-statement-per-line formatting, `rasterizer.sv` grew to ~1700 lines — far exceeding the ~500-line module guideline.
-DD-028 chose spec-level-only decomposition, keeping all logic in a single RTL file.
-With the formatting expansion, the readability argument no longer holds; the single-file approach is now a liability.
+The rasterizer (UNIT-005) implements four functionally distinct datapaths totaling ~1700 lines, far exceeding the ~500-line module guideline.
+A single-file approach harms readability and maintainability at this scale.
 
 ### Decision
 
@@ -67,7 +262,7 @@ The parent module's external port list is unchanged; `gpu_top.sv` requires no mo
 - The derivative computation is naturally a purely combinational block (~340 lines) with no state — extracting it as a leaf module is a clear win.
 - The attribute accumulator block owns 52 registers with self-contained stepping logic — a clean sequential sub-module boundary.
 - The iteration/edge-walk logic owns 17 registers and the fragment output handshake — another clean sequential boundary.
-- Supersedes DD-028 which rejected RTL splitting before the formatting expansion made the single-file impractical.
+- The ~500-line guideline and one-statement-per-line formatting rule are incompatible with a single-file design at this register count.
 
 ### Consequences
 
@@ -79,90 +274,6 @@ The parent module's external port list is unchanged; `gpu_top.sv` requires no mo
 ### References
 
 - UNIT-005 (Rasterizer), UNIT-005.01–005.04 (sub-units)
-- DD-028 (superseded)
-- DD-027 (always_ff refactor that preceded this decomposition)
-
----
-
-
-## DD-028: UNIT-005 Sub-Unit Decomposition — Spec-Level Split Without RTL Module Split
-
-**Date:** 2026-03-01
-**Status:** Superseded by DD-029
-
-### Context
-
-The rasterizer (`rasterizer.sv`, UNIT-005) implements four functionally distinct datapaths: edge setup (SETUP → SETUP_2 → SETUP_3), derivative precomputation (ITER_START → INIT_E1 → INIT_E2), attribute accumulation (inner-loop incremental stepping), and the iteration FSM (EDGE_TEST, INTERPOLATE, ITER_NEXT).
-These datapaths have clear input/output boundaries and ownership of distinct register sets.
-The question is whether to express this decomposition as separate RTL modules or only at the specification level.
-
-### Decision
-
-Decompose UNIT-005 into four sub-units (UNIT-005.01 through UNIT-005.04) at the specification level, documented in `unit_005_rasterizer.md`, without splitting the RTL into separate modules.
-The `rasterizer.sv` module boundary is preserved.
-The sub-unit decomposition is reflected in the `always_comb` / `always_ff` block structure within the single module: each sub-unit corresponds to a named `always_comb` next-state block and a corresponding group of flat `always_ff` register assignments.
-
-### Rationale
-
-The four sub-units communicate through shared registers with no valid/ready handshake between them; the boundaries are FSM-state transitions within a single clock domain.
-Splitting into separate RTL modules would require either explicit inter-module port connections (adding port count and hierarchy complexity) or a shared-memory interface through a packed struct.
-Neither adds clarity over a well-structured single module with named `always_comb` blocks.
-The spec-level decomposition provides the traceability and readability benefits of sub-unit thinking without the implementation overhead of module hierarchy.
-
-### Alternatives Considered
-
-1. **Full RTL module split (four sub-modules, wired in `rasterizer_top.sv`):** Rejected for this phase — the communication between sub-units is via direct register references in a single FSM, not a protocol that maps naturally to module ports.
-2. **No decomposition, single monolithic design doc entry:** Rejected — the four sub-units have distinct algorithms, register ownership, and DSP usage that are easier to reason about separately.
-3. **Decompose only the iteration FSM, keep setup/init combined:** Rejected — all four sub-units have equal clarity benefits from named decomposition.
-
-### Consequences
-
-- `unit_005_rasterizer.md` gains a "Sub-Units" section documenting UNIT-005.01–005.04.
-- `doc/design/README.md` TOC is updated to list the sub-units.
-- The `rasterizer.sv` `always_comb` block naming should follow the sub-unit identifiers for traceability.
-- No new RTL files are created; no port lists change.
-
-### References
-
-- UNIT-005 (Rasterizer)
-
----
-
-
-## DD-027: Rasterizer `always_ff` Refactor
-
-**Date:** 2026-03-01
-**Status:** Proposed
-
-### Context
-
-The rasterizer datapath `always_ff` block (UNIT-005) contains conditional logic (`if`, nested `case`) embedded in case arms, violating the project guideline that `always_ff` blocks contain only flat `reg <= next_reg` assignments.
-All conditional computation must live in companion `always_comb` next-state blocks.
-
-### Decision
-
-Extract all conditional logic from the rasterizer datapath `always_ff` into four named companion `always_comb` next-state blocks, one per sub-unit (UNIT-005.01 through UNIT-005.04).
-The `always_ff` block becomes a flat list of `reg <= next_reg` assignments.
-No registers are added or removed; no ports change; no observable behavior changes.
-
-### Rationale
-
-Guideline conformance (see CLAUDE.md `always_ff` style rule).
-Improves readability by separating "what happens next" (`always_comb`) from "when it happens" (`always_ff`).
-Verilator's `-Wall` lint checks are expected to improve (fewer inferred-latch false positives).
-RTL module splitting was initially rejected (DD-028) but later adopted (DD-029) after formatting expansion made single-file impractical.
-Lint suppression via pragmas was rejected (hides real issues).
-
-### Consequences
-
-- Source-line references in `doc/requirements/states_and_modes.md` (e.g., `rasterizer.sv` line numbers) will shift after the refactor; those are flagged as a post-refactor follow-on update.
-- The `Spec-ref` hash in `rasterizer.sv` must be refreshed via `impl-stamp.sh UNIT-005`.
-- Verilator lint improvement expected.
-
-### References
-
-- UNIT-005 (Rasterizer)
-- DD-028 (UNIT-005 Sub-Unit Decomposition)
 
 ---
 
@@ -348,89 +459,47 @@ A `SimTransport` wrapper could be added later if there is a demonstrated need to
 - INT-040 Notes (Host Platform HAL)
 
 
-## DD-022: SystemVerilog Code Style Conformance Remediation
+## DD-022: SystemVerilog Style Guide Conformance
 
 **Date:** 2026-02-16
-**Status:** Proposed
-**Implementation:** RTL PENDING
+**Status:** Accepted
 
 ### Context
 
-The `CLAUDE.md` project guidelines define nine SystemVerilog code style rules covering net type directives, signal comments, `always_ff`/`always_comb` usage, declaration style, FSM structure, module organization, CDC patterns, and verilator lint policy.
-An audit of all 19 RTL files in `spi_gpu/src/` revealed that 10 files are missing the required `` `default_nettype none `` directive, 3 files have structural violations (combined FSMs, incorrect signal types), and several files use implicit literal widths, verilator lint pragmas, or `'0` shorthand instead of explicit-width zeros.
-
-The most severe violations are in `rasterizer.sv` (UNIT-005), which has a combined FSM with `reg` declarations inside `always_ff`, and `tmds_encoder.sv` (UNIT-009), which assigns to a `wire` inside `always_comb`.
-Medium-severity violations include a combined FSM in `display_controller.sv` (UNIT-008).
+All RTL files must conform to a consistent coding style for safety (`\`default_nettype none`), maintainability (separated FSMs), and lint hygiene (zero verilator warnings without pragmas).
 
 ### Decision
 
-Perform a systematic style conformance remediation across all 18 RTL files (`divider.sv` removed as unused dead code):
-
-1. **Add `` `default_nettype none ``** to the 9 files that are missing it: `gpu_top.sv`, `spi_slave.sv`, `register_file.sv`, `pll_core.sv`, `reset_sync.sv`, `async_fifo.sv`, `timing_generator.sv`, `dvi_output.sv`, `tmds_encoder.sv`.
-
-2. **Refactor `rasterizer.sv` FSM** (UNIT-005): Split the combined `always_ff` into separate state register, next-state `always_comb`, and datapath `always_ff` blocks.
-   Remove `reg` declarations from inside `always_ff` (move to module scope).
-   Replace implicit literal widths with explicit sizes (e.g., `curr_x + 10'd1`).
-
-3. **Refactor `display_controller.sv` prefetch FSM** (UNIT-008): Split the prefetch state machine into separate state register, next-state logic, and datapath blocks.
-
-4. **Fix `tmds_encoder.sv`** (UNIT-009): Change `wire [9:0] stage2` to `logic [9:0] stage2`.
-   Add `default` case to `control_symbol` case statement.
-
-5. **Replace `'0` shorthand** with explicit-width zeros in `async_fifo.sv`.
-
-6. **Remove verilator lint pragmas** from `display_controller.sv`, `texture_cache.sv`, and `sram_arbiter.sv`.
-   Replace with named unused-wire patterns (e.g., `wire _unused_x = signal;`) where signals are intentionally unused.
-
-7. **Add explicit bit widths** to localparam literals in `timing_generator.sv` and `register_file.sv`.
-
-8. **Verify** all files pass `verilator --lint-only -Wall` with zero warnings after fixes.
+All SystemVerilog files in `spi_gpu/src/` conform to the project style guide (`.claude/skills/claude-skill-verilog/SKILL.md`).
+Key requirements enforced:
+- `\`default_nettype none` in every file
+- `always_ff` contains only flat `reg <= next_reg` assignments; all logic in companion `always_comb` blocks
+- FSMs use separate state register, next-state `always_comb`, and datapath blocks
+- Explicit bit widths on all literals; no `'0` shorthand
+- No verilator lint pragmas; unused signals use named wire patterns
+- All files pass `verilator --lint-only -Wall` with zero warnings
 
 ### Rationale
 
-- **Consistency**: A codebase with uniform style is easier to review, maintain, and onboard new contributors to
-- **Safety**: `` `default_nettype none `` catches undeclared nets at compile time, preventing subtle synthesis bugs
-- **Maintainability**: Separated FSMs (state register + next-state logic + datapath) make state transitions explicit and simplify formal verification
-- **Lint hygiene**: Fixing all verilator warnings without pragmas ensures the lint tool remains useful as a regression gate
-- **No functional changes**: All remediation is structural/stylistic; module interfaces and behavior are preserved
+- `\`default_nettype none` catches undeclared nets at compile time, preventing subtle synthesis bugs.
+- Separated FSMs make state transitions explicit and simplify formal verification.
+- Zero-warning lint policy ensures verilator remains a useful regression gate.
 
 ### Alternatives Considered
 
-1. **Partial remediation (critical only)**: Fix only `rasterizer.sv` and `tmds_encoder.sv`.
-   Rejected -- leaves 10 files without `` `default_nettype none ``, which is the most widespread and highest-risk violation.
-
-2. **Incremental per-feature remediation**: Fix style issues only when modifying a file for other reasons.
-   Rejected -- leaves the codebase in an inconsistent state indefinitely; style violations accumulate.
-
-3. **Automated formatting tool**: Use a SystemVerilog formatter to fix style.
-   Rejected -- no mature tool handles FSM restructuring or semantic changes (e.g., wire→logic, adding default cases).
+1. **Incremental per-feature remediation**: Fix style issues only when modifying a file for other reasons.
+   Rejected — leaves the codebase in an inconsistent state indefinitely.
+2. **Automated formatting tool**: Use a SystemVerilog formatter.
+   Rejected — no mature tool handles FSM restructuring or semantic changes (e.g., wire→logic, adding default cases).
 
 ### Consequences
 
-**Hardware (RTL):**
-- All 18 RTL files updated to conform to CLAUDE.md style rules (unused `divider.sv` removed)
-- `rasterizer.sv`: Major restructure (3 `always` blocks → separate state/next-state/datapath); functional behavior unchanged
-- `display_controller.sv`: Prefetch FSM restructured; functional behavior unchanged
-- `tmds_encoder.sv`: `wire` → `logic` type fix, `default` case added; functional behavior unchanged
-- All files pass `verilator --lint-only -Wall` without pragmas
-
-**Testing:**
-- All existing testbenches must pass after remediation (no functional changes)
-- Recommended: run full regression suite after each file is modified
-
-**Risk:**
-- Low: All changes are structural/stylistic with no behavioral modification
-- FSM restructuring preserves identical state transition graphs
-- Verilator lint verification provides regression safety
+- All new and modified RTL files must pass the style guide and lint checks before merging.
+- Module interfaces and behavior are unchanged by style conformance; all changes are structural/stylistic.
 
 ### References
 
-- CLAUDE.md: SystemVerilog Code Style section
-- UNIT-005: Rasterizer (primary FSM refactoring target)
-- UNIT-008: Display Controller (prefetch FSM refactoring)
-- UNIT-009: DVI TMDS Encoder (type fix, default case)
-- UNIT-006: Pixel Pipeline (upstream dependency on rasterizer interface)
-- UNIT-007: Memory Arbiter (lint pragma removal)
+- `.claude/skills/claude-skill-verilog/SKILL.md` (authoritative style guide)
 
 ---
 
@@ -510,44 +579,6 @@ Replace the async SRAM controller with a synchronous DRAM controller for the W98
 - INT-002: DVI TMDS Output (PLL configuration update)
 - REQ-011.01: Performance Targets (bandwidth recalculation)
 - REQ-011.02: Resource Constraints (SDRAM controller resource estimate)
-- DD-020: SRAM Burst Read/Write Operations (superseded)
-
----
-
-
-## DD-020: SRAM Burst Read/Write Operations
-
-**Date:** 2026-02-14
-**Status:** Superseded by DD-021
-**Implementation:** N/A (superseded)
-
-### Context
-
-The SRAM controller currently uses a 6-state FSM (IDLE, READ_LOW, READ_HIGH, WRITE_LOW, WRITE_HIGH, DONE) to perform 32-bit accesses over the 16-bit external SRAM data bus.
-Each 32-bit access requires 2 bus cycles (low half, high half) plus address setup, and returns to IDLE between every access.
-For sequential access patterns -- display scanout (2560 bytes/scanline), framebuffer writes (sequential pixels), Z-buffer reads/writes (scanline-order fragments), and texture cache line fills (8-32 bytes/miss) -- the overhead of re-issuing addresses between each 16-bit word is significant.
-
-The icepi-zero's async SRAM supports burst mode, which allows reading or writing multiple sequential 16-bit words with automatic address increment, eliminating the address setup cycle between consecutive words in a burst.
-
-### Decision
-
-**SUPERSEDED**: This decision described burst mode for an async SRAM controller.
-The target hardware (ICEpi Zero) uses SDRAM (W9825G6KH), not async SRAM.
-See DD-021 for the replacement SDRAM controller architecture, which achieves similar sequential access throughput through SDRAM column auto-increment within active rows.
-
-### Rationale
-
-See DD-021.
-
-### Consequences
-
-Superseded by DD-021.
-The sequential access concepts (arbiter burst grants, per-port burst behavior, preemption policy) carry forward to the SDRAM controller design, adapted for SDRAM timing (CAS latency, row activation, auto-refresh).
-
-### References
-
-- DD-021: SDRAM Controller Architecture for W9825G6KH (replacement)
-
 ---
 
 
