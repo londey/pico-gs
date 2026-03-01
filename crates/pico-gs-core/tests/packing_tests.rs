@@ -222,10 +222,6 @@ mod register_addresses {
         assert_eq!(registers::Z_RANGE, 0x31);
     }
 
-    #[test]
-    fn tri_mode_alias() {
-        assert_eq!(registers::TRI_MODE, registers::RENDER_MODE);
-    }
 }
 
 /// RENDER_MODE bit field constants (INT-010 §0x30).
@@ -253,18 +249,12 @@ mod render_mode_bits {
     }
 
     #[test]
-    fn z_compare_less_bits_15_13() {
-        assert_eq!(registers::Z_COMPARE_LESS, 0b000 << 13);
-    }
-
-    #[test]
-    fn z_compare_lequal() {
-        assert_eq!(registers::Z_COMPARE_LEQUAL, 0b001 << 13);
-    }
-
-    #[test]
-    fn z_compare_always() {
-        assert_eq!(registers::Z_COMPARE_ALWAYS, 0b110 << 13);
+    fn z_compare_enum_discriminants() {
+        // Verify that the generated enum discriminants match the RDL encoding.
+        use pico_gs_core::gpu::registers::ZCompare;
+        assert_eq!(ZCompare::Less as u8, 0);
+        assert_eq!(ZCompare::Lequal as u8, 1);
+        assert_eq!(ZCompare::Always as u8, 6);
     }
 }
 

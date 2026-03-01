@@ -280,10 +280,10 @@ mod render_mode_tests {
                 true,                   // color_write
                 ZCompare::Less,         // z_compare
                 AlphaBlend::Disabled,   // alpha_blend
-                CullMode::None,         // cull_mode
+                CullMode::CullNone,     // cull_mode
                 true,                   // dither
                 false,                  // stipple_en
-                AlphaTestFunc::Always,  // alpha_test
+                AlphaTestFunc::AtAlways, // alpha_test
                 0,                      // alpha_ref
             )
             .expect("set_render_mode should succeed");
@@ -315,10 +315,10 @@ mod render_mode_tests {
                 true,                   // color_write
                 ZCompare::Less,         // z_compare (000)
                 AlphaBlend::Disabled,   // alpha_blend (000)
-                CullMode::Cw,           // cull_mode (01)
+                CullMode::CullCw,       // cull_mode (01)
                 true,                   // dither
                 false,                  // stipple_en
-                AlphaTestFunc::Always,  // alpha_test (11)
+                AlphaTestFunc::AtAlways, // alpha_test (00)
                 0,                      // alpha_ref
             )
             .expect("set_render_mode should succeed");
@@ -337,13 +337,12 @@ mod render_mode_tests {
         // bit 10: dither = 1
         // bits [15:13]: z_compare = 000
         // bit 16: stipple_en = 0
-        // bits [18:17]: alpha_test = 11
+        // bits [18:17]: alpha_test = 00 (AtAlways)
         // bits [26:19]: alpha_ref = 0
         let expected: u64 = (1 << 2)   // z_test
             | (1 << 4)                 // color_write
             | (1 << 5)                 // cull = CW
-            | (1 << 10)               // dither
-            | (3u64 << 17);           // alpha_test = Always
+            | (1 << 10);              // dither
 
         assert_eq!(
             data, expected,

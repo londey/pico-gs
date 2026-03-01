@@ -104,18 +104,14 @@ fn execute_upload_texture<S: SpiTransport>(
     // Upload pixel data via MEM_ADDR/MEM_DATA.
     gpu.upload_memory(cmd.gpu_dword_addr, tex.data)?;
 
-    // Configure TEX0.
-    gpu.write(registers::TEX0_BASE, cmd.gpu_dword_addr as u64)?;
-
-    // TEX0_FMT: swizzle=RGBA(0), height_log2, width_log2, not compressed, enabled.
-    let fmt: u64 = ((tex.height_log2 as u64) << 8)
-        | ((tex.width_log2 as u64) << 4)
-        // bit 1 = 0 (not compressed), bit 0 = 1 (enabled)
-        | 1;
-    gpu.write(registers::TEX0_FMT, fmt)?;
-
-    // REPEAT wrapping on both axes.
-    gpu.write(registers::TEX0_WRAP, 0)?;
+    // Configure TEX0 via unified TEX0_CFG register.
+    // Pack base_addr (512-byte granularity), dimensions, wrapping, and enable.
+    let base_512 = (cmd.gpu_dword_addr >> 6) as u16; // dword_addr >> 6 = byte_addr >> 9
+    let cfg: u64 = (1u64) // ENABLE (bit 0)
+        | ((tex.width_log2 as u64) << registers::TexCfgReg::WIDTH_LOG2_OFFSET)
+        | ((tex.height_log2 as u64) << registers::TexCfgReg::HEIGHT_LOG2_OFFSET)
+        | ((base_512 as u64) << registers::TexCfgReg::BASE_ADDR_OFFSET);
+    gpu.write(registers::TEX0_CFG, cfg)?;
 
     Ok(())
 }
