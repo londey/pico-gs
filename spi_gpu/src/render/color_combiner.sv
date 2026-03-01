@@ -70,8 +70,6 @@ module color_combiner (
     input  wire        out_ready
 );
 
-    import fp_types_pkg::*;
-
     // ====================================================================
     // CC_SOURCE Encoding (cc_source_e from RDL)
     // ====================================================================
@@ -111,8 +109,7 @@ module color_combiner (
     // ====================================================================
     // Q4.12 Constants (sourced from fp_types_pkg.sv)
     // ====================================================================
-    // Q412_ZERO and Q412_ONE are provided by the fp_types_pkg wildcard
-    // import above.  See fp_types_pkg.sv for canonical definitions.
+    // fp_types_pkg::Q412_ZERO and fp_types_pkg::Q412_ONE are from fp_types_pkg.sv.
 
     // Packed 64-bit constant for RGBA zero (4-channel convenience, local)
     localparam [63:0] ZERO_Q412 = 64'h0000_0000_0000_0000;
@@ -207,10 +204,10 @@ module color_combiner (
                 CC_SHADE0:   mux_channel = $signed(sh0_in[ch_idx*16 +: 16]);
                 CC_CONST0:   mux_channel = $signed(c0_in[ch_idx*16 +: 16]);
                 CC_CONST1:   mux_channel = $signed(c1_in[ch_idx*16 +: 16]);
-                CC_ONE:      mux_channel = Q412_ONE;
-                CC_ZERO:     mux_channel = Q412_ZERO;
+                CC_ONE:      mux_channel = fp_types_pkg::Q412_ONE;
+                CC_ZERO:     mux_channel = fp_types_pkg::Q412_ZERO;
                 CC_SHADE1:   mux_channel = $signed(sh1_in[ch_idx*16 +: 16]);
-                default:     mux_channel = Q412_ZERO;
+                default:     mux_channel = fp_types_pkg::Q412_ZERO;
             endcase
         end
     endfunction
@@ -240,8 +237,8 @@ module color_combiner (
                 CC_C_SHADE0:         mux_rgb_c_channel = $signed(sh0_in[ch_idx*16 +: 16]);
                 CC_C_CONST0:         mux_rgb_c_channel = $signed(c0_in[ch_idx*16 +: 16]);
                 CC_C_CONST1:         mux_rgb_c_channel = $signed(c1_in[ch_idx*16 +: 16]);
-                CC_C_ONE:            mux_rgb_c_channel = Q412_ONE;
-                CC_C_ZERO:           mux_rgb_c_channel = Q412_ZERO;
+                CC_C_ONE:            mux_rgb_c_channel = fp_types_pkg::Q412_ONE;
+                CC_C_ZERO:           mux_rgb_c_channel = fp_types_pkg::Q412_ZERO;
                 CC_C_TEX0_ALPHA:     mux_rgb_c_channel = $signed(tex0_in[15:0]);
                 CC_C_TEX1_ALPHA:     mux_rgb_c_channel = $signed(tex1_in[15:0]);
                 CC_C_SHADE0_ALPHA:   mux_rgb_c_channel = $signed(sh0_in[15:0]);
@@ -249,7 +246,7 @@ module color_combiner (
                 CC_C_COMBINED_ALPHA: mux_rgb_c_channel = $signed(combined_in[15:0]);
                 CC_C_SHADE1:         mux_rgb_c_channel = $signed(sh1_in[ch_idx*16 +: 16]);
                 CC_C_SHADE1_ALPHA:   mux_rgb_c_channel = $signed(sh1_in[15:0]);
-                default:             mux_rgb_c_channel = Q412_ZERO;
+                default:             mux_rgb_c_channel = fp_types_pkg::Q412_ZERO;
             endcase
         end
     endfunction
@@ -263,9 +260,9 @@ module color_combiner (
             if (val[15]) begin
                 // Negative: clamp to 0
                 saturate_unorm = 16'h0000;
-            end else if (val > Q412_ONE) begin
+            end else if (val > fp_types_pkg::Q412_ONE) begin
                 // Above 1.0: clamp to 1.0
-                saturate_unorm = Q412_ONE;
+                saturate_unorm = fp_types_pkg::Q412_ONE;
             end else begin
                 saturate_unorm = val[15:0];
             end

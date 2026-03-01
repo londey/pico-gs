@@ -130,8 +130,6 @@ module pixel_pipeline (
     output wire         pipeline_empty    // No fragments in flight
 );
 
-    import fp_types_pkg::*;
-
     // ====================================================================
     // RENDER_MODE Field Extraction
     // ====================================================================
@@ -167,8 +165,8 @@ module pixel_pipeline (
     // [31:16] (wrap/mip), [7] (reserved), [3:1] (filter reserved) unused
     wire [19:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:16], reg_tex0_cfg[7], reg_tex0_cfg[3:1]};
     wire [27:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:1]};
-    wire [11:0] _unused_render_mode_bits = {reg_render_mode[31:16],
-                                            reg_render_mode[12:8]}[11:0];
+    wire [20:0] _unused_render_mode_bits = {reg_render_mode[31:16],
+                                            reg_render_mode[12:8]};
     wire [12:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15]};
     wire [16:0] _unused_fb_ctrl_bits = {reg_fb_control[31:16], reg_fb_control[15]};
     wire [5:0]  _unused_cc_in_x_hi = cc_in_frag_x[15:10];

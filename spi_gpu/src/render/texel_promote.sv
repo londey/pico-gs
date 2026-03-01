@@ -21,9 +21,7 @@
 //      REQ-004.02 (Extended Precision Fragment Processing),
 //      REQ-003.06 (FR-024-11)
 
-module texel_promote
-    import fp_types_pkg::*;
-(
+module texel_promote (
     // Input: RGBA5652 from texture cache (18 bits)
     //   [17:13] = R5
     //   [12:7]  = G6
@@ -54,13 +52,13 @@ module texel_promote
     // This module delegates to those functions to ensure bit-exact consistency
     // across all promotion call sites.
 
-    assign r_q412 = promote_r5_to_q412(r5);
+    assign r_q412 = fp_types_pkg::promote_r5_to_q412(r5);
 
-    assign g_q412 = promote_g6_to_q412(g6);
+    assign g_q412 = fp_types_pkg::promote_g6_to_q412(g6);
 
-    assign b_q412 = promote_b5_to_q412(b5);
+    assign b_q412 = fp_types_pkg::promote_b5_to_q412(b5);
 
-    assign a_q412 = promote_a2_to_q412(a2);
+    assign a_q412 = fp_types_pkg::promote_a2_to_q412(a2);
 
 endmodule
 

@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(//workspaces/pico-gs/**)"
+      "Read(//workspaces/pico-gs/**)",
+      "Bash(yosys --version)"
     ]
   }
 }
