@@ -39,7 +39,7 @@ The triangle is large enough to cover a significant portion of the 512x480 viewp
 
 ### Harness Command Sequence
 
-The integration harness drives the following register-write sequence into UNIT-003 (Register File), replicating the register writes that a `RenderMeshPatch` command produces per INT-021:
+The integration harness drives the following register-write sequence into UNIT-003 (Register File) per the SPI register-write protocol defined in INT-010 and INT-012:
 
 1. **Configure framebuffer:**
    Write `FB_CONFIG` (address `0x40`) with:

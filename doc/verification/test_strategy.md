@@ -57,7 +57,7 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
   - Instantiates the full GPU RTL hierarchy under Verilator.
   - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
     A partial or stub SDRAM model that does not implement the cache miss fill FSM is not sufficient for VER-012 through VER-014.
-  - Accepts a command script (encoded per INT-021 register-write sequences) and drives UNIT-003 register-file inputs.
+  - Accepts a command script (encoded as register-write sequences per INT-010 and INT-012) and drives UNIT-003 register-file inputs.
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.
     The framebuffer readback uses the WIDTH_LOG2 value written to FB_CONFIG in the test command script; each test must write an explicit FB_CONFIG that establishes the surface dimensions before rendering.
 - **Post-integration re-approval:** All five golden image tests (VER-010 through VER-014) require golden image re-approval after the pixel pipeline integration change (UNIT-006 stub → functional, UNIT-005 incremental interpolation redesign, `tex_format` 3-bit widening).

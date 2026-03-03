@@ -460,7 +460,7 @@ This frees 13–14 DSP blocks, creating headroom for color combiner (UNIT-010, 4
 ---
 
 
-## DD-023: SimTransport for pico-gs-core against Verilator Interactive Simulator
+## DD-023: Standalone C++/Lua Verilator Simulator Instead of Rust SimTransport
 
 **Date:** 2026-02-26
 **Status:** Accepted
@@ -468,32 +468,29 @@ This frees 13–14 DSP blocks, creating headroom for color combiner (UNIT-010, 4
 ### Context
 
 The Verilator interactive simulator (REQ-010.02, UNIT-037) needs to drive the GPU RTL model for live visual debugging.
-A key question is whether this simulator should implement a Rust `SimTransport` satisfying the `SpiTransport` trait (INT-040), which would allow `pico-gs-core` driver code (UNIT-022) to run against the Verilator sim without modification.
-Both UNIT-022 Design Notes and INT-040 Notes require this decision to be captured before UNIT-037 implementation begins.
+A key question was whether this simulator should implement a Rust `SpiTransport` shim, allowing host application driver code to run against the Verilator model without modification.
+The host application driver code (formerly UNIT-022) has moved to the pico-racer repository; this repo retains only the GPU RTL and test harness.
 
 ### Decision
 
 The Verilator interactive simulator is implemented as a standalone C++/Lua binary that drives the GPU RTL out-of-band via `SIM_DIRECT_CMD` injection ports, bypassing SPI serial framing entirely.
-It does NOT implement a Rust `SimTransport` satisfying INT-040 in the initial version.
+It does not implement a Rust `SpiTransport` shim.
 
 ### Rationale
 
 A standalone C++ application is simpler to build, avoids Rust/C FFI complexity, and delivers the core use case (live visual debug with Lua scripting) immediately.
 The `SIM_DIRECT_CMD` path presents the same logical 72-bit format (`{rw[0], addr[6:0], data[63:0]}`) to the FIFO write port that the SPI slave would present after deserializing a transaction, so the RTL behavior is exercised faithfully.
-A `SimTransport` wrapper could be added later if there is a demonstrated need to run `pico-gs-core` driver code (UNIT-022) against the sim without modification; that path is deferred until the need arises.
+Since the host application code lives in pico-racer, there is no Rust workspace in this repo against which a `SimTransport` would be useful.
 
 ### Consequences
 
-- `pico-gs-core` tests cannot currently run against the Verilator sim model.
-- UNIT-037 is a standalone C++/Lua binary outside the Rust workspace; it does not participate in `cargo build` or `cargo test`.
-- UNIT-022 and INT-040 correctly reference this decision; their notes about a future `SimTransport` remain valid as a deferred option.
-- If the need for a `SimTransport` is later demonstrated, a new design decision (superseding this one) would be created and UNIT-037 extended accordingly.
+- UNIT-037 is a standalone C++/Lua binary in `spi_gpu/`; it does not require a Rust workspace.
+- The GPU RTL is tested via direct command injection at the INT-010 register-write level, matching what the physical SPI host produces.
 
 ### References
 
 - REQ-010.02 (Verilator Interactive Simulator)
-- UNIT-022 Design Notes (GPU Driver Layer)
-- INT-040 Notes (Host Platform HAL)
+- UNIT-037 (Verilator Interactive Simulator App)
 
 
 ## DD-022: SystemVerilog Style Guide Conformance
@@ -772,10 +769,8 @@ Three related changes to the pixel pipeline and register layout:
 - UNIT-003: New Z_RANGE register decode; COLOR_WRITE_EN routing from RENDER_MODE
 - UNIT-007: Z-buffer read requests arrive before texture read requests
 
-**Firmware (Rust):**
-- INT-020: New `gpu_set_z_range()`; `gpu_set_render_mode()` updated for COLOR_WRITE_EN
-- INT-021: RenderFlags gains `color_write` field
-- Migration: Code using FB_CONTROL[41] must move to RENDER_MODE[4]
+**Host Application (external):**
+- pico-racer: `gpu_set_z_range()` and `gpu_set_render_mode()` updated for COLOR_WRITE_EN; code using FB_CONTROL[41] must move to RENDER_MODE[4]
 
 **Performance:**
 - Positive: Eliminates wasted texture bandwidth for occluded fragments
@@ -785,80 +780,7 @@ Three related changes to the pixel pipeline and register layout:
 
 ### References
 
-- INT-010, INT-011, INT-020, INT-021, UNIT-006, REQ-005.07
-
----
-
-
-## DD-017: 16-bit Fixed-Point Mesh Vertex Data with SoA Patch Layout
-
-**Date:** 2026-02-13
-**Status:** Accepted
-**Implementation:** RUST PENDING
-
-### Context
-
-The asset binary format (INT-031) stores mesh vertex data as f32 arrays: positions (3×f32 = 12 B/vertex), normals (3×f32 = 12 B/vertex), and UVs (2×f32 = 8 B/vertex), totaling 32 bytes per vertex plus indices.
-For 16-vertex patches this is ~560 bytes per patch.
-With ~50 patches per mesh and multiple meshes in flash, vertex data consumes significant flash and DMA bandwidth.
-
-Additionally, each patch uses four separate binary files (_pos.bin, _uv.bin, _norm.bin, _idx.bin), requiring four DMA transfers per patch.
-
-### Decision
-
-1. **Quantize vertex attributes to 16-bit fixed-point:**
-   - Positions: u16 with mesh-wide AABB quantization grid ([0, 65535] maps to [aabb_min, aabb_max] per axis)
-   - Normals: i16 1:15 signed fixed-point (range [-1.0, +0.99997])
-   - UVs: i16 1:2:13 signed fixed-point (range [-4.0, +3.9998])
-   - Indices: u8 strip commands (unchanged)
-
-2. **Single contiguous SoA blob per patch:**
-   - Layout: `[pos_x[], pos_y[], pos_z[], norm_x[], norm_y[], norm_z[], uv_u[], uv_v[], indices[]]`
-   - One file per patch instead of four
-
-3. **Quantization bias matrix:**
-   - Core 0 folds quantization parameters into the model matrix: `adjusted_model = model × translate(aabb_min) × scale(extent / 65535.0)`
-   - `transform_vertex()` is unchanged — receives MVP and position as before
-
-### Rationale
-
-- **46% flash savings**: 304 B vs 560 B per 16-vertex patch
-- **Single DMA transfer**: One 304 B read vs four separate reads (reduced DMA setup overhead)
-- **No precision loss in practice**: u16 positions give 1/65535 of the mesh AABB extent per axis — sub-millimeter for typical game meshes.
-  Normal 1:15 resolution (1/32768) exceeds Gouraud shading requirements.
-  UV 1:2:13 gives 1/16 texel precision at 512px (acceptable with bilinear filtering)
-- **Zero-cost conversion on Cortex-M33**: Single-cycle VCVT.F32.U16/VCVT.F32.S16 instructions
-- **Bias matrix approach**: Avoids changing `transform_vertex()` — all quantization is absorbed into the model matrix
-- **Mesh-wide quantization grid**: All patches share one coordinate system, preventing seam artifacts at patch boundaries
-
-### Alternatives Considered
-
-1. **Keep f32, merge into single blob**: Saves DMA setup but no size reduction.
-   Rejected — flash savings are the primary motivation.
-2. **Per-patch quantization AABBs**: Each patch has its own [0, 65535] range.
-   Rejected — causes seam artifacts where adjacent patches meet due to different quantization grids.
-3. **Half-float (f16)**: 16-bit IEEE 754.
-   Same size as u16/i16 but with non-uniform precision (more precision near zero, less at extremes).
-   Rejected — ARM Cortex-M33 lacks native f16 instructions, requiring software conversion.
-   u16/i16 with VCVT is simpler and faster.
-
-### Consequences
-
-- INT-031: Major revision to mesh binary format sections
-- UNIT-032: Quantization and SoA packing steps added to mesh splitter
-- UNIT-033: Codegen emits single blob files with quantized data
-- INT-021: RenderMeshPatch processing steps updated for unpack/convert
-- UNIT-021: Input buffer sizes reduced (~1,136 B → ~608 B), working RAM ~7.5 KB
-- REQ-007.01: Bias matrix requirement added
-- No GPU hardware changes required
-- Lights and matrices remain f32 (only vertex attributes are quantized)
-
-### References
-
-- INT-031: Asset Binary Format (primary spec)
-- INT-021: Render Command Format (RenderMeshPatch processing)
-- REQ-007.01: Matrix Transformation Pipeline (bias matrix)
-- DD-016: Mesh Pipeline Restructure (Core 1 vertex processing context)
+- INT-010, INT-011, UNIT-006, REQ-005.07
 
 ---
 
@@ -1215,293 +1137,7 @@ DVI is electrically compatible with HDMI for video-only output. 640x480@60Hz use
 ---
 
 
-## DD-004: Rust with rp235x-hal
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-The RP2350 host firmware needs a language and HAL. Rust was specified as the language. The choice is between bare-metal HAL and async frameworks.
-
-### Decision
-
-Use Rust with `rp235x-hal` (bare-metal, no Embassy). Direct access to SPI, DMA, GPIO, and multicore primitives with deterministic timing.
-
-### Rationale
-
-`rp235x-hal` is the community-standard HAL for RP2350, based on the mature `rp2040-hal`. A bare-metal approach (vs Embassy async) gives deterministic timing essential for 30+ FPS real-time rendering on the render core. Embassy's cooperative scheduling adds unpredictable latency.
-
-### Consequences
-
-- Deterministic timing for render loop on Core 1
-- No async runtime overhead; interrupt-driven where needed
-- Must manually manage concurrency between cores
-- Ecosystem limited to `no_std` crates
-
 ---
 
-
-## DD-005: Cortex-M33 Target and Toolchain
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-The RP2350 has dual Cortex-M33 cores (with hardware FPU) and dual RISC-V cores. A target and toolchain must be chosen.
-
-### Decision
-
-Use `thumbv8m.main-none-eabihf` target (Cortex-M33 with hardware FPU). Build with `probe-rs` for flash/debug, `flip-link` for stack overflow protection, and `defmt` for logging.
-
-### Rationale
-
-The Cortex-M33 cores have a single-precision hardware FPU and DSP extensions. The `eabihf` target enables hardware float calling conventions, critical for matrix math and lighting performance.
-
-### Consequences
-
-- Hardware float for matrix/lighting calculations (no software emulation overhead)
-- `probe-rs` enables SWD debug and flash programming
-- `flip-link` provides stack overflow detection in debug builds
-- `defmt` provides efficient logging over RTT
-
----
-
-
-## DD-006: Dual-Core Communication via heapless SPSC Queue
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-Core 0 (scene manager) must send render commands to Core 1 (render executor). The RP2350 hardware SIO FIFOs are only 8-deep × 32-bit, too small for render commands.
-
-### Decision
-
-Use `heapless::spsc::Queue` for the inter-core render command queue, with SIO FIFO doorbell signaling to wake Core 1.
-
-### Rationale
-
-`heapless::spsc::Queue` is a proven lock-free single-producer single-consumer queue requiring no allocator or mutexes. SIO FIFO signals "new commands available" to avoid busy-polling.
-
-### Consequences
-
-- Lock-free, wait-free command submission from Core 0
-- Fixed queue capacity must be sized at compile time
-- SIO doorbell avoids Core 1 busy-polling (power savings)
-- Queue overflow must be handled by Core 0 (back-pressure)
-
----
-
-
-## DD-007: PNG Decoding with image Crate
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-The asset build tool needs to decode PNG textures and convert them to GPU-native formats (RGBA4444, BC1). A Rust PNG/image library is needed.
-
-### Decision
-
-Use the `image` crate (v0.25+) for PNG decoding in the asset build tool.
-
-### Rationale
-
-The `image` crate is the de facto standard for image processing in Rust. It provides `open()` and `to_rgba8()` for automatic color space conversion, handles PNG and other formats, and is actively maintained (10M+ downloads).
-
-### Consequences
-
-- Simple API for loading any image format to RGBA8
-- Large dependency tree (acceptable for host-side build tool, not embedded)
-- Future format support (JPEG, etc.) available without additional crates
-
----
-
-
-## DD-008: OBJ Parsing with tobj Crate
-
-**Date:** 2026-02-08
-**Status:** Accepted
-
-### Context
-
-The asset build tool needs to parse Wavefront OBJ mesh files and extract vertex positions, normals, and UV coordinates.
-
-### Decision
-
-Use the `tobj` crate (v4.0+) for OBJ file parsing.
-
-### Rationale
-
-`tobj` is the most popular Rust OBJ parser (971K+ downloads). It supports triangulation, handles positions/normals/UVs, and provides a simple API.
-
-### Consequences
-
-- Automatic triangulation of non-triangle faces
-- Handles all standard OBJ attributes needed (v, vt, vn, f)
-- No MTL material support needed (textures assigned separately)
-
----
-
-
-## DD-009: Greedy Sequential Triangle Packing with Strip Optimization
-
-**Date:** 2026-02-08 (updated 2026-02-13)
-**Status:** Accepted
-
-### Context
-
-Large meshes must be split into "patches" that fit within the GPU's per-draw vertex/index limits. A splitting algorithm is needed. Additionally, after splitting, triangles within each patch should be reordered for strip connectivity to reduce index data size and leverage the GPU's kicked vertex registers.
-
-### Decision
-
-Implement greedy sequential triangle packing: fill each patch with triangles in order until the next triangle would exceed vertex or index limits, then start a new patch. After splitting, perform strip optimization within each patch and encode indices as packed u8 strip commands.
-
-### Rationale
-
-- O(n) time complexity for initial packing
-- Deterministic output for the same input
-- Simple to implement, debug, and maintain
-- Accepts some vertex duplication at patch boundaries as an acceptable trade-off
-- Strip optimization reduces index data from 3N entries (triangle list) to ~N+2 (strip), halving index size per entry (u8 vs u16)
-
-### Consequences
-
-- Vertex duplication at patch boundaries (~5-15% overhead for typical meshes)
-- Strip-optimized triangle ordering within patches (original ordering not preserved)
-- No spatial optimization (adjacent triangles may land in different patches)
-- Packed u8 index format maps directly to GPU VERTEX_NOKICK/KICK_012/KICK_021 registers (INT-010)
-
----
-
-
-## DD-016: Mesh Pipeline Restructure — Core 1 Vertex Processing with DMA Pipeline
-
-**Date:** 2026-02-13
-**Status:** Accepted
-**Implementation:** RUST PENDING
-
-### Context
-
-The original mesh pipeline had Core 0 performing all vertex transformation, lighting, back-face culling, and GPU vertex packing (~460 vertices × MVP multiply per frame), then enqueuing ~144 pre-transformed `SubmitScreenTriangle` commands for Core 1 to dispatch as register writes. This created a CPU bottleneck on Core 0 while Core 1 was largely idle between SPI transactions.
-
-### Decision
-
-Restructure the mesh pipeline so that:
-1. **Core 0** performs scene management and spatial culling only (AABB frustum tests, ~29 tests/frame)
-2. **Core 1** performs the full vertex processing pipeline: DMA-prefetch patch data from flash, transform (MVP), light (Gouraud), cull (back-face), clip (Sutherland-Hodgman), pack (GpuVertex), and submit to GPU
-3. **DMA double-buffering** on both sides: input (flash→SRAM prefetch) and output (SRAM→SPI via DMA/PIO)
-4. **Packed u8 index format**: Each byte encodes `[7:4]` vertex index, `[3:2]` kick control (NOKICK/KICK_012/KICK_021), `[1:0]` spare — mapping directly to GPU registers in INT-010
-5. **PC platform**: 3-thread model (main/scene + render/vertex + SPI/output)
-
-### Rationale
-
-- **Core 0 bottleneck eliminated**: ~460 vertex transforms → ~29 AABB tests (>10× reduction)
-- **Core 1 utilization**: DMA overlap hides flash read latency (~1µs per patch) and SPI write latency
-- **Memory efficiency**: 16-vertex patches × ~568 bytes = DMA-friendly sizes; working RAM ~8 KB (1.5% of 520 KB)
-- **Culling benefit**: Frustum culling eliminates ~30% of patches in typical teapot views
-- **u8 index format**: 50% size reduction vs u16; strip optimization gives ~N+2 entries for N triangles vs 3N; direct GPU register mapping (no lookup table)
-- **GPU registers exist**: INT-010 already defines VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), VERTEX_KICK_021 (0x08) — no hardware change needed
-
-### Consequences
-
-- **Queue memory**: ~5 KB → ~16.5 KB (RenderMeshPatch ~264 bytes × 64 entries)
-- **Core 1 working RAM**: ~8 KB (input buffers 2×568B, vertex cache 640B, clip workspace 280B, output buffers 2×810B, matrices/lights 224B)
-- **New HAL traits**: DmaMemcpy, BufferedSpiTransport (INT-040)
-- **Asset pipeline changes**: Strip optimization, AABB computation, u8 index encoding, MeshPatchDescriptor generation
-- **Compile-time mesh data**: No runtime mesh generation; const flash data from asset pipeline
-- **PC 3-thread model**: More complex than single-threaded, but mirrors RP2350 dual-core behavior for testing
-
-### References
-
-- INT-010: GPU Register Map (VERTEX_NOKICK, VERTEX_KICK_012, VERTEX_KICK_021)
-- INT-021: Render Command Format (RenderMeshPatch)
-- INT-031: Asset Binary Format (packed u8 index, AABB, MeshPatchDescriptor)
-- INT-040: Host Platform HAL (DmaMemcpy, BufferedSpiTransport)
-- REQ-007.02: Render Mesh Patch (Core 1 vertex processing pipeline)
-
----
-
-
-## DD-015: Multi-Platform Host Architecture
-
-**Date:** 2026-02-12
-**Status:** Accepted
-**Implementation:** RUST PENDING
-
-### Context
-
-Debugging the spi_gpu FPGA is difficult when the only host is the RP2350 microcontroller. The RP2350 has limited logging (defmt over RTT), no filesystem for frame capture, and requires physical hardware for every test. An Adafruit FT232H breakout board can drive the same SPI protocol from a PC, enabling full logging, frame capture, command replay, and faster iteration during GPU development.
-
-The host application currently has platform-specific code (rp235x-hal SPI, TinyUSB input, dual-core SPSC queue) tightly coupled with platform-agnostic logic (scene management, geometry, lighting, command generation). These must be separated.
-
-### Decision
-
-Split the host application into multiple Rust crates with a shared core:
-
-```
-crates/
-├── pico-gs-core/          # Platform-agnostic shared library
-│   ├── gpu/               # GPU driver API (register protocol, command building)
-│   ├── render/            # Command types, lighting, mesh rendering, transforms
-│   ├── scene/             # Scene state machine, demo definitions
-│   └── math/              # Fixed-point utilities
-├── pico-gs-hal/           # Platform abstraction traits
-│   ├── SpiTransport       # SPI read/write/transfer
-│   ├── GpioInput          # CMD_FULL, CMD_EMPTY, VSYNC polling
-│   └── InputSource        # Keyboard/input event abstraction
-├── pico-gs-rp2350/        # RP2350 embedded application
-│   ├── hal_impl/          # rp235x-hal SPI + GPIO implementations
-│   ├── main.rs            # Dual-core entry point
-│   ├── core1.rs           # Render executor on Core 1
-│   └── input.rs           # TinyUSB keyboard handler
-├── pico-gs-pc/            # PC debug application
-│   ├── hal_impl/          # FT232H SPI + GPIO implementations
-│   ├── main.rs            # Single-threaded entry point
-│   ├── input.rs           # Terminal keyboard handler
-│   ├── capture.rs         # Frame capture / command logging
-│   └── replay.rs          # Command replay from logs
-└── asset-build-tool/      # Asset preparation (moved from root)
-```
-
-Key design principles:
-1. GPU driver API (`gpu_write`, `gpu_read`, `gpu_init`, etc.) is generic over HAL traits -- same code runs on both platforms
-2. Scene management, transforms, lighting, and command generation are fully platform-agnostic in pico-gs-core
-3. Platform-specific code is limited to: SPI transport, GPIO access, input handling, and application orchestration (threading model)
-4. The inter-core SPSC queue is RP2350-specific; the PC version calls command execution directly (single-threaded)
-
-### Rationale
-
-- **Multi-crate over feature flags**: Platform differences (threading model, input system, logging framework) are too deep for `#[cfg]` flags. Separate crates give clean boundaries and independent dependency trees (no_std vs std)
-- **Trait-based HAL**: The GPU driver already uses `embedded-hal` traits internally. Extracting a custom HAL trait that wraps the 9-byte SPI protocol + flow control GPIO makes the driver genuinely platform-agnostic
-- **PC-first for GPU debugging**: Full tracing, frame capture, command replay, and assertion checking are trivial on a PC but impractical on the RP2350
-- **Shared core**: ~70% of the host code (scene, geometry, lighting, command building) is pure computation with no platform dependencies
-
-### Alternatives Considered
-
-1. **Single crate with feature flags**: Rejected -- `no_std` vs `std`, different threading models, and different dependency trees make this unwieldy. Would require `#[cfg]` on almost every module.
-2. **Separate codebases**: Rejected -- duplicates all shared logic, changes must be applied twice, divergence inevitable.
-3. **PC-only testing via simulation**: Rejected -- doesn't test actual SPI protocol over real hardware. FT232H tests the real GPU.
-
-### Consequences
-
-- +3 new crates (pico-gs-core, pico-gs-hal, pico-gs-pc)
-- Existing host_app becomes pico-gs-rp2350 (breaking rename)
-- asset_build_tool moves to crates/ (path change only)
-- GPU debugging dramatically simplified with PC logging + frame capture
-- Both platforms share identical GPU driver and rendering logic
-- Build system (build.sh, Cargo.toml) must be updated
-- All specification path references must be updated
-
-### References
-
-- INT-040: Host Platform HAL (trait definitions)
-- REQ-100: Host Firmware Architecture (multi-platform)
-- REQ-010.01: PC Debug Host (PC-specific requirements)
-- UNIT-035: PC SPI Driver (FT232H implementation)
 
 ---

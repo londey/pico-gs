@@ -2,6 +2,11 @@
 
 **Moved to `registers/doc/int_013_gpio_status_signals.md`** — managed outside syskit as part of the register interface.
 
+## External Consumer
+
+The physical GPIO consumers of CMD_FULL, CMD_EMPTY, and VSYNC (flow control and frame synchronization logic) are implemented in the pico-racer application repository (https://github.com/londey/pico-racer).
+The GPU-side signal providers (UNIT-001, UNIT-002, UNIT-008) remain in this repo.
+
 ## Simulation Signal Mapping Note
 
 In the Verilator interactive simulator (UNIT-037), the INT-013 signals are internal RTL signals rather than physical GPIO pins.

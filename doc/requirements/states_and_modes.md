@@ -1,6 +1,7 @@
 # States and Modes
 
-This document defines the operational states and modes of the pico-gs system, covering both GPU hardware (FPGA) and host firmware (RP2350).
+This document defines the operational states and modes of the pico-gs GPU hardware (ECP5 FPGA).
+Host application states (RP2350 boot sequence, demo state machine, Core 1 render loop) are defined in the pico-racer repository (https://github.com/londey/pico-racer).
 
 ## Definitions
 
@@ -299,138 +300,11 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 
 ---
 
-## Host Firmware States
-
-### 1. Boot Sequence States
-
-#### State: Power-on Reset
-
-- **Description:** RP2350 begins boot ROM execution
-- **Entry Conditions:** Power applied or external reset
-- **Exit Conditions:** Boot ROM jumps to firmware
-- **Capabilities:** Hardware initialization by boot ROM
-- **Restrictions:** No user code running
-- **Source:** [host_app/src/main.rs:54-141](../../host_app/src/main.rs#L54-L141)
-
-#### State: Clock Init
-
-- **Description:** Initialize 12 MHz XTAL clocks and PLL
-- **Entry Conditions:** Firmware entry point
-- **Exit Conditions:** Clocks configured
-- **Capabilities:** Configure system clocks for RP2350
-- **Restrictions:** Peripherals not yet initialized
-- **Source:** [host_app/src/main.rs:61-70](../../host_app/src/main.rs#L61-L70)
-
-#### State: Peripheral Init
-
-- **Description:** Configure GPIO, SPI, input pins, LED
-- **Entry Conditions:** Clock init complete
-- **Exit Conditions:** All peripherals configured
-- **Capabilities:** GPIO setup, SPI controller init, LED control
-- **Restrictions:** GPU not yet detected
-- **Source:** [host_app/src/main.rs:75-102](../../host_app/src/main.rs#L75-L102)
-
-#### State: GPU Detection
-
-- **Description:** Read GPU ID register to verify FPGA presence
-- **Entry Conditions:** SPI configured
-- **Exit Conditions:** Success → Core 1 spawn; Failure → LED blink error halt
-- **Capabilities:** SPI communication test via ID register read
-- **Restrictions:** Failure halts system with visual indicator
-- **Source:** [host_app/src/main.rs:108-125](../../host_app/src/main.rs#L108-L125)
-
-#### State: Command Queue Setup
-
-- **Description:** Split SPSC queue into Producer/Consumer
-- **Entry Conditions:** GPU detection success
-- **Exit Conditions:** Queue ready for Core 0 (producer) and Core 1 (consumer)
-- **Capabilities:** Lock-free inter-core communication
-- **Restrictions:** Queue size fixed at compile time
-- **Source:** [host_app/src/main.rs:130-139](../../host_app/src/main.rs#L130-L139)
-
-#### State: Core 1 Spawn
-
-- **Description:** Launch render worker on second CPU core
-- **Entry Conditions:** Command queue setup complete
-- **Exit Conditions:** Core 1 running render loop
-- **Capabilities:** Parallel execution: Core 0 scene management, Core 1 GPU commands
-- **Restrictions:** Core 1 runs independently
-- **Source:** [host_app/src/main.rs:133-139](../../host_app/src/main.rs#L133-L139)
-
-#### State: Main Loop Entry
-
-- **Description:** Core 0 enters scene setup and input polling loop
-- **Entry Conditions:** Core 1 spawned
-- **Exit Conditions:** Never exits (infinite loop)
-- **Capabilities:** Scene graph management, input handling, command enqueueing
-- **Restrictions:** Must maintain frame rate to prevent queue overflow
-- **Source:** [host_app/src/main.rs:141+](../../host_app/src/main.rs#L141)
-
-### 2. Scene/Demo States
-
-#### State: GouraudTriangle Demo
-
-- **Description:** Simple single-triangle demo with vertex colors
-- **Entry Conditions:** Default at startup or keyboard input
-- **Exit Conditions:** Demo switch via keyboard
-- **Capabilities:** Clear to black, submit 1 triangle with RGB vertex colors
-- **Restrictions:** No texture, no depth testing
-- **Source:** [host_app/src/scene/mod.rs:8-32](../../host_app/src/scene/mod.rs#L8-L32)
-
-#### State: TexturedTriangle Demo
-
-- **Description:** Single triangle with checkerboard texture
-- **Entry Conditions:** needs_init=true on first entry
-- **Exit Conditions:** Demo switch via keyboard
-- **Capabilities:** Texture upload (init only), textured triangle rendering
-- **Restrictions:** Texture upload occurs once per init
-- **Source:** [host_app/src/scene/mod.rs:8-32](../../host_app/src/scene/mod.rs#L8-L32)
-
-#### State: SpinningTeapot Demo
-
-- **Description:** Complex 3D mesh (~288 triangles) with rotation and lighting
-- **Entry Conditions:** needs_init=true resets rotation angle
-- **Exit Conditions:** Demo switch via keyboard
-- **Capabilities:** Depth buffer clear, Gouraud shading with lighting, animated rotation
-- **Restrictions:** Rotation speed fixed at TAU/360 rad/frame
-- **Source:** [host_app/src/scene/mod.rs:8-32](../../host_app/src/scene/mod.rs#L8-L32)
-
-### 3. Core 1 Render Execution States
-
-#### State: Command Dequeue
-
-- **Description:** Polling command queue for render commands
-- **Entry Conditions:** Queue consumer active
-- **Exit Conditions:** Command available or queue empty
-- **Capabilities:** Lock-free dequeue from SPSC queue
-- **Restrictions:** Spins with nop() when queue empty
-- **Source:** [host_app/src/core1.rs:13-47](../../host_app/src/core1.rs#L13-L47)
-
-#### State: Execute Command
-
-- **Description:** Execute dequeued render command
-- **Entry Conditions:** Command dequeued successfully
-- **Exit Conditions:** Command execution complete
-- **Capabilities:** Execute any RenderCommand variant (SubmitTriangle, WaitVsync, Clear, SetTriMode, UploadTexture)
-- **Restrictions:** Blocking on GPU operations (VSYNC, memory writes)
-- **Source:** [host_app/src/render/commands.rs:12-114](../../host_app/src/render/commands.rs#L12-L114)
-
-#### State: Frame Boundary (WaitVsync)
-
-- **Description:** Detected on WaitVsync command execution
-- **Entry Conditions:** WaitVsync command dequeued
-- **Exit Conditions:** VSYNC GPIO signal, framebuffer swap complete
-- **Capabilities:** frame_count increment, performance logging every 120 frames
-- **Restrictions:** Blocks until VSYNC signal
-- **Source:** [host_app/src/core1.rs:28-40](../../host_app/src/core1.rs#L28-L40)
-
----
-
 ## Operational Modes
 
 ### 1. Triangle Rendering Modes
 
-**Control Register:** TRI_MODE (0x30) — [host_app/src/gpu/registers.rs:84-91](../../host_app/src/gpu/registers.rs#L84-L91)
+**Control Register:** TRI_MODE (0x30) — see INT-010 (GPU Register Map)
 
 #### Mode: Flat Shading
 
@@ -466,7 +340,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 
 ### 2. Texture Mapping Modes
 
-**Control Registers:** TEX0_BASE, TEX0_FMT, TEX0_BLEND, TEX0_LUT_BASE, TEX0_WRAP (and TEX1-TEX3) — [host_app/src/gpu/registers.rs:5-55](../../host_app/src/gpu/registers.rs#L5-L55)
+**Control Registers:** TEX0_BASE, TEX0_FMT, TEX0_BLEND, TEX0_LUT_BASE, TEX0_WRAP (and TEX1-TEX3) — see INT-010 (GPU Register Map)
 
 #### Mode: Texture Format Configuration
 
@@ -492,7 +366,6 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
   - ALPHA_SUBTRACT (0b10): Subtractive blending
   - ALPHA_BLEND_MODE (0b11): Alpha blend
 - **Use Case:** Future multi-texture effects
-- **Source:** [host_app/src/gpu/registers.rs:104-109](../../host_app/src/gpu/registers.rs#L104-L109)
 
 #### Mode: UV Wrapping Modes
 
@@ -507,7 +380,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 
 ### 3. Framebuffer Management Modes
 
-**Control Registers:** FB_DRAW (0x40), FB_DISPLAY (0x41), FB_ZBUFFER (0x42) — [host_app/src/gpu/registers.rs:67-69, 113-116](../../host_app/src/gpu/registers.rs#L67-L69)
+**Control Registers:** FB_DRAW (0x40), FB_DISPLAY (0x41), FB_ZBUFFER (0x42) — see INT-010 (GPU Register Map)
 
 #### Mode: Dual-Framebuffer Swap
 
@@ -522,24 +395,22 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 #### Mode: Color Clear Only
 
 - **Description:** Clear framebuffer to solid color without depth clear
-- **Applicable States:** Triggered by ClearFramebuffer command with clear_depth=false
-- **Configuration:** Two viewport triangles at Z=0.0, TRI_MODE=0 (flat shading)
+- **Applicable States:** All rendering states
+- **Configuration:** Two viewport triangles at Z=0.0, TRI_MODE=0 (flat shading, Z_WRITE disabled)
 - **Behavior Differences:** Fast clear without Z-buffer writes
-- **Use Case:** GouraudTriangle, TexturedTriangle demos
-- **Source:** [host_app/src/render/commands.rs:29-72](../../host_app/src/render/commands.rs#L29-L72)
+- **Use Case:** Single-layer 2D rendering, resetting framebuffer between frames
 
 #### Mode: Color + Depth Clear
 
 - **Description:** Clear both framebuffer and Z-buffer
-- **Applicable States:** Triggered by ClearFramebuffer command with clear_depth=true
-- **Configuration:** Color clear + two triangles at Z=1.0 with Z_COMPARE_ALWAYS
-- **Behavior Differences:** Temporarily sets Z-compare to ALWAYS, then restores LEQUAL
-- **Use Case:** SpinningTeapot demo (3D scene with depth testing)
-- **Source:** [host_app/src/render/commands.rs:29-72](../../host_app/src/render/commands.rs#L29-L72)
+- **Applicable States:** All rendering states
+- **Configuration:** Color clear triangles at Z=1.0 with Z_COMPARE_ALWAYS and Z_WRITE enabled; restore Z_COMPARE_LEQUAL after
+- **Behavior Differences:** Writes maximum Z to entire framebuffer; subsequent 3D geometry uses LEQUAL for correct depth ordering
+- **Use Case:** 3D scenes with depth testing
 
 ### 4. Z-Buffer Compare Modes
 
-**Control Register:** FB_ZBUFFER (bits 34:32) — [host_app/src/gpu/registers.rs:95-102](../../host_app/src/gpu/registers.rs#L95-L102)
+**Control Register:** FB_ZBUFFER (bits 34:32) — see INT-010 (GPU Register Map)
 
 #### Mode: Z_COMPARE_LESS (0b000)
 
@@ -735,106 +606,6 @@ Power-on
               [return to IDLE]
 ```
 
-### Host Firmware Demo State Machine
-
-```
-Power-on
-    │
-    ▼
-┌──────────────────────────┐
-│ Clock Init               │
-└────────┬─────────────────┘
-         │
-         ▼
-┌──────────────────────────┐
-│ Peripheral Init          │  GPIO, SPI, LED
-└────────┬─────────────────┘
-         │
-         ▼
-┌──────────────────────────┐
-│ GPU Detection            │  Read ID register
-└────────┬─────────────────┘
-         │
-    ┌────┴────┐
-    │         │
-[Success]  [Failed]
-    │         │
-    │         ▼
-    │    ┌──────────────────────────┐
-    │    │ LED Blink Error Halt     │
-    │    └──────────────────────────┘
-    │
-    ▼
-┌──────────────────────────┐
-│ Command Queue Setup      │  Split SPSC queue
-└────────┬─────────────────┘
-         │
-         ▼
-┌──────────────────────────┐
-│ Core 1 Spawn             │  Launch render worker
-└────────┬─────────────────┘
-         │
-         ▼
-┌──────────────────────────┐
-│ Scene Init               │  needs_init=true, active_demo=GouraudTriangle
-└────────┬─────────────────┘
-         │
-         ▼
-    ┌────────────────────────────────┐
-    │       Main Loop (Core 0)       │
-    │  ┌──────────────────────────┐  │
-    │  │ Check Keyboard Input     │  │
-    │  └──────────┬───────────────┘  │
-    │             │                  │
-    │             ▼                  │
-    │  ┌──────────────────────────┐  │
-    │  │ Demo Unchanged?          │  │
-    │  │ OR switch_demo(new)      │  │
-    │  └──────────┬───────────────┘  │
-    │             │                  │
-    │             ▼                  │
-    │  ┌──────────────────────────┐  │
-    │  │ needs_init=true?         │  │
-    │  │ ├─→ Init demo (texture)  │  │
-    │  │ └─→ Render current demo  │  │
-    │  └──────────┬───────────────┘  │
-    │             │                  │
-    │             ▼                  │
-    │  ┌──────────────────────────┐  │
-    │  │ Enqueue Render Commands  │  │
-    │  └──────────┬───────────────┘  │
-    │             │                  │
-    │             ▼                  │
-    │  ┌──────────────────────────┐  │
-    │  │ WaitVsync                │  │
-    │  └──────────────────────────┘  │
-    └────────────────────────────────┘
-                 │
-                 │ [Parallel on Core 1]
-                 ▼
-    ┌────────────────────────────────┐
-    │     Render Loop (Core 1)       │
-    │  ┌──────────────────────────┐  │
-    │  │ Dequeue Command          │  │
-    │  └──────────┬───────────────┘  │
-    │             │                  │
-    │             ▼                  │
-    │  ┌──────────────────────────┐  │
-    │  │ Execute Command          │  │
-    │  │ (SubmitTriangle, Clear,  │  │
-    │  │  SetTriMode, UploadTex,  │  │
-    │  │  WaitVsync)              │  │
-    │  └──────────┬───────────────┘  │
-    │             │                  │
-    │             ▼                  │
-    │  ┌──────────────────────────┐  │
-    │  │ [WaitVsync?]             │  │
-    │  │ → Swap framebuffers      │  │
-    │  │ → frame_count++          │  │
-    │  └──────────────────────────┘  │
-    └────────────────────────────────┘
-```
-
 ---
 
 ## State Transition Table
@@ -889,27 +660,6 @@ Power-on
 | Vertex Count 1 | ADDR_VERTEX write | Vertex Count 2 | Latch vertex 1 |
 | Vertex Count 2 | ADDR_VERTEX write | Triangle Emission | tri_valid=1, vertex_count=0 |
 
-### Host Firmware State Transitions
-
-| Current State | Event / Condition | Next State | Actions |
-|---------------|-------------------|------------|---------|
-| **Boot Sequence** |
-| Power-on | (boot ROM) | Clock Init | RP2350 boot complete |
-| Clock Init | clocks configured | Peripheral Init | PLL configured |
-| Peripheral Init | GPIO/SPI ready | GPU Detection | Read ID register |
-| GPU Detection | ID = 0x6702 | Command Queue Setup | GPU verified |
-| GPU Detection | ID mismatch | LED Blink Error | Infinite halt loop |
-| Command Queue Setup | queue split | Core 1 Spawn | Producer/Consumer ready |
-| Core 1 Spawn | core1 running | Main Loop Entry | Dual-core active |
-| **Demo State Machine** |
-| Any Demo | keyboard input | New Demo | switch_demo(), needs_init=true |
-| Any Demo (needs_init=true) | first frame | Same Demo | Initialize demo (texture, etc.) |
-| **Core 1 Render Loop** |
-| Command Dequeue | command available | Execute Command | Dequeue from SPSC queue |
-| Command Dequeue | queue empty | Command Dequeue | Spin with nop() |
-| Execute Command | WaitVsync | Frame Boundary | Swap framebuffers, frame_count++ |
-| Execute Command | other command | Command Dequeue | Command complete |
-
 ---
 
 ## Mode Compatibility Matrix
@@ -948,7 +698,7 @@ Power-on
 | **Blend Modes** | DISABLED, ADD, SUBTRACT, ALPHA | DISABLED, ADD, SUBTRACT, ALPHA | DISABLED, ADD, SUBTRACT, ALPHA | DISABLED, ADD, SUBTRACT, ALPHA | Independent blending |
 | **UV Wrap Modes** | REPEAT, CLAMP, MIRROR | REPEAT, CLAMP, MIRROR | REPEAT, CLAMP, MIRROR | REPEAT, CLAMP, MIRROR | Per-unit wrapping |
 
-**Current Usage:** Only TEX0 active (TexturedTriangle demo); TEX1-TEX3 reserved for future multi-texturing.
+**Current Usage:** TEX1–TEX3 reserved for future multi-texturing.
 
 ---
 
@@ -963,9 +713,5 @@ Power-on
 - [spi_gpu/src/render/rasterizer.sv](../../spi_gpu/src/render/rasterizer.sv) — Rasterizer 12-state FSM
 - [spi_gpu/src/display/display_controller.sv](../../spi_gpu/src/display/display_controller.sv) — Display fetch FSM
 
-### Host Firmware Sources
-- [host_app/src/main.rs](../../host_app/src/main.rs) — Boot sequence, main loop
-- [host_app/src/scene/mod.rs](../../host_app/src/scene/mod.rs) — Demo states
-- [host_app/src/core1.rs](../../host_app/src/core1.rs) — Core 1 render loop
-- [host_app/src/render/commands.rs](../../host_app/src/render/commands.rs) — Render command execution
-- [host_app/src/gpu/registers.rs](../../host_app/src/gpu/registers.rs) — GPU register map and mode constants
+### Register Definitions
+- INT-010 (GPU Register Map) — authoritative register field definitions and addresses

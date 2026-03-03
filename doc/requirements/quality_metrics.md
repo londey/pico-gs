@@ -1,8 +1,9 @@
 # Quality Metrics
 
-This document defines quality attributes and metrics for the pico-gs system, focusing on **controllable design decisions** relevant to a home project.
+This document defines quality attributes and metrics for the pico-gs GPU, focusing on **controllable design decisions** relevant to a home project.
 
-**Scope:** Metrics that can be influenced by design choices (FPGA resource usage, code quality, test coverage). Excludes fixed hardware constraints (clock frequencies, external SRAM bandwidth) and industrial reliability requirements.
+**Scope:** Metrics that can be influenced by design choices (FPGA resource usage, RTL code quality, Verilator test coverage). Excludes fixed hardware constraints (clock frequencies, external SDRAM bandwidth) and industrial reliability requirements.
+Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) are tracked in the pico-racer repository (https://github.com/londey/pico-racer).
 
 ---
 
@@ -46,36 +47,6 @@ This document defines quality attributes and metrics for the pico-gs system, foc
   The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-001.04).
   Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 
-### Host Firmware Resources (RP2350)
-
-#### SRAM Usage
-
-- **Budget:** 520 KB available
-- **Target:** ≤ 400 KB (77% utilization)
-- **Critical Threshold:** ≤ 468 KB (90%)
-- **Estimated Allocation:**
-  - Stack (both cores): ~64 KB
-  - Scene graph + assets: ~200 KB
-  - Command queue: ~16 KB
-  - Runtime data: ~100 KB
-  - **Headroom:** ~140 KB
-- **Measurement Method:** `cargo size` output, linker memory map analysis
-- **References:** REQ-011.02, REQ-111 (Dual-Core Architecture)
-- **Rationale:** Sufficient space for larger scenes and asset data
-
-#### Flash Usage
-
-- **Budget:** 4 MB (typical RP2350 flash)
-- **Target:** ≤ 3 MB (75% utilization)
-- **Critical Threshold:** ≤ 3.6 MB (90%)
-- **Estimated Allocation:**
-  - Firmware binary: ~500 KB
-  - Compiled assets (meshes, textures): ~2 MB
-  - **Headroom:** ~1.5 MB
-- **Measurement Method:** Binary size after linking + compiled asset data size
-- **References:** REQ-011.02, UNIT-030 through UNIT-034 (Asset Build Tool)
-- **Rationale:** Space for additional demos and assets
-
 ---
 
 ## Timing Closure
@@ -101,15 +72,6 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ## Code Quality
 
-### Test Coverage (Rust)
-
-- **Target:** ≥ 70% line coverage for core modules
-- **Minimum Acceptable:** ≥ 50%
-- **Measurement Method:** `cargo tarpaulin` or `cargo llvm-cov`
-- **Scope:** `host_app/src` core modules (gpu, render, scene)
-- **References:** Internal quality goal
-- **Rationale:** Balance between test thoroughness and development effort for hobby project
-
 ### RTL Testbench Coverage
 
 - **Target:** ≥ 80% toggle coverage, ≥ 60% FSM state coverage
@@ -121,17 +83,17 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ### Cyclomatic Complexity
 
-- **Target:** ≤ 10 per function (Rust), ≤ 20 per module (SystemVerilog)
-- **Minimum Acceptable:** ≤ 15 per function (Rust), ≤ 30 per module (SystemVerilog)
-- **Measurement Method:** `cargo clippy` (Rust), static analysis tools (SystemVerilog)
+- **Target:** ≤ 20 per module (SystemVerilog)
+- **Minimum Acceptable:** ≤ 30 per module (SystemVerilog)
+- **Measurement Method:** Static analysis tools (SystemVerilog)
 - **References:** Internal quality goal
-- **Rationale:** Keeps code maintainable for a hobby project; easier to understand and debug
+- **Rationale:** Keeps RTL maintainable for a hobby project; easier to understand and debug
 
 ### Documentation Coverage
 
-- **Target:** All public APIs documented with rustdoc/inline comments
-- **Measurement Method:** `cargo doc` warnings, manual review
-- **Scope:** Public functions in `host_app/src/gpu`, `host_app/src/render`
+- **Target:** All public module ports and parameters documented with inline comments
+- **Measurement Method:** Manual review of RTL source files
+- **Scope:** All modules in `spi_gpu/src/`
 - **References:** Internal quality goal
 - **Rationale:** Helps with future development and onboarding
 
@@ -159,9 +121,9 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 
 ### Frame Time
 
-- **Observation:** Track actual frame times via frame_count logging
-- **Measurement Method:** Already implemented in [host_app/src/core1.rs:28-40](../../host_app/src/core1.rs#L28-L40) (logs every 120 frames)
-- **References:** UNIT-021 (Core 1 Render Executor)
+- **Observation:** Track actual frame times via VSYNC timing
+- **Measurement Method:** Count VSYNC pulses per unit time using the Verilator simulator (UNIT-037) or logic analyzer on the physical board
+- **References:** UNIT-008 (Display Controller)
 - **Note:** Content-dependent; simple scenes may run much faster than 60 fps, complex scenes may drop below
 
 ---
@@ -195,13 +157,10 @@ This document defines quality attributes and metrics for the pico-gs system, foc
 | **FPGA Resources** | LUT Usage | ≤ 18,000 (75%) | ≤ 21,600 (90%) | Design complexity, future headroom |
 | | BRAM Usage | ≤ 95 KB (75%) | ≤ 113 KB (90%) | Memory for FIFOs, caches |
 | | Flip-Flops | ≤ 9,000 (75%) | ≤ 10,800 (90%) | Sequential logic budget |
-| **Host Memory** | SRAM Usage | ≤ 400 KB (77%) | ≤ 468 KB (90%) | Scene/asset complexity |
-| | Flash Usage | ≤ 3 MB (75%) | ≤ 3.6 MB (90%) | Firmware + asset budget |
 | **Timing** | Setup Slack | ≥ 0.5 ns | ≥ 0.0 ns | Meets 100 MHz clock |
 | | Critical Path | ≤ 9.5 ns | ≤ 10 ns | Timing margin |
-| **Code Quality** | Test Coverage (Rust) | ≥ 70% | ≥ 50% | Confidence in code |
-| | RTL Coverage | ≥ 80% toggle | ≥ 60% toggle | Hardware verification |
-| | Complexity | ≤ 10/fn (Rust) | ≤ 15/fn | Maintainability |
+| **Code Quality** | RTL Coverage | ≥ 80% toggle | ≥ 60% toggle | Hardware verification |
+| | Complexity | ≤ 20/module (SV) | ≤ 30/module | Maintainability |
 | **Verification** | Req Coverage | 100% | 95% | All features verified |
 | | Test Pass Rate | 100% | 100% | No regressions |
 
@@ -217,24 +176,18 @@ This document defines quality attributes and metrics for the pico-gs system, foc
   - Command: `nextpnr-ecp5 --25k --package CABGA256 --freq 100 --timing-allow-fail`
 - **Verilator:** RTL simulation and coverage analysis
 
-### Host Firmware
-- **cargo size:** Binary size analysis
-- **cargo tarpaulin / cargo llvm-cov:** Code coverage
-- **cargo clippy:** Linting and complexity analysis
-- **cargo doc:** Documentation generation and verification
-
 ### Performance Profiling
-- **defmt logging:** Frame time tracking (already implemented in core1.rs)
-- **Manual instrumentation:** Triangle count, pixel count via debug signals
+- **Verilator simulation:** Triangle count, pixel count via RTL debug signals (UNIT-037)
+- **Logic analyzer / oscilloscope:** VSYNC period and SPI transaction timing on physical hardware
 
 ---
 
 ## References
 
 - [REQ-011.01: Performance Targets](req_050_performance_targets.md)
-- [REQ-011.02: Resource Constraints](req_051_resource_constraints.md)
+- [REQ-011.02: Resource Constraints](req_011.02_resource_constraints.md)
 - [REQ-011.03: Reliability Requirements](req_052_reliability_requirements.md)
 - [INT-011: SDRAM Memory Layout](../interfaces/int_011_sram_memory_layout.md) (bandwidth budget)
 - [UNIT-005: Rasterizer](../design/unit_005_rasterizer.md)
 - [UNIT-008: Display Controller](../design/unit_008_display_controller.md)
-- [UNIT-021: Core 1 Render Executor](../design/unit_021_core_1_render_executor.md)
+- [UNIT-037: Verilator Interactive Simulator App](../design/unit_037_verilator_simulator.md)

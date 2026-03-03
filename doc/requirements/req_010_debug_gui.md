@@ -1,4 +1,4 @@
-# REQ-010: GPU Debug GUI
+# REQ-010: GPU Interactive Simulator
 
 ## Classification
 
@@ -8,12 +8,12 @@
 
 ## Requirement
 
-The system SHALL provide a PC-based debug host that communicates with the GPU over SPI (via FT232H or equivalent) and accepts terminal keyboard input, enabling development and debugging without RP2350 hardware.
+When GPU RTL development or debugging requires exercising the hardware without an RP2350 or physical SPI host, the system SHALL provide a Verilator-based interactive simulator that accepts register-write command scripts and renders frames using the simulated GPU pipeline.
 
 ## Rationale
 
-The debug GUI area groups requirements for the PC-side development and debugging platform.
-This provides a way to drive the GPU from a desktop computer for testing, visualization, and development iteration.
+The interactive simulator enables GPU RTL development and verification without requiring physical hardware.
+It drives the GPU model via the same 72-bit register-write protocol defined in INT-010, exercising the same code paths as real SPI traffic.
 
 ## Parent Requirements
 
@@ -21,14 +21,12 @@ None (top-level area)
 
 ## Child Requirements
 
-- REQ-010.01 (PC Debug Host)
 - REQ-010.02 (Verilator Interactive Simulator)
 
 ## Allocated To
 
-- UNIT-035 (PC SPI Driver)
-- UNIT-036 (PC Input Handler)
+- UNIT-037 (Verilator Interactive Simulator App)
 
 ## Notes
 
-This is one of the top-level requirement areas organizing the specification hierarchy.
+REQ-010.01 (PC Debug Host) and its implementation units (UNIT-035, UNIT-036) have moved to the pico-racer repository (https://github.com/londey/pico-racer), which provides the host application that drives the GPU over SPI from a PC via FT232H.

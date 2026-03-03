@@ -7,8 +7,8 @@
 pico-gs is an educational/hobby 3D GPU implemented on the ICEpi Zero v1.3 development board (Lattice ECP5-25K FPGA, CABGA256) with 32 MiB of SDRAM (Winbond W9825G6KH-6).
 It outputs 640x480 at 60 Hz as DVI on the board's HDMI port.
 
-The GPU is driven over SPI from a Raspberry Pi Pico 2 (RP2350, dual Cortex-M33) host.
-The same host software also runs on a PC via an FT232H USB-to-SPI adapter for desktop debugging.
+The GPU is driven over SPI by an external host that writes 72-bit register-write transactions per INT-012.
+The reference host application is pico-racer (https://github.com/londey/pico-racer), which runs on a Raspberry Pi Pico 2 (RP2350) or on a PC via an FT232H USB-to-SPI adapter.
 Three GPIO lines provide hardware status to the host: CMD_FULL warns when the command FIFO is nearly full (host must pause writes), CMD_EMPTY indicates the FIFO is empty and no command is executing (safe to issue register reads), and VSYNC delivers a pulse for frame synchronization.
 
 The framebuffer is RGB565 in 4×4 block-tiled layout, the Z-buffer is 16-bit unsigned (also block-tiled), and the pixel pipeline supports two independent texture units per pixel in a single pass.
@@ -20,9 +20,9 @@ The pipeline is fixed-function, inspired by the Nintendo 64 RDP's programmable c
 The architecture is a hybrid of two classic console GPUs: the PS2 Graphics Synthesizer's register-driven vertex submission model and the N64 RDP's fixed-function pixel pipeline.
 Rendering is strictly immediate mode — no display lists, no tile-based deferred rendering.
 
-The host handles all vertex transformation, lighting, back-face culling, and clipping in software (Rust, `no_std`, using the RP2350's hardware FPU).
+The external host handles all vertex transformation, lighting, back-face culling, and clipping in software.
 The GPU handles rasterization, texturing, depth testing, color combining, and scanout.
-This split keeps the FPGA fabric focused on per-pixel throughput while the host's dual cores manage scene complexity.
+This split keeps the FPGA fabric focused on per-pixel throughput while the host manages scene complexity.
 
 Fragment processing uses Q4.12 signed fixed-point arithmetic (16-bit) as the pipeline-wide format, with colors normalized to 0.0–1.0.
 All UNORM inputs — vertex colors, material constants, and texture samples — are promoted to Q4.12 at pipeline entry; output converts back to UNORM after optional dithering.
@@ -146,9 +146,12 @@ After dither, color is truncated to RGB565 (16-bit) for framebuffer write.
 
 ## Host Interface
 
-The FPGA's SPI slave accepts standard SPI Mode 0 at up to 62.5 MHz from the RP2350's hardware SPI peripheral, or 30 MHz from the FT232H MPSSE (PC debug path).
+The FPGA's SPI slave accepts standard SPI Mode 0 at up to 62.5 MHz.
 At 62.5 MHz, the 72-bit transaction format yields approximately 868K register writes per second — roughly 960 non-textured or 640 textured triangles per frame at 60 fps.
 SPI bandwidth, not vertex compute, is the primary throughput bottleneck.
+
+The reference host is pico-racer (https://github.com/londey/pico-racer), which supports both a Raspberry Pi Pico 2 (RP2350, 62.5 MHz SPI) and a PC via FT232H USB-to-SPI adapter (30 MHz).
+All vertex transformation, lighting, back-face culling, clipping, and scene management run in the host application; the GPU receives pre-transformed register writes.
 
 A future upgrade path widens the interface to quad SPI via the RP2350's PIO, using four data lines at 37.5 MHz for approximately 2M register writes per second (2.4x improvement) with only two additional GPIO pins.
 The FPGA slave change is minimal: widening the shift register input from 1 to 4 bits.
@@ -353,57 +356,19 @@ block
         UNIT_009["UNIT-009<br>DVI TMDS Encoder"]
     end
 
-    block:fw_core0["Firmware — Core 0"]:2
-        columns 2
-        UNIT_020["UNIT-020<br>Scene Manager"]
-        UNIT_027["UNIT-027<br>Demo State Machine"]
-        UNIT_025["UNIT-025<br>USB Keyboard"]
-        UNIT_026["UNIT-026<br>Inter-Core Queue"]
-    end
-    block:fw_core1["Firmware — Core 1"]:2
-        columns 2
-        UNIT_021["UNIT-021<br>Render Executor"]
-        UNIT_022["UNIT-022<br>GPU Driver"]
-        UNIT_023["UNIT-023<br>Transform Pipeline"]
-        UNIT_024["UNIT-024<br>Lighting Calculator"]
-    end
-
-    block:asset["Asset Pipeline (Build-time)"]:3
-        columns 5
-        UNIT_034["UNIT-034<br>Build.rs Orchestrator"]
-        UNIT_030["UNIT-030<br>PNG Decoder"]
-        UNIT_031["UNIT-031<br>OBJ Parser"]
-        UNIT_032["UNIT-032<br>Mesh Patch Splitter"]
-        UNIT_033["UNIT-033<br>Codegen Engine"]
-    end
-    block:pchost["PC Debug Host"]:1
+    block:sim["Development Tools"]:4
         columns 1
-        UNIT_035["UNIT-035<br>PC SPI Driver (FT232H)"]
-        UNIT_036["UNIT-036<br>PC Input Handler"]
         UNIT_037["UNIT-037<br>Verilator Simulator"]
     end
 
-    UNIT_001 -- "INT-001" --> UNIT_022
-    UNIT_001 -- "INT-001" --> UNIT_035
-    UNIT_003 -- "INT-010" --> UNIT_001
     UNIT_003 -- "INT-010" --> UNIT_004
     UNIT_003 -- "INT-010" --> UNIT_005_01
     UNIT_003 -- "INT-010" --> UNIT_006
     UNIT_003 -- "INT-010" --> UNIT_008
     UNIT_003 -- "INT-010" --> UNIT_010
-    UNIT_003 -- "INT-010" --> UNIT_022
-    UNIT_022 -- "INT-020" --> UNIT_020
-    UNIT_022 -- "INT-020" --> UNIT_021
-    UNIT_026 -- "INT-021" --> UNIT_020
-    UNIT_026 -- "INT-021" --> UNIT_021
-    UNIT_026 -- "INT-021" --> UNIT_027
-    UNIT_034 -- "INT-031" --> UNIT_026
-    UNIT_034 -- "INT-031" --> UNIT_032
-    UNIT_034 -- "INT-031" --> UNIT_033
-    UNIT_036 -- "INT-040" --> UNIT_022
 ```
 
-### Software Units
+### Hardware Units
 
 | Unit | Title | Purpose |
 |------|-------|---------|
@@ -421,20 +386,5 @@ block
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
 | UNIT-010 | Color Combiner | Two-stage pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
-| UNIT-020 | Core 0 Scene Manager | Scene graph management and animation |
-| UNIT-021 | Core 1 Render Executor | Render command queue consumer |
-| UNIT-022 | GPU Driver Layer | Platform-agnostic GPU register protocol and flow control, generic over SPI transport |
-| UNIT-023 | Transformation Pipeline | MVP matrix transforms |
-| UNIT-024 | Lighting Calculator | Gouraud shading calculations |
-| UNIT-025 | USB Keyboard Handler | USB HID keyboard input processing |
-| UNIT-026 | Inter-Core Queue | SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-threaded equivalent on other platforms) |
-| UNIT-027 | Demo State Machine | Demo selection and switching logic |
-| UNIT-030 | PNG Decoder | PNG file loading, RGBA conversion, and texture format encoding (RGBA4444/BC1) |
-| UNIT-031 | OBJ Parser | OBJ file parsing and geometry extraction |
-| UNIT-032 | Mesh Patch Splitter | Mesh splitting with vertex/index limits |
-| UNIT-033 | Codegen Engine | Rust source and binary data generation for compiled assets |
-| UNIT-034 | Build.rs Orchestrator | Asset pipeline entry point |
-| UNIT-035 | PC SPI Driver (FT232H) | SPI transport implementation for PC platform via Adafruit FT232H breakout board |
-| UNIT-036 | PC Input Handler | Terminal keyboard input handling for the PC debug host platform. |
-| UNIT-037 | Verilator Interactive Simulator App | Standalone C++/Lua Verilator application for GPU development and debugging without FPGA hardware or an RP2350. |
+| UNIT-037 | Verilator Interactive Simulator App | Standalone C++/Lua Verilator application for GPU development and debugging without FPGA hardware. |
 <!-- syskit-arch-end -->
