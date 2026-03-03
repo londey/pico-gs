@@ -1,7 +1,0 @@
-[package]
-name = "pico-gs-hal"
-version.workspace = true
-edition.workspace = true
-description = "Platform abstraction traits for pico-gs host applications"
-
-[dependencies]

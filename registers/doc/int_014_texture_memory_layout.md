@@ -8,8 +8,7 @@ Internal
 
 - **Provider:** External (host firmware defines layout)
 - **Consumer:** UNIT-006 (Pixel Pipeline)
-- **Consumer:** UNIT-030 (PNG Decoder - generates layout)
-- **Consumer:** UNIT-033 (Codegen Engine - generates layout)
+- **External consumer:** pico-racer (https://github.com/londey/pico-racer) — texture upload sequencing and layout generation.
 
 ## Referenced By
 

@@ -12,8 +12,8 @@ Internal
 - **Consumer:** UNIT-005 (Rasterizer)
 - **Consumer:** UNIT-006 (Pixel Pipeline)
 - **Consumer:** UNIT-008 (Display Controller)
-- **Consumer:** UNIT-022 (GPU Driver Layer)
 - **Consumer:** UNIT-010 (Color Combiner)
+- **External consumer:** pico-racer (https://github.com/londey/pico-racer) — host SPI driver and render command dispatch.
 
 ## Serves Requirement Areas
 

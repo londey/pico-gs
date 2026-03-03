@@ -7,7 +7,11 @@
       "Bash(bash /workspaces/pico-gs/spi_gpu/scripts/synth_summary.sh:*)",
       "Bash(git ls-files -s spi_gpu/scripts/*.sh)",
       "Bash(bash spi_gpu/scripts/synth_summary.sh:*)",
-      "Bash(awk --version)"
+      "Bash(awk --version)",
+      "Bash(/workspaces/pico-gs/.syskit/scripts/manifest-snapshot.sh /workspaces/pico-gs/.syskit/tasks/2026-03-03_remove_rust_app_code/)",
+      "Bash(bash build.sh --fpga-only --no-test)",
+      "Bash(bash /workspaces/pico-gs/build.sh --firmware-only)",
+      "Bash(bash /workspaces/pico-gs/build.sh --pc-only)"
     ]
   }
 }

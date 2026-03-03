@@ -10,6 +10,7 @@ Internal
 - **Consumer:** UNIT-006 (Pixel Pipeline)
 - **Consumer:** UNIT-007 (Memory Arbiter)
 - **Consumer:** UNIT-008 (Display Controller)
+- **External consumer:** pico-racer (https://github.com/londey/pico-racer) — host memory upload and layout configuration.
 
 ## Referenced By
 
