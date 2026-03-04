@@ -63,10 +63,6 @@ module rasterizer (
     input  wire [31:0]  v2_uv1,
     input  wire [15:0]  v2_q,
 
-    // Inverse area for derivative scaling (from CPU / UNIT-004)
-    input  wire [15:0]  inv_area,       // 1/area (UQ0.16 fixed point)
-    input  wire [3:0]   area_shift,     // Barrel-shift count (0-15, from AREA_SETUP)
-
     // Fragment output bus (to UNIT-006 Pixel Pipeline)
     // Driven by raster_edge_walk sub-module (UNIT-005.04)
     output wire         frag_valid,     // Fragment data valid
@@ -177,10 +173,6 @@ module rasterizer (
     reg [15:0] q0;
     reg [15:0] q1;
     reg [15:0] q2;
-
-    // Inverse area for derivative scaling
-    reg [15:0] inv_area_reg /* verilator public */;
-    reg [3:0]  area_shift_reg;
 
     // Bounding box
     reg [9:0] bbox_min_x /* verilator public */;
@@ -372,9 +364,6 @@ module rasterizer (
         .edge1_B        (edge1_B),
         .edge2_A        (edge2_A),
         .edge2_B        (edge2_B),
-        // Scaling
-        .inv_area_reg   (inv_area_reg),
-        .area_shift_reg (area_shift_reg),
         // Bbox origin
         .bbox_min_x     (bbox_min_x),
         .bbox_min_y     (bbox_min_y),
@@ -772,8 +761,6 @@ module rasterizer (
     logic [15:0]       next_q0;
     logic [15:0]       next_q1;
     logic [15:0]       next_q2;
-    logic [15:0]       next_inv_area_reg;
-    logic [3:0]        next_area_shift_reg;
     logic [9:0]        next_bbox_min_x;
     logic [9:0]        next_bbox_max_x;
     logic [9:0]        next_bbox_min_y;
@@ -797,7 +784,7 @@ module rasterizer (
     // ========================================================================
     // --- UNIT-005.01: Edge Setup (IDLE, SETUP, SETUP_2, SETUP_3) ---
     // ========================================================================
-    // Owns: tri_ready, vertex latches, edge coefficients, bbox, inv_area/area_shift
+    // Owns: tri_ready, vertex latches, edge coefficients, bbox
 
     always_comb begin
         // Default: hold all triangle setup and edge coefficient registers
@@ -850,8 +837,6 @@ module rasterizer (
         next_q0 = q0;
         next_q1 = q1;
         next_q2 = q2;
-        next_inv_area_reg = inv_area_reg;
-        next_area_shift_reg = area_shift_reg;
         next_edge0_A = edge0_A;
         next_edge0_B = edge0_B;
         next_edge0_C = edge0_C;
@@ -922,8 +907,6 @@ module rasterizer (
                     next_uv1_v2 = $signed(v2_uv1[15:0]);
                     next_q2 = v2_q;
 
-                    next_inv_area_reg = inv_area[15:0];
-                    next_area_shift_reg = area_shift;
                     next_tri_ready = 1'b0;
                 end
             end
@@ -1016,8 +999,6 @@ module rasterizer (
             q0 <= 16'b0;
             q1 <= 16'b0;
             q2 <= 16'b0;
-            inv_area_reg   <= 16'b0;
-            area_shift_reg <= 4'b0;
             bbox_min_x <= 10'b0;
             bbox_max_x <= 10'b0;
             bbox_min_y <= 10'b0;
@@ -1082,8 +1063,6 @@ module rasterizer (
             q0 <= next_q0;
             q1 <= next_q1;
             q2 <= next_q2;
-            inv_area_reg   <= next_inv_area_reg;
-            area_shift_reg <= next_area_shift_reg;
             bbox_min_x <= next_bbox_min_x;
             bbox_max_x <= next_bbox_max_x;
             bbox_min_y <= next_bbox_min_y;

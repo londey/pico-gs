@@ -17,7 +17,7 @@
 //   3. TEX0_CFG      — texture enable, format, dimensions, base address
 //   4. CC_MODE       — MODULATE preset (TEX0 * SHADE0 in cycle 0, pass-through in cycle 1)
 //   5. RENDER_MODE   — GOURAUD_EN=1, COLOR_WRITE_EN=1, no Z
-//   6. AREA_SETUP    — triangle area normalization
+//   6. (AREA_SETUP removed — Phase 1; inv_area hardcoded)
 //   7. V0: COLOR + UV0_UV1 + VERTEX_NOKICK
 //   8. V1: COLOR + UV0_UV1 + VERTEX_NOKICK
 //   9. V2: COLOR + UV0_UV1 + VERTEX_KICK_012
@@ -129,8 +129,7 @@ static const RegWrite ver_013_script[] = {
     // 5. Set render mode: Gouraud + color write, no Z
     {REG_RENDER_MODE, RENDER_MODE_COMBINED_013},
 
-    // 6. AREA_SETUP for the triangle (320,60)-(511,380)-(100,380)
-    {REG_AREA_SETUP, compute_area_setup(320, 60, 511, 380, 100, 380)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
 
     // 7. Submit V0: red at (320, 60), UV=(0.5, 0.0)
     {REG_COLOR, pack_color(rgba(0xFF, 0x00, 0x00), rgba(0x00, 0x00, 0x00))},

@@ -195,10 +195,6 @@ module gpu_top (
     wire [63:0] cc_mode;
     wire [63:0] const_color;
 
-    // Barycentric area normalization (AREA_SETUP)
-    wire [15:0] area_inv;
-    wire [3:0]  area_shift;
-
     // Texture configuration
     wire [63:0] tex0_cfg;
     wire [63:0] tex1_cfg;
@@ -297,10 +293,6 @@ module gpu_top (
         .tri_color1(tri_color1),
         .tri_uv0(tri_uv0),
         .tri_uv1(tri_uv1),
-
-        // Barycentric area normalization
-        .area_inv(area_inv),
-        .area_shift(area_shift),
 
         // Rectangle output
         .rect_valid(rect_valid),
@@ -866,10 +858,6 @@ module gpu_top (
         .v2_uv1(tri_uv1[2]),
         .v2_q(tri_q[2]),
 
-        // Barycentric interpolation (from AREA_SETUP register)
-        .inv_area(area_inv),
-        .area_shift(area_shift),
-
         // Fragment output bus (DD-025 valid/ready handshake)
         .frag_valid(rast_frag_valid),
         .frag_ready(rast_frag_ready),
@@ -967,7 +955,6 @@ module gpu_top (
     // Unused rasterizer fragment output signals
     /* verilator lint_off UNUSEDSIGNAL */
     wire [15:0] _unused_rast_frag_q = rast_frag_q;
-    // area_shift is now connected to the rasterizer
     wire [3:0]  _unused_fb_h_log2   = fb_height_log2;
     wire [1:0]  _unused_mode_cull   = mode_cull;
     wire [7:0]  _unused_alpha_ref   = mode_alpha_ref;

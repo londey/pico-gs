@@ -29,7 +29,7 @@
 // ---------------------------------------------------------------------------
 
 static constexpr uint8_t REG_COLOR = 0x00;           // ADDR_COLOR
-static constexpr uint8_t REG_AREA_SETUP = 0x05;      // ADDR_AREA_SETUP
+// REG_AREA_SETUP (0x05) removed in Phase 1; inv_area hardcoded in raster_deriv.sv
 static constexpr uint8_t REG_VERTEX_NOKICK = 0x06;   // ADDR_VERTEX_NOKICK
 static constexpr uint8_t REG_VERTEX_KICK_012 = 0x07; // ADDR_VERTEX_KICK_012
 static constexpr uint8_t REG_RENDER_MODE = 0x30;     // ADDR_RENDER_MODE
@@ -139,100 +139,13 @@ static constexpr uint64_t pack_fb_control(uint16_t x, uint16_t y, uint16_t width
 }
 
 // ---------------------------------------------------------------------------
-// AREA_SETUP register packing (from register_file.sv ADDR_AREA_SETUP decode):
-//
-//   [15:0]   = INV_AREA  (UQ0.16 reciprocal of (2*area >> AREA_SHIFT))
-//   [19:16]  = AREA_SHIFT (barrel-shift count, 0-15)
-//
-// The rasterizer uses integer pixel coordinates (Q12.4 truncated to 10-bit
-// integers) for edge function computation.  The host must compute 2*area
-// and the corresponding shift/inv_area in the same coordinate space.
+// Phase 1: AREA_SETUP register removed from RTL.
+// The compute_area_setup() function is retained below (commented out) for
+// Phase 2 when on-chip area computation replaces the hardcoded interim values.
 // ---------------------------------------------------------------------------
-
-/// Compute the packed 64-bit AREA_SETUP register value from three vertices
-/// given in integer pixel coordinates (matching the rasterizer's conversion
-/// of Q12.4 to 10-bit integers).
-///
-/// The algorithm maximizes shift to get the best inv_area precision, subject
-/// to the constraint that the largest edge function coefficient (A or B) must
-/// still produce at least 1 step per pixel after shifting (i.e., max_coeff >> shift >= 1).
-///
-/// @param x0,y0  Vertex 0 screen coordinates (integer pixels).
-/// @param x1,y1  Vertex 1 screen coordinates (integer pixels).
-/// @param x2,y2  Vertex 2 screen coordinates (integer pixels).
-/// @return        64-bit AREA_SETUP register value: [19:16]=shift, [15:0]=inv_area.
-static constexpr uint64_t compute_area_setup(int x0, int y0, int x1, int y1, int x2, int y2) {
-    // Signed area = x0*(y1-y2) + x1*(y2-y0) + x2*(y0-y1)
-    // 2*area is the absolute value (rasterizer uses CCW winding, area > 0)
-    int64_t twice_area = static_cast<int64_t>(x0) * (y1 - y2) +
-                         static_cast<int64_t>(x1) * (y2 - y0) +
-                         static_cast<int64_t>(x2) * (y0 - y1);
-    if (twice_area < 0) {
-        twice_area = -twice_area;
-    }
-
-    // Compute edge function A and B coefficients (same as rasterizer setup).
-    // A_i = y_a - y_b,  B_i = x_b - x_a  for each edge (va, vb).
-    // The largest coefficient determines the maximum safe shift:
-    // we need max_coeff >> shift >= 1 so each pixel step produces a
-    // distinct shifted edge value.
-    auto abs_val = [](int v) -> int {
-        return v < 0 ? -v : v;
-    };
-    int max_coeff = 0;
-    // Edge 0: V1 → V2
-    max_coeff = abs_val(y1 - y2) > max_coeff ? abs_val(y1 - y2) : max_coeff;
-    max_coeff = abs_val(x2 - x1) > max_coeff ? abs_val(x2 - x1) : max_coeff;
-    // Edge 1: V2 → V0
-    max_coeff = abs_val(y2 - y0) > max_coeff ? abs_val(y2 - y0) : max_coeff;
-    max_coeff = abs_val(x0 - x2) > max_coeff ? abs_val(x0 - x2) : max_coeff;
-    // Edge 2: V0 → V1
-    max_coeff = abs_val(y0 - y1) > max_coeff ? abs_val(y0 - y1) : max_coeff;
-    max_coeff = abs_val(x1 - x0) > max_coeff ? abs_val(x1 - x0) : max_coeff;
-
-    // Maximum shift that preserves 1 step per pixel: floor(log2(max_coeff))
-    uint32_t shift_max = 0;
-    if (max_coeff > 1) {
-        int v = max_coeff;
-        while (v > 1) {
-            shift_max++;
-            v >>= 1;
-        }
-    }
-
-    // Minimum shift to fit 2*area in 16 bits: max(0, ceil(log2(2*area+1)) - 16)
-    uint32_t shift_min = 0;
-    if (twice_area > 0) {
-        uint64_t val = static_cast<uint64_t>(twice_area);
-        uint32_t bits_needed = 0;
-        while (val > 0) {
-            bits_needed++;
-            val >>= 1;
-        }
-        if (bits_needed > 16) {
-            shift_min = bits_needed - 16;
-        }
-    }
-
-    // Pick optimal shift: as large as possible (best inv_area precision),
-    // but at least shift_min and at most shift_max.
-    uint32_t shift = shift_max;
-    if (shift < shift_min) {
-        shift = shift_min; // must fit in 16 bits
-    }
-    if (shift > 15) {
-        shift = 15; // clamp to 4-bit field
-    }
-
-    // Compute inv_area = round(65536 / (twice_area >> shift))
-    uint64_t shifted_area = static_cast<uint64_t>(twice_area) >> shift;
-    uint16_t inv_area = 0;
-    if (shifted_area > 0) {
-        inv_area = static_cast<uint16_t>((65536ULL + shifted_area / 2) / shifted_area);
-    }
-
-    return (static_cast<uint64_t>(shift & 0xF) << 16) | (static_cast<uint64_t>(inv_area));
-}
+//
+// static constexpr uint64_t compute_area_setup(int x0, int y0,
+//     int x1, int y1, int x2, int y2);  // See git history for full impl.
 
 // ---------------------------------------------------------------------------
 // RENDER_MODE encoding (from register_file.sv ADDR_RENDER_MODE decode):
@@ -272,8 +185,7 @@ static const RegWrite ver_010_script[] = {
     // 3. Set render mode: Gouraud shading + color write, no Z test/write
     {REG_RENDER_MODE, RENDER_MODE_GOURAUD_COLOR},
 
-    // 3b. Set AREA_SETUP for the triangle (256,40)-(448,400)-(64,400)
-    {REG_AREA_SETUP, compute_area_setup(256, 40, 448, 400, 64, 400)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
 
     // 4. Submit V0: red vertex at top center (256, 40)
     {REG_COLOR, pack_color(rgba(0xFF, 0x00, 0x00))}, // Red diffuse

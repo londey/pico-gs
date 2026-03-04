@@ -280,7 +280,7 @@ static const RegWrite ver_014_zclear_script[] = {
     {REG_RENDER_MODE, RENDER_MODE_ZCLEAR_014},
 
     // 4. Z-clear triangle 1: (0,0) - (511,0) - (0,511)
-    {REG_AREA_SETUP, compute_area_setup(0, 0, 511, 0, 0, 511)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_BLACK},
     {REG_VERTEX_NOKICK, pack_vertex(0, 0, 0xFFFF)},
 
@@ -291,7 +291,7 @@ static const RegWrite ver_014_zclear_script[] = {
     {REG_VERTEX_KICK_012, pack_vertex(0, 511, 0xFFFF)},
 
     // 5. Z-clear triangle 2: (511,0) - (511,511) - (0,511)
-    {REG_AREA_SETUP, compute_area_setup(511, 0, 511, 511, 0, 511)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_BLACK},
     {REG_VERTEX_NOKICK, pack_vertex(511, 0, 0xFFFF)},
 
@@ -363,7 +363,7 @@ static constexpr size_t ver_014_setup_script_len =
 //   +Z (front face, nearest)
 //
 // Each triangle:
-//   AREA_SETUP (pre-computed bounding box and area normalization)
+//   (AREA_SETUP removed — Phase 1; inv_area hardcoded)
 //   V0: COLOR (white), UV0_UV1, VERTEX_NOKICK
 //   V1: COLOR (white), UV0_UV1, VERTEX_NOKICK
 //   V2: COLOR (white), UV0_UV1, VERTEX_KICK_012 or VERTEX_KICK_021
@@ -385,7 +385,7 @@ static const RegWrite ver_014_triangles_script[] = {
     // =======================================================================
 
     // Triangle 1: TL-BL-TR → (192,192)-(192,320)-(320,192)
-    {REG_AREA_SETUP, compute_area_setup(192, 192, 192, 320, 320, 192)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(0.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(192, 192, 0x5800)},
@@ -399,7 +399,7 @@ static const RegWrite ver_014_triangles_script[] = {
     {REG_VERTEX_KICK_021, pack_vertex(320, 192, 0x5800)},
 
     // Triangle 2: TR-BL-BR → (320,192)-(192,320)-(320,320)
-    {REG_AREA_SETUP, compute_area_setup(320, 192, 192, 320, 320, 320)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(1.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(320, 192, 0x5800)},
@@ -420,7 +420,7 @@ static const RegWrite ver_014_triangles_script[] = {
     // =======================================================================
 
     // Triangle 3: (128,128)-(64,192)-(128,384)
-    {REG_AREA_SETUP, compute_area_setup(128, 128, 64, 192, 128, 384)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(1.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(128, 128, 0x3800)},
@@ -434,7 +434,7 @@ static const RegWrite ver_014_triangles_script[] = {
     {REG_VERTEX_KICK_021, pack_vertex(128, 384, 0x3800)},
 
     // Triangle 4: (64,192)-(64,320)-(128,384)
-    {REG_AREA_SETUP, compute_area_setup(64, 192, 64, 320, 128, 384)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(0.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(64, 192, 0x4800)},
@@ -455,7 +455,7 @@ static const RegWrite ver_014_triangles_script[] = {
     // =======================================================================
 
     // Triangle 5: (128,384)-(384,384)-(192,448)
-    {REG_AREA_SETUP, compute_area_setup(128, 384, 384, 384, 192, 448)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(0.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(128, 384, 0x3800)},
@@ -469,7 +469,7 @@ static const RegWrite ver_014_triangles_script[] = {
     {REG_VERTEX_KICK_021, pack_vertex(192, 448, 0x4800)},
 
     // Triangle 6: (384,384)-(320,448)-(192,448)
-    {REG_AREA_SETUP, compute_area_setup(384, 384, 320, 448, 192, 448)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(1.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(384, 384, 0x3800)},
@@ -490,7 +490,7 @@ static const RegWrite ver_014_triangles_script[] = {
     // =======================================================================
 
     // Triangle 7: (384,128)-(448,192)-(384,384)
-    {REG_AREA_SETUP, compute_area_setup(384, 128, 448, 192, 384, 384)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(0.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(384, 128, 0x3800)},
@@ -504,7 +504,7 @@ static const RegWrite ver_014_triangles_script[] = {
     {REG_VERTEX_KICK_012, pack_vertex(384, 384, 0x3800)},
 
     // Triangle 8: (448,192)-(448,320)-(384,384)
-    {REG_AREA_SETUP, compute_area_setup(448, 192, 448, 320, 384, 384)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(1.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(448, 192, 0x4800)},
@@ -525,7 +525,7 @@ static const RegWrite ver_014_triangles_script[] = {
     // =======================================================================
 
     // Triangle 9: (128,128)-(384,128)-(192,64)
-    {REG_AREA_SETUP, compute_area_setup(128, 128, 384, 128, 192, 64)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(0.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(128, 128, 0x3800)},
@@ -539,7 +539,7 @@ static const RegWrite ver_014_triangles_script[] = {
     {REG_VERTEX_KICK_012, pack_vertex(192, 64, 0x4800)},
 
     // Triangle 10: (384,128)-(320,64)-(192,64)
-    {REG_AREA_SETUP, compute_area_setup(384, 128, 320, 64, 192, 64)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(1.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(384, 128, 0x3800)},
@@ -559,7 +559,7 @@ static const RegWrite ver_014_triangles_script[] = {
     // =======================================================================
 
     // Triangle 11: (128,128)-(384,128)-(128,384)
-    {REG_AREA_SETUP, compute_area_setup(128, 128, 384, 128, 128, 384)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(0.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(128, 128, 0x3800)},
@@ -573,7 +573,7 @@ static const RegWrite ver_014_triangles_script[] = {
     {REG_VERTEX_KICK_012, pack_vertex(128, 384, 0x3800)},
 
     // Triangle 12: (384,128)-(384,384)-(128,384)
-    {REG_AREA_SETUP, compute_area_setup(384, 128, 384, 384, 128, 384)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
     {REG_COLOR, COLOR_WHITE},
     {REG_UV0_UV1, pack_uv(1.0f, 0.0f)},
     {REG_VERTEX_NOKICK, pack_vertex(384, 128, 0x3800)},

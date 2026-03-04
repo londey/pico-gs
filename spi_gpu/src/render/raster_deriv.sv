@@ -70,10 +70,6 @@ module raster_deriv (
     input  wire signed [10:0]  edge2_A,        // Edge 2, A coefficient
     input  wire signed [10:0]  edge2_B,        // Edge 2, B coefficient
 
-    // Scaling parameters
-    input  wire [15:0]         inv_area_reg,   // 1/area (UQ0.16 fixed point)
-    input  wire [3:0]          area_shift_reg, // Barrel-shift count (0-15)
-
     // Bbox origin
     input  wire [9:0]          bbox_min_x,     // Bounding box minimum X
     input  wire [9:0]          bbox_min_y,     // Bounding box minimum Y
@@ -128,6 +124,18 @@ module raster_deriv (
     output wire signed [31:0]  init_uv1v,      // UV1 V initial value
     output wire signed [31:0]  init_q          // Q/W initial value
 );
+
+    // ========================================================================
+    // Interim Phase 1 constants: hardcoded inv_area and area_shift
+    // Phase 2: replace with on-chip computed inv_area from UNIT-004 triangle setup
+    // ========================================================================
+
+    localparam [15:0] INV_AREA   = 16'hFFFF;  // ~1.0 in UQ0.16
+    localparam [3:0]  AREA_SHIFT = 4'd0;
+
+    // Internal wires using the localparams (same names as removed ports)
+    wire [15:0] inv_area_reg   = INV_AREA;
+    wire [3:0]  area_shift_reg = AREA_SHIFT;
 
     // ========================================================================
     // Derivative Precomputation (combinational wires)

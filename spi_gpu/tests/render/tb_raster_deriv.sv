@@ -71,8 +71,6 @@ module tb_raster_deriv;
     reg signed [10:0] edge1_B;      // Edge 1 B coefficient
     reg signed [10:0] edge2_A;      // Edge 2 A coefficient
     reg signed [10:0] edge2_B;      // Edge 2 B coefficient
-    reg [15:0] inv_area_reg;        // 1/area scaling factor
-    reg [3:0]  area_shift_reg;      // Barrel-shift count
     reg [9:0]  bbox_min_x;          // Bounding box min X
     reg [9:0]  bbox_min_y;          // Bounding box min Y
     reg [9:0]  x0;                  // Vertex 0 X
@@ -153,7 +151,6 @@ module tb_raster_deriv;
         .q0(q0), .q1(q1), .q2(q2),
         .edge1_A(edge1_A), .edge1_B(edge1_B),
         .edge2_A(edge2_A), .edge2_B(edge2_B),
-        .inv_area_reg(inv_area_reg), .area_shift_reg(area_shift_reg),
         .bbox_min_x(bbox_min_x), .bbox_min_y(bbox_min_y),
         .x0(x0), .y0(y0),
         .pre_c0r_dx(pre_c0r_dx), .pre_c0r_dy(pre_c0r_dy),
@@ -220,8 +217,7 @@ module tb_raster_deriv;
             q0 = 16'd0; q1 = 16'd0; q2 = 16'd0;
             edge1_A = 11'sd0; edge1_B = 11'sd0;
             edge2_A = 11'sd0; edge2_B = 11'sd0;
-            inv_area_reg = 16'd0;
-            area_shift_reg = 4'd0;
+
             bbox_min_x = 10'd0; bbox_min_y = 10'd0;
             x0 = 10'd0; y0 = 10'd0;
         end
@@ -246,8 +242,7 @@ module tb_raster_deriv;
         z0 = 16'h8000; z1 = 16'h8000; z2 = 16'h8000;
         edge1_A = 11'sd5; edge1_B = 11'sd3;
         edge2_A = 11'sd2; edge2_B = 11'sd7;
-        inv_area_reg = 16'd1000;
-        area_shift_reg = 4'd0;
+
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         x0 = 10'd0; y0 = 10'd0;
         #1;
@@ -271,24 +266,23 @@ module tb_raster_deriv;
         // ============================================================
         // c0_r varies: v0=0, v1=10, v2=20
         // d10_c0r = 10, d20_c0r = 20
-        // With inv_area_reg=1, area_shift=0:
+        // With hardcoded INV_AREA=65535, AREA_SHIFT=0:
         //   raw_dx = 10 * edge1_A + 20 * edge2_A
-        //   pre_dx = raw_dx * 1 >>> 0 = raw_dx
+        //   pre_dx = raw_dx * 65535 >>> 0
         $display("--- Test 2: Color Gradient (single channel) ---");
         zero_all_inputs;
         c0_r0 = 8'd0; c0_r1 = 8'd10; c0_r2 = 8'd20;
         edge1_A = 11'sd3; edge1_B = 11'sd2;
         edge2_A = 11'sd5; edge2_B = 11'sd4;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
-        // raw_dx = 10*3 + 20*5 = 30+100 = 130; pre = 130*1 >>> 0 = 130
-        check32s("gradient: pre_c0r_dx", pre_c0r_dx, 32'sd130);
-        // raw_dy = 10*2 + 20*4 = 20+80 = 100; pre = 100
-        check32s("gradient: pre_c0r_dy", pre_c0r_dy, 32'sd100);
+        // raw_dx = 10*3 + 20*5 = 130; scl = 130*65535 = 8519550
+        check32s("gradient: pre_c0r_dx", pre_c0r_dx, 32'sd8519550);
+        // raw_dy = 10*2 + 20*4 = 100; scl = 100*65535 = 6553500
+        check32s("gradient: pre_c0r_dy", pre_c0r_dy, 32'sd6553500);
         // Other channels must still be zero (only c0_r varies)
         check32s("gradient: pre_c0g_dx", pre_c0g_dx, 32'sd0);
         check32s("gradient: pre_c1r_dx", pre_c1r_dx, 32'sd0);
@@ -304,16 +298,15 @@ module tb_raster_deriv;
         c0_r0 = 8'd200; c0_r1 = 8'd50; c0_r2 = 8'd200;
         edge1_A = 11'sd4; edge1_B = 11'sd1;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
-        // raw_dx = (-150)*4 + 0*0 = -600; pre = -600
-        check32s("neg delta: pre_c0r_dx", pre_c0r_dx, -32'sd600);
-        // raw_dy = (-150)*1 + 0 = -150; pre = -150
-        check32s("neg delta: pre_c0r_dy", pre_c0r_dy, -32'sd150);
+        // raw_dx = (-150)*4 = -600; scl = -600*65535 = -39321000
+        check32s("neg delta: pre_c0r_dx", pre_c0r_dx, -32'sd39321000);
+        // raw_dy = (-150)*1 = -150; scl = -150*65535 = -9830250
+        check32s("neg delta: pre_c0r_dy", pre_c0r_dy, -32'sd9830250);
 
         // ============================================================
         // Test 4: Z (wide channel) derivative
@@ -325,16 +318,15 @@ module tb_raster_deriv;
         z0 = 16'd0; z1 = 16'h1000; z2 = 16'd0;
         edge1_A = 11'sd2; edge1_B = 11'sd3;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
-        // raw_z_dx = 4096*2 + 0 = 8192; pre = 8192
-        check32s("Z wide: pre_z_dx", pre_z_dx, 32'sd8192);
-        // raw_z_dy = 4096*3 + 0 = 12288
-        check32s("Z wide: pre_z_dy", pre_z_dy, 32'sd12288);
+        // raw_z_dx = 4096*2 = 8192; scl = 8192*65535 = 536862720
+        check32s("Z wide: pre_z_dx", pre_z_dx, 32'sd536862720);
+        // raw_z_dy = 4096*3 = 12288; scl = 12288*65535 = 805294080
+        check32s("Z wide: pre_z_dy", pre_z_dy, 32'sd805294080);
 
         // ============================================================
         // Test 5: UV signed values
@@ -346,47 +338,34 @@ module tb_raster_deriv;
         uv0_u0 = -16'sd100; uv0_u1 = 16'sd200; uv0_u2 = -16'sd100;
         edge1_A = 11'sd1; edge1_B = 11'sd0;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
-        // d10_uv0u = 300, raw_dx = 300*1 + 0 = 300; pre = 300
-        check32s("UV signed: pre_uv0u_dx", pre_uv0u_dx, 32'sd300);
+        // d10_uv0u = 300, raw_dx = 300*1 = 300; scl = 300*65535 = 19660500
+        check32s("UV signed: pre_uv0u_dx", pre_uv0u_dx, 32'sd19660500);
         // Init at origin: {uv0_u0, 16'b0} + 0 + 0 = {-100, 16'b0}
         // -100 in 16-bit = 0xFF9C, extended to 32-bit: {0xFF9C, 16'h0000} = 0xFF9C0000
         check32s("UV signed: init_uv0u", init_uv0u, {-16'sd100, 16'b0});
 
         // ============================================================
-        // Test 6: area_shift_reg effect
+        // Test 6: Hardcoded INV_AREA/AREA_SHIFT (Phase 1 interim)
         // ============================================================
-        // Same raw value, different shift amounts
-        $display("--- Test 6: area_shift_reg Scaling ---");
+        // Phase 1: inv_area is hardcoded to 16'hFFFF (~1.0 UQ0.16),
+        // area_shift is hardcoded to 0.  Verify derivative uses these
+        // interim values.
+        $display("--- Test 6: Hardcoded INV_AREA Scaling (Phase 1) ---");
         zero_all_inputs;
         c0_r0 = 8'd0; c0_r1 = 8'd128; c0_r2 = 8'd0;
         edge1_A = 11'sd1; edge1_B = 11'sd0;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
-        inv_area_reg = 16'd256;
-        area_shift_reg = 4'd0;
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
-        // d10=128, raw_dx=128*1=128; scl=128*256=32768; pre=32768>>>0=32768
-        check32s("shift=0: pre_c0r_dx", pre_c0r_dx, 32'sd32768);
-
-        // Now shift by 2 — should divide result by 4
-        area_shift_reg = 4'd2;
-        #1;
-        // pre = 32768 >>> 2 = 8192
-        check32s("shift=2: pre_c0r_dx", pre_c0r_dx, 32'sd8192);
-
-        // Shift by 4 — divide by 16
-        area_shift_reg = 4'd4;
-        #1;
-        // pre = 32768 >>> 4 = 2048
-        check32s("shift=4: pre_c0r_dx", pre_c0r_dx, 32'sd2048);
+        // d10=128, raw_dx=128*1=128; scl=128*65535=8388480; pre=8388480>>>0=8388480
+        check32s("hardcoded inv_area: pre_c0r_dx", pre_c0r_dx, 32'sd8388480);
 
         // ============================================================
         // Test 7: Initial value with bbox offset from vertex 0
@@ -397,20 +376,20 @@ module tb_raster_deriv;
         c0_r0 = 8'd100; c0_r1 = 8'd110; c0_r2 = 8'd100;
         edge1_A = 11'sd1; edge1_B = 11'sd0;
         edge2_A = 11'sd0; edge2_B = 11'sd1;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd5; y0 = 10'd5;
         bbox_min_x = 10'd8; bbox_min_y = 10'd7;
         #1;
 
         // d10=10, d20=0
-        // pre_c0r_dx = 10*1 + 0 = 10
-        // pre_c0r_dy = 10*0 + 0 = 0
+        // raw_dx = 10*1 = 10; scl = 10*65535 = 655350
+        // raw_dy = 10*0 = 0
         // bbox_sx = 8-5 = 3, bbox_sy = 7-5 = 2
-        // init = {8'b0, 100, 16'b0} + 10*3 + 0*2 = 0x00640000 + 30 = 0x0064001E
-        check32s("bbox offset: pre_c0r_dx", pre_c0r_dx, 32'sd10);
+        // init = {8'b0, 100, 16'b0} + 655350*3 + 0*2 = 0x00640000 + 1966050
+        // 1966050 = 0x001E0002 → init = 0x00820002
+        check32s("bbox offset: pre_c0r_dx", pre_c0r_dx, 32'sd655350);
         check32s("bbox offset: pre_c0r_dy", pre_c0r_dy, 32'sd0);
-        check32s("bbox offset: init_c0r", init_c0r, 32'sh0064_001E);
+        check32s("bbox offset: init_c0r", init_c0r, 32'sh0082_0002);
 
         // ============================================================
         // Test 8: Color1 derivative (verify second color channel path)
@@ -420,17 +399,16 @@ module tb_raster_deriv;
         c1_g0 = 8'd0; c1_g1 = 8'd0; c1_g2 = 8'd50;
         edge1_A = 11'sd0; edge1_B = 11'sd0;
         edge2_A = 11'sd3; edge2_B = 11'sd7;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
         // d10_c1g = 0, d20_c1g = 50
-        // raw_dx = 0 + 50*3 = 150; pre = 150
-        check32s("color1: pre_c1g_dx", pre_c1g_dx, 32'sd150);
-        // raw_dy = 0 + 50*7 = 350; pre = 350
-        check32s("color1: pre_c1g_dy", pre_c1g_dy, 32'sd350);
+        // raw_dx = 0 + 50*3 = 150; scl = 150*65535 = 9830250
+        check32s("color1: pre_c1g_dx", pre_c1g_dx, 32'sd9830250);
+        // raw_dy = 0 + 50*7 = 350; scl = 350*65535 = 22937250
+        check32s("color1: pre_c1g_dy", pre_c1g_dy, 32'sd22937250);
         // c0 channels should be zero (only c1_g varies)
         check32s("color1: pre_c0r_dx", pre_c0r_dx, 32'sd0);
 
@@ -442,15 +420,14 @@ module tb_raster_deriv;
         q0 = 16'd1000; q1 = 16'd2000; q2 = 16'd1000;
         edge1_A = 11'sd1; edge1_B = 11'sd0;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
-        inv_area_reg = 16'd1;
-        area_shift_reg = 4'd0;
+
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         #1;
 
         // d10_q = 2000-1000 = 1000, d20_q = 0
-        // raw_dx = 1000*1 = 1000; pre = 1000
-        check32s("Q: pre_q_dx", pre_q_dx, 32'sd1000);
+        // raw_dx = 1000*1 = 1000; scl = 1000*65535 = 65535000
+        check32s("Q: pre_q_dx", pre_q_dx, 32'sd65535000);
         check32s("Q: pre_q_dy", pre_q_dy, 32'sd0);
 
         // ============================================================

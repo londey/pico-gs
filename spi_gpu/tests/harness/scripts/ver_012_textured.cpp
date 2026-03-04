@@ -14,7 +14,7 @@
 //   2. FB_CONTROL    — scissor rectangle
 //   3. TEX0_CFG      — texture enable, format, dimensions, base address
 //   4. RENDER_MODE   — COLOR_WRITE_EN=1, no Z, no Gouraud
-//   5. AREA_SETUP    — triangle area normalization
+//   5. (AREA_SETUP removed — Phase 1; inv_area hardcoded)
 //   6. V0: COLOR + UV0_UV1 + VERTEX_NOKICK
 //   7. V1: COLOR + UV0_UV1 + VERTEX_NOKICK
 //   8. V2: COLOR + UV0_UV1 + VERTEX_KICK_012
@@ -85,8 +85,7 @@ static const RegWrite ver_012_script[] = {
     // 4. Set render mode: textured, color write, no Z, no Gouraud
     {REG_RENDER_MODE, RENDER_MODE_TEXTURED_012},
 
-    // 5. AREA_SETUP for the triangle (320,60)-(511,380)-(100,380)
-    {REG_AREA_SETUP, compute_area_setup(320, 60, 511, 380, 100, 380)},
+    // Phase 1: AREA_SETUP removed; inv_area hardcoded in raster_deriv.sv
 
     // 6. Submit V0: white at (320, 60), UV=(0.5, 0.0)
     {REG_COLOR, COLOR_WHITE_012},

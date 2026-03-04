@@ -34,9 +34,6 @@ module tb_rasterizer;
     reg [31:0]  v2_uv0, v2_uv1;
     reg [15:0]  v2_q;
 
-    // Inverse area
-    reg [15:0]  inv_area;
-
     // Fragment output bus
     wire        frag_valid;
     reg         frag_ready;
@@ -75,8 +72,6 @@ module tb_rasterizer;
         .v2_x(v2_x), .v2_y(v2_y), .v2_z(v2_z),
         .v2_color0(v2_color0), .v2_color1(v2_color1),
         .v2_uv0(v2_uv0), .v2_uv1(v2_uv1), .v2_q(v2_q),
-
-        .inv_area(inv_area),
 
         .frag_valid(frag_valid),
         .frag_ready(frag_ready),
@@ -308,7 +303,7 @@ module tb_rasterizer;
         v2_color0 = 32'h0000FF00;  // Blue
 
         // inv_area = 65536/1200 ~ 55 = 0x0037
-        inv_area = 16'h0037;
+
 
         submit_triangle_and_wait;
         $display("  Triangle rasterization completed at time %0t, fragments=%0d", $time, pixel_count);
@@ -351,7 +346,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0200;
+
 
         submit_triangle_and_wait;
         $display("  Triangle rasterization completed at time %0t", $time);
@@ -383,7 +378,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0200;
+
 
         submit_triangle_and_wait;
         $display("  Triangle rasterization completed at time %0t", $time);
@@ -427,7 +422,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0200;
+
 
         submit_triangle_and_wait;
         $display("  Triangle rasterization completed at time %0t", $time);
@@ -459,7 +454,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0200;
+
 
         submit_triangle_and_wait;
         $display("  Triangle rasterization completed at time %0t", $time);
@@ -492,7 +487,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0000;
+
 
         submit_triangle_and_wait;
         $display("  Degenerate triangle completed at time %0t, fragments=%0d", $time, pixel_count);
@@ -528,7 +523,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0200;
+
 
         submit_triangle_and_wait;
         $display("  Off-screen triangle completed at time %0t, fragments=%0d", $time, pixel_count);
@@ -566,7 +561,7 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h0200;
+
 
         // Deassert ready to test back-pressure
         frag_ready = 0;
@@ -679,7 +674,7 @@ module tb_rasterizer;
         v2_uv1 = 32'h00000000;
         v2_q = 16'h1000;
 
-        inv_area = 16'h0200;
+
 
         submit_triangle_and_wait;
         $display("  Q4.12 UV test completed at time %0t, fragments=%0d", $time, pixel_count);
@@ -745,7 +740,7 @@ module tb_rasterizer;
 
         // 2*area = |(30-10)*(30-10)-(20-10)*(10-10)| = |20*20-10*0| = 400
         // inv_area = 65536/400 = 163.84 ~ 164 = 0x00A4
-        inv_area = 16'h00A4;
+
 
         // Submit the triangle and collect fragments
         frag_ready = 1;
@@ -788,26 +783,26 @@ module tb_rasterizer;
             ref_e2B = $signed(11'd30) - $signed(11'd10);  // x1 - x0 = 20
 
             // Color0 R: f0=255, f1=0, f2=0
-            ref_c0r_dx = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1A, ref_e2A, 16'h00A4);
-            ref_c0r_dy = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1B, ref_e2B, 16'h00A4);
+            ref_c0r_dx = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1A, ref_e2A, 16'hFFFF);
+            ref_c0r_dy = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1B, ref_e2B, 16'hFFFF);
 
             // Color0 G: f0=0, f1=255, f2=0
-            ref_c0g_dx = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1A, ref_e2A, 16'h00A4);
-            ref_c0g_dy = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1B, ref_e2B, 16'h00A4);
+            ref_c0g_dx = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1A, ref_e2A, 16'hFFFF);
+            ref_c0g_dy = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1B, ref_e2B, 16'hFFFF);
 
             // Color0 B: f0=0, f1=0, f2=255
-            ref_c0b_dx = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1A, ref_e2A, 16'h00A4);
-            ref_c0b_dy = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1B, ref_e2B, 16'h00A4);
+            ref_c0b_dx = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1A, ref_e2A, 16'hFFFF);
+            ref_c0b_dy = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1B, ref_e2B, 16'hFFFF);
 
             // Z: z0=0x1000, z1=0x3000, z2=0x2000
             ref_z_dx = ref_deriv_16bit(
                 $signed({1'b0, 16'h3000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1A, ref_e2A, 16'h00A4);
+                ref_e1A, ref_e2A, 16'hFFFF);
             ref_z_dy = ref_deriv_16bit(
                 $signed({1'b0, 16'h3000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1B, ref_e2B, 16'h00A4);
+                ref_e1B, ref_e2B, 16'hFFFF);
 
             // UV reference values are Q4.12 (16-bit signed: sign [15], integer [14:12], fractional [11:0])
             // per UNIT-005 fragment bus spec and fp_types_pkg.sv q4_12_t typedef.
@@ -816,31 +811,31 @@ module tb_rasterizer;
             ref_uv0u_dx = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
-                ref_e1A, ref_e2A, 16'h00A4);
+                ref_e1A, ref_e2A, 16'hFFFF);
             ref_uv0u_dy = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
-                ref_e1B, ref_e2B, 16'h00A4);
+                ref_e1B, ref_e2B, 16'hFFFF);
 
             // UV0 V: v0=0x0000, v1=0x0000, v2=0x1000
             ref_uv0v_dx = ref_deriv_16bit(
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
-                ref_e1A, ref_e2A, 16'h00A4);
+                ref_e1A, ref_e2A, 16'hFFFF);
             ref_uv0v_dy = ref_deriv_16bit(
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
-                ref_e1B, ref_e2B, 16'h00A4);
+                ref_e1B, ref_e2B, 16'hFFFF);
 
             // Q: q0=0x1000, q1=0x1000, q2=0x2000
             ref_q_dx = ref_deriv_16bit(
                 $signed({1'b0, 16'h1000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1A, ref_e2A, 16'h00A4);
+                ref_e1A, ref_e2A, 16'hFFFF);
             ref_q_dy = ref_deriv_16bit(
                 $signed({1'b0, 16'h1000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1B, ref_e2B, 16'h00A4);
+                ref_e1B, ref_e2B, 16'hFFFF);
 
             interp_fail = 0;
 
@@ -1021,7 +1016,7 @@ module tb_rasterizer;
         v2_x = 16'd320;  v2_y = 16'd480;  v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
 
-        inv_area = 16'h00A4;
+
 
         submit_triangle_and_wait;
         $display("    CCW fragments=%0d", pixel_count);
@@ -1045,7 +1040,7 @@ module tb_rasterizer;
             v2_x = 16'd480;  v2_y = 16'd160;  v2_z = 16'h2000;
             v2_color0 = 32'h00FF0000;
 
-            inv_area = 16'h00A4;
+    
 
             submit_triangle_and_wait;
             $display("    CW fragments=%0d", pixel_count);

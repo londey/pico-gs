@@ -836,10 +836,7 @@ int main(int argc, char** argv) {
                 // redesign.  Vertex colors are now latched internally as
                 // v0_color0..v2_color0 and not exposed via verilator public.
                 std::cout << "DIAG: SETUP — vertex colors latched (not exposed)\n";
-                std::cout << std::format(
-                    "DIAG: SETUP — inv_area_reg={}\n",
-                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->inv_area_reg)
-                );
+                // Phase 1: inv_area is hardcoded in raster_deriv.sv (no longer a register)
             }
 
             // Print bbox once after SETUP completes
