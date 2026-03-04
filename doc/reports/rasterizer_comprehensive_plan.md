@@ -704,3 +704,67 @@ Hierarchical tile rejection (test tile corners) skips fully-outside tiles.
    The rasterizer now claims 7 MULT18X18D (up from 2).
    The total ECP5-25K budget of 28 blocks must be re-evaluated across the color combiner, texture decoders, and alpha blend units.
    Some existing DSP allocations in other modules may be speculative and trimmable.
+
+## Recommended Implementation Phases
+
+This redesign is too large for a single syskit flow.
+A single `syskit-propose` touching ~10 documents across three specification tiers produces a changeset that is difficult to review, and a single `syskit-plan` produces an overwhelming task list.
+The following phased approach orders changes so that each phase builds on stable contracts established by the previous one.
+
+### Phase 1: Register Interface and Requirement Cleanup
+
+**Scope:** Set the foundation — define contracts and clean up obsolete requirements before redesigning the rasterizer internals.
+
+**Specification changes:**
+- **INT-010** (register map): Remove AREA_SETUP register (index 0x05); resolve Q format to canonical Q4.12 in the VERTEX register definition.
+- **REQ-002.01** (flat shading): Remove — explicitly not required per design goals.
+- **REQ-002.02** (Gouraud shading): Update to document screen-space linear color interpolation as an explicit design choice (Finding 7), not a limitation.
+- **REQ-002.03** (rasterization algorithm): Update traversal order from scanline to 4x4 tile order; redefine fragment bus format — remove `frag_q`, add `frag_lod` (UQ4.4), change UV semantics to true perspective-correct U/V coordinates.
+- **REQ-002** (parent): Update sub-requirement list to reflect REQ-002.01 removal.
+
+**Why first:** Requirements and interface contracts must be stable before writing the design that implements them.
+The register change (AREA_SETUP removal) also unblocks the reciprocal LUT design in Phase 2.
+
+**syskit workflow:** `/syskit-impact` → `/syskit-propose` → `/syskit-approve` → `/syskit-plan` → `/syskit-implement`
+
+### Phase 2: Rasterizer Design Rewrite (UNIT-005.x)
+
+**Scope:** Replace all rasterizer design documents with the new architecture defined by this report.
+
+**Specification changes:**
+- **UNIT-005** (parent): New algorithm overview, DSP budget (7 MULT18X18D), pipeline stage decomposition, cold/hot path description.
+- **UNIT-005.01** (edge setup): Add internal reciprocal LUT computation (CLZ + 256-entry LUT + linear interpolation) that replaces host-computed inv_area.
+- **UNIT-005.02** (derivative precompute): Update to use internally computed reciprocal; document 14-attribute derivative set with formats.
+- **UNIT-005.03** (attribute accumulation): 14 attributes with specified accumulator widths (32-bit); document output promotion and clamping to fragment bus formats.
+- **UNIT-005.04** (iteration FSM): 4x4 tile-ordered traversal with hierarchical tile rejection; perspective correction pipeline (2-cycle 1/Q + S/T multiply); LOD derivation via CLZ; block framing signals.
+
+**RTL implementation:** This phase includes rewriting the four rasterizer SystemVerilog modules ([rasterizer.sv](../../spi_gpu/src/render/rasterizer.sv), [raster_deriv.sv](../../spi_gpu/src/render/raster_deriv.sv), [raster_attr_accum.sv](../../spi_gpu/src/render/raster_attr_accum.sv), [raster_edge_walk.sv](../../spi_gpu/src/render/raster_edge_walk.sv)) plus the reciprocal LUT module and updated testbenches.
+
+**Why second:** The Phase 1 requirements and fragment bus contract are now approved and stable.
+The design units can reference the updated REQ-002.x requirements directly.
+
+**syskit workflow:** `/syskit-impact` → `/syskit-propose` → `/syskit-approve` → `/syskit-plan` → `/syskit-implement`
+
+### Phase 3: Integration and Upstream/Downstream Updates
+
+**Scope:** Align surrounding components and architecture documentation with the new rasterizer.
+
+**Specification changes:**
+- **UNIT-004** (triangle setup): Remove inv_area passthrough; confirm vertex packing matches updated register definitions.
+- **ARCHITECTURE.md**: Align traversal order description (already says 4x4 tile — verify consistency with new REQ-002.03); update DSP budget table; update fragment bus description.
+- **UNIT-006** (pixel pipeline) interface: Document Q removal from fragment bus (simplification, no functional change); add `LOD_BIAS` field to `TEXn_CFG` register in INT-010 if not already present; document LOD computation contract (`final_LOD = rasterizer_LOD + LOD_BIAS`).
+
+**Why third:** Integration changes depend on both the requirements (Phase 1) and the rasterizer design (Phase 2) being finalized.
+UNIT-006 changes are minimal — the pixel pipeline contract is preserved by design.
+
+**syskit workflow:** `/syskit-impact` → `/syskit-propose` → `/syskit-approve` → `/syskit-plan` → `/syskit-implement`
+
+### Phase Summary
+
+| Phase | Documents | Nature | Dependency |
+|-------|-----------|--------|------------|
+| 1 — Contracts | REQ-002.x, INT-010 | Requirement + interface cleanup | None |
+| 2 — Design | UNIT-005.x | Rasterizer architecture rewrite + RTL | Phase 1 approved |
+| 3 — Integration | UNIT-004, UNIT-006, ARCHITECTURE.md | Upstream/downstream alignment | Phase 2 approved |
+
+Each phase is a self-contained syskit flow (impact → propose → approve → plan → implement) with a focused review scope of 3–5 documents.
