@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `9d98a8596df41915` 2026-03-01
+// Spec-ref: unit_005_rasterizer.md `0c69953a5ba2a37e` 2026-03-04
 
 // Rasterizer Attribute Accumulator (UNIT-005.02 / UNIT-005.03)
 //
@@ -179,7 +179,7 @@ module raster_attr_accum (
     reg signed [31:0] uv1v_acc; // UV1 V current pixel accumulator
     reg signed [31:0] uv1v_row; // UV1 V row start value
 
-    // Q accumulators (Q3.28 signed fixed-point)
+    // Q accumulators (Q4.28 signed fixed-point)
     reg signed [31:0] q_acc;   // Q current pixel accumulator
     reg signed [31:0] q_row;   // Q row start value
 

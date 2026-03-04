@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `9d98a8596df41915` 2026-03-01
+// Spec-ref: unit_005_rasterizer.md `0c69953a5ba2a37e` 2026-03-04
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and incremental
@@ -13,7 +13,7 @@
 //   valid/ready over alternatives.
 //
 // Format: Fragment output bus carries interpolated attributes in extended
-// precision (Q4.12 color, 16-bit Z, Q4.12 UV, Q3.12 Q/W).
+// precision (Q4.12 color, 16-bit Z, Q4.12 UV, Q4.12 Q/W).
 //   Color packing: 4x16-bit Q4.12 channels packed into 64-bit bus.
 //   Each 16-bit channel: 1 sign + 3 integer + 12 fractional bits.
 //   UNORM8 [0,255] promoted to Q4.12 [0x0000, 0x0FFF].
@@ -41,7 +41,7 @@ module rasterizer (
     input  wire [31:0]  v0_color1,      // RGBA8888 secondary color
     input  wire [31:0]  v0_uv0,         // UV0 {U[31:16], V[15:0]} Q4.12
     input  wire [31:0]  v0_uv1,         // UV1 {U[31:16], V[15:0]} Q4.12
-    input  wire [15:0]  v0_q,           // Q/W (Q3.12 perspective denominator)
+    input  wire [15:0]  v0_q,           // Q/W (Q4.12 perspective denominator)
 
     // Vertex 1
     input  wire [15:0]  v1_x,
@@ -78,7 +78,7 @@ module rasterizer (
     output wire [63:0]  frag_color1,    // Q4.12 RGBA {R[63:48], G[47:32], B[31:16], A[15:0]}
     output wire [31:0]  frag_uv0,       // Q4.12 {U[31:16], V[15:0]}
     output wire [31:0]  frag_uv1,       // Q4.12 {U[31:16], V[15:0]}
-    output wire [15:0]  frag_q,         // Q3.12 perspective denominator
+    output wire [15:0]  frag_q,         // Q4.12 perspective denominator
 
     // Framebuffer surface dimensions (from FB_CONFIG register via UNIT-003)
     input  wire [3:0]   fb_width_log2,  // log2(surface width), e.g. 9 for 512 pixels
@@ -173,7 +173,7 @@ module rasterizer (
     reg signed [15:0] uv1_u2;
     reg signed [15:0] uv1_v2;
 
-    // Vertex Q/W (Q3.12)
+    // Vertex Q/W (Q4.12)
     reg [15:0] q0;
     reg [15:0] q1;
     reg [15:0] q2;

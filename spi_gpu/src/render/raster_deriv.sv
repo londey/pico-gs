@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `9d98a8596df41915` 2026-03-01
+// Spec-ref: unit_005_rasterizer.md `0c69953a5ba2a37e` 2026-03-04
 
 // Rasterizer Derivative Precomputation (UNIT-005.02 combinational)
 //
@@ -59,7 +59,7 @@ module raster_deriv (
     input  wire signed [15:0]  uv1_u2,         // UV1 U, vertex 2
     input  wire signed [15:0]  uv1_v2,         // UV1 V, vertex 2
 
-    // Vertex Q/W (Q3.12, unsigned)
+    // Vertex Q/W (Q4.12, unsigned)
     input  wire [15:0]         q0,             // Q/W, vertex 0
     input  wire [15:0]         q1,             // Q/W, vertex 1
     input  wire [15:0]         q2,             // Q/W, vertex 2

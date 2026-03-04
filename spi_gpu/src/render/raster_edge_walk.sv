@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `9d98a8596df41915` 2026-03-01
+// Spec-ref: unit_005_rasterizer.md `0c69953a5ba2a37e` 2026-03-04
 
 // Rasterizer Edge Walk and Fragment Emission (UNIT-005.04)
 //
@@ -69,7 +69,7 @@ module raster_edge_walk (
     output reg  [63:0] frag_color1,      // Q4.12 RGBA secondary color
     output reg  [31:0] frag_uv0,         // Q4.12 {U[31:16], V[15:0]}
     output reg  [31:0] frag_uv1,         // Q4.12 {U[31:16], V[15:0]}
-    output reg  [15:0] frag_q,           // Q3.12 perspective denominator
+    output reg  [15:0] frag_q,           // Q4.12 perspective denominator
 
     // Iteration position (read by parent for FSM decisions)
     output reg  [9:0]  curr_x /* verilator public */,  // Current pixel X
