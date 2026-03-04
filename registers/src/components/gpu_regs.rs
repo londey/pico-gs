@@ -2,7 +2,6 @@
 
 /// Named types defined within this component's body
 pub mod named_types {
-    pub mod area_setup_reg;
     pub mod cc_mode_reg;
     pub mod color_reg;
     pub mod const_color_reg;
@@ -23,7 +22,6 @@ pub mod named_types {
 }
 
 // Instances of named component types
-pub use crate::components::gpu_regs::named_types::area_setup_reg as area_setup;
 pub use crate::components::gpu_regs::named_types::cc_mode_reg as cc_mode;
 pub use crate::components::gpu_regs::named_types::color_reg as color;
 pub use crate::components::gpu_regs::named_types::const_color_reg as const_color;
@@ -95,20 +93,6 @@ impl GpuRegs {
     #[must_use]
     pub const fn uv0_uv1(&self) -> crate::reg::Reg<uv0_uv1::Uv0Uv1Reg, crate::access::RW> {
         unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x8).cast()) }
-    }
-
-    /// AREA_SETUP
-    ///
-    /// Barycentric interpolation area normalization.
-    /// INV_AREA is the reciprocal of (2*triangle_area >> AREA_SHIFT)
-    /// in UQ0.16 fixed point.  AREA_SHIFT is the barrel-shift count
-    /// applied to edge function values before the 16x16 multiply.
-    /// The host computes both values from the triangle vertex
-    /// positions before each vertex kick.
-    #[inline(always)]
-    #[must_use]
-    pub const fn area_setup(&self) -> crate::reg::Reg<area_setup::AreaSetupReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x28).cast()) }
     }
 
     /// VERTEX

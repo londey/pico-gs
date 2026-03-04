@@ -7,7 +7,7 @@
 // sequential (burst_len>0, pipelined 16-bit column accesses) modes.
 // Preserves the internal arbiter interface from sram_controller.sv.
 //
-// Spec-ref: unit_022_gpu_driver_layer.md `2e395d1315d4c2b1` 2026-02-25
+// Spec-ref: unit_022_gpu_driver_layer.md `1bc7e997bc2c5525` 2026-03-04
 
 module sdram_controller (
     input  wire         clk,            // 100 MHz system clock (clk_core)

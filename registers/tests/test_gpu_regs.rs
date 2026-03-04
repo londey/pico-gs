@@ -18,10 +18,6 @@ fn test_gpu_regs_addresses() {
         base_addr.wrapping_byte_add(0x8)
     );
     assert_eq!(
-        dut.area_setup().as_ptr() as *mut u8,
-        base_addr.wrapping_byte_add(0x28)
-    );
-    assert_eq!(
         dut.vertex_nokick().as_ptr() as *mut u8,
         base_addr.wrapping_byte_add(0x30)
     );
