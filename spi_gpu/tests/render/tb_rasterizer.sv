@@ -4,7 +4,7 @@
 // Includes parametric bounding-box clamping tests for multiple surface sizes.
 //
 // Verification reference: VER-001 (Rasterizer Unit Testbench)
-// Spec-ref: unit_005_rasterizer.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005_rasterizer.md `0c69953a5ba2a37e` 2026-03-04
 
 `timescale 1ns/1ps
 
