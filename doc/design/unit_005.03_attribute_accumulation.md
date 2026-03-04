@@ -14,37 +14,58 @@ Sub-unit of UNIT-005 (Rasterizer).
 - REQ-002.02 (Gouraud Shaded Triangle) — color interpolation
 - REQ-002.03 (Rasterization Algorithm) — incremental attribute interpolation
 - REQ-003.01 (Textured Triangle) — UV coordinate interpolation
+- REQ-004.02 (Extended Precision Fragment Processing) — RGBA output promoted to Q4.12 accumulator format
 - REQ-005.02 (Depth Tested Triangle) — Z interpolation
 
 ## Interfaces
 
 ### Internal Interfaces
 
-- Receives dAttr/dx, dAttr/dy, and initial accumulator values from UNIT-005.02 (Derivative Pre-computation)
-- Receives step commands (step-X, step-Y) from UNIT-005.04 (Iteration FSM)
-- Outputs interpolated attribute values to the fragment output bus toward UNIT-006 (Pixel Pipeline)
+- Receives dAttr/dx, dAttr/dy (32-bit each), and initial accumulator values from UNIT-005.02 (Derivative Pre-computation)
+- Receives step commands (step-X, step-Y, row-reload) from UNIT-005.04 (Iteration FSM)
+- Outputs interpolated raw attribute values (32-bit each) to UNIT-005.04 for perspective correction and fragment emission
 
 ## Design Description
 
-**Active in:** INTERPOLATE state (inner loop, per inside pixel)
+**Active in:** EDGE_TEST and ITER_NEXT states (inner loop, per pixel/tile step)
 
-Maintains 13 attribute accumulators (color0, color1, Z, UV0, UV1, Q/W).
-When stepping right in X (within a scanline), adds dAttr/dx to each accumulator.
-When advancing to a new row in Y, adds dAttr/dy to each accumulator (and reloads the row-start register).
+Maintains 14 attribute accumulators in 32-bit wide registers (see UNIT-005.02 for attribute list and formats).
+When stepping right in X within a tile, adds dAttr/dx to each accumulator.
+When advancing to a new tile row in Y, reloads each accumulator from its row-start register and adds dAttr/dy to the row-start register.
 No multiplies are required; all accumulation is performed by addition.
-Outputs interpolated attribute values to the fragment output bus at each inside pixel.
 
-UV components are output as Q4.12 by extracting bits [31:16] of the Q4.28 accumulator (discarding the 16 guard bits).
-Color components are promoted from 8-bit UNORM to Q4.12 for the fragment output bus (see UNIT-006, Stage 3).
+### Accumulator Width
 
-**Phase 2 note:** REQ-002.03 has been updated to remove `frag_q` from the fragment bus and add `frag_lod` (UQ4.4), and to change UV semantics to true perspective-correct U/V coordinates.
-The accumulator set (currently 13 attributes) and UV output description will be revised in Phase 2 design document updates.
+All 14 accumulators are 32 bits wide.
+The upper 16 bits hold the primary fixed-point value; the lower 16 bits are guard bits that accumulate rounding error across steps without loss.
+See UNIT-005.02 for per-attribute formats.
+
+### Output Extraction and Clamping
+
+Accumulator outputs are extracted and promoted before being passed to UNIT-005.04 for fragment emission:
+
+| Attribute group | Extraction | Fragment bus format |
+|---|---|---|
+| color0 R, G, B, A | acc[31:16] → Q4.12; clamp to [0, 255]; output as UNORM8 | UNORM8 (8-bit per channel) |
+| color1 R, G, B, A | acc[31:16] → Q4.12; clamp to [0, 255]; output as UNORM8 | UNORM8 (8-bit per channel) |
+| Z | acc[31:16] → UQ16.0 | 16-bit unsigned |
+| Q/W | acc[31:16] → Q3.12 | Q3.12 signed 16-bit |
+| S0, T0, S1, T1 | acc[31:16] → Q4.12 | Q4.12 signed 16-bit |
+
+Color clamping is applied after extraction: accumulated colors that overflow the UNORM8 range (due to vertex attributes at the triangle boundary) are saturated to 0 or 255 before output.
+S/T projected texture coordinates are passed to UNIT-005.04 as Q4.12 values for the perspective correction pipeline; they are not directly output to the fragment bus.
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Attribute accumulation logic within the parent rasterizer module.
-  Corresponds to the `always_comb` next-state block for attribute stepping and the associated flat `always_ff` register assignments.
+- `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, step logic, output extraction and clamping.
 
 ## Verification
 
 Covered by UNIT-005 verification (VER-001, VER-010–VER-014).
+
+Key verification points for this sub-unit:
+
+- Step across a rasterized triangle and confirm accumulated values at each fragment match analytic values within Q4.12 rounding tolerance for all 14 attributes.
+- Verify color clamping: drive a triangle with colors that exceed UNORM8 range at intermediate steps; confirm output is saturated to 0 or 255.
+- Verify row-start reload: advance to a new tile row and confirm accumulators correctly reload from row-start registers, not from the prior pixel's value.
+- Verify that S/T outputs are in Q4.12 and correctly represent the projected (not corrected) texture coordinates — perspective correction is applied downstream in UNIT-005.04.

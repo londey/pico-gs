@@ -103,11 +103,10 @@ The integration harness drives the following register-write sequence into UNIT-0
 - Run this test with: `cd spi_gpu && make test-gouraud`.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- **The golden image requires re-approval after pixel pipeline integration.**
-  Two changes affect pixel values: (1) the rasterizer now uses incremental derivative interpolation instead of the barycentric multiply-accumulate method, which may shift interpolated color values by 1 ULP at some pixel locations; (2) the `GOURAUD_EN=1` flag written in the harness command sequence is now functionally active in the pixel pipeline (UNIT-006), whereas it previously had no effect on the stub pipeline.
-  After integration, re-run the test, visually inspect the output, and re-commit the golden image.
-  **Note (re-baselining required after Phase 2):** REQ-002.03 changes rasterizer traversal order from scanline to 4x4 tile order.
-  Fragment emission order affects framebuffer write sequencing; re-baseline the golden image after Phase 2 RTL changes land.
+- **The golden image requires re-approval after Phase 2 RTL implementation.**
+  The rasterizer traversal order changes from scanline order to 4×4 tile-major order (REQ-002.03); fragment emission order affects framebuffer write sequencing and the exact pixel values produced by incremental derivative interpolation.
+  Additionally, the rasterizer uses incremental derivative interpolation (not barycentric multiply-accumulate), which may shift interpolated color values by 1 ULP at some pixel locations.
+  After Phase 2 RTL implementation is complete, re-run the test, visually inspect the output, and re-commit the golden image before marking this test as passing.
 - The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), since pixel positions in the framebuffer may shift.
   See `test_strategy.md` for the re-approval workflow.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.

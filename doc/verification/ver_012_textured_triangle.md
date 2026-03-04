@@ -21,7 +21,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
 - Golden image `spi_gpu/tests/golden/textured_triangle.ppm` has been approved and committed.
-  This image must be re-approved after the pixel pipeline integration (UNIT-006 stub becomes functional) and after the `tex_format` field widening to 3 bits (step 5 of the pixel pipeline integration change), because the format-select mux path changes even for RGB565.
+  This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`) compile without errors under `verilator --lint-only -Wall`.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the texture cache, format-select mux connecting all six decoders, color combiner, and FB/Z write logic per UNIT-006.
@@ -154,8 +154,9 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
-- **Perspective-correct UV:** The UV coordinates are interpolated using perspective-correct interpolation (U/W, V/W, 1/W).
-  With the checker pattern, any affine warping would be visible as curved checker lines -- the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
+- **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.04).
+  `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; the pixel pipeline (UNIT-006) uses them directly for texture cache lookup without further division.
+  With the checker pattern, any affine warping would be visible as curved checker lines — the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
 - **Vertex color modulation:** All vertex colors are set to white (`0xFFFFFFFF`) so the MODULATE combiner mode produces `texture_color x 1.0 = texture_color`.
   This isolates texture sampling correctness from color blending behavior.
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
@@ -165,8 +166,10 @@ The integration harness drives the following register-write sequence into UNIT-0
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), or after any change to the format-select mux path in UNIT-006.
   See `test_strategy.md` for the re-approval workflow.
-- **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) are Q4.12 (16-bit signed) on the rasterizer→pixel_pipeline fragment bus, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
-  If the UV format mismatch between the rasterizer output and the pixel pipeline's UV consumption logic is corrected (the pixel pipeline must extract the Q4.12 fractional part correctly rather than treating the bus as Q1.15), the rendered checker pattern will change at pixel level.
-  In that case, re-run this test, visually inspect the corrected output, and re-approve the golden image before committing.
-  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus UV semantics to true perspective-correct U/V coordinates and removes `frag_q`.
-  When Phase 2 RTL changes land, this test's golden image must be re-baselined and the Notes section updated to reflect the new bus definition.
+- **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
+  Perspective correction (S×(1/Q), T×(1/Q)) is performed inside the rasterizer (UNIT-005.04); the pixel pipeline (UNIT-006) receives fully corrected U,V coordinates directly and no longer performs 1/Q division on the UV bus.
+  `frag_q` is not present on the fragment bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q.
+  **The golden image requires re-approval after Phase 2 RTL implementation.**
+  The rasterizer traversal order changes to 4×4 tile-major order, the UV bus semantics change (true U,V vs. S=U/W projections), and `frag_q` is removed and `frag_lod` added.
+  These changes alter the UV coordinates consumed by the texture sampler, changing the checker pattern rendering at pixel level.
+  After Phase 2 RTL implementation is complete, re-run this test, visually inspect the corrected output, and re-approve the golden image before marking this test as passing.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Edge-walking rasterization engine
+Incremental derivative-based rasterization engine with internal perspective correction.
 
 ## Parent Requirements
 
@@ -13,14 +13,12 @@ Edge-walking rasterization engine
 - REQ-002.02 (Gouraud Shaded Triangle)
 - REQ-002.03 (Rasterization Algorithm)
 - REQ-003.01 (Textured Triangle)
-- REQ-004.02 (Extended Precision Fragment Processing) — RGBA8 interpolation output promotion to 10.8
+- REQ-004.02 (Extended Precision Fragment Processing) — RGBA8 interpolation output promotion to Q4.12
 - REQ-005.02 (Depth Tested Triangle)
 - REQ-005.04 (Enhanced Z-Buffer) — emits Z values for downstream Z-buffer operations
 - REQ-005.05 (Triangle-Based Clearing) — rasterizes screen-covering clear triangles
 - REQ-005.07 (Z-Buffer Operations) — generates per-fragment Z values for Z-buffer read/write
 - REQ-011.01 (Performance Targets) — triangle throughput and fill rate are primary performance drivers
-- REQ-002 (Rasterizer)
-- REQ-005 (Blend / Frame Buffer Store)
 
 ## Interfaces
 
@@ -35,54 +33,87 @@ None
 
 ### Internal Interfaces
 
-- Receives triangle setup data from UNIT-004 (Triangle Setup) via setup_valid/downstream_ready handshake, including two vertex colors (color0, color1) per vertex
-- Outputs fragment data to UNIT-006 (Pixel Pipeline) for SRAM access
+- Receives triangle setup data from UNIT-004 (Triangle Setup) via setup_valid/downstream_ready handshake, including three vertex positions, two sets of vertex colors (color0, color1), perspective-correct Q/W at each vertex, and S/T projected texture coordinates
+- Outputs fragment data to UNIT-006 (Pixel Pipeline) via frag_valid/frag_ready handshake
 - All internal interfaces operate in the unified 100 MHz `clk_core` domain (no CDC required)
 
 ## Design Description
 
 ### Inputs
 
-- Triangle vertex data from UNIT-004 (Triangle Setup):
-  - 3× vertex position (X, Y, Z)
-  - 3× primary vertex color (RGBA8888 UNORM8 from COLOR register, used as VER_COLOR0)
-  - 3× secondary vertex color (RGBA8888 UNORM8 from COLOR1 register, used as VER_COLOR1)
-  - 3× UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1)
+Triangle vertex data from UNIT-004 (Triangle Setup):
+
+- 3× vertex position (X, Y, Z), screen-space integer coordinates
+- 3× primary vertex color (RGBA8888 UNORM8 from COLOR register, used as VER_COLOR0)
+- 3× secondary vertex color (RGBA8888 UNORM8 from COLOR1 register, used as VER_COLOR1)
+- 3× Q/W value per vertex (Q3.12 signed, perspective-correct denominator)
+- 3× S0/T0 projected texture coordinates per vertex (Q4.12 signed, S=U/W, T=V/W), when texture unit 0 is enabled
+- 3× S1/T1 projected texture coordinates per vertex (Q4.12 signed), when texture unit 1 is enabled
 - Register state (TRI_MODE, FB_CONFIG including FB_CONFIG.WIDTH_LOG2 and FB_CONFIG.HEIGHT_LOG2)
 
 ### Outputs
 
-- Fragment data to UNIT-006 (Pixel Pipeline):
-  - Fragment position (x, y) in screen coordinates
-  - Interpolated Z depth (16-bit)
-  - Interpolated primary vertex color (VER_COLOR0) in 10.8 fixed-point (4× 18-bit channels: R, G, B, A)
-  - Interpolated secondary vertex color (VER_COLOR1) in 10.8 fixed-point (4× 18-bit channels: R, G, B, A)
-  - Interpolated UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point
+Fragment data to UNIT-006 (Pixel Pipeline):
 
-**Note**: The rasterizer does **not** write directly to the framebuffer. All fragment output goes through the pixel pipeline (UNIT-006) for texture blending, dithering, and framebuffer conversion.
+- Fragment position (x, y) in screen coordinates (UQ12.0 integer)
+- Interpolated Z depth (16-bit unsigned)
+- Interpolated primary vertex color (VER_COLOR0) in UNORM8 (4× 8-bit channels: R, G, B, A), clamped from Q4.12 accumulator output
+- Interpolated secondary vertex color (VER_COLOR1) in UNORM8 (4× 8-bit channels: R, G, B, A), clamped from Q4.12 accumulator output
+- Interpolated perspective-correct UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point — these are true U, V coordinates, not S/T projections
+- Per-pixel LOD estimate (frag_lod) in UQ4.4 unsigned fixed-point, derived from CLZ on the interpolated Q/W value; UNIT-006 adds TEXn_CFG.LOD_BIAS to form the final mip level
+
+**Note**: The rasterizer does not write directly to the framebuffer.
+All fragment output goes through the pixel pipeline (UNIT-006) for texture blending, dithering, and framebuffer conversion.
 
 ### Internal State
 
+- Reciprocal LUT (256 entries, Q3.12) and CLZ unit, shared between inv_area computation during setup and per-pixel 1/Q computation during traversal
 - Edge-walking state machine registers
 - Edge function accumulators (e0, e1, e2) and row-start registers (e0_row, e1_row, e2_row) for incremental stepping
-- Per-attribute derivative registers (dAttr/dx, dAttr/dy) for color0, color1, Z, UV0, UV1, and Q; computed once per triangle during setup
+- Per-attribute derivative registers (dAttr/dx, dAttr/dy) for 14 attributes: color0 RGBA, color1 RGBA, Z, Q/W, S0/T0 projected, S1/T1 projected; computed once per triangle during setup
 - Accumulated attribute values (attr_x) per active fragment position; stepped with additions in the inner loop
-- Current scanline and span tracking
+- 4×4 tile traversal counters (tile_x, tile_y within tile; outer tile_col, tile_row across the bounding box)
+- Two-stage perspective correction pipeline: 1/Q via LUT (cycle 1), then S×(1/Q) and T×(1/Q) via dedicated MULT18X18D blocks (cycle 2)
 
 ### Algorithm / Behavior
 
-1. **Edge Setup** (SETUP → SETUP_2 → SETUP_3, 3 cycles): Compute edge coefficients A (11-bit), B (11-bit) in cycle 1; compute edge C coefficients (21-bit) serialized over 3 cycles using a shared pair of 11×11 multipliers; compute bounding box.
-2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at bounding box origin using the same shared multiplier pair (cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
-   Compute per-attribute derivatives using the precomputed `inv_area` from UNIT-004: for each attribute `f` at vertices v0, v1, v2, compute `df/dx = (f1-f0)*A01 + (f2-f0)*A02` and `df/dy = (f1-f0)*B01 + (f2-f0)*B02` (scaled by inv_area), using the shared multiplier pair in the same 3-cycle window.
+1. **Edge Setup** (SETUP → SETUP_2 → SETUP_3, 3 cycles): Compute edge coefficients A (11-bit) and B (11-bit) in cycle 1; compute edge C coefficients (21-bit) serialized over 3 cycles using 2 dedicated MULT18X18D blocks; compute bounding box clamped to the configured surface dimensions.
+   Compute CLZ on the triangle area and look up `inv_area` from the 256-entry reciprocal LUT; apply 1 MULT18X18D for linear interpolation between adjacent LUT entries to refine the reciprocal.
+   Total DSP usage for edge setup: 2 (C coefficients) + 1 (LUT interpolation) = 3 MULT18X18D.
+
+2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at the bounding box origin using the same 2 MULT18X18D blocks (cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
+   Compute per-attribute derivatives for all 14 interpolated attributes using the internally computed `inv_area`: for each attribute `f` at vertices v0, v1, v2, compute `df/dx = (f1-f0)*A01 + (f2-f0)*A02` and `df/dy = (f1-f0)*B01 + (f2-f0)*B02` (scaled by inv_area).
    Initialize accumulated attribute values at the bounding box origin.
-   Attributes subject to derivative precomputation: color0 (RGBA, 8-bit per channel), color1 (RGBA, 8-bit per channel), Z (16-bit unsigned), UV0 (Q4.12 per component), UV1 (Q4.12 per component), and Q/W (Q3.12).
-3. **Pixel Test** (EDGE_TEST, per pixel): Check e0/e1/e2 ≥ 0 (inside triangle); no multiply required.
-4. **Interpolation** (INTERPOLATE, per inside pixel): Add the precomputed dx derivatives to the accumulated attribute values when stepping right in X; add the dy derivatives when advancing to a new row.
-   No per-pixel multiplies are required — all attribute interpolation is performed by incremental addition only.
-   Output interpolated UV values as Q4.12 by extracting bits [31:16] of the Q4.28 accumulator (which discards the 16 guard bits, recovering the Q4.12 representation).
-   Output interpolated color values by promoting the 8-bit accumulated UNORM to Q4.12 (see UNIT-006, Stage 3).
-5. **Pixel Advance** (ITER_NEXT): Step to next pixel — add edge A coefficients when stepping right, add edge B coefficients when stepping to a new row.
-6. **Scissor Bounds**: Bounding box is clamped to `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y, using the register values for the current render surface.
+
+3. **Tile-Ordered Traversal** (inner loop): Walk the bounding box in 4×4 tile order — advance pixel-by-pixel within a 4×4 tile, then advance to the next tile horizontally, then vertically.
+   At the start of each 4×4 tile, test edge functions at the four tile corners using the accumulated e0/e1/e2 values; when all four corners are outside the same edge half-plane, reject the entire tile without emitting fragments.
+
+4. **Pixel Test** (EDGE_TEST, per pixel within accepted tiles): Check e0/e1/e2 ≥ 0 (inside triangle); no multiply required.
+
+5. **Interpolation** (INTERPOLATE, per inside pixel): Add dAttr/dx to accumulators when stepping right in X; add dAttr/dy when advancing to a new row.
+   No per-pixel multiplies are required for attribute interpolation — all stepping is by incremental addition.
+
+6. **Perspective Correction** (2-cycle pipeline, per inside pixel):
+   - Cycle 1: Compute CLZ on the interpolated Q/W value; index the 256-entry reciprocal LUT with the CLZ-normalized mantissa; output 1/Q (Q3.12).
+     This also produces frag_lod = CLZ(Q) in UQ4.4 format.
+   - Cycle 2: Multiply S0×(1/Q) and T0×(1/Q) using 2 dedicated MULT18X18D blocks; multiply S1×(1/Q) and T1×(1/Q) using 2 additional dedicated MULT18X18D blocks.
+     Output true perspective-correct U0, V0 (Q4.12) and U1, V1 (Q4.12).
+   Total DSP usage for perspective correction: 4 MULT18X18D.
+
+7. **Fragment Emission**: After the 2-cycle perspective correction pipeline, emit the completed fragment to UNIT-006 via frag_valid/frag_ready.
+   Stall the traversal (hold all state) when frag_ready is deasserted by UNIT-006.
+
+8. **Scissor Bounds**: Bounding box is clamped to `[0, (1<<FB_CONFIG.WIDTH_LOG2)-1]` in X and `[0, (1<<FB_CONFIG.HEIGHT_LOG2)-1]` in Y.
+
+### DSP Budget
+
+| Usage | MULT18X18D count |
+|---|---|
+| Edge C coefficient computation (2 edges serialized) | 2 |
+| Reciprocal LUT linear interpolation (inv_area; reused for 1/Q) | 1 |
+| Perspective correction: U0, V0 = S0×(1/Q), T0×(1/Q) | 2 |
+| Perspective correction: U1, V1 = S1×(1/Q), T1×(1/Q) | 2 |
+| **Total** | **7** |
 
 ## Sub-Units
 
@@ -96,11 +127,11 @@ Each sub-unit is documented in its own design unit file:
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Parent module — FSM, shared multiplier, vertex latches, edge setup (UNIT-005.01), sub-module instantiation.
+- `spi_gpu/src/render/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal LUT module instantiation, sub-module instantiation (DD-029).
+- `spi_gpu/src/render/raster_recip_lut.sv`: 256-entry reciprocal LUT with CLZ normalization and 1 MULT18X18D linear interpolation; shared between inv_area (setup) and 1/Q (per-pixel) paths.
 - `spi_gpu/src/render/raster_deriv.sv`: Purely combinational derivative precomputation (UNIT-005.02 combinational path).
-- `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion (UNIT-005.02 latching / UNIT-005.03).
-- `spi_gpu/src/render/raster_edge_walk.sv`: Iteration position, edge functions, fragment emission (UNIT-005.04).
-- See DD-029 (UNIT-005 RTL Module Decomposition) for the architectural rationale.
+- `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.02 latching / UNIT-005.03).
+- `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 2-cycle perspective correction pipeline (UNIT-005.04).
 
 ## Verification
 
@@ -112,11 +143,15 @@ Each sub-unit is documented in its own design unit file:
 - **VER-014** (Textured Cube Golden Image Test) — exercises the rasterizer across multiple triangles with varying depth and projection angles under perspective
 
 Key verification points:
+
 - Verify edge function computation for known triangles (clockwise/counter-clockwise winding)
 - Test bounding box clamping at the configured surface boundary — `(1<<FB_CONFIG.WIDTH_LOG2)-1` in X and `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y — not at a fixed 640×480
-- Verify derivative precomputation: for a known triangle, confirm dColor/dx, dColor/dy, dZ/dx, dZ/dy, dUV/dx, dUV/dy, dQ/dx, dQ/dy match expected values derived from vertex attributes and inv_area
-- Verify incremental interpolation: step across a rasterized triangle and confirm accumulated color0, color1, Z, UV0, UV1, Q/W values at each fragment match analytic values within rounding tolerance
-- Verify the fragment output bus carries correct (x, y, z, color0, color1, uv0, uv1, q) values and valid/ready handshake operates correctly
+- Verify reciprocal LUT: for a known area value, confirm inv_area from the LUT matches the analytic reciprocal within the specified Q3.12 rounding tolerance
+- Verify derivative precomputation: for a known triangle, confirm dAttr/dx and dAttr/dy for all 14 attributes match expected values derived from vertex attributes and the internally computed inv_area
+- Verify incremental interpolation: step across a rasterized triangle and confirm accumulated color0, color1, Z, Q/W, S/T projected values at each fragment match analytic values within rounding tolerance
+- Verify perspective correction pipeline: confirm that emitted frag_uv0 and frag_uv1 carry true perspective-correct U, V values (not S, T projections); verify frag_lod (UQ4.4) matches CLZ(Q) for known Q values
+- Verify 4×4 tile traversal order: confirm fragment emission order follows tile-major then pixel-minor order; verify hierarchical tile rejection suppresses entire tiles when all four corners lie outside a single edge half-plane
+- Verify the fragment output bus carries correct (x, y, z, color0, color1, uv0, uv1, lod) values and valid/ready handshake operates correctly
 - Test degenerate triangles (zero area, single-pixel, off-screen)
 
 The Verilator interactive simulator (REQ-010.02, `make sim-interactive`) extends the golden image harness concept to a live interactive tool.
@@ -125,36 +160,33 @@ The interactive sim is a companion development tool, not a replacement for the g
 
 ## Design Notes
 
-Migrated from speckit module specification.
-
-**Unified clock update:** The rasterizer now operates at the unified 100 MHz `clk_core`, doubling pixel evaluation throughput compared to the previous 50 MHz design.
-At one fragment evaluation per clock cycle in the inner edge-walking loop, the rasterizer achieves a peak rate of 100 million fragment evaluations per second.
-Fragment output to the pixel pipeline (UNIT-006) is synchronous within the same 100 MHz clock domain, and downstream SRAM access through the arbiter (UNIT-007) incurs no CDC latency.
+**Unified clock:** The rasterizer operates at the unified 100 MHz `clk_core`.
+At one fragment evaluation per clock cycle in the inner edge-walking loop (plus 2 cycles of perspective correction latency in the pipeline), the rasterizer achieves a peak throughput of 100 million fragment evaluations per second.
+Fragment output to the pixel pipeline (UNIT-006) is synchronous within the same 100 MHz clock domain.
 Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM arbitration contention with display scanout, Z-buffer, and texture fetch (see INT-011 bandwidth budget).
 
-**Burst-friendly access patterns:** The edge-walking algorithm emits fragments in scanline order (left-to-right within each row of the bounding box), producing sequential screen-space positions within each 4×4 tile.
-This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM arbiter (UNIT-007) to exploit SDRAM burst write mode for framebuffer writes and burst read/write mode for Z-buffer accesses, improving effective SDRAM throughput for runs of horizontally adjacent fragments.
+**Tile-ordered traversal and burst access:** The 4×4 tile-ordered traversal groups spatially coherent fragments together, improving texture cache hit rate in UNIT-006.
+Each 4×4 tile corresponds to a contiguous 4×4 block of screen pixels; fragments are emitted pixel-by-pixel within the tile, then tile-by-tile across the bounding box in row-major tile order.
 The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tiles per row as `1 << (WIDTH_LOG2 - 2)`.
-
-**Phase 2 note:** REQ-002.03 has been updated to mandate 4×4 tile traversal order and redefines the fragment bus format (removing `frag_q`, adding `frag_lod` UQ4.4, updating UV semantics to true perspective-correct U/V coordinates).
-The algorithm description, fragment bus documentation, and sub-unit descriptions in this document will be updated to reflect those changes in Phase 2 design document revisions.
+Hierarchical tile rejection allows the FSM to skip entire tiles in a single step when the tile is provably outside the triangle.
 
 **Incremental interpolation (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
-The rasterizer exploits this by computing edge values and all attribute derivatives at the bounding box origin once per triangle (using multiplies in the ITER_START / INIT_E1 / INIT_E2 window), then stepping all edge and attribute accumulators incrementally with pure addition in the per-pixel inner loop.
-No per-pixel multiplies are required for either edge testing or attribute interpolation.
+The rasterizer computes edge values and all 14 attribute derivatives at the bounding box origin once per triangle (using the shared MULT18X18D blocks in the SETUP and ITER_START windows), then steps all edge and attribute accumulators incrementally with pure addition in the per-pixel inner loop.
+No per-pixel multiplies are required for edge testing or attribute interpolation.
 See DD-024 for the rationale behind replacing per-pixel barycentric multiply-accumulate with precomputed derivative increments.
-The 12 cold-path setup multipliers (6 for edge C coefficients, 6 for initial edge evaluation + derivative precomputation) are serialized through a shared pair of 11×11 multipliers over 6 cycles total (3 for setup, 3 for derivative init).
-Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum, the extra setup cycles have zero impact on sustained performance.
-This reduces total DSP usage to 3–4 MULT18X18D blocks (the shared setup pair, plus any fractional-multiply needed for Q promotion at output), freeing 13–14 blocks compared to the previous barycentric MAC approach, and leaving ample headroom for the color combiner (UNIT-010, 4–6 DSPs) and texture cache decoders (UNIT-006, 2–4 DSPs per BC decoder).
 
-**Dual-texture + color combiner update:** The rasterizer interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment, plus UV0, UV1, Z, and Q/W (perspective-correct denominator).
-UV interpolation covers up to 2 sets (UV0, UV1); UV2_UV3 is removed.
-Under the incremental interpolation scheme, adding color1 and Q/W interpolation costs only additional accumulator registers and derivative storage — no additional DSP multipliers in the inner loop.
+**Internal reciprocal — inv_area and 1/Q sharing:** The 256-entry reciprocal LUT with CLZ normalization and 1 MULT18X18D linear interpolation interpolator is shared between two uses: computing inv_area once per triangle during edge setup, and computing 1/Q per pixel during traversal for perspective correction.
+The LUT interpolation refines the coarse LUT output to achieve Q3.12 accuracy.
+This single-multiplier shared reciprocal replaces the host-computed inv_area that was previously supplied via the AREA_SETUP register (removed in Phase 1).
+
+**Perspective correction in the rasterizer:** S/T projected texture coordinates (S=U/W, T=V/W) are interpolated incrementally alongside all other attributes.
+The 2-cycle perspective correction pipeline converts these to true U, V per pixel using the concurrently computed 1/Q.
+This removes the UV perspective division from the pixel pipeline (UNIT-006): frag_uv0 and frag_uv1 on the fragment bus carry fully corrected U, V in Q4.12.
+
+**Fragment bus — frag_lod:** CLZ on the interpolated Q/W value provides an unsigned integer mip-level estimate (frag_lod, UQ4.4).
+UNIT-006 adds TEXn_CFG.LOD_BIAS to frag_lod to produce the final mip level for texture cache lookup.
+frag_q is not present on the fragment bus; perspective correction is complete before fragment emission.
+
+**Dual-texture + color combiner:** The rasterizer interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment, plus UV0, UV1, Z, and Q/W.
+Under the incremental interpolation scheme, additional accumulator registers and derivative storage are the only cost for each additional attribute — no additional DSP multipliers in the inner loop.
 Both interpolated vertex colors are output to UNIT-006 for use as VER_COLOR0 and VER_COLOR1 inputs to the color combiner (UNIT-010).
-Q/W is output to UNIT-006 for perspective-correct UV division before texture lookup.
-
-**Fragment output interface:** The rasterizer emits per-fragment data to UNIT-006 (Pixel Pipeline) via a valid/ready handshake (see DD-025).
-The fragment bus carries: (x, y) screen coordinates in Q12.4; interpolated Z (16-bit unsigned); interpolated color0 and color1 (Q4.12 RGBA, 4 × 16-bit channels); interpolated UV0 and UV1 (Q4.12 per component, 16-bit signed each, packed as U[31:16]/V[15:0] in a 32-bit bus); and interpolated Q/W (Q3.12, 16-bit signed).
-UV components use Q4.12 format throughout — sign bit, 3 integer bits, 12 fractional bits — matching the vertex input format from UNIT-003 and the accumulator output extraction `acc[31:16]` (top half of the Q4.28 accumulator).
-The pixel pipeline (UNIT-006) must interpret `frag_u0[15:0]` and `frag_v0[15:0]` as Q4.12: sign bit at [15], integer bits at [14:12], fractional bits at [11:0].
-The rasterizer does not access SDRAM directly; all framebuffer, Z-buffer, and texture memory accesses are the responsibility of UNIT-006 through UNIT-007.

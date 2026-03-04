@@ -163,11 +163,11 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **The Z-buffer read and write paths are owned by the pixel pipeline (UNIT-006)**, not the rasterizer (UNIT-005), after pixel pipeline integration.
   The rasterizer emits fragments via the valid/ready handshake interface; the pixel pipeline's FSM reads the Z-buffer (arbiter port 2), invokes `early_z.sv`, and conditionally writes back updated Z values and color pixels.
   This test exercises the integrated pipeline including arbiter port 2 ownership by UNIT-006.
-- **The golden image requires re-approval after pixel pipeline integration.**
-  The incremental interpolation redesign (step 1) may shift Z-interpolated values by 1 ULP at some pixels, and the transfer of Z-buffer write ownership from the rasterizer to the pixel pipeline (step 2) changes the timing of Z-buffer updates.
-  After integration, re-run the test, visually inspect the output, and re-commit the golden image.
-  **Note (re-baselining required after Phase 2):** REQ-002.03 changes rasterizer traversal order from scanline to 4x4 tile order.
-  Traversal order affects Z-buffer write sequencing for overlapping triangles; re-baseline the golden image after Phase 2 RTL changes land.
+- **The golden image requires re-approval after Phase 2 RTL implementation.**
+  The rasterizer traversal order changes from scanline order to 4×4 tile-major order (REQ-002.03).
+  Traversal order affects Z-buffer write sequencing for overlapping triangles, which determines which fragment writes the depth value first and therefore which color wins in the overlap region at pixel level.
+  Additionally, incremental derivative interpolation may shift Z-interpolated values by 1 ULP at some pixels.
+  After Phase 2 RTL implementation is complete, re-run the test, visually inspect the output, and re-commit the golden image before marking this test as passing.
 - The background of the framebuffer (pixels outside both triangles) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).

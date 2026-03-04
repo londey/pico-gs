@@ -20,6 +20,7 @@ The testbench drives known triangle configurations through the triangle setup an
 - `spi_gpu/src/render/early_z.sv` compiles without errors under `verilator --lint-only -Wall` (rasterizer depends on early Z integration signals).
 - Triangle setup module (UNIT-004) is instantiated or stubbed so that the rasterizer receives valid setup data.
 - The testbench drives `fb_width_log2` and `fb_height_log2` register inputs (from UNIT-003) to configure the active surface dimensions before each test case.
+- The rasterizer computes inv_area internally via the CLZ + 256-entry LUT reciprocal unit (UNIT-005.01); the testbench does not supply `setup_inv_area` as an external input.
 
 ## Procedure
 
@@ -41,25 +42,31 @@ The testbench drives known triangle configurations through the triangle setup an
 
    For each case, verify the bounding box after clamping does not exceed the configured surface boundary.
 
-3. **Fragment emission count.**
+3. **Fragment emission count and traversal order.**
    Drive the rasterizer with a triangle of known area.
    Count the number of fragment emission pulses (fragment_valid assertions on the output handshake bus) during edge walking.
    Compare the count against a reference pixel count for the test triangle.
    The count must be exact (no tolerance).
+   Additionally, verify that fragments within the bounding box are emitted in 4×4 tile-major order: the rasterizer walks 4×4 pixel tiles across the bounding box in raster order, emitting all covered pixels within each tile before advancing to the next tile.
 
 4. **Incremental interpolation accuracy.**
-   For a triangle with distinct vertex colors, Z values, and UV coordinates, the rasterizer initializes per-attribute derivative values at triangle setup time and advances them incrementally per scan line and per pixel.
+   For a triangle with distinct vertex colors, Z values, UV coordinates, and Q (1/W) values, the rasterizer initializes per-attribute derivative values at triangle setup time and advances them incrementally per 4×4 tile and per pixel within each tile.
    Sample the interpolated output on the fragment output bus at:
    - Each of the three vertices.
    - The centroid.
    - Edge midpoints.
-   Verify that interpolated color, Z, UV0, UV1, and Q values match reference values within 1 ULP of the fixed-point derivative step precision.
-   UV0 and UV1 coordinates on the fragment output bus are Q4.12 (16-bit signed, 4 integer bits, 12 fractional bits) as defined in `fp_types_pkg.sv`.
-   Reference values are computed offline using the same incremental step model (not the barycentric MAC model), with UV values represented in Q4.12.
-
-   **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus format — `frag_q` is removed, `frag_lod` (UQ4.4) is added, and UV semantics change to true perspective-correct U/V coordinates.
-   This step and the Expected Results section will require updating once Phase 2 implementation is complete.
-   Do not update this procedure until the RTL changes are in place.
+   Verify that the following 14 interpolated attributes match reference values within 1 ULP of the fixed-point derivative step precision:
+   - 3 edge function values
+   - Z depth
+   - Q (1/W)
+   - R/G/B/A of color0
+   - R/G/B/A of color1 (Gouraud mode)
+   - S0/T0 and S1/T1 perspective-projected texture coordinates
+   UV0 and UV1 coordinates on the fragment output bus (`frag_uv0`, `frag_uv1`) carry true perspective-correct U,V values in Q4.12 (16-bit signed, 4 integer bits, 12 fractional bits) as defined in `fp_types_pkg.sv`.
+   The rasterizer performs perspective correction internally: S×(1/Q) and T×(1/Q) are computed in a 2-cycle pipeline before the fragment is emitted.
+   `frag_lod` (UQ4.4) is present on the fragment bus; its value is derived from CLZ applied to Q at the pixel location.
+   `frag_q` is not present on the fragment bus.
+   Reference values are computed offline using the same incremental step model (not the barycentric MAC model), with UV values in Q4.12 representing true perspective-correct coordinates.
 
 5. **Fragment output bus handshake.**
    Verify that the rasterizer emits fragments using the valid/ready handshake protocol on the fragment output bus.
@@ -82,18 +89,21 @@ The testbench drives known triangle configurations through the triangle setup an
   - All edge function coefficients (A, B, C) for each edge match reference values exactly.
   - Bounding box X coordinate is clamped to `[0, (1 << fb_width_log2) - 1]` and Y coordinate to `[0, (1 << fb_height_log2) - 1]` for each configured surface size (512×512 and 256×256).
   - Fragment emission counts match reference pixel counts exactly for all test triangles.
-  - Interpolated color, Z, UV0, UV1 (Q4.12), and Q values at vertices, centroid, and midpoints match reference values within 1 ULP of the fixed-point derivative step precision.
+  - Fragments are emitted in 4×4 tile-major order: all covered pixels within a tile are emitted before the rasterizer advances to the next tile.
+  - Interpolated color, Z, UV0, UV1 (Q4.12 true perspective-correct U,V), and `frag_lod` (UQ4.4) values at vertices, centroid, and midpoints match reference values within 1 ULP of the fixed-point derivative step precision.
+  - `frag_q` is absent from the fragment output bus; `frag_lod` (UQ4.4) is present and matches the CLZ-on-Q reference.
+  - All 14 attributes (3 edge functions, Z, Q, RGBA color0, RGBA color1, S0/T0/S1/T1) step correctly across the triangle.
   - Back-pressure on the fragment output bus (`ready = 0`) halts fragment emission without loss or duplication.
   - Degenerate triangles produce the expected fragment count (0 or 1 as specified).
   - Winding order tests produce consistent edge function signs.
-
-  **Note (re-baselining required after Phase 2):** Expected Results for step 4 (interpolated Q and UV format) will need updating after Phase 2 changes the fragment bus — `frag_q` removal, `frag_lod` (UQ4.4) addition, and updated UV semantics.
 
 - **Fail Criteria:**
   - Any edge function coefficient differs from the reference value.
   - Bounding box exceeds the configured surface bounds or is incorrectly computed for any `fb_width_log2` / `fb_height_log2` combination.
   - Fragment count differs from expected value for any test triangle.
-  - Interpolated color, Z, UV0, UV1 (Q4.12), or Q values exceed the 1 ULP tolerance at any sampled point.
+  - Fragments are emitted out of 4×4 tile-major order.
+  - Interpolated color, Z, UV0, UV1 (Q4.12), or `frag_lod` (UQ4.4) values exceed the 1 ULP tolerance at any sampled point.
+  - `frag_q` is present on the fragment bus (it must not be).
   - Fragment emission continues while `ready = 0`, or any fragment is lost or duplicated around a back-pressure stall.
   - Degenerate triangle produces unexpected fragments.
 
@@ -110,13 +120,15 @@ The testbench drives known triangle configurations through the triangle setup an
   Full pipeline integration (framebuffer writes, Z-buffer interaction) is covered by VER-010 through VER-013 (golden image tests).
 - The rasterizer uses incremental derivative interpolation (per UNIT-005): attribute derivatives (dAttr/dx, dAttr/dy) are precomputed during triangle setup by UNIT-004, then stepped per-pixel by the rasterizer.
   The testbench reference model must use the same incremental step computation; the previously-used barycentric multiply-accumulate reference is no longer applicable.
-- The rasterizer no longer performs direct SDRAM writes.
-  Fragment data (x, y, z, color0, color1, uv0, uv1, q) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
-  UV coordinates (`frag_uv0`, `frag_uv1`) are Q4.12 (16-bit signed) on this bus, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
+- The rasterizer does not perform direct SDRAM writes.
+  Fragment data (x, y, z, color0, color1, uv0, uv1, lod) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
+  UV coordinates (`frag_uv0`, `frag_uv1`) carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
+  `frag_lod` (UQ4.4) carries the per-pixel mip level derived from CLZ on the interpolated Q value; it is added to TEXn_CFG.LOD_BIAS in UNIT-006 to produce the final mip level.
+  `frag_q` is not present on this bus.
   The testbench instantiates a simple ready-signal driver to simulate downstream back-pressure.
-  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines this bus — `frag_q` is removed, `frag_lod` (UQ4.4) is added, and UV represents true perspective-correct U/V coordinates.
-  The testbench reference model, step 4 procedure, and expected results must be updated to match after Phase 2 RTL changes land.
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.
   The testbench clock should match this frequency for cycle-accurate fragment throughput verification.
-- Edge function coefficients use serialized computation through a shared pair of 11x11 multipliers (3 setup cycles + 3 initial evaluation cycles).
-  The testbench should allow sufficient cycles for setup completion before checking output values.
+- Edge function C coefficients are computed using 2 MULT18X18D DSP blocks in the edge setup unit (UNIT-005.01).
+  inv_area is computed internally by UNIT-005.01 via CLZ + 256-entry LUT + 1 MULT18X18D linear interpolation; the same LUT is reused per-pixel for 1/Q computation.
+  Perspective correction (S×(1/Q), T×(1/Q)) uses 4 dedicated MULT18X18D in the iteration FSM (UNIT-005.04), adding a 2-cycle latency after the attribute accumulation step.
+  The testbench should allow sufficient cycles for setup completion before checking output values, accounting for the perspective correction pipeline latency.

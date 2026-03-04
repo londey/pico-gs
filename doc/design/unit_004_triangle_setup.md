@@ -58,7 +58,6 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `v0_uv0`, `v1_uv0`, `v2_uv0` | 3x32 | Vertex UV0 coordinates (Q4.12 per component) |
 | `v0_uv1`, `v1_uv1`, `v2_uv1` | 3x32 | Vertex UV1 coordinates (Q4.12 per component) |
 | `v0_q`, `v1_q`, `v2_q` | 3x16 | Vertex 1/W (Q3.12 fixed point) for perspective correction |
-| `inv_area` | 16 | 1/area (UQ0.16) from CPU |
 | `fb_base_addr` | 20 | Framebuffer base address [31:12] |
 | `zb_base_addr` | 20 | Z-buffer base address [31:12] |
 | `downstream_ready` | 1 | UNIT-005 ready to accept setup data |
@@ -85,7 +84,6 @@ All SRAM memory access for framebuffer and Z-buffer occurs within UNIT-006.
 | `setup_v0_uv0`, `setup_v1_uv0`, `setup_v2_uv0` | 3x32 | Vertex UV0 coordinates (passed through) |
 | `setup_v0_uv1`, `setup_v1_uv1`, `setup_v2_uv1` | 3x32 | Vertex UV1 coordinates (passed through) |
 | `setup_v0_q`, `setup_v1_q`, `setup_v2_q` | 3x16 | Vertex 1/W values (passed through for perspective correction) |
-| `setup_inv_area` | 16 | 1/area (UQ0.16) passed through |
 
 ### Internal State
 
@@ -117,7 +115,7 @@ Pixel iteration, Z-buffer access, and framebuffer writes are now handled downstr
 - bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y [9:0]: Screen-clamped bounding box
 
 **Latched Pass-Through:**
-- inv_area_reg [15:0]: Latched 1/area (passed through to UNIT-005)
+- (no inv_area; reciprocal of triangle area is computed internally by UNIT-005.01)
 
 ### Algorithm / Behavior
 
@@ -134,7 +132,7 @@ Computes bounding box as min/max of vertex coordinates clamped to the configured
 The surface dimensions are taken from the `fb_width_log2` and `fb_height_log2` outputs of UNIT-003 at the time of setup; they are never hardcoded.
 
 **Output Handshake (EMIT state):**
-1. Assert `setup_valid` for one cycle with all edge coefficients, bounding box, vertex attributes, and inv_area on the output buses.
+1. Assert `setup_valid` for one cycle with all edge coefficients, bounding box, and vertex attributes on the output buses.
 2. Wait for downstream ready (UNIT-005 backpressure).
 3. Return to IDLE, reassert `tri_ready`.
 
@@ -147,7 +145,7 @@ The surface dimensions are taken from the `fb_width_log2` and `fb_height_log2` o
 - Verify edge function computation: known triangle vertices produce correct A/B/C coefficients
 - Verify bounding box clamping: vertices outside the configured render surface dimensions (`(1<<FB_CONFIG.WIDTH_LOG2)-1` in X, `(1<<FB_CONFIG.HEIGHT_LOG2)-1` in Y) produce clamped bounds; verify at multiple surface sizes
 - Verify inside/outside test: sample points inside and outside a known triangle
-- Verify UV0, UV1, and Q passthrough: setup outputs carry the per-vertex uv0, uv1, q values unchanged from input
+- Verify UV0, UV1, and Q passthrough: setup outputs carry the per-vertex uv0, uv1, and q values unchanged from input
 - Verify degenerate triangles: zero-area triangle produces no valid setup output
 - Verify setup_valid handshake: setup_valid asserts for one cycle and deasserts when downstream_ready is low
 - VER-010 (Gouraud Triangle Golden Image Test)
@@ -168,15 +166,14 @@ The FSM was reduced from 12 states (4-bit) to 3 states (3-bit).
 SRAM arbiter ports 1 and 2 are now driven by UNIT-006, not UNIT-004.
 See DD-015 for rationale.
 
-**Dual-texture + perspective correction update:** Triangle setup passes through two vertex colors (color0 and color1) per vertex, plus UV0, UV1, and Q (1/W) per vertex.
+**Dual-texture + perspective correction:** Triangle setup passes through two vertex colors (color0 and color1) per vertex, plus UV0, UV1, and Q (1/W) per vertex.
 UV passthrough covers up to 2 sets (UV0, UV1 only; UV2_UV3 register removed).
-The Q/W passthrough enables perspective-correct UV interpolation in UNIT-005: the rasterizer interpolates Q/W as a plain scalar, and UNIT-006 divides the interpolated (UV × Q) by the interpolated Q to recover perspective-correct UV before the texture lookup.
+The Q/W passthrough enables perspective-correct UV interpolation in UNIT-005: the rasterizer interpolates Q, S×Q, T×Q as plain scalars using incremental derivatives, then applies per-pixel perspective correction internally (1/Q via reciprocal LUT, then U = S×(1/Q), V = T×(1/Q) via dedicated DSP multipliers).
+UNIT-004 does not supply `inv_area`; the reciprocal of the triangle area is computed internally by UNIT-005.01 via a CLZ-assisted reciprocal LUT.
 The second vertex color (color1) supports the color combiner's VER_COLOR1 input for specular highlights, emissive terms, or blend factors.
-
-**Phase 2 note:** The Q/W passthrough and `inv_area` input (from UNIT-003, related to the AREA_SETUP register being removed in Phase 1) will be reviewed and updated in Phase 2 design document revisions (UNIT-005.x). The AREA_SETUP register (INT-010, index 0x05) has been removed; the impact on how `inv_area` is provided to this unit is a Phase 2 design concern.
 
 **Unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
 The setup FSM (IDLE → SETUP → SETUP_2 → SETUP_3) completes edge coefficient computation in 3 cycles (30 ns at 100 MHz) using a shared pair of 11×11 multipliers.
 Combined with the 3-cycle initial edge evaluation (ITER_START → INIT_E1 → INIT_E2), total triangle setup is 6 cycles (60 ns).
 Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum (4-bit QSPI @ 25 MHz), the serialized setup has zero impact on sustained performance.
-This serialization reduces setup multiplier usage from 12 to 2 MULT18X18D blocks, contributing to the overall reduction from 47 to 17 blocks.
+This serialization reduces setup multiplier usage from 12 to 2 MULT18X18D blocks within UNIT-004; the remaining 5 MULT18X18D blocks are allocated to UNIT-005 for reciprocal LUT interpolation and per-pixel perspective correction.

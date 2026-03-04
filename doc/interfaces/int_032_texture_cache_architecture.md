@@ -103,6 +103,7 @@ All Q4.12 values represent signed fixed-point in range [−8.0, +7.999], where U
 **UV Coordinate Format at Cache Lookup:**
 
 UV coordinates consumed by Stage 1 (Texture Cache Lookup) arrive from UNIT-005 (Rasterizer) in Q4.12 format (16-bit signed: sign at [15], integer bits at [14:12], fractional bits at [11:0]).
+The coordinates are fully perspective-corrected by the rasterizer (UNIT-005 performs the 1/Q division internally); UNIT-006 receives true U, V values and does not perform any further perspective division.
 The block address and set index computation uses the integer portion `uv[14:12]` for the block coordinate, and the sub-texel fractional portion `uv[11:0]` for bilinear weight computation.
 Note: the current `pixel_pipeline.sv` implementation contains an incorrect Q1.15 comment and bit extraction at this stage (audit finding F4b); the correct format is Q4.12 as defined here.
 
@@ -212,7 +213,7 @@ set = (block_x[7:0] ^ block_y[7:0])  // XOR of low 8 bits → 256 sets
 Each cache line is identified by:
 - **Tag:** Unique identifier for the 4×4 block
   - Texture base address: `tex_cfg.BASE_ADDR` (from TEX0_CFG/TEX1_CFG register)
-  - Mipmap level: `mip_level[3:0]` (0-15)
+  - Mipmap level: `mip_level[3:0]` (0-15); derived from the rasterizer-supplied `frag_lod` (UQ4.4, 8-bit: integer mip level in bits [7:4], trilinear blend fraction in bits [3:0]) after UNIT-006 applies the TEXn_MIP_BIAS offset; the 4-bit integer portion maps directly to `mip_level[3:0]`
   - Block address: Computed from UV coordinates and mip level
 - **Set:** 8-bit index (0-255) from XOR-folded block coordinates
 - **Way:** 2-bit index (0-3) for 4-way set associativity

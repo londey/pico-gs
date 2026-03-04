@@ -71,7 +71,8 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 ### Inputs
 
 - Fragment position (x, y) from rasterizer (UNIT-005)
-- Interpolated UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0])
+- Perspective-correct UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0]); these are true U, V values — perspective correction is performed inside the rasterizer (UNIT-005.04) before emission
+- Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); integer part selects the mip level, fractional part is the trilinear blend weight
 - Interpolated vertex colors (SHADE0, SHADE1) as Q4.12 from rasterizer (UNIT-005)
 - Interpolated Z depth value (16-bit unsigned)
 - Register state (TEX0_CFG, TEX1_CFG, CC_MODE, CONST_COLOR, RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, STIPPLE_PATTERN)
@@ -127,6 +128,7 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
 
 **Stage 1: Texture Cache Lookup (per enabled texture unit, up to 2, REQ-003.08):**
 - UV coordinates arrive from UNIT-005 in Q4.12 format (16-bit signed: sign at [15], integer [14:12], fractional [11:0]).
+  These are true perspective-correct U, V values; no division is performed in this stage.
   The fractional part used for texel addressing is bits [11:0] of the Q4.12 value (12 bits, resolution 2⁻¹²).
 - Apply UV wrapping mode (REQ-003.05, TEXn_CFG.U_WRAP / V_WRAP) for TEX0 and TEX1
 - Compute block_x = pixel_x >> 2, block_y = pixel_y >> 2
@@ -146,7 +148,7 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
   - FORMAT=RGBA8888 (5): Burst read 64 bytes (burst_len=32), convert to RGBA5652 (truncate to RGBA5652 precision)
   - FORMAT=R8 (6): Burst read 16 bytes (burst_len=8), convert to RGBA5652 (R replicated to G and B, A=11)
 - Apply swizzle pattern (REQ-003.04, TEXn_CFG.SWIZZLE)
-- Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels (requires MIP_LEVELS > 1)
+- Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels using LOD = `frag_lod[7:4]` + `TEXn_CFG.LOD_BIAS`; the fractional blend weight is `frag_lod[3:0]`; requires MIP_LEVELS > 1
 
 **Stage 3: Format Promotion (RGBA5652 → Q4.12):**
 - Promote texture data to Q4.12 via `texel_promote.sv` (combinational):
@@ -369,8 +371,13 @@ The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
 The tiled address calculation uses only shifts and masks; no multiply hardware is required.
 Render targets with power-of-two dimensions can be bound directly as texture sources (format RGB565 tiled) with no copy or conversion step.
 
-**Phase 2 note:** REQ-002.03 has been updated to remove `frag_q` from the fragment bus and add `frag_lod` (UQ4.4), and to change UV semantics to true perspective-correct U/V coordinates.
-The UV receive description in Stage 1 (Q4.12 format), the perspective-correct UV division logic, and the LOD selection for trilinear filtering will be revised in Phase 2 design document updates to reflect the new fragment bus definition.
+**Fragment bus UV semantics:** UNIT-006 receives true perspective-correct U, V coordinates in Q4.12 format on the fragment bus.
+Perspective correction (1/Q division and UV reconstruction) is fully handled by UNIT-005.04 before fragment emission.
+UNIT-006 consumes UV directly for texel addressing; no perspective division occurs within the pixel pipeline.
+
+**LOD selection:** The per-pixel `frag_lod` (UQ4.4) value is produced by UNIT-005.04 via CLZ on the interpolated Q (1/W) value.
+UNIT-006 adds `TEXn_CFG.LOD_BIAS` to `frag_lod[7:4]` (the integer mip-level component) to select the final mip level for each texture unit.
+`frag_lod[3:0]` carries the fractional blend weight used for trilinear filtering.
 
 **Architectural separation:** The pixel pipeline is decomposed into:
 

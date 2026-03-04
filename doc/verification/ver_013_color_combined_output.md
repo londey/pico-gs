@@ -188,11 +188,13 @@ The integration harness drives the following register-write sequence into UNIT-0
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005), or after any change to UNIT-010 combiner arithmetic.
   See `test_strategy.md` for the re-approval workflow.
-- **UV format and golden image:** UV coordinates on the rasterizer→pixel_pipeline fragment bus are Q4.12, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
-  If the UV format mismatch between the rasterizer output and the pixel pipeline's UV consumption logic is corrected, the texture coordinates used for cache set indexing will change, altering the rendered checker pattern at pixel level.
-  Re-run this test, visually inspect the corrected output, and re-approve the golden image if pixel output changes.
-  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus UV semantics to true perspective-correct U/V coordinates and removes `frag_q`.
-  When Phase 2 RTL changes land, this test's golden image must be re-baselined and the Notes section updated to reflect the new bus definition.
+- **UV format and golden image:** UV coordinates on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
+  Perspective correction is performed inside the rasterizer (UNIT-005.04); the pixel pipeline receives fully corrected U,V directly.
+  `frag_q` is not present on the bus; `frag_lod` (UQ4.4) is present in its place.
+  **The golden image requires re-approval after Phase 2 RTL implementation.**
+  The rasterizer traversal order changes to 4×4 tile-major order, the UV bus semantics change to true perspective-correct U,V, and `frag_q` is replaced by `frag_lod`.
+  These changes alter the texture coordinates consumed by the cache lookup, changing the rendered checker pattern at pixel level.
+  After Phase 2 RTL implementation is complete, re-run this test, visually inspect the corrected output, and re-approve the golden image before marking this test as passing.
 - **Q4.12 arithmetic constants:** The color combiner ONE (0x1000) and ZERO (0x0000) constants are centralized in `fp_types_pkg.sv`.
   If those constant values change (which is not expected for a correct implementation), VER-013 pixel output will change and the golden image must be re-approved.
 - Of the five golden image tests (VER-010 through VER-014), this test has the deepest dependency chain: it requires a stable UNIT-010 implementation and a fully integrated pixel pipeline (UNIT-006) in addition to the shared integration harness infrastructure.

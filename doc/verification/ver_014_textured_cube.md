@@ -23,7 +23,7 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
 - A known test texture (16×16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets are generated programmatically by the test harness and are not committed.
 - Golden image `spi_gpu/tests/golden/textured_cube.ppm` has been approved and committed.
-  This image must be re-approved after the pixel pipeline integration, after the incremental interpolation redesign (UNIT-005), and after the `tex_format` field widening to 3 bits (INT-010), because UV interpolation, format-select mux path, and COMBINE_MODE are all functionally active for the first time.
+  This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` (UQ4.4) is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `triangle_setup.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `early_z.sv`) compile without errors under `verilator --lint-only -Wall`.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the early Z stage, texture cache, format-select mux connecting all six decoders, MODULATE combiner (UNIT-010), and FB/Z write logic per UNIT-006.
@@ -181,13 +181,15 @@ The integration harness drives the following register-write sequence into UNIT-0
   Reviewers should confirm the Z-buffer clear sequence is identical to VER-011's clear pass.
 - **Relationship to VER-012:** The texture setup (16×16 RGB565 checker pattern, INT-014 tiled layout, TEX0_BASE/TEX0_FMT register writes, INT-032 cache miss protocol) follows the pattern established in VER-012 (textured triangle).
   VER-014 extends that pattern to a multi-triangle scene with multiple distinct texture cache fill patterns arising from spatially varied UV access across differently oriented faces.
-- **Perspective-correct UV and UV format:** UV coordinates are interpolated using perspective-correct interpolation (U/W, V/W, 1/W) as specified in UNIT-005.
-  On the rasterizer→pixel_pipeline fragment bus, `frag_uv0` and `frag_uv1` are Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
-  The checker pattern on a perspective-projected cube face exhibits clear foreshortening — this makes affine warping artifacts and UV format extraction errors immediately visible in the golden image comparison.
+- **Perspective-correct UV and UV format:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.04).
+  On the rasterizer→pixel_pipeline fragment bus, `frag_uv0` and `frag_uv1` carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
+  `frag_q` is not present on the bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q.
+  The checker pattern on a perspective-projected cube face exhibits clear foreshortening — this makes affine warping artifacts and perspective correction failures immediately visible in the golden image comparison.
   VER-012 verifies the same interpolation path on a single flat triangle; VER-014 provides additional coverage under projection angles that produce stronger W variation across the triangle surface.
-  If the UV format mismatch between the rasterizer output and the pixel pipeline's UV consumption logic is corrected, the rendered checker pattern on all faces will change at pixel level and the golden image must be re-approved.
-  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus UV semantics to true perspective-correct U/V coordinates and removes `frag_q` (adding `frag_lod` UQ4.4 in its place).
-  When Phase 2 RTL changes land, this test's golden image must be re-baselined and the Notes section updated to reflect the new bus definition.
+  **The golden image requires re-approval after Phase 2 RTL implementation.**
+  The rasterizer traversal order changes to 4×4 tile-major order, the UV bus semantics change to true perspective-correct U,V (vs. S=U/W projections requiring downstream division), and `frag_q` is replaced by `frag_lod`.
+  Perspective foreshortening on cube faces is particularly sensitive to these changes — UV interpolation accuracy directly affects the checker rendering on each face.
+  After Phase 2 RTL implementation is complete, re-run this test, visually inspect the corrected output, and re-approve the golden image before marking this test as passing.
 - **Multiple cache fill patterns:** A single-triangle test (VER-012) accesses texture cache sets in a predictable sweep; a 3D cube with multiple faces at different orientations accesses cache sets in spatially varied patterns.
   This exercises cache tag matching, set indexing, and eviction behavior more thoroughly than VER-012 alone.
 - **MODULATE combiner:** All vertex colors are white (`0xFFFFFFFF`), so the MODULATE combiner (`TEX0 × SHADE0`) produces `texture_color × 1.0 = texture_color`.
@@ -199,6 +201,6 @@ The integration harness drives the following register-write sequence into UNIT-0
   The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured-cube`.
 - **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PPM, copy it to `spi_gpu/tests/golden/textured_cube.ppm`, and commit.
-  The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes, the perspective-correct interpolation logic is modified (UNIT-005 incremental interpolation redesign), the format-select mux path in UNIT-006 changes, the COMBINE_MODE=MODULATE pipeline behavior changes in UNIT-010, or the UV format mismatch between the rasterizer output and pixel pipeline UV consumption is corrected.
+  The golden image must be regenerated and re-approved whenever: the rasterizer tiled address stride changes; the perspective-correct interpolation logic in UNIT-005 is modified; the format-select mux path in UNIT-006 changes; the COMBINE_MODE=MODULATE pipeline behavior in UNIT-010 changes; or the rasterizer traversal order changes.
 - **VER-014 together with VER-005** (Texture Decoder Unit Testbench) and **VER-012** (Textured Triangle) provide supplementary integration coverage of REQ-003.01.
   VER-014 additionally provides supplementary integration coverage of REQ-005.02 alongside VER-011.

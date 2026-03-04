@@ -51,8 +51,8 @@ The FPGA executes a self-test boot screen immediately after PLL lock, before any
   register writes     SPI 25 MHz   │  Register File (vertex accumulator)  │
  ──────────────────────────────────►│       │ (3rd VERTEX write)           │
    9-byte frames                    │       ▼                              │
-                                    │  Rasterizer (12-state FSM)           │
-                                    │       │ (fragment: x,y,z,color,UV)  │
+                                    │  Rasterizer (edge-walk + persp corr) │
+                                    │       │ (fragment: x,y,z,color,UV,lod)│
                                     │       ▼                              │
                                     │  Pixel Pipeline (Z/tex/blend)        │
                                     │       │            Mem Arbiter       │
@@ -70,8 +70,8 @@ The FPGA executes a self-test boot screen immediately after PLL lock, before any
 **On the FPGA**, the SPI slave deserializes 72 bits into a command FIFO (depth 32, custom soft FIFO backed by a regular memory array).
 At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstream that execute a self-test boot screen autonomously (see DD-019); during normal operation, only SPI-sourced commands flow through the FIFO.
 The register file consumes FIFO entries, latching color/UV/position state.
-Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box in 4×4 tile order, performs edge tests, and interpolates Z, vertex colors, and UV coordinates per fragment.
-The rasterizer emits per-fragment data (x, y, z, color0, color1, uv0, uv1) via a valid/ready handshake to the pixel pipeline (UNIT-006).
+Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box in 4×4 tile order, performs edge tests, interpolates Z, Q (1/W), vertex colors, and UV projections per fragment, and applies perspective correction internally (1/Q via reciprocal LUT; true U, V reconstructed via DSP multipliers).
+The rasterizer emits per-fragment data (x, y, z, color0, color1, uv0, uv1, lod) via a valid/ready handshake to the pixel pipeline (UNIT-006); `uv0` and `uv1` carry true perspective-correct U, V coordinates ready for texel addressing.
 The pixel pipeline performs early Z testing, texture cache lookup and sampling, color combining, alpha blending, dithering, and writes passing pixels and updated depth values to the framebuffer and Z-buffer in SDRAM via the memory arbiter.
 The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at the 25 MHz pixel clock (synchronous 4:1 from the 100 MHz core clock).
 

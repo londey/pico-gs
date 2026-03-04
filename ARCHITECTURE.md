@@ -45,9 +45,11 @@ When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
 The CMD_EMPTY GPIO indicates the FIFO is drained and no command is executing, which the host must check before issuing a register read (reads bypass the FIFO and require an idle register file).
 
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
-The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using edge-function increments, interpolating Z, two vertex colors, and two UV coordinate pairs per fragment.
+The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using incremental derivative-based traversal with 7 MULT18X18D DSP blocks.
+It interpolates Z, Q (1/W), two vertex colors, and two UV coordinate pairs (S×Q, T×Q perspective projections at vertices), then applies perspective correction internally: a reciprocal LUT computes 1/Q per pixel (reusing the edge-setup LUT via 1 MULT18X18D), and four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.
+The per-pixel level-of-detail (LOD) is derived from Q via CLZ and emitted on the fragment bus as `frag_lod` (UQ4.4).
 All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
-The pixel pipeline (UNIT-006) performs early Z testing and dual-texture sampling through per-sampler caches.
+The pixel pipeline (UNIT-006) performs early Z testing and dual-texture sampling through per-sampler caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
 The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per clock: each stage evaluates `(A-B)*C+D` independently for RGB and alpha, selecting from texture colors, two interpolated vertex colors (SHADE0 for diffuse, SHADE1 for specular), per-draw-call constant colors, and a combined-output feedback path.
 Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add in a single pass; for simple single-equation rendering, stage 1 is configured as a pass-through.
 After optional alpha blending and ordered dithering, fragments are written to the double-buffered framebuffer in SDRAM.
