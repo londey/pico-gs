@@ -6,7 +6,6 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 
 ## Implements Requirements
 
-- REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
 - REQ-003.01 (Textured Triangle)
 - REQ-003.02 (Multi-Texture Rendering — dual-texture per pass)
@@ -369,6 +368,9 @@ Burst lengths differ by format: 4 (BC1/BC4), 8 (BC2/BC3/R8), 16 (RGB565), 32 (RG
 The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
 The tiled address calculation uses only shifts and masks; no multiply hardware is required.
 Render targets with power-of-two dimensions can be bound directly as texture sources (format RGB565 tiled) with no copy or conversion step.
+
+**Phase 2 note:** REQ-002.03 has been updated to remove `frag_q` from the fragment bus and add `frag_lod` (UQ4.4), and to change UV semantics to true perspective-correct U/V coordinates.
+The UV receive description in Stage 1 (Q4.12 format), the perspective-correct UV division logic, and the LOD selection for trilinear filtering will be revised in Phase 2 design document updates to reflect the new fragment bus definition.
 
 **Architectural separation:** The pixel pipeline is decomposed into:
 

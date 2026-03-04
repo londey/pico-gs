@@ -11,7 +11,8 @@
       "Bash(/workspaces/pico-gs/.syskit/scripts/manifest-snapshot.sh /workspaces/pico-gs/.syskit/tasks/2026-03-03_remove_rust_app_code/)",
       "Bash(bash build.sh --fpga-only --no-test)",
       "Bash(bash /workspaces/pico-gs/build.sh --firmware-only)",
-      "WebFetch(domain:yosyshq.readthedocs.io)"
+      "WebFetch(domain:yosyshq.readthedocs.io)",
+      "Bash(/workspaces/pico-gs/.syskit/scripts/manifest-check.sh /workspaces/pico-gs/.syskit/analysis/2026-03-04_rasterizer_phase1_register_req_cleanup/snapshot.md)"
     ]
   }
 }

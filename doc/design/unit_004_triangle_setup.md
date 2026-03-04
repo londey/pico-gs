@@ -10,7 +10,6 @@ Prepares triangle for rasterization
 
 ## Implements Requirements
 
-- REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
 - REQ-002.03 (Rasterization Algorithm)
 - REQ-002 (Rasterizer)
@@ -173,6 +172,8 @@ See DD-015 for rationale.
 UV passthrough covers up to 2 sets (UV0, UV1 only; UV2_UV3 register removed).
 The Q/W passthrough enables perspective-correct UV interpolation in UNIT-005: the rasterizer interpolates Q/W as a plain scalar, and UNIT-006 divides the interpolated (UV × Q) by the interpolated Q to recover perspective-correct UV before the texture lookup.
 The second vertex color (color1) supports the color combiner's VER_COLOR1 input for specular highlights, emissive terms, or blend factors.
+
+**Phase 2 note:** The Q/W passthrough and `inv_area` input (from UNIT-003, related to the AREA_SETUP register being removed in Phase 1) will be reviewed and updated in Phase 2 design document revisions (UNIT-005.x). The AREA_SETUP register (INT-010, index 0x05) has been removed; the impact on how `inv_area` is provided to this unit is a Phase 2 design concern.
 
 **Unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
 The setup FSM (IDLE → SETUP → SETUP_2 → SETUP_3) completes edge coefficient computation in 3 cycles (30 ns at 100 MHz) using a shared pair of 11×11 multipliers.

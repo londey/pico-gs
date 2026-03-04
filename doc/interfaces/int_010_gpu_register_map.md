@@ -16,7 +16,6 @@ Key GPU requirement areas that depend on this interface:
 - REQ-001.02 (Memory Upload Interface) — Area 1: GPU SPI Controller
 - REQ-001.04 (Command Buffer FIFO) — Area 1: GPU SPI Controller
 - REQ-001.05 (Vertex Submission Protocol) — Area 1: GPU SPI Controller
-- REQ-002.01 (Flat Shaded Triangle) — Area 2: Rasterizer
 - REQ-002.02 (Gouraud Shaded Triangle) — Area 2: Rasterizer
 - REQ-002.03 (Rasterization Algorithm) — Area 2: Rasterizer
 - REQ-003.01 (Textured Triangle) — Area 3: Texture Samplers

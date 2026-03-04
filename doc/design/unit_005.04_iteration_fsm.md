@@ -36,6 +36,11 @@ Manages the fragment output bus handshake: asserts frag_valid when a fragment is
 - `spi_gpu/src/render/rasterizer.sv`: Iteration FSM logic within the parent rasterizer module.
   Corresponds to the `always_comb` next-state block for the iteration state machine and the associated flat `always_ff` register assignments.
 
+## Design Notes
+
+**Phase 2 note:** REQ-002.03 has been updated to mandate 4×4 tile traversal order instead of scanline order.
+The bounding box walk algorithm documented in this unit will be revised in Phase 2 design document updates to reflect the new traversal order.
+
 ## Verification
 
 Covered by UNIT-005 verification (VER-001, VER-010–VER-014).

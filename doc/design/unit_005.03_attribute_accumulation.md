@@ -37,6 +37,9 @@ Outputs interpolated attribute values to the fragment output bus at each inside 
 UV components are output as Q4.12 by extracting bits [31:16] of the Q4.28 accumulator (discarding the 16 guard bits).
 Color components are promoted from 8-bit UNORM to Q4.12 for the fragment output bus (see UNIT-006, Stage 3).
 
+**Phase 2 note:** REQ-002.03 has been updated to remove `frag_q` from the fragment bus and add `frag_lod` (UQ4.4), and to change UV semantics to true perspective-correct U/V coordinates.
+The accumulator set (currently 13 attributes) and UV output description will be revised in Phase 2 design document updates.
+
 ## Implementation
 
 - `spi_gpu/src/render/rasterizer.sv`: Attribute accumulation logic within the parent rasterizer module.

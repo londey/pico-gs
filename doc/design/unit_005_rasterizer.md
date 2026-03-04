@@ -10,7 +10,6 @@ Edge-walking rasterization engine
 
 ## Implements Requirements
 
-- REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
 - REQ-002.03 (Rasterization Algorithm)
 - REQ-003.01 (Textured Triangle)
@@ -136,6 +135,9 @@ Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM
 **Burst-friendly access patterns:** The edge-walking algorithm emits fragments in scanline order (left-to-right within each row of the bounding box), producing sequential screen-space positions within each 4×4 tile.
 This sequential output enables the downstream pixel pipeline (UNIT-006) and SRAM arbiter (UNIT-007) to exploit SDRAM burst write mode for framebuffer writes and burst read/write mode for Z-buffer accesses, improving effective SDRAM throughput for runs of horizontally adjacent fragments.
 The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tiles per row as `1 << (WIDTH_LOG2 - 2)`.
+
+**Phase 2 note:** REQ-002.03 has been updated to mandate 4×4 tile traversal order and redefines the fragment bus format (removing `frag_q`, adding `frag_lod` UQ4.4, updating UV semantics to true perspective-correct U/V coordinates).
+The algorithm description, fragment bus documentation, and sub-unit descriptions in this document will be updated to reflect those changes in Phase 2 design document revisions.
 
 **Incremental interpolation (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
 The rasterizer exploits this by computing edge values and all attribute derivatives at the bounding box origin once per triangle (using multiplies in the ITER_START / INIT_E1 / INIT_E2 window), then stepping all edge and attribute accumulators incrementally with pure addition in the per-pixel inner loop.

@@ -126,21 +126,21 @@ The LUT is double-buffered in EBR and auto-loaded from SDRAM via DMA during vbla
 
 Each column shows a value's lifetime from production (first ●) to last consumption (last ●).
 
-| Stage | x, y | z | shade0 | shade1 | uv | tex0 | tex1 | comb | color | SDRAM access |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
-| Rasterizer | ● | ● | ● | ● | ● | | | | | |
-| Stipple Test | ● | ● | ● | ● | ● | | | | | |
-| Depth Range Clip | ● | ● | ● | ● | ● | | | | | |
-| Early Z Test | ● | ● | ● | ● | ● | | | | | Z-buffer read |
-| Texture Sample | ● | ● | ● | ● | ● | ● | ● | | | Texture read (cache miss) |
-| Color Combiner 0 | ● | ● | ● | ● | | ● | ● | ● | | |
-| Color Combiner 1 | ● | ● | ● | ● | | ● | ● | ● | ● | |
-| Alpha Test | ● | ● | | | | | | | ● | |
-| Alpha Blend | ● | ● | | | | | | | ● | Framebuffer read (dst) |
-| Dither | ● | ● | | | | | | | ● | |
-| Pixel Write | ● | ● | | | | | | | ● | FB write, Z write |
+| Stage | x, y | z | shade0 | shade1 | uv | lod | tex0 | tex1 | comb | color | SDRAM access |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
+| Rasterizer | ● | ● | ● | ● | ● | ● | | | | | |
+| Stipple Test | ● | ● | ● | ● | ● | ● | | | | | |
+| Depth Range Clip | ● | ● | ● | ● | ● | ● | | | | | |
+| Early Z Test | ● | ● | ● | ● | ● | ● | | | | | Z-buffer read |
+| Texture Sample | ● | ● | ● | ● | ● | ● | ● | ● | | | Texture read (cache miss) |
+| Color Combiner 0 | ● | ● | ● | ● | | | ● | ● | ● | | |
+| Color Combiner 1 | ● | ● | ● | ● | | | ● | ● | ● | ● | |
+| Alpha Test | ● | ● | | | | | | | | ● | |
+| Alpha Blend | ● | ● | | | | | | | | ● | Framebuffer read (dst) |
+| Dither | ● | ● | | | | | | | | ● | |
+| Pixel Write | ● | ● | | | | | | | | ● | FB write, Z write |
 
-**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed: sign at [15], integer [14:12], fractional [11:0]); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
+**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits: 4-bit integer mip level, 4-bit trilinear blend fraction, derived from interpolated Q = 1/W by the rasterizer); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
 Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
 After dither, color is truncated to RGB565 (16-bit) for framebuffer write.
 

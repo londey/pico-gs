@@ -8,11 +8,11 @@
 
 ## Requirement
 
-The system SHALL rasterize triangles from vertex data into per-pixel fragments, supporting flat shading, Gouraud shading, and edge-function-based scan conversion.
+The system SHALL rasterize triangles from vertex data into per-pixel fragments, supporting Gouraud shading and edge-function-based coverage evaluation.
 
 ## Rationale
 
-The rasterizer area groups all requirements related to converting triangle primitives (defined by three vertices) into a stream of pixel fragments with interpolated attributes (color, depth, texture coordinates).
+The rasterizer area groups all requirements related to converting triangle primitives (defined by three vertices) into a stream of pixel fragments with Gouraud-interpolated colors, perspective-correct texture coordinates, and depth.
 
 ## Parent Requirements
 
@@ -20,7 +20,6 @@ None (top-level area)
 
 ## Child Requirements
 
-- REQ-002.01 (Flat Shaded Triangle)
 - REQ-002.02 (Gouraud Shaded Triangle)
 - REQ-002.03 (Rasterization Algorithm)
 

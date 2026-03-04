@@ -168,3 +168,5 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) are Q4.12 (16-bit signed) on the rasterizer→pixel_pipeline fragment bus, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   If the UV format mismatch between the rasterizer output and the pixel pipeline's UV consumption logic is corrected (the pixel pipeline must extract the Q4.12 fractional part correctly rather than treating the bus as Q1.15), the rendered checker pattern will change at pixel level.
   In that case, re-run this test, visually inspect the corrected output, and re-approve the golden image before committing.
+  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus UV semantics to true perspective-correct U/V coordinates and removes `frag_q`.
+  When Phase 2 RTL changes land, this test's golden image must be re-baselined and the Notes section updated to reflect the new bus definition.

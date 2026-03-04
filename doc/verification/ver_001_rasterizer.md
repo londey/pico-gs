@@ -57,6 +57,10 @@ The testbench drives known triangle configurations through the triangle setup an
    UV0 and UV1 coordinates on the fragment output bus are Q4.12 (16-bit signed, 4 integer bits, 12 fractional bits) as defined in `fp_types_pkg.sv`.
    Reference values are computed offline using the same incremental step model (not the barycentric MAC model), with UV values represented in Q4.12.
 
+   **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus format — `frag_q` is removed, `frag_lod` (UQ4.4) is added, and UV semantics change to true perspective-correct U/V coordinates.
+   This step and the Expected Results section will require updating once Phase 2 implementation is complete.
+   Do not update this procedure until the RTL changes are in place.
+
 5. **Fragment output bus handshake.**
    Verify that the rasterizer emits fragments using the valid/ready handshake protocol on the fragment output bus.
    Assert `ready = 0` from the consumer side for several cycles while fragments are being generated, then assert `ready = 1`.
@@ -83,6 +87,8 @@ The testbench drives known triangle configurations through the triangle setup an
   - Degenerate triangles produce the expected fragment count (0 or 1 as specified).
   - Winding order tests produce consistent edge function signs.
 
+  **Note (re-baselining required after Phase 2):** Expected Results for step 4 (interpolated Q and UV format) will need updating after Phase 2 changes the fragment bus — `frag_q` removal, `frag_lod` (UQ4.4) addition, and updated UV semantics.
+
 - **Fail Criteria:**
   - Any edge function coefficient differs from the reference value.
   - Bounding box exceeds the configured surface bounds or is incorrectly computed for any `fb_width_log2` / `fb_height_log2` combination.
@@ -108,6 +114,8 @@ The testbench drives known triangle configurations through the triangle setup an
   Fragment data (x, y, z, color0, color1, uv0, uv1, q) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
   UV coordinates (`frag_uv0`, `frag_uv1`) are Q4.12 (16-bit signed) on this bus, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   The testbench instantiates a simple ready-signal driver to simulate downstream back-pressure.
+  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines this bus — `frag_q` is removed, `frag_lod` (UQ4.4) is added, and UV represents true perspective-correct U/V coordinates.
+  The testbench reference model, step 4 procedure, and expected results must be updated to match after Phase 2 RTL changes land.
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.
   The testbench clock should match this frequency for cycle-accurate fragment throughput verification.
 - Edge function coefficients use serialized computation through a shared pair of 11x11 multipliers (3 setup cycles + 3 initial evaluation cycles).

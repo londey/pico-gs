@@ -186,6 +186,8 @@ The integration harness drives the following register-write sequence into UNIT-0
   The checker pattern on a perspective-projected cube face exhibits clear foreshortening — this makes affine warping artifacts and UV format extraction errors immediately visible in the golden image comparison.
   VER-012 verifies the same interpolation path on a single flat triangle; VER-014 provides additional coverage under projection angles that produce stronger W variation across the triangle surface.
   If the UV format mismatch between the rasterizer output and the pixel pipeline's UV consumption logic is corrected, the rendered checker pattern on all faces will change at pixel level and the golden image must be re-approved.
+  **Note (re-baselining required after Phase 2):** REQ-002.03 redefines the fragment bus UV semantics to true perspective-correct U/V coordinates and removes `frag_q` (adding `frag_lod` UQ4.4 in its place).
+  When Phase 2 RTL changes land, this test's golden image must be re-baselined and the Notes section updated to reflect the new bus definition.
 - **Multiple cache fill patterns:** A single-triangle test (VER-012) accesses texture cache sets in a predictable sweep; a 3D cube with multiple faces at different orientations accesses cache sets in spatially varied patterns.
   This exercises cache tag matching, set indexing, and eviction behavior more thoroughly than VER-012 alone.
 - **MODULATE combiner:** All vertex colors are white (`0xFFFFFFFF`), so the MODULATE combiner (`TEX0 × SHADE0`) produces `texture_color × 1.0 = texture_color`.

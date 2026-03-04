@@ -18,7 +18,7 @@ Internal
 ## Serves Requirement Areas
 
 - Area 1: GPU SPI Controller (REQ-001.01, REQ-001.02, REQ-001.05, REQ-013.01)
-- Area 2: Rasterizer (REQ-002.01, REQ-002.02, REQ-002.03)
+- Area 2: Rasterizer (REQ-002.02, REQ-002.03)
 - Area 3: Texture Samplers (REQ-003.01, REQ-003.02, REQ-003.03, REQ-003.04, REQ-003.05, REQ-003.06, REQ-003.08)
 - Area 4: Fragment Processor/Color Combiner (REQ-004.01, REQ-004.02)
 - Area 5: Blend/Frame Buffer Store (REQ-005.01, REQ-005.02, REQ-005.04, REQ-005.05, REQ-005.06, REQ-005.07, REQ-005.08, REQ-005.09, REQ-005.10)
@@ -29,7 +29,6 @@ Internal
 
 - REQ-001.01 (Basic Host Communication) — Area 1: GPU SPI Controller
 - REQ-005.01 (Framebuffer Management) — Area 5: Blend/Frame Buffer Store
-- REQ-002.01 (Flat Shaded Triangle) — Area 2: Rasterizer
 - REQ-002.02 (Gouraud Shaded Triangle) — Area 2: Rasterizer
 - REQ-005.02 (Depth Tested Triangle) — Area 5: Blend/Frame Buffer Store
 - REQ-003.01 (Textured Triangle) — Area 3: Texture Samplers
@@ -206,7 +205,7 @@ Step 3: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 **Notes**:
 - VER_COLOR0 (diffuse) and VER_COLOR1 (specular) are the two vertex colors
 - The color combiner (CC_MODE register 0x18) controls how these inputs are combined
-- In flat shading mode (GOURAUD=0), only vertex 0's colors are used
+- VER_COLOR0 and VER_COLOR1 are interpolated across the triangle (Gouraud shading)
 - Values are 0-255, where 255 = full intensity
 - Color is associated with the next VERTEX write
 
@@ -299,23 +298,24 @@ Reserved for future vertex attributes (normals, tangents, skinning weights, etc.
 
 ### 0x06: VERTEX
 
-Latches vertex position and 1/W, then triggers vertex push based on **RENDER_MODE[TRI_KICK_MODE]** field.
+Deprecated. Use VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) instead. This entry is retained for reference; the register address is now VERTEX_NOKICK.
 
 ```
-[63:48]   Q = 1/W (1.15 signed fixed-point)
+[63:48]   Q = 1/W (Q4.12 signed fixed-point)
 [47:32]   Z depth (16 bits unsigned)
-[31:16]   Y coordinate (12.4 signed fixed-point)
-[15:0]    X coordinate (12.4 signed fixed-point)
+[31:16]   Y coordinate (Q12.4 signed fixed-point)
+[15:0]    X coordinate (Q12.4 signed fixed-point)
 ```
 
-**Fixed-Point Format (12.4)**:
+**Fixed-Point Format (Q12.4)**:
 - Bits 15:4: Signed integer (-2048 to +2047)
 - Bits 3:0: Fractional (1/16 pixel)
 
-**Fixed-Point Format Q (1.15)**:
+**Fixed-Point Format Q (Q4.12)**:
 - Bit 15: Sign
-- Bits 14:0: Fractional value
-- Same format as UQ/VQ in UV registers
+- Bits 14:12: Integer part (3 bits, range -8 to +7)
+- Bits 11:0: Fractional value (resolution 1/4096)
+- Range: -8.0 to +7.999 (same format as UV0_UV1 ST coordinates)
 
 **Z Format (16 bits)**:
 - Unsigned, 0 = near plane, 0xFFFF = far plane
@@ -341,10 +341,10 @@ Write to VERTEX:
 Latches vertex position and 1/W without triggering triangle rasterization. Used to accumulate vertices for strips, fans, or explicit triangle submission.
 
 ```
-[63:48]   Q = 1/W (1.15 signed fixed-point)
+[63:48]   Q = 1/W (Q4.12 signed fixed-point)
 [47:32]   Z depth (16 bits unsigned)
-[31:16]   Y coordinate (12.4 signed fixed-point)
-[15:0]    X coordinate (12.4 signed fixed-point)
+[31:16]   Y coordinate (Q12.4 signed fixed-point)
+[15:0]    X coordinate (Q12.4 signed fixed-point)
 ```
 
 **Behavior**:
@@ -369,10 +369,10 @@ Write to VERTEX_NOKICK:
 Latches vertex position and 1/W, then triggers triangle rasterization with vertex order (v[0], v[1], v[2]).
 
 ```
-[63:48]   Q = 1/W (1.15 signed fixed-point)
+[63:48]   Q = 1/W (Q4.12 signed fixed-point)
 [47:32]   Z depth (16 bits unsigned)
-[31:16]   Y coordinate (12.4 signed fixed-point)
-[15:0]    X coordinate (12.4 signed fixed-point)
+[31:16]   Y coordinate (Q12.4 signed fixed-point)
+[15:0]    X coordinate (Q12.4 signed fixed-point)
 ```
 
 **Behavior**:
@@ -399,10 +399,10 @@ Write to VERTEX_KICK_012:
 Latches vertex position and 1/W, then triggers triangle rasterization with **reversed** vertex order (v[0], v[2], v[1]).
 
 ```
-[63:48]   Q = 1/W (1.15 signed fixed-point)
+[63:48]   Q = 1/W (Q4.12 signed fixed-point)
 [47:32]   Z depth (16 bits unsigned)
-[31:16]   Y coordinate (12.4 signed fixed-point)
-[15:0]    X coordinate (12.4 signed fixed-point)
+[31:16]   Y coordinate (Q12.4 signed fixed-point)
+[15:0]    X coordinate (Q12.4 signed fixed-point)
 ```
 
 **Behavior**:
@@ -830,7 +830,7 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
 [3]       Z_WRITE_EN: Write to Z-buffer on depth test pass
 [2]       Z_TEST_EN: Enable depth testing
 [1]       Reserved
-[0]       GOURAUD: Enable Gouraud shading (vs flat shading)
+[0]       GOURAUD: Enable Gouraud shading (1=interpolate vertex colors; 0=reserved, treat as 1)
 ```
 
 **Update Frequency by Field**:

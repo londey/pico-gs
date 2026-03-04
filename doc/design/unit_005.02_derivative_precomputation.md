@@ -31,6 +31,8 @@ Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 13 interpolat
 Derivative computation uses `inv_area` from UNIT-004 and the A/B edge coefficients; the shared multiplier pair is reused in the same 3-cycle window.
 Initializes the accumulated attribute value registers at the bounding box origin.
 
+**Phase 2 note:** REQ-002.03 has been updated to remove `frag_q` from the fragment bus and add `frag_lod` (UQ4.4); the attribute list and derivative count documented here will be revised in Phase 2 design document updates.
+
 ### Outputs
 
 - dAttr/dx, dAttr/dy for all 13 attributes
