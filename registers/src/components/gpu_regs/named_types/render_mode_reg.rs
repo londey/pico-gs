@@ -41,7 +41,8 @@ impl RenderModeReg {
     pub const GOURAUD_WIDTH: usize = 1;
     pub const GOURAUD_MASK: u64 = 0x1;
 
-    /// GOURAUD
+    /// GOURAUD — Gouraud shading enable.
+    /// Must be set to 1; GOURAUD=0 is reserved under the current design.
     #[inline(always)]
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
@@ -50,7 +51,8 @@ impl RenderModeReg {
         val != 0
     }
 
-    /// GOURAUD
+    /// GOURAUD — Gouraud shading enable.
+    /// Must be set to 1; GOURAUD=0 is reserved under the current design.
     #[inline(always)]
     pub fn set_gouraud(&mut self, val: bool) {
         let val = val as u64;

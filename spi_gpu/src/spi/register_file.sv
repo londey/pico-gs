@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_003_register_file.md `6c3a6feba8ffdeba` 2026-02-28
+// Spec-ref: unit_003_register_file.md `86518c26047284a7` 2026-03-04
 // Register File - GPU State and Vertex State Machine (INT-010 v10.0)
 // Decodes register addresses and manages vertex submission
 // Implements the vertex state machine that triggers triangle rasterization
@@ -35,7 +35,7 @@ module register_file (
     output reg          rect_valid,
 
     // Rendering mode flags (combinational decode of render_mode register)
-    output reg          mode_gouraud,       // Gouraud shading (RENDER_MODE[0])
+    output reg          mode_gouraud,       // Gouraud shading (RENDER_MODE[0]); GOURAUD=0 is reserved
     output reg          mode_z_test,        // Z-test enabled (RENDER_MODE[2])
     output reg          mode_z_write,       // Z-write enabled (RENDER_MODE[3])
     output reg          mode_color_write,   // Color buffer write (RENDER_MODE[4])
@@ -195,7 +195,7 @@ module register_file (
     // ========================================================================
 
     always_comb begin
-        mode_gouraud        = render_mode_reg[0];
+        mode_gouraud        = render_mode_reg[0];   // GOURAUD=0 is reserved; host must set to 1
         // render_mode_reg[1] is reserved
         mode_z_test         = render_mode_reg[2];
         mode_z_write        = render_mode_reg[3];

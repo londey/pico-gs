@@ -300,7 +300,9 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     reg render_mode_reg {
         name = "RENDER_MODE";
         desc = "Unified rendering state (Gouraud, Z, alpha, culling, dithering, stipple)";
-        field {} GOURAUD[0:0]                                  = 0;
+        field {
+            desc = "Gouraud shading enable. Must be set to 1; GOURAUD=0 is reserved under the current design.";
+        } GOURAUD[0:0]                                  = 0;
         field {} RSVD_1[1:1]                                   = 0;
         field {} Z_TEST_EN[2:2]                                = 0;
         field {} Z_WRITE_EN[3:3]                               = 0;
