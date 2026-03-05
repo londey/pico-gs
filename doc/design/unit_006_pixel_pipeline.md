@@ -148,7 +148,7 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
   - FORMAT=RGBA8888 (5): Burst read 64 bytes (burst_len=32), convert to RGBA5652 (truncate to RGBA5652 precision)
   - FORMAT=R8 (6): Burst read 16 bytes (burst_len=8), convert to RGBA5652 (R replicated to G and B, A=11)
 - Apply swizzle pattern (REQ-003.04, TEXn_CFG.SWIZZLE)
-- Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels using LOD = `frag_lod[7:4]` + `TEXn_CFG.LOD_BIAS`; the fractional blend weight is `frag_lod[3:0]`; requires MIP_LEVELS > 1
+- Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels using LOD = `frag_lod[7:4]` + `TEXn_MIP_BIAS`; the fractional blend weight is `frag_lod[3:0]`; requires MIP_LEVELS > 1
 
 **Stage 3: Format Promotion (RGBA5652 → Q4.12):**
 - Promote texture data to Q4.12 via `texel_promote.sv` (combinational):
@@ -376,7 +376,7 @@ Perspective correction (1/Q division and UV reconstruction) is fully handled by 
 UNIT-006 consumes UV directly for texel addressing; no perspective division occurs within the pixel pipeline.
 
 **LOD selection:** The per-pixel `frag_lod` (UQ4.4) value is produced by UNIT-005.04 via CLZ on the interpolated Q (1/W) value.
-UNIT-006 adds `TEXn_CFG.LOD_BIAS` to `frag_lod[7:4]` (the integer mip-level component) to select the final mip level for each texture unit.
+UNIT-006 adds `TEXn_MIP_BIAS` to `frag_lod[7:4]` (the integer mip-level component) to select the final mip level for each texture unit.
 `frag_lod[3:0]` carries the fractional blend weight used for trilinear filtering.
 
 **Architectural separation:** The pixel pipeline is decomposed into:

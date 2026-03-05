@@ -60,7 +60,7 @@ Fragment data to UNIT-006 (Pixel Pipeline):
 - Interpolated primary vertex color (VER_COLOR0) in UNORM8 (4× 8-bit channels: R, G, B, A), clamped from Q4.12 accumulator output
 - Interpolated secondary vertex color (VER_COLOR1) in UNORM8 (4× 8-bit channels: R, G, B, A), clamped from Q4.12 accumulator output
 - Interpolated perspective-correct UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point — these are true U, V coordinates, not S/T projections
-- Per-pixel LOD estimate (frag_lod) in UQ4.4 unsigned fixed-point, derived from CLZ on the interpolated Q/W value; UNIT-006 adds TEXn_CFG.LOD_BIAS to form the final mip level
+- Per-pixel LOD estimate (frag_lod) in UQ4.4 unsigned fixed-point, derived from CLZ on the interpolated Q/W value; UNIT-006 adds TEXn_MIP_BIAS to form the final mip level
 
 **Note**: The rasterizer does not write directly to the framebuffer.
 All fragment output goes through the pixel pipeline (UNIT-006) for texture blending, dithering, and framebuffer conversion.
@@ -184,7 +184,7 @@ The 2-cycle perspective correction pipeline converts these to true U, V per pixe
 This removes the UV perspective division from the pixel pipeline (UNIT-006): frag_uv0 and frag_uv1 on the fragment bus carry fully corrected U, V in Q4.12.
 
 **Fragment bus — frag_lod:** CLZ on the interpolated Q/W value provides an unsigned integer mip-level estimate (frag_lod, UQ4.4).
-UNIT-006 adds TEXn_CFG.LOD_BIAS to frag_lod to produce the final mip level for texture cache lookup.
+UNIT-006 adds TEXn_MIP_BIAS to frag_lod to produce the final mip level for texture cache lookup.
 frag_q is not present on the fragment bus; perspective correction is complete before fragment emission.
 
 **Dual-texture + color combiner:** The rasterizer interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment, plus UV0, UV1, Z, and Q/W.

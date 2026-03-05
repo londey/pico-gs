@@ -608,11 +608,16 @@ Mipmap LOD (Level of Detail) bias for artistic control.
 ```
 
 **LOD Calculation**:
+
+The rasterizer (UNIT-005) derives a per-pixel LOD estimate from the interpolated Q (1/W) value using CLZ (count leading zeros).
+The result is emitted on the fragment bus as `frag_lod` in UQ4.4 format (4-bit integer mip level, 4-bit trilinear blend fraction).
+The pixel pipeline (UNIT-006) applies the bias:
+
 ```
-raw_lod = log₂(max(|du/dx|, |dv/dx|, |du/dy|, |dv/dy|))
-biased_lod = raw_lod + (MIP_BIAS / 4.0)
-final_lod = clamp(biased_lod, 0, MIP_LEVELS - 1)
-mip_level = round(final_lod)  // Nearest-mip mode
+rasterizer_lod = CLZ_derived_LOD(Q)          // UQ4.4 from UNIT-005
+biased_lod     = rasterizer_lod[7:4] + MIP_BIAS
+final_lod      = clamp(biased_lod, 0, MIP_LEVELS - 1)
+blend_fraction = rasterizer_lod[3:0]          // trilinear weight
 ```
 
 **Use Cases**:
