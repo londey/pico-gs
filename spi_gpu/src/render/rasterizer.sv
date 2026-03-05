@@ -13,7 +13,7 @@
 //   valid/ready over alternatives.
 //
 // Format: Fragment output bus carries interpolated attributes in extended
-// precision (Q4.12 color, 16-bit Z, Q4.12 UV, Q4.12 Q/W).
+// precision (Q4.12 color, 16-bit Z, Q4.12 UV, UQ4.4 LOD).
 //   Color packing: 4x16-bit Q4.12 channels packed into 64-bit bus.
 //   Each 16-bit channel: 1 sign + 3 integer + 12 fractional bits.
 //   UNORM8 [0,255] promoted to Q4.12 [0x0000, 0x0FFF].
@@ -21,9 +21,13 @@
 // Multiplier strategy (DD-024):
 //   Setup uses a shared pair of 11x11 multipliers, sequenced over 6 cycles
 //   (edge C coefficients + initial edge evaluation).
+//   A shared reciprocal LUT with 1 MULT18X18D linear interpolation is
+//   used for both inv_area (once per triangle) and 1/Q (per pixel).
+//   Per-pixel perspective correction uses 4 dedicated MULT18X18D blocks.
 //   All per-pixel attribute interpolation is performed by incremental
-//   addition only -- no per-pixel multiplies.
-//   Total: 2 (shared setup) = 2 MULT18X18D.
+//   addition only -- no per-pixel multiplies for attribute stepping.
+//   Total: 2 (C coefficients) + 1 (LUT interpolation shared) +
+//          4 (perspective correction) = 7 MULT18X18D.
 
 module rasterizer (
     input  wire         clk,
@@ -74,7 +78,9 @@ module rasterizer (
     output wire [63:0]  frag_color1,    // Q4.12 RGBA {R[63:48], G[47:32], B[31:16], A[15:0]}
     output wire [31:0]  frag_uv0,       // Q4.12 {U[31:16], V[15:0]}
     output wire [31:0]  frag_uv1,       // Q4.12 {U[31:16], V[15:0]}
-    output wire [15:0]  frag_q,         // Q4.12 perspective denominator
+    output wire [7:0]   frag_lod,       // UQ4.4 mip-level estimate
+    output wire         frag_tile_start, // First emitted fragment of 4x4 tile
+    output wire         frag_tile_end,  // Last emitted fragment of 4x4 tile
 
     // Framebuffer surface dimensions (from FB_CONFIG register via UNIT-003)
     input  wire [3:0]   fb_width_log2,  // log2(surface width), e.g. 9 for 512 pixels
@@ -96,13 +102,12 @@ module rasterizer (
         IDLE            = 4'd0,
         SETUP           = 4'd1,   // Edge A/B/bbox + edge0_C (shared mul)
         SETUP_2         = 4'd13,  // edge1_C (shared mul)
-        SETUP_3         = 4'd14,  // edge2_C (shared mul)
+        SETUP_3         = 4'd14,  // edge2_C (shared mul) + area computation
+        SETUP_RECIP     = 4'd12,  // Wait for reciprocal LUT (1 cycle)
         ITER_START      = 4'd2,   // e0_init (shared mul) + derivative latch + attr init
         INIT_E1         = 4'd4,   // e1_init (shared mul)
         INIT_E2         = 4'd15,  // e2_init (shared mul)
-        EDGE_TEST       = 4'd3,   // Inside test
-        INTERPOLATE     = 4'd5,   // Emit fragment + wait for frag_ready (DD-025 handshake)
-        ITER_NEXT       = 4'd11   // Move to next pixel
+        WALKING         = 4'd5    // Edge walk sub-module autonomous traversal
     } state_t;
 
     state_t state /* verilator public */;
@@ -191,8 +196,8 @@ module rasterizer (
     reg signed [10:0] edge2_B;
     reg signed [20:0] edge2_C;
 
-    // Iteration registers and edge functions are in raster_edge_walk sub-module.
-    // Attribute accumulators and derivatives are in raster_attr_accum sub-module.
+    // Inverse area (Q3.12) — latched from reciprocal LUT during SETUP_RECIP
+    reg signed [15:0] inv_area;
 
     // Iteration position wires (from raster_edge_walk sub-module)
     wire [9:0] curr_x;                   // Current pixel X (from edge walk)
@@ -200,6 +205,9 @@ module rasterizer (
 
     // Inside-triangle test result (from raster_edge_walk sub-module)
     wire inside_triangle;
+
+    // Walk completion signal (from raster_edge_walk sub-module)
+    wire walk_done;
 
     // ========================================================================
     // Shared Setup Multiplier (2 x 11x11 signed, muxed across 6 setup phases)
@@ -258,6 +266,82 @@ module rasterizer (
             default: begin end
         endcase
     end
+
+    // ========================================================================
+    // Reciprocal LUT (shared between inv_area and per-pixel 1/Q)
+    // ========================================================================
+
+    // Muxed LUT interface wires
+    logic signed [31:0] recip_lut_operand;
+    logic               recip_lut_valid_in;
+    wire  signed [15:0] recip_lut_recip_out;
+    wire         [4:0]  recip_lut_clz_out;
+    wire                recip_lut_valid_out;
+    wire                recip_lut_degenerate;
+
+    // Edge walk reciprocal interface (per-pixel 1/Q path)
+    wire signed [31:0] ew_recip_operand;
+    wire               ew_recip_valid_in;
+
+    // Triangle area for reciprocal LUT (computed in SETUP_3)
+    // area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+    // This uses the shared multiplier products from SETUP_3:
+    //   smul_p1 = x0 * y1, smul_p2 = x1 * y0
+    // But the area formula uses cross-products of edge vectors, not vertex products.
+    // We compute it directly from the edge A/B coefficients and vertex positions:
+    //   area = edge0_A * (x1 - x0) + edge0_B * (y1 - y0)... No, simpler:
+    //   area = sum of all edge C coefficients = edge0_C + edge1_C + edge2_C
+    //   (This is the signed area of the triangle, equal to the determinant.)
+    // Actually, area = edge0_A * edge1_B - edge0_B * edge1_A  (2x signed area)
+    // But we already have the C coefficients. The signed area is:
+    //   2*area = (y1-y2)(x2-x0)(... no.
+    // The edge function sum at vertex v0:
+    //   e0(v0) + e1(v0) + e2(v0) = 0 + area + 0 (for CW winding)
+    // Actually: area = e1_A * e0_B - e1_B * e0_A ... that needs multiplies.
+    //
+    // Simplest: reuse the C coefficient computation pattern.
+    //   area = (x1 - x0)*(y2 - y0) - (x2 - x0)*(y1 - y0)
+    // We can compute this from already-available edge coefficients:
+    //   edge0_A = y1 - y2,  edge0_B = x2 - x1
+    //   edge1_A = y2 - y0,  edge1_B = x0 - x2
+    //   edge2_A = y0 - y1,  edge2_B = x1 - x0
+    //   area = edge2_B * edge1_A - edge1_B * edge2_A
+    //        = (x1-x0)*(y2-y0) - (x0-x2)*(y0-y1)
+    //        = (x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)  ✓
+    // edge2_B and edge1_A are 11-bit signed, so their product fits in 22 bits.
+    // We compute this combinationally — it reuses the edge A/B values already latched.
+    wire signed [21:0] area_term1 = $signed(edge2_B) * $signed(edge1_A);
+    wire signed [21:0] area_term2 = $signed(edge1_B) * $signed(edge2_A);
+    wire signed [31:0] triangle_area = 32'(area_term1) - 32'(area_term2);
+
+    // FSM-based mux: during SETUP_3/SETUP_RECIP the parent drives the LUT
+    // with the triangle area; during traversal the edge walk drives it with Q/W.
+    wire setup_drives_recip = (state == SETUP_3) || (state == SETUP_RECIP);
+
+    always_comb begin
+        if (setup_drives_recip) begin
+            recip_lut_operand = triangle_area;
+            recip_lut_valid_in = (state == SETUP_3);
+        end else begin
+            recip_lut_operand = ew_recip_operand;
+            recip_lut_valid_in = ew_recip_valid_in;
+        end
+    end
+
+    raster_recip_lut u_recip_lut (
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .operand_in   (recip_lut_operand),
+        .valid_in     (recip_lut_valid_in),
+        .recip_out    (recip_lut_recip_out),
+        .clz_out      (recip_lut_clz_out),
+        .valid_out    (recip_lut_valid_out),
+        .degenerate   (recip_lut_degenerate)
+    );
+
+    // Unused signals from reciprocal LUT (setup path only uses recip_out)
+    wire [4:0] _unused_setup_clz = (state == SETUP_RECIP) ? recip_lut_clz_out : 5'd0;
+    wire       _unused_setup_valid = (state == SETUP_RECIP) ? recip_lut_valid_out : 1'b0;
 
     // ========================================================================
     // Derivative Precomputation Sub-module (UNIT-005.02 combinational)
@@ -423,16 +507,15 @@ module rasterizer (
     // Derivative latch (for raster_attr_accum)
     wire latch_derivs  = (state == ITER_START);
 
-    // Stepping signals shared by raster_attr_accum and raster_edge_walk
-    wire iter_step_x   = (state == ITER_NEXT) && (curr_x < bbox_max_x);
-    wire iter_step_y   = (state == ITER_NEXT) && !(curr_x < bbox_max_x) && (curr_y < bbox_max_y);
+    // Attribute step signals from raster_edge_walk sub-module
+    wire ew_attr_step_x;
+    wire ew_attr_step_y;
 
     // Edge walk control signals
     wire ew_do_idle       = (state == IDLE);
     wire ew_init_pos_e0   = (state == ITER_START);
     wire ew_init_e1       = (state == INIT_E1);
     wire ew_init_e2       = (state == INIT_E2);
-    wire ew_do_interpolate = (state == INTERPOLATE);
 
     // ========================================================================
     // Attribute Accumulator Sub-module Outputs
@@ -465,8 +548,8 @@ module rasterizer (
         .rst_n          (rst_n),
         // Control signals
         .latch_derivs   (latch_derivs),
-        .step_x         (iter_step_x),
-        .step_y         (iter_step_y),
+        .step_x         (ew_attr_step_x),
+        .step_y         (ew_attr_step_y),
         // Derivative inputs from raster_deriv
         .pre_c0r_dx     (pre_c0r_dx),
         .pre_c0r_dy     (pre_c0r_dy),
@@ -541,9 +624,6 @@ module rasterizer (
         .init_pos_e0    (ew_init_pos_e0),
         .init_e1        (ew_init_e1),
         .init_e2        (ew_init_e2),
-        .do_interpolate (ew_do_interpolate),
-        .step_x         (iter_step_x),
-        .step_y         (iter_step_y),
         // Shared multiplier products
         .smul_p1        (smul_p1),
         .smul_p2        (smul_p2),
@@ -560,6 +640,8 @@ module rasterizer (
         // Bounding box bounds
         .bbox_min_x     (bbox_min_x),
         .bbox_min_y     (bbox_min_y),
+        .bbox_max_x     (bbox_max_x),
+        .bbox_max_y     (bbox_max_y),
         // Promoted attribute values
         .out_c0r        (out_c0r),
         .out_c0g        (out_c0g),
@@ -570,12 +652,22 @@ module rasterizer (
         .out_c1b        (out_c1b),
         .out_c1a        (out_c1a),
         .out_z          (out_z),
-        // Raw UV/Q accumulator values
-        .uv0u_acc       (uv0u_acc),
-        .uv0v_acc       (uv0v_acc),
-        .uv1u_acc       (uv1u_acc),
-        .uv1v_acc       (uv1v_acc),
+        // S/T accumulator values (renamed from uv*_acc)
+        .s0_acc         (uv0u_acc),
+        .t0_acc         (uv0v_acc),
+        .s1_acc         (uv1u_acc),
+        .t1_acc         (uv1v_acc),
+        // Q/W accumulator
         .q_acc          (q_acc),
+        // Reciprocal LUT shared interface
+        .recip_operand  (ew_recip_operand),
+        .recip_valid_in (ew_recip_valid_in),
+        .recip_out      (recip_lut_recip_out),
+        .recip_clz_out  (recip_lut_clz_out),
+        .recip_valid_out(recip_lut_valid_out),
+        // Attribute accumulator step commands
+        .attr_step_x    (ew_attr_step_x),
+        .attr_step_y    (ew_attr_step_y),
         // Fragment handshake
         .frag_ready     (frag_ready),
         .frag_valid     (frag_valid),
@@ -586,10 +678,14 @@ module rasterizer (
         .frag_color1    (frag_color1),
         .frag_uv0       (frag_uv0),
         .frag_uv1       (frag_uv1),
-        .frag_q         (frag_q),
+        .frag_lod       (frag_lod),
+        .frag_tile_start(frag_tile_start),
+        .frag_tile_end  (frag_tile_end),
         // Iteration position
         .curr_x         (curr_x),
         .curr_y         (curr_y),
+        // Walk completion
+        .walk_done      (walk_done),
         // Edge test result
         .inside_triangle(inside_triangle)
     );
@@ -637,6 +733,11 @@ module rasterizer (
     wire [9:0] clamped_min_y = (raw_min_y > surf_max_y) ? surf_max_y : raw_min_y;
     wire [9:0] clamped_max_y = (raw_max_y > surf_max_y) ? surf_max_y : raw_max_y;
 
+    // Unused signals from edge walk sub-module
+    wire [9:0] _unused_curr_x = curr_x;
+    wire [9:0] _unused_curr_y = curr_y;
+    wire       _unused_inside = inside_triangle;
+
     // ========================================================================
     // State Register
     // ========================================================================
@@ -665,34 +766,26 @@ module rasterizer (
 
             SETUP:      next_state = SETUP_2;
             SETUP_2:    next_state = SETUP_3;
-            SETUP_3:    next_state = ITER_START;
+            SETUP_3:    next_state = SETUP_RECIP;
+
+            SETUP_RECIP: begin
+                // Wait for reciprocal LUT result (1-cycle latency).
+                // If triangle is degenerate (zero area), skip traversal.
+                if (recip_lut_degenerate) begin
+                    next_state = IDLE;
+                end else begin
+                    next_state = ITER_START;
+                end
+            end
+
             ITER_START: next_state = INIT_E1;
             INIT_E1:    next_state = INIT_E2;
-            INIT_E2:    next_state = EDGE_TEST;
+            INIT_E2:    next_state = WALKING;
 
-            EDGE_TEST: begin
-                if (inside_triangle) begin
-                    next_state = INTERPOLATE;
-                end else begin
-                    next_state = ITER_NEXT;
-                end
-            end
-
-            INTERPOLATE: begin
-                // DD-025: valid/ready handshake.  Stay in INTERPOLATE while
-                // the downstream pixel pipeline is not ready (frag_ready=0).
-                // Advance only when both frag_valid and frag_ready are high.
-                if (frag_valid && frag_ready) begin
-                    next_state = ITER_NEXT;
-                end
-            end
-
-            ITER_NEXT: begin
-                if (curr_x < bbox_max_x) begin
-                    next_state = EDGE_TEST;
-                end else if (curr_y < bbox_max_y) begin
-                    next_state = EDGE_TEST;
-                end else begin
+            WALKING: begin
+                // Edge walk sub-module handles tile traversal autonomously.
+                // Return to IDLE when walk is complete.
+                if (walk_done) begin
                     next_state = IDLE;
                 end
             end
@@ -777,14 +870,17 @@ module rasterizer (
     logic signed [10:0] next_edge2_B;
     logic signed [20:0] next_edge2_C;
 
+    // Inverse area
+    logic signed [15:0] next_inv_area;
+
     // Iteration next_* declarations are in raster_edge_walk sub-module.
     // Attribute derivative and accumulator next_* declarations are in
     // raster_attr_accum sub-module.
 
     // ========================================================================
-    // --- UNIT-005.01: Edge Setup (IDLE, SETUP, SETUP_2, SETUP_3) ---
+    // --- UNIT-005.01: Edge Setup (IDLE, SETUP, SETUP_2, SETUP_3, SETUP_RECIP) ---
     // ========================================================================
-    // Owns: tri_ready, vertex latches, edge coefficients, bbox
+    // Owns: tri_ready, vertex latches, edge coefficients, bbox, inv_area
 
     always_comb begin
         // Default: hold all triangle setup and edge coefficient registers
@@ -850,6 +946,7 @@ module rasterizer (
         next_bbox_max_x = bbox_max_x;
         next_bbox_min_y = bbox_min_y;
         next_bbox_max_y = bbox_max_y;
+        next_inv_area = inv_area;
 
         unique case (state)
             IDLE: begin
@@ -934,6 +1031,15 @@ module rasterizer (
 
             SETUP_3: begin
                 next_edge2_C = 21'(smul_p1 - smul_p2);
+                // Area computation and reciprocal LUT submission happen
+                // combinationally via triangle_area and recip_lut_valid_in mux.
+            end
+
+            SETUP_RECIP: begin
+                // Latch inv_area from the reciprocal LUT output
+                next_inv_area = recip_lut_recip_out;
+                // If degenerate, tri_ready will be re-asserted when FSM
+                // returns to IDLE via next-state logic.
             end
 
             default: begin end
@@ -1012,6 +1118,7 @@ module rasterizer (
             edge2_A <= 11'sb0;
             edge2_B <= 11'sb0;
             edge2_C <= 21'sb0;
+            inv_area <= 16'sb0;
         end else begin
             // UNIT-005.01 registers
             tri_ready      <= next_tri_ready;
@@ -1076,6 +1183,7 @@ module rasterizer (
             edge2_A <= next_edge2_A;
             edge2_B <= next_edge2_B;
             edge2_C <= next_edge2_C;
+            inv_area <= next_inv_area;
             // UNIT-005.04 registers are in raster_edge_walk sub-module.
         end
     end
