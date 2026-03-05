@@ -389,11 +389,11 @@ flowchart LR
 | UNIT-002 | Command FIFO | Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries. |
 | UNIT-003 | Register File | Stores GPU state and vertex data |
 | UNIT-004 | Triangle Setup | Prepares triangle for rasterization |
-| UNIT-005.01 | Edge Setup | Computes edge function coefficients and bounding box for a triangle. |
+| UNIT-005.01 | Edge Setup | Computes edge function coefficients, bounding box, and the internal triangle area reciprocal for a triangle. |
 | UNIT-005.02 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
 | UNIT-005.03 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
-| UNIT-005.04 | Iteration FSM | Drives the bounding box walk, edge testing, and fragment output handshake. |
-| UNIT-005 | Rasterizer | Edge-walking rasterization engine |
+| UNIT-005.04 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
+| UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
 | UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture sampling, and format promotion to Q4.12 |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
