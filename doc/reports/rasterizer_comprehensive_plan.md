@@ -422,11 +422,11 @@ For Q ∈ (0, 1] (the common case where W ≥ 1), the integer bits are zero and 
 **LOD bias for texture scale:**
 
 The raw `log2(W)` captures only distance.
-To select the correct mip level, the pixel pipeline adds a per-texture `LOD_BIAS` from the existing `TEXn_CFG` register.
+To select the correct mip level, the pixel pipeline adds a per-texture bias from the `TEXn_MIP_BIAS` register.
 The host computes this bias during texture setup based on texture dimensions and UV mapping scale (analogous to the PS2 GS's K/L LOD parameters).
 
 ```
-final_LOD = CLZ_derived_LOD + TEXn_CFG.LOD_BIAS
+final_LOD = CLZ_derived_LOD + TEXn_MIP_BIAS
 ```
 
 This is a single addition in the pixel pipeline — trivial.
@@ -444,7 +444,7 @@ The Q-based approach is strictly better for this GPU class: it varies correctly 
 
 `frag_lod` carries the integer + fractional CLZ-derived LOD per pixel.
 A compact format such as UQ4.4 (8-bit: 4-bit integer for up to 16 mip levels, 4-bit fraction for trilinear blending) is likely sufficient.
-The pixel pipeline adds `TEXn_CFG.LOD_BIAS` and clamps to the texture's available mip range.
+The pixel pipeline adds `TEXn_MIP_BIAS` and clamps to the texture's available mip range.
 
 ## Proposed Rasterizer Data Flow
 
@@ -560,7 +560,7 @@ flowchart TD
         LOD["frag_lod
         UQ4.4 ·8b· per pixel
         ·CLZ of interpolated Q·
-        ·pixel pipeline adds TEXn LOD_BIAS·"]
+        ·pixel pipeline adds TEXn_MIP_BIAS·"]
         BLK["block_first, block_last
         block_x, block_y
         ·4×4 tile framing·"]
@@ -679,14 +679,14 @@ Hierarchical tile rejection (test tile corners) skips fully-outside tiles.
    Sustained throughput: 1 pixel/clock (2-cycle pipeline for 1/Q + multiply).
    Fragment bus carries true U,V in Q4.12 — pixel pipeline contract unchanged.
    Q is removed from the fragment bus; per-pixel LOD is derived from CLZ of Q at zero extra cost (Finding 12).
-   The pixel pipeline adds a per-texture LOD_BIAS to select the correct mip level.
+   The pixel pipeline adds a per-texture `TEXn_MIP_BIAS` to select the correct mip level.
 
 ### What Remains Uncertain
 
 1. **ECP5 resource impact:** Whether the combinational multipliers in `raster_deriv.sv` need to be converted to DSP blocks, and whether the reciprocal LUT fits in distributed LUT or requires an EBR.
    The 7 MULT18X18D rasterizer budget is a deliberate allocation; the total system DSP budget will be reviewed after trimming in other areas.
 2. **Intra-tile pixel ordering:** Whether pixels within a 4x4 block should emit in row-major order, column-major, Z-order (Morton curve), or some other pattern optimized for downstream access.
-3. **LOD_BIAS register field:** The `TEXn_CFG` register needs a `LOD_BIAS` field (signed, ~Q4.4 or similar) for the pixel pipeline to add to the rasterizer's CLZ-derived LOD.
+3. **`TEXn_MIP_BIAS` register:** The `TEXn_MIP_BIAS` register (signed, ~Q4.4 or similar) provides the bias for the pixel pipeline to add to the rasterizer's CLZ-derived LOD.
    The exact bit width and whether min/max LOD clamp fields are also needed are pixel pipeline design concerns.
 
 ## Recommendations
@@ -755,7 +755,7 @@ The design units can reference the updated REQ-002.x requirements directly.
 **Specification changes:**
 - **UNIT-004** (triangle setup): Remove inv_area passthrough; confirm vertex packing matches updated register definitions.
 - **ARCHITECTURE.md**: Align traversal order description (already says 4x4 tile — verify consistency with new REQ-002.03); update DSP budget table; update fragment bus description.
-- **UNIT-006** (pixel pipeline) interface: Document Q removal from fragment bus (simplification, no functional change); add `LOD_BIAS` field to `TEXn_CFG` register in INT-010 if not already present; document LOD computation contract (`final_LOD = rasterizer_LOD + LOD_BIAS`).
+- **UNIT-006** (pixel pipeline) interface: Document Q removal from fragment bus (simplification, no functional change); confirm `TEXn_MIP_BIAS` register in INT-010 if not already present; document LOD computation contract (`final_LOD = rasterizer_LOD + TEXn_MIP_BIAS`).
 
 **Why third:** Integration changes depend on both the requirements (Phase 1) and the rasterizer design (Phase 2) being finalized.
 UNIT-006 changes are minimal — the pixel pipeline contract is preserved by design.
