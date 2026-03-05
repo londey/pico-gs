@@ -818,7 +818,9 @@ module gpu_top (
     wire [63:0] rast_frag_color1;
     wire [31:0] rast_frag_uv0;
     wire [31:0] rast_frag_uv1;
-    wire [15:0] rast_frag_q;
+    wire [7:0]  rast_frag_lod;
+    wire        rast_frag_tile_start;
+    wire        rast_frag_tile_end;
 
     rasterizer u_rasterizer (
         .clk(clk_core),
@@ -868,7 +870,9 @@ module gpu_top (
         .frag_color1(rast_frag_color1),
         .frag_uv0(rast_frag_uv0),
         .frag_uv1(rast_frag_uv1),
-        .frag_q(rast_frag_q),
+        .frag_lod(rast_frag_lod),
+        .frag_tile_start(rast_frag_tile_start),
+        .frag_tile_end(rast_frag_tile_end),
 
         // Framebuffer surface dimensions (from FB_CONFIG via register file)
         .fb_width_log2(fb_width_log2),
@@ -954,7 +958,9 @@ module gpu_top (
 
     // Unused rasterizer fragment output signals
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [15:0] _unused_rast_frag_q = rast_frag_q;
+    wire [7:0]  _unused_frag_lod         = rast_frag_lod;
+    wire        _unused_frag_tile_start = rast_frag_tile_start;
+    wire        _unused_frag_tile_end   = rast_frag_tile_end;
     wire [3:0]  _unused_fb_h_log2   = fb_height_log2;
     wire [1:0]  _unused_mode_cull   = mode_cull;
     wire [7:0]  _unused_alpha_ref   = mode_alpha_ref;
