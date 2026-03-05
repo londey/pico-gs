@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `af6f054089e37f68` 2026-03-01
+// Spec-ref: unit_006_pixel_pipeline.md `858a7c13af21b66f` 2026-03-05
 //
 // BC3 Texture Decoder — FORMAT=2
 //

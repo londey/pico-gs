@@ -958,7 +958,7 @@ module gpu_top (
 
     // Unused rasterizer fragment output signals
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [7:0]  _unused_frag_lod         = rast_frag_lod;
+    // frag_lod now connected to pixel_pipeline
     wire        _unused_frag_tile_start = rast_frag_tile_start;
     wire        _unused_frag_tile_end   = rast_frag_tile_end;
     wire [3:0]  _unused_fb_h_log2   = fb_height_log2;
@@ -1006,6 +1006,7 @@ module gpu_top (
         .frag_v1(rast_frag_uv1[31:16]),
         .frag_shade0(rast_frag_color0),
         .frag_shade1(rast_frag_color1),
+        .frag_lod(rast_frag_lod),
 
         // Register configuration
         .reg_render_mode(render_mode_packed),

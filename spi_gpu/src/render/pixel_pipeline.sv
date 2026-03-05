@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `af6f054089e37f68` 2026-03-01
+// Spec-ref: unit_006_pixel_pipeline.md `858a7c13af21b66f` 2026-03-05
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
 //
@@ -46,6 +46,9 @@ module pixel_pipeline (
     input  wire [15:0]  frag_v0,          // TEX0 V coordinate
     input  wire [15:0]  frag_u1,          // TEX1 U coordinate
     input  wire [15:0]  frag_v1,          // TEX1 V coordinate
+
+    // Per-pixel level-of-detail from rasterizer (UNIT-005)
+    input  wire [7:0]   frag_lod,         // UQ4.4: mip level [7:4], blend weight [3:0]
 
     // Interpolated vertex colors (already Q4.12 from rasterizer)
     input  wire [63:0]  frag_shade0,      // SHADE0 RGBA Q4.12
@@ -161,10 +164,18 @@ module pixel_pipeline (
     /* verilator lint_off UNUSEDSIGNAL */
     wire [15:0] _unused_frag_u1 = frag_u1;
     wire [15:0] _unused_frag_v1 = frag_v1;
-    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [11:8] WIDTH_LOG2, [15:12] HEIGHT_LOG2 used;
-    // [31:16] (wrap/mip), [7] (reserved), [3:1] (filter reserved) unused
-    wire [19:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:16], reg_tex0_cfg[7], reg_tex0_cfg[3:1]};
-    wire [27:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:7], reg_tex1_cfg[3:1]};
+    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [11:8] WIDTH_LOG2, [15:12] HEIGHT_LOG2,
+    // [23:20] MIP_LEVELS used; [31:24] (reserved), [19:16] (wrap), [7] (reserved),
+    // [3:1] (filter reserved) unused
+    wire [15:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:24], reg_tex0_cfg[19:16],
+                                         reg_tex0_cfg[7], reg_tex0_cfg[3:1]};
+    wire [23:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:24], reg_tex1_cfg[19:16],
+                                         reg_tex1_cfg[15:7], reg_tex1_cfg[3:1]};
+    // LOD signals used for mip selection; blend weight and per-tex mip levels
+    // consumed by trilinear filtering (stub: currently nearest-only)
+    wire [3:0]  _unused_lod_blend      = lod_blend;
+    wire [3:0]  _unused_tex0_mip_level = tex0_mip_level;
+    wire [3:0]  _unused_tex1_mip_level = tex1_mip_level;
     wire [20:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8]};
     wire [12:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15]};
@@ -325,6 +336,35 @@ module pixel_pipeline (
     wire        tex1_enable = reg_tex1_cfg[0];
     wire [2:0]  tex1_format = reg_tex1_cfg[6:4];
 
+    // MIP_LEVELS field: maximum available mip levels per texture unit
+    wire [3:0]  tex0_mip_levels = reg_tex0_cfg[23:20];
+    wire [3:0]  tex1_mip_levels = reg_tex1_cfg[23:20];
+
+    // ====================================================================
+    // LOD Selection (UNIT-006: frag_lod[7:4] + LOD_BIAS, clamped)
+    // ====================================================================
+    // frag_lod is UQ4.4 from UNIT-005: integer mip level [7:4], blend [3:0].
+    // LOD_BIAS is not yet defined as a register field (RSVD_MID[31:24] in
+    // TEXn_CFG is reserved for future LOD_BIAS); bias is currently zero.
+    // Final mip level is clamped to [0, MIP_LEVELS-1].
+
+    reg  [7:0]  lat_frag_lod;
+
+    wire [3:0]  lod_base       = lat_frag_lod[7:4];
+    wire [3:0]  lod_blend      = lat_frag_lod[3:0];
+
+    // TEX0 mip level: lod_base + 0 (bias=0), clamped to [0, mip_levels-1]
+    wire [3:0]  tex0_max_mip   = (tex0_mip_levels > 4'd0)
+                               ? (tex0_mip_levels - 4'd1) : 4'd0;
+    wire [3:0]  tex0_mip_level = (lod_base > tex0_max_mip)
+                               ? tex0_max_mip : lod_base;
+
+    // TEX1 mip level: lod_base + 0 (bias=0), clamped to [0, mip_levels-1]
+    wire [3:0]  tex1_max_mip   = (tex1_mip_levels > 4'd0)
+                               ? (tex1_mip_levels - 4'd1) : 4'd0;
+    wire [3:0]  tex1_mip_level = (lod_base > tex1_max_mip)
+                               ? tex1_max_mip : lod_base;
+
     // ====================================================================
     // Stage 2: Texture Decoders (per-format, combinational)
     // ====================================================================
@@ -461,10 +501,10 @@ module pixel_pipeline (
     reg [17:0] lat_tex0_rgba5652;
 
     // UV → texel coordinate conversion (combinational)
-    // UV coordinates are Q4.12 (UNIT-005 fragment bus): fractional bits [11:0]
-    // are used for texel addressing. Integer bits [14:12] index the texture
-    // block; sign bit [15] is not used for wrapping (wrap is modular on the
-    // fractional/integer portion before the shift).
+    // UV coordinates arrive in Q4.12 format as true perspective-correct U, V
+    // values from UNIT-005.04; no perspective division is performed in this stage.
+    // Q4.12: sign [15], integer [14:12], fractional [11:0].
+    // Fractional bits [11:0] are used for texel addressing.
     // texel_coord = floor(frac * 2^tex_dim_log2) = frac >> (12 - dim_log2)
     // Note: TEXn_CFG.WIDTH_LOG2 and HEIGHT_LOG2 are bounded to [1, 10] per
     // INT-010, so (4'd12 - tex0_width_log2) cannot underflow.
@@ -875,6 +915,7 @@ module pixel_pipeline (
             lat_z_bypass   <= 1'b0;
             lat_u0         <= 16'b0;
             lat_v0         <= 16'b0;
+            lat_frag_lod   <= 8'b0;
             lat_tex0_rgba5652 <= RGBA5652_WHITE_OPAQUE;
             cc_result_pending <= 1'b0;
             zbuf_data_lat  <= 16'b0;
@@ -914,6 +955,7 @@ module pixel_pipeline (
                         lat_z_bypass <= z_bypass;
                         lat_u0       <= frag_u0;
                         lat_v0       <= frag_v0;
+                        lat_frag_lod <= frag_lod;
 
                         // Latch tiled addresses (combinationally computed)
                         fb_addr_reg  <= fb_tiled_addr;
