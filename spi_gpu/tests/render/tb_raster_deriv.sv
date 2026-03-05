@@ -386,10 +386,10 @@ module tb_raster_deriv;
         // raw_dy = 10*0 = 0
         // bbox_sx = 8-5 = 3, bbox_sy = 7-5 = 2
         // init = {8'b0, 100, 16'b0} + 655350*3 + 0*2 = 0x00640000 + 1966050
-        // 1966050 = 0x001E0002 → init = 0x00820002
+        // 1966050 = 0x001DFFE2 → init = 0x0081FFE2
         check32s("bbox offset: pre_c0r_dx", pre_c0r_dx, 32'sd655350);
         check32s("bbox offset: pre_c0r_dy", pre_c0r_dy, 32'sd0);
-        check32s("bbox offset: init_c0r", init_c0r, 32'sh0082_0002);
+        check32s("bbox offset: init_c0r", init_c0r, 32'sh0081_FFE2);
 
         // ============================================================
         // Test 8: Color1 derivative (verify second color channel path)

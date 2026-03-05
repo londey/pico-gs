@@ -6,6 +6,11 @@
 // Verification reference: VER-001 (Rasterizer Unit Testbench)
 // Spec-ref: unit_005_rasterizer.md `0000000000000000` 1970-01-01
 // Spec-ref: ver_001_rasterizer.md `0000000000000000` 1970-01-01
+//
+// NOTE: Phase 2 rasterizer changes (tile traversal order, UV semantics,
+// derivative scaling) have made VER-010 through VER-014 golden images stale.
+// These require regeneration via test-*-init targets and human re-approval
+// before the corresponding golden image tests can pass.
 
 `timescale 1ns/1ps
 
@@ -195,7 +200,8 @@ module tb_rasterizer;
 
     // Compute a single 8-bit-channel derivative (dx or dy) using the same
     // formula as the rasterizer: raw = d10*coeff_A1 + d20*coeff_A2,
-    // then scaled = (raw * inv_area_val) >>> 16.
+    // then scaled = (raw * inv_area_val) >>> area_shift.
+    // Phase 2: INV_AREA=0xFFFF, AREA_SHIFT=0 (no right-shift).
     function automatic signed [31:0] ref_deriv_8bit(
         input [7:0] f0, input [7:0] f1, input [7:0] f2,
         input signed [10:0] coeff1, input signed [10:0] coeff2,
@@ -209,12 +215,13 @@ module tb_rasterizer;
             d20 = $signed({1'b0, f2}) - $signed({1'b0, f0});
             raw = (d10 * coeff1) + (d20 * coeff2);
             scl = raw * $signed({1'b0, inv_area_val});
-            ref_deriv_8bit = scl >>> 16;
+            ref_deriv_8bit = scl[31:0];
         end
     endfunction
 
     // Compute a single 16-bit-channel derivative (dx or dy) for Z (unsigned
     // origin), UV (signed), or Q (unsigned origin).
+    // Phase 2: INV_AREA=0xFFFF, AREA_SHIFT=0 (no right-shift).
     function automatic signed [31:0] ref_deriv_16bit(
         input signed [16:0] d10, input signed [16:0] d20,
         input signed [10:0] coeff1, input signed [10:0] coeff2,
@@ -225,7 +232,7 @@ module tb_rasterizer;
         begin
             raw = (d10 * coeff1) + (d20 * coeff2);
             scl = raw * $signed({1'b0, inv_area_val});
-            ref_deriv_16bit = scl >>> 16;
+            ref_deriv_16bit = scl[31:0];
         end
     endfunction
 
