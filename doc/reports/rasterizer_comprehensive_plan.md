@@ -748,7 +748,10 @@ The design units can reference the updated REQ-002.x requirements directly.
 
 **syskit workflow:** `/syskit-impact` → `/syskit-propose` → `/syskit-approve` → `/syskit-plan` → `/syskit-implement`
 
-### Phase 3: Integration and Upstream/Downstream Updates
+### Phase 3: Integration and Upstream/Downstream Updates ✅ Complete
+
+**Status:** All 3 implementation tasks complete (2026-03-05).
+Documentation-only changes: updated RTL comments and working documents to use `TEXn_MIP_BIAS` instead of `TEXn_CFG.LOD_BIAS`.
 
 **Scope:** Align surrounding components and architecture documentation with the new rasterizer.
 
