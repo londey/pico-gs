@@ -727,7 +727,10 @@ The register change (AREA_SETUP removal) also unblocks the reciprocal LUT design
 
 **syskit workflow:** `/syskit-impact` → `/syskit-propose` → `/syskit-approve` → `/syskit-plan` → `/syskit-implement`
 
-### Phase 2: Rasterizer Design Rewrite (UNIT-005.x)
+### Phase 2: Rasterizer Design Rewrite (UNIT-005.x) ✅ Complete
+
+**Status:** All 7 implementation tasks complete (2026-03-05).
+Note: FPGA PNR fails due to pre-existing MULT18X18D overbudget (167/28 on ECP5-25K); golden image tests (VER-010–014) need re-approval.
 
 **Scope:** Replace all rasterizer design documents with the new architecture defined by this report.
 
