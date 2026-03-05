@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `7d2bacbf2a30e5b1` 2026-03-05
+// Spec-ref: unit_005_rasterizer.md `95cb9ee1ff61b979` 2026-03-05
 
 // Reciprocal Lookup Table with CLZ Normalization and Linear Interpolation
 //

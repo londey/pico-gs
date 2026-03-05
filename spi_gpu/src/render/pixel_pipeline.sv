@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `858a7c13af21b66f` 2026-03-05
+// Spec-ref: unit_006_pixel_pipeline.md `ab72114247abe0c5` 2026-03-05
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
 //
@@ -341,11 +341,11 @@ module pixel_pipeline (
     wire [3:0]  tex1_mip_levels = reg_tex1_cfg[23:20];
 
     // ====================================================================
-    // LOD Selection (UNIT-006: frag_lod[7:4] + LOD_BIAS, clamped)
+    // LOD Selection (UNIT-006: frag_lod[7:4] + TEXn_MIP_BIAS, clamped)
     // ====================================================================
     // frag_lod is UQ4.4 from UNIT-005: integer mip level [7:4], blend [3:0].
-    // LOD_BIAS is not yet defined as a register field (RSVD_MID[31:24] in
-    // TEXn_CFG is reserved for future LOD_BIAS); bias is currently zero.
+    // TEXn_MIP_BIAS registers (0x12, 0x16) are defined in INT-010 but not
+    // yet wired into the pipeline; bias is currently hardcoded to zero.
     // Final mip level is clamped to [0, MIP_LEVELS-1].
 
     reg  [7:0]  lat_frag_lod;
@@ -353,13 +353,13 @@ module pixel_pipeline (
     wire [3:0]  lod_base       = lat_frag_lod[7:4];
     wire [3:0]  lod_blend      = lat_frag_lod[3:0];
 
-    // TEX0 mip level: lod_base + 0 (bias=0), clamped to [0, mip_levels-1]
+    // TEX0 mip level: lod_base + TEX0_MIP_BIAS (currently 0), clamped to [0, mip_levels-1]
     wire [3:0]  tex0_max_mip   = (tex0_mip_levels > 4'd0)
                                ? (tex0_mip_levels - 4'd1) : 4'd0;
     wire [3:0]  tex0_mip_level = (lod_base > tex0_max_mip)
                                ? tex0_max_mip : lod_base;
 
-    // TEX1 mip level: lod_base + 0 (bias=0), clamped to [0, mip_levels-1]
+    // TEX1 mip level: lod_base + TEX1_MIP_BIAS (currently 0), clamped to [0, mip_levels-1]
     wire [3:0]  tex1_max_mip   = (tex1_mip_levels > 4'd0)
                                ? (tex1_mip_levels - 4'd1) : 4'd0;
     wire [3:0]  tex1_mip_level = (lod_base > tex1_max_mip)
