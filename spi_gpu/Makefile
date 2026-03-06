@@ -78,10 +78,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
 	test-texture-decoder lint-memory lint harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
-	test-gouraud test-depth-test test-textured test-color-combined \
-	test-gouraud-init test-depth-test-init \
-	test-textured-init test-color-combined-init \
-	test-textured-cube test-textured-cube-init \
+	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-all \
+	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-fb-promote test-alpha-blend test-dither
 
 # Default target
@@ -313,92 +311,75 @@ test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_register_file -o tb_register_file
 	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file)
 
-# VER-010: Gouraud triangle golden image test
-test-gouraud: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+# Render targets — always generate output images (parallelizable)
+render-gouraud: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
+
+render-depth-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
+
+render-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
+
+render-textured: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
+
+render-color-combined: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
+
+render-all: render-gouraud render-depth-test render-textured-cube render-textured render-color-combined
+
+# Golden image diff targets — compare rendered output against approved golden images
+# VER-010: Gouraud triangle
+test-gouraud: render-gouraud
 	diff -q $(SIM_OUT_DIR)/gouraud_triangle.png $(TB_DIR)/golden/gouraud_triangle.png
 
-# VER-011: Depth-tested triangles golden image test
-test-depth-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
+# VER-011: Depth-tested triangles
+test-depth-test: render-depth-test
 	diff -q $(SIM_OUT_DIR)/depth_test.png $(TB_DIR)/golden/depth_test.png
 
-# VER-010 initial approval: run simulation and generate output for visual inspection.
-# After inspecting the output, copy to golden/ and commit to enable test-gouraud.
-test-gouraud-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
-	@echo "Output written to $(SIM_OUT_DIR)/gouraud_triangle.png"
-	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/gouraud_triangle.png $(TB_DIR)/golden/"
-
-# VER-011 initial approval: run simulation and generate output for visual inspection.
-# After inspecting the output, copy to golden/ and commit to enable test-depth-test.
-test-depth-test-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
-	@echo "Output written to $(SIM_OUT_DIR)/depth_test.png"
-	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/depth_test.png $(TB_DIR)/golden/"
-
-# VER-014: Textured cube golden image test
-test-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
+# VER-014: Textured cube
+test-textured-cube: render-textured-cube
 	diff -q $(SIM_OUT_DIR)/textured_cube.png $(TB_DIR)/golden/textured_cube.png
 
-# VER-014 initial approval: run simulation and generate output for visual inspection.
-# After inspecting the output, copy to golden/ and commit to enable test-textured-cube.
-test-textured-cube-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
-	@echo "Output written to $(SIM_OUT_DIR)/textured_cube.png"
-	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/textured_cube.png $(TB_DIR)/golden/"
-
-# VER-012: Textured triangle golden image test
-test-textured: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
+# VER-012: Textured triangle
+test-textured: render-textured
 	diff -q $(SIM_OUT_DIR)/textured_triangle.png $(TB_DIR)/golden/textured_triangle.png
 
-# VER-012 initial approval: run simulation and generate output for visual inspection.
-test-textured-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
-	@echo "Output written to $(SIM_OUT_DIR)/textured_triangle.png"
-	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/textured_triangle.png $(TB_DIR)/golden/"
-
-# VER-013: Color-combined output golden image test
-test-color-combined: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
+# VER-013: Color-combined output
+test-color-combined: render-color-combined
 	diff -q $(SIM_OUT_DIR)/color_combined.png $(TB_DIR)/golden/color_combined.png
 
-# VER-013 initial approval: run simulation and generate output for visual inspection.
-test-color-combined-init: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
-	@echo "Output written to $(SIM_OUT_DIR)/color_combined.png"
-	@echo "Inspect visually, then: cp $(SIM_OUT_DIR)/color_combined.png $(TB_DIR)/golden/"
-
-# Run all RTL tests. Unit testbenches (VER-001 through VER-005) run unconditionally.
-# Golden image tests (VER-010 through VER-014) run when approved golden images exist.
-test: lint test-rasterizer-all test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-alpha-blend test-dither
+# Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
+# Golden image renders run as prerequisites. Diffs run in the recipe so all
+# comparisons execute even if some fail.
+test: lint test-rasterizer-all test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-alpha-blend test-dither render-all
 	@echo "Unit testbenches passed."
-	@if [ -f $(TB_DIR)/golden/gouraud_triangle.png ]; then \
-		$(MAKE) test-gouraud; \
-	else \
-		echo "VER-010: Golden image not yet approved. Run 'make test-gouraud-init' after approval."; \
-	fi
-	@if [ -f $(TB_DIR)/golden/depth_test.png ]; then \
-		$(MAKE) test-depth-test; \
-	else \
-		echo "VER-011: Golden image not yet approved. Run 'make test-depth-test-init' after approval."; \
-	fi
-	@if [ -f $(TB_DIR)/golden/textured_triangle.png ]; then \
-		$(MAKE) test-textured; \
-	else \
-		echo "VER-012: Golden image not yet approved. Run 'make test-textured-init' after approval."; \
-	fi
-	@if [ -f $(TB_DIR)/golden/color_combined.png ]; then \
-		$(MAKE) test-color-combined; \
-	else \
-		echo "VER-013: Golden image not yet approved. Run 'make test-color-combined-init' after approval."; \
-	fi
-	@if [ -f $(TB_DIR)/golden/textured_cube.png ]; then \
-		$(MAKE) test-textured-cube; \
-	else \
-		echo "VER-014: Golden image not yet approved. Run 'make test-textured-cube-init' after approval."; \
+	@echo "All images rendered to $(SIM_OUT_DIR)/"
+	@failures=0; \
+	for pair in \
+		gouraud_triangle.png:gouraud_triangle.png \
+		depth_test.png:depth_test.png \
+		textured_cube.png:textured_cube.png \
+		textured_triangle.png:textured_triangle.png \
+		color_combined.png:color_combined.png \
+	; do \
+		golden="$(TB_DIR)/golden/$${pair%%:*}"; \
+		rendered="$(SIM_OUT_DIR)/$${pair##*:}"; \
+		if [ -f "$$golden" ]; then \
+			if diff -q "$$rendered" "$$golden" > /dev/null 2>&1; then \
+				echo "  PASS: $${pair%%:*}"; \
+			else \
+				echo "  FAIL: $${pair%%:*}"; \
+				failures=$$((failures + 1)); \
+			fi; \
+		else \
+			echo "  SKIP: $${pair%%:*} (no golden image)"; \
+		fi; \
+	done; \
+	if [ $$failures -ne 0 ]; then \
+		echo "$$failures golden image test(s) failed."; \
+		exit 1; \
 	fi
 
 # Lint memory subsystem RTL

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified build script for pico-gs project
-# Builds FPGA bitstream, runs RTL tests, and builds gpu-registers crate
+# Builds FPGA bitstream and runs RTL tests
 
 set -e  # Exit on error
 
@@ -13,35 +13,19 @@ NC='\033[0m' # No Color
 # Directories
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPI_GPU="${REPO_ROOT}/spi_gpu"
+MAKEFLAGS="-j$(nproc)"
 OUTPUT_DIR="${REPO_ROOT}/build"
 
 # Default build targets
 BUILD_FPGA=true
 BUILD_TEST=true
-RELEASE_MODE=false
 FLASH_FPGA=false
+CLEAN=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --assets-only)
-            echo "Firmware and asset build steps have moved to pico-racer"
-            exit 0
-            ;;
-        --firmware-only)
-            echo "Firmware build steps have moved to pico-racer"
-            exit 0
-            ;;
         --fpga-only)
-            shift
-            ;;
-        --pc-only)
-            echo "PC debug host build steps have moved to pico-racer"
-            exit 0
-            ;;
-        --registers-only)
-            BUILD_FPGA=false
-            BUILD_REGISTERS=true
             shift
             ;;
         --test-only)
@@ -52,8 +36,8 @@ while [[ $# -gt 0 ]]; do
             BUILD_TEST=false
             shift
             ;;
-        --release)
-            RELEASE_MODE=true
+        --clean)
+            CLEAN=true
             shift
             ;;
         --flash-fpga)
@@ -65,17 +49,13 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --fpga-only         Build only FPGA bitstream"
-            echo "  --registers-only    Regenerate register definitions from SystemRDL"
             echo "  --test-only         Run tests only (skip FPGA build)"
             echo "  --no-test           Skip tests (build only)"
-            echo "  --release           Build in release mode (optimized)"
+            echo "  --clean             Clean build artifacts before building"
             echo "  --flash-fpga        Program FPGA after build"
             echo "  --help              Show this help message"
             echo ""
-            echo "Removed options (moved to pico-racer):"
-            echo "  --assets-only, --firmware-only, --pc-only"
-            echo ""
-            echo "Default: Build FPGA bitstream, gpu-registers crate, and run all tests"
+            echo "Default: Build FPGA bitstream and run all tests"
             exit 0
             ;;
         *)
@@ -88,28 +68,17 @@ done
 echo -e "${GREEN}=== pico-gs Build System ===${NC}"
 echo ""
 
-# Step 0: Regenerate register definitions (if requested)
-if [ "${BUILD_REGISTERS:-false}" = true ]; then
-    echo -e "${YELLOW}Regenerating register definitions from SystemRDL...${NC}"
-    "${REPO_ROOT}/registers/scripts/generate.sh"
-    echo -e "${GREEN}Register definitions regenerated${NC}"
+# Clean build directory unless incremental
+if [ "$CLEAN" = true ]; then
+    echo -e "${YELLOW}Cleaning previous build artifacts...${NC}"
+    cd "${SPI_GPU}"
+    make clean
     echo ""
 fi
 
-# Step 1: Build gpu-registers crate
-echo -e "${YELLOW}[1/4] Building gpu-registers crate...${NC}"
-cd "${REPO_ROOT}"
-if [ "$RELEASE_MODE" = true ]; then
-    cargo build --release -p gpu-registers
-else
-    cargo build -p gpu-registers
-fi
-echo -e "${GREEN}gpu-registers crate built${NC}"
-echo ""
-
-# Step 2: Build FPGA bitstream
+# Step 1: Build FPGA bitstream
 if [ "$BUILD_FPGA" = true ]; then
-    echo -e "${YELLOW}[2/4] Building FPGA bitstream...${NC}"
+    echo -e "${YELLOW}[1/2] Building FPGA bitstream...${NC}"
     cd "${SPI_GPU}"
     make bitstream
     FPGA_BITSTREAM="${REPO_ROOT}/build/fpga/gpu_top.bit"
@@ -122,18 +91,9 @@ if [ "$BUILD_FPGA" = true ]; then
     echo ""
 fi
 
-# Step 3: Rust tests (gpu-registers crate)
+# Step 2: RTL tests (lint + unit testbenches + golden image tests if approved)
 if [ "$BUILD_TEST" = true ]; then
-    echo -e "${YELLOW}[3/4] Running Rust tests (gpu-registers)...${NC}"
-    cd "${REPO_ROOT}"
-    cargo test -p gpu-registers
-    echo -e "${GREEN}Rust tests passed${NC}"
-    echo ""
-fi
-
-# Step 4: RTL tests (lint + unit testbenches + golden image tests if approved)
-if [ "$BUILD_TEST" = true ]; then
-    echo -e "${YELLOW}[4/4] Running RTL tests (lint + unit testbenches + golden image tests)...${NC}"
+    echo -e "${YELLOW}[2/2] Running RTL tests (lint + unit testbenches + golden image tests)...${NC}"
     cd "${SPI_GPU}"
     make test
     echo -e "${GREEN}RTL tests passed${NC}"
@@ -142,7 +102,7 @@ fi
 
 # Collect build outputs into structured directory
 echo -e "${YELLOW}Collecting build outputs...${NC}"
-mkdir -p "${OUTPUT_DIR}/fpga" "${OUTPUT_DIR}/tests"
+mkdir -p "${OUTPUT_DIR}/fpga"
 
 if [ "$BUILD_FPGA" = true ] && [ -f "${OUTPUT_DIR}/fpga/gpu_top.bit" ]; then
     echo "  FPGA Bitstream:  ${OUTPUT_DIR}/fpga/gpu_top.bit"
