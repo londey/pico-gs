@@ -74,6 +74,10 @@ module raster_deriv (
     input  wire [9:0]          bbox_min_x,     // Bounding box minimum X
     input  wire [9:0]          bbox_min_y,     // Bounding box minimum Y
 
+    // Inverse area and shift (from raster_recip_area, UQ4.14 unsigned)
+    input  wire [17:0]         inv_area,       // UQ4.14 reciprocal of twice-area
+    input  wire [3:0]          area_shift,     // Right-shift for area normalization
+
     // Vertex 0 position (screen-space integer pixels)
     input  wire [9:0]          x0,             // Vertex 0 X
     input  wire [9:0]          y0,             // Vertex 0 Y
@@ -126,18 +130,6 @@ module raster_deriv (
 );
 
     // ========================================================================
-    // Interim Phase 1 constants: hardcoded inv_area and area_shift
-    // Phase 2: replace with on-chip computed inv_area from UNIT-004 triangle setup
-    // ========================================================================
-
-    localparam [15:0] INV_AREA   = 16'hFFFF;  // ~1.0 in UQ0.16
-    localparam [3:0]  AREA_SHIFT = 4'd0;
-
-    // Internal wires using the localparams (same names as removed ports)
-    wire [15:0] inv_area_reg   = INV_AREA;
-    wire [3:0]  area_shift_reg = AREA_SHIFT;
-
-    // ========================================================================
     // Derivative Precomputation (combinational wires)
     // ========================================================================
     //
@@ -184,127 +176,127 @@ module raster_deriv (
 
     // ---- Color derivative computation (8-bit channel) ----
     // raw = d10 * coeff1 + d20 * coeff2  (20-bit products, 21-bit sum)
-    // derivative = (raw * inv_area) >>> area_shift  (37-bit scaled, take [31:0] after shift)
+    // derivative = (raw * inv_area) >>> area_shift  (39-bit scaled, take [31:0] after shift)
     //
-    // inv_area = 65536 / (twice_area >> area_shift), stored as a 16-bit integer.
-    // The product raw * inv_area = raw * 65536 / (area >> shift).
-    // Shifting right by area_shift gives: raw * 65536 / area = df/dx in 8.16 format.
+    // inv_area is UQ4.14 (18-bit unsigned) from raster_recip_area.
+    // The product raw * inv_area gives the scaled derivative.
+    // Shifting right by area_shift normalizes the result.
 
     // Color0 R dx/dy
     wire signed [20:0] raw_c0r_dx = (d10_c0r * edge1_A) + (d20_c0r * edge2_A);
     wire signed [20:0] raw_c0r_dy = (d10_c0r * edge1_B) + (d20_c0r * edge2_B);
-    wire signed [36:0] scl_c0r_dx = raw_c0r_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c0r_dy = raw_c0r_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c0r_dx = 32'(scl_c0r_dx >>> area_shift_reg);
-    assign pre_c0r_dy = 32'(scl_c0r_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c0r_dx = raw_c0r_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c0r_dy = raw_c0r_dy * $signed({1'b0, inv_area});
+    assign pre_c0r_dx = 32'(scl_c0r_dx >>> area_shift);
+    assign pre_c0r_dy = 32'(scl_c0r_dy >>> area_shift);
 
     // Color0 G dx/dy
     wire signed [20:0] raw_c0g_dx = (d10_c0g * edge1_A) + (d20_c0g * edge2_A);
     wire signed [20:0] raw_c0g_dy = (d10_c0g * edge1_B) + (d20_c0g * edge2_B);
-    wire signed [36:0] scl_c0g_dx = raw_c0g_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c0g_dy = raw_c0g_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c0g_dx = 32'(scl_c0g_dx >>> area_shift_reg);
-    assign pre_c0g_dy = 32'(scl_c0g_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c0g_dx = raw_c0g_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c0g_dy = raw_c0g_dy * $signed({1'b0, inv_area});
+    assign pre_c0g_dx = 32'(scl_c0g_dx >>> area_shift);
+    assign pre_c0g_dy = 32'(scl_c0g_dy >>> area_shift);
 
     // Color0 B dx/dy
     wire signed [20:0] raw_c0b_dx = (d10_c0b * edge1_A) + (d20_c0b * edge2_A);
     wire signed [20:0] raw_c0b_dy = (d10_c0b * edge1_B) + (d20_c0b * edge2_B);
-    wire signed [36:0] scl_c0b_dx = raw_c0b_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c0b_dy = raw_c0b_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c0b_dx = 32'(scl_c0b_dx >>> area_shift_reg);
-    assign pre_c0b_dy = 32'(scl_c0b_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c0b_dx = raw_c0b_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c0b_dy = raw_c0b_dy * $signed({1'b0, inv_area});
+    assign pre_c0b_dx = 32'(scl_c0b_dx >>> area_shift);
+    assign pre_c0b_dy = 32'(scl_c0b_dy >>> area_shift);
 
     // Color0 A dx/dy
     wire signed [20:0] raw_c0a_dx = (d10_c0a * edge1_A) + (d20_c0a * edge2_A);
     wire signed [20:0] raw_c0a_dy = (d10_c0a * edge1_B) + (d20_c0a * edge2_B);
-    wire signed [36:0] scl_c0a_dx = raw_c0a_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c0a_dy = raw_c0a_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c0a_dx = 32'(scl_c0a_dx >>> area_shift_reg);
-    assign pre_c0a_dy = 32'(scl_c0a_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c0a_dx = raw_c0a_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c0a_dy = raw_c0a_dy * $signed({1'b0, inv_area});
+    assign pre_c0a_dx = 32'(scl_c0a_dx >>> area_shift);
+    assign pre_c0a_dy = 32'(scl_c0a_dy >>> area_shift);
 
     // Color1 R dx/dy
     wire signed [20:0] raw_c1r_dx = (d10_c1r * edge1_A) + (d20_c1r * edge2_A);
     wire signed [20:0] raw_c1r_dy = (d10_c1r * edge1_B) + (d20_c1r * edge2_B);
-    wire signed [36:0] scl_c1r_dx = raw_c1r_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c1r_dy = raw_c1r_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c1r_dx = 32'(scl_c1r_dx >>> area_shift_reg);
-    assign pre_c1r_dy = 32'(scl_c1r_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c1r_dx = raw_c1r_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c1r_dy = raw_c1r_dy * $signed({1'b0, inv_area});
+    assign pre_c1r_dx = 32'(scl_c1r_dx >>> area_shift);
+    assign pre_c1r_dy = 32'(scl_c1r_dy >>> area_shift);
 
     // Color1 G dx/dy
     wire signed [20:0] raw_c1g_dx = (d10_c1g * edge1_A) + (d20_c1g * edge2_A);
     wire signed [20:0] raw_c1g_dy = (d10_c1g * edge1_B) + (d20_c1g * edge2_B);
-    wire signed [36:0] scl_c1g_dx = raw_c1g_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c1g_dy = raw_c1g_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c1g_dx = 32'(scl_c1g_dx >>> area_shift_reg);
-    assign pre_c1g_dy = 32'(scl_c1g_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c1g_dx = raw_c1g_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c1g_dy = raw_c1g_dy * $signed({1'b0, inv_area});
+    assign pre_c1g_dx = 32'(scl_c1g_dx >>> area_shift);
+    assign pre_c1g_dy = 32'(scl_c1g_dy >>> area_shift);
 
     // Color1 B dx/dy
     wire signed [20:0] raw_c1b_dx = (d10_c1b * edge1_A) + (d20_c1b * edge2_A);
     wire signed [20:0] raw_c1b_dy = (d10_c1b * edge1_B) + (d20_c1b * edge2_B);
-    wire signed [36:0] scl_c1b_dx = raw_c1b_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c1b_dy = raw_c1b_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c1b_dx = 32'(scl_c1b_dx >>> area_shift_reg);
-    assign pre_c1b_dy = 32'(scl_c1b_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c1b_dx = raw_c1b_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c1b_dy = raw_c1b_dy * $signed({1'b0, inv_area});
+    assign pre_c1b_dx = 32'(scl_c1b_dx >>> area_shift);
+    assign pre_c1b_dy = 32'(scl_c1b_dy >>> area_shift);
 
     // Color1 A dx/dy
     wire signed [20:0] raw_c1a_dx = (d10_c1a * edge1_A) + (d20_c1a * edge2_A);
     wire signed [20:0] raw_c1a_dy = (d10_c1a * edge1_B) + (d20_c1a * edge2_B);
-    wire signed [36:0] scl_c1a_dx = raw_c1a_dx * $signed({1'b0, inv_area_reg});
-    wire signed [36:0] scl_c1a_dy = raw_c1a_dy * $signed({1'b0, inv_area_reg});
-    assign pre_c1a_dx = 32'(scl_c1a_dx >>> area_shift_reg);
-    assign pre_c1a_dy = 32'(scl_c1a_dy >>> area_shift_reg);
+    wire signed [38:0] scl_c1a_dx = raw_c1a_dx * $signed({1'b0, inv_area});
+    wire signed [38:0] scl_c1a_dy = raw_c1a_dy * $signed({1'b0, inv_area});
+    assign pre_c1a_dx = 32'(scl_c1a_dx >>> area_shift);
+    assign pre_c1a_dy = 32'(scl_c1a_dy >>> area_shift);
 
     // ---- Wide derivative computation (16-bit channel: Z unsigned, UV/Q signed) ----
     // raw = d10 * coeff1 + d20 * coeff2  (28-bit products, 29-bit sum)
-    // derivative = (raw * inv_area) >>> area_shift  (45-bit scaled, take [31:0] after shift)
+    // derivative = (raw * inv_area) >>> area_shift  (47-bit scaled, take [31:0] after shift)
 
     // Z dx/dy
     wire signed [28:0] raw_z_dx = (d10_z * edge1_A) + (d20_z * edge2_A);
     wire signed [28:0] raw_z_dy = (d10_z * edge1_B) + (d20_z * edge2_B);
-    wire signed [44:0] scl_z_dx = raw_z_dx * $signed({1'b0, inv_area_reg});
-    wire signed [44:0] scl_z_dy = raw_z_dy * $signed({1'b0, inv_area_reg});
-    assign pre_z_dx = 32'(scl_z_dx >>> area_shift_reg);
-    assign pre_z_dy = 32'(scl_z_dy >>> area_shift_reg);
+    wire signed [46:0] scl_z_dx = raw_z_dx * $signed({1'b0, inv_area});
+    wire signed [46:0] scl_z_dy = raw_z_dy * $signed({1'b0, inv_area});
+    assign pre_z_dx = 32'(scl_z_dx >>> area_shift);
+    assign pre_z_dy = 32'(scl_z_dy >>> area_shift);
 
     // UV0 U dx/dy
     wire signed [28:0] raw_uv0u_dx = (d10_uv0u * edge1_A) + (d20_uv0u * edge2_A);
     wire signed [28:0] raw_uv0u_dy = (d10_uv0u * edge1_B) + (d20_uv0u * edge2_B);
-    wire signed [44:0] scl_uv0u_dx = raw_uv0u_dx * $signed({1'b0, inv_area_reg});
-    wire signed [44:0] scl_uv0u_dy = raw_uv0u_dy * $signed({1'b0, inv_area_reg});
-    assign pre_uv0u_dx = 32'(scl_uv0u_dx >>> area_shift_reg);
-    assign pre_uv0u_dy = 32'(scl_uv0u_dy >>> area_shift_reg);
+    wire signed [46:0] scl_uv0u_dx = raw_uv0u_dx * $signed({1'b0, inv_area});
+    wire signed [46:0] scl_uv0u_dy = raw_uv0u_dy * $signed({1'b0, inv_area});
+    assign pre_uv0u_dx = 32'(scl_uv0u_dx >>> area_shift);
+    assign pre_uv0u_dy = 32'(scl_uv0u_dy >>> area_shift);
 
     // UV0 V dx/dy
     wire signed [28:0] raw_uv0v_dx = (d10_uv0v * edge1_A) + (d20_uv0v * edge2_A);
     wire signed [28:0] raw_uv0v_dy = (d10_uv0v * edge1_B) + (d20_uv0v * edge2_B);
-    wire signed [44:0] scl_uv0v_dx = raw_uv0v_dx * $signed({1'b0, inv_area_reg});
-    wire signed [44:0] scl_uv0v_dy = raw_uv0v_dy * $signed({1'b0, inv_area_reg});
-    assign pre_uv0v_dx = 32'(scl_uv0v_dx >>> area_shift_reg);
-    assign pre_uv0v_dy = 32'(scl_uv0v_dy >>> area_shift_reg);
+    wire signed [46:0] scl_uv0v_dx = raw_uv0v_dx * $signed({1'b0, inv_area});
+    wire signed [46:0] scl_uv0v_dy = raw_uv0v_dy * $signed({1'b0, inv_area});
+    assign pre_uv0v_dx = 32'(scl_uv0v_dx >>> area_shift);
+    assign pre_uv0v_dy = 32'(scl_uv0v_dy >>> area_shift);
 
     // UV1 U dx/dy
     wire signed [28:0] raw_uv1u_dx = (d10_uv1u * edge1_A) + (d20_uv1u * edge2_A);
     wire signed [28:0] raw_uv1u_dy = (d10_uv1u * edge1_B) + (d20_uv1u * edge2_B);
-    wire signed [44:0] scl_uv1u_dx = raw_uv1u_dx * $signed({1'b0, inv_area_reg});
-    wire signed [44:0] scl_uv1u_dy = raw_uv1u_dy * $signed({1'b0, inv_area_reg});
-    assign pre_uv1u_dx = 32'(scl_uv1u_dx >>> area_shift_reg);
-    assign pre_uv1u_dy = 32'(scl_uv1u_dy >>> area_shift_reg);
+    wire signed [46:0] scl_uv1u_dx = raw_uv1u_dx * $signed({1'b0, inv_area});
+    wire signed [46:0] scl_uv1u_dy = raw_uv1u_dy * $signed({1'b0, inv_area});
+    assign pre_uv1u_dx = 32'(scl_uv1u_dx >>> area_shift);
+    assign pre_uv1u_dy = 32'(scl_uv1u_dy >>> area_shift);
 
     // UV1 V dx/dy
     wire signed [28:0] raw_uv1v_dx = (d10_uv1v * edge1_A) + (d20_uv1v * edge2_A);
     wire signed [28:0] raw_uv1v_dy = (d10_uv1v * edge1_B) + (d20_uv1v * edge2_B);
-    wire signed [44:0] scl_uv1v_dx = raw_uv1v_dx * $signed({1'b0, inv_area_reg});
-    wire signed [44:0] scl_uv1v_dy = raw_uv1v_dy * $signed({1'b0, inv_area_reg});
-    assign pre_uv1v_dx = 32'(scl_uv1v_dx >>> area_shift_reg);
-    assign pre_uv1v_dy = 32'(scl_uv1v_dy >>> area_shift_reg);
+    wire signed [46:0] scl_uv1v_dx = raw_uv1v_dx * $signed({1'b0, inv_area});
+    wire signed [46:0] scl_uv1v_dy = raw_uv1v_dy * $signed({1'b0, inv_area});
+    assign pre_uv1v_dx = 32'(scl_uv1v_dx >>> area_shift);
+    assign pre_uv1v_dy = 32'(scl_uv1v_dy >>> area_shift);
 
     // Q dx/dy
     wire signed [28:0] raw_q_dx = (d10_q * edge1_A) + (d20_q * edge2_A);
     wire signed [28:0] raw_q_dy = (d10_q * edge1_B) + (d20_q * edge2_B);
-    wire signed [44:0] scl_q_dx = raw_q_dx * $signed({1'b0, inv_area_reg});
-    wire signed [44:0] scl_q_dy = raw_q_dy * $signed({1'b0, inv_area_reg});
-    assign pre_q_dx = 32'(scl_q_dx >>> area_shift_reg);
-    assign pre_q_dy = 32'(scl_q_dy >>> area_shift_reg);
+    wire signed [46:0] scl_q_dx = raw_q_dx * $signed({1'b0, inv_area});
+    wire signed [46:0] scl_q_dy = raw_q_dy * $signed({1'b0, inv_area});
+    assign pre_q_dx = 32'(scl_q_dx >>> area_shift);
+    assign pre_q_dy = 32'(scl_q_dy >>> area_shift);
 
     // ========================================================================
     // Initial attribute values at bbox origin (combinational)

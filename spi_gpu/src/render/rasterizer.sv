@@ -583,6 +583,9 @@ module rasterizer (
         // Bbox origin
         .bbox_min_x     (bbox_min_x),
         .bbox_min_y     (bbox_min_y),
+        // Inverse area (UQ4.14) and shift
+        .inv_area       (inv_area),
+        .area_shift     (4'd0),
         // Vertex 0 position
         .x0             (x0),
         .y0             (y0),
