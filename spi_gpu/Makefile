@@ -34,7 +34,9 @@ RTL_SOURCES = \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
-	$(RTL_DIR)/render/raster_recip_lut.sv \
+	$(RTL_DIR)/render/raster_recip_area.sv \
+	$(RTL_DIR)/render/raster_recip_q.sv \
+	$(RTL_DIR)/render/raster_setup_fifo.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \
@@ -265,7 +267,9 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/raster_deriv.sv \
 		$(RTL_DIR)/render/raster_attr_accum.sv \
 		$(RTL_DIR)/render/raster_edge_walk.sv \
-		$(RTL_DIR)/render/raster_recip_lut.sv \
+		$(RTL_DIR)/render/raster_recip_area.sv \
+		$(RTL_DIR)/render/raster_recip_q.sv \
+		$(RTL_DIR)/render/raster_setup_fifo.sv \
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
@@ -418,7 +422,9 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
-	$(RTL_DIR)/render/raster_recip_lut.sv
+	$(RTL_DIR)/render/raster_recip_area.sv \
+	$(RTL_DIR)/render/raster_recip_q.sv \
+	$(RTL_DIR)/render/raster_setup_fifo.sv
 
 # Lint all RTL sources. Leaf modules linted individually for precise diagnostics.
 # Modules with sub-instances linted with their dependencies.
@@ -456,13 +462,15 @@ lint:
 		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/texel_promote.sv \
 		--top-module texel_promote 2>&1 || fail=1; \
-	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_lut)..."; \
+	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_area, raster_recip_q, raster_setup_fifo)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(RTL_DIR)/fp_types_pkg.sv \
 		$(RTL_DIR)/render/raster_deriv.sv \
 		$(RTL_DIR)/render/raster_attr_accum.sv \
 		$(RTL_DIR)/render/raster_edge_walk.sv \
-		$(RTL_DIR)/render/raster_recip_lut.sv \
+		$(RTL_DIR)/render/raster_recip_area.sv \
+		$(RTL_DIR)/render/raster_recip_q.sv \
+		$(RTL_DIR)/render/raster_setup_fifo.sv \
 		$(RTL_DIR)/render/rasterizer.sv \
 		--top-module rasterizer 2>&1 || fail=1; \
 	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
@@ -519,7 +527,9 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
-	$(RTL_DIR)/render/raster_recip_lut.sv \
+	$(RTL_DIR)/render/raster_recip_area.sv \
+	$(RTL_DIR)/render/raster_recip_q.sv \
+	$(RTL_DIR)/render/raster_setup_fifo.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \
@@ -603,7 +613,9 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
-	$(RTL_DIR)/render/raster_recip_lut.sv \
+	$(RTL_DIR)/render/raster_recip_area.sv \
+	$(RTL_DIR)/render/raster_recip_q.sv \
+	$(RTL_DIR)/render/raster_setup_fifo.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/pixel_pipeline.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \

@@ -21,13 +21,21 @@
 // Multiplier strategy (DD-024):
 //   Setup uses a shared pair of 11x11 multipliers, sequenced over 6 cycles
 //   (edge C coefficients + initial edge evaluation).
-//   A shared reciprocal LUT with 1 MULT18X18D linear interpolation is
-//   used for both inv_area (once per triangle) and 1/Q (per pixel).
+//   Dedicated raster_recip_area module (1 DP16KD, 1 MULT18X18D) computes
+//   inv_area once per triangle during setup (2-cycle latency).
+//   Dedicated raster_recip_q module (1 DP16KD, 1 MULT18X18D) computes
+//   1/Q per pixel during traversal (2-cycle latency).
 //   Per-pixel perspective correction uses 4 dedicated MULT18X18D blocks.
 //   All per-pixel attribute interpolation is performed by incremental
 //   addition only -- no per-pixel multiplies for attribute stepping.
-//   Total: 2 (C coefficients) + 1 (LUT interpolation shared) +
-//          4 (perspective correction) = 7 MULT18X18D.
+//   Total: 2 (C coefficients) + 1 (inv_area interp) +
+//          1 (1/Q interp) + 4 (perspective correction) = 8 MULT18X18D.
+//
+// Producer-consumer FSM (DD-035):
+//   A register-based FIFO (raster_setup_fifo) decouples triangle setup
+//   from iteration, allowing setup of triangle N+1 to overlap with
+//   iteration of triangle N.  The FSM is split into a setup producer
+//   (setup_state) and an iteration consumer (iter_state).
 
 module rasterizer (
     input  wire         clk,
@@ -95,23 +103,70 @@ module rasterizer (
     wire [3:0] _unused_frac_bits = FRAC_BITS;
 
     // ========================================================================
-    // State Machine
+    // State Machine — Dual-FSM Producer-Consumer (DD-035)
     // ========================================================================
 
+    // Setup producer FSM
+    typedef enum logic [2:0] {
+        S_IDLE          = 3'd0,
+        S_SETUP         = 3'd1,   // Edge A/B/bbox + edge0_C (shared mul)
+        S_SETUP_2       = 3'd2,   // edge1_C (shared mul)
+        S_SETUP_3       = 3'd3,   // edge2_C (shared mul) + area computation
+        S_RECIP_WAIT    = 3'd4,   // Wait for raster_recip_area (2-cycle BRAM latency)
+        S_RECIP_DONE    = 3'd5    // Latch inv_area, write FIFO
+    } setup_state_t;
+
+    setup_state_t setup_state /* verilator public */;
+    setup_state_t next_setup_state;
+
+    // Iteration consumer FSM
+    typedef enum logic [2:0] {
+        I_IDLE          = 3'd0,   // Waiting for FIFO data
+        I_ITER_START    = 3'd1,   // e0_init (shared mul) + derivative latch + attr init
+        I_INIT_E1       = 3'd2,   // e1_init (shared mul)
+        I_INIT_E2       = 3'd3,   // e2_init (shared mul)
+        I_WALKING       = 3'd4    // Edge walk sub-module autonomous traversal
+    } iter_state_t;
+
+    iter_state_t iter_state /* verilator public */;
+    iter_state_t next_iter_state;
+
+    // Legacy single-state alias for sub-modules that test FSM state
+    // (edge walk control signals, shared multiplier mux, etc.)
+    // Combines setup and iteration states into a unified view.
     typedef enum logic [3:0] {
         IDLE            = 4'd0,
-        SETUP           = 4'd1,   // Edge A/B/bbox + edge0_C (shared mul)
-        SETUP_2         = 4'd13,  // edge1_C (shared mul)
-        SETUP_3         = 4'd14,  // edge2_C (shared mul) + area computation
-        SETUP_RECIP     = 4'd12,  // Wait for reciprocal LUT (1 cycle)
-        ITER_START      = 4'd2,   // e0_init (shared mul) + derivative latch + attr init
-        INIT_E1         = 4'd4,   // e1_init (shared mul)
-        INIT_E2         = 4'd15,  // e2_init (shared mul)
-        WALKING         = 4'd5    // Edge walk sub-module autonomous traversal
+        SETUP           = 4'd1,
+        SETUP_2         = 4'd13,
+        SETUP_3         = 4'd14,
+        SETUP_RECIP     = 4'd12,
+        ITER_START      = 4'd2,
+        INIT_E1         = 4'd4,
+        INIT_E2         = 4'd15,
+        WALKING         = 4'd5
     } state_t;
 
     state_t state /* verilator public */;
-    state_t next_state;
+
+    // Synthesize unified state from the two FSMs
+    always_comb begin
+        unique case (setup_state)
+            S_SETUP:      state = SETUP;
+            S_SETUP_2:    state = SETUP_2;
+            S_SETUP_3:    state = SETUP_3;
+            S_RECIP_WAIT: state = SETUP_RECIP;
+            S_RECIP_DONE: state = SETUP_RECIP;
+            default: begin
+                unique case (iter_state)
+                    I_ITER_START: state = ITER_START;
+                    I_INIT_E1:    state = INIT_E1;
+                    I_INIT_E2:    state = INIT_E2;
+                    I_WALKING:    state = WALKING;
+                    default:      state = IDLE;
+                endcase
+            end
+        endcase
+    end
 
     // ========================================================================
     // Triangle Setup Registers
@@ -196,8 +251,8 @@ module rasterizer (
     reg signed [10:0] edge2_B;
     reg signed [20:0] edge2_C;
 
-    // Inverse area (Q3.12) — latched from reciprocal LUT during SETUP_RECIP
-    reg signed [15:0] inv_area;
+    // Inverse area (UQ4.14) — latched from raster_recip_area during S_RECIP_DONE
+    reg [17:0] inv_area;
 
     // Iteration position wires (from raster_edge_walk sub-module)
     wire [9:0] curr_x;                   // Current pixel X (from edge walk)
@@ -268,80 +323,157 @@ module rasterizer (
     end
 
     // ========================================================================
-    // Reciprocal LUT (shared between inv_area and per-pixel 1/Q)
+    // Triangle Area Computation (combinational, from edge coefficients)
     // ========================================================================
+    //
+    // area = edge2_B * edge1_A - edge1_B * edge2_A
+    //      = (x1-x0)*(y2-y0) - (x0-x2)*(y0-y1)
+    //      = (x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)
+    // edge2_B and edge1_A are 11-bit signed, so their product fits in 22 bits.
+    wire signed [21:0] area_term1 = $signed(edge2_B) * $signed(edge1_A);
+    wire signed [21:0] area_term2 = $signed(edge1_B) * $signed(edge2_A);
+    wire signed [21:0] triangle_area = area_term1 - area_term2;
 
-    // Muxed LUT interface wires
-    logic signed [31:0] recip_lut_operand;
-    logic               recip_lut_valid_in;
-    wire  signed [15:0] recip_lut_recip_out;
-    wire         [4:0]  recip_lut_clz_out;
-    wire                recip_lut_valid_out;
-    wire                recip_lut_degenerate;
+    // ========================================================================
+    // Dedicated Reciprocal: raster_recip_area (inv_area, once per triangle)
+    // ========================================================================
+    // 1 DP16KD (36x512), 2-cycle latency, UQ4.14 output (18-bit unsigned).
+    // Driven during S_SETUP_3 with the triangle_area value.
+
+    wire               recip_area_valid_in = (setup_state == S_SETUP_3);
+    wire        [17:0] recip_area_out;         // UQ4.14 inv_area result
+    wire               recip_area_degenerate;  // Zero area flag
+    wire               recip_area_valid_out;   // Result valid (2 cycles after valid_in)
+
+    raster_recip_area u_recip_area (
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .operand_in   (triangle_area),
+        .valid_in     (recip_area_valid_in),
+        .recip_out    (recip_area_out),
+        .degenerate   (recip_area_degenerate),
+        .valid_out    (recip_area_valid_out)
+    );
+
+    // ========================================================================
+    // Dedicated Reciprocal: raster_recip_q (1/Q, per pixel)
+    // ========================================================================
+    // 1 DP16KD (18x1024), 2-cycle latency, UQ4.14 output (18-bit unsigned).
+    // Connected directly to the edge walk sub-module.
 
     // Edge walk reciprocal interface (per-pixel 1/Q path)
     wire signed [31:0] ew_recip_operand;
     wire               ew_recip_valid_in;
 
-    // Triangle area for reciprocal LUT (computed in SETUP_3)
-    // area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
-    // This uses the shared multiplier products from SETUP_3:
-    //   smul_p1 = x0 * y1, smul_p2 = x1 * y0
-    // But the area formula uses cross-products of edge vectors, not vertex products.
-    // We compute it directly from the edge A/B coefficients and vertex positions:
-    //   area = edge0_A * (x1 - x0) + edge0_B * (y1 - y0)... No, simpler:
-    //   area = sum of all edge C coefficients = edge0_C + edge1_C + edge2_C
-    //   (This is the signed area of the triangle, equal to the determinant.)
-    // Actually, area = edge0_A * edge1_B - edge0_B * edge1_A  (2x signed area)
-    // But we already have the C coefficients. The signed area is:
-    //   2*area = (y1-y2)(x2-x0)(... no.
-    // The edge function sum at vertex v0:
-    //   e0(v0) + e1(v0) + e2(v0) = 0 + area + 0 (for CW winding)
-    // Actually: area = e1_A * e0_B - e1_B * e0_A ... that needs multiplies.
-    //
-    // Simplest: reuse the C coefficient computation pattern.
-    //   area = (x1 - x0)*(y2 - y0) - (x2 - x0)*(y1 - y0)
-    // We can compute this from already-available edge coefficients:
-    //   edge0_A = y1 - y2,  edge0_B = x2 - x1
-    //   edge1_A = y2 - y0,  edge1_B = x0 - x2
-    //   edge2_A = y0 - y1,  edge2_B = x1 - x0
-    //   area = edge2_B * edge1_A - edge1_B * edge2_A
-    //        = (x1-x0)*(y2-y0) - (x0-x2)*(y0-y1)
-    //        = (x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)  ✓
-    // edge2_B and edge1_A are 11-bit signed, so their product fits in 22 bits.
-    // We compute this combinationally — it reuses the edge A/B values already latched.
-    wire signed [21:0] area_term1 = $signed(edge2_B) * $signed(edge1_A);
-    wire signed [21:0] area_term2 = $signed(edge1_B) * $signed(edge2_A);
-    wire signed [31:0] triangle_area = 32'(area_term1) - 32'(area_term2);
+    wire        [17:0] recip_q_out;            // UQ4.14 1/Q result
+    wire         [4:0] recip_q_clz_out;        // CLZ count for frag_lod
+    wire               recip_q_valid_out;      // Result valid
 
-    // FSM-based mux: during SETUP_3/SETUP_RECIP the parent drives the LUT
-    // with the triangle area; during traversal the edge walk drives it with Q/W.
-    wire setup_drives_recip = (state == SETUP_3) || (state == SETUP_RECIP);
-
-    always_comb begin
-        if (setup_drives_recip) begin
-            recip_lut_operand = triangle_area;
-            recip_lut_valid_in = (state == SETUP_3);
-        end else begin
-            recip_lut_operand = ew_recip_operand;
-            recip_lut_valid_in = ew_recip_valid_in;
-        end
-    end
-
-    raster_recip_lut u_recip_lut (
+    raster_recip_q u_recip_q (
         .clk          (clk),
         .rst_n        (rst_n),
-        .operand_in   (recip_lut_operand),
-        .valid_in     (recip_lut_valid_in),
-        .recip_out    (recip_lut_recip_out),
-        .clz_out      (recip_lut_clz_out),
-        .valid_out    (recip_lut_valid_out),
-        .degenerate   (recip_lut_degenerate)
+        .operand_in   (ew_recip_operand[31:0]),
+        .valid_in     (ew_recip_valid_in),
+        .recip_out    (recip_q_out),
+        .clz_out      (recip_q_clz_out),
+        .valid_out    (recip_q_valid_out)
     );
 
-    // Unused signals from reciprocal LUT (setup path only uses recip_out)
-    wire [4:0] _unused_setup_clz = (state == SETUP_RECIP) ? recip_lut_clz_out : 5'd0;
-    wire       _unused_setup_valid = (state == SETUP_RECIP) ? recip_lut_valid_out : 1'b0;
+    // Adapter: edge walk expects signed [15:0] recip_out (Q4.12) and [4:0] clz.
+    // raster_recip_q produces [17:0] UQ4.14.  Truncate to Q4.12 for now;
+    // Task 6 will widen the edge walk interface to accept UQ4.14 natively.
+    wire signed [15:0] ew_recip_out_adapted = $signed(recip_q_out[17:2]);
+    wire         [4:0] ew_recip_clz_adapted = recip_q_clz_out;
+    wire               ew_recip_valid_adapted = recip_q_valid_out;
+
+    // Low bits discarded by Q4.14 → Q4.12 truncation
+    wire [1:0] _unused_recip_q_lo = recip_q_out[1:0];
+
+    // ========================================================================
+    // Setup-Iteration Overlap FIFO (DD-035)
+    // ========================================================================
+    // Holds complete triangle setup results between the setup producer and
+    // the iteration consumer.  Payload: edge coefficients, bbox, inv_area,
+    // vertex attributes.
+
+    // FIFO payload packing:
+    //   3 edges x (11-bit A + 11-bit B + 21-bit C) = 3 x 43 = 129 bits
+    //   4 bbox registers x 10 bits = 40 bits
+    //   inv_area: 18 bits (UQ4.14)
+    //   3 vertices x (depth 16 + color0 32 + color1 32 + uv0 32 + uv1 32 + q 16) = 3 x 160 = 480 bits
+    //   3 vertex positions x (10 + 10) = 60 bits
+    //   Total: 129 + 40 + 18 + 480 + 60 = 727 bits
+    localparam FIFO_WIDTH = 727;
+
+    wire                   fifo_wr_en;
+    wire [FIFO_WIDTH-1:0]  fifo_wr_data;
+    wire                   fifo_rd_en;
+    wire [FIFO_WIDTH-1:0]  fifo_rd_data;
+    wire                   fifo_full;
+    wire                   fifo_empty;
+
+    wire [1:0] fifo_count;  // FIFO entry count (unused, for debug only)
+
+    raster_setup_fifo #(
+        .DATA_WIDTH (FIFO_WIDTH),
+        .DEPTH      (2)
+    ) u_setup_fifo (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .wr_en   (fifo_wr_en),
+        .wr_data (fifo_wr_data),
+        .rd_en   (fifo_rd_en),
+        .rd_data (fifo_rd_data),
+        .full    (fifo_full),
+        .empty   (fifo_empty),
+        .count   (fifo_count)
+    );
+
+    // Unused FIFO count output
+    wire [1:0] _unused_fifo_count = fifo_count;
+
+    // FIFO write: triggered when setup completes (S_RECIP_DONE) and FIFO not full
+    assign fifo_wr_en = (setup_state == S_RECIP_DONE) && !fifo_full && !recip_area_degenerate;
+
+    // FIFO read: triggered when iteration is idle and FIFO has data
+    assign fifo_rd_en = (iter_state == I_IDLE) && !fifo_empty;
+
+    // FIFO payload packing (write side)
+    // Pack all setup results into a flat vector
+    assign fifo_wr_data = {
+        // Edge coefficients (129 bits)
+        edge0_A, edge0_B, edge0_C,    // 11 + 11 + 21 = 43
+        edge1_A, edge1_B, edge1_C,    // 43
+        edge2_A, edge2_B, edge2_C,    // 43
+        // Bounding box (40 bits)
+        bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y,
+        // Inverse area (18 bits, UQ4.14)
+        recip_area_out,
+        // Vertex positions (60 bits)
+        x0, y0, x1, y1, x2, y2,
+        // Vertex depths (48 bits)
+        z0, z1, z2,
+        // Vertex color0 (96 bits)
+        c0_r0, c0_g0, c0_b0, c0_a0,
+        c0_r1, c0_g1, c0_b1, c0_a1,
+        c0_r2, c0_g2, c0_b2, c0_a2,
+        // Vertex color1 (96 bits)
+        c1_r0, c1_g0, c1_b0, c1_a0,
+        c1_r1, c1_g1, c1_b1, c1_a1,
+        c1_r2, c1_g2, c1_b2, c1_a2,
+        // Vertex UV0 (96 bits)
+        uv0_u0, uv0_v0, uv0_u1, uv0_v1, uv0_u2, uv0_v2,
+        // Vertex UV1 (96 bits)
+        uv1_u0, uv1_v0, uv1_u1, uv1_v1, uv1_u2, uv1_v2,
+        // Vertex Q (48 bits)
+        q0, q1, q2
+    };
+
+    // FIFO payload unpacking (read side) — iteration registers
+    // These are loaded into the working registers when the iteration FSM
+    // reads from the FIFO (I_IDLE -> I_ITER_START transition).
+    // The unpacked wires are named fifo_rd_* and used in the iter FSM
+    // next-state logic below.
 
     // ========================================================================
     // Derivative Precomputation Sub-module (UNIT-005.02 combinational)
@@ -505,17 +637,17 @@ module rasterizer (
     // ========================================================================
 
     // Derivative latch (for raster_attr_accum)
-    wire latch_derivs  = (state == ITER_START);
+    wire latch_derivs  = (iter_state == I_ITER_START);
 
     // Attribute step signals from raster_edge_walk sub-module
     wire ew_attr_step_x;
     wire ew_attr_step_y;
 
     // Edge walk control signals
-    wire ew_do_idle       = (state == IDLE);
-    wire ew_init_pos_e0   = (state == ITER_START);
-    wire ew_init_e1       = (state == INIT_E1);
-    wire ew_init_e2       = (state == INIT_E2);
+    wire ew_do_idle       = (iter_state == I_IDLE);
+    wire ew_init_pos_e0   = (iter_state == I_ITER_START);
+    wire ew_init_e1       = (iter_state == I_INIT_E1);
+    wire ew_init_e2       = (iter_state == I_INIT_E2);
 
     // ========================================================================
     // Attribute Accumulator Sub-module Outputs
@@ -659,12 +791,12 @@ module rasterizer (
         .t1_acc         (uv1v_acc),
         // Q/W accumulator
         .q_acc          (q_acc),
-        // Reciprocal LUT shared interface
+        // Reciprocal interface (dedicated raster_recip_q module)
         .recip_operand  (ew_recip_operand),
         .recip_valid_in (ew_recip_valid_in),
-        .recip_out      (recip_lut_recip_out),
-        .recip_clz_out  (recip_lut_clz_out),
-        .recip_valid_out(recip_lut_valid_out),
+        .recip_out      (ew_recip_out_adapted),
+        .recip_clz_out  (ew_recip_clz_adapted),
+        .recip_valid_out(ew_recip_valid_adapted),
         // Attribute accumulator step commands
         .attr_step_x    (ew_attr_step_x),
         .attr_step_y    (ew_attr_step_y),
@@ -739,59 +871,99 @@ module rasterizer (
     wire       _unused_inside = inside_triangle;
 
     // ========================================================================
-    // State Register
+    // State Registers — Dual FSM
     // ========================================================================
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state <= IDLE;
+            setup_state <= S_IDLE;
         end else begin
-            state <= next_state;
+            setup_state <= next_setup_state;
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            iter_state <= I_IDLE;
+        end else begin
+            iter_state <= next_iter_state;
         end
     end
 
     // ========================================================================
-    // Next-State Logic
+    // Next-State Logic — Setup Producer FSM
     // ========================================================================
 
     always_comb begin
-        next_state = state;
+        next_setup_state = setup_state;
 
-        unique case (state)
-            IDLE: begin
+        unique case (setup_state)
+            S_IDLE: begin
                 if (tri_valid && tri_ready) begin
-                    next_state = SETUP;
+                    next_setup_state = S_SETUP;
                 end
             end
 
-            SETUP:      next_state = SETUP_2;
-            SETUP_2:    next_state = SETUP_3;
-            SETUP_3:    next_state = SETUP_RECIP;
+            S_SETUP:    next_setup_state = S_SETUP_2;
+            S_SETUP_2:  next_setup_state = S_SETUP_3;
+            S_SETUP_3:  next_setup_state = S_RECIP_WAIT;
 
-            SETUP_RECIP: begin
-                // Wait for reciprocal LUT result (1-cycle latency).
-                // If triangle is degenerate (zero area), skip traversal.
-                if (recip_lut_degenerate) begin
-                    next_state = IDLE;
-                end else begin
-                    next_state = ITER_START;
+            S_RECIP_WAIT: begin
+                // Wait for raster_recip_area result (2-cycle BRAM latency).
+                // recip_area_valid_out goes high when the result is ready.
+                if (recip_area_valid_out) begin
+                    next_setup_state = S_RECIP_DONE;
                 end
             end
 
-            ITER_START: next_state = INIT_E1;
-            INIT_E1:    next_state = INIT_E2;
-            INIT_E2:    next_state = WALKING;
+            S_RECIP_DONE: begin
+                // Latch inv_area and write to FIFO.
+                // If degenerate (zero area), skip this triangle.
+                // If FIFO is full, stall here until space is available.
+                if (recip_area_degenerate) begin
+                    next_setup_state = S_IDLE;
+                end else if (!fifo_full) begin
+                    // FIFO write happens this cycle; return to idle
+                    next_setup_state = S_IDLE;
+                end
+                // else: stall in S_RECIP_DONE until FIFO has space
+            end
 
-            WALKING: begin
+            default: begin
+                next_setup_state = S_IDLE;
+            end
+        endcase
+    end
+
+    // ========================================================================
+    // Next-State Logic — Iteration Consumer FSM
+    // ========================================================================
+
+    always_comb begin
+        next_iter_state = iter_state;
+
+        unique case (iter_state)
+            I_IDLE: begin
+                // Start iteration when FIFO has data
+                if (!fifo_empty) begin
+                    next_iter_state = I_ITER_START;
+                end
+            end
+
+            I_ITER_START: next_iter_state = I_INIT_E1;
+            I_INIT_E1:    next_iter_state = I_INIT_E2;
+            I_INIT_E2:    next_iter_state = I_WALKING;
+
+            I_WALKING: begin
                 // Edge walk sub-module handles tile traversal autonomously.
-                // Return to IDLE when walk is complete.
+                // Return to idle when walk is complete.
                 if (walk_done) begin
-                    next_state = IDLE;
+                    next_iter_state = I_IDLE;
                 end
             end
 
             default: begin
-                next_state = IDLE;
+                next_iter_state = I_IDLE;
             end
         endcase
     end
@@ -870,15 +1042,17 @@ module rasterizer (
     logic signed [10:0] next_edge2_B;
     logic signed [20:0] next_edge2_C;
 
-    // Inverse area
-    logic signed [15:0] next_inv_area;
+    // Inverse area (UQ4.14)
+    logic [17:0] next_inv_area;
 
     // Iteration next_* declarations are in raster_edge_walk sub-module.
     // Attribute derivative and accumulator next_* declarations are in
     // raster_attr_accum sub-module.
 
     // ========================================================================
-    // --- UNIT-005.01: Edge Setup (IDLE, SETUP, SETUP_2, SETUP_3, SETUP_RECIP) ---
+    // --- UNIT-005.01: Edge Setup (S_IDLE, S_SETUP, S_SETUP_2, S_SETUP_3,
+    //                               S_RECIP_WAIT, S_RECIP_DONE)
+    // --- Iteration unpack (I_IDLE FIFO read)
     // ========================================================================
     // Owns: tri_ready, vertex latches, edge coefficients, bbox, inv_area
 
@@ -948,9 +1122,19 @@ module rasterizer (
         next_bbox_max_y = bbox_max_y;
         next_inv_area = inv_area;
 
-        unique case (state)
-            IDLE: begin
-                next_tri_ready = 1'b1;
+        // --- Setup producer path (setup_state) ---
+        unique case (setup_state)
+            S_IDLE: begin
+                // tri_ready reflects FIFO availability: can accept when
+                // setup FSM is idle AND FIFO is not full.
+                // Can accept a new triangle when:
+                // 1. FIFO is not full
+                // 2. Iteration FSM is not using the shared multiplier
+                //    (I_ITER_START/I_INIT_E1/I_INIT_E2 contend for smul)
+                next_tri_ready = !fifo_full &&
+                    (iter_state != I_ITER_START) &&
+                    (iter_state != I_INIT_E1) &&
+                    (iter_state != I_INIT_E2);
                 if (tri_valid && tri_ready) begin
                     // Latch triangle vertices
                     next_x0 = px0;
@@ -1008,7 +1192,7 @@ module rasterizer (
                 end
             end
 
-            SETUP: begin
+            S_SETUP: begin
                 next_edge0_A = $signed({1'b0, y1}) - $signed({1'b0, y2});
                 next_edge0_B = $signed({1'b0, x2}) - $signed({1'b0, x1});
                 next_edge0_C = 21'(smul_p1 - smul_p2);
@@ -1025,25 +1209,56 @@ module rasterizer (
                 next_bbox_max_y = clamped_max_y;
             end
 
-            SETUP_2: begin
+            S_SETUP_2: begin
                 next_edge1_C = 21'(smul_p1 - smul_p2);
             end
 
-            SETUP_3: begin
+            S_SETUP_3: begin
                 next_edge2_C = 21'(smul_p1 - smul_p2);
-                // Area computation and reciprocal LUT submission happen
-                // combinationally via triangle_area and recip_lut_valid_in mux.
+                // Area computation and raster_recip_area submission happen
+                // combinationally via triangle_area and recip_area_valid_in.
             end
 
-            SETUP_RECIP: begin
-                // Latch inv_area from the reciprocal LUT output
-                next_inv_area = recip_lut_recip_out;
-                // If degenerate, tri_ready will be re-asserted when FSM
-                // returns to IDLE via next-state logic.
+            S_RECIP_WAIT: begin
+                // Waiting for raster_recip_area result (2-cycle BRAM latency).
+                // No datapath changes; just waiting.
+            end
+
+            S_RECIP_DONE: begin
+                // Latch inv_area from raster_recip_area output (UQ4.14)
+                next_inv_area = recip_area_out;
+                // FIFO write is handled by fifo_wr_en combinational logic.
+                // If degenerate, tri_ready will be re-asserted when setup FSM
+                // returns to S_IDLE via next-state logic.
             end
 
             default: begin end
         endcase
+
+        // --- Iteration consumer path: unpack FIFO data into working registers ---
+        // When the iteration FSM reads from the FIFO (I_IDLE -> I_ITER_START),
+        // we load the working registers from the FIFO read data.
+        // This overrides the default "hold" for all setup registers.
+        if ((iter_state == I_IDLE) && !fifo_empty) begin
+            // Unpack FIFO payload into working registers
+            // The packing order must match fifo_wr_data exactly.
+            {next_edge0_A, next_edge0_B, next_edge0_C,
+             next_edge1_A, next_edge1_B, next_edge1_C,
+             next_edge2_A, next_edge2_B, next_edge2_C,
+             next_bbox_min_x, next_bbox_max_x, next_bbox_min_y, next_bbox_max_y,
+             next_inv_area,
+             next_x0, next_y0, next_x1, next_y1, next_x2, next_y2,
+             next_z0, next_z1, next_z2,
+             next_c0_r0, next_c0_g0, next_c0_b0, next_c0_a0,
+             next_c0_r1, next_c0_g1, next_c0_b1, next_c0_a1,
+             next_c0_r2, next_c0_g2, next_c0_b2, next_c0_a2,
+             next_c1_r0, next_c1_g0, next_c1_b0, next_c1_a0,
+             next_c1_r1, next_c1_g1, next_c1_b1, next_c1_a1,
+             next_c1_r2, next_c1_g2, next_c1_b2, next_c1_a2,
+             next_uv0_u0, next_uv0_v0, next_uv0_u1, next_uv0_v1, next_uv0_u2, next_uv0_v2,
+             next_uv1_u0, next_uv1_v0, next_uv1_u1, next_uv1_v1, next_uv1_u2, next_uv1_v2,
+             next_q0, next_q1, next_q2} = fifo_rd_data;
+        end
     end
 
     // UNIT-005.02 and UNIT-005.03 logic is now in raster_attr_accum sub-module.
@@ -1118,7 +1333,7 @@ module rasterizer (
             edge2_A <= 11'sb0;
             edge2_B <= 11'sb0;
             edge2_C <= 21'sb0;
-            inv_area <= 16'sb0;
+            inv_area <= 18'd0;
         end else begin
             // UNIT-005.01 registers
             tri_ready      <= next_tri_ready;

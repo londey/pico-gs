@@ -15,10 +15,13 @@
 
 module raster_setup_fifo #(
     parameter DATA_WIDTH = 730,  // Payload width in bits
-    parameter DEPTH      = 2    // Number of entries (must be >= 1)
+    parameter DEPTH      = 2,   // Number of entries (must be >= 1)
+    // Pointer width: ceil(log2(DEPTH))
+    // For DEPTH=1, PTR_WIDTH=1 (need at least 1 bit for pointer)
+    parameter PTR_WIDTH  = (DEPTH <= 1) ? 1 : $clog2(DEPTH)
 ) (
     input  wire                    clk,       // System clock
-    input  wire                    rst_n,     // Active-low synchronous reset
+    input  wire                    rst_n,     // Active-low async reset
 
     // Write interface
     input  wire                    wr_en,     // Write enable
@@ -33,10 +36,6 @@ module raster_setup_fifo #(
     output wire                    empty,     // FIFO is empty
     output wire [PTR_WIDTH:0]      count      // Number of entries currently stored
 );
-
-    // Pointer width: ceil(log2(DEPTH))
-    // For DEPTH=1, PTR_WIDTH=1 (need at least 1 bit for pointer)
-    localparam PTR_WIDTH = (DEPTH <= 1) ? 1 : $clog2(DEPTH);
 
     // Storage array — register-based (fabric FFs)
     reg [DATA_WIDTH-1:0] mem [0:DEPTH-1];     // FIFO storage registers
@@ -105,7 +104,7 @@ module raster_setup_fifo #(
     end
 
     // Sequential logic — pointers and count
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             wr_ptr    <= {PTR_WIDTH{1'b0}};
             rd_ptr    <= {PTR_WIDTH{1'b0}};
