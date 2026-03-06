@@ -16,12 +16,12 @@ Sub-unit of UNIT-005 (Rasterizer).
 - Receives e0/e1/e2 initial values, row-start registers, and A/B edge coefficients from UNIT-005.01 (Edge Setup) and UNIT-005.02 (Derivative Pre-computation)
 - Receives S/T projected attribute values (Q4.12) and Q/W (Q3.12) from UNIT-005.03 (Attribute Accumulation) at each inside pixel
 - Commands UNIT-005.03 to step accumulators on X-step, Y-step, and row-reload events
-- Shares the reciprocal LUT module (`raster_recip_lut.sv`) with UNIT-005.01 for per-pixel 1/Q computation
+- Uses a dedicated per-pixel reciprocal module (`raster_recip_q.sv`) for 1/Q computation; UNIT-005.01 uses a separate dedicated module (`raster_recip_area.sv`)
 - Drives fragment output bus (frag_valid/frag_ready) toward UNIT-006 (Pixel Pipeline)
 
 ## Design Description
 
-**FSM states:** TILE_TEST, EDGE_TEST, PERSP_1, PERSP_2, EMIT, ITER_NEXT (inner loop)
+**FSM states:** TILE_TEST, EDGE_TEST, BRAM_READ, PERSP_1, PERSP_2, EMIT, ITER_NEXT (inner loop)
 
 ### 4×4 Tile-Ordered Traversal
 
@@ -52,25 +52,28 @@ For each pixel within an accepted tile, check e0 ≥ 0, e1 ≥ 0, e2 ≥ 0 (insi
 Pixels that fail any edge test advance to ITER_NEXT without entering the perspective correction pipeline.
 No multiply is required.
 
-### Perspective Correction Pipeline (PERSP_1, PERSP_2)
+### Perspective Correction Pipeline (BRAM_READ, PERSP_1, PERSP_2)
 
-For inside pixels, the FSM executes a 2-cycle perspective correction pipeline:
+For inside pixels, the FSM executes a 3-cycle perspective correction pipeline:
 
-**Cycle 1 (PERSP_1):**
+**Cycle 1 (BRAM_READ):**
 
-- Apply CLZ to the interpolated Q/W value from UNIT-005.03 to determine the normalization shift.
-- Index the 256-entry reciprocal LUT with the CLZ-normalized mantissa; apply 1 MULT18X18D linear interpolation between adjacent LUT entries (shared with UNIT-005.01).
-- Output 1/Q (Q3.12).
+- Apply CLZ to the interpolated Q/W value from UNIT-005.03 (unsigned — Q = 1/W is always positive for visible geometry) to determine the normalization shift.
+- Index the dedicated per-pixel reciprocal module (`raster_recip_q.sv`) with the 10-bit CLZ-normalized mantissa (from normalized[29:20]); initiate DP16KD BRAM read (18×1024 mode, UQ1.17 entries).
 - Compute frag_lod = CLZ(Q) as a UQ4.4 integer mip-level estimate.
 
-**Cycle 2 (PERSP_2):**
+**Cycle 2 (PERSP_1):**
+
+- BRAM read result available; apply 1 MULT18X18D linear interpolation to produce 1/Q in UQ4.14 (18-bit unsigned).
+
+**Cycle 3 (PERSP_2):**
 
 - Multiply S0 × (1/Q) using 1 dedicated MULT18X18D; extract upper bits as U0 (Q4.12).
 - Multiply T0 × (1/Q) using 1 dedicated MULT18X18D; extract upper bits as V0 (Q4.12).
 - Multiply S1 × (1/Q) using 1 dedicated MULT18X18D; extract upper bits as U1 (Q4.12).
 - Multiply T1 × (1/Q) using 1 dedicated MULT18X18D; extract upper bits as V1 (Q4.12).
 
-Total DSP usage for perspective correction: 4 MULT18X18D (plus the 1 shared with UNIT-005.01, counted in UNIT-005.01's budget).
+Total DSP usage for perspective correction: 1 MULT18X18D (1/Q interpolation, dedicated to this module) + 4 MULT18X18D (S/T multiply) = 5 MULT18X18D.
 
 ### Fragment Emission (EMIT)
 
@@ -107,17 +110,17 @@ These signals enable downstream consumers to optimize SDRAM burst scheduling and
 
 | Usage | MULT18X18D count |
 |---|---|
-| Reciprocal LUT interpolation for 1/Q (shared with UNIT-005.01) | 0 (counted in UNIT-005.01) |
+| Per-pixel 1/Q reciprocal interpolation (`raster_recip_q.sv`) | 1 |
 | Perspective correction: U0 = S0 × (1/Q) | 1 |
 | Perspective correction: V0 = T0 × (1/Q) | 1 |
 | Perspective correction: U1 = S1 × (1/Q) | 1 |
 | Perspective correction: V1 = T1 × (1/Q) | 1 |
-| **Sub-unit total (exclusive)** | **4** |
+| **Sub-unit total** | **5** |
 
 ## Implementation
 
-- `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, edge testing, perspective correction pipeline, block framing signals, fragment output handshake.
-- `spi_gpu/src/render/raster_recip_lut.sv`: 256-entry reciprocal LUT (shared instance, instantiated in parent `rasterizer.sv`).
+- `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
+- `spi_gpu/src/render/raster_recip_q.sv`: Dedicated per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), UQ1.17 entries, 2-cycle latency (BRAM read + MULT18X18D interpolation), UQ4.14 output.
 
 ## Verification
 

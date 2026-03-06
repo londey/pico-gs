@@ -14,8 +14,8 @@ Sub-unit of UNIT-005 (Rasterizer).
 ### Internal Interfaces
 
 - Receives triangle vertex positions from UNIT-004 (Triangle Setup) via the parent UNIT-005 input interface
-- Outputs edge coefficients, bounding box, and `inv_area` to UNIT-005.02 (Derivative Pre-computation)
-- Shares the reciprocal LUT module (`raster_recip_lut.sv`) with UNIT-005.04 for per-pixel 1/Q computation
+- Outputs edge coefficients, bounding box, and `inv_area` to the setup-iteration overlap FIFO, which feeds UNIT-005.02 (Derivative Pre-computation)
+- Uses a dedicated triangle setup reciprocal module (`raster_recip_area.sv`) with its own DP16KD; UNIT-005.04 uses a separate dedicated per-pixel reciprocal module (`raster_recip_q.sv`)
 
 ## Design Description
 
@@ -33,14 +33,16 @@ The signed triangle area is computed from vertex positions as:
 area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
 ```
 
-`inv_area` (Q3.12) is derived from this area value using the shared reciprocal LUT module:
+`inv_area` (UQ4.14, 18-bit unsigned after denormalization) is derived from this area value using the dedicated triangle setup reciprocal module (`raster_recip_area.sv`):
 
-1. Apply CLZ to the absolute value of the area to determine the normalization shift.
-2. Index the 256-entry LUT with the top 8 bits of the CLZ-normalized mantissa to obtain a coarse reciprocal.
-3. Apply 1 MULT18X18D linear interpolation between adjacent LUT entries using the remaining mantissa bits to refine the reciprocal.
-4. Re-apply the sign and normalization shift to produce the final Q3.12 `inv_area`.
+1. Apply CLZ to the 22-bit magnitude of the signed area to determine the normalization shift.
+2. Index the 512-entry DP16KD (36×512 mode) with the 9-bit CLZ-normalized mantissa (from normalized[29:21]) to obtain a 36-bit entry packing UQ1.17 reciprocal seed + UQ0.17 delta.
+3. Apply 1 MULT18X18D linear interpolation using the delta and remaining mantissa bits to refine the reciprocal in a single read.
+4. Re-apply the normalization shift to produce UQ4.14 `inv_area`.
+5. (Optional, compile-time parameter) Apply one Newton-Raphson refinement iteration using 1 additional MULT18X18D, adding 2-3 extra cycles of latency.
 
-The same reciprocal LUT module instance is reused by UNIT-005.04 during traversal to compute 1/Q per pixel (see UNIT-005.04).
+This module is latency-tolerant as it runs once per triangle during setup.
+UNIT-005.04 uses a separate dedicated per-pixel reciprocal module (`raster_recip_q.sv`) for 1/Q computation (see UNIT-005.04).
 
 ### DSP Usage
 
@@ -55,13 +57,13 @@ The same reciprocal LUT module instance is reused by UNIT-005.04 during traversa
 - A and B coefficients for all three edges
 - C coefficients for all three edges
 - Clamped bounding box min/max
-- `inv_area` (Q3.12) — internally computed triangle area reciprocal
+- `inv_area` (UQ4.14, 18-bit) — internally computed triangle area reciprocal
 
 ## Implementation
 
 - `spi_gpu/src/render/rasterizer.sv`: Edge setup logic within the parent rasterizer module.
   Corresponds to the `always_comb` next-state block covering SETUP/SETUP_2/SETUP_3 states and the associated flat `always_ff` register assignments.
-- `spi_gpu/src/render/raster_recip_lut.sv`: 256-entry reciprocal LUT with CLZ normalization and 1 MULT18X18D linear interpolation; instantiated once in `rasterizer.sv` and shared between this sub-unit and UNIT-005.04.
+- `spi_gpu/src/render/raster_recip_area.sv`: Dedicated triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 output, optional Newton-Raphson refinement.
 
 ## Verification
 
@@ -71,5 +73,5 @@ Key verification points for this sub-unit:
 
 - For a known triangle, confirm A and B coefficients match the analytic edge normal vectors.
 - Verify bounding box clamping respects FB_CONFIG.WIDTH_LOG2 and FB_CONFIG.HEIGHT_LOG2.
-- For known area values (including powers of two, non-powers, and values near LUT boundaries), confirm `inv_area` from the LUT matches the analytic reciprocal within Q3.12 rounding tolerance.
+- For known area values (including powers of two, non-powers, and values near LUT boundaries), confirm `inv_area` from `raster_recip_area.sv` matches the analytic reciprocal within UQ4.14 rounding tolerance.
 - Verify degenerate triangle (zero area) handling — the reciprocal LUT must produce a defined (saturated or zero) output and the rasterizer must not emit fragments.

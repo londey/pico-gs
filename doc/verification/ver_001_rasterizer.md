@@ -20,7 +20,9 @@ The testbench drives known triangle configurations through the triangle setup an
 - `spi_gpu/src/render/early_z.sv` compiles without errors under `verilator --lint-only -Wall` (rasterizer depends on early Z integration signals).
 - Triangle setup module (UNIT-004) is instantiated or stubbed so that the rasterizer receives valid setup data.
 - The testbench drives `fb_width_log2` and `fb_height_log2` register inputs (from UNIT-003) to configure the active surface dimensions before each test case.
-- The rasterizer computes inv_area internally via the CLZ + 256-entry LUT reciprocal unit (UNIT-005.01); the testbench does not supply `setup_inv_area` as an external input.
+- The rasterizer computes inv_area internally via a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode) in UNIT-005.01; the testbench does not supply `setup_inv_area` as an external input.
+- Per-pixel 1/Q is computed by a separate dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode) in UNIT-005.04.
+- A setup-iteration overlap FIFO (compile-time configurable depth, default 2) allows triangle N+1 setup to proceed concurrently with triangle N iteration.
 
 ## Procedure
 
@@ -63,7 +65,7 @@ The testbench drives known triangle configurations through the triangle setup an
    - R/G/B/A of color1 (Gouraud mode)
    - S0/T0 and S1/T1 perspective-projected texture coordinates
    UV0 and UV1 coordinates on the fragment output bus (`frag_uv0`, `frag_uv1`) carry true perspective-correct U,V values in Q4.12 (16-bit signed, 4 integer bits, 12 fractional bits) as defined in `fp_types_pkg.sv`.
-   The rasterizer performs perspective correction internally: S×(1/Q) and T×(1/Q) are computed in a 2-cycle pipeline before the fragment is emitted.
+   The rasterizer performs perspective correction internally: S×(1/Q) and T×(1/Q) are computed via the dedicated per-pixel reciprocal module (`raster_recip_q.sv`) and 4 MULT18X18D blocks before the fragment is emitted.
    `frag_lod` (UQ4.4) is present on the fragment bus; its value is derived from CLZ applied to Q at the pixel location.
    `frag_q` is not present on the fragment bus.
    Reference values are computed offline using the same incremental step model (not the barycentric MAC model), with UV values in Q4.12 representing true perspective-correct coordinates.
@@ -129,6 +131,8 @@ The testbench drives known triangle configurations through the triangle setup an
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.
   The testbench clock should match this frequency for cycle-accurate fragment throughput verification.
 - Edge function C coefficients are computed using 2 MULT18X18D DSP blocks in the edge setup unit (UNIT-005.01).
-  inv_area is computed internally by UNIT-005.01 via CLZ + 256-entry LUT + 1 MULT18X18D linear interpolation; the same LUT is reused per-pixel for 1/Q computation.
-  Perspective correction (S×(1/Q), T×(1/Q)) uses 4 dedicated MULT18X18D in the iteration FSM (UNIT-005.04), adding a 2-cycle latency after the attribute accumulation step.
+  inv_area is computed by a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode, UQ4.14 output) in UNIT-005.01.
+  Per-pixel 1/Q is computed by a separate dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output) in UNIT-005.04.
+  Perspective correction (S×(1/Q), T×(1/Q)) uses 4 dedicated MULT18X18D in the iteration FSM (UNIT-005.04).
+  A setup-iteration overlap FIFO (compile-time configurable depth, default 2) allows triangle N+1 setup to proceed concurrently with triangle N iteration; multi-triangle tests should verify that overlap does not corrupt interpolated values.
   The testbench should allow sufficient cycles for setup completion before checking output values, accounting for the perspective correction pipeline latency.

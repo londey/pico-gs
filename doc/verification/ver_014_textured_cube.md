@@ -182,6 +182,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Relationship to VER-012:** The texture setup (16×16 RGB565 checker pattern, INT-014 tiled layout, TEX0_BASE/TEX0_FMT register writes, INT-032 cache miss protocol) follows the pattern established in VER-012 (textured triangle).
   VER-014 extends that pattern to a multi-triangle scene with multiple distinct texture cache fill patterns arising from spatially varied UV access across differently oriented faces.
 - **Perspective-correct UV and UV format:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.04).
+  The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
   On the rasterizer→pixel_pipeline fragment bus, `frag_uv0` and `frag_uv1` carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   `frag_q` is not present on the bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q.
   The checker pattern on a perspective-projected cube face exhibits clear foreshortening — this makes affine warping artifacts and perspective correction failures immediately visible in the golden image comparison.
@@ -201,6 +202,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured-cube`.
 - **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PPM, copy it to `spi_gpu/tests/golden/textured_cube.ppm`, and commit.
-  The golden image must be regenerated and re-approved whenever: the rasterizer tiled address stride changes; the perspective-correct interpolation logic in UNIT-005 is modified; the format-select mux path in UNIT-006 changes; the COMBINE_MODE=MODULATE pipeline behavior in UNIT-010 changes; or the rasterizer traversal order changes.
+  The golden image must be regenerated and re-approved whenever: the rasterizer tiled address stride changes; the perspective-correct interpolation logic in UNIT-005 is modified (including the reciprocal module split replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs); the format-select mux path in UNIT-006 changes; the COMBINE_MODE=MODULATE pipeline behavior in UNIT-010 changes; or the rasterizer traversal order changes.
+  The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations; perspective foreshortening on cube faces is particularly sensitive to this.
 - **VER-014 together with VER-005** (Texture Decoder Unit Testbench) and **VER-012** (Textured Triangle) provide supplementary integration coverage of REQ-003.01.
   VER-014 additionally provides supplementary integration coverage of REQ-005.02 alongside VER-011.

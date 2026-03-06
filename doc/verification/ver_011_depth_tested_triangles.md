@@ -171,4 +171,5 @@ The integration harness drives the following register-write sequence into UNIT-0
 - The background of the framebuffer (pixels outside both triangles) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
+  The split of the shared reciprocal LUT into dedicated area and per-pixel 1/Q modules (`raster_recip_area.sv`, `raster_recip_q.sv`) and the addition of the setup-iteration overlap FIFO do not affect flat-shaded depth-tested rendering (no perspective correction path exercised for UV), so golden image re-approval is not expected for that change alone.
   See `test_strategy.md` for the re-approval workflow.

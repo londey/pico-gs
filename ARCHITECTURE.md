@@ -46,7 +46,9 @@ The CMD_EMPTY GPIO indicates the FIFO is drained and no command is executing, wh
 
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
 The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using incremental derivative-based traversal with 7 MULT18X18D DSP blocks.
-It interpolates Z, Q (1/W), two vertex colors, and two UV coordinate pairs (S×Q, T×Q perspective projections at vertices), then applies perspective correction internally: a reciprocal LUT computes 1/Q per pixel (reusing the edge-setup LUT via 1 MULT18X18D), and four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.
+It interpolates Z, Q (1/W), two vertex colors, and two UV coordinate pairs (S×Q, T×Q perspective projections at vertices), then applies perspective correction internally using two dedicated reciprocal modules backed by ECP5 DP16KD block RAMs: one for the triangle-setup inv_area computation (`raster_recip_area.sv`, 36×512 mode, UQ4.14 output) and one for per-pixel 1/Q computation (`raster_recip_q.sv`, 18×1024 mode, UQ4.14 output).
+A compile-time configurable register FIFO (default depth 2, ~730 bits wide) between setup and iteration enables triangle N+1 setup to overlap with triangle N iteration.
+Four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.
 The per-pixel level-of-detail (LOD) is derived from Q via CLZ and emitted on the fragment bus as `frag_lod` (UQ4.4).
 All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
 The pixel pipeline (UNIT-006) performs early Z testing and dual-texture sampling through per-sampler caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
@@ -308,11 +310,13 @@ Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after 
 | Texture cache (2 samplers) | 32 | 16 per sampler |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
 | Command FIFO | 2 | 512×72 async CDC |
+| Reciprocal LUT (area) | 1 | DP16KD 36×512, inv_area seed+delta |
+| Reciprocal LUT (1/Q) | 1 | DP16KD 18×1024, per-pixel 1/Q |
 | Dither matrix | 1 | 16×16 blue noise |
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | FB write buffer | 1 | Single-tile coalescing buffer |
-| **Total** | **42–43** | **of 56 available (ECP5-25K)** |
+| **Total** | **44–45** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 

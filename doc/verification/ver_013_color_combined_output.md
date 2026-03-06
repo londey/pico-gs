@@ -186,7 +186,8 @@ The integration harness drives the following register-write sequence into UNIT-0
   VER-004 verifies individual combiner modes and arithmetic at the unit level; VER-013 verifies the MODULATE mode through the full integrated pipeline including texture sampling and vertex color interpolation.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005), or after any change to UNIT-010 combiner arithmetic.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to UNIT-010 combiner arithmetic.
+  The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations.
   See `test_strategy.md` for the re-approval workflow.
 - **UV format and golden image:** UV coordinates on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12, as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   Perspective correction is performed inside the rasterizer (UNIT-005.04); the pixel pipeline receives fully corrected U,V directly.

@@ -14,7 +14,7 @@ Sub-unit of UNIT-005 (Rasterizer).
 ### Internal Interfaces
 
 - Receives A/B/C edge coefficients and bounding box from UNIT-005.01 (Edge Setup)
-- Receives `inv_area` (Q3.12) from UNIT-005.01 (internally computed; not from UNIT-004)
+- Receives `inv_area` (UQ4.14) from UNIT-005.01 via the setup-iteration overlap FIFO (internally computed; not from UNIT-004)
 - Outputs derivatives and initial accumulator values to UNIT-005.03 (Attribute Accumulation) and UNIT-005.04 (Iteration FSM)
 
 ## Design Description
@@ -24,7 +24,7 @@ Sub-unit of UNIT-005 (Rasterizer).
 Evaluates the three edge functions at the bounding box origin using the 2 MULT18X18D blocks shared with UNIT-005.01 (cold path, once per triangle).
 Latches the evaluated edge function values into e0/e1/e2 and the row-start registers e0_row/e1_row/e2_row.
 
-Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 14 interpolated attributes using `inv_area` from UNIT-005.01 and the A/B edge coefficients.
+Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 14 interpolated attributes using `inv_area` (UQ4.14) from UNIT-005.01 (received via the setup-iteration overlap FIFO) and the A/B edge coefficients.
 For each attribute `f` at vertices v0, v1, v2:
 
 ```

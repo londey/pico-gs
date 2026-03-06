@@ -108,6 +108,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   Additionally, the rasterizer uses incremental derivative interpolation (not barycentric multiply-accumulate), which may shift interpolated color values by 1 ULP at some pixel locations.
   After Phase 2 RTL implementation is complete, re-run the test, visually inspect the output, and re-commit the golden image before marking this test as passing.
 - The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), since pixel positions in the framebuffer may shift.
+  The split of the shared reciprocal LUT into dedicated area and per-pixel 1/Q modules (`raster_recip_area.sv`, `raster_recip_q.sv`) and the addition of the setup-iteration overlap FIFO do not affect Gouraud-only rendering (no perspective correction path exercised), so golden image re-approval is not expected for that change alone.
   See `test_strategy.md` for the re-approval workflow.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
   Dithered rendering is tested separately in VER-013.

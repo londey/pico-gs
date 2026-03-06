@@ -49,7 +49,7 @@ Accumulator outputs are extracted and promoted before being passed to UNIT-005.0
 | S0, T0, S1, T1 | acc[31:16] → Q4.12 | Q4.12 signed 16-bit |
 
 Color clamping is applied after extraction: accumulated colors that overflow the UNORM8 range (due to vertex attributes at the triangle boundary) are saturated to 0 or 255 before output.
-S/T projected texture coordinates are passed to UNIT-005.04 as Q4.12 values for the perspective correction pipeline; they are not directly output to the fragment bus.
+S/T projected texture coordinates are passed to UNIT-005.04 as Q4.12 values for the 3-cycle perspective correction pipeline; they are not directly output to the fragment bus.
 
 ## Implementation
 

@@ -155,6 +155,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
 - **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.04).
+  The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
   `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; the pixel pipeline (UNIT-006) uses them directly for texture cache lookup without further division.
   With the checker pattern, any affine warping would be visible as curved checker lines — the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
 - **Vertex color modulation:** All vertex colors are set to white (`0xFFFFFFFF`) so the MODULATE combiner mode produces `texture_color x 1.0 = texture_color`.
@@ -164,7 +165,8 @@ The integration harness drives the following register-write sequence into UNIT-0
   VER-005 verifies individual format decoders at the unit level; VER-012 verifies the full texture sampling path through the integrated pipeline.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), or after any change to the format-select mux path in UNIT-006.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to the format-select mux path in UNIT-006.
+  The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations.
   See `test_strategy.md` for the re-approval workflow.
 - **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   Perspective correction (S×(1/Q), T×(1/Q)) is performed inside the rasterizer (UNIT-005.04); the pixel pipeline (UNIT-006) receives fully corrected U,V coordinates directly and no longer performs 1/Q division on the UV bus.

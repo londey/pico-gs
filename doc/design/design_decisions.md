@@ -36,6 +36,49 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-035: Dedicated DP16KD Reciprocal Modules with Setup-Iteration Overlap FIFO
+
+**Date:** 2026-03-06
+**Status:** Accepted
+
+### Context
+
+The rasterizer used a single shared `raster_recip_lut.sv` module with duplicated 257-entry case-statement ROMs for both inv_area (once per triangle) and per-pixel 1/Q computation.
+Sharing a single reciprocal module forced sequential setup-then-iterate execution: the next triangle's setup could not begin until the current triangle's iteration completed, because both paths contended for the same LUT.
+The case-statement ROMs consumed significant FPGA logic resources (large mux trees) and limited both precision (Q3.12, 256 entries) and throughput.
+
+### Decision
+
+Replace the shared `raster_recip_lut.sv` with two dedicated DP16KD-backed reciprocal modules:
+
+- `raster_recip_area.sv`: 1 DP16KD in 36×512 mode for inv_area.
+  9-bit CLZ index from 22-bit signed magnitude; 36-bit entries pack UQ1.17 seed + UQ0.17 delta for single-read linear interpolation.
+  Output: UQ4.14 (18-bit, 2 extra fractional bits vs Q4.12).
+  Optional compile-time Newton-Raphson refinement (1 extra MULT18X18D, 2-3 cycles).
+- `raster_recip_q.sv`: 1 DP16KD in 18×1024 mode for per-pixel 1/Q.
+  10-bit CLZ index from unsigned Q/W; 1024 UQ1.17 entries.
+  2-cycle latency (BRAM read + MULT18X18D interpolation).
+  Output: UQ4.14 (18-bit unsigned).
+
+A compile-time configurable depth (default 2) register-based FIFO (~730 bits × depth, ~1460 FFs at depth 2) sits between the triangle setup producer and the edge-walk iteration consumer, enabling setup of triangle N+1 to overlap with iteration of triangle N.
+
+### Rationale
+
+- Eliminates large case-statement mux trees, trading logic for 2 DP16KD hard blocks (budget 37 to 39 of 56, 70%).
+- Doubles or quadruples LUT entry count (512/1024 vs 256), improving reciprocal accuracy.
+- Widens output from 16-bit Q4.12 to 18-bit UQ4.14, providing 2 extra fractional bits.
+- Decoupling setup and iteration paths enables producer-consumer pipelining, eliminating setup stalls for sequences of small triangles.
+- DSP impact: +1 MULT18X18D (was 7, now 8; 9 with Newton-Raphson), within the ≤16 budget.
+- Perspective correction pipeline grows from 2 to 3 cycles (BRAM read latency), but steady-state throughput remains 1 fragment/cycle.
+
+### Consequences
+
+- EBR budget increases from 37 to 39 (70% of 56 available).
+- UNIT-005 DSP budget increases from 7 to 8 MULT18X18D (9 with optional Newton-Raphson).
+- Perspective correction pipeline latency increases from 2 to 3 cycles; small triangles see marginally higher pipeline drain cost.
+- The setup-iteration overlap FIFO adds ~1460 FFs at depth 2.
+- The old `raster_recip_lut.sv` with its duplicated case-statement ROMs is removed entirely.
+
 ## DD-034: Yosys-Compatible SystemVerilog Subset for Synthesis
 
 **Date:** 2026-03-01
