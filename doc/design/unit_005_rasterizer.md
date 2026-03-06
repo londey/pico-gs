@@ -139,6 +139,7 @@ Each sub-unit is documented in its own design unit file:
 - `spi_gpu/src/render/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
 - `spi_gpu/src/render/raster_deriv.sv`: Purely combinational derivative precomputation (UNIT-005.02 combinational path).
 - `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.02 latching / UNIT-005.03).
+- `spi_gpu/src/render/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
 - `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline (UNIT-005.04).
 
 ## Verification
