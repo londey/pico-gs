@@ -72,12 +72,6 @@ Internal connections not formally specified as interfaces.
 
 List all source files that implement this unit.
 
-## Verification
-
-- `<test filepath>`: <what it tests>
-
-List all test files for this unit.
-
 ## Design Notes
 
 <Additional design considerations>

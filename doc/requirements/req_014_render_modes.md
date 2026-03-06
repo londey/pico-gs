@@ -20,21 +20,6 @@ The shared vertex transformation infrastructure (REQ-007) provides the common ma
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-014.01 (Lightmapped Static Mesh)
-- REQ-014.02 (Static Mesh with Directional Lighting)
-- REQ-014.03 (Skinned Mesh)
-- REQ-014.04 (Particle System)
-
-## Allocated To
-
-- UNIT-006 (Pixel Pipeline) — GPU-side multi-texture and combiner execution for lightmapped mode
-- UNIT-021 (Core 1 Render Executor) — host-side render command dispatch
-- UNIT-022 (GPU Driver Layer) — GPU register configuration for each mode
-- UNIT-023 (Transformation Pipeline) — vertex transformation shared by all modes
-- UNIT-024 (Lighting Calculator) — per-vertex lighting for directionally-lit modes
-
 ## Verification Method
 
 **Inspection:** Verify that each render mode's GPU register configuration (combiner mode, texture unit config, render mode flags) produces the correct visual output through UNIT-006.

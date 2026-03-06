@@ -19,14 +19,6 @@ It drives the GPU model via the same 72-bit register-write protocol defined in I
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-010.02 (Verilator Interactive Simulator)
-
-## Allocated To
-
-- UNIT-037 (Verilator Interactive Simulator App)
-
 ## Notes
 
 REQ-010.01 (PC Debug Host) and its implementation units (UNIT-035, UNIT-036) have moved to the pico-racer repository (https://github.com/londey/pico-racer), which provides the host application that drives the GPU over SPI from a PC via FT232H.

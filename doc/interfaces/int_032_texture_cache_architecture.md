@@ -4,18 +4,6 @@
 
 Internal
 
-## Parties
-
-- **Provider:** UNIT-006 (Pixel Pipeline)
-- **Consumer:** UNIT-006 (Pixel Pipeline)
-
-## Referenced By
-
-- REQ-003 (Texture Samplers)
-- REQ-003.06 (Texture Sampling)
-- REQ-003.07 (Texture Mipmapping)
-- REQ-003.08 (Texture Cache)
-
 ## Specification
 
 ### Overview

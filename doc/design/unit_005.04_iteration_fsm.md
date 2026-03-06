@@ -5,10 +5,6 @@
 Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake.
 Sub-unit of UNIT-005 (Rasterizer).
 
-## Parent Unit
-
-- UNIT-005 (Rasterizer)
-
 ## Implements Requirements
 
 - REQ-002.03 (Rasterization Algorithm) — 4×4 tile traversal, hierarchical tile rejection, and per-pixel perspective correction

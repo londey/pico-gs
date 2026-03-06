@@ -4,30 +4,6 @@
 
 Internal
 
-## Serves Requirement Areas
-
-- Area 7: Vertex Transformation (REQ-007.01, REQ-007.02)
-- Area 8: Scene Graph/ECS (REQ-008.01, REQ-008.02, REQ-008.03, REQ-008.04)
-
-## Parties
-
-- **Provider:** UNIT-026 (Inter-Core Queue)
-- **Consumer:** UNIT-020 (Core 0 Scene Manager)
-- **Consumer:** UNIT-021 (Core 1 Render Executor)
-- **Consumer:** UNIT-027 (Demo State Machine)
-
-## Referenced By
-
-- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-009.01 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
-- REQ-007.01 (Matrix Transformation Pipeline) — Area 7: Vertex Transformation
-- REQ-008.03 (Scene Graph Management) — Area 8: Scene Graph/ECS
-- REQ-008.04 (Render Command Queue) — Area 8: Scene Graph/ECS
-- REQ-007.02 (Render Mesh Patch) — Area 7: Vertex Transformation
-
-Note: REQ-111 (Dual-Core Architecture) is retired; its reference has been removed.
-
 ## Specification
 
 ## Overview
@@ -185,7 +161,6 @@ Core 0 performs frustum culling per frame: tests each model's overall AABB, then
 | Queue memory | 64 × ~264 bytes ≈ 16.5 KB |
 
 **Note**: RenderMeshPatch commands are larger than the previous SubmitScreenTriangle (~80 bytes) but there are far fewer per frame (~29 vs ~144). Consider sharing per-frame state (MVP matrix, lights) via a separate mechanism to reduce per-command size.
-
 
 ## Constraints
 

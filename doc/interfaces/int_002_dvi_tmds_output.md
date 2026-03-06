@@ -9,19 +9,6 @@ External Standard
 - **Standard:** DVI TMDS Output
 - **Reference:** DVI 1.0 specification for TMDS encoding at 640×480@60Hz.
 
-## Parties
-
-- **Provider:** External
-- **Consumer:** UNIT-009 (DVI TMDS Encoder)
-- **Provider:** UNIT-009 (DVI TMDS Encoder)
-- **Provider:** UNIT-008 (Display Controller)
-
-## Referenced By
-
-- REQ-006.01 (Display Output) — area 6: Screen Scan Out
-- REQ-006.02 (Display Output Timing) — area 6: Screen Scan Out
-- REQ-006 (Screen Scan Out)
-
 ## Specification
 
 ### Overview

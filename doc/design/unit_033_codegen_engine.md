@@ -4,10 +4,6 @@
 
 Rust source and binary data generation for compiled assets
 
-## Parent Area
-
-- Area 13: Game Data Preparation/Import
-
 ## Implements Requirements
 
 - REQ-012.01 (PNG Asset Processing)

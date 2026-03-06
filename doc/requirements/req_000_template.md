@@ -36,10 +36,6 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 - Or "None" if this is a top-level requirement
 - Child requirements use hierarchical IDs: REQ-NNN.NN (e.g., REQ-004.01 is a child of REQ-004)
 
-## Allocated To
-
-- UNIT-NNN (<unit name>)
-
 ## Interfaces
 
 - INT-NNN (<interface name>)
@@ -52,10 +48,6 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 - **Analysis:** Verified by technical evaluation
 - **Inspection:** Verified by examination
 - **Demonstration:** Verified by operation
-
-## Verified By
-
-- VER-NNN (<verification name>)
 
 ## Notes
 

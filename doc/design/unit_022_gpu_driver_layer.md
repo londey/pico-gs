@@ -4,10 +4,6 @@
 
 Platform-agnostic GPU register protocol and flow control, generic over SPI transport
 
-## Parent Requirement Area
-
-- Area 7: Vertex Transformation / Area 8: Scene Graph/ECS (per proposed change: UNIT-022 serves both areas)
-
 ## Implements Requirements
 
 - REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
@@ -25,8 +21,6 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - REQ-014.01 (Lightmapped Static Mesh) — combiner mode and texture unit register configuration
 - REQ-013 (Host SPI Driver)
 - REQ-014 (Render Modes)
-
-Note: REQ-100 (Host Firmware Architecture), REQ-110 (GPU Initialization), and REQ-121 (Async SPI Transmission) are retired; their references have been removed.
 
 ## Interfaces
 

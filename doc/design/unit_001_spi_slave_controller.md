@@ -4,10 +4,6 @@
 
 Receives 72-bit SPI transactions and writes to register file
 
-## Parent Area
-
-- REQ-001 (GPU SPI Controller)
-
 ## Implements Requirements
 
 - REQ-001.01 (Basic Host Communication)

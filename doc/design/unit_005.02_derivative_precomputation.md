@@ -5,10 +5,6 @@
 Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin.
 Sub-unit of UNIT-005 (Rasterizer).
 
-## Parent Unit
-
-- UNIT-005 (Rasterizer)
-
 ## Implements Requirements
 
 - REQ-002.03 (Rasterization Algorithm) — derivative precomputation for incremental interpolation

@@ -13,16 +13,6 @@ External Standard
 - **Standard:** USB HID Keyboard
 - **Reference:** USB HID specification for keyboard input.
 
-## Parties
-
-- **Provider:** External
-- **Consumer:** UNIT-025 (USB Keyboard Handler)
-
-## Referenced By
-
-- REQ-009.01 (USB Keyboard Input) — canonical requirement; REQ-113 retired and merged into REQ-009.01
-- REQ-009.02 (Gamepad Input)
-
 ## Specification
 
 ### Overview

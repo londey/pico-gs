@@ -4,48 +4,6 @@
 
 Internal
 
-## Serves Requirement Areas
-
-- Area 1: GPU SPI Controller (REQ-001.06, REQ-013.01, REQ-013.02, REQ-013.03)
-- Area 4: Fragment Processor/Color Combiner (REQ-004.02)
-- Area 5: Blend/Frame Buffer Store (REQ-005.08, REQ-005.09, REQ-005.10)
-- Area 6: Screen Scan Out (REQ-006.03)
-- Area 7: Vertex Transformation (REQ-007.02)
-- Area 8: Scene Graph/ECS (REQ-008.01, REQ-008.02, REQ-008.03, REQ-008.04, REQ-008.05)
-- Area 10: GPU Debug GUI (REQ-010.01)
-- Area 14: Demo Scenes (REQ-014.01, REQ-014.02, REQ-014.03, REQ-014.04)
-
-## Parties
-
-- **Provider:** UNIT-022 (GPU Driver Layer)
-- **Consumer:** UNIT-021 (Core 1 Render Executor), pico-gs-pc main loop
-- **Consumer:** UNIT-020 (Core 0 Scene Manager)
-
-## Referenced By
-
-- REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
-- REQ-008.02 (Render Pipeline Execution) — Area 8: Scene Graph/ECS
-- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-010.01 (PC Debug Host) — Area 10: GPU Debug GUI
-- REQ-008.03 (Scene Graph Management) — Area 8: Scene Graph/ECS
-- REQ-007.02 (Render Mesh Patch) — Area 7: Vertex Transformation
-- REQ-013.02 (Upload Texture) — Area 1: GPU SPI Controller
-- REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
-- REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
-- REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
-- REQ-001.06 (GPU Flow Control) — Area 1: GPU SPI Controller
-- REQ-008.05 (Default Demo Startup) — Area 8: Scene Graph/ECS
-- REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
-- REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
-- REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
-- REQ-014.04 (Particle System)
-- REQ-014.01 (Lightmapped Static Mesh)
-- REQ-014.02 (Static Mesh with Directional Lighting)
-- REQ-014.03 (Skinned Mesh (3-Bone))
-- REQ-007.01 (Matrix Transformation Pipeline)
-
-Note: REQ-100 (Host Firmware Architecture) and REQ-110 (GPU Initialization) and REQ-120 (Async Data Loading) are retired; their references have been removed.
-
 ## Specification
 
 ## Overview

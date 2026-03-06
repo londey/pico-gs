@@ -49,10 +49,12 @@ Explain the naming convention:
 
 Explain that all document types support two-level hierarchy — child documents use dot-notation (e.g., `REQ-001.03`, `INT-002.01`, `UNIT-003.01`) so the parent relationship is visible from the ID itself.
 
-Explain that these documents cross-reference each other to create a traceability web:
-- Requirements reference the interfaces they use, the design units that implement them, and the verifications that prove them
+Explain that these documents reference each other in one direction to create a traceability chain:
+- Requirements reference the interfaces they depend on
 - Design units reference the requirements they satisfy and the interfaces they provide or consume
 - Verification documents reference the requirements they verify and the design units they exercise
+
+References only flow upward (VER → UNIT/REQ → INT). There are no back-reference sections — use `.syskit/scripts/trace-query.sh <ID>` to find what references a given document.
 
 ### Step 3A: Create a Requirement
 
@@ -73,7 +75,7 @@ Once they respond, create the requirement:
      5. **Necessary** — Is this requirement essential, or is it an implementation detail that belongs in a design unit?
      If the statement fails any check, explain the issue to the user and help them revise it before proceeding.
    - **Rationale:** Ask why this requirement exists
-4. Leave **Allocated To** and **Interfaces** as TBD — these will be filled in after creating those documents
+4. Leave **Interfaces** as TBD — this will be filled in after creating the interface document
 
 Write the completed content to the file.
 
@@ -87,8 +89,6 @@ Once they respond:
 2. Read the created file
 3. Walk the user through:
    - **Type:** Internal, External Standard, or External Service
-   - **Parties:** Leave Provider/Consumer as TBD until the design unit exists
-   - **Referenced By:** Add the requirement just created (e.g., REQ-001)
    - **Specification:** Help them write at least an overview of what this interface does
    - Help the user understand that detailed data layouts, field definitions, register maps, and encoding specifications belong here in the interface document — not in requirements. If the user described low-level details during requirement creation that were redirected here, incorporate them into the interface specification.
 
@@ -112,16 +112,12 @@ Write the completed content to the file.
 
 ### Step 6A: Wire Up Cross-References
 
-Now go back and complete the cross-references:
+Now go back and complete the forward references:
 
 1. Edit the requirement file:
-   - Set **Allocated To** → the design unit just created (e.g., UNIT-001)
    - Set **Interfaces** → the interface just created (e.g., INT-001)
 
-2. Edit the interface file:
-   - Set **Provider/Consumer** in Parties → the design unit (e.g., UNIT-001)
-
-Explain to the user how this traceability web works: every requirement traces forward to what implements it, and every design unit traces back to why it exists.
+Explain that references flow in one direction: the design unit already references the requirement it implements and the interface it provides/consumes. The requirement references the interface it depends on. No document needs to be edited to add back-references — use `.syskit/scripts/trace-query.sh` to look up what references a given document.
 
 ### Step 7A: Update Manifest and Explain Workflow
 
@@ -162,10 +158,11 @@ Provide a brief inventory of existing documents:
 Explain the conventions this project uses:
 
 1. **Naming:** `req_NNN_name.md` → `REQ-NNN`, `int_NNN_name.md` → `INT-NNN`, `unit_NNN_name.md` → `UNIT-NNN`, `ver_NNN_name.md` → `VER-NNN` (children use dot-notation: `req_NNN.NN_name.md` → `REQ-NNN.NN`, `int_NNN.NN_name.md` → `INT-NNN.NN`, `unit_NNN.NN_name.md` → `UNIT-NNN.NN`, `ver_NNN.NN_name.md` → `VER-NNN.NN`)
-2. **Cross-references:** Documents link to each other using these IDs to create traceability:
-   - Requirements → Interfaces they use, Design Units that implement them, Verifications that prove them
+2. **Cross-references:** Documents link to each other using these IDs. References flow in one direction (upward):
+   - Requirements → Interfaces they depend on
    - Design Units → Requirements they satisfy, Interfaces they provide/consume
    - Verifications → Requirements they verify, Design Units they exercise
+   - Use `.syskit/scripts/trace-query.sh <ID>` for reverse lookups
 3. **Manifest:** `.syskit/manifest.md` stores SHA256 hashes for freshness checking between workflow steps
 
 ### Step 4B: Explain the Change Workflow

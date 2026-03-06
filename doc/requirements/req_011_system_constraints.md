@@ -20,12 +20,6 @@ Host application resource constraints (RP2350 SRAM, Flash, USB stack sizing) are
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-011.01 (Performance Targets)
-- REQ-011.02 (Resource Constraints)
-- REQ-011.03 (Reliability Requirements)
-
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.

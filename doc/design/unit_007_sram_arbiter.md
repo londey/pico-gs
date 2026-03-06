@@ -7,7 +7,6 @@ Arbitrates SDRAM access between display and render
 ## Implements Requirements
 
 - REQ-001.02 (Memory Upload Interface)
-- REQ-002.01 (Flat Shaded Triangle)
 - REQ-005.01 (Framebuffer Management)
 - REQ-005.02 (Depth Tested Triangle)
 - REQ-005.04 (Enhanced Z-Buffer)

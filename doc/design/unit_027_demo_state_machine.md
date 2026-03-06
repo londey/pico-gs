@@ -1,9 +1,5 @@
 # UNIT-027: Demo State Machine
 
-## Parent Area
-
-8. Scene Graph/ECS (Pico Software)
-
 ## Purpose
 
 Demo selection and switching logic

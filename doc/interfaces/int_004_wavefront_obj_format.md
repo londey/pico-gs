@@ -9,15 +9,6 @@ External Standard
 - **Standard:** Wavefront OBJ Format
 - **Reference:** OBJ file format specification for mesh parsing.
 
-## Parties
-
-- **Provider:** External
-- **Consumer:** UNIT-031 (OBJ Parser)
-
-## Referenced By
-
-- REQ-012.02 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
-
 ## Specification
 
 ### Overview

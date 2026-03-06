@@ -19,16 +19,6 @@ This covers the per-patch processing loop from mesh data to GPU-ready vertex sub
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-007.01 (Matrix Transformation Pipeline)
-- REQ-007.02 (Render Mesh Patch)
-
-## Allocated To
-
-- UNIT-023 (Transformation Pipeline)
-- UNIT-024 (Lighting Calculator)
-
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.

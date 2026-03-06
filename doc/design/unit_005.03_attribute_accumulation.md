@@ -5,10 +5,6 @@
 Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition.
 Sub-unit of UNIT-005 (Rasterizer).
 
-## Parent Unit
-
-- UNIT-005 (Rasterizer)
-
 ## Implements Requirements
 
 - REQ-002.02 (Gouraud Shaded Triangle) — color interpolation

@@ -1,9 +1,5 @@
 # UNIT-026: Inter-Core Queue
 
-## Parent Area
-
-8. Scene Graph/ECS (Pico Software)
-
 ## Purpose
 
 SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-threaded equivalent on other platforms)

@@ -9,22 +9,9 @@ External Standard
 - **Standard:** SPI Mode 0 Protocol
 - **Reference:** SPI specification for Mode 0 electrical characteristics (CPOL=0, CPHA=0).
 
-## Parties
-
-- **Provider:** External
-- **Consumer:** UNIT-001 (SPI Slave Controller)
-- **Consumer:** UNIT-022 (GPU Driver Layer)
-- **Consumer:** UNIT-035 (PC SPI Driver (FT232H))
-- **Provider:** UNIT-001 (SPI Slave Controller)
-
 ## Parent Area
 
 - REQ-001 (GPU SPI Controller)
-
-## Referenced By
-
-- REQ-001.01 (Basic Host Communication)
-- REQ-001.03 (SPI Electrical Interface)
 
 ## Specification
 

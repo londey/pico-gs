@@ -14,6 +14,7 @@ It is connected to both via FIFOs of fragment data, allowing each stage to stall
 - REQ-004.01 (Color Combiner — programmable combiner equation; sub-requirement under area 4: Fragment Processor/Color Combiner)
 - REQ-004.02 (Extended Precision Fragment Processing — Q4.12 fixed-point arithmetic; sub-requirement under area 4: Fragment Processor/Color Combiner)
 - REQ-004 (Fragment Processor / Color Combiner)
+- REQ-011.02 (Resource Constraints)
 
 ## Interfaces
 
@@ -144,8 +145,6 @@ Formal testbench: **VER-004** (`color_combiner_tb` — Verilator unit testbench;
 - Verify FIFO backpressure: combiner stalls correctly when output FIFO is full
 - VER-004 (Color Combiner Unit Testbench)
 - VER-013 (Color-Combined Output Golden Image Test)
-- VER-013 (Color-Combined Output Golden Image Test)
-- VER-004 (Color Combiner Unit Testbench)
 
 ## Design Notes
 

@@ -4,10 +4,6 @@
 
 OBJ file parsing and geometry extraction
 
-## Parent Area
-
-- Area 13: Game Data Preparation/Import
-
 ## Implements Requirements
 
 - REQ-012.02 (OBJ Mesh Processing)

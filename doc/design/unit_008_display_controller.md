@@ -311,4 +311,3 @@ The display controller operates across two synchronous clock domains:
 
 Since clk_pixel = clk_core / 4 (synchronous integer division from the same PLL), the scanline FIFO uses a synchronous 4:1 clock domain crossing.
 This is simpler and more reliable than the asynchronous CDC that would be required if the clocks were from independent sources.
-

@@ -1,9 +1,5 @@
 # UNIT-023: Transformation Pipeline
 
-## Parent Area
-
-7. Vertex Transformation (Pico Software)
-
 ## Purpose
 
 MVP matrix transforms

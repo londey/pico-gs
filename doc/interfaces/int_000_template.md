@@ -24,19 +24,6 @@ Choose one:
 - **Standard:** <name and version, e.g., "SPI Mode 0", "PNG 1.2">
 - **Reference:** <URL or document reference>
 
-## Parties
-
-- **Provider:** UNIT-NNN (<unit name>) | External
-- **Consumer:** UNIT-NNN (<unit name>)
-
-Multiple consumers are common. List all units that use this interface.
-
-## Referenced By
-
-- REQ-NNN (<requirement name>)
-
-List all requirements that reference this interface.
-
 ## Specification
 
 <!-- For internal interfaces: This section IS the specification -->

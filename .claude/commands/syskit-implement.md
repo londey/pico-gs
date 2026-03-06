@@ -72,7 +72,7 @@ Run these scripts to verify consistency:
 .syskit/scripts/trace-sync.sh
 ```
 
-If trace-sync reports issues, run `.syskit/scripts/trace-sync.sh --fix` and report what was fixed.
+If trace-sync reports issues, report them to the user for manual correction.
 
 For each design unit referenced by the task, update Spec-ref hashes:
 

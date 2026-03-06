@@ -86,12 +86,12 @@ For **UNIT-** nodes that have implementation files, add an "Implementation Files
 After the tree, provide a brief coverage assessment:
 
 1. **Trace completeness** — Flag any sections that are empty or contain only placeholders (TBD, None, etc.). For example:
-   - A requirement with no "Allocated To" unit → "Not yet allocated to a design unit"
-   - A requirement with no "Verified By" → "No verification defined"
+   - A requirement with no "Implemented By" unit → "Not yet implemented by a design unit"
+   - A requirement not verified by any VER document → "No verification defined"
    - A design unit with no "Implements Requirements" → "No requirements traced"
-   - An interface with no provider or consumer → "Missing party assignments"
+   - An interface with no provider or consumer → "No units provide or consume this interface"
 
-2. **Orphan check** — If the root item is not referenced by ANY other document (based on the depth-1 neighbors' back-links), flag it as potentially orphaned.
+2. **Orphan check** — If the root item is not referenced by ANY other document (based on reverse lookups from forward references), flag it as potentially orphaned.
 
 Keep the assessment brief — just list the gaps, don't elaborate.
 

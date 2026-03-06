@@ -4,10 +4,6 @@
 
 Scene graph management and animation
 
-## Parent Requirement Area
-
-- Area 8: Scene Graph/ECS
-
 ## Implements Requirements
 
 - REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
@@ -16,7 +12,6 @@ Scene graph management and animation
 - REQ-008.03 (Scene Graph Management) — Area 8: Scene Graph/ECS
 - REQ-008 (Scene Graph / ECS)
 
-Note: REQ-100 (Host Firmware Architecture), REQ-111 (Dual-Core Architecture), and REQ-120 (Async Data Loading) are retired; their references have been removed.
 Note: This unit's name reflects its RP2350 dual-core origin. In a future change it may be merged with UNIT-021 into a single-threaded execution unit; for now it is re-parented under Area 8 without functional change.
 
 ## Interfaces

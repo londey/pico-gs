@@ -4,16 +4,6 @@
 
 Internal
 
-## Parties
-
-- **Provider:** UNIT-034 (Build.rs Orchestrator)
-
-## Referenced By
-
-- REQ-012.01 (PNG Asset Processing) — area 13: Game Data Preparation/Import
-- REQ-012.02 (OBJ Mesh Processing) — area 13: Game Data Preparation/Import
-- REQ-012.03 (Asset Build Orchestration) — area 13: Game Data Preparation/Import
-
 ## Specification
 
 ## Overview
@@ -426,7 +416,6 @@ EXAMPLES:
     asset-prep mesh assets/terrain.obj -o firmware/assets/ --index-limit 48
 ```
 
-
 ---
 
 ## Usage Examples
@@ -581,7 +570,6 @@ This CLI interface provides:
 5. **Progress reporting**: Detailed output showing conversion progress
 
 The CLI is a **secondary interface** for debugging. For production builds, the library API is used directly by `host_app/build.rs` — see `output-format.md` for the build.rs integration pattern.
-
 
 ## Constraints
 

@@ -4,10 +4,6 @@
 
 Render command queue consumer
 
-## Parent Requirement Area
-
-- Area 8: Scene Graph/ECS
-
 ## Implements Requirements
 
 - REQ-008.01 (Scene Management) — Area 8: Scene Graph/ECS
@@ -22,7 +18,6 @@ Render command queue consumer
 - REQ-014 (Render Modes)
 - REQ-008 (Scene Graph / ECS)
 
-Note: REQ-100 (Host Firmware Architecture) and REQ-111 (Dual-Core Architecture) are retired; their references have been removed.
 Note: This unit's name reflects its RP2350 dual-core origin. In a future change it may be merged with UNIT-020 into a single-threaded execution unit; for now it is re-parented under Area 8 without functional change.
 
 ## Interfaces

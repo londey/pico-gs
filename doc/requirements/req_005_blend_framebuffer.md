@@ -19,25 +19,6 @@ This includes blending modes, Z-buffer operations, framebuffer format, clearing,
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-005.01 (Framebuffer Management)
-- REQ-005.02 (Depth Tested Triangle)
-- REQ-005.03 (Alpha Blending)
-- REQ-005.04 (Enhanced Z-Buffer)
-- REQ-005.05 (Triangle-Based Clearing)
-- REQ-005.06 (Framebuffer Format)
-- REQ-005.07 (Z-Buffer Operations)
-- REQ-005.08 (Clear Framebuffer)
-- REQ-005.09 (Double-Buffered Rendering)
-- REQ-005.10 (Ordered Dithering)
-
-## Allocated To
-
-- UNIT-006 (Pixel Pipeline) — alpha blending, depth test, dithering, framebuffer and Z-buffer SDRAM writes
-- UNIT-007 (Memory Arbiter) — SDRAM arbitration for framebuffer and Z-buffer ports
-- UNIT-008 (Display Controller) — double-buffer flip and display scanout
-
 ## Interfaces
 
 - INT-010 (GPU Register Map)

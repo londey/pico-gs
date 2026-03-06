@@ -5,10 +5,6 @@
 Computes edge function coefficients, bounding box, and the internal triangle area reciprocal for a triangle.
 Sub-unit of UNIT-005 (Rasterizer).
 
-## Parent Unit
-
-- UNIT-005 (Rasterizer)
-
 ## Implements Requirements
 
 - REQ-002.03 (Rasterization Algorithm) — edge function coefficient computation and internal reciprocal computation

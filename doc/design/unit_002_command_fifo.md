@@ -4,10 +4,6 @@
 
 Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries.
 
-## Parent Area
-
-- REQ-001 (GPU SPI Controller)
-
 ## Implements Requirements
 
 - REQ-001.01 (Basic Host Communication)
@@ -173,4 +169,3 @@ The boot screen rasterization (two clear triangles + one Gouraud triangle) compl
 ## Design Notes
 
 Migrated from speckit module specification.
-

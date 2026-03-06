@@ -1,9 +1,5 @@
 # UNIT-036: PC Input Handler
 
-## Parent Area
-
-10. GPU Debug GUI (Pico Software)
-
 ## Purpose
 
 Terminal keyboard input handling for the PC debug host platform.

@@ -4,10 +4,6 @@
 
 Prepares triangle for rasterization
 
-## Parent Requirements
-
-- REQ-002 (Rasterizer)
-
 ## Implements Requirements
 
 - REQ-002.02 (Gouraud Shaded Triangle)
@@ -153,8 +149,6 @@ The surface dimensions are taken from the `fb_width_log2` and `fb_height_log2` o
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
 - VER-014 (Textured Cube Golden Image Test)
-- VER-010 (Gouraud Triangle Golden Image Test)
-- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 
 ## Design Notes
 

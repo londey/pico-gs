@@ -1,9 +1,5 @@
 # UNIT-024: Lighting Calculator
 
-## Parent Area
-
-7. Vertex Transformation (Pico Software)
-
 ## Purpose
 
 Gouraud shading calculations

@@ -9,6 +9,7 @@ The simulator drives the GPU RTL model by injecting register writes directly int
 
 - REQ-010.02 (Verilator Interactive Simulator)
 - REQ-010.02-LUA (Base Lua Register Helper Script)
+- REQ-010 (GPU Interactive Simulator)
 
 ## Interfaces
 

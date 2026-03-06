@@ -18,17 +18,6 @@ The screen scan out area groups all requirements related to reading the complete
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-006.01 (Display Output)
-- REQ-006.02 (Display Output Timing)
-- REQ-006.03 (Color Grading LUT)
-
-## Allocated To
-
-- UNIT-008 (Display Controller)
-- UNIT-009 (DVI TMDS Encoder)
-
 ## Interfaces
 
 - INT-002 (DVI TMDS Output)

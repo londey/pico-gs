@@ -4,26 +4,6 @@
 
 Internal
 
-## Parties
-
-- **Provider:** Platform-specific crates (pico-gs-rp2350, pico-gs-pc)
-- **Consumer:** pico-gs-core (GPU driver, command execution)
-- **Provider:** UNIT-036 (PC Input Handler)
-- **Provider:** UNIT-035 (PC SPI Driver (FT232H))
-- **Consumer:** UNIT-022 (GPU Driver Layer)
-
-## Serves Requirement Areas
-
-- Area 12: Target Hardware Devices (HAL abstracts target hardware differences)
-
-## Referenced By
-
-- REQ-009.01 (USB Keyboard Input) — Area 9: Keyboard and Controller Input
-- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-010.01 (PC Debug Host) — Area 10: GPU Debug GUI
-
-Note: REQ-100 (Host Firmware Architecture) is retired; its reference has been removed.
-
 ## Specification
 
 ## Overview

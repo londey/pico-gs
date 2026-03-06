@@ -10,15 +10,6 @@ External Standard (Multi-format)
 - **DDS**: DirectDraw Surface format (Microsoft DDS specification)
 - **KTX2**: Khronos Texture Format 2.0 (Khronos KTX2 specification)
 
-## Parties
-
-- **Provider:** External (asset authoring tools, texture compressors)
-- **Consumer:** UNIT-030 (PNG Decoder)
-
-## Referenced By
-
-- REQ-012.01 (PNG Asset Processing) — area 13: Game Data Preparation/Import
-
 ## Specification
 
 ### Overview

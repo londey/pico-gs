@@ -18,18 +18,6 @@ The rasterizer area groups all requirements related to converting triangle primi
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-002.02 (Gouraud Shaded Triangle)
-- REQ-002.03 (Rasterization Algorithm)
-
-## Allocated To
-
-- UNIT-004 (Triangle Setup)
-- UNIT-005 (Rasterizer)
-- UNIT-006 (Pixel Pipeline)
-- UNIT-007 (Memory Arbiter)
-
 ## Interfaces
 
 - INT-010 (GPU Register Map)

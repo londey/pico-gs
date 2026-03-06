@@ -19,16 +19,6 @@ This includes the color combiner modes and the internal precision format used fo
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-004.01 (Color Combiner)
-- REQ-004.02 (Extended Precision Fragment Processing)
-
-## Allocated To
-
-- UNIT-006 (Pixel Pipeline)
-- UNIT-010 (Color Combiner)
-
 ## Interfaces
 
 - INT-010 (GPU Register Map)

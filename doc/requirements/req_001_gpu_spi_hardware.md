@@ -20,21 +20,6 @@ Host-side driver software is covered separately by REQ-013 (Host SPI Driver).
 
 None (top-level area)
 
-## Child Requirements
-
-- REQ-001.01 (Basic Host Communication)
-- REQ-001.02 (Memory Upload Interface)
-- REQ-001.03 (SPI Electrical Interface)
-- REQ-001.04 (Command Buffer FIFO)
-- REQ-001.05 (Vertex Submission Protocol)
-- REQ-001.06 (GPU Flow Control)
-
-## Allocated To
-
-- UNIT-001 (SPI Slave Controller)
-- UNIT-002 (Command FIFO)
-- UNIT-003 (Register File)
-
 ## Interfaces
 
 - INT-010 (GPU Register Map)
