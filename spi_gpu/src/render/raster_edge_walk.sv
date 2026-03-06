@@ -1,13 +1,13 @@
 `default_nettype none
-// Spec-ref: unit_005.04_iteration_fsm.md `d1095e5a97c3f996` 2026-03-05
+// Spec-ref: unit_005.04_iteration_fsm.md `4f6993d4e752ce6c` 2026-03-06
 
 // Rasterizer Edge Walk and Fragment Emission (UNIT-005.04)
 //
 // Tile-ordered (4x4) iteration FSM with hierarchical tile rejection,
-// per-pixel edge testing, 2-cycle perspective correction pipeline
-// (4 MULT18X18D), and fragment output handshake (DD-025) to UNIT-006.
+// per-pixel edge testing, 3-cycle perspective correction pipeline
+// (4 MULT18X18D + 1 in raster_recip_q), and fragment output handshake (DD-025) to UNIT-006.
 //
-// Once started by the parent (init_pos_e0 → init_e1 → init_e2 sequence),
+// Once started by the parent (init_pos_e0 -> init_e1 -> init_e2 sequence),
 // the module walks all 4x4 tiles within the bounding box autonomously,
 // asserting walk_done for one cycle when finished.
 //
@@ -69,12 +69,11 @@ module raster_edge_walk (
     // Q/W accumulator (from raster_attr_accum, top 16 bits = Q3.12)
     input  wire signed [31:0] q_acc,      // Q raw accumulator
 
-    // Reciprocal LUT interface (shared instance in parent)
-    output reg  signed [31:0] recip_operand,  // Operand to reciprocal LUT
-    output reg                recip_valid_in,  // Valid strobe to reciprocal LUT
-    input  wire signed [15:0] recip_out,       // 1/Q result (Q4.12)
-    input  wire        [4:0]  recip_clz_out,   // CLZ count from LUT
-    input  wire               recip_valid_out,  // Result valid from LUT
+    // Dedicated per-pixel reciprocal interface (raster_recip_q)
+    output reg         [31:0] recip_operand,   // Unsigned operand to raster_recip_q
+    output reg                recip_valid_in,   // Valid strobe to raster_recip_q
+    input  wire        [17:0] recip_out,        // 1/Q result, UQ4.14 unsigned
+    input  wire        [4:0]  recip_clz_out,    // CLZ count from raster_recip_q
 
     // Attribute accumulator step commands (to raster_attr_accum)
     output reg         attr_step_x,       // Step attributes in X
@@ -114,7 +113,6 @@ module raster_edge_walk (
     wire [15:0] _unused_s1_lo = s1_acc[15:0];
     wire [15:0] _unused_t1_lo = t1_acc[15:0];
     wire [15:0] _unused_q_lo  = q_acc[15:0];
-    wire _unused_recip_valid_out = recip_valid_out;
     wire [1:0] _unused_bbox_max_x_lo = bbox_max_x[1:0];
     wire [1:0] _unused_bbox_max_y_lo = bbox_max_y[1:0];
 
@@ -122,14 +120,15 @@ module raster_edge_walk (
     // Internal FSM
     // ========================================================================
 
-    typedef enum logic [2:0] {
-        EW_IDLE      = 3'd0,
-        EW_TILE_TEST = 3'd1,
-        EW_EDGE_TEST = 3'd2,
-        EW_PERSP_1   = 3'd3,
-        EW_PERSP_2   = 3'd4,
-        EW_EMIT      = 3'd5,
-        EW_ITER_NEXT = 3'd6
+    typedef enum logic [3:0] {
+        EW_IDLE      = 4'd0,
+        EW_TILE_TEST = 4'd1,
+        EW_EDGE_TEST = 4'd2,
+        EW_BRAM_READ = 4'd3,
+        EW_PERSP_1   = 4'd4,
+        EW_PERSP_2   = 4'd5,
+        EW_EMIT      = 4'd6,
+        EW_ITER_NEXT = 4'd7
     } ew_state_t;
 
     ew_state_t ew_state;
@@ -224,7 +223,7 @@ module raster_edge_walk (
     // Perspective Correction Registers
     // ========================================================================
 
-    reg signed [15:0] persp_recip;        // 1/Q from LUT (Q4.12)
+    reg        [17:0] persp_recip;        // 1/Q from raster_recip_q (UQ4.14)
     reg        [7:0]  persp_lod;          // UQ4.4 LOD
 
     reg [9:0]  latched_x;                // Latched X for emission
@@ -236,23 +235,25 @@ module raster_edge_walk (
     // ========================================================================
     // Perspective Correction Multiplies (4 MULT18X18D)
     // ========================================================================
-    // S/T are Q4.12, 1/Q is Q4.12. Product is Q8.24 (32-bit signed).
-    // Extract Q4.12 from bits [27:12].
+    // S/T are Q4.12 (signed 16-bit), 1/Q is UQ4.14 (unsigned 18-bit).
+    // Signed multiply: $signed(S) * $signed({1'b0, persp_recip})
+    //   = signed 16 × signed 19 = signed 35-bit product (Q9.26).
+    // Extract Q4.12 from bits [29:14].
 
-    wire signed [31:0] mul_u0 = $signed(s0_acc[31:16]) * persp_recip;
-    wire signed [31:0] mul_v0 = $signed(t0_acc[31:16]) * persp_recip;
-    wire signed [31:0] mul_u1 = $signed(s1_acc[31:16]) * persp_recip;
-    wire signed [31:0] mul_v1 = $signed(t1_acc[31:16]) * persp_recip;
+    wire signed [34:0] mul_u0 = $signed(s0_acc[31:16]) * $signed({1'b0, persp_recip});
+    wire signed [34:0] mul_v0 = $signed(t0_acc[31:16]) * $signed({1'b0, persp_recip});
+    wire signed [34:0] mul_u1 = $signed(s1_acc[31:16]) * $signed({1'b0, persp_recip});
+    wire signed [34:0] mul_v1 = $signed(t1_acc[31:16]) * $signed({1'b0, persp_recip});
 
     // Unused bits from multiply products
-    wire [11:0] _unused_mul_u0_lo = mul_u0[11:0];
-    wire [11:0] _unused_mul_v0_lo = mul_v0[11:0];
-    wire [11:0] _unused_mul_u1_lo = mul_u1[11:0];
-    wire [11:0] _unused_mul_v1_lo = mul_v1[11:0];
-    wire [3:0]  _unused_mul_u0_hi = mul_u0[31:28];
-    wire [3:0]  _unused_mul_v0_hi = mul_v0[31:28];
-    wire [3:0]  _unused_mul_u1_hi = mul_u1[31:28];
-    wire [3:0]  _unused_mul_v1_hi = mul_v1[31:28];
+    wire [13:0] _unused_mul_u0_lo = mul_u0[13:0];
+    wire [13:0] _unused_mul_v0_lo = mul_v0[13:0];
+    wire [13:0] _unused_mul_u1_lo = mul_u1[13:0];
+    wire [13:0] _unused_mul_v1_lo = mul_v1[13:0];
+    wire [4:0]  _unused_mul_u0_hi = mul_u0[34:30];
+    wire [4:0]  _unused_mul_v0_hi = mul_v0[34:30];
+    wire [4:0]  _unused_mul_u1_hi = mul_u1[34:30];
+    wire [4:0]  _unused_mul_v1_hi = mul_v1[34:30];
 
     // ========================================================================
     // Next-State Declarations
@@ -284,7 +285,7 @@ module raster_edge_walk (
     logic signed [31:0] next_e0_trow;
     logic signed [31:0] next_e1_trow;
     logic signed [31:0] next_e2_trow;
-    logic signed [15:0] next_persp_recip;
+    logic        [17:0] next_persp_recip;
     logic        [7:0]  next_persp_lod;
     logic [9:0]        next_latched_x;
     logic [9:0]        next_latched_y;
@@ -294,7 +295,7 @@ module raster_edge_walk (
     logic              next_tile_has_emission;
     logic              next_tile_first_emission;
     logic              next_walk_done;
-    logic signed [31:0] next_recip_operand;
+    logic        [31:0] next_recip_operand;
     logic              next_recip_valid_in;
     logic              next_attr_step_x;
     logic              next_attr_step_y;
@@ -321,10 +322,14 @@ module raster_edge_walk (
 
             EW_EDGE_TEST: begin
                 if (inside_triangle) begin
-                    next_ew_state = EW_PERSP_1;
+                    next_ew_state = EW_BRAM_READ;
                 end else begin
                     next_ew_state = EW_ITER_NEXT;
                 end
+            end
+
+            EW_BRAM_READ: begin
+                next_ew_state = EW_PERSP_1;
             end
 
             EW_PERSP_1: begin
@@ -410,7 +415,7 @@ module raster_edge_walk (
         next_tile_has_emission = tile_has_emission;
         next_tile_first_emission = tile_first_emission;
         next_walk_done = 1'b0;
-        next_recip_operand = 32'sd0;
+        next_recip_operand = 32'd0;
         next_recip_valid_in = 1'b0;
         next_attr_step_x = 1'b0;
         next_attr_step_y = 1'b0;
@@ -464,20 +469,25 @@ module raster_edge_walk (
 
             EW_EDGE_TEST: begin
                 if (inside_triangle) begin
-                    // Issue 1/Q lookup
-                    next_recip_operand = q_acc;
+                    // Issue 1/Q lookup to raster_recip_q (unsigned operand)
+                    next_recip_operand = q_acc[31:0];
                     next_recip_valid_in = 1'b1;
-                    // Latch attributes
-                    next_latched_x = curr_x;
-                    next_latched_y = curr_y;
-                    next_latched_z = out_z;
-                    next_latched_color0 = {out_c0r, out_c0g, out_c0b, out_c0a};
-                    next_latched_color1 = {out_c1r, out_c1g, out_c1b, out_c1a};
                 end
             end
 
+            EW_BRAM_READ: begin
+                // BRAM read cycle — raster_recip_q stage 1 in progress.
+                // Latch pixel coordinates and attribute values while waiting.
+                next_latched_x = curr_x;
+                next_latched_y = curr_y;
+                next_latched_z = out_z;
+                next_latched_color0 = {out_c0r, out_c0g, out_c0b, out_c0a};
+                next_latched_color1 = {out_c1r, out_c1g, out_c1b, out_c1a};
+            end
+
             EW_PERSP_1: begin
-                // LUT result arrives (1-cycle latency)
+                // BRAM read result available (2-cycle latency from raster_recip_q)
+                // Latch 18-bit UQ4.14 reciprocal
                 next_persp_recip = recip_out;
                 // CLZ to UQ4.4: integer mip level from CLZ, fractional = 0
                 next_persp_lod = {recip_clz_out[4:0], 3'b000};
@@ -491,8 +501,8 @@ module raster_edge_walk (
                 next_frag_z = latched_z;
                 next_frag_color0 = latched_color0;
                 next_frag_color1 = latched_color1;
-                next_frag_uv0 = {mul_u0[27:12], mul_v0[27:12]};
-                next_frag_uv1 = {mul_u1[27:12], mul_v1[27:12]};
+                next_frag_uv0 = {mul_u0[29:14], mul_v0[29:14]};
+                next_frag_uv1 = {mul_u1[29:14], mul_v1[29:14]};
                 next_frag_lod = persp_lod;
                 next_frag_tile_start = tile_first_emission;
                 next_tile_first_emission = 1'b0;
@@ -630,7 +640,7 @@ module raster_edge_walk (
             e0_trow         <= 32'sb0;
             e1_trow         <= 32'sb0;
             e2_trow         <= 32'sb0;
-            persp_recip     <= 16'sb0;
+            persp_recip     <= 18'd0;
             persp_lod       <= 8'b0;
             latched_x       <= 10'b0;
             latched_y       <= 10'b0;
@@ -640,7 +650,7 @@ module raster_edge_walk (
             tile_has_emission    <= 1'b0;
             tile_first_emission  <= 1'b1;
             walk_done       <= 1'b0;
-            recip_operand   <= 32'sb0;
+            recip_operand   <= 32'd0;
             recip_valid_in  <= 1'b0;
             attr_step_x     <= 1'b0;
             attr_step_y     <= 1'b0;
