@@ -20,15 +20,16 @@
 //   6. ROM read: 36-bit entry → seed (UQ1.17) and delta (UQ0.17)
 //   7. correction = (delta * fraction) >> 9 using 1 MULT18X18D
 //   8. result = seed - correction (UQ1.17)
-//   9. Denormalize: shift right to produce UQ4.14
+//   9. Output raw_recip (UQ1.17) + area_shift (24 - clz_count)
 //  10. Handle degenerate (zero area): output zero, assert degenerate
 //
 // Pipeline: 2-cycle latency (BRAM read cycle 1, interpolation cycle 2).
 // Optional Newton-Raphson: +2-3 cycles when ENABLE_NEWTON_RAPHSON == 1.
 //
-// Output: UQ4.14 (18-bit unsigned). Sign is not needed because inv_area
-// magnitude is always positive (area sign is handled separately in the
-// rasterizer FSM).
+// Output: recip_out is UQ1.17 (18-bit unsigned normalized mantissa).
+// area_shift (5-bit) tells the consumer how many bits to right-shift
+// the product (raw * recip_out) to get the correctly scaled result.
+// The consumer computes: derivative = (raw * recip_out) >>> area_shift.
 
 module raster_recip_area #(
     parameter ENABLE_NEWTON_RAPHSON = 0  // Set to 1 for one NR refinement iteration
@@ -39,7 +40,8 @@ module raster_recip_area #(
     input  wire signed [21:0] operand_in,   // Signed area value (22-bit)
     input  wire               valid_in,     // Input valid handshake
 
-    output reg        [17:0]  recip_out,    // Output reciprocal, UQ4.14 unsigned
+    output reg        [17:0]  recip_out,    // Output reciprocal, UQ1.17 normalized mantissa
+    output reg         [4:0]  area_shift,   // Right-shift for denormalization (24 - clz)
     output reg                degenerate,   // Asserted when operand_in == 0
     output reg                valid_out     // Output valid (2-cycle latency)
 );
@@ -172,40 +174,32 @@ module raster_recip_area #(
     // Interpolated reciprocal of normalized mantissa (UQ1.17)
     wire [17:0] raw_recip = seed - correction;                      // UQ1.17
 
-    // Denormalization — Convert to UQ4.14 Output
+    // Output Strategy — Normalized Mantissa + Shift
     //
-    // raw_recip is UQ1.17 and represents 1/normalized_mantissa.
+    // Instead of denormalizing to UQ4.14 (which underflows for large areas),
+    // output the full-precision UQ1.17 mantissa and a shift count.
+    //
+    // The consumer (raster_deriv) computes:
+    //   derivative = (raw * recip_out) >>> area_shift
     //
     // Derivation:
-    //   magnitude = normalized >> clz_count, where normalized has bit 21 set.
-    //   raw_recip ≈ 2^17 / (normalized / 2^21) = 2^38 / normalized.
-    //   1/magnitude = 2^clz_count / normalized = raw_recip * 2^(clz_count - 38).
-    //   UQ4.14 representation = 1/magnitude * 2^14
-    //     = raw_recip * 2^(clz_count + 14 - 38)
-    //     = raw_recip * 2^(clz_count - 24)
-    //     = (raw_recip << clz_count) >> 24.
+    //   magnitude = normalized_mantissa * 2^(21 - clz_count)
+    //   raw_recip ≈ 2^17 / normalized_mantissa  (UQ1.17)
+    //   1/magnitude = raw_recip * 2^(clz_count - 38)
     //
-    // raw_recip is 18 bits, max clz is 21, so max shifted value is 39 bits.
-    // Result taken from shifted_recip[38:24] (15 bits), zero-extended to 18.
+    //   derivative = raw_dx * (1/magnitude) * 2^16   (8.16 accumulator scaling)
+    //              = raw_dx * raw_recip * 2^(clz_count - 22)
+    //              = (raw_dx * raw_recip) >>> (22 - clz_count)
     //
-    // Verification:
-    //   clz=21, raw_recip=0x20000 (=1.0 in UQ1.17): shifted=2^38,
-    //     [38:24]=16384 → 1.0 in UQ4.14. Correct (1/1 = 1.0).
-    //   clz=20, raw_recip=0x20000: shifted=2^37,
-    //     [38:24]=8192 → 0.5 in UQ4.14. Correct (1/2 = 0.5).
-    //   clz=0,  raw_recip=0x20000: shifted=0x20000,
-    //     [38:24]=0. Correct (1/2^21 ≈ 0).
+    //   area_shift = 22 - clz_count
+    //
+    // Range: clz ∈ [0, 21] → area_shift ∈ [1, 22].  Fits in 5 bits.
 
-    wire [38:0] shifted_recip = {21'd0, raw_recip} << s1_clz;      // Shift by CLZ
-
-    // Extract UQ4.14 result (18 bits, zero-extended from 15 bits)
-    wire [17:0] uq414_result = {3'd0, shifted_recip[38:24]};       // UQ4.14
-
-    // Unused low bits from the shift (rounding residue)
-    wire [23:0] _unused_shift_lo = shifted_recip[23:0];
+    wire  [4:0] computed_area_shift = 5'd22 - s1_clz;
 
     // Compute next-state values for output registers
     logic [17:0] next_recip_out;                                    // Next recip_out value
+    logic  [4:0] next_area_shift;                                   // Next area_shift value
     logic        next_degenerate;                                   // Next degenerate flag
     logic        next_valid_out;                                    // Next valid_out value
 
@@ -214,9 +208,11 @@ module raster_recip_area #(
         next_degenerate = s1_is_zero && s1_valid;
 
         if (s1_is_zero) begin
-            next_recip_out = 18'd0;
+            next_recip_out  = 18'd0;
+            next_area_shift = 5'd0;
         end else begin
-            next_recip_out = uq414_result;
+            next_recip_out  = raw_recip;
+            next_area_shift = computed_area_shift;
         end
     end
 
@@ -238,28 +234,33 @@ module raster_recip_area #(
             // Placeholder: NR refinement would go here.
             // For now, pass through the interpolated result with 1 extra cycle.
             reg [17:0] nr_recip;                                    // NR-refined reciprocal
+            reg  [4:0] nr_area_shift;                               // NR area shift
             reg        nr_degenerate;                               // NR degenerate flag
             reg        nr_valid;                                    // NR valid flag
 
             logic [17:0] next_nr_recip;                             // Next NR reciprocal
+            logic  [4:0] next_nr_area_shift;                        // Next NR area shift
             logic        next_nr_degenerate;                        // Next NR degenerate
             logic        next_nr_valid;                             // Next NR valid
 
             always_comb begin
-                next_nr_recip     = next_recip_out;
+                next_nr_recip      = next_recip_out;
+                next_nr_area_shift = next_area_shift;
                 next_nr_degenerate = next_degenerate;
-                next_nr_valid     = next_valid_out;
+                next_nr_valid      = next_valid_out;
             end
 
             always_ff @(posedge clk or negedge rst_n) begin
                 if (!rst_n) begin
-                    nr_recip     <= 18'd0;
+                    nr_recip      <= 18'd0;
+                    nr_area_shift <= 5'd0;
                     nr_degenerate <= 1'b0;
-                    nr_valid     <= 1'b0;
+                    nr_valid      <= 1'b0;
                 end else begin
-                    nr_recip     <= next_nr_recip;
+                    nr_recip      <= next_nr_recip;
+                    nr_area_shift <= next_nr_area_shift;
                     nr_degenerate <= next_nr_degenerate;
-                    nr_valid     <= next_nr_valid;
+                    nr_valid      <= next_nr_valid;
                 end
             end
 
@@ -267,10 +268,12 @@ module raster_recip_area #(
             always_ff @(posedge clk or negedge rst_n) begin
                 if (!rst_n) begin
                     recip_out   <= 18'd0;
+                    area_shift  <= 5'd0;
                     degenerate  <= 1'b0;
                     valid_out   <= 1'b0;
                 end else begin
                     recip_out   <= nr_recip;
+                    area_shift  <= nr_area_shift;
                     degenerate  <= nr_degenerate;
                     valid_out   <= nr_valid;
                 end
@@ -280,16 +283,19 @@ module raster_recip_area #(
             always_ff @(posedge clk or negedge rst_n) begin
                 if (!rst_n) begin
                     recip_out   <= 18'd0;
+                    area_shift  <= 5'd0;
                     degenerate  <= 1'b0;
                     valid_out   <= 1'b0;
                 end else begin
                     recip_out   <= next_recip_out;
+                    area_shift  <= next_area_shift;
                     degenerate  <= next_degenerate;
                     valid_out   <= next_valid_out;
                 end
             end
         end
     endgenerate
+
 
 endmodule
 

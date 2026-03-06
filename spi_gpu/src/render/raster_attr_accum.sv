@@ -25,6 +25,8 @@ module raster_attr_accum (
     input  wire        latch_derivs,     // Latch derivatives and initialize accumulators
     input  wire        step_x,           // Step right: add dx to accumulators
     input  wire        step_y,           // New row: add dy to row regs, reload accumulators
+    input  wire        tile_col_step,    // Advance to next tile column: _tcol += 4*dx
+    input  wire        tile_row_step,    // Advance to next tile row: _trow += 4*dy
 
     // Derivative values from raster_deriv (latched on latch_derivs)
     input  wire signed [31:0] pre_c0r_dx,  // Color0 R dx derivative
@@ -184,6 +186,27 @@ module raster_attr_accum (
     reg signed [31:0] q_row;   // Q row start value
 
     // ========================================================================
+    // Tile-Row and Tile-Column Origin Registers
+    // ========================================================================
+    // _trow: attribute value at (bbox_min_x, tile_row_start_y)
+    // _tcol: attribute value at (tile_col_start_x, tile_row_start_y)
+
+    reg signed [31:0] c0r_trow, c0r_tcol;
+    reg signed [31:0] c0g_trow, c0g_tcol;
+    reg signed [31:0] c0b_trow, c0b_tcol;
+    reg signed [31:0] c0a_trow, c0a_tcol;
+    reg signed [31:0] c1r_trow, c1r_tcol;
+    reg signed [31:0] c1g_trow, c1g_tcol;
+    reg signed [31:0] c1b_trow, c1b_tcol;
+    reg signed [31:0] c1a_trow, c1a_tcol;
+    reg signed [31:0] z_trow, z_tcol;
+    reg signed [31:0] uv0u_trow, uv0u_tcol;
+    reg signed [31:0] uv0v_trow, uv0v_tcol;
+    reg signed [31:0] uv1u_trow, uv1u_tcol;
+    reg signed [31:0] uv1v_trow, uv1v_tcol;
+    reg signed [31:0] q_trow, q_tcol;
+
+    // ========================================================================
     // Next-State Declarations — Derivative Registers
     // ========================================================================
 
@@ -248,6 +271,22 @@ module raster_attr_accum (
     logic signed [31:0] next_uv1v_row; // Next UV1 V row
     logic signed [31:0] next_q_acc;   // Next Q accumulator
     logic signed [31:0] next_q_row;   // Next Q row
+
+    // Next-state for tile-row and tile-column origin registers
+    logic signed [31:0] next_c0r_trow, next_c0r_tcol;
+    logic signed [31:0] next_c0g_trow, next_c0g_tcol;
+    logic signed [31:0] next_c0b_trow, next_c0b_tcol;
+    logic signed [31:0] next_c0a_trow, next_c0a_tcol;
+    logic signed [31:0] next_c1r_trow, next_c1r_tcol;
+    logic signed [31:0] next_c1g_trow, next_c1g_tcol;
+    logic signed [31:0] next_c1b_trow, next_c1b_tcol;
+    logic signed [31:0] next_c1a_trow, next_c1a_tcol;
+    logic signed [31:0] next_z_trow, next_z_tcol;
+    logic signed [31:0] next_uv0u_trow, next_uv0u_tcol;
+    logic signed [31:0] next_uv0v_trow, next_uv0v_tcol;
+    logic signed [31:0] next_uv1u_trow, next_uv1u_tcol;
+    logic signed [31:0] next_uv1v_trow, next_uv1v_tcol;
+    logic signed [31:0] next_q_trow, next_q_tcol;
 
     // ========================================================================
     // Derivative Latching (UNIT-005.02)
@@ -327,8 +366,38 @@ module raster_attr_accum (
     // On step_y: add dy to row registers and reload accumulators (new row).
     // Otherwise: hold current values.
 
+    // Pre-compute 4*dx and 4*dy for tile stepping (shift, no DSP)
+    wire signed [31:0] c0r_4dx = c0r_dx <<< 2;
+    wire signed [31:0] c0r_4dy = c0r_dy <<< 2;
+    wire signed [31:0] c0g_4dx = c0g_dx <<< 2;
+    wire signed [31:0] c0g_4dy = c0g_dy <<< 2;
+    wire signed [31:0] c0b_4dx = c0b_dx <<< 2;
+    wire signed [31:0] c0b_4dy = c0b_dy <<< 2;
+    wire signed [31:0] c0a_4dx = c0a_dx <<< 2;
+    wire signed [31:0] c0a_4dy = c0a_dy <<< 2;
+    wire signed [31:0] c1r_4dx = c1r_dx <<< 2;
+    wire signed [31:0] c1r_4dy = c1r_dy <<< 2;
+    wire signed [31:0] c1g_4dx = c1g_dx <<< 2;
+    wire signed [31:0] c1g_4dy = c1g_dy <<< 2;
+    wire signed [31:0] c1b_4dx = c1b_dx <<< 2;
+    wire signed [31:0] c1b_4dy = c1b_dy <<< 2;
+    wire signed [31:0] c1a_4dx = c1a_dx <<< 2;
+    wire signed [31:0] c1a_4dy = c1a_dy <<< 2;
+    wire signed [31:0] z_4dx   = z_dx <<< 2;
+    wire signed [31:0] z_4dy   = z_dy <<< 2;
+    wire signed [31:0] uv0u_4dx = uv0u_dx <<< 2;
+    wire signed [31:0] uv0u_4dy = uv0u_dy <<< 2;
+    wire signed [31:0] uv0v_4dx = uv0v_dx <<< 2;
+    wire signed [31:0] uv0v_4dy = uv0v_dy <<< 2;
+    wire signed [31:0] uv1u_4dx = uv1u_dx <<< 2;
+    wire signed [31:0] uv1u_4dy = uv1u_dy <<< 2;
+    wire signed [31:0] uv1v_4dx = uv1v_dx <<< 2;
+    wire signed [31:0] uv1v_4dy = uv1v_dy <<< 2;
+    wire signed [31:0] q_4dx   = q_dx <<< 2;
+    wire signed [31:0] q_4dy   = q_dy <<< 2;
+
     always_comb begin
-        // Default: hold all accumulator and row registers
+        // Default: hold all accumulator, row, trow, tcol registers
         next_c0r_acc  = c0r_acc;
         next_c0r_row  = c0r_row;
         next_c0g_acc  = c0g_acc;
@@ -358,36 +427,153 @@ module raster_attr_accum (
         next_q_acc    = q_acc;
         next_q_row    = q_row;
 
+        next_c0r_trow = c0r_trow; next_c0r_tcol = c0r_tcol;
+        next_c0g_trow = c0g_trow; next_c0g_tcol = c0g_tcol;
+        next_c0b_trow = c0b_trow; next_c0b_tcol = c0b_tcol;
+        next_c0a_trow = c0a_trow; next_c0a_tcol = c0a_tcol;
+        next_c1r_trow = c1r_trow; next_c1r_tcol = c1r_tcol;
+        next_c1g_trow = c1g_trow; next_c1g_tcol = c1g_tcol;
+        next_c1b_trow = c1b_trow; next_c1b_tcol = c1b_tcol;
+        next_c1a_trow = c1a_trow; next_c1a_tcol = c1a_tcol;
+        next_z_trow   = z_trow;   next_z_tcol   = z_tcol;
+        next_uv0u_trow = uv0u_trow; next_uv0u_tcol = uv0u_tcol;
+        next_uv0v_trow = uv0v_trow; next_uv0v_tcol = uv0v_tcol;
+        next_uv1u_trow = uv1u_trow; next_uv1u_tcol = uv1u_tcol;
+        next_uv1v_trow = uv1v_trow; next_uv1v_tcol = uv1v_tcol;
+        next_q_trow   = q_trow;   next_q_tcol   = q_tcol;
+
         if (latch_derivs) begin
-            // Initialize attribute accumulators at bbox origin (UNIT-005.02)
-            next_c0r_acc  = init_c0r;
-            next_c0r_row  = init_c0r;
-            next_c0g_acc  = init_c0g;
-            next_c0g_row  = init_c0g;
-            next_c0b_acc  = init_c0b;
-            next_c0b_row  = init_c0b;
-            next_c0a_acc  = init_c0a;
-            next_c0a_row  = init_c0a;
-            next_c1r_acc  = init_c1r;
-            next_c1r_row  = init_c1r;
-            next_c1g_acc  = init_c1g;
-            next_c1g_row  = init_c1g;
-            next_c1b_acc  = init_c1b;
-            next_c1b_row  = init_c1b;
-            next_c1a_acc  = init_c1a;
-            next_c1a_row  = init_c1a;
-            next_z_acc    = init_z;
-            next_z_row    = init_z;
-            next_uv0u_acc = init_uv0u;
-            next_uv0u_row = init_uv0u;
-            next_uv0v_acc = init_uv0v;
-            next_uv0v_row = init_uv0v;
-            next_uv1u_acc = init_uv1u;
-            next_uv1u_row = init_uv1u;
-            next_uv1v_acc = init_uv1v;
-            next_uv1v_row = init_uv1v;
-            next_q_acc    = init_q;
-            next_q_row    = init_q;
+            // Initialize all register levels at bbox origin (UNIT-005.02)
+            next_c0r_acc  = init_c0r; next_c0r_row  = init_c0r;
+            next_c0r_trow = init_c0r; next_c0r_tcol = init_c0r;
+            next_c0g_acc  = init_c0g; next_c0g_row  = init_c0g;
+            next_c0g_trow = init_c0g; next_c0g_tcol = init_c0g;
+            next_c0b_acc  = init_c0b; next_c0b_row  = init_c0b;
+            next_c0b_trow = init_c0b; next_c0b_tcol = init_c0b;
+            next_c0a_acc  = init_c0a; next_c0a_row  = init_c0a;
+            next_c0a_trow = init_c0a; next_c0a_tcol = init_c0a;
+            next_c1r_acc  = init_c1r; next_c1r_row  = init_c1r;
+            next_c1r_trow = init_c1r; next_c1r_tcol = init_c1r;
+            next_c1g_acc  = init_c1g; next_c1g_row  = init_c1g;
+            next_c1g_trow = init_c1g; next_c1g_tcol = init_c1g;
+            next_c1b_acc  = init_c1b; next_c1b_row  = init_c1b;
+            next_c1b_trow = init_c1b; next_c1b_tcol = init_c1b;
+            next_c1a_acc  = init_c1a; next_c1a_row  = init_c1a;
+            next_c1a_trow = init_c1a; next_c1a_tcol = init_c1a;
+            next_z_acc    = init_z;   next_z_row    = init_z;
+            next_z_trow   = init_z;   next_z_tcol   = init_z;
+            next_uv0u_acc = init_uv0u; next_uv0u_row = init_uv0u;
+            next_uv0u_trow = init_uv0u; next_uv0u_tcol = init_uv0u;
+            next_uv0v_acc = init_uv0v; next_uv0v_row = init_uv0v;
+            next_uv0v_trow = init_uv0v; next_uv0v_tcol = init_uv0v;
+            next_uv1u_acc = init_uv1u; next_uv1u_row = init_uv1u;
+            next_uv1u_trow = init_uv1u; next_uv1u_tcol = init_uv1u;
+            next_uv1v_acc = init_uv1v; next_uv1v_row = init_uv1v;
+            next_uv1v_trow = init_uv1v; next_uv1v_tcol = init_uv1v;
+            next_q_acc    = init_q;   next_q_row    = init_q;
+            next_q_trow   = init_q;   next_q_tcol   = init_q;
+        end else if (tile_col_step) begin
+            // Advance to next tile column: _tcol += 4*dx, reset _row and _acc
+            next_c0r_tcol = c0r_tcol + c0r_4dx;
+            next_c0r_row  = c0r_tcol + c0r_4dx;
+            next_c0r_acc  = c0r_tcol + c0r_4dx;
+            next_c0g_tcol = c0g_tcol + c0g_4dx;
+            next_c0g_row  = c0g_tcol + c0g_4dx;
+            next_c0g_acc  = c0g_tcol + c0g_4dx;
+            next_c0b_tcol = c0b_tcol + c0b_4dx;
+            next_c0b_row  = c0b_tcol + c0b_4dx;
+            next_c0b_acc  = c0b_tcol + c0b_4dx;
+            next_c0a_tcol = c0a_tcol + c0a_4dx;
+            next_c0a_row  = c0a_tcol + c0a_4dx;
+            next_c0a_acc  = c0a_tcol + c0a_4dx;
+            next_c1r_tcol = c1r_tcol + c1r_4dx;
+            next_c1r_row  = c1r_tcol + c1r_4dx;
+            next_c1r_acc  = c1r_tcol + c1r_4dx;
+            next_c1g_tcol = c1g_tcol + c1g_4dx;
+            next_c1g_row  = c1g_tcol + c1g_4dx;
+            next_c1g_acc  = c1g_tcol + c1g_4dx;
+            next_c1b_tcol = c1b_tcol + c1b_4dx;
+            next_c1b_row  = c1b_tcol + c1b_4dx;
+            next_c1b_acc  = c1b_tcol + c1b_4dx;
+            next_c1a_tcol = c1a_tcol + c1a_4dx;
+            next_c1a_row  = c1a_tcol + c1a_4dx;
+            next_c1a_acc  = c1a_tcol + c1a_4dx;
+            next_z_tcol   = z_tcol + z_4dx;
+            next_z_row    = z_tcol + z_4dx;
+            next_z_acc    = z_tcol + z_4dx;
+            next_uv0u_tcol = uv0u_tcol + uv0u_4dx;
+            next_uv0u_row  = uv0u_tcol + uv0u_4dx;
+            next_uv0u_acc  = uv0u_tcol + uv0u_4dx;
+            next_uv0v_tcol = uv0v_tcol + uv0v_4dx;
+            next_uv0v_row  = uv0v_tcol + uv0v_4dx;
+            next_uv0v_acc  = uv0v_tcol + uv0v_4dx;
+            next_uv1u_tcol = uv1u_tcol + uv1u_4dx;
+            next_uv1u_row  = uv1u_tcol + uv1u_4dx;
+            next_uv1u_acc  = uv1u_tcol + uv1u_4dx;
+            next_uv1v_tcol = uv1v_tcol + uv1v_4dx;
+            next_uv1v_row  = uv1v_tcol + uv1v_4dx;
+            next_uv1v_acc  = uv1v_tcol + uv1v_4dx;
+            next_q_tcol   = q_tcol + q_4dx;
+            next_q_row    = q_tcol + q_4dx;
+            next_q_acc    = q_tcol + q_4dx;
+        end else if (tile_row_step) begin
+            // Advance to next tile row: _trow += 4*dy, reset _tcol, _row, _acc
+            next_c0r_trow = c0r_trow + c0r_4dy;
+            next_c0r_tcol = c0r_trow + c0r_4dy;
+            next_c0r_row  = c0r_trow + c0r_4dy;
+            next_c0r_acc  = c0r_trow + c0r_4dy;
+            next_c0g_trow = c0g_trow + c0g_4dy;
+            next_c0g_tcol = c0g_trow + c0g_4dy;
+            next_c0g_row  = c0g_trow + c0g_4dy;
+            next_c0g_acc  = c0g_trow + c0g_4dy;
+            next_c0b_trow = c0b_trow + c0b_4dy;
+            next_c0b_tcol = c0b_trow + c0b_4dy;
+            next_c0b_row  = c0b_trow + c0b_4dy;
+            next_c0b_acc  = c0b_trow + c0b_4dy;
+            next_c0a_trow = c0a_trow + c0a_4dy;
+            next_c0a_tcol = c0a_trow + c0a_4dy;
+            next_c0a_row  = c0a_trow + c0a_4dy;
+            next_c0a_acc  = c0a_trow + c0a_4dy;
+            next_c1r_trow = c1r_trow + c1r_4dy;
+            next_c1r_tcol = c1r_trow + c1r_4dy;
+            next_c1r_row  = c1r_trow + c1r_4dy;
+            next_c1r_acc  = c1r_trow + c1r_4dy;
+            next_c1g_trow = c1g_trow + c1g_4dy;
+            next_c1g_tcol = c1g_trow + c1g_4dy;
+            next_c1g_row  = c1g_trow + c1g_4dy;
+            next_c1g_acc  = c1g_trow + c1g_4dy;
+            next_c1b_trow = c1b_trow + c1b_4dy;
+            next_c1b_tcol = c1b_trow + c1b_4dy;
+            next_c1b_row  = c1b_trow + c1b_4dy;
+            next_c1b_acc  = c1b_trow + c1b_4dy;
+            next_c1a_trow = c1a_trow + c1a_4dy;
+            next_c1a_tcol = c1a_trow + c1a_4dy;
+            next_c1a_row  = c1a_trow + c1a_4dy;
+            next_c1a_acc  = c1a_trow + c1a_4dy;
+            next_z_trow   = z_trow + z_4dy;
+            next_z_tcol   = z_trow + z_4dy;
+            next_z_row    = z_trow + z_4dy;
+            next_z_acc    = z_trow + z_4dy;
+            next_uv0u_trow = uv0u_trow + uv0u_4dy;
+            next_uv0u_tcol = uv0u_trow + uv0u_4dy;
+            next_uv0u_row  = uv0u_trow + uv0u_4dy;
+            next_uv0u_acc  = uv0u_trow + uv0u_4dy;
+            next_uv0v_trow = uv0v_trow + uv0v_4dy;
+            next_uv0v_tcol = uv0v_trow + uv0v_4dy;
+            next_uv0v_row  = uv0v_trow + uv0v_4dy;
+            next_uv0v_acc  = uv0v_trow + uv0v_4dy;
+            next_uv1u_trow = uv1u_trow + uv1u_4dy;
+            next_uv1u_tcol = uv1u_trow + uv1u_4dy;
+            next_uv1u_row  = uv1u_trow + uv1u_4dy;
+            next_uv1u_acc  = uv1u_trow + uv1u_4dy;
+            next_uv1v_trow = uv1v_trow + uv1v_4dy;
+            next_uv1v_tcol = uv1v_trow + uv1v_4dy;
+            next_uv1v_row  = uv1v_trow + uv1v_4dy;
+            next_uv1v_acc  = uv1v_trow + uv1v_4dy;
+            next_q_trow   = q_trow + q_4dy;
+            next_q_tcol   = q_trow + q_4dy;
+            next_q_row    = q_trow + q_4dy;
+            next_q_acc    = q_trow + q_4dy;
         end else if (step_x) begin
             // Step right: add dx derivatives to accumulators
             next_c0r_acc  = c0r_acc + c0r_dx;
@@ -591,34 +777,35 @@ module raster_attr_accum (
             q_dx     <= 32'sb0;
             q_dy     <= 32'sb0;
             // Accumulator registers
-            c0r_acc  <= 32'sb0;
-            c0r_row  <= 32'sb0;
-            c0g_acc  <= 32'sb0;
-            c0g_row  <= 32'sb0;
-            c0b_acc  <= 32'sb0;
-            c0b_row  <= 32'sb0;
-            c0a_acc  <= 32'sb0;
-            c0a_row  <= 32'sb0;
-            c1r_acc  <= 32'sb0;
-            c1r_row  <= 32'sb0;
-            c1g_acc  <= 32'sb0;
-            c1g_row  <= 32'sb0;
-            c1b_acc  <= 32'sb0;
-            c1b_row  <= 32'sb0;
-            c1a_acc  <= 32'sb0;
-            c1a_row  <= 32'sb0;
-            z_acc    <= 32'sb0;
-            z_row    <= 32'sb0;
-            uv0u_acc <= 32'sb0;
-            uv0u_row <= 32'sb0;
-            uv0v_acc <= 32'sb0;
-            uv0v_row <= 32'sb0;
-            uv1u_acc <= 32'sb0;
-            uv1u_row <= 32'sb0;
-            uv1v_acc <= 32'sb0;
-            uv1v_row <= 32'sb0;
-            q_acc    <= 32'sb0;
-            q_row    <= 32'sb0;
+            c0r_acc  <= 32'sb0; c0r_row  <= 32'sb0;
+            c0g_acc  <= 32'sb0; c0g_row  <= 32'sb0;
+            c0b_acc  <= 32'sb0; c0b_row  <= 32'sb0;
+            c0a_acc  <= 32'sb0; c0a_row  <= 32'sb0;
+            c1r_acc  <= 32'sb0; c1r_row  <= 32'sb0;
+            c1g_acc  <= 32'sb0; c1g_row  <= 32'sb0;
+            c1b_acc  <= 32'sb0; c1b_row  <= 32'sb0;
+            c1a_acc  <= 32'sb0; c1a_row  <= 32'sb0;
+            z_acc    <= 32'sb0; z_row    <= 32'sb0;
+            uv0u_acc <= 32'sb0; uv0u_row <= 32'sb0;
+            uv0v_acc <= 32'sb0; uv0v_row <= 32'sb0;
+            uv1u_acc <= 32'sb0; uv1u_row <= 32'sb0;
+            uv1v_acc <= 32'sb0; uv1v_row <= 32'sb0;
+            q_acc    <= 32'sb0; q_row    <= 32'sb0;
+            // Tile-origin registers
+            c0r_trow <= 32'sb0; c0r_tcol <= 32'sb0;
+            c0g_trow <= 32'sb0; c0g_tcol <= 32'sb0;
+            c0b_trow <= 32'sb0; c0b_tcol <= 32'sb0;
+            c0a_trow <= 32'sb0; c0a_tcol <= 32'sb0;
+            c1r_trow <= 32'sb0; c1r_tcol <= 32'sb0;
+            c1g_trow <= 32'sb0; c1g_tcol <= 32'sb0;
+            c1b_trow <= 32'sb0; c1b_tcol <= 32'sb0;
+            c1a_trow <= 32'sb0; c1a_tcol <= 32'sb0;
+            z_trow   <= 32'sb0; z_tcol   <= 32'sb0;
+            uv0u_trow <= 32'sb0; uv0u_tcol <= 32'sb0;
+            uv0v_trow <= 32'sb0; uv0v_tcol <= 32'sb0;
+            uv1u_trow <= 32'sb0; uv1u_tcol <= 32'sb0;
+            uv1v_trow <= 32'sb0; uv1v_tcol <= 32'sb0;
+            q_trow   <= 32'sb0; q_tcol   <= 32'sb0;
         end else begin
             // Derivative registers
             c0r_dx   <= next_c0r_dx;
@@ -650,36 +837,38 @@ module raster_attr_accum (
             q_dx     <= next_q_dx;
             q_dy     <= next_q_dy;
             // Accumulator registers
-            c0r_acc  <= next_c0r_acc;
-            c0r_row  <= next_c0r_row;
-            c0g_acc  <= next_c0g_acc;
-            c0g_row  <= next_c0g_row;
-            c0b_acc  <= next_c0b_acc;
-            c0b_row  <= next_c0b_row;
-            c0a_acc  <= next_c0a_acc;
-            c0a_row  <= next_c0a_row;
-            c1r_acc  <= next_c1r_acc;
-            c1r_row  <= next_c1r_row;
-            c1g_acc  <= next_c1g_acc;
-            c1g_row  <= next_c1g_row;
-            c1b_acc  <= next_c1b_acc;
-            c1b_row  <= next_c1b_row;
-            c1a_acc  <= next_c1a_acc;
-            c1a_row  <= next_c1a_row;
-            z_acc    <= next_z_acc;
-            z_row    <= next_z_row;
-            uv0u_acc <= next_uv0u_acc;
-            uv0u_row <= next_uv0u_row;
-            uv0v_acc <= next_uv0v_acc;
-            uv0v_row <= next_uv0v_row;
-            uv1u_acc <= next_uv1u_acc;
-            uv1u_row <= next_uv1u_row;
-            uv1v_acc <= next_uv1v_acc;
-            uv1v_row <= next_uv1v_row;
-            q_acc    <= next_q_acc;
-            q_row    <= next_q_row;
+            c0r_acc  <= next_c0r_acc; c0r_row  <= next_c0r_row;
+            c0g_acc  <= next_c0g_acc; c0g_row  <= next_c0g_row;
+            c0b_acc  <= next_c0b_acc; c0b_row  <= next_c0b_row;
+            c0a_acc  <= next_c0a_acc; c0a_row  <= next_c0a_row;
+            c1r_acc  <= next_c1r_acc; c1r_row  <= next_c1r_row;
+            c1g_acc  <= next_c1g_acc; c1g_row  <= next_c1g_row;
+            c1b_acc  <= next_c1b_acc; c1b_row  <= next_c1b_row;
+            c1a_acc  <= next_c1a_acc; c1a_row  <= next_c1a_row;
+            z_acc    <= next_z_acc;   z_row    <= next_z_row;
+            uv0u_acc <= next_uv0u_acc; uv0u_row <= next_uv0u_row;
+            uv0v_acc <= next_uv0v_acc; uv0v_row <= next_uv0v_row;
+            uv1u_acc <= next_uv1u_acc; uv1u_row <= next_uv1u_row;
+            uv1v_acc <= next_uv1v_acc; uv1v_row <= next_uv1v_row;
+            q_acc    <= next_q_acc;   q_row    <= next_q_row;
+            // Tile-origin registers
+            c0r_trow <= next_c0r_trow; c0r_tcol <= next_c0r_tcol;
+            c0g_trow <= next_c0g_trow; c0g_tcol <= next_c0g_tcol;
+            c0b_trow <= next_c0b_trow; c0b_tcol <= next_c0b_tcol;
+            c0a_trow <= next_c0a_trow; c0a_tcol <= next_c0a_tcol;
+            c1r_trow <= next_c1r_trow; c1r_tcol <= next_c1r_tcol;
+            c1g_trow <= next_c1g_trow; c1g_tcol <= next_c1g_tcol;
+            c1b_trow <= next_c1b_trow; c1b_tcol <= next_c1b_tcol;
+            c1a_trow <= next_c1a_trow; c1a_tcol <= next_c1a_tcol;
+            z_trow   <= next_z_trow;   z_tcol   <= next_z_tcol;
+            uv0u_trow <= next_uv0u_trow; uv0u_tcol <= next_uv0u_tcol;
+            uv0v_trow <= next_uv0v_trow; uv0v_tcol <= next_uv0v_tcol;
+            uv1u_trow <= next_uv1u_trow; uv1u_tcol <= next_uv1u_tcol;
+            uv1v_trow <= next_uv1v_trow; uv1v_tcol <= next_uv1v_tcol;
+            q_trow   <= next_q_trow;   q_tcol   <= next_q_tcol;
         end
     end
+
 
 endmodule
 

@@ -63,6 +63,7 @@ struct RegWrite {
 // is essentially constant data.  Do not restructure the include-pattern
 // unless the harness architecture is being redesigned.
 #include "scripts/ver_010_gouraud.cpp"
+#include "scripts/ver_015_size_grid.cpp"
 #include "scripts/ver_011_depth_test.cpp"
 #include "scripts/ver_014_textured_cube.cpp"
 #include "scripts/ver_012_textured.cpp"
@@ -624,7 +625,7 @@ int main(int argc, char** argv) {
     if (test_name.empty()) {
         std::cerr << std::format(
             "Usage: {} <test_name> [output.png] [--trace]\n"
-            "  test_name: gouraud, depth_test, textured, color_combined, textured_cube\n",
+            "  test_name: gouraud, depth_test, textured, color_combined, textured_cube, size_grid\n",
             argv[0]
         );
         return 1;
@@ -755,6 +756,12 @@ int main(int argc, char** argv) {
 
         execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_013_script);
 
+    } else if (test_name == "size_grid") {
+        // VER-015: Grid of triangles at increasing sizes.
+        std::cout << "Running VER-015 (triangle size grid).\n";
+
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_015_script);
+
     } else {
         std::cerr << std::format("Unknown test: {}\n", test_name);
         top->final();
@@ -836,7 +843,10 @@ int main(int argc, char** argv) {
                 // redesign.  Vertex colors are now latched internally as
                 // v0_color0..v2_color0 and not exposed via verilator public.
                 std::cout << "DIAG: SETUP — vertex colors latched (not exposed)\n";
-                // Phase 1: inv_area is hardcoded in raster_deriv.sv (no longer a register)
+                std::cout << std::format(
+                    "DIAG: SETUP — inv_area=0x{:05x} area_shift={}\n",
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->inv_area),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->area_shift));
             }
 
             // Print bbox once after SETUP completes
@@ -848,6 +858,10 @@ int main(int argc, char** argv) {
                     static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->bbox_min_y),
                     static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->bbox_max_y)
                 );
+                std::cout << std::format(
+                    "DIAG: ITER_START — inv_area=0x{:05x} area_shift={}\n",
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->inv_area),
+                    static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->area_shift));
             }
 
             if (rast_state == 3) { // EDGE_TEST = 3
@@ -880,7 +894,8 @@ int main(int argc, char** argv) {
             // premature exit before all triangles have been processed.
             bool fifo_empty = top->gpio_cmd_empty;
             unsigned vtx_count = top->rootp->gpu_top->u_register_file->vertex_count;
-            if (rast_started && rast_state == 0 && fifo_empty && vtx_count == 0 && i > 100) {
+            bool setup_fifo_empty = top->rootp->gpu_top->u_rasterizer->fifo_empty;
+            if (rast_started && rast_state == 0 && fifo_empty && setup_fifo_empty && vtx_count == 0 && i > 100) {
                 std::cout << std::format(
                     "DIAG: Rasterizer returned to IDLE at drain cycle {}\n", i
                 );

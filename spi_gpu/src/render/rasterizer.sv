@@ -251,8 +251,9 @@ module rasterizer (
     reg signed [10:0] edge2_B;
     reg signed [20:0] edge2_C;
 
-    // Inverse area (UQ4.14) — latched from raster_recip_area during S_RECIP_DONE
-    reg [17:0] inv_area;
+    // Inverse area (UQ1.17 mantissa + 5-bit shift) from raster_recip_area
+    reg [17:0] inv_area /* verilator public */;
+    reg  [4:0] area_shift /* verilator public */;
 
     // Iteration position wires (from raster_edge_walk sub-module)
     wire [9:0] curr_x;                   // Current pixel X (from edge walk)
@@ -341,7 +342,8 @@ module rasterizer (
     // Driven during S_SETUP_3 with the triangle_area value.
 
     wire               recip_area_valid_in = (setup_state == S_SETUP_3);
-    wire        [17:0] recip_area_out;         // UQ4.14 inv_area result
+    wire        [17:0] recip_area_out;         // UQ1.17 normalized mantissa
+    wire         [4:0] recip_area_shift;       // Right-shift for denormalization
     wire               recip_area_degenerate;  // Zero area flag
     wire               recip_area_valid_out;   // Result valid (2 cycles after valid_in)
 
@@ -351,6 +353,7 @@ module rasterizer (
         .operand_in   (triangle_area),
         .valid_in     (recip_area_valid_in),
         .recip_out    (recip_area_out),
+        .area_shift   (recip_area_shift),
         .degenerate   (recip_area_degenerate),
         .valid_out    (recip_area_valid_out)
     );
@@ -367,7 +370,11 @@ module rasterizer (
 
     wire        [17:0] recip_q_out;            // UQ4.14 1/Q result
     wire         [4:0] recip_q_clz_out;        // CLZ count for frag_lod
-    wire               recip_q_valid_out;      // Result valid
+    // recip_q_valid_out is unused: edge walk FSM uses cycle counting
+    // (EW_BRAM_READ -> EW_PERSP_1 -> EW_PERSP_2) rather than a valid strobe.
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire               recip_q_valid_out;
+    /* verilator lint_on UNUSEDSIGNAL */
 
     raster_recip_q u_recip_q (
         .clk          (clk),
@@ -379,15 +386,8 @@ module rasterizer (
         .valid_out    (recip_q_valid_out)
     );
 
-    // Adapter: edge walk expects signed [15:0] recip_out (Q4.12) and [4:0] clz.
-    // raster_recip_q produces [17:0] UQ4.14.  Truncate to Q4.12 for now;
-    // Task 6 will widen the edge walk interface to accept UQ4.14 natively.
-    wire signed [15:0] ew_recip_out_adapted = $signed(recip_q_out[17:2]);
-    wire         [4:0] ew_recip_clz_adapted = recip_q_clz_out;
-    wire               ew_recip_valid_adapted = recip_q_valid_out;
-
-    // Low bits discarded by Q4.14 → Q4.12 truncation
-    wire [1:0] _unused_recip_q_lo = recip_q_out[1:0];
+    // Edge walk accepts UQ4.14 (18-bit) reciprocal directly from raster_recip_q.
+    // No adapter needed — Task 6 widened the edge walk interface.
 
     // ========================================================================
     // Setup-Iteration Overlap FIFO (DD-035)
@@ -399,18 +399,18 @@ module rasterizer (
     // FIFO payload packing:
     //   3 edges x (11-bit A + 11-bit B + 21-bit C) = 3 x 43 = 129 bits
     //   4 bbox registers x 10 bits = 40 bits
-    //   inv_area: 18 bits (UQ4.14)
+    //   inv_area: 18 bits (UQ1.17) + area_shift: 5 bits = 23 bits
     //   3 vertices x (depth 16 + color0 32 + color1 32 + uv0 32 + uv1 32 + q 16) = 3 x 160 = 480 bits
     //   3 vertex positions x (10 + 10) = 60 bits
-    //   Total: 129 + 40 + 18 + 480 + 60 = 727 bits
-    localparam FIFO_WIDTH = 727;
+    //   Total: 129 + 40 + 23 + 480 + 60 = 732 bits
+    localparam FIFO_WIDTH = 732;
 
     wire                   fifo_wr_en;
     wire [FIFO_WIDTH-1:0]  fifo_wr_data;
     wire                   fifo_rd_en;
     wire [FIFO_WIDTH-1:0]  fifo_rd_data;
     wire                   fifo_full;
-    wire                   fifo_empty;
+    wire                   fifo_empty /* verilator public */;
 
     wire [1:0] fifo_count;  // FIFO entry count (unused, for debug only)
 
@@ -447,8 +447,8 @@ module rasterizer (
         edge2_A, edge2_B, edge2_C,    // 43
         // Bounding box (40 bits)
         bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y,
-        // Inverse area (18 bits, UQ4.14)
-        recip_area_out,
+        // Inverse area (18 bits, UQ1.17) + area shift (5 bits)
+        recip_area_out, recip_area_shift,
         // Vertex positions (60 bits)
         x0, y0, x1, y1, x2, y2,
         // Vertex depths (48 bits)
@@ -585,7 +585,7 @@ module rasterizer (
         .bbox_min_y     (bbox_min_y),
         // Inverse area (UQ4.14) and shift
         .inv_area       (inv_area),
-        .area_shift     (4'd0),
+        .area_shift     (area_shift),
         // Vertex 0 position
         .x0             (x0),
         .y0             (y0),
@@ -645,6 +645,8 @@ module rasterizer (
     // Attribute step signals from raster_edge_walk sub-module
     wire ew_attr_step_x;
     wire ew_attr_step_y;
+    wire ew_attr_tile_col_step;
+    wire ew_attr_tile_row_step;
 
     // Edge walk control signals
     wire ew_do_idle       = (iter_state == I_IDLE);
@@ -685,6 +687,8 @@ module rasterizer (
         .latch_derivs   (latch_derivs),
         .step_x         (ew_attr_step_x),
         .step_y         (ew_attr_step_y),
+        .tile_col_step  (ew_attr_tile_col_step),
+        .tile_row_step  (ew_attr_tile_row_step),
         // Derivative inputs from raster_deriv
         .pre_c0r_dx     (pre_c0r_dx),
         .pre_c0r_dy     (pre_c0r_dy),
@@ -794,15 +798,16 @@ module rasterizer (
         .t1_acc         (uv1v_acc),
         // Q/W accumulator
         .q_acc          (q_acc),
-        // Reciprocal interface (dedicated raster_recip_q module)
+        // Reciprocal interface (dedicated raster_recip_q module, UQ4.14)
         .recip_operand  (ew_recip_operand),
         .recip_valid_in (ew_recip_valid_in),
-        .recip_out      (ew_recip_out_adapted),
-        .recip_clz_out  (ew_recip_clz_adapted),
-        .recip_valid_out(ew_recip_valid_adapted),
+        .recip_out      (recip_q_out),
+        .recip_clz_out  (recip_q_clz_out),
         // Attribute accumulator step commands
-        .attr_step_x    (ew_attr_step_x),
-        .attr_step_y    (ew_attr_step_y),
+        .attr_step_x         (ew_attr_step_x),
+        .attr_step_y         (ew_attr_step_y),
+        .attr_tile_col_step  (ew_attr_tile_col_step),
+        .attr_tile_row_step  (ew_attr_tile_row_step),
         // Fragment handshake
         .frag_ready     (frag_ready),
         .frag_valid     (frag_valid),
@@ -1045,8 +1050,9 @@ module rasterizer (
     logic signed [10:0] next_edge2_B;
     logic signed [20:0] next_edge2_C;
 
-    // Inverse area (UQ4.14)
+    // Inverse area (UQ1.17 mantissa + shift)
     logic [17:0] next_inv_area;
+    logic  [4:0] next_area_shift;
 
     // Iteration next_* declarations are in raster_edge_walk sub-module.
     // Attribute derivative and accumulator next_* declarations are in
@@ -1124,6 +1130,7 @@ module rasterizer (
         next_bbox_min_y = bbox_min_y;
         next_bbox_max_y = bbox_max_y;
         next_inv_area = inv_area;
+        next_area_shift = area_shift;
 
         // --- Setup producer path (setup_state) ---
         unique case (setup_state)
@@ -1228,8 +1235,9 @@ module rasterizer (
             end
 
             S_RECIP_DONE: begin
-                // Latch inv_area from raster_recip_area output (UQ4.14)
+                // Latch inv_area and area_shift from raster_recip_area
                 next_inv_area = recip_area_out;
+                next_area_shift = recip_area_shift;
                 // FIFO write is handled by fifo_wr_en combinational logic.
                 // If degenerate, tri_ready will be re-asserted when setup FSM
                 // returns to S_IDLE via next-state logic.
@@ -1249,7 +1257,7 @@ module rasterizer (
              next_edge1_A, next_edge1_B, next_edge1_C,
              next_edge2_A, next_edge2_B, next_edge2_C,
              next_bbox_min_x, next_bbox_max_x, next_bbox_min_y, next_bbox_max_y,
-             next_inv_area,
+             next_inv_area, next_area_shift,
              next_x0, next_y0, next_x1, next_y1, next_x2, next_y2,
              next_z0, next_z1, next_z2,
              next_c0_r0, next_c0_g0, next_c0_b0, next_c0_a0,
@@ -1337,6 +1345,7 @@ module rasterizer (
             edge2_B <= 11'sb0;
             edge2_C <= 21'sb0;
             inv_area <= 18'd0;
+            area_shift <= 5'd0;
         end else begin
             // UNIT-005.01 registers
             tri_ready      <= next_tri_ready;
@@ -1402,9 +1411,11 @@ module rasterizer (
             edge2_B <= next_edge2_B;
             edge2_C <= next_edge2_C;
             inv_area <= next_inv_area;
+            area_shift <= next_area_shift;
             // UNIT-005.04 registers are in raster_edge_walk sub-module.
         end
     end
+
 
 endmodule
 

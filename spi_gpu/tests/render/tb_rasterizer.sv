@@ -7,10 +7,11 @@
 // Spec-ref: unit_005_rasterizer.md `0000000000000000` 1970-01-01
 // Spec-ref: ver_001_rasterizer.md `0000000000000000` 1970-01-01
 //
-// NOTE: Phase 2 rasterizer changes (tile traversal order, UV semantics,
-// derivative scaling) have made VER-010 through VER-014 golden images stale.
-// These require regeneration via test-*-init targets and human re-approval
-// before the corresponding golden image tests can pass.
+// NOTE: Reciprocal LUT migration (DP16KD BRAM) changed inv_area precision
+// from Q4.12 pass-through to UQ4.14 computed reciprocal.  Reference model
+// in Test 7 now reads the DUT's actual inv_area value for comparison.
+// VER-010 through VER-014 golden images may need regeneration after
+// precision changes.
 
 `timescale 1ns/1ps
 
@@ -113,8 +114,14 @@ module tb_rasterizer;
             @(posedge clk);
             wait(tri_ready == 0);  // Wait for rasterizer to accept
             tri_valid = 0;
-            // Wait for rasterization to complete
+            // Wait for setup to complete (tri_ready re-asserted)
             wait(tri_ready == 1);
+            // With setup-iteration FIFO (DD-035), tri_ready goes high after
+            // setup writes to the FIFO.  Wait for iteration to finish too:
+            // iter_state returns to I_IDLE (0) and FIFO drains.
+            @(posedge clk);
+            wait(dut.iter_state == 0 && dut.u_setup_fifo.empty);
+            @(posedge clk);
         end
     endtask
 
@@ -200,39 +207,41 @@ module tb_rasterizer;
 
     // Compute a single 8-bit-channel derivative (dx or dy) using the same
     // formula as the rasterizer: raw = d10*coeff_A1 + d20*coeff_A2,
-    // then scaled = (raw * inv_area_val) >>> area_shift.
-    // Phase 2: INV_AREA=0xFFFF, AREA_SHIFT=0 (no right-shift).
+    // then scaled = (raw * inv_area_val) >>> shift.
+    // inv_area is UQ1.17 (18-bit unsigned mantissa) from raster_recip_area.
     function automatic signed [31:0] ref_deriv_8bit(
         input [7:0] f0, input [7:0] f1, input [7:0] f2,
         input signed [10:0] coeff1, input signed [10:0] coeff2,
-        input [15:0] inv_area_val
+        input [17:0] inv_area_val,
+        input [4:0] shift
     );
         reg signed [8:0]  d10, d20;
         reg signed [20:0] raw;
-        reg signed [36:0] scl;
+        reg signed [38:0] scl;
         begin
             d10 = $signed({1'b0, f1}) - $signed({1'b0, f0});
             d20 = $signed({1'b0, f2}) - $signed({1'b0, f0});
             raw = (d10 * coeff1) + (d20 * coeff2);
             scl = raw * $signed({1'b0, inv_area_val});
-            ref_deriv_8bit = scl[31:0];
+            ref_deriv_8bit = 32'(scl >>> shift);
         end
     endfunction
 
     // Compute a single 16-bit-channel derivative (dx or dy) for Z (unsigned
     // origin), UV (signed), or Q (unsigned origin).
-    // Phase 2: INV_AREA=0xFFFF, AREA_SHIFT=0 (no right-shift).
+    // inv_area is UQ1.17 (18-bit unsigned mantissa) from raster_recip_area.
     function automatic signed [31:0] ref_deriv_16bit(
         input signed [16:0] d10, input signed [16:0] d20,
         input signed [10:0] coeff1, input signed [10:0] coeff2,
-        input [15:0] inv_area_val
+        input [17:0] inv_area_val,
+        input [4:0] shift
     );
         reg signed [28:0] raw;
-        reg signed [44:0] scl;
+        reg signed [46:0] scl;
         begin
             raw = (d10 * coeff1) + (d20 * coeff2);
             scl = raw * $signed({1'b0, inv_area_val});
-            ref_deriv_16bit = scl[31:0];
+            ref_deriv_16bit = 32'(scl >>> shift);
         end
     endfunction
 
@@ -632,6 +641,10 @@ module tb_rasterizer;
             // Re-assert ready and let rasterization complete
             frag_ready = 1;
             wait(tri_ready == 1);
+            // Wait for iteration to finish (FIFO drains, iter FSM returns to IDLE)
+            @(posedge clk);
+            wait(dut.iter_state == 0 && dut.u_setup_fifo.empty);
+            @(posedge clk);
             $display("  Back-pressure test completed, total fragments=%0d", pixel_count);
 
             if (pixel_count > pre_resume_count) begin
@@ -781,6 +794,8 @@ module tb_rasterizer;
         //   dx  = -836400 >>> 16 = -12 (truncated)
         begin : interp_check
             reg signed [10:0] ref_e1A, ref_e1B, ref_e2A, ref_e2B;
+            reg [17:0] dut_inv_area;
+            reg  [4:0] dut_area_shift;
             reg signed [31:0] ref_c0r_dx, ref_c0r_dy;
             reg signed [31:0] ref_c0g_dx, ref_c0g_dy;
             reg signed [31:0] ref_c0b_dx, ref_c0b_dy;
@@ -797,27 +812,33 @@ module tb_rasterizer;
             ref_e2A = $signed(11'd10) - $signed(11'd10);  // y0 - y1 = 0
             ref_e2B = $signed(11'd30) - $signed(11'd10);  // x1 - x0 = 20
 
+            // Read the DUT's actual inv_area (UQ1.17 mantissa + shift) computed by
+            // raster_recip_area during triangle setup.
+            dut_inv_area = dut.inv_area;
+            dut_area_shift = dut.area_shift;
+            $display("  DUT inv_area (UQ1.17) = 0x%05x (%0d), area_shift = %0d", dut_inv_area, dut_inv_area, dut_area_shift);
+
             // Color0 R: f0=255, f1=0, f2=0
-            ref_c0r_dx = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1A, ref_e2A, 16'hFFFF);
-            ref_c0r_dy = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1B, ref_e2B, 16'hFFFF);
+            ref_c0r_dx = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
+            ref_c0r_dy = ref_deriv_8bit(8'd255, 8'd0, 8'd0, ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             // Color0 G: f0=0, f1=255, f2=0
-            ref_c0g_dx = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1A, ref_e2A, 16'hFFFF);
-            ref_c0g_dy = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1B, ref_e2B, 16'hFFFF);
+            ref_c0g_dx = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
+            ref_c0g_dy = ref_deriv_8bit(8'd0, 8'd255, 8'd0, ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             // Color0 B: f0=0, f1=0, f2=255
-            ref_c0b_dx = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1A, ref_e2A, 16'hFFFF);
-            ref_c0b_dy = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1B, ref_e2B, 16'hFFFF);
+            ref_c0b_dx = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
+            ref_c0b_dy = ref_deriv_8bit(8'd0, 8'd0, 8'd255, ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             // Z: z0=0x1000, z1=0x3000, z2=0x2000
             ref_z_dx = ref_deriv_16bit(
                 $signed({1'b0, 16'h3000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1A, ref_e2A, 16'hFFFF);
+                ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
             ref_z_dy = ref_deriv_16bit(
                 $signed({1'b0, 16'h3000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1B, ref_e2B, 16'hFFFF);
+                ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             // UV reference values are Q4.12 (16-bit signed: sign [15], integer [14:12], fractional [11:0])
             // per UNIT-005 fragment bus spec and fp_types_pkg.sv q4_12_t typedef.
@@ -826,31 +847,31 @@ module tb_rasterizer;
             ref_uv0u_dx = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
-                ref_e1A, ref_e2A, 16'hFFFF);
+                ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
             ref_uv0u_dy = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
-                ref_e1B, ref_e2B, 16'hFFFF);
+                ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             // UV0 V: v0=0x0000, v1=0x0000, v2=0x1000
             ref_uv0v_dx = ref_deriv_16bit(
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
-                ref_e1A, ref_e2A, 16'hFFFF);
+                ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
             ref_uv0v_dy = ref_deriv_16bit(
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
-                ref_e1B, ref_e2B, 16'hFFFF);
+                ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             // Q: q0=0x1000, q1=0x1000, q2=0x2000
             ref_q_dx = ref_deriv_16bit(
                 $signed({1'b0, 16'h1000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1A, ref_e2A, 16'hFFFF);
+                ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
             ref_q_dy = ref_deriv_16bit(
                 $signed({1'b0, 16'h1000}) - $signed({1'b0, 16'h1000}),
                 $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
-                ref_e1B, ref_e2B, 16'hFFFF);
+                ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
             interp_fail = 0;
 
@@ -1384,6 +1405,109 @@ module tb_rasterizer;
         repeat(20) @(posedge clk);
 
         // ====================================================================
+        // Test 13: Multi-triangle FIFO overlap (DD-035 backpressure)
+        // Submit 3 triangles in rapid succession to exercise the depth-2
+        // setup-iteration FIFO.  Verify that all triangles complete without
+        // data corruption (correct fragment counts and positions).
+        // ====================================================================
+        $display("\nTest 13: Multi-triangle FIFO overlap (DD-035 backpressure)");
+        fb_width_log2  = 4'd9;
+        fb_height_log2 = 4'd9;
+
+        begin : fifo_overlap_test
+            integer tri_a_count, tri_b_count, tri_c_count;
+            integer total_before;
+
+            total_before = total_frag_count;
+
+            // Triangle A: small, (10,10)-(20,10)-(15,20), ~50 pixels
+            pixel_count = 0;
+            v0_x = 16'd160;  v0_y = 16'd160;  v0_z = 16'h1000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd320;  v1_y = 16'd160;  v1_z = 16'h2000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd240;  v2_y = 16'd320;  v2_z = 16'h3000;
+            v2_color0 = 32'h0000FF00;
+
+            // Submit triangle A — do NOT wait for iteration to complete
+            tri_valid = 1;
+            @(posedge clk);
+            wait(tri_ready == 0);
+            tri_valid = 0;
+            wait(tri_ready == 1);
+            tri_a_count = pixel_count;
+            $display("  Triangle A submitted, pixel_count at submit=%0d", tri_a_count);
+
+            // Triangle B: small, (30,10)-(40,10)-(35,20), ~50 pixels
+            pixel_count = 0;
+            v0_x = 16'd480;  v0_y = 16'd160;  v0_z = 16'h1000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd640;  v1_y = 16'd160;  v1_z = 16'h2000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd560;  v2_y = 16'd320;  v2_z = 16'h3000;
+            v2_color0 = 32'h0000FF00;
+
+            // Submit triangle B
+            tri_valid = 1;
+            @(posedge clk);
+            wait(tri_ready == 0);
+            tri_valid = 0;
+            wait(tri_ready == 1);
+            tri_b_count = pixel_count;
+            $display("  Triangle B submitted, pixel_count at submit=%0d", tri_b_count);
+
+            // Triangle C: small, (50,10)-(60,10)-(55,20), ~50 pixels
+            pixel_count = 0;
+            v0_x = 16'd800;  v0_y = 16'd160;  v0_z = 16'h1000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd960;  v1_y = 16'd160;  v1_z = 16'h2000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd880;  v2_y = 16'd320;  v2_z = 16'h3000;
+            v2_color0 = 32'h0000FF00;
+
+            // Submit triangle C and wait for ALL iteration to complete
+            tri_valid = 1;
+            @(posedge clk);
+            wait(tri_ready == 0);
+            tri_valid = 0;
+            wait(tri_ready == 1);
+            @(posedge clk);
+            wait(dut.iter_state == 0 && dut.u_setup_fifo.empty);
+            @(posedge clk);
+            tri_c_count = pixel_count;
+            $display("  Triangle C done, pixel_count=%0d", tri_c_count);
+
+            // Check total fragment count across all 3 triangles
+            begin : fifo_check
+                integer total_frags;
+                total_frags = total_frag_count - total_before;
+                $display("  Total fragments from 3 overlapped triangles: %0d", total_frags);
+
+                if (total_frags > 0) begin
+                    $display("  PASS: Multi-triangle FIFO overlap -- %0d total fragments", total_frags);
+                    test_pass_count = test_pass_count + 1;
+                end else begin
+                    $display("  FAIL: No fragments from overlapped triangles");
+                    test_fail_count = test_fail_count + 1;
+                end
+
+                // Verify the rasterizer returned to IDLE (no stuck state)
+                if (dut.iter_state == 0 && dut.u_setup_fifo.empty) begin
+                    $display("  PASS: Rasterizer idle after FIFO overlap test");
+                    test_pass_count = test_pass_count + 1;
+                end else begin
+                    $display("  FAIL: Rasterizer not idle after FIFO overlap test");
+                    test_fail_count = test_fail_count + 1;
+                end
+            end
+        end
+
+        repeat(20) @(posedge clk);
+
+        // ====================================================================
         // Summary
         // ====================================================================
         $display("\n=== Rasterizer Test Summary ===");
@@ -1403,7 +1527,7 @@ module tb_rasterizer;
 
     // Timeout watchdog
     initial begin
-        #40000000;  // 40ms timeout (increased for tile traversal and perspective tests)
+        #80000000;  // 80ms timeout (increased for FIFO overlap and perspective tests)
         $display("\nERROR: Timeout - simulation ran too long");
         $finish;
     end

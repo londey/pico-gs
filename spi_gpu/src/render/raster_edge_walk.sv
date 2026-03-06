@@ -78,6 +78,8 @@ module raster_edge_walk (
     // Attribute accumulator step commands (to raster_attr_accum)
     output reg         attr_step_x,       // Step attributes in X
     output reg         attr_step_y,       // Step attributes in Y (row reload)
+    output reg         attr_tile_col_step, // Advance attributes to next tile column
+    output reg         attr_tile_row_step, // Advance attributes to next tile row
 
     // Fragment handshake (to UNIT-006)
     input  wire        frag_ready,        // Downstream ready to accept
@@ -150,6 +152,11 @@ module raster_edge_walk (
     reg signed [31:0] e0_trow;            // Edge 0 at tile-row start
     reg signed [31:0] e1_trow;            // Edge 1 at tile-row start
     reg signed [31:0] e2_trow;            // Edge 2 at tile-row start
+
+    // Tile-column origin edge values (at start of current tile)
+    reg signed [31:0] e0_tcol;            // Edge 0 at current tile origin
+    reg signed [31:0] e1_tcol;            // Edge 1 at current tile origin
+    reg signed [31:0] e2_tcol;            // Edge 2 at current tile origin
 
     // ========================================================================
     // Tile Traversal Counters
@@ -285,6 +292,9 @@ module raster_edge_walk (
     logic signed [31:0] next_e0_trow;
     logic signed [31:0] next_e1_trow;
     logic signed [31:0] next_e2_trow;
+    logic signed [31:0] next_e0_tcol;
+    logic signed [31:0] next_e1_tcol;
+    logic signed [31:0] next_e2_tcol;
     logic        [17:0] next_persp_recip;
     logic        [7:0]  next_persp_lod;
     logic [9:0]        next_latched_x;
@@ -299,6 +309,8 @@ module raster_edge_walk (
     logic              next_recip_valid_in;
     logic              next_attr_step_x;
     logic              next_attr_step_y;
+    logic              next_attr_tile_col_step;
+    logic              next_attr_tile_row_step;
 
     // ========================================================================
     // FSM Next-State Logic
@@ -405,6 +417,9 @@ module raster_edge_walk (
         next_e0_trow = e0_trow;
         next_e1_trow = e1_trow;
         next_e2_trow = e2_trow;
+        next_e0_tcol = e0_tcol;
+        next_e1_tcol = e1_tcol;
+        next_e2_tcol = e2_tcol;
         next_persp_recip = persp_recip;
         next_persp_lod = persp_lod;
         next_latched_x = latched_x;
@@ -419,6 +434,8 @@ module raster_edge_walk (
         next_recip_valid_in = 1'b0;
         next_attr_step_x = 1'b0;
         next_attr_step_y = 1'b0;
+        next_attr_tile_col_step = 1'b0;
+        next_attr_tile_row_step = 1'b0;
 
         // ----------------------------------------------------------------
         // Parent init signals
@@ -437,21 +454,24 @@ module raster_edge_walk (
             next_py = 2'd0;
             next_tile_has_emission = 1'b0;
             next_tile_first_emission = 1'b1;
-            next_e0     = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
-            next_e0_row = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
+            next_e0      = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
+            next_e0_row  = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
             next_e0_trow = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
+            next_e0_tcol = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge0_C));
         end
 
         if (init_e1) begin
-            next_e1     = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
-            next_e1_row = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
+            next_e1      = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
+            next_e1_row  = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
             next_e1_trow = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
+            next_e1_tcol = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge1_C));
         end
 
         if (init_e2) begin
-            next_e2     = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
-            next_e2_row = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
+            next_e2      = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
+            next_e2_row  = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
             next_e2_trow = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
+            next_e2_tcol = 32'(smul_p1) + 32'(smul_p2) + 32'($signed(edge2_C));
         end
 
         // ----------------------------------------------------------------
@@ -549,37 +569,21 @@ module raster_edge_walk (
                     next_tile_first_emission = 1'b1;
 
                     if (tile_col < tile_col_max) begin
-                        // Next tile column
+                        // Next tile column: use e_tcol for correct origin
+                        // regardless of whether the tile was rejected or fully walked.
                         next_tile_col = tile_col + 7'd1;
-                        // Step tile-row-start by 4*A for next column
-                        // e_row resets to tile-row-start + (tile_col+1)*4A
-                        // Since e_trow is at col=0, we need to track per-column.
-                        // Actually, e_row at this point was stepped through
-                        // the tile. We restore from tile_row_start + 4*A*(tile_col+1).
-                        // But that requires a multiply. Instead:
-                        //
-                        // Strategy: at end of a tile, e_row has been stepped
-                        // by 3*B (three py advances within the tile).
-                        // We need to undo that and step by 4*A.
-                        // e_row at tile origin = e_trow + tile_col * 4*A
-                        // Next tile: e_trow + (tile_col+1) * 4*A
-                        // So: current e_row (after 3*B steps) needs to go to
-                        // e_row_at_tile_origin_of_next_col.
-                        //
-                        // Simpler: track e values at each tile's origin.
-                        // At tile end, e_row was: tile_origin + 3*B.
-                        // tile_origin was: e_trow + tile_col * 4*A.
-                        // Next tile_origin = current tile_origin + 4*A
-                        //                  = (e_row - 3*B) + 4*A
-                        // e_row_next = e_row - 3*B + 4*A
-                        next_e0_row = e0_row - e0_3B + e0_4A;
-                        next_e1_row = e1_row - e1_3B + e1_4A;
-                        next_e2_row = e2_row - e2_3B + e2_4A;
-                        next_e0 = e0_row - e0_3B + e0_4A;
-                        next_e1 = e1_row - e1_3B + e1_4A;
-                        next_e2 = e2_row - e2_3B + e2_4A;
+                        next_e0_tcol = e0_tcol + e0_4A;
+                        next_e1_tcol = e1_tcol + e1_4A;
+                        next_e2_tcol = e2_tcol + e2_4A;
+                        next_e0_row = e0_tcol + e0_4A;
+                        next_e1_row = e1_tcol + e1_4A;
+                        next_e2_row = e2_tcol + e2_4A;
+                        next_e0 = e0_tcol + e0_4A;
+                        next_e1 = e1_tcol + e1_4A;
+                        next_e2 = e2_tcol + e2_4A;
                         next_curr_x = bbox_min_x + {1'b0, (tile_col + 7'd1), 2'b00};
                         next_curr_y = bbox_min_y + {1'b0, tile_row, 2'b00};
+                        next_attr_tile_col_step = 1'b1;
                     end else if (tile_row < tile_row_max) begin
                         // Next tile row, reset col to 0
                         next_tile_col = 7'd0;
@@ -588,7 +592,10 @@ module raster_edge_walk (
                         next_e0_trow = e0_trow + e0_4B;
                         next_e1_trow = e1_trow + e1_4B;
                         next_e2_trow = e2_trow + e2_4B;
-                        // Reset e and e_row to new tile-row start
+                        // Reset tcol, e_row and e to new tile-row start
+                        next_e0_tcol = e0_trow + e0_4B;
+                        next_e1_tcol = e1_trow + e1_4B;
+                        next_e2_tcol = e2_trow + e2_4B;
                         next_e0_row = e0_trow + e0_4B;
                         next_e1_row = e1_trow + e1_4B;
                         next_e2_row = e2_trow + e2_4B;
@@ -597,6 +604,7 @@ module raster_edge_walk (
                         next_e2 = e2_trow + e2_4B;
                         next_curr_x = bbox_min_x;
                         next_curr_y = bbox_min_y + {1'b0, (tile_row + 7'd1), 2'b00};
+                        next_attr_tile_row_step = 1'b1;
                     end else begin
                         next_walk_done = 1'b1;
                     end
@@ -640,6 +648,9 @@ module raster_edge_walk (
             e0_trow         <= 32'sb0;
             e1_trow         <= 32'sb0;
             e2_trow         <= 32'sb0;
+            e0_tcol         <= 32'sb0;
+            e1_tcol         <= 32'sb0;
+            e2_tcol         <= 32'sb0;
             persp_recip     <= 18'd0;
             persp_lod       <= 8'b0;
             latched_x       <= 10'b0;
@@ -652,8 +663,10 @@ module raster_edge_walk (
             walk_done       <= 1'b0;
             recip_operand   <= 32'd0;
             recip_valid_in  <= 1'b0;
-            attr_step_x     <= 1'b0;
-            attr_step_y     <= 1'b0;
+            attr_step_x          <= 1'b0;
+            attr_step_y          <= 1'b0;
+            attr_tile_col_step   <= 1'b0;
+            attr_tile_row_step   <= 1'b0;
         end else begin
             ew_state        <= next_ew_state;
             frag_valid      <= next_frag_valid;
@@ -682,6 +695,9 @@ module raster_edge_walk (
             e0_trow         <= next_e0_trow;
             e1_trow         <= next_e1_trow;
             e2_trow         <= next_e2_trow;
+            e0_tcol         <= next_e0_tcol;
+            e1_tcol         <= next_e1_tcol;
+            e2_tcol         <= next_e2_tcol;
             persp_recip     <= next_persp_recip;
             persp_lod       <= next_persp_lod;
             latched_x       <= next_latched_x;
@@ -694,8 +710,10 @@ module raster_edge_walk (
             walk_done       <= next_walk_done;
             recip_operand   <= next_recip_operand;
             recip_valid_in  <= next_recip_valid_in;
-            attr_step_x     <= next_attr_step_x;
-            attr_step_y     <= next_attr_step_y;
+            attr_step_x          <= next_attr_step_x;
+            attr_step_y          <= next_attr_step_y;
+            attr_tile_col_step   <= next_attr_tile_col_step;
+            attr_tile_row_step   <= next_attr_tile_row_step;
         end
     end
 

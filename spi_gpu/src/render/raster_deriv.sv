@@ -74,9 +74,9 @@ module raster_deriv (
     input  wire [9:0]          bbox_min_x,     // Bounding box minimum X
     input  wire [9:0]          bbox_min_y,     // Bounding box minimum Y
 
-    // Inverse area and shift (from raster_recip_area, UQ4.14 unsigned)
-    input  wire [17:0]         inv_area,       // UQ4.14 reciprocal of twice-area
-    input  wire [3:0]          area_shift,     // Right-shift for area normalization
+    // Inverse area and shift (from raster_recip_area, UQ1.17 normalized mantissa)
+    input  wire [17:0]         inv_area,       // UQ1.17 reciprocal mantissa
+    input  wire [4:0]          area_shift,     // Right-shift for area denormalization
 
     // Vertex 0 position (screen-space integer pixels)
     input  wire [9:0]          x0,             // Vertex 0 X

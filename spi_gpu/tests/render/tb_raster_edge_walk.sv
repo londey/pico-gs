@@ -84,9 +84,8 @@ module tb_raster_edge_walk;
 
     wire signed [31:0] recip_operand;  // Operand from DUT
     wire               recip_valid_in; // Valid from DUT
-    reg  signed [15:0] recip_out;      // 1/Q result to DUT
+    reg         [17:0] recip_out;      // 1/Q result to DUT (UQ4.14)
     reg         [4:0]  recip_clz_out;  // CLZ to DUT
-    reg                recip_valid_out; // Valid to DUT
 
     // ========================================================================
     // Handshake
@@ -160,7 +159,6 @@ module tb_raster_edge_walk;
         .recip_valid_in (recip_valid_in),
         .recip_out      (recip_out),
         .recip_clz_out  (recip_clz_out),
-        .recip_valid_out(recip_valid_out),
         .attr_step_x    (attr_step_x),
         .attr_step_y    (attr_step_y),
         .frag_ready     (frag_ready),
@@ -286,9 +284,9 @@ module tb_raster_edge_walk;
             s0_acc = 32'sd0; t0_acc = 32'sd0;
             s1_acc = 32'sd0; t1_acc = 32'sd0;
             q_acc = 32'sd0;
-            recip_out = 16'sd0;
+            recip_out = 18'd0;
             recip_clz_out = 5'd0;
-            recip_valid_out = 1'b0;
+            // recip_valid_out removed; edge walk uses cycle counting
             frag_ready = 1'b0;
         end
     endtask
@@ -401,10 +399,10 @@ module tb_raster_edge_walk;
         t1_acc = 32'h0200_0000;  // T1 = 0x0200 (Q4.12 = 0.125)
         q_acc  = 32'h1000_0000;  // Q = 0x1000 (Q4.12 = 1.0)
 
-        // Recip LUT stub: respond with 1/Q = 1.0 (0x1000) for Q=1.0
-        recip_out = 16'sh1000;
+        // Recip LUT stub: respond with 1/Q = 1.0 (UQ4.14 = 0x4000) for Q=1.0
+        recip_out = 18'h4000;
         recip_clz_out = 5'd18;   // CLZ for Q=0x1000 (bit 12 set)
-        recip_valid_out = 1'b1;
+        // recip_valid_out removed; edge walk uses cycle counting
 
         frag_ready = 1'b1;
 

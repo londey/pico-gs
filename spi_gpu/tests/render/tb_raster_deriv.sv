@@ -71,6 +71,8 @@ module tb_raster_deriv;
     reg signed [10:0] edge1_B;      // Edge 1 B coefficient
     reg signed [10:0] edge2_A;      // Edge 2 A coefficient
     reg signed [10:0] edge2_B;      // Edge 2 B coefficient
+    reg [17:0] inv_area;             // UQ4.14 inverse area
+    reg [4:0]  area_shift;          // Area normalization shift
     reg [9:0]  bbox_min_x;          // Bounding box min X
     reg [9:0]  bbox_min_y;          // Bounding box min Y
     reg [9:0]  x0;                  // Vertex 0 X
@@ -151,6 +153,7 @@ module tb_raster_deriv;
         .q0(q0), .q1(q1), .q2(q2),
         .edge1_A(edge1_A), .edge1_B(edge1_B),
         .edge2_A(edge2_A), .edge2_B(edge2_B),
+        .inv_area(inv_area), .area_shift(area_shift),
         .bbox_min_x(bbox_min_x), .bbox_min_y(bbox_min_y),
         .x0(x0), .y0(y0),
         .pre_c0r_dx(pre_c0r_dx), .pre_c0r_dy(pre_c0r_dy),
@@ -218,6 +221,8 @@ module tb_raster_deriv;
             edge1_A = 11'sd0; edge1_B = 11'sd0;
             edge2_A = 11'sd0; edge2_B = 11'sd0;
 
+            inv_area = 18'h0FFFF;   // UQ4.14 = ~4.0 (matches old 16-bit 0xFFFF)
+            area_shift = 5'd0;
             bbox_min_x = 10'd0; bbox_min_y = 10'd0;
             x0 = 10'd0; y0 = 10'd0;
         end
@@ -352,9 +357,8 @@ module tb_raster_deriv;
         // ============================================================
         // Test 6: Hardcoded INV_AREA/AREA_SHIFT (Phase 1 interim)
         // ============================================================
-        // Phase 1: inv_area is hardcoded to 16'hFFFF (~1.0 UQ0.16),
-        // area_shift is hardcoded to 0.  Verify derivative uses these
-        // interim values.
+        // inv_area set to 18'h0FFFF (UQ4.14 = ~4.0) via zero_all_inputs,
+        // area_shift = 0.  Verify derivative uses these values.
         $display("--- Test 6: Hardcoded INV_AREA Scaling (Phase 1) ---");
         zero_all_inputs;
         c0_r0 = 8'd0; c0_r1 = 8'd128; c0_r2 = 8'd0;

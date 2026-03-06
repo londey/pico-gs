@@ -78,7 +78,7 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
-	test-texture-decoder lint-memory lint harness-scaffold clean help \
+	test-texture-decoder lint-memory lint harness-scaffold copy-recip-hex clean help \
 	test test-rasterizer test-early-z test-register-file \
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
@@ -273,6 +273,8 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
+	cp -f $(RTL_DIR)/render/recip_area_init.hex $(SIM_OUT_DIR)/
+	cp -f $(RTL_DIR)/render/recip_q_init.hex $(SIM_OUT_DIR)/
 	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_rasterizer)
 
 # VER-002: Early Z-test unit testbench
@@ -315,23 +317,31 @@ test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_register_file -o tb_register_file
 	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file)
 
+# Copy reciprocal LUT hex files to sim_out (needed by raster_recip_area/q $readmemh)
+copy-recip-hex: | $(SIM_OUT_DIR)
+	cp -f $(RTL_DIR)/render/recip_area_init.hex $(SIM_OUT_DIR)/
+	cp -f $(RTL_DIR)/render/recip_q_init.hex $(SIM_OUT_DIR)/
+
 # Render targets — always generate output images (parallelizable)
-render-gouraud: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+render-gouraud: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
 
-render-depth-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+render-depth-test: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
 
-render-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+render-textured-cube: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
 
-render-textured: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+render-textured: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
 
-render-color-combined: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+render-color-combined: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
 
-render-all: render-gouraud render-depth-test render-textured-cube render-textured render-color-combined
+render-size-grid: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
+	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) size_grid $(abspath $(SIM_OUT_DIR))/size_grid.png
+
+render-all: render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-size-grid
 
 # Golden image diff targets — compare rendered output against approved golden images
 # VER-010: Gouraud triangle
@@ -354,6 +364,10 @@ test-textured: render-textured
 test-color-combined: render-color-combined
 	diff -q $(SIM_OUT_DIR)/color_combined.png $(TB_DIR)/golden/color_combined.png
 
+# VER-015: Triangle size grid
+test-size-grid: render-size-grid
+	diff -q $(SIM_OUT_DIR)/size_grid.png $(TB_DIR)/golden/size_grid.png
+
 # Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
 # Golden image renders run as prerequisites. Diffs run in the recipe so all
 # comparisons execute even if some fail.
@@ -367,6 +381,7 @@ test: lint test-rasterizer-all test-early-z test-register-file test-color-combin
 		textured_cube.png:textured_cube.png \
 		textured_triangle.png:textured_triangle.png \
 		color_combined.png:color_combined.png \
+		size_grid.png:size_grid.png \
 	; do \
 		golden="$(TB_DIR)/golden/$${pair%%:*}"; \
 		rendered="$(SIM_OUT_DIR)/$${pair##*:}"; \
