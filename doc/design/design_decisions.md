@@ -36,6 +36,44 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-036: Sequential Time-Multiplexed Derivative Computation
+
+**Date:** 2026-03-07
+**Status:** Accepted
+
+### Context
+
+After DD-035 widened `inv_area` from Q4.12 (16-bit) to UQ4.14 (18-bit), the combinational derivative precomputation in `raster_deriv.sv` caused Yosys to infer 28 MULT18X18D blocks (one per `raw_dx * inv_area` and `raw_dy * inv_area` multiplication across 14 attributes).
+The ECP5-25K provides only 28 MULT18X18D total, so the combinational approach consumed the entire DSP budget on derivative computation alone, leaving none for edge setup, reciprocal interpolation, or perspective correction.
+
+### Decision
+
+Convert `raster_deriv.sv` from purely combinational to sequential time-multiplexed derivative computation using 2 shared MULT18X18D blocks (the same pair used for edge C-coefficient computation in UNIT-005.01 and edge evaluation in UNIT-005.02 Phase 1).
+
+The 14 attributes are processed one per clock cycle over 14 cycles (DERIV_0 through DERIV_13).
+Each cycle, a 4-bit attribute index counter selects one attribute's precomputed `raw_dx` and `raw_dy` terms from a combinational mux tree.
+Multiplier 0 computes `raw_dx * inv_area` (dAttr/dx) and multiplier 1 computes `raw_dy * inv_area` (dAttr/dy) simultaneously.
+The multiplier outputs are latched into the corresponding derivative register each cycle.
+
+Total derivative precomputation time increases from 3 cycles (ITER_START/INIT_E1/INIT_E2) to 17 cycles (3 edge evaluation + 14 derivative scaling).
+The setup-iteration overlap FIFO (DD-035) absorbs most of this increased latency for sustained workloads.
+
+### Rationale
+
+- Reduces derivative DSP usage from 28 inferred MULT18X18D to 0 additional (reuses the existing 2 shared multipliers).
+- Total UNIT-005 DSP budget remains at 8 MULT18X18D (unchanged from DD-035).
+- The 14-cycle derivative window adds latency only to per-triangle setup, not to the per-pixel inner loop; for triangles larger than ~16 pixels, the setup-iteration overlap FIFO hides this cost entirely.
+- The alternative of 1 shared multiplier (28 cycles for derivatives) was rejected because it would double the derivative computation time with no DSP saving; 2 multipliers compute dx and dy in parallel.
+
+### Consequences
+
+- Per-triangle setup latency increases from 6 cycles (3 edge setup + 3 derivative) to 20 cycles (3 edge setup + 3 edge evaluation + 14 derivative scaling).
+- Small triangles (fewer pixels than the setup latency) see reduced throughput; the overlap FIFO mitigates this for back-to-back triangle streams.
+- The `raster_deriv.sv` module gains a clock, reset, enable, and attribute index interface; it is no longer purely combinational.
+- The FSM state encoding in `rasterizer.sv` adds 14 new DERIV states (or a single DERIV state with a 4-bit counter).
+
+---
+
 ## DD-035: Dedicated DP16KD Reciprocal Modules with Setup-Iteration Overlap FIFO
 
 **Date:** 2026-03-06

@@ -45,7 +45,7 @@ When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
 The CMD_EMPTY GPIO indicates the FIFO is drained and no command is executing, which the host must check before issuing a register read (reads bypass the FIFO and require an idle register file).
 
 Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
-The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using incremental derivative-based traversal with 7 MULT18X18D DSP blocks.
+The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using incremental derivative-based traversal with 8 MULT18X18D DSP blocks (see UNIT-005 DSP Budget table for breakdown).
 It interpolates Z, Q (1/W), two vertex colors, and two UV coordinate pairs (S×Q, T×Q perspective projections at vertices), then applies perspective correction internally using two dedicated reciprocal modules backed by ECP5 DP16KD block RAMs: one for the triangle-setup inv_area computation (`raster_recip_area.sv`, 36×512 mode, UQ4.14 output) and one for per-pixel 1/Q computation (`raster_recip_q.sv`, 18×1024 mode, UQ4.14 output).
 A compile-time configurable register FIFO (default depth 2, ~730 bits wide) between setup and iteration enables triangle N+1 setup to overlap with triangle N iteration.
 Four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.

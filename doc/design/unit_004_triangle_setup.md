@@ -168,6 +168,7 @@ The second vertex color (color1) supports the color combiner's VER_COLOR1 input 
 
 **Unified clock update:** Triangle setup now runs at 100 MHz (`clk_core`), doubling computation throughput compared to the previous 50 MHz design.
 The setup FSM (IDLE → SETUP → SETUP_2 → SETUP_3) completes edge coefficient computation in 3 cycles (30 ns at 100 MHz) using a shared pair of 11×11 multipliers.
-Combined with the 3-cycle initial edge evaluation (ITER_START → INIT_E1 → INIT_E2), total triangle setup is 6 cycles (60 ns).
+The downstream derivative precomputation in UNIT-005.02 is sequential (time-multiplexed through shared MULT18X18D blocks); total setup latency from triangle acceptance to first fragment emission depends on the number of derivative computation cycles (see UNIT-005.02 for the current cycle count).
+The setup-iteration overlap FIFO (DD-035) absorbs the derivative computation latency for sustained workloads.
 Since the SPI interface limits triangle throughput to one every ~72+ core cycles minimum (4-bit QSPI @ 25 MHz), the serialized setup has zero impact on sustained performance.
-This serialization reduces setup multiplier usage from 12 to 2 MULT18X18D blocks within UNIT-004; the remaining 5 MULT18X18D blocks are allocated to UNIT-005 for reciprocal LUT interpolation and per-pixel perspective correction.
+This serialization reduces setup multiplier usage from 12 to 2 MULT18X18D blocks within UNIT-004; the remaining MULT18X18D blocks are allocated to UNIT-005 for derivative computation, reciprocal LUT interpolation, and per-pixel perspective correction (see UNIT-005 DSP Budget table).

@@ -19,21 +19,39 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 ## Design Description
 
-**FSM states:** ITER_START → INIT_E1 → INIT_E2 (3 cycles)
+**FSM states:** ITER_START → INIT_E1 → INIT_E2 → DERIV_0 … DERIV_13 (3 + 14 = 17 cycles)
 
+The derivative precomputation operates in two phases:
+
+**Phase 1 — Edge evaluation (3 cycles, ITER_START → INIT_E1 → INIT_E2):**
 Evaluates the three edge functions at the bounding box origin using the 2 MULT18X18D blocks shared with UNIT-005.01 (cold path, once per triangle).
 Latches the evaluated edge function values into e0/e1/e2 and the row-start registers e0_row/e1_row/e2_row.
 
-Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 14 interpolated attributes using `inv_area` (UQ4.14) from UNIT-005.01 (received via the setup-iteration overlap FIFO) and the A/B edge coefficients.
-For each attribute `f` at vertices v0, v1, v2:
+**Phase 2 — Sequential derivative computation (14 cycles, DERIV_0 → DERIV_13):**
+Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 14 interpolated attributes, one attribute per cycle, using 2 shared MULT18X18D blocks time-multiplexed across the 14 attributes.
+Each cycle computes one attribute's dx and dy derivatives simultaneously through the 2 multipliers.
+
+For each attribute `f` at vertices v0, v1, v2, the unscaled derivative terms are precomputed combinationally:
 
 ```
-df/dx = ((f1 - f0) * A01 + (f2 - f0) * A02) * inv_area
-df/dy = ((f1 - f0) * B01 + (f2 - f0) * B02) * inv_area
+raw_dx = (f1 - f0) * A01 + (f2 - f0) * A02
+raw_dy = (f1 - f0) * B01 + (f2 - f0) * B02
 ```
 
-The shared multiplier pair is reused in the same 3-cycle ITER_START/INIT_E1/INIT_E2 window.
-Initializes the accumulated attribute value registers at the bounding box origin.
+The 2 shared MULT18X18D blocks then perform the `inv_area` scaling:
+
+```
+df/dx = raw_dx * inv_area    (multiplier 0)
+df/dy = raw_dy * inv_area    (multiplier 1)
+```
+
+A 4-bit attribute index counter selects which attribute's `raw_dx`/`raw_dy` feeds the multipliers each cycle.
+The `inv_area` (UQ4.14) input from UNIT-005.01 (received via the setup-iteration overlap FIFO) is held constant across all 14 cycles.
+Each cycle's multiplier output is latched into the corresponding derivative register.
+
+The 2 MULT18X18D blocks are the same pair used for edge C-coefficient computation in UNIT-005.01 and edge evaluation in Phase 1; they are time-shared across setup, edge evaluation, and derivative computation (DD-036).
+
+Initializes the accumulated attribute value registers at the bounding box origin after all derivatives are computed.
 
 ### 14 Interpolated Attributes
 
@@ -61,8 +79,9 @@ This gives Q4.28 for UV/Q/Z and Q4.28 for colors (with the UNORM8 value promoted
 ## Implementation
 
 - `spi_gpu/src/render/rasterizer.sv`: Derivative precomputation logic within the parent rasterizer module.
-  Corresponds to the `always_comb` next-state block covering ITER_START/INIT_E1/INIT_E2 states and the associated flat `always_ff` register assignments.
-- `spi_gpu/src/render/raster_deriv.sv`: Purely combinational derivative precomputation.
+  Corresponds to the `always_comb` next-state block covering ITER_START/INIT_E1/INIT_E2/DERIV_0–DERIV_13 states and the associated flat `always_ff` register assignments.
+- `spi_gpu/src/render/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation module.
+  Contains the 4-bit attribute index counter, raw_dx/raw_dy mux tree, and shared MULT18X18D instantiation for inv_area scaling (DD-036).
 
 ## Verification
 

@@ -84,8 +84,8 @@ All fragment output goes through the pixel pipeline (UNIT-006) for texture blend
    This module is latency-tolerant as it runs once per triangle.
    Total DSP usage for edge setup: 2 (C coefficients) + 1 (LUT interpolation) = 3 MULT18X18D (4 with Newton-Raphson enabled).
 
-2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2, 3 cycles): Evaluate edge functions at the bounding box origin using the same 2 MULT18X18D blocks (cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
-   Compute per-attribute derivatives for all 14 interpolated attributes using the internally computed `inv_area`: for each attribute `f` at vertices v0, v1, v2, compute `df/dx = (f1-f0)*A01 + (f2-f0)*A02` and `df/dy = (f1-f0)*B01 + (f2-f0)*B02` (scaled by inv_area).
+2. **Derivative Precomputation** (ITER_START → INIT_E1 → INIT_E2 → DERIV_0 … DERIV_13, 17 cycles): Evaluate edge functions at the bounding box origin using the 2 shared MULT18X18D blocks (3 cycles, cold path, once per triangle); latch into e0/e1/e2 and row-start registers.
+   Then sequentially compute per-attribute derivatives for all 14 interpolated attributes (14 cycles, one attribute per cycle) using the same 2 shared MULT18X18D blocks time-multiplexed: for each attribute `f`, multiplier 0 computes `raw_dx * inv_area` and multiplier 1 computes `raw_dy * inv_area` simultaneously (DD-036).
    Initialize accumulated attribute values at the bounding box origin.
 
 3. **Tile-Ordered Traversal** (inner loop): Walk the bounding box in 4×4 tile order — advance pixel-by-pixel within a 4×4 tile, then advance to the next tile horizontally, then vertically.
@@ -111,16 +111,17 @@ All fragment output goes through the pixel pipeline (UNIT-006) for texture blend
 
 ### DSP Budget
 
-| Usage | MULT18X18D count |
-|---|---|
-| Edge C coefficient computation (2 edges serialized) | 2 |
-| Triangle setup reciprocal interpolation (inv_area, `raster_recip_area.sv`) | 1 |
-| Per-pixel 1/Q reciprocal interpolation (`raster_recip_q.sv`) | 1 |
-| Perspective correction: U0, V0 = S0×(1/Q), T0×(1/Q) | 2 |
-| Perspective correction: U1, V1 = S1×(1/Q), T1×(1/Q) | 2 |
-| **Total** | **8** |
+| Usage | MULT18X18D count | Time-sharing |
+|---|---|---|
+| Edge C coefficient computation / derivative inv_area scaling (shared pair) | 2 | Setup: C coefficients; ITER_START–INIT_E2: edge eval; DERIV_0–DERIV_13: derivative scaling (DD-036) |
+| Triangle setup reciprocal interpolation (inv_area, `raster_recip_area.sv`) | 1 | Once per triangle |
+| Per-pixel 1/Q reciprocal interpolation (`raster_recip_q.sv`) | 1 | Per inside pixel |
+| Perspective correction: U0, V0 = S0×(1/Q), T0×(1/Q) | 2 | Per inside pixel |
+| Perspective correction: U1, V1 = S1×(1/Q), T1×(1/Q) | 2 | Per inside pixel |
+| **Total** | **8** | |
 
 Note: With optional Newton-Raphson refinement enabled for inv_area, total increases to 9 MULT18X18D.
+The derivative computation reuses the same 2 MULT18X18D blocks as edge C-coefficient computation and edge evaluation; no additional DSP blocks are required (DD-036).
 
 ## Sub-Units
 
@@ -137,7 +138,7 @@ Each sub-unit is documented in its own design unit file:
 - `spi_gpu/src/render/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
 - `spi_gpu/src/render/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
 - `spi_gpu/src/render/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
-- `spi_gpu/src/render/raster_deriv.sv`: Purely combinational derivative precomputation (UNIT-005.02 combinational path).
+- `spi_gpu/src/render/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.02), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
 - `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.02 latching / UNIT-005.03).
 - `spi_gpu/src/render/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
 - `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline (UNIT-005.04).
@@ -185,7 +186,7 @@ The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tile
 Hierarchical tile rejection allows the FSM to skip entire tiles in a single step when the tile is provably outside the triangle.
 
 **Incremental interpolation (multiplier optimization):** Edge functions are linear: E(x+1,y) = E(x,y) + A and E(x,y+1) = E(x,y) + B.
-The rasterizer computes edge values and all 14 attribute derivatives at the bounding box origin once per triangle (using the shared MULT18X18D blocks in the SETUP and ITER_START windows), then steps all edge and attribute accumulators incrementally with pure addition in the per-pixel inner loop.
+The rasterizer computes edge values and all 14 attribute derivatives at the bounding box origin once per triangle (using the 2 shared MULT18X18D blocks sequentially across 17 cycles in the ITER_START through DERIV_13 window), then steps all edge and attribute accumulators incrementally with pure addition in the per-pixel inner loop.
 No per-pixel multiplies are required for edge testing or attribute interpolation.
 See DD-024 for the rationale behind replacing per-pixel barycentric multiply-accumulate with precomputed derivative increments.
 
