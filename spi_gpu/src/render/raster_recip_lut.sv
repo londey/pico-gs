@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `95cb9ee1ff61b979` 2026-03-05
+// (Deprecated — replaced by raster_recip_area.sv and raster_recip_q.sv)
 
 // Reciprocal Lookup Table with CLZ Normalization and Linear Interpolation
 //

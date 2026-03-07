@@ -1,5 +1,6 @@
 `default_nettype none
 // Spec-ref: unit_005_rasterizer.md `8917edee7f5c0a59` 2026-03-06
+// Spec-ref: unit_005.02_derivative_precomputation.md `8b041e3ad3aaeb22` 2026-03-06
 
 // Rasterizer Derivative Precomputation (UNIT-005.02 combinational)
 //

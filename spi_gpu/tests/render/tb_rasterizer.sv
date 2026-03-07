@@ -4,7 +4,7 @@
 // Includes parametric bounding-box clamping tests for multiple surface sizes.
 //
 // Verification reference: VER-001 (Rasterizer Unit Testbench)
-// Spec-ref: unit_005_rasterizer.md `0000000000000000` 1970-01-01
+// Verification: VER-001 (tb_rasterizer), covers UNIT-005
 // Spec-ref: ver_001_rasterizer.md `0000000000000000` 1970-01-01
 //
 // NOTE: Reciprocal LUT migration (DP16KD BRAM) changed inv_area precision
