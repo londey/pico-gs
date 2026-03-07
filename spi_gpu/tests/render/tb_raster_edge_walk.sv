@@ -27,7 +27,8 @@ module tb_raster_edge_walk;
     reg do_idle;           // Return to idle
     reg init_pos_e0;       // Init position + e0
     reg init_e1;           // Init e1
-    reg init_e2;           // Init e2 + begin walking
+    reg init_e2;           // Init e2 (edge values only)
+    reg walk_start;        // Begin walking (after derivatives ready)
 
     // ========================================================================
     // Shared Multiplier Products
@@ -126,6 +127,7 @@ module tb_raster_edge_walk;
         .init_pos_e0    (init_pos_e0),
         .init_e1        (init_e1),
         .init_e2        (init_e2),
+        .walk_start     (walk_start),
         .smul_p1        (smul_p1),
         .smul_p2        (smul_p2),
         .edge0_A        (edge0_A),
@@ -267,6 +269,7 @@ module tb_raster_edge_walk;
             init_pos_e0 = 1'b0;
             init_e1 = 1'b0;
             init_e2 = 1'b0;
+            walk_start = 1'b0;
             smul_p1 = 22'sd0;
             smul_p2 = 22'sd0;
             edge0_A = 11'sd0; edge0_B = 11'sd0; edge0_C = 21'sd0;
@@ -375,9 +378,15 @@ module tb_raster_edge_walk;
         #1;
         init_e2 = 1'b0;
 
-        // After init_e2, FSM transitions to TILE_TEST
+        // Pulse walk_start to begin walking (simulates deriv_done)
+        walk_start = 1'b1;
+        @(posedge clk);
+        #1;
+        walk_start = 1'b0;
+
+        // After walk_start, FSM transitions to TILE_TEST
         // e0=600, e1=180, e2=60 → all positive, inside
-        check1("post init_e2: inside_triangle", inside_triangle, 1'b1);
+        check1("post walk_start: inside_triangle", inside_triangle, 1'b1);
 
         // ============================================================
         // Test 4: Tile traversal - single tile (4x4 bbox)
@@ -562,6 +571,11 @@ module tb_raster_edge_walk;
         init_e2 = 1'b1;
         @(posedge clk); #1;
         init_e2 = 1'b0;
+
+        // Pulse walk_start to begin walking
+        walk_start = 1'b1;
+        @(posedge clk); #1;
+        walk_start = 1'b0;
 
         // FSM now in TILE_TEST. Tile should be rejected (e0 all negative).
         // Then ITER_NEXT with px=3,py=3 → bbox done → walk_done.

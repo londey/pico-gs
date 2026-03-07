@@ -8,7 +8,7 @@
 // per-pixel edge testing, 3-cycle perspective correction pipeline
 // (4 MULT18X18D + 1 in raster_recip_q), and fragment output handshake (DD-025) to UNIT-006.
 //
-// Once started by the parent (init_pos_e0 -> init_e1 -> init_e2 sequence),
+// Once started by the parent (init_pos_e0 -> init_e1 -> init_e2 -> walk_start),
 // the module walks all 4x4 tiles within the bounding box autonomously,
 // asserting walk_done for one cycle when finished.
 //
@@ -27,7 +27,8 @@ module raster_edge_walk (
     input  wire        do_idle,           // Return to idle, deassert frag_valid
     input  wire        init_pos_e0,       // ITER_START: init position + e0
     input  wire        init_e1,           // INIT_E1: init e1
-    input  wire        init_e2,           // INIT_E2: init e2 + begin walking
+    input  wire        init_e2,           // INIT_E2: init e2 (edge values only)
+    input  wire        walk_start,        // Begin walking (after derivatives ready)
 
     // Shared multiplier products (from parent's setup multiplier)
     input  wire signed [21:0] smul_p1,    // Multiplier product 1
@@ -381,7 +382,7 @@ module raster_edge_walk (
         if (do_idle) begin
             next_ew_state = EW_IDLE;
         end
-        if (init_e2) begin
+        if (walk_start) begin
             next_ew_state = EW_TILE_TEST;
         end
     end

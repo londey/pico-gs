@@ -775,6 +775,7 @@ module rasterizer (
         .init_pos_e0    (ew_init_pos_e0),
         .init_e1        (ew_init_e1),
         .init_e2        (ew_init_e2),
+        .walk_start     (deriv_done),
         // Shared multiplier products
         .smul_p1        (smul_p1),
         .smul_p2        (smul_p2),
