@@ -1,16 +1,47 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `8917edee7f5c0a59` 2026-03-06
-// Spec-ref: unit_005.02_derivative_precomputation.md `8b041e3ad3aaeb22` 2026-03-06
 
-// Rasterizer Derivative Precomputation (UNIT-005.02 combinational)
+// ============================================================================
+// Rasterizer Derivative Precomputation (UNIT-005.02 sequential, Option A)
+// ============================================================================
+
+// Spec-ref: unit_005_rasterizer.md `43b4390c9803abd3` 2026-03-07
+// Spec-ref: unit_005.02_derivative_precomputation.md `0000000000000000` 1970-01-01
+
+// Sequential time-multiplexed derivative computation module.
+// Computes per-attribute dx/dy derivatives for all 14 interpolated attributes
+// over 7 clock cycles (2 attributes per cycle) using 4 MULT18X18D blocks,
+// then computes initial accumulator values at the bounding box origin.
 //
-// Purely combinational module computing per-attribute dx/dy derivatives
-// and initial attribute values at the bounding box origin.
-// No clock, no state — outputs are valid one combinational delay after inputs.
+// Architecture (restructured computation order for minimal DSP usage):
+//   1. Delta mux selects 2 attributes' vertex deltas (d10, d20) per cycle
+//   2. 4 MULT18X18D: delta * inv_area (17x18 each, via raster_dsp_mul helper)
+//   3. 8 LUT multiplies: scaled_delta * edge_coeff (shift-add, no $mul cells)
+//   4. Init values computed in parallel during finishing cycle (shift-add)
 //
-// See: UNIT-005.02 (Derivative Pre-computation), DD-024
+// Computation reordering (mathematically equivalent):
+//   Original:  deriv = (delta * edge_coeff) * inv_area >>> shift
+//   Reordered: deriv = (delta * inv_area) * edge_coeff >>> shift
+//   This makes the DSP multiply 17x18 (fits 1 MULT18X18D) instead of 29x18.
+//
+// DSP control: LUT-intended multiplies use explicit shift-and-add functions
+// (no $mul cells) to prevent Yosys mul2dsp from mapping them to DSP blocks.
+//
+// Timing (8 cycles from enable to deriv_done):
+//   Cycle 0:   enable sampled, running=1, pair_idx=0
+//   Cycle 0-6: pair_idx advances, 2 derivatives latched per posedge
+//   Cycle 7:   finishing -- all 14 derivatives stable, init values computed
+//   Posedge 8: init values latched, deriv_done asserted
+//
+// DSP budget: 4 MULT18X18D (1 per raster_dsp_mul instance)
+//
+// See: UNIT-005.02 (Derivative Pre-computation), DD-036, REQ-011.02
 
 module raster_deriv (
+    input  wire                clk,            // System clock
+    input  wire                rst_n,          // Active-low synchronous reset
+    input  wire                enable,         // Start pulse (begin computation)
+    output reg                 deriv_done,     // Completion flag (one cycle pulse)
+
     // Vertex color0 channels (RGBA, 8-bit per channel per vertex)
     input  wire [7:0]          c0_r0,          // Color0 red, vertex 0
     input  wire [7:0]          c0_g0,          // Color0 green, vertex 0
@@ -83,67 +114,117 @@ module raster_deriv (
     input  wire [9:0]          x0,             // Vertex 0 X
     input  wire [9:0]          y0,             // Vertex 0 Y
 
-    // Derivative outputs (32-bit signed, per-attribute dx and dy)
-    output wire signed [31:0]  pre_c0r_dx,     // Color0 red dx derivative
-    output wire signed [31:0]  pre_c0r_dy,     // Color0 red dy derivative
-    output wire signed [31:0]  pre_c0g_dx,     // Color0 green dx derivative
-    output wire signed [31:0]  pre_c0g_dy,     // Color0 green dy derivative
-    output wire signed [31:0]  pre_c0b_dx,     // Color0 blue dx derivative
-    output wire signed [31:0]  pre_c0b_dy,     // Color0 blue dy derivative
-    output wire signed [31:0]  pre_c0a_dx,     // Color0 alpha dx derivative
-    output wire signed [31:0]  pre_c0a_dy,     // Color0 alpha dy derivative
-    output wire signed [31:0]  pre_c1r_dx,     // Color1 red dx derivative
-    output wire signed [31:0]  pre_c1r_dy,     // Color1 red dy derivative
-    output wire signed [31:0]  pre_c1g_dx,     // Color1 green dx derivative
-    output wire signed [31:0]  pre_c1g_dy,     // Color1 green dy derivative
-    output wire signed [31:0]  pre_c1b_dx,     // Color1 blue dx derivative
-    output wire signed [31:0]  pre_c1b_dy,     // Color1 blue dy derivative
-    output wire signed [31:0]  pre_c1a_dx,     // Color1 alpha dx derivative
-    output wire signed [31:0]  pre_c1a_dy,     // Color1 alpha dy derivative
-    output wire signed [31:0]  pre_z_dx,       // Depth dx derivative
-    output wire signed [31:0]  pre_z_dy,       // Depth dy derivative
-    output wire signed [31:0]  pre_uv0u_dx,    // UV0 U dx derivative
-    output wire signed [31:0]  pre_uv0u_dy,    // UV0 U dy derivative
-    output wire signed [31:0]  pre_uv0v_dx,    // UV0 V dx derivative
-    output wire signed [31:0]  pre_uv0v_dy,    // UV0 V dy derivative
-    output wire signed [31:0]  pre_uv1u_dx,    // UV1 U dx derivative
-    output wire signed [31:0]  pre_uv1u_dy,    // UV1 U dy derivative
-    output wire signed [31:0]  pre_uv1v_dx,    // UV1 V dx derivative
-    output wire signed [31:0]  pre_uv1v_dy,    // UV1 V dy derivative
-    output wire signed [31:0]  pre_q_dx,       // Q/W dx derivative
-    output wire signed [31:0]  pre_q_dy,       // Q/W dy derivative
+    // Derivative outputs (32-bit signed, per-attribute dx and dy, registered)
+    output reg  signed [31:0]  pre_c0r_dx,     // Color0 red dx derivative
+    output reg  signed [31:0]  pre_c0r_dy,     // Color0 red dy derivative
+    output reg  signed [31:0]  pre_c0g_dx,     // Color0 green dx derivative
+    output reg  signed [31:0]  pre_c0g_dy,     // Color0 green dy derivative
+    output reg  signed [31:0]  pre_c0b_dx,     // Color0 blue dx derivative
+    output reg  signed [31:0]  pre_c0b_dy,     // Color0 blue dy derivative
+    output reg  signed [31:0]  pre_c0a_dx,     // Color0 alpha dx derivative
+    output reg  signed [31:0]  pre_c0a_dy,     // Color0 alpha dy derivative
+    output reg  signed [31:0]  pre_c1r_dx,     // Color1 red dx derivative
+    output reg  signed [31:0]  pre_c1r_dy,     // Color1 red dy derivative
+    output reg  signed [31:0]  pre_c1g_dx,     // Color1 green dx derivative
+    output reg  signed [31:0]  pre_c1g_dy,     // Color1 green dy derivative
+    output reg  signed [31:0]  pre_c1b_dx,     // Color1 blue dx derivative
+    output reg  signed [31:0]  pre_c1b_dy,     // Color1 blue dy derivative
+    output reg  signed [31:0]  pre_c1a_dx,     // Color1 alpha dx derivative
+    output reg  signed [31:0]  pre_c1a_dy,     // Color1 alpha dy derivative
+    output reg  signed [31:0]  pre_z_dx,       // Depth dx derivative
+    output reg  signed [31:0]  pre_z_dy,       // Depth dy derivative
+    output reg  signed [31:0]  pre_uv0u_dx,    // UV0 U dx derivative
+    output reg  signed [31:0]  pre_uv0u_dy,    // UV0 U dy derivative
+    output reg  signed [31:0]  pre_uv0v_dx,    // UV0 V dx derivative
+    output reg  signed [31:0]  pre_uv0v_dy,    // UV0 V dy derivative
+    output reg  signed [31:0]  pre_uv1u_dx,    // UV1 U dx derivative
+    output reg  signed [31:0]  pre_uv1u_dy,    // UV1 U dy derivative
+    output reg  signed [31:0]  pre_uv1v_dx,    // UV1 V dx derivative
+    output reg  signed [31:0]  pre_uv1v_dy,    // UV1 V dy derivative
+    output reg  signed [31:0]  pre_q_dx,       // Q/W dx derivative
+    output reg  signed [31:0]  pre_q_dy,       // Q/W dy derivative
 
-    // Initial attribute values at bbox origin (32-bit signed)
-    output wire signed [31:0]  init_c0r,       // Color0 red initial value
-    output wire signed [31:0]  init_c0g,       // Color0 green initial value
-    output wire signed [31:0]  init_c0b,       // Color0 blue initial value
-    output wire signed [31:0]  init_c0a,       // Color0 alpha initial value
-    output wire signed [31:0]  init_c1r,       // Color1 red initial value
-    output wire signed [31:0]  init_c1g,       // Color1 green initial value
-    output wire signed [31:0]  init_c1b,       // Color1 blue initial value
-    output wire signed [31:0]  init_c1a,       // Color1 alpha initial value
-    output wire signed [31:0]  init_z,         // Depth initial value
-    output wire signed [31:0]  init_uv0u,      // UV0 U initial value
-    output wire signed [31:0]  init_uv0v,      // UV0 V initial value
-    output wire signed [31:0]  init_uv1u,      // UV1 U initial value
-    output wire signed [31:0]  init_uv1v,      // UV1 V initial value
-    output wire signed [31:0]  init_q          // Q/W initial value
+    // Initial attribute values at bbox origin (32-bit signed, registered)
+    output reg  signed [31:0]  init_c0r,       // Color0 red initial value
+    output reg  signed [31:0]  init_c0g,       // Color0 green initial value
+    output reg  signed [31:0]  init_c0b,       // Color0 blue initial value
+    output reg  signed [31:0]  init_c0a,       // Color0 alpha initial value
+    output reg  signed [31:0]  init_c1r,       // Color1 red initial value
+    output reg  signed [31:0]  init_c1g,       // Color1 green initial value
+    output reg  signed [31:0]  init_c1b,       // Color1 blue initial value
+    output reg  signed [31:0]  init_c1a,       // Color1 alpha initial value
+    output reg  signed [31:0]  init_z,         // Depth initial value
+    output reg  signed [31:0]  init_uv0u,      // UV0 U initial value
+    output reg  signed [31:0]  init_uv0v,      // UV0 V initial value
+    output reg  signed [31:0]  init_uv1u,      // UV1 U initial value
+    output reg  signed [31:0]  init_uv1v,      // UV1 V initial value
+    output reg  signed [31:0]  init_q          // Q/W initial value
 );
 
     // ========================================================================
-    // Derivative Precomputation (combinational wires)
+    // Pair counter and control (3-bit, 0-6 for 7 pairs of 2 attributes)
     // ========================================================================
     //
-    // For each attribute f with values at v0, v1, v2 and edge coefficients:
-    //   delta10 = f1 - f0, delta20 = f2 - f0
-    //   raw_dx = delta10 * edge1_A + delta20 * edge2_A
-    //   df/dx = (raw_dx * inv_area) >> 16
-    // Similarly for df/dy using edge1_B, edge2_B.
-    //
-    // Color channels (8-bit): 9-bit deltas * 11-bit coeffs = 20-bit products
-    // Wide channels (16-bit): 17-bit deltas * 11-bit coeffs = 28-bit products
+    // Attribute pair assignment:
+    //   pair 0: c0_r (attr 0), c0_g (attr 1)
+    //   pair 1: c0_b (attr 2), c0_a (attr 3)
+    //   pair 2: c1_r (attr 4), c1_g (attr 5)
+    //   pair 3: c1_b (attr 6), c1_a (attr 7)
+    //   pair 4: z    (attr 8), uv0_u (attr 9)
+    //   pair 5: uv0_v(attr 10), q    (attr 11)
+    //   pair 6: uv1_u(attr 12), uv1_v (attr 13)
 
-    // Attribute vertex deltas
+    reg  [2:0] pair_idx;
+    reg        running;
+    reg        finishing;
+
+    reg  [2:0] next_pair_idx;
+    reg        next_running;
+    reg        next_finishing;
+    reg        next_deriv_done;
+
+    always_comb begin
+        next_pair_idx   = pair_idx;
+        next_running    = running;
+        next_deriv_done = 1'b0;
+        next_finishing  = 1'b0;
+
+        if (enable && !running && !finishing) begin
+            next_pair_idx = 3'd0;
+            next_running  = 1'b1;
+        end else if (running) begin
+            if (pair_idx == 3'd6) begin
+                next_running   = 1'b0;
+                next_finishing = 1'b1;
+            end else begin
+                next_pair_idx = pair_idx + 3'd1;
+            end
+        end
+
+        if (finishing) begin
+            next_deriv_done = 1'b1;
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            pair_idx   <= 3'd0;
+            running    <= 1'b0;
+            finishing  <= 1'b0;
+            deriv_done <= 1'b0;
+        end else begin
+            pair_idx   <= next_pair_idx;
+            running    <= next_running;
+            finishing  <= next_finishing;
+            deriv_done <= next_deriv_done;
+        end
+    end
+
+    // ========================================================================
+    // Vertex delta computations (combinational subtractions)
+    // ========================================================================
+
+    // Color0 deltas (9-bit signed)
     wire signed [8:0] d10_c0r = $signed({1'b0, c0_r1}) - $signed({1'b0, c0_r0});
     wire signed [8:0] d20_c0r = $signed({1'b0, c0_r2}) - $signed({1'b0, c0_r0});
     wire signed [8:0] d10_c0g = $signed({1'b0, c0_g1}) - $signed({1'b0, c0_g0});
@@ -153,6 +234,7 @@ module raster_deriv (
     wire signed [8:0] d10_c0a = $signed({1'b0, c0_a1}) - $signed({1'b0, c0_a0});
     wire signed [8:0] d20_c0a = $signed({1'b0, c0_a2}) - $signed({1'b0, c0_a0});
 
+    // Color1 deltas (9-bit signed)
     wire signed [8:0] d10_c1r = $signed({1'b0, c1_r1}) - $signed({1'b0, c1_r0});
     wire signed [8:0] d20_c1r = $signed({1'b0, c1_r2}) - $signed({1'b0, c1_r0});
     wire signed [8:0] d10_c1g = $signed({1'b0, c1_g1}) - $signed({1'b0, c1_g0});
@@ -162,6 +244,7 @@ module raster_deriv (
     wire signed [8:0] d10_c1a = $signed({1'b0, c1_a1}) - $signed({1'b0, c1_a0});
     wire signed [8:0] d20_c1a = $signed({1'b0, c1_a2}) - $signed({1'b0, c1_a0});
 
+    // Wide deltas (17-bit signed): Z (unsigned), UV (signed), Q (unsigned)
     wire signed [16:0] d10_z    = $signed({1'b0, z1})     - $signed({1'b0, z0});
     wire signed [16:0] d20_z    = $signed({1'b0, z2})     - $signed({1'b0, z0});
     wire signed [16:0] d10_uv0u = {uv0_u1[15], uv0_u1} - {uv0_u0[15], uv0_u0};
@@ -175,166 +258,369 @@ module raster_deriv (
     wire signed [16:0] d10_q    = $signed({1'b0, q1})     - $signed({1'b0, q0});
     wire signed [16:0] d20_q    = $signed({1'b0, q2})     - $signed({1'b0, q0});
 
-    // ---- Color derivative computation (8-bit channel) ----
-    // raw = d10 * coeff1 + d20 * coeff2  (20-bit products, 21-bit sum)
-    // derivative = (raw * inv_area) >>> area_shift  (39-bit scaled, take [31:0] after shift)
-    //
-    // inv_area is UQ4.14 (18-bit unsigned) from raster_recip_area.
-    // The product raw * inv_area gives the scaled derivative.
-    // Shifting right by area_shift normalizes the result.
+    // ========================================================================
+    // Delta mux: select 2 attributes' deltas per cycle
+    // ========================================================================
 
-    // Color0 R dx/dy
-    wire signed [20:0] raw_c0r_dx = (d10_c0r * edge1_A) + (d20_c0r * edge2_A);
-    wire signed [20:0] raw_c0r_dy = (d10_c0r * edge1_B) + (d20_c0r * edge2_B);
-    wire signed [38:0] scl_c0r_dx = raw_c0r_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c0r_dy = raw_c0r_dy * $signed({1'b0, inv_area});
-    assign pre_c0r_dx = 32'(scl_c0r_dx >>> area_shift);
-    assign pre_c0r_dy = 32'(scl_c0r_dy >>> area_shift);
+    reg signed [16:0] d10_a;
+    reg signed [16:0] d20_a;
+    reg signed [16:0] d10_b;
+    reg signed [16:0] d20_b;
 
-    // Color0 G dx/dy
-    wire signed [20:0] raw_c0g_dx = (d10_c0g * edge1_A) + (d20_c0g * edge2_A);
-    wire signed [20:0] raw_c0g_dy = (d10_c0g * edge1_B) + (d20_c0g * edge2_B);
-    wire signed [38:0] scl_c0g_dx = raw_c0g_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c0g_dy = raw_c0g_dy * $signed({1'b0, inv_area});
-    assign pre_c0g_dx = 32'(scl_c0g_dx >>> area_shift);
-    assign pre_c0g_dy = 32'(scl_c0g_dy >>> area_shift);
+    always_comb begin
+        d10_a = 17'sd0;  d20_a = 17'sd0;
+        d10_b = 17'sd0;  d20_b = 17'sd0;
 
-    // Color0 B dx/dy
-    wire signed [20:0] raw_c0b_dx = (d10_c0b * edge1_A) + (d20_c0b * edge2_A);
-    wire signed [20:0] raw_c0b_dy = (d10_c0b * edge1_B) + (d20_c0b * edge2_B);
-    wire signed [38:0] scl_c0b_dx = raw_c0b_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c0b_dy = raw_c0b_dy * $signed({1'b0, inv_area});
-    assign pre_c0b_dx = 32'(scl_c0b_dx >>> area_shift);
-    assign pre_c0b_dy = 32'(scl_c0b_dy >>> area_shift);
-
-    // Color0 A dx/dy
-    wire signed [20:0] raw_c0a_dx = (d10_c0a * edge1_A) + (d20_c0a * edge2_A);
-    wire signed [20:0] raw_c0a_dy = (d10_c0a * edge1_B) + (d20_c0a * edge2_B);
-    wire signed [38:0] scl_c0a_dx = raw_c0a_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c0a_dy = raw_c0a_dy * $signed({1'b0, inv_area});
-    assign pre_c0a_dx = 32'(scl_c0a_dx >>> area_shift);
-    assign pre_c0a_dy = 32'(scl_c0a_dy >>> area_shift);
-
-    // Color1 R dx/dy
-    wire signed [20:0] raw_c1r_dx = (d10_c1r * edge1_A) + (d20_c1r * edge2_A);
-    wire signed [20:0] raw_c1r_dy = (d10_c1r * edge1_B) + (d20_c1r * edge2_B);
-    wire signed [38:0] scl_c1r_dx = raw_c1r_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c1r_dy = raw_c1r_dy * $signed({1'b0, inv_area});
-    assign pre_c1r_dx = 32'(scl_c1r_dx >>> area_shift);
-    assign pre_c1r_dy = 32'(scl_c1r_dy >>> area_shift);
-
-    // Color1 G dx/dy
-    wire signed [20:0] raw_c1g_dx = (d10_c1g * edge1_A) + (d20_c1g * edge2_A);
-    wire signed [20:0] raw_c1g_dy = (d10_c1g * edge1_B) + (d20_c1g * edge2_B);
-    wire signed [38:0] scl_c1g_dx = raw_c1g_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c1g_dy = raw_c1g_dy * $signed({1'b0, inv_area});
-    assign pre_c1g_dx = 32'(scl_c1g_dx >>> area_shift);
-    assign pre_c1g_dy = 32'(scl_c1g_dy >>> area_shift);
-
-    // Color1 B dx/dy
-    wire signed [20:0] raw_c1b_dx = (d10_c1b * edge1_A) + (d20_c1b * edge2_A);
-    wire signed [20:0] raw_c1b_dy = (d10_c1b * edge1_B) + (d20_c1b * edge2_B);
-    wire signed [38:0] scl_c1b_dx = raw_c1b_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c1b_dy = raw_c1b_dy * $signed({1'b0, inv_area});
-    assign pre_c1b_dx = 32'(scl_c1b_dx >>> area_shift);
-    assign pre_c1b_dy = 32'(scl_c1b_dy >>> area_shift);
-
-    // Color1 A dx/dy
-    wire signed [20:0] raw_c1a_dx = (d10_c1a * edge1_A) + (d20_c1a * edge2_A);
-    wire signed [20:0] raw_c1a_dy = (d10_c1a * edge1_B) + (d20_c1a * edge2_B);
-    wire signed [38:0] scl_c1a_dx = raw_c1a_dx * $signed({1'b0, inv_area});
-    wire signed [38:0] scl_c1a_dy = raw_c1a_dy * $signed({1'b0, inv_area});
-    assign pre_c1a_dx = 32'(scl_c1a_dx >>> area_shift);
-    assign pre_c1a_dy = 32'(scl_c1a_dy >>> area_shift);
-
-    // ---- Wide derivative computation (16-bit channel: Z unsigned, UV/Q signed) ----
-    // raw = d10 * coeff1 + d20 * coeff2  (28-bit products, 29-bit sum)
-    // derivative = (raw * inv_area) >>> area_shift  (47-bit scaled, take [31:0] after shift)
-
-    // Z dx/dy
-    wire signed [28:0] raw_z_dx = (d10_z * edge1_A) + (d20_z * edge2_A);
-    wire signed [28:0] raw_z_dy = (d10_z * edge1_B) + (d20_z * edge2_B);
-    wire signed [46:0] scl_z_dx = raw_z_dx * $signed({1'b0, inv_area});
-    wire signed [46:0] scl_z_dy = raw_z_dy * $signed({1'b0, inv_area});
-    assign pre_z_dx = 32'(scl_z_dx >>> area_shift);
-    assign pre_z_dy = 32'(scl_z_dy >>> area_shift);
-
-    // UV0 U dx/dy
-    wire signed [28:0] raw_uv0u_dx = (d10_uv0u * edge1_A) + (d20_uv0u * edge2_A);
-    wire signed [28:0] raw_uv0u_dy = (d10_uv0u * edge1_B) + (d20_uv0u * edge2_B);
-    wire signed [46:0] scl_uv0u_dx = raw_uv0u_dx * $signed({1'b0, inv_area});
-    wire signed [46:0] scl_uv0u_dy = raw_uv0u_dy * $signed({1'b0, inv_area});
-    assign pre_uv0u_dx = 32'(scl_uv0u_dx >>> area_shift);
-    assign pre_uv0u_dy = 32'(scl_uv0u_dy >>> area_shift);
-
-    // UV0 V dx/dy
-    wire signed [28:0] raw_uv0v_dx = (d10_uv0v * edge1_A) + (d20_uv0v * edge2_A);
-    wire signed [28:0] raw_uv0v_dy = (d10_uv0v * edge1_B) + (d20_uv0v * edge2_B);
-    wire signed [46:0] scl_uv0v_dx = raw_uv0v_dx * $signed({1'b0, inv_area});
-    wire signed [46:0] scl_uv0v_dy = raw_uv0v_dy * $signed({1'b0, inv_area});
-    assign pre_uv0v_dx = 32'(scl_uv0v_dx >>> area_shift);
-    assign pre_uv0v_dy = 32'(scl_uv0v_dy >>> area_shift);
-
-    // UV1 U dx/dy
-    wire signed [28:0] raw_uv1u_dx = (d10_uv1u * edge1_A) + (d20_uv1u * edge2_A);
-    wire signed [28:0] raw_uv1u_dy = (d10_uv1u * edge1_B) + (d20_uv1u * edge2_B);
-    wire signed [46:0] scl_uv1u_dx = raw_uv1u_dx * $signed({1'b0, inv_area});
-    wire signed [46:0] scl_uv1u_dy = raw_uv1u_dy * $signed({1'b0, inv_area});
-    assign pre_uv1u_dx = 32'(scl_uv1u_dx >>> area_shift);
-    assign pre_uv1u_dy = 32'(scl_uv1u_dy >>> area_shift);
-
-    // UV1 V dx/dy
-    wire signed [28:0] raw_uv1v_dx = (d10_uv1v * edge1_A) + (d20_uv1v * edge2_A);
-    wire signed [28:0] raw_uv1v_dy = (d10_uv1v * edge1_B) + (d20_uv1v * edge2_B);
-    wire signed [46:0] scl_uv1v_dx = raw_uv1v_dx * $signed({1'b0, inv_area});
-    wire signed [46:0] scl_uv1v_dy = raw_uv1v_dy * $signed({1'b0, inv_area});
-    assign pre_uv1v_dx = 32'(scl_uv1v_dx >>> area_shift);
-    assign pre_uv1v_dy = 32'(scl_uv1v_dy >>> area_shift);
-
-    // Q dx/dy
-    wire signed [28:0] raw_q_dx = (d10_q * edge1_A) + (d20_q * edge2_A);
-    wire signed [28:0] raw_q_dy = (d10_q * edge1_B) + (d20_q * edge2_B);
-    wire signed [46:0] scl_q_dx = raw_q_dx * $signed({1'b0, inv_area});
-    wire signed [46:0] scl_q_dy = raw_q_dy * $signed({1'b0, inv_area});
-    assign pre_q_dx = 32'(scl_q_dx >>> area_shift);
-    assign pre_q_dy = 32'(scl_q_dy >>> area_shift);
+        case (pair_idx)
+            3'd0: begin
+                d10_a = 17'(d10_c0r);  d20_a = 17'(d20_c0r);
+                d10_b = 17'(d10_c0g);  d20_b = 17'(d20_c0g);
+            end
+            3'd1: begin
+                d10_a = 17'(d10_c0b);  d20_a = 17'(d20_c0b);
+                d10_b = 17'(d10_c0a);  d20_b = 17'(d20_c0a);
+            end
+            3'd2: begin
+                d10_a = 17'(d10_c1r);  d20_a = 17'(d20_c1r);
+                d10_b = 17'(d10_c1g);  d20_b = 17'(d20_c1g);
+            end
+            3'd3: begin
+                d10_a = 17'(d10_c1b);  d20_a = 17'(d20_c1b);
+                d10_b = 17'(d10_c1a);  d20_b = 17'(d20_c1a);
+            end
+            3'd4: begin
+                d10_a = d10_z;         d20_a = d20_z;
+                d10_b = d10_uv0u;      d20_b = d20_uv0u;
+            end
+            3'd5: begin
+                d10_a = d10_uv0v;      d20_a = d20_uv0v;
+                d10_b = d10_q;         d20_b = d20_q;
+            end
+            3'd6: begin
+                d10_a = d10_uv1u;      d20_a = d20_uv1u;
+                d10_b = d10_uv1v;      d20_b = d20_uv1v;
+            end
+            default: begin
+                d10_a = 17'sd0;  d20_a = 17'sd0;
+                d10_b = 17'sd0;  d20_b = 17'sd0;
+            end
+        endcase
+    end
 
     // ========================================================================
-    // Initial attribute values at bbox origin (combinational)
+    // 4 MULT18X18D: delta * inv_area (via raster_dsp_mul helper)
     // ========================================================================
-    // attr_init = f0_scaled + df/dx * bbox_sx + df/dy * bbox_sy
-    // For 8-bit color: f0 placed at integer position: {8'b0, f0, 16'b0}
-    // For 16-bit: f0 placed at integer position: {f0, 16'b0}
+    // Restructured: multiply delta by inv_area FIRST (17x18, 1 DSP each),
+    // then multiply by edge coefficients in LUTs (shift-add).
 
-    // Bbox origin offset from vertex 0
+    wire signed [35:0] d10_a_inv;
+    wire signed [35:0] d20_a_inv;
+    wire signed [35:0] d10_b_inv;
+    wire signed [35:0] d20_b_inv;
+
+    raster_dsp_mul u_mul_d10a (.a(d10_a), .b(inv_area), .p(d10_a_inv));
+    raster_dsp_mul u_mul_d20a (.a(d20_a), .b(inv_area), .p(d20_a_inv));
+    raster_dsp_mul u_mul_d10b (.a(d10_b), .b(inv_area), .p(d10_b_inv));
+    raster_dsp_mul u_mul_d20b (.a(d20_b), .b(inv_area), .p(d20_b_inv));
+
+    // ========================================================================
+    // Edge coefficient application (shift-add, LUT-only, no $mul cells)
+    // ========================================================================
+    // deriv_dx = (d10_inv * edge1_A + d20_inv * edge2_A) >>> area_shift
+
+    wire signed [46:0] d10_a_ext = 47'(d10_a_inv);
+    wire signed [46:0] d20_a_ext = 47'(d20_a_inv);
+    wire signed [46:0] d10_b_ext = 47'(d10_b_inv);
+    wire signed [46:0] d20_b_ext = 47'(d20_b_inv);
+
+    // 8 shift-add multiplier instances for edge coefficient application
+    wire signed [46:0] t_dxa_e1, t_dxa_e2, t_dya_e1, t_dya_e2;
+    wire signed [46:0] t_dxb_e1, t_dxb_e2, t_dyb_e1, t_dyb_e2;
+
+    raster_shift_mul_47x11 u_dxa_e1 (.a(d10_a_ext), .b(edge1_A), .p(t_dxa_e1));
+    raster_shift_mul_47x11 u_dxa_e2 (.a(d20_a_ext), .b(edge2_A), .p(t_dxa_e2));
+    raster_shift_mul_47x11 u_dya_e1 (.a(d10_a_ext), .b(edge1_B), .p(t_dya_e1));
+    raster_shift_mul_47x11 u_dya_e2 (.a(d20_a_ext), .b(edge2_B), .p(t_dya_e2));
+    raster_shift_mul_47x11 u_dxb_e1 (.a(d10_b_ext), .b(edge1_A), .p(t_dxb_e1));
+    raster_shift_mul_47x11 u_dxb_e2 (.a(d20_b_ext), .b(edge2_A), .p(t_dxb_e2));
+    raster_shift_mul_47x11 u_dyb_e1 (.a(d10_b_ext), .b(edge1_B), .p(t_dyb_e1));
+    raster_shift_mul_47x11 u_dyb_e2 (.a(d20_b_ext), .b(edge2_B), .p(t_dyb_e2));
+
+    wire signed [46:0] scaled_dx_a = t_dxa_e1 + t_dxa_e2;
+    wire signed [46:0] scaled_dy_a = t_dya_e1 + t_dya_e2;
+    wire signed [46:0] scaled_dx_b = t_dxb_e1 + t_dxb_e2;
+    wire signed [46:0] scaled_dy_b = t_dyb_e1 + t_dyb_e2;
+
+    wire signed [31:0] deriv_dx_a = 32'(scaled_dx_a >>> area_shift);
+    wire signed [31:0] deriv_dy_a = 32'(scaled_dy_a >>> area_shift);
+    wire signed [31:0] deriv_dx_b = 32'(scaled_dx_b >>> area_shift);
+    wire signed [31:0] deriv_dy_b = 32'(scaled_dy_b >>> area_shift);
+
+    // ========================================================================
+    // Derivative output register latching (2 pairs per cycle)
+    // ========================================================================
+
+    reg signed [31:0] next_pre_c0r_dx, next_pre_c0r_dy;
+    reg signed [31:0] next_pre_c0g_dx, next_pre_c0g_dy;
+    reg signed [31:0] next_pre_c0b_dx, next_pre_c0b_dy;
+    reg signed [31:0] next_pre_c0a_dx, next_pre_c0a_dy;
+    reg signed [31:0] next_pre_c1r_dx, next_pre_c1r_dy;
+    reg signed [31:0] next_pre_c1g_dx, next_pre_c1g_dy;
+    reg signed [31:0] next_pre_c1b_dx, next_pre_c1b_dy;
+    reg signed [31:0] next_pre_c1a_dx, next_pre_c1a_dy;
+    reg signed [31:0] next_pre_z_dx,   next_pre_z_dy;
+    reg signed [31:0] next_pre_uv0u_dx, next_pre_uv0u_dy;
+    reg signed [31:0] next_pre_uv0v_dx, next_pre_uv0v_dy;
+    reg signed [31:0] next_pre_uv1u_dx, next_pre_uv1u_dy;
+    reg signed [31:0] next_pre_uv1v_dx, next_pre_uv1v_dy;
+    reg signed [31:0] next_pre_q_dx,   next_pre_q_dy;
+
+    always_comb begin
+        next_pre_c0r_dx  = pre_c0r_dx;   next_pre_c0r_dy  = pre_c0r_dy;
+        next_pre_c0g_dx  = pre_c0g_dx;   next_pre_c0g_dy  = pre_c0g_dy;
+        next_pre_c0b_dx  = pre_c0b_dx;   next_pre_c0b_dy  = pre_c0b_dy;
+        next_pre_c0a_dx  = pre_c0a_dx;   next_pre_c0a_dy  = pre_c0a_dy;
+        next_pre_c1r_dx  = pre_c1r_dx;   next_pre_c1r_dy  = pre_c1r_dy;
+        next_pre_c1g_dx  = pre_c1g_dx;   next_pre_c1g_dy  = pre_c1g_dy;
+        next_pre_c1b_dx  = pre_c1b_dx;   next_pre_c1b_dy  = pre_c1b_dy;
+        next_pre_c1a_dx  = pre_c1a_dx;   next_pre_c1a_dy  = pre_c1a_dy;
+        next_pre_z_dx    = pre_z_dx;     next_pre_z_dy    = pre_z_dy;
+        next_pre_uv0u_dx = pre_uv0u_dx;  next_pre_uv0u_dy = pre_uv0u_dy;
+        next_pre_uv0v_dx = pre_uv0v_dx;  next_pre_uv0v_dy = pre_uv0v_dy;
+        next_pre_uv1u_dx = pre_uv1u_dx;  next_pre_uv1u_dy = pre_uv1u_dy;
+        next_pre_uv1v_dx = pre_uv1v_dx;  next_pre_uv1v_dy = pre_uv1v_dy;
+        next_pre_q_dx    = pre_q_dx;     next_pre_q_dy    = pre_q_dy;
+
+        if (running) begin
+            case (pair_idx)
+                3'd0: begin
+                    next_pre_c0r_dx = deriv_dx_a;  next_pre_c0r_dy = deriv_dy_a;
+                    next_pre_c0g_dx = deriv_dx_b;  next_pre_c0g_dy = deriv_dy_b;
+                end
+                3'd1: begin
+                    next_pre_c0b_dx = deriv_dx_a;  next_pre_c0b_dy = deriv_dy_a;
+                    next_pre_c0a_dx = deriv_dx_b;  next_pre_c0a_dy = deriv_dy_b;
+                end
+                3'd2: begin
+                    next_pre_c1r_dx = deriv_dx_a;  next_pre_c1r_dy = deriv_dy_a;
+                    next_pre_c1g_dx = deriv_dx_b;  next_pre_c1g_dy = deriv_dy_b;
+                end
+                3'd3: begin
+                    next_pre_c1b_dx = deriv_dx_a;  next_pre_c1b_dy = deriv_dy_a;
+                    next_pre_c1a_dx = deriv_dx_b;  next_pre_c1a_dy = deriv_dy_b;
+                end
+                3'd4: begin
+                    next_pre_z_dx    = deriv_dx_a;  next_pre_z_dy    = deriv_dy_a;
+                    next_pre_uv0u_dx = deriv_dx_b;  next_pre_uv0u_dy = deriv_dy_b;
+                end
+                3'd5: begin
+                    next_pre_uv0v_dx = deriv_dx_a;  next_pre_uv0v_dy = deriv_dy_a;
+                    next_pre_q_dx    = deriv_dx_b;  next_pre_q_dy    = deriv_dy_b;
+                end
+                3'd6: begin
+                    next_pre_uv1u_dx = deriv_dx_a;  next_pre_uv1u_dy = deriv_dy_a;
+                    next_pre_uv1v_dx = deriv_dx_b;  next_pre_uv1v_dy = deriv_dy_b;
+                end
+                default: begin
+                    // No latch for invalid indices
+                end
+            endcase
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            pre_c0r_dx  <= 32'sd0;  pre_c0r_dy  <= 32'sd0;
+            pre_c0g_dx  <= 32'sd0;  pre_c0g_dy  <= 32'sd0;
+            pre_c0b_dx  <= 32'sd0;  pre_c0b_dy  <= 32'sd0;
+            pre_c0a_dx  <= 32'sd0;  pre_c0a_dy  <= 32'sd0;
+            pre_c1r_dx  <= 32'sd0;  pre_c1r_dy  <= 32'sd0;
+            pre_c1g_dx  <= 32'sd0;  pre_c1g_dy  <= 32'sd0;
+            pre_c1b_dx  <= 32'sd0;  pre_c1b_dy  <= 32'sd0;
+            pre_c1a_dx  <= 32'sd0;  pre_c1a_dy  <= 32'sd0;
+            pre_z_dx    <= 32'sd0;  pre_z_dy    <= 32'sd0;
+            pre_uv0u_dx <= 32'sd0;  pre_uv0u_dy <= 32'sd0;
+            pre_uv0v_dx <= 32'sd0;  pre_uv0v_dy <= 32'sd0;
+            pre_uv1u_dx <= 32'sd0;  pre_uv1u_dy <= 32'sd0;
+            pre_uv1v_dx <= 32'sd0;  pre_uv1v_dy <= 32'sd0;
+            pre_q_dx    <= 32'sd0;  pre_q_dy    <= 32'sd0;
+        end else begin
+            pre_c0r_dx  <= next_pre_c0r_dx;   pre_c0r_dy  <= next_pre_c0r_dy;
+            pre_c0g_dx  <= next_pre_c0g_dx;   pre_c0g_dy  <= next_pre_c0g_dy;
+            pre_c0b_dx  <= next_pre_c0b_dx;   pre_c0b_dy  <= next_pre_c0b_dy;
+            pre_c0a_dx  <= next_pre_c0a_dx;   pre_c0a_dy  <= next_pre_c0a_dy;
+            pre_c1r_dx  <= next_pre_c1r_dx;   pre_c1r_dy  <= next_pre_c1r_dy;
+            pre_c1g_dx  <= next_pre_c1g_dx;   pre_c1g_dy  <= next_pre_c1g_dy;
+            pre_c1b_dx  <= next_pre_c1b_dx;   pre_c1b_dy  <= next_pre_c1b_dy;
+            pre_c1a_dx  <= next_pre_c1a_dx;   pre_c1a_dy  <= next_pre_c1a_dy;
+            pre_z_dx    <= next_pre_z_dx;      pre_z_dy    <= next_pre_z_dy;
+            pre_uv0u_dx <= next_pre_uv0u_dx;  pre_uv0u_dy <= next_pre_uv0u_dy;
+            pre_uv0v_dx <= next_pre_uv0v_dx;  pre_uv0v_dy <= next_pre_uv0v_dy;
+            pre_uv1u_dx <= next_pre_uv1u_dx;  pre_uv1u_dy <= next_pre_uv1u_dy;
+            pre_uv1v_dx <= next_pre_uv1v_dx;  pre_uv1v_dy <= next_pre_uv1v_dy;
+            pre_q_dx    <= next_pre_q_dx;      pre_q_dy    <= next_pre_q_dy;
+        end
+    end
+
+    // ========================================================================
+    // Pipelined initial attribute values at bbox origin
+    // ========================================================================
+    // Init values are computed one pair per cycle, pipelined behind derivatives.
+    // During running cycle N (pair_idx=N, N>=1), we compute init for pair N-1
+    // using its registered derivatives from the previous posedge.
+    // During finishing, we compute init for pair 6 (the last pair).
+    // This uses only 4 smul_32x11 instances instead of 28.
+
     wire signed [10:0] bbox_sx = $signed({1'b0, bbox_min_x}) - $signed({1'b0, x0});
     wire signed [10:0] bbox_sy = $signed({1'b0, bbox_min_y}) - $signed({1'b0, y0});
 
-    // Color0 init
-    assign init_c0r = $signed({8'b0, c0_r0, 16'b0}) + pre_c0r_dx * bbox_sx + pre_c0r_dy * bbox_sy;
-    assign init_c0g = $signed({8'b0, c0_g0, 16'b0}) + pre_c0g_dx * bbox_sx + pre_c0g_dy * bbox_sy;
-    assign init_c0b = $signed({8'b0, c0_b0, 16'b0}) + pre_c0b_dx * bbox_sx + pre_c0b_dy * bbox_sy;
-    assign init_c0a = $signed({8'b0, c0_a0, 16'b0}) + pre_c0a_dx * bbox_sx + pre_c0a_dy * bbox_sy;
+    // Init pipeline control: which pair to compute init for this cycle
+    wire        init_active = (running && pair_idx != 3'd0) || finishing;
+    wire  [2:0] init_pair   = finishing ? 3'd6 : (pair_idx - 3'd1);
 
-    // Color1 init
-    assign init_c1r = $signed({8'b0, c1_r0, 16'b0}) + pre_c1r_dx * bbox_sx + pre_c1r_dy * bbox_sy;
-    assign init_c1g = $signed({8'b0, c1_g0, 16'b0}) + pre_c1g_dx * bbox_sx + pre_c1g_dy * bbox_sy;
-    assign init_c1b = $signed({8'b0, c1_b0, 16'b0}) + pre_c1b_dx * bbox_sx + pre_c1b_dy * bbox_sy;
-    assign init_c1a = $signed({8'b0, c1_a0, 16'b0}) + pre_c1a_dx * bbox_sx + pre_c1a_dy * bbox_sy;
+    // Mux: select the registered derivative pair and f0 value for init computation
+    reg signed [31:0] init_dx_a, init_dy_a, init_dx_b, init_dy_b;
+    reg signed [31:0] init_f0_a, init_f0_b;
 
-    // Z init
-    assign init_z = $signed({z0, 16'b0}) + pre_z_dx * bbox_sx + pre_z_dy * bbox_sy;
+    always_comb begin
+        init_dx_a = 32'sd0;  init_dy_a = 32'sd0;
+        init_dx_b = 32'sd0;  init_dy_b = 32'sd0;
+        init_f0_a = 32'sd0;  init_f0_b = 32'sd0;
 
-    // UV0 init
-    assign init_uv0u = $signed({uv0_u0, 16'b0}) + pre_uv0u_dx * bbox_sx + pre_uv0u_dy * bbox_sy;
-    assign init_uv0v = $signed({uv0_v0, 16'b0}) + pre_uv0v_dx * bbox_sx + pre_uv0v_dy * bbox_sy;
+        case (init_pair)
+            3'd0: begin
+                init_dx_a = pre_c0r_dx;  init_dy_a = pre_c0r_dy;
+                init_dx_b = pre_c0g_dx;  init_dy_b = pre_c0g_dy;
+                init_f0_a = $signed({8'b0, c0_r0, 16'b0});
+                init_f0_b = $signed({8'b0, c0_g0, 16'b0});
+            end
+            3'd1: begin
+                init_dx_a = pre_c0b_dx;  init_dy_a = pre_c0b_dy;
+                init_dx_b = pre_c0a_dx;  init_dy_b = pre_c0a_dy;
+                init_f0_a = $signed({8'b0, c0_b0, 16'b0});
+                init_f0_b = $signed({8'b0, c0_a0, 16'b0});
+            end
+            3'd2: begin
+                init_dx_a = pre_c1r_dx;  init_dy_a = pre_c1r_dy;
+                init_dx_b = pre_c1g_dx;  init_dy_b = pre_c1g_dy;
+                init_f0_a = $signed({8'b0, c1_r0, 16'b0});
+                init_f0_b = $signed({8'b0, c1_g0, 16'b0});
+            end
+            3'd3: begin
+                init_dx_a = pre_c1b_dx;  init_dy_a = pre_c1b_dy;
+                init_dx_b = pre_c1a_dx;  init_dy_b = pre_c1a_dy;
+                init_f0_a = $signed({8'b0, c1_b0, 16'b0});
+                init_f0_b = $signed({8'b0, c1_a0, 16'b0});
+            end
+            3'd4: begin
+                init_dx_a = pre_z_dx;     init_dy_a = pre_z_dy;
+                init_dx_b = pre_uv0u_dx;  init_dy_b = pre_uv0u_dy;
+                init_f0_a = $signed({z0, 16'b0});
+                init_f0_b = $signed({uv0_u0, 16'b0});
+            end
+            3'd5: begin
+                init_dx_a = pre_uv0v_dx;  init_dy_a = pre_uv0v_dy;
+                init_dx_b = pre_q_dx;     init_dy_b = pre_q_dy;
+                init_f0_a = $signed({uv0_v0, 16'b0});
+                init_f0_b = $signed({q0, 16'b0});
+            end
+            3'd6: begin
+                init_dx_a = pre_uv1u_dx;  init_dy_a = pre_uv1u_dy;
+                init_dx_b = pre_uv1v_dx;  init_dy_b = pre_uv1v_dy;
+                init_f0_a = $signed({uv1_u0, 16'b0});
+                init_f0_b = $signed({uv1_v0, 16'b0});
+            end
+            default: begin
+                init_dx_a = 32'sd0;  init_dy_a = 32'sd0;
+                init_dx_b = 32'sd0;  init_dy_b = 32'sd0;
+                init_f0_a = 32'sd0;  init_f0_b = 32'sd0;
+            end
+        endcase
+    end
 
-    // UV1 init
-    assign init_uv1u = $signed({uv1_u0, 16'b0}) + pre_uv1u_dx * bbox_sx + pre_uv1u_dy * bbox_sy;
-    assign init_uv1v = $signed({uv1_v0, 16'b0}) + pre_uv1v_dx * bbox_sx + pre_uv1v_dy * bbox_sy;
+    // 4 shift-add multiplier instances for init computation (32-bit truncated)
+    wire signed [31:0] t_init_ax, t_init_ay, t_init_bx, t_init_by;
 
-    // Q init
-    assign init_q = $signed({q0, 16'b0}) + pre_q_dx * bbox_sx + pre_q_dy * bbox_sy;
+    raster_shift_mul_32x11 u_init_ax (.a(init_dx_a), .b(bbox_sx), .p(t_init_ax));
+    raster_shift_mul_32x11 u_init_ay (.a(init_dy_a), .b(bbox_sy), .p(t_init_ay));
+    raster_shift_mul_32x11 u_init_bx (.a(init_dx_b), .b(bbox_sx), .p(t_init_bx));
+    raster_shift_mul_32x11 u_init_by (.a(init_dy_b), .b(bbox_sy), .p(t_init_by));
+
+    wire signed [31:0] computed_init_a = init_f0_a + t_init_ax + t_init_ay;
+    wire signed [31:0] computed_init_b = init_f0_b + t_init_bx + t_init_by;
+
+    // Init output register latching (one pair per cycle, pipelined behind derivs)
+    reg signed [31:0] next_init_c0r, next_init_c0g;
+    reg signed [31:0] next_init_c0b, next_init_c0a;
+    reg signed [31:0] next_init_c1r, next_init_c1g;
+    reg signed [31:0] next_init_c1b, next_init_c1a;
+    reg signed [31:0] next_init_z,   next_init_uv0u;
+    reg signed [31:0] next_init_uv0v, next_init_q;
+    reg signed [31:0] next_init_uv1u, next_init_uv1v;
+
+    always_comb begin
+        next_init_c0r  = init_c0r;   next_init_c0g  = init_c0g;
+        next_init_c0b  = init_c0b;   next_init_c0a  = init_c0a;
+        next_init_c1r  = init_c1r;   next_init_c1g  = init_c1g;
+        next_init_c1b  = init_c1b;   next_init_c1a  = init_c1a;
+        next_init_z    = init_z;     next_init_uv0u = init_uv0u;
+        next_init_uv0v = init_uv0v;  next_init_q    = init_q;
+        next_init_uv1u = init_uv1u;  next_init_uv1v = init_uv1v;
+
+        if (init_active) begin
+            case (init_pair)
+                3'd0: begin
+                    next_init_c0r = computed_init_a;
+                    next_init_c0g = computed_init_b;
+                end
+                3'd1: begin
+                    next_init_c0b = computed_init_a;
+                    next_init_c0a = computed_init_b;
+                end
+                3'd2: begin
+                    next_init_c1r = computed_init_a;
+                    next_init_c1g = computed_init_b;
+                end
+                3'd3: begin
+                    next_init_c1b = computed_init_a;
+                    next_init_c1a = computed_init_b;
+                end
+                3'd4: begin
+                    next_init_z    = computed_init_a;
+                    next_init_uv0u = computed_init_b;
+                end
+                3'd5: begin
+                    next_init_uv0v = computed_init_a;
+                    next_init_q    = computed_init_b;
+                end
+                3'd6: begin
+                    next_init_uv1u = computed_init_a;
+                    next_init_uv1v = computed_init_b;
+                end
+                default: ;
+            endcase
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            init_c0r  <= 32'sd0;  init_c0g  <= 32'sd0;
+            init_c0b  <= 32'sd0;  init_c0a  <= 32'sd0;
+            init_c1r  <= 32'sd0;  init_c1g  <= 32'sd0;
+            init_c1b  <= 32'sd0;  init_c1a  <= 32'sd0;
+            init_z    <= 32'sd0;  init_uv0u <= 32'sd0;
+            init_uv0v <= 32'sd0;  init_q    <= 32'sd0;
+            init_uv1u <= 32'sd0;  init_uv1v <= 32'sd0;
+        end else begin
+            init_c0r  <= next_init_c0r;   init_c0g  <= next_init_c0g;
+            init_c0b  <= next_init_c0b;   init_c0a  <= next_init_c0a;
+            init_c1r  <= next_init_c1r;   init_c1g  <= next_init_c1g;
+            init_c1b  <= next_init_c1b;   init_c1a  <= next_init_c1a;
+            init_z    <= next_init_z;     init_uv0u <= next_init_uv0u;
+            init_uv0v <= next_init_uv0v;  init_q    <= next_init_q;
+            init_uv1u <= next_init_uv1u;  init_uv1v <= next_init_uv1v;
+        end
+    end
 
 endmodule
 

@@ -31,6 +31,9 @@ RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/raster_dsp_mul.sv \
+	$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+	$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
@@ -236,6 +239,9 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # UNIT-005.02: Raster derivative precomputation unit testbench
 test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RTL_DIR)/render/raster_dsp_mul.sv \
+		$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+		$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 		$(RTL_DIR)/render/raster_deriv.sv \
 		$(TB_DIR)/render/tb_raster_deriv.sv \
 		--top-module tb_raster_deriv -o tb_raster_deriv
@@ -264,6 +270,9 @@ test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-w
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/raster_dsp_mul.sv \
+		$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+		$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 		$(RTL_DIR)/render/raster_deriv.sv \
 		$(RTL_DIR)/render/raster_attr_accum.sv \
 		$(RTL_DIR)/render/raster_edge_walk.sv \
@@ -434,7 +443,9 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/render/alpha_blend.sv \
 	$(RTL_DIR)/render/dither.sv \
 	$(RTL_DIR)/render/fb_promote.sv \
-	$(RTL_DIR)/render/raster_deriv.sv \
+	$(RTL_DIR)/render/raster_dsp_mul.sv \
+	$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+	$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
 	$(RTL_DIR)/render/raster_recip_area.sv \
@@ -480,6 +491,9 @@ lint:
 	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_area, raster_recip_q, raster_setup_fifo)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/raster_dsp_mul.sv \
+		$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+		$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 		$(RTL_DIR)/render/raster_deriv.sv \
 		$(RTL_DIR)/render/raster_attr_accum.sv \
 		$(RTL_DIR)/render/raster_edge_walk.sv \
@@ -539,6 +553,9 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/raster_dsp_mul.sv \
+	$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+	$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \
@@ -625,6 +642,9 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \
 	$(RTL_DIR)/render/rasterizer.sv \
+	$(RTL_DIR)/render/raster_dsp_mul.sv \
+	$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+	$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
 	$(RTL_DIR)/render/raster_deriv.sv \
 	$(RTL_DIR)/render/raster_attr_accum.sv \
 	$(RTL_DIR)/render/raster_edge_walk.sv \

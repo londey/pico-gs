@@ -1,10 +1,26 @@
 // Testbench for raster_deriv module
-// Tests purely combinational derivative computation and initial value calculation
+// Tests sequential time-multiplexed derivative computation and initial value calculation
 // Verification: UNIT-005.02 (Derivative Pre-computation)
 
 `timescale 1ns/1ps
 
 module tb_raster_deriv;
+
+    // ========================================================================
+    // Clock and Reset
+    // ========================================================================
+
+    /* verilator lint_off PROCASSINIT */
+    reg clk = 1'b0;                // System clock (100 MHz)
+    /* verilator lint_on PROCASSINIT */
+    reg rst_n;                     // Active-low async reset
+    reg enable;                    // Start pulse
+
+    always #5 clk = ~clk;         // 10ns period (100 MHz)
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire deriv_done;               // Completion flag from DUT
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // ========================================================================
     // DUT Signals — Vertex Color0
@@ -137,6 +153,7 @@ module tb_raster_deriv;
     // ========================================================================
 
     raster_deriv dut (
+        .clk(clk), .rst_n(rst_n), .enable(enable), .deriv_done(deriv_done),
         .c0_r0(c0_r0), .c0_g0(c0_g0), .c0_b0(c0_b0), .c0_a0(c0_a0),
         .c0_r1(c0_r1), .c0_g1(c0_g1), .c0_b1(c0_b1), .c0_a1(c0_a1),
         .c0_r2(c0_r2), .c0_g2(c0_g2), .c0_b2(c0_b2), .c0_a2(c0_a2),
@@ -186,6 +203,7 @@ module tb_raster_deriv;
 
     integer pass_count = 0;
     integer fail_count = 0;
+    integer cycle_count;            // Cycle counter for deriv_done timing check
 
     /* verilator lint_off UNUSEDSIGNAL */
     task check32s(input string name,
@@ -225,6 +243,26 @@ module tb_raster_deriv;
             area_shift = 5'd0;
             bbox_min_x = 10'd0; bbox_min_y = 10'd0;
             x0 = 10'd0; y0 = 10'd0;
+            enable = 1'b0;
+        end
+    endtask
+
+    // Pulse enable for one cycle and wait for deriv_done
+    task run_deriv;
+        begin
+            @(posedge clk);
+            enable = 1'b1;
+            cycle_count = 0;
+            @(posedge clk);
+            enable = 1'b0;
+            cycle_count = 1;
+            // Wait for deriv_done (with timeout)
+            while (!deriv_done && cycle_count < 30) begin
+                @(posedge clk);
+                cycle_count = cycle_count + 1;
+            end
+            // Sample outputs on the next clock edge after deriv_done
+            @(negedge clk);
         end
     endtask
 
@@ -236,7 +274,30 @@ module tb_raster_deriv;
         $dumpfile("raster_deriv.vcd");
         $dumpvars(0, tb_raster_deriv);
 
-        $display("=== Testing raster_deriv Module ===\n");
+        $display("=== Testing raster_deriv Module (Sequential) ===\n");
+
+        // Reset sequence
+        zero_all_inputs;
+        rst_n = 1'b0;
+        @(posedge clk);
+        @(posedge clk);
+        rst_n = 1'b1;
+        @(posedge clk);
+
+        // ============================================================
+        // Test 0: Verify deriv_done timing (8 cycles after enable)
+        // ============================================================
+        $display("--- Test 0: deriv_done Timing ---");
+        zero_all_inputs;
+        run_deriv;
+        // cycle_count should be 9 (enable at cycle 0, 7 pair cycles + 1 finishing)
+        if (cycle_count >= 30) begin
+            $display("FAIL: deriv_done did not assert within 30 cycles");
+            fail_count = fail_count + 1;
+        end else begin
+            $display("  deriv_done asserted after %0d cycles", cycle_count);
+            pass_count = pass_count + 1;
+        end
 
         // ============================================================
         // Test 1: Zero deltas — all attributes identical across vertices
@@ -250,7 +311,7 @@ module tb_raster_deriv;
 
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         x0 = 10'd0; y0 = 10'd0;
-        #1;
+        run_deriv;
 
         // All deltas are zero, so all derivatives must be zero
         check32s("zero deltas: pre_c0r_dx", pre_c0r_dx, 32'sd0);
@@ -269,11 +330,6 @@ module tb_raster_deriv;
         // ============================================================
         // Test 2: Single-channel color gradient
         // ============================================================
-        // c0_r varies: v0=0, v1=10, v2=20
-        // d10_c0r = 10, d20_c0r = 20
-        // With hardcoded INV_AREA=65535, AREA_SHIFT=0:
-        //   raw_dx = 10 * edge1_A + 20 * edge2_A
-        //   pre_dx = raw_dx * 65535 >>> 0
         $display("--- Test 2: Color Gradient (single channel) ---");
         zero_all_inputs;
         c0_r0 = 8'd0; c0_r1 = 8'd10; c0_r2 = 8'd20;
@@ -282,7 +338,7 @@ module tb_raster_deriv;
 
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // raw_dx = 10*3 + 20*5 = 130; scl = 130*65535 = 8519550
         check32s("gradient: pre_c0r_dx", pre_c0r_dx, 32'sd8519550);
@@ -295,9 +351,6 @@ module tb_raster_deriv;
         // ============================================================
         // Test 3: Negative color delta
         // ============================================================
-        // c0_r: v0=200, v1=50, v2=200
-        // d10 = 50-200 = -150 (signed 9-bit)
-        // d20 = 0
         $display("--- Test 3: Negative Color Delta ---");
         zero_all_inputs;
         c0_r0 = 8'd200; c0_r1 = 8'd50; c0_r2 = 8'd200;
@@ -306,7 +359,7 @@ module tb_raster_deriv;
 
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // raw_dx = (-150)*4 = -600; scl = -600*65535 = -39321000
         check32s("neg delta: pre_c0r_dx", pre_c0r_dx, -32'sd39321000);
@@ -316,8 +369,6 @@ module tb_raster_deriv;
         // ============================================================
         // Test 4: Z (wide channel) derivative
         // ============================================================
-        // Z: v0=0, v1=0x1000 (4096), v2=0
-        // d10_z = 4096 (17-bit signed), d20_z = 0
         $display("--- Test 4: Z (Wide Channel) Derivative ---");
         zero_all_inputs;
         z0 = 16'd0; z1 = 16'h1000; z2 = 16'd0;
@@ -326,7 +377,7 @@ module tb_raster_deriv;
 
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // raw_z_dx = 4096*2 = 8192; scl = 8192*65535 = 536862720
         check32s("Z wide: pre_z_dx", pre_z_dx, 32'sd536862720);
@@ -336,8 +387,6 @@ module tb_raster_deriv;
         // ============================================================
         // Test 5: UV signed values
         // ============================================================
-        // UV0_U: v0=-100, v1=+200, v2=-100 (Q4.12 signed)
-        // d10_uv0u = 200-(-100) = 300, d20 = 0
         $display("--- Test 5: UV Signed Values ---");
         zero_all_inputs;
         uv0_u0 = -16'sd100; uv0_u1 = 16'sd200; uv0_u2 = -16'sd100;
@@ -346,19 +395,16 @@ module tb_raster_deriv;
 
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // d10_uv0u = 300, raw_dx = 300*1 = 300; scl = 300*65535 = 19660500
         check32s("UV signed: pre_uv0u_dx", pre_uv0u_dx, 32'sd19660500);
         // Init at origin: {uv0_u0, 16'b0} + 0 + 0 = {-100, 16'b0}
-        // -100 in 16-bit = 0xFF9C, extended to 32-bit: {0xFF9C, 16'h0000} = 0xFF9C0000
         check32s("UV signed: init_uv0u", init_uv0u, {-16'sd100, 16'b0});
 
         // ============================================================
         // Test 6: Hardcoded INV_AREA/AREA_SHIFT (Phase 1 interim)
         // ============================================================
-        // inv_area set to 18'h0FFFF (UQ4.14 = ~4.0) via zero_all_inputs,
-        // area_shift = 0.  Verify derivative uses these values.
         $display("--- Test 6: Hardcoded INV_AREA Scaling (Phase 1) ---");
         zero_all_inputs;
         c0_r0 = 8'd0; c0_r1 = 8'd128; c0_r2 = 8'd0;
@@ -366,7 +412,7 @@ module tb_raster_deriv;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // d10=128, raw_dx=128*1=128; scl=128*65535=8388480; pre=8388480>>>0=8388480
         check32s("hardcoded inv_area: pre_c0r_dx", pre_c0r_dx, 32'sd8388480);
@@ -374,7 +420,6 @@ module tb_raster_deriv;
         // ============================================================
         // Test 7: Initial value with bbox offset from vertex 0
         // ============================================================
-        // bbox origin != vertex 0 → init includes derivative offsets
         $display("--- Test 7: Initial Value with Bbox Offset ---");
         zero_all_inputs;
         c0_r0 = 8'd100; c0_r1 = 8'd110; c0_r2 = 8'd100;
@@ -383,7 +428,7 @@ module tb_raster_deriv;
 
         x0 = 10'd5; y0 = 10'd5;
         bbox_min_x = 10'd8; bbox_min_y = 10'd7;
-        #1;
+        run_deriv;
 
         // d10=10, d20=0
         // raw_dx = 10*1 = 10; scl = 10*65535 = 655350
@@ -406,7 +451,7 @@ module tb_raster_deriv;
 
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // d10_c1g = 0, d20_c1g = 50
         // raw_dx = 0 + 50*3 = 150; scl = 150*65535 = 9830250
@@ -427,7 +472,7 @@ module tb_raster_deriv;
 
         x0 = 10'd0; y0 = 10'd0;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
-        #1;
+        run_deriv;
 
         // d10_q = 2000-1000 = 1000, d20_q = 0
         // raw_dx = 1000*1 = 1000; scl = 1000*65535 = 65535000

@@ -42,3 +42,4 @@ Thumbs.db
 *.log
 
 .syskit
+spi_gpu/obj_dir

@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `8917edee7f5c0a59` 2026-03-06
+// Spec-ref: unit_005_rasterizer.md `43b4390c9803abd3` 2026-03-07
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and incremental
@@ -122,9 +122,10 @@ module rasterizer (
     // Iteration consumer FSM
     typedef enum logic [2:0] {
         I_IDLE          = 3'd0,   // Waiting for FIFO data
-        I_ITER_START    = 3'd1,   // e0_init (shared mul) + derivative latch + attr init
+        I_ITER_START    = 3'd1,   // e0_init (shared mul)
         I_INIT_E1       = 3'd2,   // e1_init (shared mul)
-        I_INIT_E2       = 3'd3,   // e2_init (shared mul)
+        I_INIT_E2       = 3'd3,   // e2_init (shared mul) + derivative enable
+        I_DERIV_WAIT    = 3'd5,   // Wait for raster_deriv sequential completion
         I_WALKING       = 3'd4    // Edge walk sub-module autonomous traversal
     } iter_state_t;
 
@@ -134,16 +135,17 @@ module rasterizer (
     // Legacy single-state alias for sub-modules that test FSM state
     // (edge walk control signals, shared multiplier mux, etc.)
     // Combines setup and iteration states into a unified view.
-    typedef enum logic [3:0] {
-        IDLE            = 4'd0,
-        SETUP           = 4'd1,
-        SETUP_2         = 4'd13,
-        SETUP_3         = 4'd14,
-        SETUP_RECIP     = 4'd12,
-        ITER_START      = 4'd2,
-        INIT_E1         = 4'd4,
-        INIT_E2         = 4'd15,
-        WALKING         = 4'd5
+    typedef enum logic [4:0] {
+        IDLE            = 5'd0,
+        SETUP           = 5'd1,
+        SETUP_2         = 5'd13,
+        SETUP_3         = 5'd14,
+        SETUP_RECIP     = 5'd12,
+        ITER_START      = 5'd2,
+        INIT_E1         = 5'd4,
+        INIT_E2         = 5'd15,
+        DERIV_WAIT      = 5'd16,
+        WALKING         = 5'd5
     } state_t;
 
     state_t state /* verilator public */;
@@ -161,6 +163,7 @@ module rasterizer (
                     I_ITER_START: state = ITER_START;
                     I_INIT_E1:    state = INIT_E1;
                     I_INIT_E2:    state = INIT_E2;
+                    I_DERIV_WAIT: state = DERIV_WAIT;
                     I_WALKING:    state = WALKING;
                     default:      state = IDLE;
                 endcase
@@ -476,9 +479,13 @@ module rasterizer (
     // next-state logic below.
 
     // ========================================================================
-    // Derivative Precomputation Sub-module (UNIT-005.02 combinational)
+    // Derivative Precomputation Sub-module (UNIT-005.02 sequential)
     // ========================================================================
-    // Extracted into raster_deriv.sv — purely combinational, no clock.
+    // Extracted into raster_deriv.sv — sequential time-multiplexed, 14 cycles.
+    // Pulse deriv_enable to start; deriv_done asserts 14 cycles later.
+
+    wire deriv_done;                                // Completion flag from raster_deriv
+    wire deriv_enable = (iter_state == I_INIT_E2);  // Start derivative computation
 
     // Derivative output wires (from raster_deriv)
     wire signed [31:0] pre_c0r_dx;
@@ -527,6 +534,10 @@ module rasterizer (
     wire signed [31:0] init_q;
 
     raster_deriv u_deriv (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        .enable         (deriv_enable),
+        .deriv_done     (deriv_done),
         // Vertex color0 channels
         .c0_r0          (c0_r0),
         .c0_g0          (c0_g0),
@@ -640,7 +651,8 @@ module rasterizer (
     // ========================================================================
 
     // Derivative latch (for raster_attr_accum)
-    wire latch_derivs  = (iter_state == I_ITER_START);
+    // Asserted when raster_deriv completes its 14-cycle sequential computation
+    wire latch_derivs  = deriv_done;
 
     // Attribute step signals from raster_edge_walk sub-module
     wire ew_attr_step_x;
@@ -960,7 +972,14 @@ module rasterizer (
 
             I_ITER_START: next_iter_state = I_INIT_E1;
             I_INIT_E1:    next_iter_state = I_INIT_E2;
-            I_INIT_E2:    next_iter_state = I_WALKING;
+            I_INIT_E2:    next_iter_state = I_DERIV_WAIT;
+
+            I_DERIV_WAIT: begin
+                // Wait for raster_deriv sequential computation to complete
+                if (deriv_done) begin
+                    next_iter_state = I_WALKING;
+                end
+            end
 
             I_WALKING: begin
                 // Edge walk sub-module handles tile traversal autonomously.
