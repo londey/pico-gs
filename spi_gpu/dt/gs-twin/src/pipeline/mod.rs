@@ -28,9 +28,7 @@ pub mod rasterize;
 pub mod vertex;
 
 use crate::cmd::{CullMode, DepthFunc};
-use crate::math::{
-    Bary3, Depth, Mat4, Rgb565, ScreenCoord, TexVec2, Vec4, WRecip,
-};
+use crate::math::{Bary3, Depth, Mat4, Rgb565, ScreenCoord, TexVec2, Vec4, WRecip};
 use serde::{Deserialize, Serialize};
 
 // ── GPU state (set by command processor) ────────────────────────────────────

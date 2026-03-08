@@ -13,6 +13,12 @@ use std::path::Path;
 pub struct GpuMemory {
     pub framebuffer: Framebuffer,
     pub depth_buffer: DepthBuffer,
+    /// Raw unsigned 16-bit Z-buffer for the register-write path.
+    ///
+    /// The RTL's early_z.sv uses unsigned 16-bit Z values (smaller = nearer).
+    /// This is separate from `depth_buffer` (signed Q4.12) used by the
+    /// high-level pipeline. Initialized to 0 (all near-plane).
+    pub raw_zbuf: RawZBuffer,
     pub vertex_sram: Vec<u8>,
     pub textures: TextureStore,
 }
@@ -22,6 +28,7 @@ impl GpuMemory {
         Self {
             framebuffer: Framebuffer::new(width, height),
             depth_buffer: DepthBuffer::new(width, height),
+            raw_zbuf: RawZBuffer::new(width, height),
             vertex_sram: vec![0u8; 64 * 1024], // 64 KiB vertex/index SRAM
             textures: TextureStore::default(),
         }
@@ -208,5 +215,62 @@ impl TextureStore {
         let ty = ((v_frac as u32 * tex.height as u32) >> 14) as u16 % tex.height;
 
         Rgb565(tex.data[(ty as usize) * (tex.width as usize) + (tx as usize)])
+    }
+}
+
+// ── Raw Z-buffer (unsigned 16-bit, for register-write path) ──────────────
+
+/// Unsigned 16-bit Z-buffer matching the RTL's early_z.sv.
+///
+/// Smaller values are nearer. The RTL performs unsigned comparison on
+/// raw 16-bit Z values from the rasterizer.
+pub struct RawZBuffer {
+    pub width: u32,
+    pub height: u32,
+    /// Per-pixel Z values. Initialized to 0.
+    pub values: Vec<u16>,
+}
+
+impl RawZBuffer {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            values: vec![0u16; (width * height) as usize],
+        }
+    }
+
+    /// Fill the entire Z-buffer with a constant value.
+    pub fn clear(&mut self, value: u16) {
+        self.values.fill(value);
+    }
+
+    /// Read the stored Z value at (x, y).
+    pub fn get(&self, x: u32, y: u32) -> u16 {
+        self.values[(y * self.width + x) as usize]
+    }
+
+    /// Write a Z value at (x, y).
+    pub fn set(&mut self, x: u32, y: u32, value: u16) {
+        self.values[(y * self.width + x) as usize] = value;
+    }
+
+    /// Depth test + conditional write. Returns true if fragment passes.
+    pub fn test_and_set(&mut self, x: u32, y: u32, z: u16, func: DepthFunc) -> bool {
+        let stored = self.get(x, y);
+        let pass = match func {
+            DepthFunc::Never => false,
+            DepthFunc::Less => z < stored,
+            DepthFunc::LessEqual => z <= stored,
+            DepthFunc::Equal => z == stored,
+            DepthFunc::Greater => z > stored,
+            DepthFunc::GreaterEqual => z >= stored,
+            DepthFunc::NotEqual => z != stored,
+            DepthFunc::Always => true,
+        };
+        if pass {
+            self.set(x, y, z);
+        }
+        pass
     }
 }

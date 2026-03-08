@@ -99,7 +99,8 @@ pub fn rasterize_triangle(tri: &ScreenTriangle) -> Vec<Fragment> {
             let z0 = EdgeAccum::from(v0.z);
             let z1 = EdgeAccum::from(v1.z);
             let z2 = EdgeAccum::from(v2.z);
-            let z_interp = b0.wrapping_mul(z0)
+            let z_interp = b0
+                .wrapping_mul(z0)
                 .wrapping_add(b1.wrapping_mul(z1))
                 .wrapping_add(b2.wrapping_mul(z2));
             let depth: Depth = truncating_narrow(z_interp);
@@ -150,6 +151,7 @@ pub fn rasterize_triangle(tri: &ScreenTriangle) -> Vec<Fragment> {
 /// plus 3 multiplies for the denominator (b_i × 1/w_i), plus a
 /// reciprocal and 2 final multiplies. The RTL may time-share the
 /// MULT18X18D slices across these operations.
+#[allow(clippy::too_many_arguments)]
 fn interpolate_uv_perspective(
     b0: EdgeAccum,
     b1: EdgeAccum,
@@ -167,7 +169,8 @@ fn interpolate_uv_perspective(
     let wr2 = EdgeAccum::from_num(w2);
 
     // Denominator: sum of b_i / w_i = sum of b_i × (1/w_i)
-    let denom = b0.wrapping_mul(wr0)
+    let denom = b0
+        .wrapping_mul(wr0)
         .wrapping_add(b1.wrapping_mul(wr1))
         .wrapping_add(b2.wrapping_mul(wr2));
 
@@ -183,12 +186,16 @@ fn interpolate_uv_perspective(
     let v2 = EdgeAccum::from_num(uv2.v);
 
     // Numerator U: sum of b_i × u_i × (1/w_i)
-    let num_u = b0.wrapping_mul(u0).wrapping_mul(wr0)
+    let num_u = b0
+        .wrapping_mul(u0)
+        .wrapping_mul(wr0)
         .wrapping_add(b1.wrapping_mul(u1).wrapping_mul(wr1))
         .wrapping_add(b2.wrapping_mul(u2).wrapping_mul(wr2));
 
     // Numerator V: sum of b_i × v_i × (1/w_i)
-    let num_v = b0.wrapping_mul(v0).wrapping_mul(wr0)
+    let num_v = b0
+        .wrapping_mul(v0)
+        .wrapping_mul(wr0)
         .wrapping_add(b1.wrapping_mul(v1).wrapping_mul(wr1))
         .wrapping_add(b2.wrapping_mul(v2).wrapping_mul(wr2));
 
@@ -266,7 +273,11 @@ fn screen_to_pixel_ceil(s: ScreenCoord) -> i32 {
     let bits = s.to_bits() as i32;
     let frac = bits & 0xF;
     let int = bits >> 4;
-    if frac > 0 { int + 1 } else { int }
+    if frac > 0 {
+        int + 1
+    } else {
+        int
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -310,6 +321,8 @@ pub struct IntTriangle {
 pub struct IntFragment {
     pub x: u16,
     pub y: u16,
+    /// Interpolated depth (unsigned 16-bit), for Z-test.
+    pub z: u16,
     pub color: Rgb565,
 }
 
@@ -388,12 +401,16 @@ pub fn rasterize_int_triangle(tri: &IntTriangle) -> Vec<IntFragment> {
                 continue;
             }
 
+            // ── Z interpolation ───────────────────────────────────
+            let z_interp = {
+                let num =
+                    w0 as i64 * v0.z as i64 + w1 as i64 * v1.z as i64 + w2 as i64 * v2.z as i64;
+                (num / area2 as i64).clamp(0, 0xFFFF) as u16
+            };
+
             // ── Color interpolation ──────────────────────────────
             let color = if tri.gouraud_en {
-                interpolate_color_rgba8888(
-                    w0, w1, w2, area2,
-                    v0.color0, v1.color0, v2.color0,
-                )
+                interpolate_color_rgba8888(w0, w1, w2, area2, v0.color0, v1.color0, v2.color0)
             } else {
                 // Flat shading: use v0's color
                 rgba8888_to_rgb565(v0.color0)
@@ -402,6 +419,7 @@ pub fn rasterize_int_triangle(tri: &IntTriangle) -> Vec<IntFragment> {
             fragments.push(IntFragment {
                 x: px as u16,
                 y: py as u16,
+                z: z_interp,
                 color,
             });
         }
@@ -432,9 +450,7 @@ fn interpolate_color_rgba8888(
     c2: Rgba8888,
 ) -> Rgb565 {
     let interp_channel = |ch0: u8, ch1: u8, ch2: u8| -> u8 {
-        let num = w0 as i64 * ch0 as i64
-            + w1 as i64 * ch1 as i64
-            + w2 as i64 * ch2 as i64;
+        let num = w0 as i64 * ch0 as i64 + w1 as i64 * ch1 as i64 + w2 as i64 * ch2 as i64;
         // Truncating division (toward zero), matching RTL behavior
         (num / area2 as i64).clamp(0, 255) as u8
     };

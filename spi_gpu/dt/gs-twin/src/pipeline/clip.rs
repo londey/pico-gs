@@ -17,9 +17,7 @@
 //! as a Q0.16 unsigned value ([`WRecip`]).
 
 use crate::cmd::CullMode;
-use crate::math::{
-    truncating_narrow, Coord, Depth, EdgeAccum, ScreenCoord, WRecip,
-};
+use crate::math::{truncating_narrow, Coord, Depth, EdgeAccum, ScreenCoord, WRecip};
 use crate::pipeline::{ClipVertex, ScreenTriangle, ScreenVertex, Viewport};
 
 /// Clip, cull, and project three clip-space vertices to a screen-space triangle.
@@ -51,9 +49,7 @@ pub fn clip_and_project(
     // ── Reject degenerate W ─────────────────────────────────────────
     // If any vertex has w ≤ 0 after clipping, skip the triangle.
     // (Full clipping would split it; we reject for now.)
-    if v0.clip_pos.w <= Coord::ZERO
-        || v1.clip_pos.w <= Coord::ZERO
-        || v2.clip_pos.w <= Coord::ZERO
+    if v0.clip_pos.w <= Coord::ZERO || v1.clip_pos.w <= Coord::ZERO || v2.clip_pos.w <= Coord::ZERO
     {
         return None;
     }
@@ -78,9 +74,7 @@ pub fn clip_and_project(
         return None;
     }
 
-    Some(ScreenTriangle {
-        v: [sv0, sv1, sv2],
-    })
+    Some(ScreenTriangle { v: [sv0, sv1, sv2] })
 }
 
 /// Project a single clip-space vertex to screen space.
@@ -98,7 +92,7 @@ fn project_vertex(v: &ClipVertex, vp: &Viewport) -> ScreenVertex {
     // (LUT + Newton-Raphson) for bit-exact matching. This f32
     // intermediate is a placeholder that gets the algorithm right
     // but may differ by ±1 LSB from the hardware.
-    let w_f32: f32 = f32::from(v.clip_pos.w.to_num::<f32>());
+    let w_f32: f32 = v.clip_pos.w.to_num::<f32>();
     let w_recip_f32 = 1.0 / w_f32;
     let w_recip = WRecip::from_num(w_recip_f32.clamp(0.0, 0.999985));
 

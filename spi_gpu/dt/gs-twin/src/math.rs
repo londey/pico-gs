@@ -275,7 +275,7 @@ impl Mat4 {
     /// Matrix × Matrix multiply.
     pub fn mul(&self, rhs: &Mat4) -> Mat4 {
         let mut out = [[0i32; 4]; 4];
-        for c in 0..4 {
+        for (c, out_col) in out.iter_mut().enumerate() {
             let rhs_col = Vec4 {
                 x: rhs.elem(c, 0),
                 y: rhs.elem(c, 1),
@@ -283,10 +283,10 @@ impl Mat4 {
                 w: rhs.elem(c, 3),
             };
             let result = self.transform(rhs_col);
-            out[c][0] = result.x.to_bits();
-            out[c][1] = result.y.to_bits();
-            out[c][2] = result.z.to_bits();
-            out[c][3] = result.w.to_bits();
+            out_col[0] = result.x.to_bits();
+            out_col[1] = result.y.to_bits();
+            out_col[2] = result.z.to_bits();
+            out_col[3] = result.w.to_bits();
         }
         Mat4 { cols: out }
     }

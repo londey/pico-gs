@@ -2,9 +2,8 @@
 
 ## Key Rules
 
-<!-- - `./build.sh` must pass after every change (builds all software, runs all tests). -->
-- `./build.sh` must be run after every change (builds all software, runs all tests).
-- Avoid making board changes beyond what is asked for without explicit approval
+- `./build.sh --check` must pass after every change (Verilator lint, cargo fmt, cargo check, cargo clippy).
+- Minimize blast radius: only change code directly related to the current task. If you notice problems in other areas, mention them but don't fix them without approval.
 - `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
 - `registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `registers/scripts/generate.sh` is what code must reference for register values and constants.
 - All code follows its respective style guide:

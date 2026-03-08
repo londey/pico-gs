@@ -15,6 +15,7 @@
 //! - UNIT-003 (Register File)
 //! - INT-021 (Render Command Format)
 
+use crate::cmd::DepthFunc;
 use crate::mem::GpuMemory;
 use crate::pipeline::rasterize;
 
@@ -32,7 +33,10 @@ pub const ADDR_VERTEX_NOKICK: u8 = 0x06;
 /// VERTEX_KICK_012: store vertex + trigger rasterization (0-1-2 winding).
 pub const ADDR_VERTEX_KICK_012: u8 = 0x07;
 
-/// RENDER_MODE: `[0]=GOURAUD_EN, [2]=Z_TEST_EN, [3]=Z_WRITE_EN, [4]=COLOR_WRITE_EN`.
+/// VERTEX_KICK_021: store vertex + trigger rasterization (0-2-1 winding, reversed).
+pub const ADDR_VERTEX_KICK_021: u8 = 0x08;
+
+/// RENDER_MODE: `[0]=GOURAUD_EN, [2]=Z_TEST_EN, [3]=Z_WRITE_EN, [4]=COLOR_WRITE_EN, [15:13]=Z_COMPARE`.
 pub const ADDR_RENDER_MODE: u8 = 0x30;
 
 /// FB_CONFIG: `[15:0]=color_base, [31:16]=z_base, [35:32]=width_log2, [39:36]=height_log2`.
@@ -104,44 +108,52 @@ impl VertexSlot {
 // ── Render mode flags ────────────────────────────────────────────────────────
 
 /// Render mode register bit fields (from INT-010 / register_file.sv).
+///
+/// Z compare function codes (from early_z.sv localparams):
+///   `3'b000` = LESS, `3'b001` = LEQUAL, `3'b010` = EQUAL,
+///   `3'b011` = GEQUAL, `3'b100` = GREATER, `3'b101` = NOTEQUAL,
+///   `3'b110` = ALWAYS, `3'b111` = NEVER.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderMode {
     pub gouraud_en: bool,
     pub z_test_en: bool,
     pub z_write_en: bool,
     pub color_write_en: bool,
+    /// Z compare function, bits [15:13].
+    pub z_compare: DepthFunc,
 }
 
 impl RenderMode {
     fn from_bits(data: u64) -> Self {
+        let z_cmp_code = ((data >> 13) & 0x7) as u8;
         Self {
             gouraud_en: (data & (1 << 0)) != 0,
             z_test_en: (data & (1 << 2)) != 0,
             z_write_en: (data & (1 << 3)) != 0,
             color_write_en: (data & (1 << 4)) != 0,
+            z_compare: match z_cmp_code {
+                0 => DepthFunc::Less,
+                1 => DepthFunc::LessEqual,
+                2 => DepthFunc::Equal,
+                3 => DepthFunc::GreaterEqual,
+                4 => DepthFunc::Greater,
+                5 => DepthFunc::NotEqual,
+                6 => DepthFunc::Always,
+                7 => DepthFunc::Never,
+                _ => unreachable!(),
+            },
         }
     }
 }
 
 // ── Scissor rectangle ────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Scissor {
     pub x: u16,
     pub y: u16,
     pub width: u16,
     pub height: u16,
-}
-
-impl Default for Scissor {
-    fn default() -> Self {
-        Self {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-        }
-    }
 }
 
 // ── Register file state ──────────────────────────────────────────────────────
@@ -150,6 +162,7 @@ impl Default for Scissor {
 ///
 /// Maintains vertex buffers, current color/UV latches, framebuffer
 /// configuration, render mode, and scissor state.
+#[derive(Default)]
 pub struct RegisterFile {
     /// 3 vertex slots (filled by NOKICK/KICK writes).
     vertices: [VertexSlot; 3],
@@ -176,23 +189,6 @@ pub struct RegisterFile {
     pub render_mode: RenderMode,
 }
 
-impl Default for RegisterFile {
-    fn default() -> Self {
-        Self {
-            vertices: [VertexSlot::default(); 3],
-            vertex_count: 0,
-            current_color0: 0,
-            current_uv01: 0,
-            fb_width_log2: 0,
-            fb_height_log2: 0,
-            fb_color_base: 0,
-            fb_z_base: 0,
-            scissor: Scissor::default(),
-            render_mode: RenderMode::default(),
-        }
-    }
-}
-
 impl RegisterFile {
     /// Process a single register write (addr + 64-bit data).
     ///
@@ -216,7 +212,13 @@ impl RegisterFile {
             ADDR_VERTEX_KICK_012 => {
                 self.latch_vertex(data);
                 self.vertex_count = (self.vertex_count + 1) % 3;
-                self.kick_012(memory);
+                self.kick(WindingOrder::V012, memory);
+            }
+
+            ADDR_VERTEX_KICK_021 => {
+                self.latch_vertex(data);
+                self.vertex_count = (self.vertex_count + 1) % 3;
+                self.kick(WindingOrder::V021, memory);
             }
 
             ADDR_RENDER_MODE => {
@@ -270,51 +272,48 @@ impl RegisterFile {
         slot.uv1 = ((self.current_uv01 >> 32) & 0xFFFF_FFFF) as u32;
     }
 
-    /// Trigger rasterization with winding order (0, 1, 2).
+    /// Trigger rasterization with the given winding order.
     ///
-    /// Matches RTL register_file.sv ADDR_VERTEX_KICK_012:
-    /// - tri[0] = vertex_slot[0]
-    /// - tri[1] = vertex_slot[1]
-    /// - tri[2] = current vertex data (just latched)
-    fn kick_012(&mut self, memory: &mut GpuMemory) {
-        // Build the rasterizer input triangle from the 3 vertex slots
-        // Note: KICK_012 outputs (slot[0], slot[1], just-latched).
-        // The just-latched vertex was stored at vertex_count-1 (before increment).
-        let kick_idx = if self.vertex_count == 0 { 2 } else { self.vertex_count - 1 };
-        let tri_slots = [
-            self.vertices[0],
-            self.vertices[1],
-            self.vertices[kick_idx],
-        ];
+    /// KICK_012: (slot[0], slot[1], just-latched) — CCW winding.
+    /// KICK_021: (slot[0], just-latched, slot[1]) — reversed (CW→CCW).
+    fn kick(&mut self, winding: WindingOrder, memory: &mut GpuMemory) {
+        let kick_idx = if self.vertex_count == 0 {
+            2
+        } else {
+            self.vertex_count - 1
+        };
+        let tri_slots = match winding {
+            WindingOrder::V012 => [self.vertices[0], self.vertices[1], self.vertices[kick_idx]],
+            WindingOrder::V021 => [self.vertices[0], self.vertices[kick_idx], self.vertices[1]],
+        };
 
         let fb_width = 1u32 << self.fb_width_log2;
         let fb_height = 1u32 << self.fb_height_log2;
 
         // Scissor clamp for bounding box
-        let scissor_max_x = self.scissor.x.saturating_add(self.scissor.width).min(fb_width as u16);
-        let scissor_max_y = self.scissor.y.saturating_add(self.scissor.height).min(fb_height as u16);
+        let scissor_max_x = self
+            .scissor
+            .x
+            .saturating_add(self.scissor.width)
+            .min(fb_width as u16);
+        let scissor_max_y = self
+            .scissor
+            .y
+            .saturating_add(self.scissor.height)
+            .min(fb_height as u16);
 
-        // Build integer-pixel triangle for the rasterizer
+        let make_vert = |s: &VertexSlot| rasterize::IntVertex {
+            px: s.pixel_x(),
+            py: s.pixel_y(),
+            z: s.z,
+            color0: s.color0,
+        };
+
         let tri = rasterize::IntTriangle {
             verts: [
-                rasterize::IntVertex {
-                    px: tri_slots[0].pixel_x(),
-                    py: tri_slots[0].pixel_y(),
-                    z: tri_slots[0].z,
-                    color0: tri_slots[0].color0,
-                },
-                rasterize::IntVertex {
-                    px: tri_slots[1].pixel_x(),
-                    py: tri_slots[1].pixel_y(),
-                    z: tri_slots[1].z,
-                    color0: tri_slots[1].color0,
-                },
-                rasterize::IntVertex {
-                    px: tri_slots[2].pixel_x(),
-                    py: tri_slots[2].pixel_y(),
-                    z: tri_slots[2].z,
-                    color0: tri_slots[2].color0,
-                },
+                make_vert(&tri_slots[0]),
+                make_vert(&tri_slots[1]),
+                make_vert(&tri_slots[2]),
             ],
             bbox_min_x: 0,
             bbox_max_x: scissor_max_x.saturating_sub(1),
@@ -323,22 +322,47 @@ impl RegisterFile {
             gouraud_en: self.render_mode.gouraud_en,
         };
 
-        // Rasterize and write fragments
+        // Rasterize and write fragments with optional Z-test
         let fragments = rasterize::rasterize_int_triangle(&tri);
+        let rm = &self.render_mode;
         for frag in &fragments {
-            if frag.x as u32 >= memory.framebuffer.width
-                || frag.y as u32 >= memory.framebuffer.height
-            {
-                continue;
-            }
-
-            if self.render_mode.color_write_en {
-                memory
-                    .framebuffer
-                    .put_pixel(frag.x as u32, frag.y as u32, frag.color);
-            }
+            self.write_fragment(frag, rm, memory);
         }
     }
+
+    /// Write a single fragment to the framebuffer with optional Z-test.
+    fn write_fragment(
+        &self,
+        frag: &rasterize::IntFragment,
+        rm: &RenderMode,
+        memory: &mut GpuMemory,
+    ) {
+        let (fx, fy) = (frag.x as u32, frag.y as u32);
+        if fx >= memory.framebuffer.width || fy >= memory.framebuffer.height {
+            return;
+        }
+
+        // Early Z-test (matching early_z.sv)
+        if rm.z_test_en {
+            if !memory.raw_zbuf.test_and_set(fx, fy, frag.z, rm.z_compare) {
+                return;
+            }
+        } else if rm.z_write_en {
+            memory.raw_zbuf.set(fx, fy, frag.z);
+        }
+
+        if rm.color_write_en {
+            memory.framebuffer.put_pixel(fx, fy, frag.color);
+        }
+    }
+}
+
+/// Winding order for vertex kick.
+enum WindingOrder {
+    /// (slot[0], slot[1], just-latched) — standard CCW.
+    V012,
+    /// (slot[0], just-latched, slot[1]) — reversed for back-facing triangles.
+    V021,
 }
 
 /// A single register write command (matching the RTL's 72-bit SPI frame).

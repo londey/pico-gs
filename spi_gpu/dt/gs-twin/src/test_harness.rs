@@ -141,7 +141,7 @@ pub fn save_diff_image(
 pub fn single_triangle_scene() -> (Vec<GpuCommand>, Vec<Vertex>) {
     let commands = vec![
         GpuCommand::ClearColor(Rgb565::from_rgb8(0, 0, 32)), // dark blue
-        GpuCommand::ClearDepth(0x7FFF),                       // Q4.12 max positive
+        GpuCommand::ClearDepth(0x7FFF),                      // Q4.12 max positive
         GpuCommand::SetMvpMatrix(crate::math::Mat4::identity()),
         GpuCommand::SetViewport {
             x: 0,

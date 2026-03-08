@@ -48,10 +48,7 @@ pub enum GpuCommand {
     },
 
     /// Load index data for indexed draw calls.
-    LoadIndices {
-        base_addr: u32,
-        indices: Vec<u16>,
-    },
+    LoadIndices { base_addr: u32, indices: Vec<u16> },
 
     /// Load a texture into SRAM.
     LoadTexture {
@@ -72,10 +69,7 @@ pub enum GpuCommand {
     BindTexture(u8),
 
     /// Draw non-indexed triangles from loaded vertex data.
-    DrawArrays {
-        base_addr: u32,
-        vertex_count: u32,
-    },
+    DrawArrays { base_addr: u32, vertex_count: u32 },
 
     /// Draw indexed triangles.
     DrawIndexed {

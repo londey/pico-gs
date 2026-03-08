@@ -18,14 +18,29 @@ OUTPUT_DIR="${REPO_ROOT}/build"
 
 # Default build targets
 BUILD_FPGA=true
+BUILD_DT=true
 BUILD_TEST=true
 FLASH_FPGA=false
 CLEAN=false
+DT_ONLY=false
+CHECK_ONLY=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --fpga-only)
+            BUILD_DT=false
+            BUILD_TEST=false
+            shift
+            ;;
+        --dt-only)
+            DT_ONLY=true
+            BUILD_FPGA=false
+            BUILD_TEST=false
+            shift
+            ;;
+        --check)
+            CHECK_ONLY=true
             shift
             ;;
         --test-only)
@@ -34,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-test)
             BUILD_TEST=false
+            shift
+            ;;
+        --no-dt)
+            BUILD_DT=false
             shift
             ;;
         --clean)
@@ -48,14 +67,17 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --fpga-only         Build only FPGA bitstream"
+            echo "  --fpga-only         Build only FPGA bitstream (skip DT and RTL tests)"
+            echo "  --check             Quick check: Verilator lint, cargo fmt, cargo check, cargo clippy"
+            echo "  --dt-only           Build and test digital twin only"
             echo "  --test-only         Run tests only (skip FPGA build)"
-            echo "  --no-test           Skip tests (build only)"
+            echo "  --no-test           Skip RTL tests (build only)"
+            echo "  --no-dt             Skip digital twin build and tests"
             echo "  --clean             Clean build artifacts before building"
             echo "  --flash-fpga        Program FPGA after build"
             echo "  --help              Show this help message"
             echo ""
-            echo "Default: Build FPGA bitstream and run all tests"
+            echo "Default: Build FPGA bitstream, digital twin, and run all tests"
             exit 0
             ;;
         *)
@@ -76,6 +98,34 @@ if [ "$CLEAN" = true ]; then
     echo ""
 fi
 
+# Quick check mode: lint + cargo check + clippy, then exit
+if [ "$CHECK_ONLY" = true ]; then
+    echo -e "${YELLOW}[1/4] Verilator lint...${NC}"
+    cd "${SPI_GPU}"
+    make lint
+    echo -e "${GREEN}Verilator lint passed${NC}"
+    echo ""
+
+    echo -e "${YELLOW}[2/4] cargo fmt --check...${NC}"
+    cd "${REPO_ROOT}"
+    cargo fmt --check
+    echo -e "${GREEN}cargo fmt passed${NC}"
+    echo ""
+
+    echo -e "${YELLOW}[3/4] cargo check...${NC}"
+    cargo check
+    echo -e "${GREEN}cargo check passed${NC}"
+    echo ""
+
+    echo -e "${YELLOW}[4/4] cargo clippy...${NC}"
+    cargo clippy -- -D warnings
+    echo -e "${GREEN}cargo clippy passed${NC}"
+    echo ""
+
+    echo -e "${GREEN}=== Check Complete ===${NC}"
+    exit 0
+fi
+
 # Step 1: Build FPGA bitstream
 if [ "$BUILD_FPGA" = true ]; then
     echo -e "${YELLOW}[1/3] Building FPGA bitstream...${NC}"
@@ -92,18 +142,22 @@ if [ "$BUILD_FPGA" = true ]; then
 fi
 
 # Step 2: Digital twin build + tests
-echo -e "${YELLOW}[2/3] Building and testing digital twin (gs-twin)...${NC}"
-cd "${REPO_ROOT}"
-cargo build -p gs-twin -p gs-twin-cli
-cargo test -p gs-twin
-echo -e "${GREEN}Digital twin tests passed${NC}"
+if [ "$BUILD_DT" = true ]; then
+    echo -e "${YELLOW}[2/3] Building and testing digital twin (gs-twin)...${NC}"
+    cd "${REPO_ROOT}"
+    cargo build -p gs-twin -p gs-twin-cli
+    cargo test -p gs-twin
+    echo -e "${GREEN}Digital twin tests passed${NC}"
 
-# Generate golden reference images
-DT_OUT="${OUTPUT_DIR}/dt_out"
-mkdir -p "${DT_OUT}"
-cargo run -p gs-twin-cli -- render --scene ver_010 --output "${DT_OUT}/gouraud_triangle.png" --width 512 --height 480
-echo -e "${GREEN}Golden references generated in ${DT_OUT}/${NC}"
-echo ""
+    # Generate golden reference images for all passing scenes
+    DT_OUT="${OUTPUT_DIR}/dt_out"
+    mkdir -p "${DT_OUT}"
+    cargo run -p gs-twin-cli -- render --scene ver_010 --output "${DT_OUT}/ver_010_gouraud_triangle.png" --width 512 --height 480
+    cargo run -p gs-twin-cli -- render --scene ver_011 --output "${DT_OUT}/ver_011_depth_test.png" --width 512 --height 480
+    cargo run -p gs-twin-cli -- render --scene ver_015 --output "${DT_OUT}/ver_015_size_grid.png" --width 512 --height 480
+    echo -e "${GREEN}Golden references generated in ${DT_OUT}/${NC}"
+    echo ""
+fi
 
 # Step 3: RTL tests (lint + unit testbenches + golden image tests if approved)
 if [ "$BUILD_TEST" = true ]; then
