@@ -17,7 +17,7 @@
 //! as a Q0.16 unsigned value ([`WRecip`]).
 
 use crate::cmd::CullMode;
-use crate::math::{truncating_narrow, Coord, Depth, EdgeAccum, ScreenCoord, WRecip};
+use crate::math::{Coord, Depth, EdgeAccum, ScreenCoord, WRecip};
 use crate::pipeline::{ClipVertex, ScreenTriangle, ScreenVertex, Viewport};
 
 /// Clip, cull, and project three clip-space vertices to a screen-space triangle.
@@ -92,22 +92,22 @@ fn project_vertex(v: &ClipVertex, vp: &Viewport) -> ScreenVertex {
     // (LUT + Newton-Raphson) for bit-exact matching. This f32
     // intermediate is a placeholder that gets the algorithm right
     // but may differ by ±1 LSB from the hardware.
-    let w_f32: f32 = v.clip_pos.w.to_num::<f32>();
+    let w_f32 = v.clip_pos.w.to_f64() as f32;
     let w_recip_f32 = 1.0 / w_f32;
-    let w_recip = WRecip::from_num(w_recip_f32.clamp(0.0, 0.999985));
+    let w_recip = WRecip::from_f64(w_recip_f32.clamp(0.0, 0.999985) as f64);
 
     // ── NDC: clip × (1/w) ───────────────────────────────────────────
     // Widen 1/w to Coord for multiplication.
-    let w_recip_wide = Coord::from_num(w_recip);
+    let w_recip_wide: Coord = w_recip.to_signed();
     let ndc_x = v.clip_pos.x.wrapping_mul(w_recip_wide);
     let ndc_y = v.clip_pos.y.wrapping_mul(w_recip_wide);
     let ndc_z = v.clip_pos.z.wrapping_mul(w_recip_wide);
 
     // ── Viewport transform → Q12.4 screen coords ───────────────────
-    let half_w = Coord::from_num(vp.width >> 1);
-    let half_h = Coord::from_num(vp.height >> 1);
-    let vp_x = Coord::from_num(vp.x);
-    let vp_y = Coord::from_num(vp.y);
+    let half_w = Coord::from_int((vp.width >> 1) as i64);
+    let half_h = Coord::from_int((vp.height >> 1) as i64);
+    let vp_x = Coord::from_int(vp.x as i64);
+    let vp_y = Coord::from_int(vp.y as i64);
 
     // screen_x = vp.x + half_w + ndc_x * half_w
     let sx = vp_x
@@ -123,11 +123,11 @@ fn project_vertex(v: &ClipVertex, vp: &Viewport) -> ScreenVertex {
     // depth = (ndc_z + 1) / 2
     let ndc_z_plus_one = ndc_z.wrapping_add(Coord::ONE);
     let depth_coord = ndc_z_plus_one >> 1u32; // divide by 2
-    let depth: Depth = truncating_narrow(depth_coord);
+    let depth: Depth = depth_coord.truncate();
 
     ScreenVertex {
-        x: truncating_narrow(sx),
-        y: truncating_narrow(sy),
+        x: sx.truncate(),
+        y: sy.truncate(),
         z: depth,
         w_recip,
         uv: v.uv,
@@ -154,10 +154,10 @@ pub(crate) fn edge_function(
     py: ScreenCoord,
 ) -> EdgeAccum {
     // Widen to EdgeAccum (Q16.16) before multiply to match RTL precision
-    let dx1 = EdgeAccum::from(v1x) - EdgeAccum::from(v0x);
-    let dy_p = EdgeAccum::from(py) - EdgeAccum::from(v0y);
-    let dy1 = EdgeAccum::from(v1y) - EdgeAccum::from(v0y);
-    let dx_p = EdgeAccum::from(px) - EdgeAccum::from(v0x);
+    let dx1 = v1x.widen::<16, 16>() - v0x.widen::<16, 16>();
+    let dy_p = py.widen::<16, 16>() - v0y.widen::<16, 16>();
+    let dy1 = v1y.widen::<16, 16>() - v0y.widen::<16, 16>();
+    let dx_p = px.widen::<16, 16>() - v0x.widen::<16, 16>();
 
     dx1.wrapping_mul(dy_p).wrapping_sub(dy1.wrapping_mul(dx_p))
 }

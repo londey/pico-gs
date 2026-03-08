@@ -134,7 +134,7 @@ impl DepthBuffer {
     }
 
     pub fn clear_raw(&mut self, raw_value: u16) {
-        let depth = Depth::from_bits(raw_value as i16);
+        let depth = Depth::from_bits(raw_value as i16 as i64);
         self.values.fill(depth);
     }
 
@@ -206,8 +206,8 @@ impl TextureStore {
         };
 
         // Wrap to [0, 1): mask off integer bits, keep 14 fractional bits
-        let u_frac = u.to_bits() & 0x3FFF; // 14-bit fractional part
-        let v_frac = v.to_bits() & 0x3FFF;
+        let u_frac = (u.to_bits() as i16) & 0x3FFF; // 14-bit fractional part
+        let v_frac = (v.to_bits() as i16) & 0x3FFF;
 
         // Texel address: (frac × dimension) >> 14
         // This is a Q0.14 × u16 multiply, yielding the integer texel index.

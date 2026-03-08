@@ -24,7 +24,7 @@
 //! target format. The truncation discards low fractional bits (toward
 //! zero), matching Verilog's default behavior for sized assignments.
 
-use fixed::types::{I12F4, I16F16, I2F14, I4F12, U0F16, U1F7};
+use qfixed::{Q, UQ};
 use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 /// Matrix elements are loaded as 32-bit register writes. The vertex
 /// transform MAC chain uses MULT18X18D with the full 32-bit operand
 /// split across two 18-bit multiplier inputs.
-pub type Coord = I16F16;
+pub type Coord = Q<16, 16>;
 
 /// **Multiply-accumulate intermediate: Q16.16 (same width, used for clarity)**
 ///
@@ -51,7 +51,7 @@ pub type Coord = I16F16;
 ///
 /// TODO: If your RTL uses a wider accumulator (e.g. ALU54B cascade),
 /// change this to I24F24 or similar and adjust truncation points.
-pub type MulAccum = I16F16;
+pub type MulAccum = Q<16, 16>;
 
 /// **Screen-space coordinate: Q12.4 (16-bit signed)**
 ///
@@ -62,7 +62,7 @@ pub type MulAccum = I16F16;
 /// # RTL Implementation Notes
 /// The viewport transform outputs 16-bit values. The rasterizer's
 /// edge function evaluator operates on these directly.
-pub type ScreenCoord = I12F4;
+pub type ScreenCoord = Q<12, 4>;
 
 /// **Depth / Z-buffer: Q4.12 (16-bit signed)**
 ///
@@ -73,7 +73,7 @@ pub type ScreenCoord = I12F4;
 /// # RTL Implementation Notes
 /// Z-buffer is a 16-bit-wide SRAM region. Depth comparison is a
 /// simple 16-bit signed comparison in the fragment stage.
-pub type Depth = I4F12;
+pub type Depth = Q<4, 12>;
 
 /// **Barycentric / edge function accumulator: Q16.16 (32-bit signed)**
 ///
@@ -84,7 +84,7 @@ pub type Depth = I4F12;
 /// Edge function evaluation uses MULT18X18D for the cross products.
 /// The 36-bit result is truncated to 32 bits (Q16.16) for the
 /// inside/outside test and barycentric normalization.
-pub type EdgeAccum = I16F16;
+pub type EdgeAccum = Q<16, 16>;
 
 /// **Texture coordinate: Q2.14 (16-bit signed)**
 ///
@@ -96,7 +96,7 @@ pub type EdgeAccum = I16F16;
 /// Texture coordinates are interpolated in the rasterizer using the
 /// same MULT18X18D + accumulate path as barycentrics. Wrapping to
 /// [0, 1) is a simple bitmask on the fractional part.
-pub type TexCoord = I2F14;
+pub type TexCoord = Q<2, 14>;
 
 /// **Reciprocal W: Q0.16 (16-bit unsigned)**
 ///
@@ -107,7 +107,7 @@ pub type TexCoord = I2F14;
 /// 1/w is computed by the host (RP2350) or via a lookup table +
 /// Newton-Raphson iteration in the clip stage. The RTL receives
 /// this as a pre-computed 16-bit value per vertex.
-pub type WRecip = U0F16;
+pub type WRecip = UQ<0, 16>;
 
 /// **Color channel: Q1.7 (8-bit unsigned)**
 ///
@@ -119,41 +119,7 @@ pub type WRecip = U0F16;
 /// Vertex colors arrive as RGB565. For interpolation, each channel is
 /// expanded: R5→Q1.7 (shift left 2), G6→Q1.7 (shift left 1),
 /// B5→Q1.7 (shift left 2). After interpolation, truncate back to 5/6/5.
-pub type ColorChannel = U1F7;
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Truncation helpers — model RTL's sized assignment behavior
-// ═══════════════════════════════════════════════════════════════════════════
-
-/// Truncate a wide fixed-point value to a narrower format.
-///
-/// This models Verilog's behavior when assigning a wider wire to a
-/// narrower register: low fractional bits are discarded (truncation
-/// toward zero), and high integer bits are silently lost (wrapping).
-///
-/// Use [`saturating_narrow`] when the RTL uses explicit saturation.
-///
-/// # RTL Implementation Notes
-/// Default Verilog assignment truncates. If a module uses explicit
-/// saturation logic, use [`saturating_narrow`] instead.
-pub fn truncating_narrow<Src, Dst>(src: Src) -> Dst
-where
-    Src: fixed::traits::Fixed,
-    Dst: fixed::traits::Fixed + fixed::traits::FromFixed,
-{
-    Dst::wrapping_from_fixed(src)
-}
-
-/// Narrow with saturation (clamp to destination range).
-///
-/// Use when the RTL explicitly saturates (e.g. depth clamped to [0, max]).
-pub fn saturating_narrow<Src, Dst>(src: Src) -> Dst
-where
-    Src: fixed::traits::Fixed,
-    Dst: fixed::traits::Fixed + fixed::traits::FromFixed,
-{
-    Dst::saturating_from_fixed(src)
-}
+pub type ColorChannel = UQ<1, 7>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Vector / matrix types — fixed-point throughout
@@ -215,7 +181,7 @@ impl Default for Mat4 {
 impl Mat4 {
     /// Identity matrix in Q16.16.
     pub fn identity() -> Self {
-        let one = Coord::ONE.to_bits();
+        let one = Coord::ONE.to_bits() as i32;
         let zero = 0i32;
         Self {
             cols: [
@@ -233,7 +199,7 @@ impl Mat4 {
         let mut out = [[0i32; 4]; 4];
         for c in 0..4 {
             for r in 0..4 {
-                out[c][r] = Coord::from_num(cols[c][r]).to_bits();
+                out[c][r] = Coord::from_f64(cols[c][r] as f64).to_bits() as i32;
             }
         }
         Self { cols: out }
@@ -242,7 +208,7 @@ impl Mat4 {
     /// Read an element as a [`Coord`].
     #[inline]
     fn elem(&self, col: usize, row: usize) -> Coord {
-        Coord::from_bits(self.cols[col][row])
+        Coord::from_bits(self.cols[col][row] as i64)
     }
 
     /// Matrix × Vec4 multiply.
@@ -283,10 +249,10 @@ impl Mat4 {
                 w: rhs.elem(c, 3),
             };
             let result = self.transform(rhs_col);
-            out_col[0] = result.x.to_bits();
-            out_col[1] = result.y.to_bits();
-            out_col[2] = result.z.to_bits();
-            out_col[3] = result.w.to_bits();
+            out_col[0] = result.x.to_bits() as i32;
+            out_col[1] = result.y.to_bits() as i32;
+            out_col[2] = result.z.to_bits() as i32;
+            out_col[3] = result.w.to_bits() as i32;
         }
         Mat4 { cols: out }
     }
@@ -341,9 +307,9 @@ impl Rgb565 {
         let g6 = ((self.0 >> 5) & 0x3F) as u8;
         let b5 = (self.0 & 0x1F) as u8;
         (
-            ColorChannel::from_bits(r5 << 2),
-            ColorChannel::from_bits(g6 << 1),
-            ColorChannel::from_bits(b5 << 2),
+            ColorChannel::from_bits((r5 << 2) as u64),
+            ColorChannel::from_bits((g6 << 1) as u64),
+            ColorChannel::from_bits((b5 << 2) as u64),
         )
     }
 
@@ -351,9 +317,9 @@ impl Rgb565 {
     ///
     /// Truncates each channel: R takes bits [6:2], G takes [6:1], B takes [6:2].
     pub fn from_channels(r: ColorChannel, g: ColorChannel, b: ColorChannel) -> Self {
-        let r5 = (r.to_bits() >> 2) as u16;
-        let g6 = (g.to_bits() >> 1) as u16;
-        let b5 = (b.to_bits() >> 2) as u16;
+        let r5 = ((r.to_bits() as u8) >> 2) as u16;
+        let g6 = ((g.to_bits() as u8) >> 1) as u16;
+        let b5 = ((b.to_bits() as u8) >> 2) as u16;
         Self((r5 << 11) | (g6 << 5) | b5)
     }
 }
@@ -366,10 +332,10 @@ impl Vec4 {
     /// Construct from f32 values (quantizes to Q16.16).
     pub fn from_f32(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self {
-            x: Coord::from_num(x),
-            y: Coord::from_num(y),
-            z: Coord::from_num(z),
-            w: Coord::from_num(w),
+            x: Coord::from_f64(x as f64),
+            y: Coord::from_f64(y as f64),
+            z: Coord::from_f64(z as f64),
+            w: Coord::from_f64(w as f64),
         }
     }
 }
@@ -378,9 +344,9 @@ impl Vec3 {
     /// Construct from f32 values (quantizes to Q16.16).
     pub fn from_f32(x: f32, y: f32, z: f32) -> Self {
         Self {
-            x: Coord::from_num(x),
-            y: Coord::from_num(y),
-            z: Coord::from_num(z),
+            x: Coord::from_f64(x as f64),
+            y: Coord::from_f64(y as f64),
+            z: Coord::from_f64(z as f64),
         }
     }
 }
@@ -389,8 +355,8 @@ impl TexVec2 {
     /// Construct from f32 values (quantizes to Q2.14).
     pub fn from_f32(u: f32, v: f32) -> Self {
         Self {
-            u: TexCoord::from_num(u),
-            v: TexCoord::from_num(v),
+            u: TexCoord::from_f64(u as f64),
+            v: TexCoord::from_f64(v as f64),
         }
     }
 }

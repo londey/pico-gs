@@ -57,9 +57,9 @@ mod tests {
             color: Rgb565(0),
         };
         let result = transform(&v, &Mat4::identity());
-        assert_eq!(result.clip_pos.x, Coord::from_num(1.0));
-        assert_eq!(result.clip_pos.y, Coord::from_num(2.0));
-        assert_eq!(result.clip_pos.z, Coord::from_num(3.0));
+        assert_eq!(result.clip_pos.x, Coord::from_f64(1.0));
+        assert_eq!(result.clip_pos.y, Coord::from_f64(2.0));
+        assert_eq!(result.clip_pos.z, Coord::from_f64(3.0));
         assert_eq!(result.clip_pos.w, Coord::ONE);
     }
 
@@ -78,9 +78,9 @@ mod tests {
             color: Rgb565(0),
         };
         let result = transform(&v, &mat);
-        assert_eq!(result.clip_pos.x, Coord::from_num(11.0));
-        assert_eq!(result.clip_pos.y, Coord::from_num(22.0));
-        assert_eq!(result.clip_pos.z, Coord::from_num(33.0));
+        assert_eq!(result.clip_pos.x, Coord::from_f64(11.0));
+        assert_eq!(result.clip_pos.y, Coord::from_f64(22.0));
+        assert_eq!(result.clip_pos.z, Coord::from_f64(33.0));
         assert_eq!(result.clip_pos.w, Coord::ONE);
     }
 }

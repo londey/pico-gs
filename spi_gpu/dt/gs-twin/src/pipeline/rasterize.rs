@@ -19,9 +19,7 @@
 //! step) rather than recomputing from scratch per pixel. Both produce
 //! identical results; the twin uses per-pixel evaluation for clarity.
 
-use crate::math::{
-    truncating_narrow, Bary3, ColorChannel, Depth, EdgeAccum, Rgb565, ScreenCoord, TexVec2, WRecip,
-};
+use crate::math::{Bary3, ColorChannel, Depth, EdgeAccum, Rgb565, ScreenCoord, TexVec2, WRecip};
 use crate::pipeline::clip::edge_function;
 use crate::pipeline::{Fragment, ScreenTriangle};
 use crate::reg::Rgba8888;
@@ -66,8 +64,8 @@ pub fn rasterize_triangle(tri: &ScreenTriangle) -> Vec<Fragment> {
     for py in px_min_y..=px_max_y {
         for px in px_min_x..=px_max_x {
             // Pixel center in Q12.4: integer part shifted, + 0.5 (= 8 in Q12.4)
-            let cx = ScreenCoord::from_num(px) + ScreenCoord::from_bits(8);
-            let cy = ScreenCoord::from_num(py) + ScreenCoord::from_bits(8);
+            let cx = ScreenCoord::from_int(px as i64) + ScreenCoord::from_bits(8);
+            let cy = ScreenCoord::from_int(py as i64) + ScreenCoord::from_bits(8);
 
             // Edge functions (= barycentric weights × 2·area)
             let w0 = edge_function(v1.x, v1.y, v2.x, v2.y, cx, cy);
@@ -96,14 +94,14 @@ pub fn rasterize_triangle(tri: &ScreenTriangle) -> Vec<Fragment> {
             // ── Depth: linear interpolation in screen space ─────
             // Z was already divided by W during viewport transform,
             // so linear interpolation of Z is correct.
-            let z0 = EdgeAccum::from(v0.z);
-            let z1 = EdgeAccum::from(v1.z);
-            let z2 = EdgeAccum::from(v2.z);
+            let z0: EdgeAccum = v0.z.widen();
+            let z1: EdgeAccum = v1.z.widen();
+            let z2: EdgeAccum = v2.z.widen();
             let z_interp = b0
                 .wrapping_mul(z0)
                 .wrapping_add(b1.wrapping_mul(z1))
                 .wrapping_add(b2.wrapping_mul(z2));
-            let depth: Depth = truncating_narrow(z_interp);
+            let depth: Depth = z_interp.truncate();
 
             // ── Perspective-correct UV interpolation ────────────
             // UV/w is linear in screen space. Interpolate UV/w and
@@ -164,9 +162,9 @@ fn interpolate_uv_perspective(
     uv2: &TexVec2,
 ) -> TexVec2 {
     // Widen all operands to EdgeAccum (Q16.16) for intermediate math
-    let wr0 = EdgeAccum::from_num(w0);
-    let wr1 = EdgeAccum::from_num(w1);
-    let wr2 = EdgeAccum::from_num(w2);
+    let wr0: EdgeAccum = w0.to_signed();
+    let wr1: EdgeAccum = w1.to_signed();
+    let wr2: EdgeAccum = w2.to_signed();
 
     // Denominator: sum of b_i / w_i = sum of b_i × (1/w_i)
     let denom = b0
@@ -178,12 +176,12 @@ fn interpolate_uv_perspective(
         return *uv0; // degenerate, return v0's UVs
     }
 
-    let u0 = EdgeAccum::from_num(uv0.u);
-    let u1 = EdgeAccum::from_num(uv1.u);
-    let u2 = EdgeAccum::from_num(uv2.u);
-    let v0 = EdgeAccum::from_num(uv0.v);
-    let v1 = EdgeAccum::from_num(uv1.v);
-    let v2 = EdgeAccum::from_num(uv2.v);
+    let u0: EdgeAccum = uv0.u.widen();
+    let u1: EdgeAccum = uv1.u.widen();
+    let u2: EdgeAccum = uv2.u.widen();
+    let v0: EdgeAccum = uv0.v.widen();
+    let v1: EdgeAccum = uv1.v.widen();
+    let v2: EdgeAccum = uv2.v.widen();
 
     // Numerator U: sum of b_i × u_i × (1/w_i)
     let num_u = b0
@@ -204,8 +202,8 @@ fn interpolate_uv_perspective(
     let v_result = num_v.wrapping_div(denom);
 
     TexVec2 {
-        u: truncating_narrow(u_result),
-        v: truncating_narrow(v_result),
+        u: u_result.truncate(),
+        v: v_result.truncate(),
     }
 }
 
@@ -238,11 +236,11 @@ fn interpolate_color(
 
     let interp_channel =
         |ch0: ColorChannel, ch1: ColorChannel, ch2: ColorChannel| -> ColorChannel {
-            let a = b0.wrapping_mul(EdgeAccum::from_num(ch0));
-            let b = b1.wrapping_mul(EdgeAccum::from_num(ch1));
-            let c = b2.wrapping_mul(EdgeAccum::from_num(ch2));
+            let a = b0.wrapping_mul(ch0.to_signed());
+            let b = b1.wrapping_mul(ch1.to_signed());
+            let c = b2.wrapping_mul(ch2.to_signed());
             let sum = a.wrapping_add(b).wrapping_add(c);
-            truncating_narrow(sum)
+            sum.to_unsigned()
         };
 
     let r = interp_channel(r0, r1, r2);
@@ -265,12 +263,12 @@ fn max3_screen(a: ScreenCoord, b: ScreenCoord, c: ScreenCoord) -> ScreenCoord {
 /// Floor a Q12.4 screen coord to integer pixel (extract integer part).
 fn screen_to_pixel_floor(s: ScreenCoord) -> i32 {
     // Q12.4: integer part is bits [15:4], fractional is [3:0]
-    s.to_bits() as i32 >> 4
+    (s.to_bits() as i16 as i32) >> 4
 }
 
 /// Ceil a Q12.4 screen coord to integer pixel.
 fn screen_to_pixel_ceil(s: ScreenCoord) -> i32 {
-    let bits = s.to_bits() as i32;
+    let bits = s.to_bits() as i16 as i32;
     let frac = bits & 0xF;
     let int = bits >> 4;
     if frac > 0 {
