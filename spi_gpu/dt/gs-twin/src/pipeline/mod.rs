@@ -29,7 +29,7 @@ pub mod vertex;
 
 use crate::cmd::{CullMode, DepthFunc};
 use crate::math::{
-    Bary3, Coord, Depth, EdgeAccum, Mat4, Rgb565, ScreenCoord, TexCoord, TexVec2, Vec4, WRecip,
+    Bary3, Depth, Mat4, Rgb565, ScreenCoord, TexVec2, Vec4, WRecip,
 };
 use serde::{Deserialize, Serialize};
 

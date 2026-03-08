@@ -8,7 +8,7 @@ description = "Bit-accurate transaction-level digital twin of the pico-gs FPGA g
 
 [dependencies]
 # Fixed-point arithmetic matching RTL Q formats
-fixed = "1"
+fixed = { version = "1", features = ["serde"] }
 
 # Image output for golden reference PNGs
 image = { version = "0.25", default-features = false, features = ["png"] }

@@ -7,6 +7,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use gs_twin::pipeline::command_proc;
+use gs_twin::reg::{self, RegWrite};
 use gs_twin::test_harness;
 use std::path::PathBuf;
 
@@ -70,17 +71,23 @@ fn main() -> Result<()> {
         } => {
             let mut gpu = gs_twin::Gpu::new(width, height);
 
-            let (commands, vertices) = match scene.as_str() {
-                "single_triangle" => test_harness::single_triangle_scene(),
-                other => anyhow::bail!("unknown scene: {other}"),
+            match scene.as_str() {
+                "single_triangle" => {
+                    let (commands, vertices) = test_harness::single_triangle_scene();
+                    gpu.execute(&commands);
+                    command_proc::draw_triangles(&vertices, &gpu.state, &mut gpu.memory);
+                }
+                "ver_010" => {
+                    let script = ver_010_script();
+                    gpu.reg_write_script(&script);
+                }
+                other => anyhow::bail!("unknown scene: {other}\navailable: single_triangle, ver_010"),
             };
 
-            gpu.execute(&commands);
-            command_proc::draw_triangles(&vertices, &gpu.state, &mut gpu.memory);
             gpu.framebuffer_to_png(&output)
                 .context("failed to write PNG")?;
 
-            println!("Rendered '{scene}' → {}", output.display());
+            println!("Rendered '{scene}' -> {}", output.display());
         }
 
         Commands::Diff {
@@ -142,4 +149,50 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+// ── VER-010 register write script ────────────────────────────────────────────
+
+fn pack_vertex(x: i32, y: i32, z: u16) -> u64 {
+    let x_q12_4 = (x * 16) as u16;
+    let y_q12_4 = (y * 16) as u16;
+    (z as u64) << 32 | (y_q12_4 as u64) << 16 | (x_q12_4 as u64)
+}
+
+fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
+    (r as u32) << 24 | (g as u32) << 16 | (b as u32) << 8 | (a as u32)
+}
+
+fn pack_color(diffuse: u32, specular: u32) -> u64 {
+    (diffuse as u64) << 32 | (specular as u64)
+}
+
+fn pack_fb_config(color_base: u16, z_base: u16, width_log2: u8, height_log2: u8) -> u64 {
+    ((height_log2 as u64) & 0xF) << 36
+        | ((width_log2 as u64) & 0xF) << 32
+        | (z_base as u64) << 16
+        | (color_base as u64)
+}
+
+fn pack_fb_control(x: u16, y: u16, width: u16, height: u16) -> u64 {
+    ((height & 0x3FF) as u64) << 30
+        | ((width & 0x3FF) as u64) << 20
+        | ((y & 0x3FF) as u64) << 10
+        | ((x & 0x3FF) as u64)
+}
+
+fn ver_010_script() -> Vec<RegWrite> {
+    let render_mode_gouraud_color: u64 = (1 << 0) | (1 << 4);
+    vec![
+        RegWrite { addr: reg::ADDR_FB_CONFIG, data: pack_fb_config(0, 0, 9, 9) },
+        RegWrite { addr: reg::ADDR_FB_CONTROL, data: pack_fb_control(0, 0, 512, 480) },
+        RegWrite { addr: reg::ADDR_RENDER_MODE, data: render_mode_gouraud_color },
+        RegWrite { addr: reg::ADDR_COLOR, data: pack_color(rgba(0xFF, 0, 0, 0xFF), 0xFF000000) },
+        RegWrite { addr: reg::ADDR_VERTEX_NOKICK, data: pack_vertex(256, 40, 0) },
+        RegWrite { addr: reg::ADDR_COLOR, data: pack_color(rgba(0, 0, 0xFF, 0xFF), 0xFF000000) },
+        RegWrite { addr: reg::ADDR_VERTEX_NOKICK, data: pack_vertex(448, 400, 0) },
+        RegWrite { addr: reg::ADDR_COLOR, data: pack_color(rgba(0, 0xFF, 0, 0xFF), 0xFF000000) },
+        RegWrite { addr: reg::ADDR_VERTEX_KICK_012, data: pack_vertex(64, 400, 0) },
+        RegWrite { addr: reg::ADDR_COLOR, data: 0 },
+    ]
 }

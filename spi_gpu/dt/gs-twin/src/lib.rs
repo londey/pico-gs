@@ -73,13 +73,20 @@ pub mod cmd;
 pub mod math;
 pub mod mem;
 pub mod pipeline;
+pub mod reg;
 pub mod test_harness;
 
 /// Top-level GPU model. Holds memory state and pipeline configuration.
-/// Feed it a command stream, get a framebuffer out.
+///
+/// Supports two interfaces:
+/// - **High-level**: `execute()` / `step()` with [`cmd::GpuCommand`] variants
+/// - **Low-level**: `reg_write()` with raw register addresses and data,
+///   matching the RTL's register_file.sv for bit-exact golden reference
 pub struct Gpu {
     pub state: pipeline::GpuState,
     pub memory: mem::GpuMemory,
+    /// Register file state for the low-level register-write interface.
+    pub regs: reg::RegisterFile,
 }
 
 impl Gpu {
@@ -88,19 +95,34 @@ impl Gpu {
         Self {
             state: pipeline::GpuState::default(),
             memory: mem::GpuMemory::new(width, height),
+            regs: reg::RegisterFile::default(),
         }
     }
 
-    /// Execute a complete command stream.
+    /// Execute a complete command stream (high-level GpuCommand interface).
     pub fn execute(&mut self, commands: &[cmd::GpuCommand]) {
         for command in commands {
             self.step(command);
         }
     }
 
-    /// Execute a single GPU command.
+    /// Execute a single GPU command (high-level interface).
     pub fn step(&mut self, command: &cmd::GpuCommand) {
         pipeline::command_proc::execute(command, &mut self.state, &mut self.memory);
+    }
+
+    /// Process a single register write (low-level RTL-matching interface).
+    ///
+    /// Each call mirrors one SPI register write as consumed by register_file.sv.
+    pub fn reg_write(&mut self, addr: u8, data: u64) {
+        self.regs.write(addr, data, &mut self.memory);
+    }
+
+    /// Process a sequence of register writes.
+    pub fn reg_write_script(&mut self, script: &[reg::RegWrite]) {
+        for rw in script {
+            self.reg_write(rw.addr, rw.data);
+        }
     }
 
     /// Export the current framebuffer as a PNG image.

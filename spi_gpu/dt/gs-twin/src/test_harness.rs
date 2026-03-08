@@ -11,7 +11,6 @@
 use crate::cmd::{GpuCommand, Vertex};
 use crate::math::{Rgb565, TexVec2, Vec3};
 use crate::mem::Framebuffer;
-use crate::Gpu;
 use std::path::Path;
 
 /// Result of comparing two framebuffers.

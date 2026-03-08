@@ -78,7 +78,7 @@ fi
 
 # Step 1: Build FPGA bitstream
 if [ "$BUILD_FPGA" = true ]; then
-    echo -e "${YELLOW}[1/2] Building FPGA bitstream...${NC}"
+    echo -e "${YELLOW}[1/3] Building FPGA bitstream...${NC}"
     cd "${SPI_GPU}"
     make bitstream
     FPGA_BITSTREAM="${REPO_ROOT}/build/fpga/gpu_top.bit"
@@ -91,9 +91,23 @@ if [ "$BUILD_FPGA" = true ]; then
     echo ""
 fi
 
-# Step 2: RTL tests (lint + unit testbenches + golden image tests if approved)
+# Step 2: Digital twin build + tests
+echo -e "${YELLOW}[2/3] Building and testing digital twin (gs-twin)...${NC}"
+cd "${REPO_ROOT}"
+cargo build -p gs-twin -p gs-twin-cli
+cargo test -p gs-twin
+echo -e "${GREEN}Digital twin tests passed${NC}"
+
+# Generate golden reference images
+DT_OUT="${OUTPUT_DIR}/dt_out"
+mkdir -p "${DT_OUT}"
+cargo run -p gs-twin-cli -- render --scene ver_010 --output "${DT_OUT}/gouraud_triangle.png" --width 512 --height 480
+echo -e "${GREEN}Golden references generated in ${DT_OUT}/${NC}"
+echo ""
+
+# Step 3: RTL tests (lint + unit testbenches + golden image tests if approved)
 if [ "$BUILD_TEST" = true ]; then
-    echo -e "${YELLOW}[2/2] Running RTL tests (lint + unit testbenches + golden image tests)...${NC}"
+    echo -e "${YELLOW}[3/3] Running RTL tests (lint + unit testbenches + golden image tests)...${NC}"
     cd "${SPI_GPU}"
     make test
     echo -e "${GREEN}RTL tests passed${NC}"
