@@ -8,8 +8,7 @@
 //! PSNR and per-channel diff metrics are provided as diagnostic tools
 //! to help localize where the mismatch occurs, not as pass/fail criteria.
 
-use crate::cmd::{GpuCommand, Vertex};
-use crate::math::{Rgb565, TexVec2, Vec3};
+use crate::math::Rgb565;
 use crate::mem::Framebuffer;
 use std::path::Path;
 
@@ -132,43 +131,4 @@ pub fn save_diff_image(
         }
     }
     img.save(path)
-}
-
-// ── Predefined test scenes ──────────────────────────────────────────────────
-
-/// A simple test scene: a single colored triangle in NDC.
-/// Useful as a smoke test that the full pipeline produces output.
-pub fn single_triangle_scene() -> (Vec<GpuCommand>, Vec<Vertex>) {
-    let commands = vec![
-        GpuCommand::ClearColor(Rgb565::from_rgb8(0, 0, 32)), // dark blue
-        GpuCommand::ClearDepth(0x7FFF),                      // Q4.12 max positive
-        GpuCommand::SetMvpMatrix(crate::math::Mat4::identity()),
-        GpuCommand::SetViewport {
-            x: 0,
-            y: 0,
-            width: 320,
-            height: 240,
-        },
-    ];
-
-    // Triangle in NDC (-1..1) mapping to center of screen
-    let vertices = vec![
-        Vertex {
-            position: Vec3::from_f32(0.0, 0.5, 0.0),
-            uv: TexVec2::from_f32(0.5, 0.0),
-            color: Rgb565::from_rgb8(255, 0, 0), // red
-        },
-        Vertex {
-            position: Vec3::from_f32(-0.5, -0.5, 0.0),
-            uv: TexVec2::from_f32(0.0, 1.0),
-            color: Rgb565::from_rgb8(0, 255, 0), // green
-        },
-        Vertex {
-            position: Vec3::from_f32(0.5, -0.5, 0.0),
-            uv: TexVec2::from_f32(1.0, 1.0),
-            color: Rgb565::from_rgb8(0, 0, 255), // blue
-        },
-    ];
-
-    (commands, vertices)
 }

@@ -1,43 +1,9 @@
 //! Integration tests: render known scenes and verify output.
 
 use gs_twin::hex_parser;
-use gs_twin::pipeline::command_proc;
 use gs_twin::test_harness;
 use gs_twin::Gpu;
 use std::path::Path;
-
-#[test]
-fn smoke_test_single_triangle() {
-    let mut gpu = Gpu::new(320, 240);
-
-    let (commands, vertices) = test_harness::single_triangle_scene();
-    gpu.execute(&commands);
-
-    // Draw the triangle (immediate mode for testing)
-    command_proc::draw_triangles(&vertices, &gpu.state, &mut gpu.memory);
-
-    // Verify: at least some pixels were written (not all background)
-    let bg = gs_twin::math::Rgb565::from_rgb8(0, 0, 32);
-    let non_bg_pixels = gpu
-        .memory
-        .framebuffer
-        .pixels
-        .iter()
-        .filter(|&&p| p != bg)
-        .count();
-
-    assert!(
-        non_bg_pixels > 100,
-        "expected triangle pixels, got only {} non-background pixels",
-        non_bg_pixels
-    );
-
-    // Save reference image for visual inspection
-    let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    std::fs::create_dir_all(&out_dir).unwrap();
-    gpu.framebuffer_to_png(&out_dir.join("single_triangle_ref.png"))
-        .unwrap();
-}
 
 #[test]
 fn exact_match_identical_framebuffers() {

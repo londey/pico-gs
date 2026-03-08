@@ -90,11 +90,13 @@ done
 echo -e "${GREEN}=== pico-gs Build System ===${NC}"
 echo ""
 
-# Clean build directory unless incremental
+# Clean build artifacts
 if [ "$CLEAN" = true ]; then
     echo -e "${YELLOW}Cleaning previous build artifacts...${NC}"
     cd "${SPI_GPU}"
     make clean
+    find "${OUTPUT_DIR}" -type f -delete 2>/dev/null || true
+    echo -e "${GREEN}Cleaned files in ${OUTPUT_DIR}/${NC}"
     echo ""
 fi
 

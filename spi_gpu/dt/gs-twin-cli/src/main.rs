@@ -1,14 +1,12 @@
 //! gs-twin CLI: render golden references and diff against Verilator output.
 //!
 //! Usage:
-//!   gs-twin-cli render --scene single_triangle --output ref.png
 //!   gs-twin-cli render --scene ver_010 --output ref.png --width 512 --height 480
 //!   gs-twin-cli diff --reference ref.png --actual verilator_dump.raw --width 320 --height 240
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use gs_twin::hex_parser;
-use gs_twin::pipeline::command_proc;
 use gs_twin::test_harness;
 use std::path::PathBuf;
 
@@ -98,11 +96,6 @@ fn main() -> Result<()> {
             let mut gpu = gs_twin::Gpu::new(width, height);
 
             match scene.as_str() {
-                "single_triangle" => {
-                    let (commands, vertices) = test_harness::single_triangle_scene();
-                    gpu.execute(&commands);
-                    command_proc::draw_triangles(&vertices, &gpu.state, &mut gpu.memory);
-                }
                 "ver_010" => {
                     render_hex_scene(scripts::VER_010, &mut gpu)?;
                 }
@@ -112,9 +105,9 @@ fn main() -> Result<()> {
                 "ver_015" => {
                     render_hex_scene(scripts::VER_015, &mut gpu)?;
                 }
-                other => anyhow::bail!(
-                    "unknown scene: {other}\navailable: single_triangle, ver_010, ver_011, ver_015"
-                ),
+                other => {
+                    anyhow::bail!("unknown scene: {other}\navailable: ver_010, ver_011, ver_015")
+                }
             };
 
             gpu.framebuffer_to_png(&output)
