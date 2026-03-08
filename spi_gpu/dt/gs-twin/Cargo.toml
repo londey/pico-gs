@@ -10,5 +10,8 @@ description = "Bit-accurate transaction-level digital twin of the pico-gs FPGA g
 # Fixed-point arithmetic matching RTL Q formats
 qfixed = { path = "../../../crates/qfixed" }
 
+# Generated register types and enums from gpu_regs.rdl (single source of truth)
+gpu-registers = { path = "../../../registers", default-features = false }
+
 # Image output for golden reference PNGs
 image = { version = "0.25", default-features = false, features = ["png"] }

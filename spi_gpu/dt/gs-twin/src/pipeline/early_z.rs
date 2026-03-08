@@ -12,8 +12,8 @@
 //! See UNIT-006, early_z.sv.
 
 use super::fragment::RasterFragment;
-use crate::cmd::DepthFunc;
 use crate::mem::RawZBuffer;
+use gpu_registers::components::z_compare_e::ZCompareE;
 
 /// Perform the early Z-buffer test.
 ///
@@ -34,7 +34,7 @@ pub fn early_z_test(
     _zbuf: &mut RawZBuffer,
     _z_test_en: bool,
     _z_write_en: bool,
-    _z_compare: DepthFunc,
+    _z_compare: ZCompareE,
 ) -> Option<RasterFragment> {
     // TODO: implement Z-buffer test and conditional write
     Some(frag)

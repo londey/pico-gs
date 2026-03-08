@@ -5,8 +5,8 @@
 //! memory model with typed accessors for framebuffer, z-buffer, vertex
 //! buffers, and texture storage.
 
-use crate::cmd::DepthFunc;
 use crate::math::{Depth, Rgb565, TexCoord};
+use gpu_registers::components::z_compare_e::ZCompareE;
 use std::path::Path;
 
 /// Complete GPU memory state.
@@ -258,17 +258,17 @@ impl DepthBuffer {
     /// This is a single SRAM read (current depth) -> compare -> conditional
     /// SRAM write (new depth). The comparison operates on the raw i16
     /// representation of Q4.12 values.
-    pub fn test_and_set(&mut self, x: u32, y: u32, depth: Depth, func: DepthFunc) -> bool {
+    pub fn test_and_set(&mut self, x: u32, y: u32, depth: Depth, func: ZCompareE) -> bool {
         let stored = self.get(x, y);
         let pass = match func {
-            DepthFunc::Never => false,
-            DepthFunc::Less => depth < stored,
-            DepthFunc::LessEqual => depth <= stored,
-            DepthFunc::Equal => depth == stored,
-            DepthFunc::Greater => depth > stored,
-            DepthFunc::GreaterEqual => depth >= stored,
-            DepthFunc::NotEqual => depth != stored,
-            DepthFunc::Always => true,
+            ZCompareE::Never => false,
+            ZCompareE::Less => depth < stored,
+            ZCompareE::Lequal => depth <= stored,
+            ZCompareE::Equal => depth == stored,
+            ZCompareE::Greater => depth > stored,
+            ZCompareE::Gequal => depth >= stored,
+            ZCompareE::Notequal => depth != stored,
+            ZCompareE::Always => true,
         };
         if pass {
             self.set(x, y, depth);
@@ -415,17 +415,17 @@ impl RawZBuffer {
     /// # Returns
     ///
     /// `true` if the fragment passes the depth test.
-    pub fn test_and_set(&mut self, x: u32, y: u32, z: u16, func: DepthFunc) -> bool {
+    pub fn test_and_set(&mut self, x: u32, y: u32, z: u16, func: ZCompareE) -> bool {
         let stored = self.get(x, y);
         let pass = match func {
-            DepthFunc::Never => false,
-            DepthFunc::Less => z < stored,
-            DepthFunc::LessEqual => z <= stored,
-            DepthFunc::Equal => z == stored,
-            DepthFunc::Greater => z > stored,
-            DepthFunc::GreaterEqual => z >= stored,
-            DepthFunc::NotEqual => z != stored,
-            DepthFunc::Always => true,
+            ZCompareE::Never => false,
+            ZCompareE::Less => z < stored,
+            ZCompareE::Lequal => z <= stored,
+            ZCompareE::Equal => z == stored,
+            ZCompareE::Greater => z > stored,
+            ZCompareE::Gequal => z >= stored,
+            ZCompareE::Notequal => z != stored,
+            ZCompareE::Always => true,
         };
         if pass {
             self.set(x, y, z);

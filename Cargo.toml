@@ -1,8 +1,9 @@
 [workspace]
 members = [
     "crates/qfixed",
+    "registers",
     "spi_gpu/dt/gs-twin",
-    "spi_gpu/dt/gs-twin-cli",
+    "spi_gpu/dt/gs-twin-cli"
 ]
 resolver = "2"
 

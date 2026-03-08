@@ -12,7 +12,7 @@
 //! (3-bit field in RENDER_MODE).
 
 use super::fragment::ColoredFragment;
-use crate::cmd::DepthFunc;
+use gpu_registers::components::z_compare_e::ZCompareE;
 use qfixed::Q;
 
 /// Test a fragment's alpha against a reference value.
@@ -30,7 +30,7 @@ use qfixed::Q;
 pub fn alpha_test(
     frag: ColoredFragment,
     _alpha_test_en: bool,
-    _alpha_func: DepthFunc,
+    _alpha_func: ZCompareE,
     _alpha_ref: Q<4, 12>,
 ) -> Option<ColoredFragment> {
     // TODO: implement alpha comparison

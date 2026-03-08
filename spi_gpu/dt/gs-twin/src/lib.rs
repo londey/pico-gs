@@ -54,12 +54,12 @@
 //!      golden reference
 //! ```
 
-pub mod cmd;
 pub mod hex_parser;
 pub mod math;
 pub mod mem;
 pub mod pipeline;
 pub mod reg;
+mod reg_ext;
 pub mod test_harness;
 
 /// Top-level GPU model.

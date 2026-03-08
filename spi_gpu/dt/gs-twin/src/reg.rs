@@ -15,9 +15,12 @@
 //! - UNIT-003 (Register File)
 //! - INT-021 (Render Command Format)
 
-use crate::cmd::DepthFunc;
 use crate::mem::GpuMemory;
 use crate::pipeline::rasterize;
+use crate::reg_ext::{
+    fb_config_from_raw, fb_control_from_raw, render_mode_from_raw, vertex_from_raw,
+};
+use gpu_registers::components::gpu_regs::named_types::render_mode_reg::RenderModeReg;
 
 // ── Register addresses (7-bit index, matching INT-010) ───────────────────────
 
@@ -119,59 +122,11 @@ impl VertexSlot {
     }
 }
 
-// ── Render mode flags ────────────────────────────────────────────────────────
-
-/// Render mode register bit fields (from INT-010 / register_file.sv).
-///
-/// Z compare function codes (from early_z.sv localparams):
-///   `3'b000` = LESS, `3'b001` = LEQUAL, `3'b010` = EQUAL,
-///   `3'b011` = GEQUAL, `3'b100` = GREATER, `3'b101` = NOTEQUAL,
-///   `3'b110` = ALWAYS, `3'b111` = NEVER.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RenderMode {
-    /// Gouraud (per-vertex) color interpolation enable (bit 0).
-    pub gouraud_en: bool,
-
-    /// Depth test enable (bit 2).
-    pub z_test_en: bool,
-
-    /// Depth write enable (bit 3).
-    pub z_write_en: bool,
-
-    /// Color write enable (bit 4).
-    pub color_write_en: bool,
-
-    /// Z compare function, bits [15:13].
-    pub z_compare: DepthFunc,
-}
-
-impl RenderMode {
-    /// Decode render mode from a raw 64-bit register value.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - Raw RENDER_MODE register value.
-    fn from_bits(data: u64) -> Self {
-        let z_cmp_code = ((data >> 13) & 0x7) as u8;
-        Self {
-            gouraud_en: (data & (1 << 0)) != 0,
-            z_test_en: (data & (1 << 2)) != 0,
-            z_write_en: (data & (1 << 3)) != 0,
-            color_write_en: (data & (1 << 4)) != 0,
-            z_compare: match z_cmp_code {
-                0 => DepthFunc::Less,
-                1 => DepthFunc::LessEqual,
-                2 => DepthFunc::Equal,
-                3 => DepthFunc::GreaterEqual,
-                4 => DepthFunc::Greater,
-                5 => DepthFunc::NotEqual,
-                6 => DepthFunc::Always,
-                7 => DepthFunc::Never,
-                _ => unreachable!(),
-            },
-        }
-    }
-}
+// ── Render mode ─────────────────────────────────────────────────────────────
+//
+// Uses `RenderModeReg` from gpu-registers (generated from gpu_regs.rdl).
+// Field layout and Z compare encoding are defined in the RDL and decoded
+// by the generated accessors.
 
 // ── Scissor rectangle ────────────────────────────────────────────────────────
 
@@ -226,8 +181,8 @@ pub struct RegisterFile {
     /// Scissor rectangle.
     pub scissor: Scissor,
 
-    /// Render mode flags.
-    pub render_mode: RenderMode,
+    /// Render mode flags (generated from gpu_regs.rdl).
+    pub render_mode: RenderModeReg,
 }
 
 impl RegisterFile {
@@ -269,22 +224,24 @@ impl RegisterFile {
             }
 
             ADDR_RENDER_MODE => {
-                self.render_mode = RenderMode::from_bits(data);
+                self.render_mode = render_mode_from_raw(data);
             }
 
             ADDR_FB_CONFIG => {
-                self.fb_color_base = (data & 0xFFFF) as u16;
-                self.fb_z_base = ((data >> 16) & 0xFFFF) as u16;
-                self.fb_width_log2 = ((data >> 32) & 0xF) as u8;
-                self.fb_height_log2 = ((data >> 36) & 0xF) as u8;
+                let cfg = fb_config_from_raw(data);
+                self.fb_color_base = cfg.color_base();
+                self.fb_z_base = cfg.z_base();
+                self.fb_width_log2 = cfg.width_log2();
+                self.fb_height_log2 = cfg.height_log2();
             }
 
             ADDR_FB_CONTROL => {
+                let ctl = fb_control_from_raw(data);
                 self.scissor = Scissor {
-                    x: (data & 0x3FF) as u16,
-                    y: ((data >> 10) & 0x3FF) as u16,
-                    width: ((data >> 20) & 0x3FF) as u16,
-                    height: ((data >> 30) & 0x3FF) as u16,
+                    x: ctl.scissor_x(),
+                    y: ctl.scissor_y(),
+                    width: ctl.scissor_width(),
+                    height: ctl.scissor_height(),
                 };
             }
 
@@ -306,11 +263,12 @@ impl RegisterFile {
     /// next_vertex_color1[vertex_count] = current_color0[31:0];
     /// ```
     fn latch_vertex(&mut self, data: u64) {
+        let vreg = vertex_from_raw(data);
         let slot = &mut self.vertices[self.vertex_count];
-        slot.x_raw = (data & 0xFFFF) as u16;
-        slot.y_raw = ((data >> 16) & 0xFFFF) as u16;
-        slot.z = ((data >> 32) & 0xFFFF) as u16;
-        slot.q = ((data >> 48) & 0xFFFF) as u16;
+        slot.x_raw = vreg.x();
+        slot.y_raw = vreg.y();
+        slot.z = vreg.z();
+        slot.q = vreg.q();
         // COLOR register: [63:32] = diffuse, [31:0] = specular
         slot.color0 = Rgba8888((self.current_color0 >> 32) as u32);
         slot.color1 = Rgba8888((self.current_color0 & 0xFFFF_FFFF) as u32);
@@ -366,7 +324,7 @@ impl RegisterFile {
             bbox_max_x: scissor_max_x.saturating_sub(1),
             bbox_min_y: 0,
             bbox_max_y: scissor_max_y.saturating_sub(1),
-            gouraud_en: self.render_mode.gouraud_en,
+            gouraud_en: self.render_mode.gouraud(),
         };
 
         // Rasterize and write fragments with optional Z-test
@@ -381,7 +339,7 @@ impl RegisterFile {
     fn write_fragment(
         &self,
         frag: &rasterize::IntFragment,
-        rm: &RenderMode,
+        rm: &RenderModeReg,
         memory: &mut GpuMemory,
     ) {
         let (fx, fy) = (frag.x as u32, frag.y as u32);
@@ -390,15 +348,15 @@ impl RegisterFile {
         }
 
         // Early Z-test (matching early_z.sv)
-        if rm.z_test_en {
-            if !memory.raw_zbuf.test_and_set(fx, fy, frag.z, rm.z_compare) {
+        if rm.z_test_en() {
+            if !memory.raw_zbuf.test_and_set(fx, fy, frag.z, rm.z_compare()) {
                 return;
             }
-        } else if rm.z_write_en {
+        } else if rm.z_write_en() {
             memory.raw_zbuf.set(fx, fy, frag.z);
         }
 
-        if rm.color_write_en {
+        if rm.color_write_en() {
             memory.framebuffer.put_pixel(fx, fy, frag.color);
         }
     }

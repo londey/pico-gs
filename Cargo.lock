@@ -117,9 +117,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpu-registers"
+version = "0.1.0"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "gs-twin"
 version = "0.1.0"
 dependencies = [
+ "gpu-registers",
  "image",
  "qfixed",
 ]
