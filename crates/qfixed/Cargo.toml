@@ -1,0 +1,14 @@
+[package]
+name = "qfixed"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bit-accurate fixed-point types with Q-notation for RTL digital twin modeling"
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", default-features = false, optional = true }

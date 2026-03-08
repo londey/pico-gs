@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/qfixed",
     "spi_gpu/dt/gs-twin",
     "spi_gpu/dt/gs-twin-cli",
 ]
