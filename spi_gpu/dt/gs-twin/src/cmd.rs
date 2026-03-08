@@ -11,13 +11,28 @@
 /// `3'b110` = ALWAYS, `3'b111` = NEVER.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum DepthFunc {
+    /// Never pass (`3'b111`).
     Never,
+
+    /// Pass if fragment Z < stored Z (`3'b000`).
     #[default]
     Less,
+
+    /// Pass if fragment Z <= stored Z (`3'b001`).
     LessEqual,
+
+    /// Pass if fragment Z == stored Z (`3'b010`).
     Equal,
+
+    /// Pass if fragment Z > stored Z (`3'b100`).
     Greater,
+
+    /// Pass if fragment Z >= stored Z (`3'b011`).
     GreaterEqual,
+
+    /// Pass if fragment Z != stored Z (`3'b101`).
     NotEqual,
+
+    /// Always pass (`3'b110`).
     Always,
 }

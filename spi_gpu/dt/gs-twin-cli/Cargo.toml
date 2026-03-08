@@ -8,6 +8,6 @@ description = "CLI for running pico-gs digital twin renders and diffing against 
 
 [dependencies]
 gs-twin.workspace = true
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-anyhow = "1"
+anyhow = { version = "1", default-features = false, features = ["std"] }

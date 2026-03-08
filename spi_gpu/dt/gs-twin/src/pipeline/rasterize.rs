@@ -25,10 +25,13 @@ use crate::reg::Rgba8888;
 pub struct IntVertex {
     /// Integer pixel X (0..1023), from Q12.4 bits [13:4].
     pub px: u16,
+
     /// Integer pixel Y (0..1023).
     pub py: u16,
+
     /// Depth, unsigned 16-bit.
     pub z: u16,
+
     /// Diffuse color (RGBA8888).
     pub color0: Rgba8888,
 }
@@ -36,12 +39,21 @@ pub struct IntVertex {
 /// Triangle input for integer-pixel rasterization.
 #[derive(Debug, Clone, Copy)]
 pub struct IntTriangle {
+    /// Three vertices in winding order.
     pub verts: [IntVertex; 3],
-    /// Bounding box limits (clamped to scissor/surface).
+
+    /// Bounding box minimum X (clamped to scissor/surface).
     pub bbox_min_x: u16,
+
+    /// Bounding box maximum X (clamped to scissor/surface).
     pub bbox_max_x: u16,
+
+    /// Bounding box minimum Y (clamped to scissor/surface).
     pub bbox_min_y: u16,
+
+    /// Bounding box maximum Y (clamped to scissor/surface).
     pub bbox_max_y: u16,
+
     /// Whether Gouraud interpolation is enabled.
     pub gouraud_en: bool,
 }
@@ -49,10 +61,16 @@ pub struct IntTriangle {
 /// Fragment output from integer-pixel rasterization.
 #[derive(Debug, Clone, Copy)]
 pub struct IntFragment {
+    /// Fragment pixel X.
     pub x: u16,
+
+    /// Fragment pixel Y.
     pub y: u16,
+
     /// Interpolated depth (unsigned 16-bit), for Z-test.
     pub z: u16,
+
+    /// Final fragment color (RGB565).
     pub color: Rgb565,
 }
 
@@ -64,7 +82,16 @@ pub struct IntFragment {
 /// 3. Test each pixel against all three edge functions
 /// 4. For inside pixels, interpolate color using barycentrics
 ///
+/// # Arguments
+///
+/// * `tri` - Triangle with integer-pixel vertices and bounding box limits.
+///
+/// # Returns
+///
+/// A vector of fragments for all pixels inside the triangle.
+///
 /// # RTL Implementation Notes
+///
 /// Edge function: `e_i(x,y) = A_i * x + B_i * y + C_i`
 /// where A = (y_j - y_k), B = (x_k - x_j), C = x_j*y_k - x_k*y_j.
 /// The RTL uses 11-bit signed A/B and 21-bit signed C.

@@ -17,15 +17,20 @@ use std::path::Path;
 pub struct DiffResult {
     /// Total number of pixels compared.
     pub total_pixels: u32,
+
     /// Number of pixels with different RGB565 values.
     pub differing_pixels: u32,
+
     /// Maximum per-channel difference (expanded to 8-bit for readability).
     pub max_channel_diff: u8,
+
     /// Mean squared error across all channels (8-bit expanded).
     pub mse: f64,
-    /// Peak signal-to-noise ratio (dB). Diagnostic only — not a pass/fail metric.
+
+    /// Peak signal-to-noise ratio (dB). Diagnostic only, not a pass/fail metric.
     pub psnr_db: f64,
-    /// First differing pixel location (for quick diagnosis).
+
+    /// First differing pixel location `(x, y, expected, actual)` for quick diagnosis.
     pub first_diff: Option<(u32, u32, Rgb565, Rgb565)>,
 }
 
@@ -41,6 +46,15 @@ impl DiffResult {
 ///
 /// The primary result is `is_exact_match()`. All other metrics are
 /// diagnostic aids for debugging mismatches.
+///
+/// # Arguments
+///
+/// * `a` - First (expected) framebuffer.
+/// * `b` - Second (actual) framebuffer.
+///
+/// # Returns
+///
+/// A `DiffResult` with exact-match status and diagnostic metrics.
 pub fn compare_framebuffers(a: &Framebuffer, b: &Framebuffer) -> DiffResult {
     assert_eq!(a.width, b.width, "framebuffer width mismatch");
     assert_eq!(a.height, b.height, "framebuffer height mismatch");
@@ -99,7 +113,18 @@ pub fn compare_framebuffers(a: &Framebuffer, b: &Framebuffer) -> DiffResult {
 }
 
 /// Save a visual diff image highlighting pixel differences.
-/// Magenta channel = difference magnitude, scaled ×4 for visibility.
+///
+/// Magenta channel = difference magnitude, scaled x4 for visibility.
+///
+/// # Arguments
+///
+/// * `a` - First (expected) framebuffer.
+/// * `b` - Second (actual) framebuffer.
+/// * `path` - Output PNG path.
+///
+/// # Errors
+///
+/// Returns `image::ImageError` if the PNG cannot be written.
 pub fn save_diff_image(
     a: &Framebuffer,
     b: &Framebuffer,

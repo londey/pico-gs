@@ -57,6 +57,12 @@ impl Rgb565 {
     ///
     /// Truncates (right-shifts) to 5-6-5 bits.
     /// This matches the RTL's behavior: no rounding, just discard low bits.
+    ///
+    /// # Arguments
+    ///
+    /// * `r` - Red channel (0..255, truncated to 5 bits).
+    /// * `g` - Green channel (0..255, truncated to 6 bits).
+    /// * `b` - Blue channel (0..255, truncated to 5 bits).
     pub fn from_rgb8(r: u8, g: u8, b: u8) -> Self {
         let r5 = (r >> 3) as u16;
         let g6 = (g >> 2) as u16;
@@ -65,6 +71,10 @@ impl Rgb565 {
     }
 
     /// Unpack to 8-bit channels with bit replication for full range.
+    ///
+    /// # Returns
+    ///
+    /// `(r, g, b)` tuple with each channel expanded to 8 bits.
     pub fn to_rgb8(self) -> (u8, u8, u8) {
         let r5 = (self.0 >> 11) & 0x1F;
         let g6 = (self.0 >> 5) & 0x3F;

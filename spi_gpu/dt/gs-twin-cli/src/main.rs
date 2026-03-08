@@ -1,3 +1,17 @@
+#![deny(unsafe_code)]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::all))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::pedantic))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(missing_docs))]
+// Allow some pedantic lints that are too strict for this project
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::enum_variant_names)]
+// Until 1.0.0, allow dead code and unused dependency warnings
+#![allow(dead_code)]
+#![allow(unused_crate_dependencies)]
+
 //! gs-twin CLI: render golden references and diff against Verilator output.
 //!
 //! Usage:
@@ -12,15 +26,22 @@ use std::path::PathBuf;
 
 /// Shared hex test scripts, embedded at compile time.
 mod scripts {
+    /// VER-010: Gouraud shaded triangle.
     pub const VER_010: &str = include_str!("../../../tests/scripts/ver_010_gouraud.hex");
+
+    /// VER-011: Depth-tested overlapping triangles.
     pub const VER_011: &str = include_str!("../../../tests/scripts/ver_011_depth_test.hex");
+
+    /// VER-015: Triangle size grid.
     pub const VER_015: &str = include_str!("../../../tests/scripts/ver_015_size_grid.hex");
 }
 
+/// Top-level CLI argument parser.
 #[derive(Parser)]
 #[command(name = "gs-twin-cli")]
 #[command(about = "pico-gs digital twin: golden reference renderer and comparator")]
 struct Cli {
+    /// Subcommand to execute.
     #[command(subcommand)]
     command: Commands,
 }
@@ -65,8 +86,19 @@ enum Commands {
     },
 }
 
-/// Render a scene from a hex script string, using fb dimensions from the
-/// `## FRAMEBUFFER:` directive (overriding --width/--height when present).
+/// Render a scene from a hex script string.
+///
+/// Uses framebuffer dimensions from the `## FRAMEBUFFER:` directive when
+/// present, overriding the GPU's current dimensions.
+///
+/// # Arguments
+///
+/// * `hex_content` - Hex script text to parse and execute.
+/// * `gpu` - GPU instance to render into.
+///
+/// # Errors
+///
+/// Returns an error if the hex script cannot be parsed.
 fn render_hex_scene(hex_content: &str, gpu: &mut gs_twin::Gpu) -> Result<()> {
     let script = hex_parser::parse_hex_str(hex_content)
         .map_err(|e| anyhow::anyhow!("hex parse error: {e}"))?;
@@ -83,6 +115,7 @@ fn render_hex_scene(hex_content: &str, gpu: &mut gs_twin::Gpu) -> Result<()> {
     Ok(())
 }
 
+/// CLI entry point: dispatch to render or diff subcommand.
 fn main() -> Result<()> {
     let cli = Cli::parse();
 

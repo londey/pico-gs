@@ -19,10 +19,13 @@ use crate::reg::RegWrite;
 pub struct TextureDirective {
     /// Texture type, e.g. `"checker_wb"`, `"checker_wg"`.
     pub tex_type: String,
+
     /// SDRAM word address for texture data.
     pub base_word: u32,
+
     /// Texture format, e.g. `"RGB565"`.
     pub format: String,
+
     /// Log2 of texture width (e.g. 4 for 16px).
     pub width_log2: u8,
 }
@@ -32,6 +35,7 @@ pub struct TextureDirective {
 pub struct HexPhase {
     /// Phase name (default: `"main"`).
     pub name: String,
+
     /// Register write commands in this phase.
     pub commands: Vec<RegWrite>,
 }
@@ -41,16 +45,23 @@ pub struct HexPhase {
 pub struct HexScript {
     /// Framebuffer width from `## FRAMEBUFFER:` directive.
     pub fb_width: u32,
+
     /// Framebuffer height from `## FRAMEBUFFER:` directive.
     pub fb_height: u32,
+
     /// Ordered list of phases.
     pub phases: Vec<HexPhase>,
+
     /// Texture pre-load directives.
     pub textures: Vec<TextureDirective>,
 }
 
 impl HexScript {
     /// Get all commands across all phases, flattened.
+    ///
+    /// # Returns
+    ///
+    /// A new `Vec` containing all register writes in phase order.
     pub fn all_commands(&self) -> Vec<RegWrite> {
         self.phases
             .iter()
@@ -59,6 +70,14 @@ impl HexScript {
     }
 
     /// Get commands for a specific phase by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Phase name to look up.
+    ///
+    /// # Returns
+    ///
+    /// The command slice for the named phase, or `None` if not found.
     pub fn phase_commands(&self, name: &str) -> Option<&[RegWrite]> {
         self.phases
             .iter()
@@ -169,6 +188,14 @@ fn parse_data_line(line: &str, line_no: usize) -> Result<RegWrite, String> {
 }
 
 /// Parse a hex script from a string.
+///
+/// # Arguments
+///
+/// * `content` - The hex script text to parse.
+///
+/// # Errors
+///
+/// Returns a descriptive error string if any data line is malformed.
 pub fn parse_hex_str(content: &str) -> Result<HexScript, String> {
     let mut script = HexScript {
         fb_width: 0,
@@ -220,6 +247,14 @@ pub fn parse_hex_str(content: &str) -> Result<HexScript, String> {
 }
 
 /// Parse a hex script from a file path.
+///
+/// # Arguments
+///
+/// * `path` - Path to the `.hex` file.
+///
+/// # Errors
+///
+/// Returns a descriptive error string if the file cannot be read or parsed.
 pub fn parse_hex_file(path: &std::path::Path) -> Result<HexScript, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;

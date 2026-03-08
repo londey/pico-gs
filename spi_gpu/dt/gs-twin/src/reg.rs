@@ -57,15 +57,22 @@ pub const ADDR_MEM_FILL: u8 = 0x44;
 pub struct Rgba8888(pub u32);
 
 impl Rgba8888 {
+    /// Extract the red channel (bits [31:24]).
     pub fn r(self) -> u8 {
         (self.0 >> 24) as u8
     }
+
+    /// Extract the green channel (bits [23:16]).
     pub fn g(self) -> u8 {
         (self.0 >> 16) as u8
     }
+
+    /// Extract the blue channel (bits [15:8]).
     pub fn b(self) -> u8 {
         (self.0 >> 8) as u8
     }
+
+    /// Extract the alpha channel (bits [7:0]).
     pub fn a(self) -> u8 {
         self.0 as u8
     }
@@ -77,18 +84,25 @@ impl Rgba8888 {
 struct VertexSlot {
     /// Screen X, Q12.4 raw 16-bit value from register write.
     x_raw: u16,
+
     /// Screen Y, Q12.4 raw 16-bit value from register write.
     y_raw: u16,
+
     /// Depth, unsigned 16-bit.
     z: u16,
+
     /// 1/W reciprocal, unsigned 16-bit.
     q: u16,
+
     /// Diffuse color (RGBA8888).
     color0: Rgba8888,
+
     /// Specular color (RGBA8888).
     color1: Rgba8888,
+
     /// UV0 packed (from UV0_UV1 register [31:0]).
     uv0: u32,
+
     /// UV1 packed (from UV0_UV1 register [63:32]).
     uv1: u32,
 }
@@ -115,15 +129,28 @@ impl VertexSlot {
 ///   `3'b110` = ALWAYS, `3'b111` = NEVER.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderMode {
+    /// Gouraud (per-vertex) color interpolation enable (bit 0).
     pub gouraud_en: bool,
+
+    /// Depth test enable (bit 2).
     pub z_test_en: bool,
+
+    /// Depth write enable (bit 3).
     pub z_write_en: bool,
+
+    /// Color write enable (bit 4).
     pub color_write_en: bool,
+
     /// Z compare function, bits [15:13].
     pub z_compare: DepthFunc,
 }
 
 impl RenderMode {
+    /// Decode render mode from a raw 64-bit register value.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Raw RENDER_MODE register value.
     fn from_bits(data: u64) -> Self {
         let z_cmp_code = ((data >> 13) & 0x7) as u8;
         Self {
@@ -148,11 +175,19 @@ impl RenderMode {
 
 // ── Scissor rectangle ────────────────────────────────────────────────────────
 
+/// Scissor rectangle for fragment clipping.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Scissor {
+    /// Left edge (pixels).
     pub x: u16,
+
+    /// Top edge (pixels).
     pub y: u16,
+
+    /// Width (pixels).
     pub width: u16,
+
+    /// Height (pixels).
     pub height: u16,
 }
 
@@ -166,20 +201,26 @@ pub struct Scissor {
 pub struct RegisterFile {
     /// 3 vertex slots (filled by NOKICK/KICK writes).
     vertices: [VertexSlot; 3],
+
     /// Next vertex slot index (0, 1, 2, wraps).
     vertex_count: usize,
+
     /// Current color0/color1 latch (from COLOR register write).
     current_color0: u64,
+
     /// Current UV0/UV1 latch (from UV0_UV1 register write).
     current_uv01: u64,
 
-    /// Framebuffer surface width (log2, e.g. 9 → 512 pixels).
+    /// Framebuffer surface width (log2, e.g. 9 = 512 pixels).
     pub fb_width_log2: u8,
+
     /// Framebuffer surface height (log2).
     pub fb_height_log2: u8,
-    /// Color buffer base address (×512 byte units).
+
+    /// Color buffer base address (x512 byte units).
     pub fb_color_base: u16,
-    /// Z buffer base address (×512 byte units).
+
+    /// Z buffer base address (x512 byte units).
     pub fb_z_base: u16,
 
     /// Scissor rectangle.
@@ -194,6 +235,12 @@ impl RegisterFile {
     ///
     /// This mirrors the RTL's register_file.sv combinational decode logic.
     /// On VERTEX_KICK_012, triggers rasterization and fragment processing.
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - 7-bit register index.
+    /// * `data` - 64-bit register data.
+    /// * `memory` - GPU memory state (framebuffer, Z-buffer) for fragment writes.
     pub fn write(&mut self, addr: u8, data: u64, memory: &mut GpuMemory) {
         match addr {
             ADDR_COLOR => {
