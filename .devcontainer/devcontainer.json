@@ -30,17 +30,19 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "mshr-h.VerilogHDL",
-                "eirikpre.systemverilog",
-                "eamodio.gitlens",
-                "ms-vscode.makefile-tools",
-                "EditorConfig.EditorConfig",
                 "Anthropic.claude-code",
-                "streetsidesoftware.code-spell-checker",
-                "mutantdino.resourcemonitor",
                 "bierner.markdown-mermaid",
+                "EditorConfig.EditorConfig",
+                "eirikpre.systemverilog",
+                "MermaidChart.vscode-mermaid-chart",
                 "ms-vscode.cpptools-extension-pack",
-                "MermaidChart.vscode-mermaid-chart"
+                "ms-vscode.makefile-tools",
+                "mshr-h.VerilogHDL",
+                "mutantdino.resourcemonitor",
+                "rust-lang.rust-analyzer",
+                "streetsidesoftware.code-spell-checker-australian-english",
+                "streetsidesoftware.code-spell-checker",
+                "tamasfe.even-better-toml"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
