@@ -17,10 +17,13 @@
 
 use crate::mem::GpuMemory;
 use crate::pipeline::rasterize;
-use crate::reg_ext::{
-    fb_config_from_raw, fb_control_from_raw, render_mode_from_raw, vertex_from_raw,
+use crate::reg_ext::{reg_from_raw, reg_to_raw};
+use gpu_registers::components::gpu_regs::named_types::{
+    cc_mode_reg::CcModeReg, color_reg::ColorReg, const_color_reg::ConstColorReg,
+    fb_config_reg::FbConfigReg, fb_control_reg::FbControlReg, fb_display_reg::FbDisplayReg,
+    render_mode_reg::RenderModeReg, stipple_pattern_reg::StipplePatternReg, tex_cfg_reg::TexCfgReg,
+    uv0_uv1_reg::Uv0Uv1Reg, vertex_reg::VertexReg, z_range_reg::ZRangeReg,
 };
-use gpu_registers::components::gpu_regs::named_types::render_mode_reg::RenderModeReg;
 
 // ── Register addresses (7-bit index, matching INT-010) ───────────────────────
 
@@ -39,17 +42,50 @@ pub const ADDR_VERTEX_KICK_012: u8 = 0x07;
 /// VERTEX_KICK_021: store vertex + trigger rasterization (0-2-1 winding, reversed).
 pub const ADDR_VERTEX_KICK_021: u8 = 0x08;
 
-/// RENDER_MODE: `[0]=GOURAUD_EN, [2]=Z_TEST_EN, [3]=Z_WRITE_EN, [4]=COLOR_WRITE_EN, [15:13]=Z_COMPARE`.
+/// VERTEX_KICK_RECT: store vertex + trigger axis-aligned rectangle rasterization.
+pub const ADDR_VERTEX_KICK_RECT: u8 = 0x09;
+
+/// TEX0_CFG: texture unit 0 configuration.
+pub const ADDR_TEX0_CFG: u8 = 0x10;
+
+/// TEX1_CFG: texture unit 1 configuration.
+pub const ADDR_TEX1_CFG: u8 = 0x11;
+
+/// CC_MODE: color combiner equation configuration.
+pub const ADDR_CC_MODE: u8 = 0x18;
+
+/// CONST_COLOR: per-draw constant colors (CONST0 + CONST1).
+pub const ADDR_CONST_COLOR: u8 = 0x19;
+
+/// RENDER_MODE: unified rendering state (Z, alpha, cull, dither, stipple).
 pub const ADDR_RENDER_MODE: u8 = 0x30;
+
+/// Z_RANGE: depth range clipping (min/max).
+pub const ADDR_Z_RANGE: u8 = 0x31;
+
+/// STIPPLE_PATTERN: 8x8 stipple bitmask.
+pub const ADDR_STIPPLE_PATTERN: u8 = 0x32;
 
 /// FB_CONFIG: `[15:0]=color_base, [31:16]=z_base, [35:32]=width_log2, [39:36]=height_log2`.
 pub const ADDR_FB_CONFIG: u8 = 0x40;
+
+/// FB_DISPLAY: display scanout configuration.
+pub const ADDR_FB_DISPLAY: u8 = 0x41;
 
 /// FB_CONTROL: `[9:0]=scissor_x, [19:10]=scissor_y, [29:20]=scissor_w, [39:30]=scissor_h`.
 pub const ADDR_FB_CONTROL: u8 = 0x43;
 
 /// MEM_FILL: hardware memory fill (clear framebuffer/z-buffer).
 pub const ADDR_MEM_FILL: u8 = 0x44;
+
+/// PERF_TIMESTAMP: command-stream timestamp marker.
+pub const ADDR_PERF_TIMESTAMP: u8 = 0x50;
+
+/// MEM_ADDR: memory access dword address pointer.
+pub const ADDR_MEM_ADDR: u8 = 0x70;
+
+/// MEM_DATA: memory data register (bidirectional, auto-increment).
+pub const ADDR_MEM_DATA: u8 = 0x71;
 
 // ── RGBA8888 color helper ────────────────────────────────────────────────────
 
@@ -122,67 +158,57 @@ impl VertexSlot {
     }
 }
 
-// ── Render mode ─────────────────────────────────────────────────────────────
-//
-// Uses `RenderModeReg` from gpu-registers (generated from gpu_regs.rdl).
-// Field layout and Z compare encoding are defined in the RDL and decoded
-// by the generated accessors.
-
-// ── Scissor rectangle ────────────────────────────────────────────────────────
-
-/// Scissor rectangle for fragment clipping.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Scissor {
-    /// Left edge (pixels).
-    pub x: u16,
-
-    /// Top edge (pixels).
-    pub y: u16,
-
-    /// Width (pixels).
-    pub width: u16,
-
-    /// Height (pixels).
-    pub height: u16,
-}
-
 // ── Register file state ──────────────────────────────────────────────────────
 
 /// GPU register file state, mirroring register_file.sv.
 ///
-/// Maintains vertex buffers, current color/UV latches, framebuffer
-/// configuration, render mode, and scissor state.
+/// Maintains vertex buffers and internal pipeline state alongside
+/// register latches using generated types from the `gpu-registers` crate.
 #[derive(Default)]
 pub struct RegisterFile {
+    // ── Internal pipeline state (not registers) ──────────────────────────
     /// 3 vertex slots (filled by NOKICK/KICK writes).
     vertices: [VertexSlot; 3],
 
     /// Next vertex slot index (0, 1, 2, wraps).
     vertex_count: usize,
 
-    /// Current color0/color1 latch (from COLOR register write).
-    current_color0: u64,
+    // ── Register latches (generated types from gpu-registers) ────────────
+    /// COLOR: per-vertex diffuse + specular colors (RGBA8888 each).
+    color: ColorReg,
 
-    /// Current UV0/UV1 latch (from UV0_UV1 register write).
-    current_uv01: u64,
+    /// UV0_UV1: texture coordinates (Q4.12 each).
+    uv0_uv1: Uv0Uv1Reg,
 
-    /// Framebuffer surface width (log2, e.g. 9 = 512 pixels).
-    pub fb_width_log2: u8,
-
-    /// Framebuffer surface height (log2).
-    pub fb_height_log2: u8,
-
-    /// Color buffer base address (x512 byte units).
-    pub fb_color_base: u16,
-
-    /// Z buffer base address (x512 byte units).
-    pub fb_z_base: u16,
-
-    /// Scissor rectangle.
-    pub scissor: Scissor,
-
-    /// Render mode flags (generated from gpu_regs.rdl).
+    /// RENDER_MODE: unified rendering state flags.
     pub render_mode: RenderModeReg,
+
+    /// Z_RANGE: depth range clipping (min/max).
+    z_range: ZRangeReg,
+
+    /// STIPPLE_PATTERN: 8x8 stipple bitmask.
+    stipple_pattern: StipplePatternReg,
+
+    /// FB_CONFIG: framebuffer dimensions and base addresses.
+    fb_config: FbConfigReg,
+
+    /// FB_CONTROL: scissor rectangle.
+    fb_control: FbControlReg,
+
+    /// FB_DISPLAY: display scanout configuration.
+    fb_display: FbDisplayReg,
+
+    /// TEX0_CFG: texture unit 0 configuration.
+    tex0_cfg: TexCfgReg,
+
+    /// TEX1_CFG: texture unit 1 configuration.
+    tex1_cfg: TexCfgReg,
+
+    /// CC_MODE: color combiner equation configuration.
+    cc_mode: CcModeReg,
+
+    /// CONST_COLOR: per-draw constant colors.
+    const_color: ConstColorReg,
 }
 
 impl RegisterFile {
@@ -199,11 +225,11 @@ impl RegisterFile {
     pub fn write(&mut self, addr: u8, data: u64, memory: &mut GpuMemory) {
         match addr {
             ADDR_COLOR => {
-                self.current_color0 = data;
+                self.color = reg_from_raw(data);
             }
 
             ADDR_UV0_UV1 => {
-                self.current_uv01 = data;
+                self.uv0_uv1 = reg_from_raw(data);
             }
 
             ADDR_VERTEX_NOKICK => {
@@ -223,26 +249,44 @@ impl RegisterFile {
                 self.kick(WindingOrder::V021, memory);
             }
 
+            ADDR_TEX0_CFG => {
+                self.tex0_cfg = reg_from_raw(data);
+            }
+
+            ADDR_TEX1_CFG => {
+                self.tex1_cfg = reg_from_raw(data);
+            }
+
+            ADDR_CC_MODE => {
+                self.cc_mode = reg_from_raw(data);
+            }
+
+            ADDR_CONST_COLOR => {
+                self.const_color = reg_from_raw(data);
+            }
+
             ADDR_RENDER_MODE => {
-                self.render_mode = render_mode_from_raw(data);
+                self.render_mode = reg_from_raw(data);
+            }
+
+            ADDR_Z_RANGE => {
+                self.z_range = reg_from_raw(data);
+            }
+
+            ADDR_STIPPLE_PATTERN => {
+                self.stipple_pattern = reg_from_raw(data);
             }
 
             ADDR_FB_CONFIG => {
-                let cfg = fb_config_from_raw(data);
-                self.fb_color_base = cfg.color_base();
-                self.fb_z_base = cfg.z_base();
-                self.fb_width_log2 = cfg.width_log2();
-                self.fb_height_log2 = cfg.height_log2();
+                self.fb_config = reg_from_raw(data);
+            }
+
+            ADDR_FB_DISPLAY => {
+                self.fb_display = reg_from_raw(data);
             }
 
             ADDR_FB_CONTROL => {
-                let ctl = fb_control_from_raw(data);
-                self.scissor = Scissor {
-                    x: ctl.scissor_x(),
-                    y: ctl.scissor_y(),
-                    width: ctl.scissor_width(),
-                    height: ctl.scissor_height(),
-                };
+                self.fb_control = reg_from_raw(data);
             }
 
             _ => {
@@ -263,18 +307,20 @@ impl RegisterFile {
     /// next_vertex_color1[vertex_count] = current_color0[31:0];
     /// ```
     fn latch_vertex(&mut self, data: u64) {
-        let vreg = vertex_from_raw(data);
+        let vreg: VertexReg = reg_from_raw(data);
         let slot = &mut self.vertices[self.vertex_count];
         slot.x_raw = vreg.x();
         slot.y_raw = vreg.y();
         slot.z = vreg.z();
         slot.q = vreg.q();
         // COLOR register: [63:32] = diffuse, [31:0] = specular
-        slot.color0 = Rgba8888((self.current_color0 >> 32) as u32);
-        slot.color1 = Rgba8888((self.current_color0 & 0xFFFF_FFFF) as u32);
+        let color_raw = reg_to_raw(self.color);
+        slot.color0 = Rgba8888((color_raw >> 32) as u32);
+        slot.color1 = Rgba8888((color_raw & 0xFFFF_FFFF) as u32);
         // UV0/UV1 from current latch
-        slot.uv0 = (self.current_uv01 & 0xFFFF_FFFF) as u32;
-        slot.uv1 = ((self.current_uv01 >> 32) & 0xFFFF_FFFF) as u32;
+        let uv_raw = reg_to_raw(self.uv0_uv1);
+        slot.uv0 = (uv_raw & 0xFFFF_FFFF) as u32;
+        slot.uv1 = ((uv_raw >> 32) & 0xFFFF_FFFF) as u32;
     }
 
     /// Trigger rasterization with the given winding order.
@@ -292,19 +338,19 @@ impl RegisterFile {
             WindingOrder::V021 => [self.vertices[0], self.vertices[kick_idx], self.vertices[1]],
         };
 
-        let fb_width = 1u32 << self.fb_width_log2;
-        let fb_height = 1u32 << self.fb_height_log2;
+        let fb_width = 1u32 << self.fb_config.width_log2();
+        let fb_height = 1u32 << self.fb_config.height_log2();
 
         // Scissor clamp for bounding box
         let scissor_max_x = self
-            .scissor
-            .x
-            .saturating_add(self.scissor.width)
+            .fb_control
+            .scissor_x()
+            .saturating_add(self.fb_control.scissor_width())
             .min(fb_width as u16);
         let scissor_max_y = self
-            .scissor
-            .y
-            .saturating_add(self.scissor.height)
+            .fb_control
+            .scissor_y()
+            .saturating_add(self.fb_control.scissor_height())
             .min(fb_height as u16);
 
         let make_vert = |s: &VertexSlot| rasterize::IntVertex {
