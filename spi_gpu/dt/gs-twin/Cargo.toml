@@ -1,0 +1,25 @@
+[package]
+name = "gs-twin"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bit-accurate transaction-level digital twin of the pico-gs FPGA graphics synthesizer"
+
+[dependencies]
+# Fixed-point arithmetic matching RTL Q formats
+fixed = "1"
+
+# Image output for golden reference PNGs
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Serialization for command streams / test fixtures
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+
+# Error handling
+thiserror = "2"
+
+[dev-dependencies]
+approx = "0.5"

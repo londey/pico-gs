@@ -1,0 +1,13 @@
+[package]
+name = "gs-twin-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "CLI for running pico-gs digital twin renders and diffing against Verilator output"
+
+[dependencies]
+gs-twin.workspace = true
+clap = { version = "4", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+anyhow = "1"

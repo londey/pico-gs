@@ -43,3 +43,4 @@ Thumbs.db
 
 .syskit
 spi_gpu/obj_dir
+target/
