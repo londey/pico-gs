@@ -1,0 +1,22 @@
+# VER-010: Gouraud Triangle Golden Image Test
+# 
+# Single Gouraud-shaded triangle: red top, blue bottom-right,
+# green bottom-left.  512x480 framebuffer, no Z testing.
+
+## FRAMEBUFFER: 512 480
+## PHASE: main
+
+40 0000_0099_0000_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9
+43 0000_0078_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=480
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_0280_1000  # VERTEX_NOKICK: x=256 y=40 z=0x0000
+
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_1900_1C00  # VERTEX_NOKICK: x=448 y=400 z=0x0000
+
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_1900_0400  # VERTEX_KICK_012: x=64 y=400 z=0x0000
+
+00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)

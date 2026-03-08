@@ -1,0 +1,77 @@
+# VER-015: Triangle Size Grid Golden Image Test
+# 
+# 8 Gouraud triangles in 4x2 grid, sizes 1-128px per side.
+# Red top, blue bottom-right, green bottom-left.
+
+## FRAMEBUFFER: 512 480
+## PHASE: main
+
+40 0000_0099_0000_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9
+43 0000_0078_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=480
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+
+# Triangle 0: 1px (half-size=8 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_0778_0400  # VERTEX_NOKICK: x=64 y=119.5 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_0788_0408  # VERTEX_NOKICK: x=64.5 y=120.5 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_0788_03F8  # VERTEX_KICK_012: x=63.5 y=120.5 z=0x0000
+
+# Triangle 1: 2px (half-size=16 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_0770_0C00  # VERTEX_NOKICK: x=192 y=119 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_0790_0C10  # VERTEX_NOKICK: x=193 y=121 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_0790_0BF0  # VERTEX_KICK_012: x=191 y=121 z=0x0000
+
+# Triangle 2: 4px (half-size=32 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_0760_1400  # VERTEX_NOKICK: x=320 y=118 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_07A0_1420  # VERTEX_NOKICK: x=322 y=122 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_07A0_13E0  # VERTEX_KICK_012: x=318 y=122 z=0x0000
+
+# Triangle 3: 8px (half-size=64 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_0740_1C00  # VERTEX_NOKICK: x=448 y=116 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_07C0_1C40  # VERTEX_NOKICK: x=452 y=124 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_07C0_1BC0  # VERTEX_KICK_012: x=444 y=124 z=0x0000
+
+# Triangle 4: 16px (half-size=128 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_1600_0400  # VERTEX_NOKICK: x=64 y=352 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_1700_0480  # VERTEX_NOKICK: x=72 y=368 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_1700_0380  # VERTEX_KICK_012: x=56 y=368 z=0x0000
+
+# Triangle 5: 32px (half-size=256 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_1580_0C00  # VERTEX_NOKICK: x=192 y=344 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_1780_0D00  # VERTEX_NOKICK: x=208 y=376 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_1780_0B00  # VERTEX_KICK_012: x=176 y=376 z=0x0000
+
+# Triangle 6: 64px (half-size=512 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_1480_1400  # VERTEX_NOKICK: x=320 y=328 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_1880_1600  # VERTEX_NOKICK: x=352 y=392 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_1880_1200  # VERTEX_KICK_012: x=288 y=392 z=0x0000
+
+# Triangle 7: 128px (half-size=1024 Q12.4)
+00 FF00_00FF_FF00_0000  # COLOR: diffuse=red specular=black(A=0)
+06 0000_0000_1280_1C00  # VERTEX_NOKICK: x=448 y=296 z=0x0000
+00 0000_FFFF_FF00_0000  # COLOR: diffuse=blue specular=black(A=0)
+06 0000_0000_1A80_2000  # VERTEX_NOKICK: x=512 y=424 z=0x0000
+00 00FF_00FF_FF00_0000  # COLOR: diffuse=green specular=black(A=0)
+07 0000_0000_1A80_1800  # VERTEX_KICK_012: x=384 y=424 z=0x0000
+
+00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)

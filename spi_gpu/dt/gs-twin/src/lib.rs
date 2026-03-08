@@ -70,6 +70,7 @@
 //! ```
 
 pub mod cmd;
+pub mod hex_parser;
 pub mod math;
 pub mod mem;
 pub mod pipeline;

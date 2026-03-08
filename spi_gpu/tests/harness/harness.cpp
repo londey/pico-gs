@@ -42,48 +42,122 @@
 // Register-write command script entry
 // ---------------------------------------------------------------------------
 
-/// A single register write in a command script.
-/// addr is the INT-010 register index; data is the value to write (up to 64
-/// bits for MEM_DATA, but most registers use only 16 bits).
-struct RegWrite {
-    uint8_t addr;
-    uint64_t data;
-};
+// Use HexRegWrite from hex_parser.hpp as the register-write type.
+using RegWrite = HexRegWrite;
 
 // ---------------------------------------------------------------------------
 // Command scripts (one per golden image test)
 // ---------------------------------------------------------------------------
 
-// The script .cpp files below are #include'd directly into this translation
-// unit.  They contain only static constexpr data definitions (register-write
-// arrays and helper functions) and are not independent translation units.
-// This is an intentional scaffold pattern: each script encapsulates the
-// register-write sequence for one golden image test, keeping the harness
-// main() small while avoiding a separate compilation/linking step for what
-// is essentially constant data.  Do not restructure the include-pattern
-// unless the harness architecture is being redesigned.
-#include "scripts/ver_010_gouraud.cpp"
-#include "scripts/ver_015_size_grid.cpp"
-#include "scripts/ver_011_depth_test.cpp"
-#include "scripts/ver_014_textured_cube.cpp"
-#include "scripts/ver_012_textured.cpp"
-#include "scripts/ver_013_color_combined.cpp"
+// Hex file parser for shared test scripts (.hex format).
+// Test scripts are loaded from spi_gpu/tests/scripts/ver_NNN_*.hex files
+// which are shared between this Verilator harness and the digital twin.
+#include "hex_parser.hpp"
+
+// ---------------------------------------------------------------------------
+// Texture generators
+//
+// Texture DATA is not stored in .hex files (only ## TEXTURE: directives).
+// The harness generates procedural textures and pre-loads them into SDRAM.
+// ---------------------------------------------------------------------------
+
+/// Generate a 16x16 RGB565 checker pattern (white/black, 4x4 blocks).
+static std::vector<uint8_t> generate_checker_texture_wb() {
+    constexpr int TEX_SIZE = 16;
+    constexpr int BLOCK_SIZE = 4;
+    std::vector<uint8_t> data(TEX_SIZE * TEX_SIZE * 2);
+
+    for (int y = 0; y < TEX_SIZE; y++) {
+        for (int x = 0; x < TEX_SIZE; x++) {
+            int block_x = x / BLOCK_SIZE;
+            int block_y = y / BLOCK_SIZE;
+            uint16_t color = ((block_x + block_y) % 2 == 0) ? 0xFFFF : 0x0000;
+
+            int idx = (y * TEX_SIZE + x) * 2;
+            data[idx + 0] = static_cast<uint8_t>(color & 0xFF);
+            data[idx + 1] = static_cast<uint8_t>((color >> 8) & 0xFF);
+        }
+    }
+    return data;
+}
+
+/// Generate a 16x16 RGB565 checker pattern (white/mid-gray, 4x4 blocks).
+static std::vector<uint8_t> generate_checker_texture_wg() {
+    constexpr int TEX_SIZE = 16;
+    constexpr int BLOCK_SIZE = 4;
+    std::vector<uint8_t> data(TEX_SIZE * TEX_SIZE * 2);
+
+    for (int y = 0; y < TEX_SIZE; y++) {
+        for (int x = 0; x < TEX_SIZE; x++) {
+            int block_x = x / BLOCK_SIZE;
+            int block_y = y / BLOCK_SIZE;
+            uint16_t color = ((block_x + block_y) % 2 == 0) ? 0xFFFF : 0x8410;
+
+            int idx = (y * TEX_SIZE + x) * 2;
+            data[idx + 0] = static_cast<uint8_t>(color & 0xFF);
+            data[idx + 1] = static_cast<uint8_t>((color >> 8) & 0xFF);
+        }
+    }
+    return data;
+}
+
+// ---------------------------------------------------------------------------
+// Test name to hex file path mapping
+// ---------------------------------------------------------------------------
+
+/// Map test name to the corresponding .hex script file path.
+/// Paths are relative to the harness executable's working directory;
+/// the Makefile runs from spi_gpu/ so scripts/ is a peer directory.
+static std::string hex_file_for_test(const std::string& test_name) {
+    static const std::pair<std::string, std::string> mappings[] = {
+        {"gouraud",        "tests/scripts/ver_010_gouraud.hex"},
+        {"depth_test",     "tests/scripts/ver_011_depth_test.hex"},
+        {"textured",       "tests/scripts/ver_012_textured.hex"},
+        {"color_combined", "tests/scripts/ver_013_color_combined.hex"},
+        {"textured_cube",  "tests/scripts/ver_014_textured_cube.hex"},
+        {"size_grid",      "tests/scripts/ver_015_size_grid.hex"},
+    };
+    for (const auto& [name, path] : mappings) {
+        if (name == test_name) {
+            return path;
+        }
+    }
+    return {};
+}
+
+/// Pre-load textures into SDRAM based on ## TEXTURE: directives.
+static void preload_textures(SdramModel& sdram, const HexScript& script) {
+    for (const auto& tex : script.textures) {
+        std::vector<uint8_t> pixels;
+        if (tex.type == "checker_wb") {
+            pixels = generate_checker_texture_wb();
+        } else if (tex.type == "checker_wg") {
+            pixels = generate_checker_texture_wg();
+        } else {
+            std::cerr << std::format("WARNING: Unknown texture type '{}', skipping\n", tex.type);
+            continue;
+        }
+
+        sdram.fill_texture(
+            tex.base_word,
+            TexFormat::RGB565,
+            std::span<const uint8_t>(pixels),
+            tex.width_log2
+        );
+        std::cout << std::format(
+            "Texture '{}' pre-loaded at word address 0x{:X}\n", tex.type, tex.base_word
+        );
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Simulation constants
 // ---------------------------------------------------------------------------
 
-/// Framebuffer surface dimensions.
-/// The rasterizer (UNIT-005) writes pixels using flat linear addressing with
-/// a hardcoded 640-pixel (1280-byte) stride: fb_addr = base + y*1280 + x*2.
-/// fb_width_log2 controls the bounding-box clamp (scissor) but does not
-/// affect the memory stride.
-///
-/// FB_WIDTH_LOG2 matches the fb_width_log2 value written to FB_CONFIG in the
-/// test scripts (ver_010_gouraud.cpp, ver_011_depth_test.cpp).
+/// Framebuffer width_log2 for extract_framebuffer addressing.
+/// All test scripts use width_log2=9 (512 pixels).
+/// Height is read from the ## FRAMEBUFFER: directive in each hex script.
 static constexpr int FB_WIDTH_LOG2 = 9;
-static constexpr int FB_WIDTH = 1 << FB_WIDTH_LOG2; // 512
-static constexpr int FB_HEIGHT = 480;
 
 /// SDRAM address space: 32 MB = 16M 16-bit words.
 static constexpr uint32_t SDRAM_WORDS = 16 * 1024 * 1024;
@@ -638,32 +712,27 @@ int main(int argc, char** argv) {
         output_file = std::format("{}.png", test_name);
     }
 
-    // Pre-load the 16x16 RGB565 checker texture for textured tests.
-    // The texture base address matches TEX0_BASE_ADDR in the script files.
-    // The checker pattern is generated programmatically per test_strategy.md.
-    // This pre-load must happen before the simulation clock starts so that
-    // texture cache misses during rendering find data already in the SDRAM model.
-    if (test_name == "textured_cube" || test_name == "textured") {
-        auto checker_pixels = generate_checker_texture();
-        sdram.fill_texture(
-            TEX0_BASE_WORD,
-            TexFormat::RGB565,
-            std::span<const uint8_t>(checker_pixels),
-            4 // width_log2 = 4 (16-pixel-wide texture)
-        );
-        std::cout << "Checker texture (white/black) pre-loaded at word address 0x"
-                  << std::hex << TEX0_BASE_WORD << std::dec << "\n";
-    } else if (test_name == "color_combined") {
-        auto checker_pixels = generate_checker_texture_midgray();
-        sdram.fill_texture(
-            TEX0_BASE_WORD_013,
-            TexFormat::RGB565,
-            std::span<const uint8_t>(checker_pixels),
-            4 // width_log2 = 4 (16-pixel-wide texture)
-        );
-        std::cout << "Checker texture (white/mid-gray) pre-loaded at word address 0x"
-                  << std::hex << TEX0_BASE_WORD_013 << std::dec << "\n";
+    // Load the hex script for this test.
+    std::string hex_path = hex_file_for_test(test_name);
+    if (hex_path.empty()) {
+        std::cerr << std::format("Unknown test: {}\n", test_name);
+        top->final();
+        if (trace) {
+            trace->close();
+        }
+        return 1;
     }
+
+    HexScript script = parse_hex_file(hex_path);
+    std::cout << std::format(
+        "Loaded {} ({} phases, {} commands, fb={}x{})\n",
+        hex_path, script.phases.size(),
+        script.all_commands().size(),
+        script.fb_width, script.fb_height
+    );
+
+    // Pre-load textures from ## TEXTURE: directives.
+    preload_textures(sdram, script);
 
     // -----------------------------------------------------------------------
     // 4. Reset the GPU
@@ -700,75 +769,23 @@ int main(int argc, char** argv) {
     /// conservative value; the actual pipeline latency is much shorter.
     static constexpr uint64_t PIPELINE_DRAIN_CYCLES = 10'000'000;
 
-    if (test_name == "depth_test") {
-        // VER-011: Depth-tested overlapping triangles.
-        // Requires three sequential phases with pipeline drain between each.
-        std::cout << "Running VER-011 (depth-tested overlapping triangles).\n";
+    // Execute phases from the hex script.
+    // Multi-phase tests (e.g. VER-011, VER-014) get pipeline drains between
+    // phases; single-phase tests execute all commands in one batch.
+    std::cout << std::format("Running {} ({} phase(s)).\n", test_name, script.phases.size());
 
-        // Phase 1: Z-buffer clear pass
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_011_zclear_script);
+    for (size_t pi = 0; pi < script.phases.size(); pi++) {
+        const auto& phase = script.phases[pi];
+        std::cout << std::format("  Phase '{}': {} commands\n", phase.name, phase.commands.size());
 
-        // Drain pipeline after Z-clear
-        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
+        execute_script(top.get(), trace.get(), sim_time, sdram, conn,
+                       std::span<const RegWrite>(phase.commands));
 
-        // Phase 2: Triangle A (far, red)
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_011_tri_a_script);
-
-        // Drain pipeline after Triangle A
-        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
-
-        // Phase 3: Triangle B (near, blue)
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_011_tri_b_script);
-
-    } else if (test_name == "gouraud") {
-        // VER-010: Gouraud-shaded triangle.
-        std::cout << "Running VER-010 (Gouraud triangle).\n";
-
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_010_script);
-
-    } else if (test_name == "textured_cube") {
-        // VER-014: Textured cube golden image test.
-        // Sequence: Z-clear -> setup -> triangles, with pipeline drains between.
-        // The Z-clear pass sets RENDER_MODE to Z-clear mode (no color writes).
-        // The setup script then reconfigures RENDER_MODE for textured depth
-        // rendering before the triangle submissions.
-        std::cout << "Running VER-014 (textured cube golden image).\n";
-
-        // Phase 1: Z-buffer clear pass (sets its own FB_CONFIG and RENDER_MODE)
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_zclear_script);
-        drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
-
-        // Phase 2: Texture config + render mode for depth-tested textured rendering
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_setup_script);
-
-        // Phase 3: Submit all twelve cube triangles
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_014_triangles_script);
-
-    } else if (test_name == "textured") {
-        // VER-012: Textured triangle.
-        std::cout << "Running VER-012 (textured triangle).\n";
-
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_012_script);
-
-    } else if (test_name == "color_combined") {
-        // VER-013: Color-combined output (MODULATE: texture * vertex color).
-        std::cout << "Running VER-013 (color-combined output).\n";
-
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_013_script);
-
-    } else if (test_name == "size_grid") {
-        // VER-015: Grid of triangles at increasing sizes.
-        std::cout << "Running VER-015 (triangle size grid).\n";
-
-        execute_script(top.get(), trace.get(), sim_time, sdram, conn, ver_015_script);
-
-    } else {
-        std::cerr << std::format("Unknown test: {}\n", test_name);
-        top->final();
-        if (trace) {
-            trace->close();
+        // Drain pipeline between phases (not after the last phase —
+        // the main drain loop handles that).
+        if (pi + 1 < script.phases.size()) {
+            drain_pipeline(top.get(), trace.get(), sim_time, sdram, conn, PIPELINE_DRAIN_CYCLES);
         }
-        return 1;
     }
 
     // -----------------------------------------------------------------------
@@ -985,14 +1002,14 @@ int main(int argc, char** argv) {
     // 7b. Extract framebuffer and write PNG
     // -----------------------------------------------------------------------
     // Framebuffer A base word address (INT-011): 0x000000 / 2 = 0
-    // WIDTH_LOG2 = 9 matches the fb_width_log2 written to FB_CONFIG in
-    // ver_010_gouraud.cpp and ver_011_depth_test.cpp (REQ-005.06).
+    // Dimensions come from the ## FRAMEBUFFER: directive in the hex script.
     uint32_t fb_base_word = 0;
-    int fb_height = (test_name == "textured_cube" || test_name == "textured" || test_name == "color_combined") ? 512 : FB_HEIGHT;
+    int fb_height = script.fb_height;
+    int fb_width = script.fb_width;
     auto fb = extract_framebuffer(sdram, fb_base_word, FB_WIDTH_LOG2, fb_height);
 
     try {
-        png_writer::write_png(output_file.c_str(), FB_WIDTH, fb_height, fb);
+        png_writer::write_png(output_file.c_str(), fb_width, fb_height, fb);
     } catch (const std::runtime_error& e) {
         std::cerr << std::format("ERROR: {}: {}\n", e.what(), output_file);
         top->final();

@@ -1,0 +1,28 @@
+# VER-013: Color-Combined Output Golden Image Test
+# 
+# Textured triangle with MODULATE combiner (TEX0 * SHADE0).
+# 16x16 white/mid-gray checker; red/green/blue vertex colors.
+
+## FRAMEBUFFER: 512 512
+## TEXTURE: checker_wg base=0x80000 format=RGB565 width_log2=4
+## PHASE: main
+
+40 0000_0099_0000_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9
+43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
+10 0000_0800_0000_4441  # TEX0_CFG: ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800
+18 7670_7670_7371_7371  # CC_MODE: MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+
+00 FF00_00FF_0000_00FF  # COLOR: diffuse=red specular=black
+01 0000_0000_0000_4000  # UV0_UV1: u0=0.5 v0=0
+06 0000_0000_03C0_1400  # VERTEX_NOKICK: x=320 y=60 z=0x0000
+
+00 0000_FFFF_0000_00FF  # COLOR: diffuse=blue specular=black
+01 0000_0000_8000_8000  # UV0_UV1: u0=1 v0=1
+06 0000_0000_17C0_1FF0  # VERTEX_NOKICK: x=511 y=380 z=0x0000
+
+00 00FF_00FF_0000_00FF  # COLOR: diffuse=green specular=black
+01 0000_0000_8000_0000  # UV0_UV1: u0=0 v0=1
+07 0000_0000_17C0_0640  # VERTEX_KICK_012: x=100 y=380 z=0x0000
+
+00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)

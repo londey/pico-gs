@@ -98,6 +98,13 @@ if [ "$CLEAN" = true ]; then
     echo ""
 fi
 
+# Generate shared .hex test scripts from Python generators.
+# These are consumed by both the Verilator harness and the digital twin.
+echo -e "${YELLOW}Generating .hex test scripts...${NC}"
+python3 "${SPI_GPU}/tests/scripts/gen/generate_all.py"
+echo -e "${GREEN}.hex test scripts generated${NC}"
+echo ""
+
 # Quick check mode: lint + cargo check + clippy, then exit
 if [ "$CHECK_ONLY" = true ]; then
     echo -e "${YELLOW}[1/4] Verilator lint...${NC}"
