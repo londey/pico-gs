@@ -21,6 +21,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use gs_twin::hex_parser;
+use gs_twin::math::Rgb565;
 use gs_twin::test_harness;
 use std::path::PathBuf;
 
@@ -156,23 +157,24 @@ fn main() -> Result<()> {
             height,
             diff_image,
         } => {
-            // Load reference PNG → RGB565 framebuffer
+            // Load reference PNG → RGB565 pixel vec
             let ref_img = image::open(&reference).context("failed to open reference PNG")?;
             let ref_rgb = ref_img.to_rgb8();
-            let mut ref_fb = gs_twin::mem::Framebuffer::new(width, height);
+            let mut ref_pixels = Vec::with_capacity((width * height) as usize);
             for y in 0..height {
                 for x in 0..width {
                     let p = ref_rgb.get_pixel(x, y);
-                    ref_fb.put_pixel(x, y, gs_twin::math::Rgb565::from_rgb8(p[0], p[1], p[2]));
+                    ref_pixels.push(Rgb565::from_rgb8(p[0], p[1], p[2]).0);
                 }
             }
 
             // Load Verilator raw RGB565 dump
-            let actual_fb = gs_twin::mem::Framebuffer::load_raw_rgb565(&actual, width, height)
+            let actual_pixels = gs_twin::mem::load_raw_rgb565(&actual, width, height)
                 .context("failed to load raw framebuffer dump")?;
 
             // Compare
-            let result = test_harness::compare_framebuffers(&ref_fb, &actual_fb);
+            let result =
+                test_harness::compare_framebuffers(&ref_pixels, &actual_pixels, width, height);
 
             println!("Comparison results:");
             println!("  Total pixels:     {}", result.total_pixels);
@@ -191,8 +193,14 @@ fn main() -> Result<()> {
             );
 
             if let Some(diff_path) = diff_image {
-                test_harness::save_diff_image(&ref_fb, &actual_fb, &diff_path)
-                    .context("failed to save diff image")?;
+                test_harness::save_diff_image(
+                    &ref_pixels,
+                    &actual_pixels,
+                    width,
+                    height,
+                    &diff_path,
+                )
+                .context("failed to save diff image")?;
                 println!("  Diff image:       {}", diff_path.display());
             }
 

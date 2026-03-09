@@ -47,10 +47,10 @@
 //!         ▼
 //!  ┌──────────────┐
 //!  │  mem::        │
-//!  │  Framebuffer  │  RGB565 framebuffer + u16 Z-buffer
+//!  │  SDRAM        │  flat 32 MiB backing store, 4x4 tiled (INT-011)
 //!  └──────────────┘
 //!         │
-//!         ▼  .save_png() / .pixels (raw compare)
+//!         ▼  .save_png() / extract methods
 //!      golden reference
 //! ```
 
@@ -69,28 +69,36 @@ pub mod test_harness;
 /// The only interface is `reg_write()` / `reg_write_script()` with raw
 /// register addresses and data, matching the RTL for bit-exact golden reference.
 pub struct Gpu {
-    /// GPU memory (framebuffer, Z-buffer, vertex SRAM, texture store).
+    /// GPU memory (SDRAM, vertex SRAM, texture store).
     pub memory: mem::GpuMemory,
 
     /// Register file state matching register_file.sv.
     pub regs: reg::RegisterFile,
+
+    /// Default framebuffer width (used when fb_config hasn't been set).
+    pub default_width: u32,
+
+    /// Default framebuffer height (used when fb_config hasn't been set).
+    pub default_height: u32,
 }
 
 impl Gpu {
-    /// Create a GPU with the given framebuffer dimensions.
+    /// Create a GPU with the given default framebuffer dimensions.
     ///
     /// # Arguments
     ///
-    /// * `width` - Framebuffer width in pixels.
-    /// * `height` - Framebuffer height in pixels.
+    /// * `width` - Default framebuffer width in pixels.
+    /// * `height` - Default framebuffer height in pixels.
     ///
     /// # Returns
     ///
-    /// A new `Gpu` with zeroed framebuffer and default register state.
+    /// A new `Gpu` with zeroed 32 MiB SDRAM and default register state.
     pub fn new(width: u32, height: u32) -> Self {
         Self {
-            memory: mem::GpuMemory::new(width, height),
+            memory: mem::GpuMemory::new(),
             regs: reg::RegisterFile::default(),
+            default_width: width,
+            default_height: height,
         }
     }
 
@@ -117,6 +125,23 @@ impl Gpu {
         }
     }
 
+    /// Get the effective framebuffer dimensions from fb_config,
+    /// falling back to defaults if fb_config hasn't been programmed.
+    fn effective_fb_dims(&self) -> (u16, u8, u32, u32) {
+        let cfg = self.regs.fb_config();
+        let wl2 = cfg.width_log2();
+        if wl2 > 0 {
+            let w = 1u32 << wl2;
+            let h = 1u32 << cfg.height_log2();
+            (cfg.color_base(), wl2, w, h)
+        } else {
+            // fb_config not yet programmed — use defaults
+            // Assume color_base = 0, compute width_log2 from default_width
+            let wl2 = (self.default_width as f64).log2().ceil() as u8;
+            (0, wl2, self.default_width, self.default_height)
+        }
+    }
+
     /// Export the current framebuffer as a PNG image.
     ///
     /// # Arguments
@@ -127,6 +152,13 @@ impl Gpu {
     ///
     /// Returns `image::ImageError` if the PNG cannot be written.
     pub fn framebuffer_to_png(&self, path: &std::path::Path) -> Result<(), image::ImageError> {
-        self.memory.framebuffer.save_png(path)
+        let (base, wl2, w, h) = self.effective_fb_dims();
+        self.memory.save_png(base, wl2, w, h, path)
+    }
+
+    /// Extract the current framebuffer as a linear `Vec<u16>` of RGB565 pixels.
+    pub fn extract_framebuffer_rgb565(&self) -> Vec<u16> {
+        let (base, wl2, w, h) = self.effective_fb_dims();
+        self.memory.extract_rgb565_linear(base, wl2, w, h)
     }
 }

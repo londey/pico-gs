@@ -12,14 +12,16 @@
 //! Requires an SDRAM framebuffer read (dst pixel).
 
 use super::fragment::ColoredFragment;
-use crate::mem::Framebuffer;
+use crate::mem::GpuMemory;
+use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 
 /// Blend a fragment with the destination framebuffer pixel.
 ///
 /// # Arguments
 ///
 /// * `frag` - Colored fragment (after alpha test).
-/// * `framebuffer` - Framebuffer for destination pixel reads.
+/// * `memory` - GPU memory (SDRAM backing store for destination reads).
+/// * `fb_config` - Framebuffer configuration (base addresses, dimensions).
 /// * `blend_en` - Whether alpha blending is enabled.
 ///
 /// # Returns
@@ -27,7 +29,8 @@ use crate::mem::Framebuffer;
 /// The blended `ColoredFragment`.
 pub fn alpha_blend(
     frag: ColoredFragment,
-    _framebuffer: &Framebuffer,
+    _memory: &GpuMemory,
+    _fb_config: &FbConfigReg,
     _blend_en: bool,
 ) -> ColoredFragment {
     // TODO: implement dst read, UNORM→Q4.12 promotion, blend

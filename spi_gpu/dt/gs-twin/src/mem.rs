@@ -1,61 +1,79 @@
 //! GPU memory model.
 //!
-//! Models the SRAM layout as defined in INT-011. The ECP5-25K has limited
-//! block RAM, so the real SRAM is external. This module provides a flat
-//! memory model with typed accessors for framebuffer, z-buffer, vertex
-//! buffers, and texture storage.
+//! Models the full 32 MiB SDRAM as a flat `Vec<u16>` backing store.
+//! All memory operations (MEM_FILL, pixel writes, Z-test, display scanout,
+//! PNG export) go through the same address space using 4x4 block-tiled
+//! addressing as defined in INT-011.
 
-use crate::math::{Depth, Rgb565, TexCoord};
+use crate::math::{Rgb565, TexCoord};
 use gpu_registers::components::z_compare_e::ZCompareE;
 use std::path::Path;
 
+// ── Block-tiled addressing (INT-011) ────────────────────────────────────────
+
+/// Compute the SDRAM word address for a pixel at (x, y) in a 4x4
+/// block-tiled surface (INT-011).
+///
+/// # Arguments
+///
+/// * `base_word` - Surface base address in 16-bit word units.
+/// * `width_log2` - Log2 of surface width in pixels (e.g. 9 for 512).
+/// * `x` - Pixel column.
+/// * `y` - Pixel row.
+///
+/// # Returns
+///
+/// The flat word index into `sdram`.
+pub fn tiled_word_addr(base_word: usize, width_log2: u8, x: u32, y: u32) -> usize {
+    let block_x = (x >> 2) as usize;
+    let block_y = (y >> 2) as usize;
+    let local_x = (x & 3) as usize;
+    let local_y = (y & 3) as usize;
+    let block_idx = (block_y << (width_log2 as usize - 2)) | block_x;
+    base_word + block_idx * 16 + local_y * 4 + local_x
+}
+
+/// Convert a register base field (COLOR_BASE / Z_BASE) to a word address.
+///
+/// Register encoding: `byte_addr = field_value << 9`, so
+/// `word_addr = field_value << 8` (512-byte / 256-word granularity).
+fn base_reg_to_word(base_reg: u16) -> usize {
+    (base_reg as usize) << 8
+}
+
+// ── GPU memory ──────────────────────────────────────────────────────────────
+
 /// Complete GPU memory state.
 pub struct GpuMemory {
-    /// RGB565 framebuffer surface.
-    pub framebuffer: Framebuffer,
-
-    /// Signed Q4.12 depth buffer (high-level pipeline path).
-    pub depth_buffer: DepthBuffer,
-
-    /// Raw unsigned 16-bit Z-buffer for the register-write path.
+    /// Flat SDRAM backing store (16-bit words, 32 MiB).
     ///
-    /// The RTL's early_z.sv uses unsigned 16-bit Z values (smaller = nearer).
-    /// This is separate from `depth_buffer` (signed Q4.12) used by the
-    /// high-level pipeline. Initialized to 0 (all near-plane).
-    pub raw_zbuf: RawZBuffer,
+    /// All framebuffer, Z-buffer, and texture data lives here.
+    /// Addressed via 4x4 block-tiled layout (INT-011).
+    pub sdram: Vec<u16>,
 
     /// Vertex / index SRAM (64 KiB).
     pub vertex_sram: Vec<u8>,
 
     /// Texture slot storage.
     pub textures: TextureStore,
+}
 
-    /// Flat SDRAM backing store (16-bit words).
-    ///
-    /// TODO: Replace typed `framebuffer` / `raw_zbuf` with views into this
-    /// flat store so that MEM_FILL, pixel writes, and Z-test all operate on
-    /// the same address space.
-    pub sdram: Vec<u16>,
+impl Default for GpuMemory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GpuMemory {
     /// Total SDRAM size in 16-bit words (32 MiB / 2).
     const SDRAM_WORDS: usize = 32 * 1024 * 1024 / 2;
 
-    /// Create GPU memory with the given framebuffer dimensions.
-    ///
-    /// # Arguments
-    ///
-    /// * `width` - Framebuffer width in pixels.
-    /// * `height` - Framebuffer height in pixels.
-    pub fn new(width: u32, height: u32) -> Self {
+    /// Create GPU memory with zeroed 32 MiB SDRAM.
+    pub fn new() -> Self {
         Self {
-            framebuffer: Framebuffer::new(width, height),
-            depth_buffer: DepthBuffer::new(width, height),
-            raw_zbuf: RawZBuffer::new(width, height),
-            vertex_sram: vec![0u8; 64 * 1024], // 64 KiB vertex/index SRAM
-            textures: TextureStore::default(),
             sdram: vec![0u16; Self::SDRAM_WORDS],
+            vertex_sram: vec![0u8; 64 * 1024],
+            textures: TextureStore::default(),
         }
     }
 
@@ -77,234 +95,182 @@ impl GpuMemory {
             self.sdram[word_addr..end].fill(value);
         }
     }
-}
 
-// ── Framebuffer ─────────────────────────────────────────────────────────────
-
-/// RGB565 framebuffer matching the RTL's SRAM framebuffer region.
-pub struct Framebuffer {
-    /// Width in pixels.
-    pub width: u32,
-
-    /// Height in pixels.
-    pub height: u32,
-
-    /// Row-major, top-left origin. Each entry is a packed RGB565 pixel.
-    pub pixels: Vec<Rgb565>,
-}
-
-impl Framebuffer {
-    /// Create a zeroed framebuffer.
+    /// Read a 16-bit value from a tiled surface in SDRAM.
     ///
     /// # Arguments
     ///
-    /// * `width` - Width in pixels.
-    /// * `height` - Height in pixels.
-    pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            pixels: vec![Rgb565(0); (width * height) as usize],
-        }
-    }
-
-    /// Write a pixel at (x, y). Out-of-bounds writes are silently ignored.
-    ///
-    /// # Arguments
-    ///
+    /// * `base_reg` - Surface base register field (COLOR_BASE or Z_BASE).
+    /// * `width_log2` - Log2 of surface width.
     /// * `x` - Pixel column.
     /// * `y` - Pixel row.
-    /// * `color` - RGB565 color value.
-    pub fn put_pixel(&mut self, x: u32, y: u32, color: Rgb565) {
-        if x < self.width && y < self.height {
-            self.pixels[(y * self.width + x) as usize] = color;
-        }
+    pub fn read_tiled(&self, base_reg: u16, width_log2: u8, x: u32, y: u32) -> u16 {
+        let addr = tiled_word_addr(base_reg_to_word(base_reg), width_log2, x, y);
+        self.sdram[addr]
     }
 
-    /// Read a pixel at (x, y). Returns black for out-of-bounds coordinates.
+    /// Write a 16-bit value to a tiled surface in SDRAM.
     ///
     /// # Arguments
     ///
+    /// * `base_reg` - Surface base register field (COLOR_BASE or Z_BASE).
+    /// * `width_log2` - Log2 of surface width.
     /// * `x` - Pixel column.
     /// * `y` - Pixel row.
-    ///
-    /// # Returns
-    ///
-    /// The RGB565 pixel value, or `Rgb565(0)` if out of bounds.
-    pub fn get_pixel(&self, x: u32, y: u32) -> Rgb565 {
-        if x < self.width && y < self.height {
-            self.pixels[(y * self.width + x) as usize]
-        } else {
-            Rgb565(0)
-        }
+    /// * `value` - 16-bit value to write.
+    pub fn write_tiled(&mut self, base_reg: u16, width_log2: u8, x: u32, y: u32, value: u16) {
+        let addr = tiled_word_addr(base_reg_to_word(base_reg), width_log2, x, y);
+        self.sdram[addr] = value;
     }
 
-    /// Fill the entire framebuffer with a single color.
+    /// Unsigned 16-bit Z-test and conditional write in SDRAM.
+    ///
+    /// Reads the stored Z value at (x, y) from the tiled Z-buffer,
+    /// compares with the fragment Z, and writes back if the test passes.
     ///
     /// # Arguments
     ///
-    /// * `color` - RGB565 fill value.
-    pub fn clear(&mut self, color: Rgb565) {
-        self.pixels.fill(color);
-    }
-
-    /// Export as a 24-bit PNG (expanding RGB565 to RGB8).
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Output file path.
-    ///
-    /// # Errors
-    ///
-    /// Returns `image::ImageError` if the PNG cannot be written.
-    pub fn save_png(&self, path: &Path) -> Result<(), image::ImageError> {
-        let mut img = image::RgbImage::new(self.width, self.height);
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let (r, g, b) = self.get_pixel(x, y).to_rgb8();
-                img.put_pixel(x, y, image::Rgb([r, g, b]));
-            }
-        }
-        img.save(path)
-    }
-
-    /// Load a raw RGB565 framebuffer dump (as produced by Verilator testbench).
-    ///
-    /// Format: little-endian u16 per pixel, row-major.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the raw dump file.
-    /// * `width` - Expected framebuffer width in pixels.
-    /// * `height` - Expected framebuffer height in pixels.
-    ///
-    /// # Errors
-    ///
-    /// Returns `std::io::Error` if the file cannot be read.
-    pub fn load_raw_rgb565(path: &Path, width: u32, height: u32) -> std::io::Result<Self> {
-        let data = std::fs::read(path)?;
-        let expected = (width * height * 2) as usize;
-        assert_eq!(
-            data.len(),
-            expected,
-            "raw framebuffer size mismatch: got {}, expected {}",
-            data.len(),
-            expected
-        );
-        let pixels: Vec<Rgb565> = data
-            .chunks_exact(2)
-            .map(|chunk| Rgb565(u16::from_le_bytes([chunk[0], chunk[1]])))
-            .collect();
-        Ok(Self {
-            width,
-            height,
-            pixels,
-        })
-    }
-}
-
-// ── Depth buffer ────────────────────────────────────────────────────────────
-
-/// 16-bit depth buffer using Q4.12 fixed-point values.
-///
-/// # RTL Implementation Notes
-///
-/// The Z-buffer occupies a contiguous SRAM region, one 16-bit word per
-/// pixel. The depth comparison is a signed 16-bit comparison on the
-/// raw Q4.12 bits, which is equivalent to comparing the fixed-point
-/// values directly since Q4.12 uses two's complement.
-pub struct DepthBuffer {
-    /// Width in pixels.
-    pub width: u32,
-
-    /// Height in pixels.
-    pub height: u32,
-
-    /// Per-pixel depth values. Cleared to MAX (far plane).
-    pub values: Vec<Depth>,
-}
-
-impl DepthBuffer {
-    /// Create a depth buffer cleared to far plane (MAX).
-    ///
-    /// # Arguments
-    ///
-    /// * `width` - Width in pixels.
-    /// * `height` - Height in pixels.
-    pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            values: vec![Depth::MAX; (width * height) as usize],
-        }
-    }
-
-    /// Clear all pixels to a raw 16-bit depth value.
-    ///
-    /// # Arguments
-    ///
-    /// * `raw_value` - Raw u16 interpreted as signed Q4.12.
-    pub fn clear_raw(&mut self, raw_value: u16) {
-        let depth = Depth::from_bits(raw_value as i16 as i64);
-        self.values.fill(depth);
-    }
-
-    /// Read the stored depth at (x, y).
-    ///
-    /// # Arguments
-    ///
+    /// * `z_base` - Z_BASE register field.
+    /// * `width_log2` - Log2 of surface width.
     /// * `x` - Pixel column.
     /// * `y` - Pixel row.
-    pub fn get(&self, x: u32, y: u32) -> Depth {
-        self.values[(y * self.width + x) as usize]
-    }
-
-    /// Write a depth value at (x, y).
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Pixel column.
-    /// * `y` - Pixel row.
-    /// * `value` - Q4.12 depth value.
-    pub fn set(&mut self, x: u32, y: u32, value: Depth) {
-        self.values[(y * self.width + x) as usize] = value;
-    }
-
-    /// Depth test: returns true if the fragment passes (and updates the buffer).
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Pixel column.
-    /// * `y` - Pixel row.
-    /// * `depth` - Fragment depth to test.
+    /// * `z` - Fragment Z value to test.
     /// * `func` - Comparison function.
     ///
     /// # Returns
     ///
     /// `true` if the fragment passes the depth test.
-    ///
-    /// # RTL Implementation Notes
-    ///
-    /// This is a single SRAM read (current depth) -> compare -> conditional
-    /// SRAM write (new depth). The comparison operates on the raw i16
-    /// representation of Q4.12 values.
-    pub fn test_and_set(&mut self, x: u32, y: u32, depth: Depth, func: ZCompareE) -> bool {
-        let stored = self.get(x, y);
+    pub fn z_test_and_set(
+        &mut self,
+        z_base: u16,
+        width_log2: u8,
+        x: u32,
+        y: u32,
+        z: u16,
+        func: ZCompareE,
+    ) -> bool {
+        let stored = self.read_tiled(z_base, width_log2, x, y);
         let pass = match func {
             ZCompareE::Never => false,
-            ZCompareE::Less => depth < stored,
-            ZCompareE::Lequal => depth <= stored,
-            ZCompareE::Equal => depth == stored,
-            ZCompareE::Greater => depth > stored,
-            ZCompareE::Gequal => depth >= stored,
-            ZCompareE::Notequal => depth != stored,
+            ZCompareE::Less => z < stored,
+            ZCompareE::Lequal => z <= stored,
+            ZCompareE::Equal => z == stored,
+            ZCompareE::Greater => z > stored,
+            ZCompareE::Gequal => z >= stored,
+            ZCompareE::Notequal => z != stored,
             ZCompareE::Always => true,
         };
         if pass {
-            self.set(x, y, depth);
+            self.write_tiled(z_base, width_log2, x, y, z);
         }
         pass
     }
+
+    /// Extract a tiled SDRAM region as a linear `Vec<u16>` (row-major).
+    ///
+    /// Used for exact RGB565 comparison with Verilator dumps.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_reg` - Surface base register field (COLOR_BASE).
+    /// * `width_log2` - Log2 of surface width.
+    /// * `width` - Surface width in pixels.
+    /// * `height` - Surface height in pixels.
+    pub fn extract_rgb565_linear(
+        &self,
+        base_reg: u16,
+        width_log2: u8,
+        width: u32,
+        height: u32,
+    ) -> Vec<u16> {
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                pixels.push(self.read_tiled(base_reg, width_log2, x, y));
+            }
+        }
+        pixels
+    }
+
+    /// Extract a tiled SDRAM region as an `RgbImage` (RGB565 → RGB888).
+    ///
+    /// # Arguments
+    ///
+    /// * `base_reg` - Surface base register field (COLOR_BASE).
+    /// * `width_log2` - Log2 of surface width.
+    /// * `width` - Surface width in pixels.
+    /// * `height` - Surface height in pixels.
+    pub fn extract_rgb_image(
+        &self,
+        base_reg: u16,
+        width_log2: u8,
+        width: u32,
+        height: u32,
+    ) -> image::RgbImage {
+        let mut img = image::RgbImage::new(width, height);
+        for y in 0..height {
+            for x in 0..width {
+                let raw = self.read_tiled(base_reg, width_log2, x, y);
+                let (r, g, b) = Rgb565(raw).to_rgb8();
+                img.put_pixel(x, y, image::Rgb([r, g, b]));
+            }
+        }
+        img
+    }
+
+    /// Save a tiled SDRAM region as a 24-bit PNG.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_reg` - Surface base register field (COLOR_BASE).
+    /// * `width_log2` - Log2 of surface width.
+    /// * `width` - Surface width in pixels.
+    /// * `height` - Surface height in pixels.
+    /// * `path` - Output file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `image::ImageError` if the PNG cannot be written.
+    pub fn save_png(
+        &self,
+        base_reg: u16,
+        width_log2: u8,
+        width: u32,
+        height: u32,
+        path: &Path,
+    ) -> Result<(), image::ImageError> {
+        self.extract_rgb_image(base_reg, width_log2, width, height)
+            .save(path)
+    }
+}
+
+/// Load a raw RGB565 framebuffer dump (as produced by Verilator testbench).
+///
+/// Format: little-endian u16 per pixel, row-major (linear, not tiled).
+///
+/// # Arguments
+///
+/// * `path` - Path to the raw dump file.
+/// * `width` - Expected framebuffer width in pixels.
+/// * `height` - Expected framebuffer height in pixels.
+///
+/// # Errors
+///
+/// Returns `std::io::Error` if the file cannot be read.
+pub fn load_raw_rgb565(path: &Path, width: u32, height: u32) -> std::io::Result<Vec<u16>> {
+    let data = std::fs::read(path)?;
+    let expected = (width * height * 2) as usize;
+    assert_eq!(
+        data.len(),
+        expected,
+        "raw framebuffer size mismatch: got {}, expected {}",
+        data.len(),
+        expected
+    );
+    Ok(data
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect())
 }
 
 // ── Texture store ───────────────────────────────────────────────────────────
@@ -368,98 +334,5 @@ impl TextureStore {
         let ty = ((v_frac as u32 * tex.height as u32) >> 14) as u16 % tex.height;
 
         Rgb565(tex.data[(ty as usize) * (tex.width as usize) + (tx as usize)])
-    }
-}
-
-// ── Raw Z-buffer (unsigned 16-bit, for register-write path) ──────────────
-
-/// Unsigned 16-bit Z-buffer matching the RTL's early_z.sv.
-///
-/// Smaller values are nearer. The RTL performs unsigned comparison on
-/// raw 16-bit Z values from the rasterizer.
-pub struct RawZBuffer {
-    /// Width in pixels.
-    pub width: u32,
-
-    /// Height in pixels.
-    pub height: u32,
-
-    /// Per-pixel Z values. Initialized to 0.
-    pub values: Vec<u16>,
-}
-
-impl RawZBuffer {
-    /// Create a Z-buffer initialized to zero.
-    ///
-    /// # Arguments
-    ///
-    /// * `width` - Width in pixels.
-    /// * `height` - Height in pixels.
-    pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            values: vec![0u16; (width * height) as usize],
-        }
-    }
-
-    /// Fill the entire Z-buffer with a constant value.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - Raw u16 Z value to fill with.
-    pub fn clear(&mut self, value: u16) {
-        self.values.fill(value);
-    }
-
-    /// Read the stored Z value at (x, y).
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Pixel column.
-    /// * `y` - Pixel row.
-    pub fn get(&self, x: u32, y: u32) -> u16 {
-        self.values[(y * self.width + x) as usize]
-    }
-
-    /// Write a Z value at (x, y).
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Pixel column.
-    /// * `y` - Pixel row.
-    /// * `value` - Raw u16 Z value.
-    pub fn set(&mut self, x: u32, y: u32, value: u16) {
-        self.values[(y * self.width + x) as usize] = value;
-    }
-
-    /// Depth test + conditional write.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Pixel column.
-    /// * `y` - Pixel row.
-    /// * `z` - Fragment Z value to test.
-    /// * `func` - Comparison function.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the fragment passes the depth test.
-    pub fn test_and_set(&mut self, x: u32, y: u32, z: u16, func: ZCompareE) -> bool {
-        let stored = self.get(x, y);
-        let pass = match func {
-            ZCompareE::Never => false,
-            ZCompareE::Less => z < stored,
-            ZCompareE::Lequal => z <= stored,
-            ZCompareE::Equal => z == stored,
-            ZCompareE::Greater => z > stored,
-            ZCompareE::Gequal => z >= stored,
-            ZCompareE::Notequal => z != stored,
-            ZCompareE::Always => true,
-        };
-        if pass {
-            self.set(x, y, z);
-        }
-        pass
     }
 }

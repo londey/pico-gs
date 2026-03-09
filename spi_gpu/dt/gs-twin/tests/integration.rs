@@ -1,14 +1,15 @@
 //! Integration tests: render known scenes and verify output.
 
 use gs_twin::hex_parser;
+use gs_twin::math::Rgb565;
 use gs_twin::test_harness;
 use gs_twin::Gpu;
 use std::path::Path;
 
 #[test]
 fn exact_match_identical_framebuffers() {
-    let fb = gs_twin::mem::Framebuffer::new(16, 16);
-    let result = test_harness::compare_framebuffers(&fb, &fb);
+    let pixels = vec![0u16; 16 * 16];
+    let result = test_harness::compare_framebuffers(&pixels, &pixels, 16, 16);
     assert!(result.is_exact_match());
     assert_eq!(result.differing_pixels, 0);
     assert!(result.psnr_db.is_infinite());
@@ -16,14 +17,14 @@ fn exact_match_identical_framebuffers() {
 
 #[test]
 fn exact_match_detects_single_pixel_difference() {
-    let mut fb_a = gs_twin::mem::Framebuffer::new(4, 4);
-    let mut fb_b = gs_twin::mem::Framebuffer::new(4, 4);
+    let mut fb_a = vec![0u16; 4 * 4];
+    let mut fb_b = vec![0u16; 4 * 4];
 
-    // One pixel differs
-    fb_a.put_pixel(2, 2, gs_twin::math::Rgb565(0xF800)); // pure red
-    fb_b.put_pixel(2, 2, gs_twin::math::Rgb565(0x07E0)); // pure green
+    // One pixel differs (index 2*4+2 = 10)
+    fb_a[10] = 0xF800; // pure red
+    fb_b[10] = 0x07E0; // pure green
 
-    let result = test_harness::compare_framebuffers(&fb_a, &fb_b);
+    let result = test_harness::compare_framebuffers(&fb_a, &fb_b, 4, 4);
     assert!(!result.is_exact_match());
     assert_eq!(result.differing_pixels, 1);
     assert_eq!(result.first_diff.unwrap().0, 2); // x
@@ -35,9 +36,9 @@ fn rgb565_roundtrip_consistency() {
     for r in (0..=255).step_by(8) {
         for g in (0..=255).step_by(4) {
             for b in (0..=255).step_by(8) {
-                let packed = gs_twin::math::Rgb565::from_rgb8(r, g, b);
+                let packed = Rgb565::from_rgb8(r, g, b);
                 let (r2, g2, b2) = packed.to_rgb8();
-                let repacked = gs_twin::math::Rgb565::from_rgb8(r2, g2, b2);
+                let repacked = Rgb565::from_rgb8(r2, g2, b2);
                 assert_eq!(
                     packed, repacked,
                     "RGB565 roundtrip failed for ({r}, {g}, {b})"
@@ -80,13 +81,8 @@ fn ver_010_gouraud_triangle() {
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     gpu.reg_write_script(&script.all_commands());
 
-    let non_bg_pixels = gpu
-        .memory
-        .framebuffer
-        .pixels
-        .iter()
-        .filter(|&&p| p != gs_twin::math::Rgb565(0))
-        .count();
+    let pixels = gpu.extract_framebuffer_rgb565();
+    let non_bg_pixels = pixels.iter().filter(|&&p| p != 0).count();
 
     assert!(
         non_bg_pixels > 10_000,
@@ -117,22 +113,11 @@ fn ver_011_depth_test() {
         gpu.reg_write_script(&phase.commands);
     }
 
-    let red = gs_twin::math::Rgb565::from_rgb8(0xFF, 0, 0);
-    let blue = gs_twin::math::Rgb565::from_rgb8(0, 0, 0xFF);
-    let red_count = gpu
-        .memory
-        .framebuffer
-        .pixels
-        .iter()
-        .filter(|&&p| p == red)
-        .count();
-    let blue_count = gpu
-        .memory
-        .framebuffer
-        .pixels
-        .iter()
-        .filter(|&&p| p == blue)
-        .count();
+    let red = Rgb565::from_rgb8(0xFF, 0, 0).0;
+    let blue = Rgb565::from_rgb8(0, 0, 0xFF).0;
+    let pixels = gpu.extract_framebuffer_rgb565();
+    let red_count = pixels.iter().filter(|&&p| p == red).count();
+    let blue_count = pixels.iter().filter(|&&p| p == blue).count();
 
     assert!(
         red_count > 1000,
@@ -227,13 +212,8 @@ fn ver_015_size_grid() {
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     gpu.reg_write_script(&script.all_commands());
 
-    let non_bg_pixels = gpu
-        .memory
-        .framebuffer
-        .pixels
-        .iter()
-        .filter(|&&p| p != gs_twin::math::Rgb565(0))
-        .count();
+    let pixels = gpu.extract_framebuffer_rgb565();
+    let non_bg_pixels = pixels.iter().filter(|&&p| p != 0).count();
 
     assert!(
         non_bg_pixels > 0,

@@ -11,23 +11,24 @@
 //! See UNIT-006, pixel_write stage.
 
 use super::fragment::PixelOut;
-use crate::mem::{Framebuffer, RawZBuffer};
+use crate::mem::GpuMemory;
+use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 
-/// Write a fragment to the framebuffer and Z-buffer.
+/// Write a fragment to the framebuffer and Z-buffer in SDRAM.
 ///
 /// # Arguments
 ///
 /// * `frag` - Final pixel output (RGB565 color + depth).
-/// * `framebuffer` - Mutable framebuffer for color writes.
-/// * `zbuf` - Mutable Z-buffer for depth writes.
+/// * `memory` - GPU memory (SDRAM backing store).
+/// * `fb_config` - Framebuffer configuration (base addresses, dimensions).
 /// * `color_write_en` - Whether color writes are enabled.
 /// * `z_write_en` - Whether Z-buffer writes are enabled.
 pub fn pixel_write(
     _frag: &PixelOut,
-    _framebuffer: &mut Framebuffer,
-    _zbuf: &mut RawZBuffer,
+    _memory: &mut GpuMemory,
+    _fb_config: &FbConfigReg,
     _color_write_en: bool,
     _z_write_en: bool,
 ) {
-    // TODO: implement framebuffer and Z-buffer writes
+    // TODO: implement framebuffer and Z-buffer writes via tiled SDRAM
 }

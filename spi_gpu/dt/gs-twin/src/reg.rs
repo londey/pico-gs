@@ -377,23 +377,29 @@ impl RegisterFile {
         }
     }
 
-    /// Write a single fragment to the framebuffer with optional Z-test.
+    /// Write a single fragment to SDRAM with optional Z-test.
     ///
     /// Accepts `RasterFragment` with Q4.12 colors and converts shade0
-    /// to RGB565 for framebuffer write (truncating, matching dither bypass).
+    /// to RGB565 for color write (truncating, matching dither bypass).
+    /// Uses 4x4 block-tiled addressing via fb_config (INT-011).
     fn write_fragment(&self, frag: &RasterFragment, rm: &RenderModeReg, memory: &mut GpuMemory) {
         let (fx, fy) = (frag.x as u32, frag.y as u32);
-        if fx >= memory.framebuffer.width || fy >= memory.framebuffer.height {
+        let fb_width = 1u32 << self.fb_config.width_log2();
+        let fb_height = 1u32 << self.fb_config.height_log2();
+        if fx >= fb_width || fy >= fb_height {
             return;
         }
 
-        // Early Z-test (matching early_z.sv)
+        let wl2 = self.fb_config.width_log2();
+
+        // Early Z-test (matching early_z.sv) — now in SDRAM
         if rm.z_test_en() {
-            if !memory.raw_zbuf.test_and_set(fx, fy, frag.z, rm.z_compare()) {
+            if !memory.z_test_and_set(self.fb_config.z_base(), wl2, fx, fy, frag.z, rm.z_compare())
+            {
                 return;
             }
         } else if rm.z_write_en() {
-            memory.raw_zbuf.set(fx, fy, frag.z);
+            memory.write_tiled(self.fb_config.z_base(), wl2, fx, fy, frag.z);
         }
 
         if rm.color_write_en() {
@@ -409,8 +415,13 @@ impl RegisterFile {
             let b5 = (b_q412 >> 7).min(31) as u8;
 
             let color = Rgb565(((r5 as u16) << 11) | ((g6 as u16) << 5) | (b5 as u16));
-            memory.framebuffer.put_pixel(fx, fy, color);
+            memory.write_tiled(self.fb_config.color_base(), wl2, fx, fy, color.0);
         }
+    }
+
+    /// Access the FB_CONFIG register latch.
+    pub fn fb_config(&self) -> FbConfigReg {
+        self.fb_config
     }
 }
 

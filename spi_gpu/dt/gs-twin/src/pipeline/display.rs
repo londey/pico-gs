@@ -7,8 +7,8 @@
 //!
 //! # Pipeline stages
 //!
-//! 1. **Scanline Prefetch** — burst-read scanlines from framebuffer
-//!    (modeled as direct framebuffer access in the DT).
+//! 1. **Scanline Prefetch** — burst-read scanlines from SDRAM
+//!    (modeled as tiled SDRAM access in the DT).
 //! 2. **Color Grade LUT** — per-channel lookup: R (32-entry, 5→8 bit),
 //!    G (64-entry, 6→8 bit), B (32-entry, 5→8 bit).
 //!    Maps RGB565 to RGB888.
@@ -23,7 +23,8 @@
 //! | 512×480 | 512→640 (4:5) | 1:1 | Default rendering |
 //! | 256×240 | 256→640 (2:5) | Line double | Half-resolution / retro |
 
-use crate::mem::Framebuffer;
+use crate::math::Rgb565;
+use crate::mem::GpuMemory;
 use image::RgbImage;
 
 /// Display output dimensions.
@@ -84,7 +85,7 @@ impl ColorGradeLut {
     /// # Returns
     ///
     /// `[R, G, B]` in 8-bit per channel.
-    pub fn apply(&self, pixel: crate::math::Rgb565) -> [u8; 3] {
+    pub fn apply(&self, pixel: Rgb565) -> [u8; 3] {
         let r5 = ((pixel.0 >> 11) & 0x1F) as usize;
         let g6 = ((pixel.0 >> 5) & 0x3F) as usize;
         let b5 = (pixel.0 & 0x1F) as usize;
@@ -116,21 +117,28 @@ impl Default for DisplayConfig {
     }
 }
 
-/// Produce a 640×480 RGB888 output image from the framebuffer.
+/// Produce a 640×480 RGB888 output image from SDRAM.
 ///
-/// Applies color grading LUT (RGB565 → RGB888) then nearest-neighbor
-/// horizontal scaling via Bresenham accumulator.
+/// Reads pixels from a tiled surface in SDRAM, applies color grading
+/// LUT (RGB565 → RGB888), then nearest-neighbor horizontal scaling
+/// via Bresenham accumulator.
 ///
 /// # Arguments
 ///
-/// * `framebuffer` - Source RGB565 framebuffer.
+/// * `memory` - GPU memory (SDRAM backing store).
+/// * `base_reg` - COLOR_BASE register field for the display framebuffer.
 /// * `lut` - Color grading lookup tables.
 /// * `config` - Display configuration (width, line doubling).
 ///
 /// # Returns
 ///
 /// A 640×480 `RgbImage` ready for PNG export or comparison.
-pub fn scanout(framebuffer: &Framebuffer, lut: &ColorGradeLut, config: &DisplayConfig) -> RgbImage {
+pub fn scanout(
+    memory: &GpuMemory,
+    base_reg: u16,
+    lut: &ColorGradeLut,
+    config: &DisplayConfig,
+) -> RgbImage {
     let src_width = 1u32 << config.fb_width_log2;
     let mut img = RgbImage::new(DISPLAY_WIDTH, DISPLAY_HEIGHT);
 
@@ -144,8 +152,8 @@ pub fn scanout(framebuffer: &Framebuffer, lut: &ColorGradeLut, config: &DisplayC
             // Bresenham: src_x = dst_x * src_width / DISPLAY_WIDTH
             let src_x = (dst_x as u64 * src_width as u64 / DISPLAY_WIDTH as u64) as u32;
 
-            let pixel = framebuffer.get_pixel(src_x, src_y);
-            let [r, g, b] = lut.apply(pixel);
+            let raw = memory.read_tiled(base_reg, config.fb_width_log2, src_x, src_y);
+            let [r, g, b] = lut.apply(Rgb565(raw));
             img.put_pixel(dst_x, dst_y, image::Rgb([r, g, b]));
         }
     }

@@ -9,7 +9,6 @@
 //! to help localize where the mismatch occurs, not as pass/fail criteria.
 
 use crate::math::Rgb565;
-use crate::mem::Framebuffer;
 use std::path::Path;
 
 /// Result of comparing two framebuffers.
@@ -42,45 +41,55 @@ impl DiffResult {
     }
 }
 
-/// Compare two framebuffers pixel-by-pixel.
+/// Compare two linear RGB565 framebuffers pixel-by-pixel.
 ///
 /// The primary result is `is_exact_match()`. All other metrics are
 /// diagnostic aids for debugging mismatches.
 ///
 /// # Arguments
 ///
-/// * `a` - First (expected) framebuffer.
-/// * `b` - Second (actual) framebuffer.
+/// * `a` - First (expected) pixel data as linear RGB565 u16 slice.
+/// * `b` - Second (actual) pixel data as linear RGB565 u16 slice.
+/// * `width` - Framebuffer width in pixels.
+/// * `height` - Framebuffer height in pixels.
 ///
 /// # Returns
 ///
 /// A `DiffResult` with exact-match status and diagnostic metrics.
-pub fn compare_framebuffers(a: &Framebuffer, b: &Framebuffer) -> DiffResult {
-    assert_eq!(a.width, b.width, "framebuffer width mismatch");
-    assert_eq!(a.height, b.height, "framebuffer height mismatch");
+pub fn compare_framebuffers(a: &[u16], b: &[u16], width: u32, height: u32) -> DiffResult {
+    let total_pixels = width * height;
+    assert_eq!(
+        a.len(),
+        total_pixels as usize,
+        "framebuffer A size mismatch"
+    );
+    assert_eq!(
+        b.len(),
+        total_pixels as usize,
+        "framebuffer B size mismatch"
+    );
 
-    let total_pixels = a.width * a.height;
     let mut differing_pixels = 0u32;
     let mut max_channel_diff = 0u8;
     let mut sum_sq_error = 0.0f64;
     let mut first_diff = None;
 
     for i in 0..total_pixels as usize {
-        let pa = a.pixels[i];
-        let pb = b.pixels[i];
+        let pa = a[i];
+        let pb = b[i];
 
         if pa != pb {
             differing_pixels += 1;
 
             if first_diff.is_none() {
-                let x = (i as u32) % a.width;
-                let y = (i as u32) / a.width;
-                first_diff = Some((x, y, pa, pb));
+                let x = (i as u32) % width;
+                let y = (i as u32) / width;
+                first_diff = Some((x, y, Rgb565(pa), Rgb565(pb)));
             }
 
             // Expand to 8-bit for human-readable metrics
-            let (ar, ag, ab) = pa.to_rgb8();
-            let (br, bg, bb) = pb.to_rgb8();
+            let (ar, ag, ab) = Rgb565(pa).to_rgb8();
+            let (br, bg, bb) = Rgb565(pb).to_rgb8();
 
             let dr = (ar as i16 - br as i16).unsigned_abs() as u8;
             let dg = (ag as i16 - bg as i16).unsigned_abs() as u8;
@@ -118,26 +127,31 @@ pub fn compare_framebuffers(a: &Framebuffer, b: &Framebuffer) -> DiffResult {
 ///
 /// # Arguments
 ///
-/// * `a` - First (expected) framebuffer.
-/// * `b` - Second (actual) framebuffer.
+/// * `a` - First (expected) pixel data as linear RGB565 u16 slice.
+/// * `b` - Second (actual) pixel data as linear RGB565 u16 slice.
+/// * `width` - Framebuffer width in pixels.
+/// * `height` - Framebuffer height in pixels.
 /// * `path` - Output PNG path.
 ///
 /// # Errors
 ///
 /// Returns `image::ImageError` if the PNG cannot be written.
 pub fn save_diff_image(
-    a: &Framebuffer,
-    b: &Framebuffer,
+    a: &[u16],
+    b: &[u16],
+    width: u32,
+    height: u32,
     path: &Path,
 ) -> Result<(), image::ImageError> {
-    assert_eq!(a.width, b.width);
-    assert_eq!(a.height, b.height);
+    assert_eq!(a.len(), (width * height) as usize);
+    assert_eq!(b.len(), (width * height) as usize);
 
-    let mut img = image::RgbImage::new(a.width, a.height);
-    for y in 0..a.height {
-        for x in 0..a.width {
-            let pa = a.get_pixel(x, y);
-            let pb = b.get_pixel(x, y);
+    let mut img = image::RgbImage::new(width, height);
+    for y in 0..height {
+        for x in 0..width {
+            let i = (y * width + x) as usize;
+            let pa = Rgb565(a[i]);
+            let pb = Rgb565(b[i]);
 
             if pa == pb {
                 // Matching pixel: dim gray

@@ -12,7 +12,8 @@
 //! See UNIT-006, early_z.sv.
 
 use super::fragment::RasterFragment;
-use crate::mem::RawZBuffer;
+use crate::mem::GpuMemory;
+use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 use gpu_registers::components::z_compare_e::ZCompareE;
 
 /// Perform the early Z-buffer test.
@@ -20,7 +21,8 @@ use gpu_registers::components::z_compare_e::ZCompareE;
 /// # Arguments
 ///
 /// * `frag` - Rasterizer output fragment.
-/// * `zbuf` - Mutable reference to the Z-buffer for read/write.
+/// * `memory` - GPU memory (SDRAM backing store for Z-buffer).
+/// * `fb_config` - Framebuffer configuration (Z_BASE, dimensions).
 /// * `z_test_en` - Whether depth testing is enabled.
 /// * `z_write_en` - Whether depth writes are enabled (independent of test).
 /// * `z_compare` - Depth comparison function.
@@ -31,11 +33,12 @@ use gpu_registers::components::z_compare_e::ZCompareE;
 /// `None` if the fragment fails the depth test.
 pub fn early_z_test(
     frag: RasterFragment,
-    _zbuf: &mut RawZBuffer,
+    _memory: &mut GpuMemory,
+    _fb_config: &FbConfigReg,
     _z_test_en: bool,
     _z_write_en: bool,
     _z_compare: ZCompareE,
 ) -> Option<RasterFragment> {
-    // TODO: implement Z-buffer test and conditional write
+    // TODO: implement Z-buffer test and conditional write via tiled SDRAM
     Some(frag)
 }
