@@ -1,29 +1,51 @@
-//! Integer-pixel triangle rasterizer matching the RTL's rasterizer.sv.
+//! Derivative-based triangle rasterizer matching the RTL pipeline.
 //!
-//! The RTL truncates Q12.4 vertex coordinates to 10-bit integer pixels
-//! (bits [13:4]) and computes edge functions on these integer values.
-//! This module implements the same algorithm for bit-exact matching.
+//! The RTL rasterizer (rasterizer.sv and submodules) uses a two-phase approach:
+//! 1. **Triangle setup**: compute edge function coefficients, reciprocal area,
+//!    per-attribute dx/dy derivatives, and initial values at the bounding box
+//!    origin.
+//! 2. **Per-fragment iteration**: walk 4×4 tiles over the bounding box with
+//!    hierarchical rejection, incrementally accumulate attributes, apply
+//!    perspective correction, and emit fragments.
 //!
-//! # Algorithm
-//! 1. Compute edge function coefficients (A, B, C) from integer vertices
-//! 2. Walk the bounding box pixel by pixel
-//! 3. Test each pixel against all three edge functions
-//! 4. For inside pixels, interpolate color and depth using barycentrics
-//!
-//! # RTL Implementation Notes
-//! Edge function: `e_i(x,y) = A_i * x + B_i * y + C_i`
-//! where A = (y_j - y_k), B = (x_k - x_j), C = x_j*y_k - x_k*y_j.
-//! The RTL uses 11-bit signed A/B and 21-bit signed C.
+//! All intermediate values use explicit bit widths matching the RTL.
+//! The digital twin is transaction-level (not cycle-accurate) but bit-accurate
+//! for the math.
 
-use crate::math::Rgb565;
+use super::fragment::{ColorQ412, RasterFragment};
+use super::recip;
 use crate::reg::Rgba8888;
 
-/// Integer-pixel vertex for the register-write path.
+// ── Attribute indices ──────────────────────────────────────────────────────
+
+const ATTR_C0R: usize = 0;
+const ATTR_C0G: usize = 1;
+const ATTR_C0B: usize = 2;
+const ATTR_C0A: usize = 3;
+const ATTR_C1R: usize = 4;
+const ATTR_C1G: usize = 5;
+const ATTR_C1B: usize = 6;
+const ATTR_C1A: usize = 7;
+const ATTR_Z: usize = 8;
+const ATTR_S0: usize = 9;
+const ATTR_T0: usize = 10;
+const ATTR_Q: usize = 11;
+const ATTR_S1: usize = 12;
+const ATTR_T1: usize = 13;
+const NUM_ATTRS: usize = 14;
+
+/// Tile size for hierarchical edge walk (matching RTL's 4×4 tiles).
+const TILE_SIZE: u16 = 4;
+
+// ── Input types ────────────────────────────────────────────────────────────
+
+/// Full vertex data matching the RTL's per-vertex register bundle.
 ///
-/// Matches the RTL's latched vertex registers after Q12.4 → pixel truncation.
+/// Contains all attributes needed for rasterization: position, depth,
+/// perspective factor, two color sets, and texture coordinates.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct IntVertex {
-    /// Integer pixel X (0..1023), from Q12.4 bits [13:4].
+pub struct RasterVertex {
+    /// Integer pixel X (0..1023), from Q12.4 bits \[13:4\].
     pub px: u16,
 
     /// Integer pixel Y (0..1023).
@@ -32,15 +54,33 @@ pub struct IntVertex {
     /// Depth, unsigned 16-bit.
     pub z: u16,
 
+    /// Q/W perspective denominator, unsigned 16-bit (from VERTEX register).
+    pub q: u16,
+
     /// Diffuse color (RGBA8888).
     pub color0: Rgba8888,
+
+    /// Specular color (RGBA8888).
+    pub color1: Rgba8888,
+
+    /// TEX0 S coordinate (Q4.12 raw bits, signed).
+    pub s0: u16,
+
+    /// TEX0 T coordinate (Q4.12 raw bits, signed).
+    pub t0: u16,
+
+    /// TEX1 S coordinate (Q4.12 raw bits, signed).
+    pub s1: u16,
+
+    /// TEX1 T coordinate (Q4.12 raw bits, signed).
+    pub t1: u16,
 }
 
-/// Triangle input for integer-pixel rasterization.
+/// Triangle input for rasterization.
 #[derive(Debug, Clone, Copy)]
-pub struct IntTriangle {
+pub struct RasterTriangle {
     /// Three vertices in winding order.
-    pub verts: [IntVertex; 3],
+    pub verts: [RasterVertex; 3],
 
     /// Bounding box minimum X (clamped to scissor/surface).
     pub bbox_min_x: u16,
@@ -54,51 +94,61 @@ pub struct IntTriangle {
     /// Bounding box maximum Y (clamped to scissor/surface).
     pub bbox_max_y: u16,
 
-    /// Whether Gouraud interpolation is enabled.
+    /// Whether Gouraud interpolation is enabled for vertex colors.
     pub gouraud_en: bool,
 }
 
-/// Fragment output from integer-pixel rasterization.
-#[derive(Debug, Clone, Copy)]
-pub struct IntFragment {
-    /// Fragment pixel X.
-    pub x: u16,
+// ── Triangle setup ─────────────────────────────────────────────────────────
 
-    /// Fragment pixel Y.
-    pub y: u16,
-
-    /// Interpolated depth (unsigned 16-bit), for Z-test.
-    pub z: u16,
-
-    /// Final fragment color (RGB565).
-    pub color: Rgb565,
+/// Edge function coefficients for one edge.
+///
+/// Edge evaluation: `e(x,y) = a*x + b*y + c`
+#[derive(Debug, Clone, Copy, Default)]
+struct EdgeCoeffs {
+    /// X coefficient, 11-bit signed (matching RTL `signed [10:0]`).
+    a: i32,
+    /// Y coefficient, 11-bit signed.
+    b: i32,
+    /// Constant term, 21-bit signed.
+    c: i32,
 }
 
-/// Rasterize a triangle using integer pixel coordinates.
+/// Result of triangle setup — all precomputed data for fragment iteration.
+pub struct TriangleSetup {
+    /// Edge function coefficients for 3 edges.
+    edges: [EdgeCoeffs; 3],
+
+    /// True if triangle has CCW winding (positive area).
+    ccw: bool,
+
+    /// Bounding box (tile-aligned for RTL matching).
+    bbox_min_x: u16,
+    bbox_min_y: u16,
+    bbox_max_x: u16,
+    bbox_max_y: u16,
+
+    /// Per-attribute dx derivatives (32-bit signed, matching RTL `signed [31:0]`).
+    dx: [i32; NUM_ATTRS],
+
+    /// Per-attribute dy derivatives (32-bit signed).
+    dy: [i32; NUM_ATTRS],
+
+    /// Initial attribute values at bbox origin (32-bit signed).
+    inits: [i32; NUM_ATTRS],
+
+    /// Whether Gouraud interpolation is enabled.
+    gouraud_en: bool,
+}
+
+/// Perform triangle setup: compute edge coefficients, derivatives, and
+/// initial values.
 ///
-/// This matches the RTL's rasterizer.sv algorithm:
-/// 1. Compute edge function coefficients (A, B, C) from integer vertices
-/// 2. Walk the bounding box pixel by pixel
-/// 3. Test each pixel against all three edge functions
-/// 4. For inside pixels, interpolate color using barycentrics
+/// Returns `None` for degenerate triangles (zero area).
 ///
-/// # Arguments
-///
-/// * `tri` - Triangle with integer-pixel vertices and bounding box limits.
-///
-/// # Returns
-///
-/// A vector of fragments for all pixels inside the triangle.
-///
-/// # RTL Implementation Notes
-///
-/// Edge function: `e_i(x,y) = A_i * x + B_i * y + C_i`
-/// where A = (y_j - y_k), B = (x_k - x_j), C = x_j*y_k - x_k*y_j.
-/// The RTL uses 11-bit signed A/B and 21-bit signed C.
-/// We use i32 for headroom (matching the RTL's multiplier widths).
-pub fn rasterize_int_triangle(tri: &IntTriangle) -> Vec<IntFragment> {
+/// Matches the RTL's rasterizer.sv S_SETUP + raster_recip_area +
+/// raster_deriv pipeline.
+pub fn triangle_setup(tri: &RasterTriangle) -> Option<TriangleSetup> {
     let [ref v0, ref v1, ref v2] = tri.verts;
-    let mut fragments = Vec::new();
 
     let x0 = v0.px as i32;
     let y0 = v0.py as i32;
@@ -107,119 +157,508 @@ pub fn rasterize_int_triangle(tri: &IntTriangle) -> Vec<IntFragment> {
     let x2 = v2.px as i32;
     let y2 = v2.py as i32;
 
-    // ── Edge function coefficients ───────────────────────────────────
+    // ── Edge function coefficients ─────────────────────────────────
     // Matching rasterizer.sv S_SETUP:
     //   edge0: (v1, v2) — tests against v0's half-plane
     //   edge1: (v2, v0) — tests against v1's half-plane
     //   edge2: (v0, v1) — tests against v2's half-plane
-    let e0_a = y1 - y2;
-    let e0_b = x2 - x1;
-    let e0_c = x1 * y2 - x2 * y1;
+    let edges = [
+        EdgeCoeffs {
+            a: y1 - y2,
+            b: x2 - x1,
+            c: x1 * y2 - x2 * y1,
+        },
+        EdgeCoeffs {
+            a: y2 - y0,
+            b: x0 - x2,
+            c: x2 * y0 - x0 * y2,
+        },
+        EdgeCoeffs {
+            a: y0 - y1,
+            b: x1 - x0,
+            c: x0 * y1 - x1 * y0,
+        },
+    ];
 
-    let e1_a = y2 - y0;
-    let e1_b = x0 - x2;
-    let e1_c = x2 * y0 - x0 * y2;
-
-    let e2_a = y0 - y1;
-    let e2_b = x1 - x0;
-    let e2_c = x0 * y1 - x1 * y0;
-
-    // 2× signed area = e0_a * x0 + e0_b * y0 + e0_c (evaluate edge0 at v0)
-    let area2 = e0_a * x0 + e0_b * y0 + e0_c;
+    // 2× signed area = evaluate edge0 at v0
+    let area2 = edges[0].a * x0 + edges[0].b * y0 + edges[0].c;
     if area2 == 0 {
-        return fragments; // degenerate triangle
+        return None; // degenerate triangle
     }
 
-    // Bounding box: clamp triangle bbox to provided limits
-    let tri_min_x = x0.min(x1).min(x2).max(tri.bbox_min_x as i32);
-    let tri_max_x = x0.max(x1).max(x2).min(tri.bbox_max_x as i32);
-    let tri_min_y = y0.min(y1).min(y2).max(tri.bbox_min_y as i32);
-    let tri_max_y = y0.max(y1).max(y2).min(tri.bbox_max_y as i32);
-
-    // CCW = positive area
     let ccw = area2 > 0;
 
-    // ── Scanline walk ────────────────────────────────────────────────
-    for py in tri_min_y..=tri_max_y {
-        for px in tri_min_x..=tri_max_x {
-            // Evaluate edge functions at (px, py)
-            let w0 = e0_a * px + e0_b * py + e0_c;
-            let w1 = e1_a * px + e1_b * py + e1_c;
-            let w2 = e2_a * px + e2_b * py + e2_c;
+    // ── Bounding box ───────────────────────────────────────────────
+    // Clamp triangle bbox to provided scissor limits
+    let tri_min_x = (x0.min(x1).min(x2).max(tri.bbox_min_x as i32)) as u16;
+    let tri_max_x = (x0.max(x1).max(x2).min(tri.bbox_max_x as i32)) as u16;
+    let tri_min_y = (y0.min(y1).min(y2).max(tri.bbox_min_y as i32)) as u16;
+    let tri_max_y = (y0.max(y1).max(y2).min(tri.bbox_max_y as i32)) as u16;
 
-            // Inside test: all edge functions same sign as area
-            let inside = if ccw {
-                w0 >= 0 && w1 >= 0 && w2 >= 0
-            } else {
-                w0 <= 0 && w1 <= 0 && w2 <= 0
-            };
+    // ── Reciprocal area ────────────────────────────────────────────
+    // Matching raster_recip_area.sv: 22-bit signed input
+    let recip = recip::recip_area(area2)?;
+    let inv_area = recip.mantissa;
+    let area_shift = recip.area_shift;
 
-            if !inside {
-                continue;
+    // ── Vertex attribute deltas ────────────────────────────────────
+    // Color deltas: 9-bit signed (from u8 difference)
+    // Matching raster_deriv.sv: $signed({1'b0, ch1}) - $signed({1'b0, ch0})
+    let color_delta = |ch0: u8, ch1: u8| -> i32 { ch1 as i32 - ch0 as i32 };
+
+    // Wide deltas: 17-bit signed
+    // Z: unsigned difference via sign-extension: $signed({1'b0, z1}) - $signed({1'b0, z0})
+    let wide_unsigned_delta = |a: u16, b: u16| -> i32 { b as i32 - a as i32 };
+
+    // ST: signed difference via sign-extension: {s1[15], s1} - {s0[15], s0}
+    let wide_signed_delta = |a: u16, b: u16| -> i32 { (b as i16 as i32) - (a as i16 as i32) };
+
+    // d10 = attr[v1] - attr[v0], d20 = attr[v2] - attr[v0]
+    let d10: [i32; NUM_ATTRS] = [
+        color_delta(v0.color0.r(), v1.color0.r()),
+        color_delta(v0.color0.g(), v1.color0.g()),
+        color_delta(v0.color0.b(), v1.color0.b()),
+        color_delta(v0.color0.a(), v1.color0.a()),
+        color_delta(v0.color1.r(), v1.color1.r()),
+        color_delta(v0.color1.g(), v1.color1.g()),
+        color_delta(v0.color1.b(), v1.color1.b()),
+        color_delta(v0.color1.a(), v1.color1.a()),
+        wide_unsigned_delta(v0.z, v1.z),
+        wide_signed_delta(v0.s0, v1.s0),
+        wide_signed_delta(v0.t0, v1.t0),
+        wide_unsigned_delta(v0.q, v1.q),
+        wide_signed_delta(v0.s1, v1.s1),
+        wide_signed_delta(v0.t1, v1.t1),
+    ];
+
+    let d20: [i32; NUM_ATTRS] = [
+        color_delta(v0.color0.r(), v2.color0.r()),
+        color_delta(v0.color0.g(), v2.color0.g()),
+        color_delta(v0.color0.b(), v2.color0.b()),
+        color_delta(v0.color0.a(), v2.color0.a()),
+        color_delta(v0.color1.r(), v2.color1.r()),
+        color_delta(v0.color1.g(), v2.color1.g()),
+        color_delta(v0.color1.b(), v2.color1.b()),
+        color_delta(v0.color1.a(), v2.color1.a()),
+        wide_unsigned_delta(v0.z, v2.z),
+        wide_signed_delta(v0.s0, v2.s0),
+        wide_signed_delta(v0.t0, v2.t0),
+        wide_unsigned_delta(v0.q, v2.q),
+        wide_signed_delta(v0.s1, v2.s1),
+        wide_signed_delta(v0.t1, v2.t1),
+    ];
+
+    // ── Derivative computation ─────────────────────────────────────
+    // Matching raster_deriv.sv:
+    //   1. delta * inv_area (17-bit signed × 18-bit unsigned → 36-bit signed)
+    //   2. scaled * edge_coeff (47-bit × 11-bit → 47-bit, shift-add)
+    //   3. deriv = (d10_scaled * edge1_coeff + d20_scaled * edge2_coeff) >>> area_shift
+    //
+    // Uses edges[1] (edge1) and edges[2] (edge2) for derivatives.
+    let edge1_a = edges[1].a as i64;
+    let edge1_b = edges[1].b as i64;
+    let edge2_a = edges[2].a as i64;
+    let edge2_b = edges[2].b as i64;
+
+    let mut dx_derivs = [0i32; NUM_ATTRS];
+    let mut dy_derivs = [0i32; NUM_ATTRS];
+
+    for i in 0..NUM_ATTRS {
+        // Step 1: delta * inv_area (signed 17 × unsigned 18 → signed 36)
+        // Matching raster_dsp_mul.sv: |a| * b, restore sign
+        let d10_inv = dsp_mul(d10[i], inv_area);
+        let d20_inv = dsp_mul(d20[i], inv_area);
+
+        // Step 2: edge coefficient application (47-bit shift-add)
+        // dx = d10_inv * edge1_A + d20_inv * edge2_A
+        // dy = d10_inv * edge1_B + d20_inv * edge2_B
+        let scaled_dx = d10_inv * edge1_a + d20_inv * edge2_a;
+        let scaled_dy = d10_inv * edge1_b + d20_inv * edge2_b;
+
+        // Step 3: arithmetic right shift by area_shift, truncate to 32-bit
+        dx_derivs[i] = (scaled_dx >> area_shift) as i32;
+        dy_derivs[i] = (scaled_dy >> area_shift) as i32;
+    }
+
+    // Force color derivatives to zero when Gouraud is disabled
+    if !tri.gouraud_en {
+        for i in ATTR_C0R..=ATTR_C1A {
+            dx_derivs[i] = 0;
+            dy_derivs[i] = 0;
+        }
+    }
+
+    // ── Initial values at bbox origin ──────────────────────────────
+    // Matching raster_deriv.sv init computation:
+    //   init = f0 + dx * (bbox_x - x0) + dy * (bbox_y - y0)
+    //
+    // f0 format:
+    //   Colors: {8'b0, unorm8, 16'b0} = (u8 as i32) << 16
+    //   Z:      {z16, 16'b0}          = (z as i32) << 16
+    //   ST:     {st_q412, 16'b0}      = (i16 as i32) << 16
+    //   Q:      {q16, 16'b0}          = (q as i32) << 16
+
+    let bbox_sx = tri_min_x as i32 - x0;
+    let bbox_sy = tri_min_y as i32 - y0;
+
+    let f0: [i32; NUM_ATTRS] = [
+        (v0.color0.r() as i32) << 16,
+        (v0.color0.g() as i32) << 16,
+        (v0.color0.b() as i32) << 16,
+        (v0.color0.a() as i32) << 16,
+        (v0.color1.r() as i32) << 16,
+        (v0.color1.g() as i32) << 16,
+        (v0.color1.b() as i32) << 16,
+        (v0.color1.a() as i32) << 16,
+        ((v0.z as u32) << 16) as i32,
+        (v0.s0 as i16 as i32) << 16,
+        (v0.t0 as i16 as i32) << 16,
+        ((v0.q as u32) << 16) as i32,
+        (v0.s1 as i16 as i32) << 16,
+        (v0.t1 as i16 as i32) << 16,
+    ];
+
+    let mut inits = [0i32; NUM_ATTRS];
+    for i in 0..NUM_ATTRS {
+        // init = f0 + dx * bbox_sx + dy * bbox_sy
+        // Matching raster_shift_mul_32x11: 32-bit × 11-bit → 32-bit truncated
+        let dx_term = shift_mul_32x11(dx_derivs[i], bbox_sx);
+        let dy_term = shift_mul_32x11(dy_derivs[i], bbox_sy);
+        inits[i] = f0[i].wrapping_add(dx_term).wrapping_add(dy_term);
+    }
+
+    Some(TriangleSetup {
+        edges,
+        ccw,
+        bbox_min_x: tri_min_x,
+        bbox_min_y: tri_min_y,
+        bbox_max_x: tri_max_x,
+        bbox_max_y: tri_max_y,
+        dx: dx_derivs,
+        dy: dy_derivs,
+        inits,
+        gouraud_en: tri.gouraud_en,
+    })
+}
+
+// ── Per-fragment iteration ─────────────────────────────────────────────────
+
+/// Rasterize a triangle from precomputed setup data.
+///
+/// Walks the bounding box in 4×4 tiles, performs hierarchical edge rejection,
+/// per-pixel edge testing, incremental attribute accumulation, and perspective
+/// correction.
+///
+/// Matches raster_edge_walk.sv + raster_attr_accum.sv.
+pub fn rasterize_triangle(setup: &TriangleSetup) -> Vec<RasterFragment> {
+    let mut fragments = Vec::new();
+
+    let min_x = setup.bbox_min_x;
+    let min_y = setup.bbox_min_y;
+    let max_x = setup.bbox_max_x;
+    let max_y = setup.bbox_max_y;
+
+    if min_x > max_x || min_y > max_y {
+        return fragments;
+    }
+
+    // ── Initialize edge values at (min_x, min_y) ──────────────────
+    let init_edge = |e: &EdgeCoeffs| -> i32 { e.a * (min_x as i32) + e.b * (min_y as i32) + e.c };
+
+    // Tile-row-level edge accumulators
+    let mut e_trow = [
+        init_edge(&setup.edges[0]),
+        init_edge(&setup.edges[1]),
+        init_edge(&setup.edges[2]),
+    ];
+
+    // Pre-compute 4*A and 4*B for tile stepping (shift, no multiply)
+    let a4: [i32; 3] = [
+        setup.edges[0].a * 4,
+        setup.edges[1].a * 4,
+        setup.edges[2].a * 4,
+    ];
+    let b4: [i32; 3] = [
+        setup.edges[0].b * 4,
+        setup.edges[1].b * 4,
+        setup.edges[2].b * 4,
+    ];
+
+    // Pre-compute 3*A and 3*B for tile corner testing
+    let a3: [i32; 3] = [
+        setup.edges[0].a * 3,
+        setup.edges[1].a * 3,
+        setup.edges[2].a * 3,
+    ];
+    let b3: [i32; 3] = [
+        setup.edges[0].b * 3,
+        setup.edges[1].b * 3,
+        setup.edges[2].b * 3,
+    ];
+
+    // Attribute accumulators: 4-level hierarchy
+    let mut attr_trow = setup.inits;
+
+    // Tile-row loop
+    let mut tile_y = min_y;
+    while tile_y <= max_y {
+        let mut e_tcol = e_trow;
+        let mut attr_tcol = attr_trow;
+
+        // Tile-column loop
+        let mut tile_x = min_x;
+        while tile_x <= max_x {
+            // ── Hierarchical tile rejection ────────────────────────
+            // Test 4 corners of 4×4 tile: TL, TR, BL, BR
+            // TR = e + 3*A, BL = e + 3*B, BR = e + 3*A + 3*B
+            let tile_rejected = tile_reject(&e_tcol, &a3, &b3, setup.ccw);
+
+            if !tile_rejected {
+                walk_tile(
+                    setup,
+                    &e_tcol,
+                    &attr_tcol,
+                    tile_x,
+                    tile_y,
+                    max_x,
+                    max_y,
+                    &mut fragments,
+                );
             }
 
-            // ── Z interpolation ───────────────────────────────────
-            let z_interp = {
-                let num =
-                    w0 as i64 * v0.z as i64 + w1 as i64 * v1.z as i64 + w2 as i64 * v2.z as i64;
-                (num / area2 as i64).clamp(0, 0xFFFF) as u16
-            };
+            // Tile column step: tcol += 4*A / 4*dx
+            step_edges(&mut e_tcol, &a4);
+            step_attrs(&mut attr_tcol, &setup.dx, 4);
 
-            // ── Color interpolation ──────────────────────────────
-            let color = if tri.gouraud_en {
-                interpolate_color_rgba8888(w0, w1, w2, area2, v0.color0, v1.color0, v2.color0)
-            } else {
-                // Flat shading: use v0's color
-                rgba8888_to_rgb565(v0.color0)
-            };
-
-            fragments.push(IntFragment {
-                x: px as u16,
-                y: py as u16,
-                z: z_interp,
-                color,
-            });
+            tile_x = tile_x.saturating_add(TILE_SIZE);
         }
+
+        // Tile row step: trow += 4*B / 4*dy
+        step_edges(&mut e_trow, &b4);
+        step_attrs(&mut attr_trow, &setup.dy, 4);
+
+        tile_y = tile_y.saturating_add(TILE_SIZE);
     }
 
     fragments
 }
 
-/// Interpolate RGBA8888 vertex colors using barycentric weights.
-///
-/// Performs per-channel 8-bit interpolation:
-///   `ch = (w0 * ch0 + w1 * ch1 + w2 * ch2) / area2`
-/// then packs the result as RGB565.
-///
-/// Uses i64 intermediates to avoid overflow:
-/// - w_i: up to ~512*512 = 262144 (fits i32)
-/// - ch_i: 0..255 (u8)
-/// - w_i * ch_i: up to ~67M (fits i32)
-/// - sum of 3: up to ~200M (fits i32)
-/// - But for safety with larger triangles, use i64.
-fn interpolate_color_rgba8888(
-    w0: i32,
-    w1: i32,
-    w2: i32,
-    area2: i32,
-    c0: Rgba8888,
-    c1: Rgba8888,
-    c2: Rgba8888,
-) -> Rgb565 {
-    let interp_channel = |ch0: u8, ch1: u8, ch2: u8| -> u8 {
-        let num = w0 as i64 * ch0 as i64 + w1 as i64 * ch1 as i64 + w2 as i64 * ch2 as i64;
-        // Truncating division (toward zero), matching RTL behavior
-        (num / area2 as i64).clamp(0, 255) as u8
-    };
+// ── Helper functions ───────────────────────────────────────────────────────
 
-    let r = interp_channel(c0.r(), c1.r(), c2.r());
-    let g = interp_channel(c0.g(), c1.g(), c2.g());
-    let b = interp_channel(c0.b(), c1.b(), c2.b());
+/// DSP multiply matching raster_dsp_mul.sv: signed 17-bit × unsigned 18-bit.
+///
+/// Computes `|a| * b`, restores sign. Result is 36-bit signed (as i64).
+fn dsp_mul(a: i32, b: u32) -> i64 {
+    // Sign-extend a to 18-bit signed, take absolute value
+    let a_ext = ((a as i64) << 46) >> 46; // sign-extend to effective 18-bit
+    let a_mag = a_ext.unsigned_abs();
 
-    Rgb565::from_rgb8(r, g, b)
+    // 18 × 18 unsigned multiply
+    let prod = a_mag * (b as u64);
+
+    // Restore sign
+    if a < 0 {
+        -(prod as i64)
+    } else {
+        prod as i64
+    }
 }
 
-/// Convert RGBA8888 to RGB565 (truncating, no rounding).
-fn rgba8888_to_rgb565(c: Rgba8888) -> Rgb565 {
-    Rgb565::from_rgb8(c.r(), c.g(), c.b())
+/// Shift-add multiply matching raster_shift_mul_32x11.sv.
+///
+/// 32-bit signed × 11-bit signed → 32-bit signed (truncated).
+fn shift_mul_32x11(a: i32, b: i32) -> i32 {
+    // In the DT we can just multiply and truncate to 32-bit
+    let result = (a as i64) * (b as i64);
+    result as i32
+}
+
+/// Increment 3 edge accumulators by the given deltas.
+fn step_edges(edges: &mut [i32; 3], deltas: &[i32; 3]) {
+    for (e, d) in edges.iter_mut().zip(deltas.iter()) {
+        *e = e.wrapping_add(*d);
+    }
+}
+
+/// Increment attribute accumulators by `derivs * scale` (wrapping).
+fn step_attrs(attrs: &mut [i32; NUM_ATTRS], derivs: &[i32; NUM_ATTRS], scale: i32) {
+    for (a, d) in attrs.iter_mut().zip(derivs.iter()) {
+        *a = a.wrapping_add(d.wrapping_mul(scale));
+    }
+}
+
+/// Walk pixels within a single 4×4 tile, emitting fragments for inside pixels.
+#[allow(clippy::too_many_arguments)]
+fn walk_tile(
+    setup: &TriangleSetup,
+    e_tcol: &[i32; 3],
+    attr_tcol: &[i32; NUM_ATTRS],
+    tile_x: u16,
+    tile_y: u16,
+    max_x: u16,
+    max_y: u16,
+    fragments: &mut Vec<RasterFragment>,
+) {
+    let mut attr_row = *attr_tcol;
+    let mut e_row = *e_tcol;
+
+    for py_offset in 0..TILE_SIZE {
+        let py = tile_y + py_offset;
+        if py > max_y {
+            break;
+        }
+
+        let mut attr_acc = attr_row;
+        let mut e_acc = e_row;
+
+        for px_offset in 0..TILE_SIZE {
+            let px = tile_x + px_offset;
+            if px > max_x {
+                break;
+            }
+
+            // Per-pixel edge test
+            let inside = if setup.ccw {
+                e_acc[0] >= 0 && e_acc[1] >= 0 && e_acc[2] >= 0
+            } else {
+                e_acc[0] <= 0 && e_acc[1] <= 0 && e_acc[2] <= 0
+            };
+
+            if inside {
+                fragments.push(emit_fragment(px, py, &attr_acc));
+            }
+
+            // Step X: edge += A, attr += dx
+            for (e, edge) in e_acc.iter_mut().zip(setup.edges.iter()) {
+                *e = e.wrapping_add(edge.a);
+            }
+            for (a, d) in attr_acc.iter_mut().zip(setup.dx.iter()) {
+                *a = a.wrapping_add(*d);
+            }
+        }
+
+        // Step Y: row += B/dy
+        for (e, edge) in e_row.iter_mut().zip(setup.edges.iter()) {
+            *e = e.wrapping_add(edge.b);
+        }
+        for (a, d) in attr_row.iter_mut().zip(setup.dy.iter()) {
+            *a = a.wrapping_add(*d);
+        }
+    }
+}
+
+/// Test whether a 4×4 tile can be rejected by hierarchical edge testing.
+///
+/// Tests all 4 corners of the tile. If all corners fail any single edge,
+/// the entire tile is outside.
+fn tile_reject(e_tl: &[i32; 3], a3: &[i32; 3], b3: &[i32; 3], ccw: bool) -> bool {
+    for k in 0..3 {
+        let tl = e_tl[k];
+        let tr = tl.wrapping_add(a3[k]);
+        let bl = tl.wrapping_add(b3[k]);
+        let br = tl.wrapping_add(a3[k]).wrapping_add(b3[k]);
+
+        if ccw {
+            // All 4 corners negative → entire tile outside for this edge
+            if tl < 0 && tr < 0 && bl < 0 && br < 0 {
+                return true;
+            }
+        } else {
+            // All 4 corners positive → entire tile outside for CW winding
+            if tl > 0 && tr > 0 && bl > 0 && br > 0 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Promote an 8.16 color accumulator to Q4.12.
+///
+/// Matches raster_attr_accum.sv color promotion:
+///   - Negative → 0x0000
+///   - Overflow (`acc[31:24] != 0`) → 0x0FFF
+///   - Normal: `{4'b0, acc[23:16], acc[23:20]}`
+fn promote_color_q412(acc: i32) -> qfixed::Q<4, 12> {
+    if acc < 0 {
+        return qfixed::Q::from_bits(0);
+    }
+    // Check overflow: any bits set above byte position [23:16]
+    if (acc >> 24) != 0 {
+        return qfixed::Q::from_bits(0x0FFF);
+    }
+    let byte = ((acc >> 16) & 0xFF) as i64;
+    // {4'b0, byte, byte[7:4]}
+    let q412 = (byte << 4) | (byte >> 4);
+    qfixed::Q::from_bits(q412)
+}
+
+/// Extract 16-bit unsigned Z from 16.16 accumulator.
+///
+/// Z is an unsigned 16-bit value stored in a signed 32-bit accumulator
+/// (signed to support derivative addition). Extraction treats the top
+/// 16 bits as unsigned — no sign clamp.
+///
+/// Note: the RTL (`raster_attr_accum.sv`) currently clamps negative
+/// accumulators to 0 (`acc[31] ? 0 : acc[31:16]`), which breaks Z
+/// values >= 0x8000 because `$signed({z0, 16'b0})` wraps negative.
+/// The DT uses unsigned extraction as the correct intended behavior.
+fn extract_z(acc: i32) -> u16 {
+    ((acc as u32) >> 16) as u16
+}
+
+/// Apply perspective correction to a texture coordinate accumulator.
+///
+/// Matches raster_edge_walk.sv:
+///   `mul = $signed(s_acc[31:16]) * $signed({1'b0, persp_recip})`
+///   `result = mul[29:14]` → Q4.12
+///
+/// `s_acc`: 32-bit signed attribute accumulator (top 16 bits = Q4.12)
+/// `inv_q`: UQ4.14 (18-bit unsigned from recip_q)
+fn persp_correct(s_acc: i32, inv_q: u32) -> qfixed::Q<4, 12> {
+    // Extract top 16 bits as signed Q4.12
+    let s_top = (s_acc >> 16) as i16 as i32;
+
+    // Signed multiply: signed(16) × signed({1'b0, 18-bit}) = signed 35-bit
+    let inv_q_signed = inv_q as i32; // {1'b0, UQ4.14} — always positive
+    let product = (s_top as i64) * (inv_q_signed as i64); // Q9.26 (35-bit)
+
+    // Extract bits [29:14] → Q4.12 (16-bit signed)
+    let result = ((product >> 14) & 0xFFFF) as i16;
+    qfixed::Q::from_bits(result as i64)
+}
+
+/// Emit a fragment from the current accumulator state.
+///
+/// Performs color promotion, Z extraction, perspective correction,
+/// and LOD computation.
+fn emit_fragment(px: u16, py: u16, acc: &[i32; NUM_ATTRS]) -> RasterFragment {
+    let z = extract_z(acc[ATTR_Z]);
+
+    // Perspective correction: compute 1/Q from Q accumulator
+    let q_top = (acc[ATTR_Q] >> 16) as u16;
+    let rq = recip::recip_q(q_top as u32);
+
+    RasterFragment {
+        x: px,
+        y: py,
+        z,
+        shade0: ColorQ412 {
+            r: promote_color_q412(acc[ATTR_C0R]),
+            g: promote_color_q412(acc[ATTR_C0G]),
+            b: promote_color_q412(acc[ATTR_C0B]),
+            a: promote_color_q412(acc[ATTR_C0A]),
+        },
+        shade1: ColorQ412 {
+            r: promote_color_q412(acc[ATTR_C1R]),
+            g: promote_color_q412(acc[ATTR_C1G]),
+            b: promote_color_q412(acc[ATTR_C1B]),
+            a: promote_color_q412(acc[ATTR_C1A]),
+        },
+        u0: persp_correct(acc[ATTR_S0], rq.recip),
+        v0: persp_correct(acc[ATTR_T0], rq.recip),
+        u1: persp_correct(acc[ATTR_S1], rq.recip),
+        v1: persp_correct(acc[ATTR_T1], rq.recip),
+        lod: rq.lod,
+    }
 }

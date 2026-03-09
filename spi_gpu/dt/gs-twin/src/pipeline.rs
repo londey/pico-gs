@@ -19,6 +19,7 @@
 
 pub mod fragment;
 pub mod rasterize;
+pub mod recip;
 
 // ── Fragment pipeline stages (per-pixel) ─────────────────────────────────────
 

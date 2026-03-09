@@ -73,6 +73,9 @@ const VER_010_HEX: &str = include_str!("../../../tests/scripts/ver_010_gouraud.h
 
 #[test]
 fn ver_010_gouraud_triangle() {
+    let png_path = dt_out_dir().join("gouraud_triangle.png");
+    let _ = std::fs::remove_file(&png_path);
+
     let script = hex_parser::parse_hex_str(VER_010_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     gpu.reg_write_script(&script.all_commands());
@@ -91,7 +94,6 @@ fn ver_010_gouraud_triangle() {
         non_bg_pixels
     );
 
-    let png_path = dt_out_dir().join("gouraud_triangle.png");
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-010 golden image: {}", png_path.display());
 }
@@ -104,6 +106,9 @@ const VER_011_HEX: &str = include_str!("../../../tests/scripts/ver_011_depth_tes
 
 #[test]
 fn ver_011_depth_test() {
+    let png_path = dt_out_dir().join("depth_test.png");
+    let _ = std::fs::remove_file(&png_path);
+
     let script = hex_parser::parse_hex_str(VER_011_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
 
@@ -138,7 +143,6 @@ fn ver_011_depth_test() {
         "expected blue pixels from Triangle B, got {blue_count}"
     );
 
-    let png_path = dt_out_dir().join("depth_test.png");
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-011 golden image: {}", png_path.display());
 }
@@ -152,12 +156,14 @@ const VER_012_HEX: &str = include_str!("../../../tests/scripts/ver_012_textured.
 #[test]
 #[ignore = "requires texture pipeline (TEX0_CFG, UV interpolation, texture sampling)"]
 fn ver_012_textured_triangle() {
+    let png_path = dt_out_dir().join("textured_triangle.png");
+    let _ = std::fs::remove_file(&png_path);
+
     let script = hex_parser::parse_hex_str(VER_012_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     // TODO: upload checker texture to GPU memory based on script.textures
     gpu.reg_write_script(&script.all_commands());
 
-    let png_path = dt_out_dir().join("textured_triangle.png");
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-012 golden image: {}", png_path.display());
 }
@@ -171,12 +177,14 @@ const VER_013_HEX: &str = include_str!("../../../tests/scripts/ver_013_color_com
 #[test]
 #[ignore = "requires texture pipeline + color combiner (CC_MODE, MODULATE)"]
 fn ver_013_color_combined() {
+    let png_path = dt_out_dir().join("color_combined.png");
+    let _ = std::fs::remove_file(&png_path);
+
     let script = hex_parser::parse_hex_str(VER_013_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     // TODO: upload mid-gray checker texture, configure CC_MODE
     gpu.reg_write_script(&script.all_commands());
 
-    let png_path = dt_out_dir().join("color_combined.png");
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-013 golden image: {}", png_path.display());
 }
@@ -190,6 +198,9 @@ const VER_014_HEX: &str = include_str!("../../../tests/scripts/ver_014_textured_
 #[test]
 #[ignore = "requires texture pipeline (TEX0_CFG, UV interpolation, texture sampling)"]
 fn ver_014_textured_cube() {
+    let png_path = dt_out_dir().join("textured_cube.png");
+    let _ = std::fs::remove_file(&png_path);
+
     let script = hex_parser::parse_hex_str(VER_014_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     // TODO: upload checker texture to GPU memory based on script.textures
@@ -197,7 +208,6 @@ fn ver_014_textured_cube() {
         gpu.reg_write_script(&phase.commands);
     }
 
-    let png_path = dt_out_dir().join("textured_cube.png");
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-014 golden image: {}", png_path.display());
 }
@@ -210,6 +220,9 @@ const VER_015_HEX: &str = include_str!("../../../tests/scripts/ver_015_size_grid
 
 #[test]
 fn ver_015_size_grid() {
+    let png_path = dt_out_dir().join("size_grid.png");
+    let _ = std::fs::remove_file(&png_path);
+
     let script = hex_parser::parse_hex_str(VER_015_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     gpu.reg_write_script(&script.all_commands());
@@ -227,7 +240,6 @@ fn ver_015_size_grid() {
         "expected size grid pixels, got 0 non-background pixels",
     );
 
-    let png_path = dt_out_dir().join("size_grid.png");
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-015 golden image: {}", png_path.display());
 }

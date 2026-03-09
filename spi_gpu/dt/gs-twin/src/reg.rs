@@ -15,7 +15,9 @@
 //! - UNIT-003 (Register File)
 //! - INT-021 (Render Command Format)
 
+use crate::math::Rgb565;
 use crate::mem::GpuMemory;
+use crate::pipeline::fragment::RasterFragment;
 use crate::pipeline::rasterize;
 use crate::reg_ext::{reg_from_raw, reg_to_raw};
 use gpu_registers::components::gpu_regs::named_types::{
@@ -318,15 +320,21 @@ impl RegisterFile {
             let v = &s.vertex;
             // COLOR register: [63:32] = diffuse RGBA8888, [31:0] = specular
             let color_raw = reg_to_raw(s.color);
-            rasterize::IntVertex {
+            rasterize::RasterVertex {
                 px: (v.x() >> 4) & 0x3FF,
                 py: (v.y() >> 4) & 0x3FF,
                 z: v.z(),
+                q: v.q(),
                 color0: Rgba8888((color_raw >> 32) as u32),
+                color1: Rgba8888(color_raw as u32),
+                s0: s.st0_st1.s0(),
+                t0: s.st0_st1.t0(),
+                s1: s.st0_st1.s1(),
+                t1: s.st0_st1.t1(),
             }
         };
 
-        let tri = rasterize::IntTriangle {
+        let tri = rasterize::RasterTriangle {
             verts: [
                 make_vert(&tri_slots[0]),
                 make_vert(&tri_slots[1]),
@@ -340,20 +348,20 @@ impl RegisterFile {
         };
 
         // Rasterize and write fragments with optional Z-test
-        let fragments = rasterize::rasterize_int_triangle(&tri);
-        let rm = &self.render_mode;
-        for frag in &fragments {
-            self.write_fragment(frag, rm, memory);
+        if let Some(setup) = rasterize::triangle_setup(&tri) {
+            let fragments = rasterize::rasterize_triangle(&setup);
+            let rm = &self.render_mode;
+            for frag in &fragments {
+                self.write_fragment(frag, rm, memory);
+            }
         }
     }
 
     /// Write a single fragment to the framebuffer with optional Z-test.
-    fn write_fragment(
-        &self,
-        frag: &rasterize::IntFragment,
-        rm: &RenderModeReg,
-        memory: &mut GpuMemory,
-    ) {
+    ///
+    /// Accepts `RasterFragment` with Q4.12 colors and converts shade0
+    /// to RGB565 for framebuffer write (truncating, matching dither bypass).
+    fn write_fragment(&self, frag: &RasterFragment, rm: &RenderModeReg, memory: &mut GpuMemory) {
         let (fx, fy) = (frag.x as u32, frag.y as u32);
         if fx >= memory.framebuffer.width || fy >= memory.framebuffer.height {
             return;
@@ -369,7 +377,19 @@ impl RegisterFile {
         }
 
         if rm.color_write_en() {
-            memory.framebuffer.put_pixel(fx, fy, frag.color);
+            // Convert shade0 Q4.12 → RGB565 (truncating, no dither)
+            // Q4.12 range [0, 0x0FFF] maps to UNORM: extract top bits
+            // R: 5 bits from Q4.12 → >>7, G: 6 bits → >>6, B: 5 bits → >>7
+            let r_q412 = frag.shade0.r.to_bits().max(0) as u16;
+            let g_q412 = frag.shade0.g.to_bits().max(0) as u16;
+            let b_q412 = frag.shade0.b.to_bits().max(0) as u16;
+
+            let r5 = (r_q412 >> 7).min(31) as u8;
+            let g6 = (g_q412 >> 6).min(63) as u8;
+            let b5 = (b_q412 >> 7).min(31) as u8;
+
+            let color = Rgb565(((r5 as u16) << 11) | ((g6 as u16) << 5) | (b5 as u16));
+            memory.framebuffer.put_pixel(fx, fy, color);
         }
     }
 }
