@@ -85,6 +85,8 @@ ENV CARGO_HOME=/opt/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
+RUN rustup component add rust-src
+
 # Add RP2350 (Cortex-M33) cross-compilation target for firmware builds
 RUN rustup target add thumbv8m.main-none-eabihf
 
