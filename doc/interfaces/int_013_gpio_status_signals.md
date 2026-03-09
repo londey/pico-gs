@@ -1,21 +1,46 @@
 # INT-013: GPIO Status Signals
 
-**Moved to `registers/doc/int_013_gpio_status_signals.md`** — managed outside syskit as part of the register interface.
+## Type
 
-## External Consumer
+External Standard
 
-The physical GPIO consumers of CMD_FULL, CMD_EMPTY, and VSYNC (flow control and frame synchronization logic) are implemented in the pico-racer application repository (https://github.com/londey/pico-racer).
-The GPU-side signal providers (UNIT-001, UNIT-002, UNIT-008) remain in this repo.
+## External Specification
 
-## Simulation Signal Mapping Note
+- **Standard:** GPIO Status Signals
+- **Reference:** GPIO signals for flow control (CMD_FULL, CMD_EMPTY, VSYNC).
 
-In the Verilator interactive simulator (UNIT-037), the INT-013 signals are internal RTL signals rather than physical GPIO pins.
-The C++ wrapper exposes them to the Lua scripting layer using the following RTL signal names, which must match the canonical names in `registers/doc/int_013_gpio_status_signals.md`:
+## Serves Requirement Areas
 
-| INT-013 Signal | RTL Source | Provider Unit |
-|----------------|------------|---------------|
-| CMD_FULL | `wr_almost_full` | UNIT-002 (Command FIFO) |
-| CMD_EMPTY | `rd_empty` | UNIT-002 (Command FIFO) |
-| VSYNC | `disp_vsync_out` | UNIT-008 (Display Controller) |
+- Area 12: Target Hardware Devices (GPIO status signals are a target hardware interface)
 
-Lua scripts can observe these signals to implement backpressure and frame synchronization without physical GPIO.
+## Parties
+
+- **Provider:** External
+- **Consumer:** UNIT-020 (Core 0 Scene Manager), Host firmware
+- **Consumer:** UNIT-022 (GPU Driver Layer)
+- **Consumer:** UNIT-035 (PC SPI Driver (FT232H))
+
+## Referenced By
+
+- REQ-001.04 (Command Buffer FIFO) — Area 1: GPU SPI Controller
+- REQ-011.03 (Reliability Requirements) — Area 11: System Constraints
+- REQ-013.03 (VSync Synchronization) — Area 6: Screen Scan Out
+- REQ-001.06 (GPU Flow Control) — Area 1: GPU SPI Controller
+
+## Specification
+
+### Overview
+
+This project uses a subset of the GPIO Status Signals standard.
+
+### Usage
+
+GPIO signals for flow control (CMD_FULL, CMD_EMPTY, VSYNC).
+
+## Constraints
+
+See external specification for full details.
+
+## Notes
+
+This is an external standard. Refer to the official specification for complete details.

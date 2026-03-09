@@ -267,11 +267,11 @@ A single authoritative source prevents divergence between hardware and software 
 `registers/rdl/gpu_regs.rdl` (SystemRDL) is the single source of truth for the GPU register map.
 PeakRDL generates the SystemVerilog package and register module into `spi_gpu/src/spi/generated/`.
 `registers/src/lib.rs` provides the hand-maintained Rust constants crate (`gpu-registers`, `no_std`), matching the RDL.
-Register specifications (INT-010 through INT-014) live in `registers/doc/`, outside syskit management.
+Register specifications (INT-010 through INT-014) live in `doc/interfaces/` alongside other interface specs, but are not managed by syskit.
 
 Change process:
 1. Edit `registers/rdl/gpu_regs.rdl` and update `registers/src/lib.rs` to match
-2. Update the corresponding markdown spec in `registers/doc/`
+2. Update the corresponding markdown spec in `doc/interfaces/`
 3. Run `registers/scripts/generate.sh` to regenerate SV
 4. Review generated diffs
 5. Update consuming code (`driver.rs`, `register_file.sv`) if register semantics changed
@@ -279,7 +279,7 @@ Change process:
 ### Rationale
 
 - SystemRDL is machine-readable and supports automated code generation, eliminating manual transcription errors between hardware and software.
-- Keeping specs in `registers/doc/` (not `doc/interfaces/`) avoids syskit workflow overhead for frequent register iterations during active hardware development.
+- Register specs live in `doc/interfaces/` for discoverability but are excluded from syskit workflows to avoid overhead during frequent register iterations.
 - The generated SV is checked into the repository so builds do not depend on PeakRDL being installed.
 
 ### Alternatives Considered
@@ -291,7 +291,7 @@ Change process:
 ### Consequences
 
 - All register changes start with the RDL file.
-- INT-010 through INT-014 in `doc/interfaces/` are stubs that redirect to `registers/doc/`.
+- INT-010 through INT-014 in `doc/interfaces/` contain the full specifications but are excluded from syskit workflows.
 - Code referencing register values must use the generated SV package or the `gpu-registers` Rust crate, not hardcoded constants.
 
 ### References

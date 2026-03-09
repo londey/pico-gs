@@ -35,7 +35,6 @@ pico-gs/
 ├── registers/                # GPU register interface (single source of truth)
 │   ├── rdl/gpu_regs.rdl      # SystemRDL register definitions
 │   ├── src/lib.rs             # Rust crate (gpu-registers, no_std)
-│   ├── doc/                   # INT-010–014 specs (outside syskit)
 │   └── scripts/generate.sh   # PeakRDL codegen → Rust + SV
 ├── spi_gpu/                  # FPGA RTL component (SystemVerilog)
 │   ├── src/                  # RTL sources
@@ -45,7 +44,7 @@ pico-gs/
 │   └── Makefile              # FPGA build system
 ├── doc/                      # Syskit specifications
 │   ├── requirements/         # REQ-NNN documents
-│   ├── interfaces/           # INT-NNN documents (INT-010–014 are stubs → registers/doc/)
+│   ├── interfaces/           # INT-NNN documents
 │   └── design/               # UNIT-NNN documents
 ├── ARCHITECTURE.md           # Authoritative GPU architecture document
 ├── build.sh                  # Unified build script
@@ -153,16 +152,16 @@ All GPIO header balls (gpio[0]–gpio[27]) use LVCMOS33 at 3.3 V.
 ## Register Interface
 
 The register interface (`registers/`) is the single source of truth for the GPU register map.
-It is **NOT managed by syskit** — do not use syskit workflows to modify register specs (INT-010 through INT-014).
+INT-010 through INT-014 live in `doc/interfaces/` alongside all other interface specs, but are **NOT managed by syskit** — do not use syskit workflows to modify them.
 
 - **SystemRDL source:** `registers/rdl/gpu_regs.rdl` — canonical machine-readable definition
 - **Rust crate:** `registers/src/lib.rs` (`gpu-registers`, `no_std`) — hand-maintained flat constants matching the RDL
 - **Generated SV:** `spi_gpu/src/spi/generated/` — PeakRDL output (package + register file module)
-- **Specs:** `registers/doc/` — INT-010 through INT-014 (moved from `doc/interfaces/`)
+- **Specs:** `doc/interfaces/int_010_*` through `int_014_*` — register interface specifications
 
 Change process:
 1. Edit `registers/rdl/gpu_regs.rdl` and update `registers/src/lib.rs` to match
-2. Update the corresponding markdown spec in `registers/doc/`
+2. Update the corresponding markdown spec in `doc/interfaces/`
 3. Run `registers/scripts/generate.sh` to regenerate SV
 4. Review the diff in generated files
 5. Update consuming code (`driver.rs`, `register_file.sv`) if register semantics changed
