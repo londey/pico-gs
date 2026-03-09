@@ -8,7 +8,7 @@
 //! If you change a Q format here, the corresponding RTL module must change
 //! to match, and vice versa.
 
-use qfixed::Q;
+use qfixed::{Q, UQ};
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Scalar Q-format aliases — one per pipeline wire format
@@ -36,6 +36,19 @@ pub type Depth = Q<4, 12>;
 /// same MULT18X18D + accumulate path as barycentrics.
 /// Wrapping to [0, 1) is a simple bitmask on the fractional part.
 pub type TexCoord = Q<2, 14>;
+
+/// **Reciprocal W: UQ1.15 (16-bit unsigned)**
+///
+/// Per-vertex 1/W value used for perspective-correct interpolation.
+/// Range [0, ~2.0) with 15 bits of fractional precision.
+/// W is always ≥ 1 after perspective divide, so 1/W ∈ (0, 1].
+/// One integer bit allows representing 1.0 exactly (W = 1, no perspective).
+///
+/// # RTL Implementation Notes
+/// The rasterizer interpolates Q linearly alongside S=U/W, T=V/W.
+/// Per-pixel perspective correction divides interpolated S,T by
+/// interpolated Q to recover true U,V.
+pub type ReciprocalW = UQ<1, 15>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Color types

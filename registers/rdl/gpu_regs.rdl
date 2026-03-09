@@ -182,7 +182,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
         field {} X[15:0]  = 0;   // Q12.4 fixed-point, range -2048.0 to +2047.9375
         field {} Y[31:16] = 0;   // Q12.4 fixed-point, range -2048.0 to +2047.9375
         field {} Z[47:32] = 0;   // 16-bit unsigned depth
-        field {} Q[63:48] = 0;   // 1/W, Q4.12 fixed-point
+        field {} Q[63:48] = 0;   // 1/W, UQ1.15 fixed-point (range 0.0 to ~2.0)
     };
     vertex_reg VERTEX_NOKICK    @ 0x030;  // index 0x06
     vertex_reg VERTEX_KICK_012  @ 0x038;  // index 0x07

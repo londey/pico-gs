@@ -119,43 +119,20 @@ impl Rgba8888 {
 
 // ── Per-vertex data stored in the register file ──────────────────────────────
 
+/// Raw register bundle latched per vertex, matching the RTL's vertex storage.
+///
+/// Triangle setup extracts typed values (Q12.4 coords, RGBA8888 colors, etc.)
+/// from these registers — no pre-unpacking in the register file.
 #[derive(Debug, Clone, Copy, Default)]
 struct VertexSlot {
-    /// Screen X, Q12.4 raw 16-bit value from register write.
-    x_raw: u16,
+    /// VERTEX register: X/Y Q12.4, Z u16, Q u16.
+    vertex: VertexReg,
 
-    /// Screen Y, Q12.4 raw 16-bit value from register write.
-    y_raw: u16,
+    /// COLOR register: diffuse + specular RGBA8888.
+    color: ColorReg,
 
-    /// Depth, unsigned 16-bit.
-    z: u16,
-
-    /// 1/W reciprocal, unsigned 16-bit.
-    q: u16,
-
-    /// Diffuse color (RGBA8888).
-    color0: Rgba8888,
-
-    /// Specular color (RGBA8888).
-    color1: Rgba8888,
-
-    /// ST0 packed (from ST0_ST1 register [31:0]).
-    st0: u32,
-
-    /// ST1 packed (from ST0_ST1 register [63:32]).
-    st1: u32,
-}
-
-impl VertexSlot {
-    /// Extract integer pixel X from Q12.4, matching RTL: `v0_x[13:4]`.
-    fn pixel_x(&self) -> u16 {
-        (self.x_raw >> 4) & 0x3FF
-    }
-
-    /// Extract integer pixel Y from Q12.4, matching RTL: `v0_y[13:4]`.
-    fn pixel_y(&self) -> u16 {
-        (self.y_raw >> 4) & 0x3FF
-    }
+    /// ST0_ST1 register: texture coordinates for units 0 and 1.
+    st0_st1: St0St1Reg,
 }
 
 // ── Register file state ──────────────────────────────────────────────────────
@@ -298,29 +275,13 @@ impl RegisterFile {
     /// Latch current vertex data + color/ST into the current slot.
     ///
     /// Matches RTL register_file.sv ADDR_VERTEX_NOKICK decode:
-    /// ```text
-    /// next_vertex_x[vertex_count]      = cmd_wdata[15:0];
-    /// next_vertex_y[vertex_count]      = cmd_wdata[31:16];
-    /// next_vertex_z[vertex_count]      = cmd_wdata[47:32];
-    /// next_vertex_q[vertex_count]      = cmd_wdata[63:48];
-    /// next_vertex_color0[vertex_count] = current_color0[63:32];
-    /// next_vertex_color1[vertex_count] = current_color0[31:0];
-    /// ```
+    /// stores the VERTEX register data and snapshots the current
+    /// COLOR and ST0_ST1 register latches.
     fn latch_vertex(&mut self, data: u64) {
-        let vreg: VertexReg = reg_from_raw(data);
         let slot = &mut self.vertices[self.vertex_count];
-        slot.x_raw = vreg.x();
-        slot.y_raw = vreg.y();
-        slot.z = vreg.z();
-        slot.q = vreg.q();
-        // COLOR register: [63:32] = diffuse, [31:0] = specular
-        let color_raw = reg_to_raw(self.color);
-        slot.color0 = Rgba8888((color_raw >> 32) as u32);
-        slot.color1 = Rgba8888((color_raw & 0xFFFF_FFFF) as u32);
-        // ST0/ST1 from current latch
-        let st_raw = reg_to_raw(self.st0_st1);
-        slot.st0 = (st_raw & 0xFFFF_FFFF) as u32;
-        slot.st1 = ((st_raw >> 32) & 0xFFFF_FFFF) as u32;
+        slot.vertex = reg_from_raw(data);
+        slot.color = self.color;
+        slot.st0_st1 = self.st0_st1;
     }
 
     /// Trigger rasterization with the given winding order.
@@ -353,11 +314,16 @@ impl RegisterFile {
             .saturating_add(self.fb_control.scissor_height())
             .min(fb_height as u16);
 
-        let make_vert = |s: &VertexSlot| rasterize::IntVertex {
-            px: s.pixel_x(),
-            py: s.pixel_y(),
-            z: s.z,
-            color0: s.color0,
+        let make_vert = |s: &VertexSlot| {
+            let v = &s.vertex;
+            // COLOR register: [63:32] = diffuse RGBA8888, [31:0] = specular
+            let color_raw = reg_to_raw(s.color);
+            rasterize::IntVertex {
+                px: (v.x() >> 4) & 0x3FF,
+                py: (v.y() >> 4) & 0x3FF,
+                z: v.z(),
+                color0: Rgba8888((color_raw >> 32) as u32),
+            }
         };
 
         let tri = rasterize::IntTriangle {

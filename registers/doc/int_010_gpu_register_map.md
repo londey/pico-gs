@@ -301,7 +301,7 @@ Reserved for future vertex attributes (normals, tangents, skinning weights, etc.
 Deprecated. Use VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) instead. This entry is retained for reference; the register address is now VERTEX_NOKICK.
 
 ```
-[63:48]   Q = 1/W (Q4.12 signed fixed-point)
+[63:48]   Q = 1/W (UQ1.15 unsigned fixed-point)
 [47:32]   Z depth (16 bits unsigned)
 [31:16]   Y coordinate (Q12.4 signed fixed-point)
 [15:0]    X coordinate (Q12.4 signed fixed-point)
@@ -311,11 +311,10 @@ Deprecated. Use VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021
 - Bits 15:4: Signed integer (-2048 to +2047)
 - Bits 3:0: Fractional (1/16 pixel)
 
-**Fixed-Point Format Q (Q4.12)**:
-- Bit 15: Sign
-- Bits 14:12: Integer part (3 bits, range -8 to +7)
-- Bits 11:0: Fractional value (resolution 1/4096)
-- Range: -8.0 to +7.999 (same format as ST0_ST1 coordinates)
+**Fixed-Point Format Q (UQ1.15)**:
+- Bit 15: Integer part (1 bit)
+- Bits 14:0: Fractional value (resolution 1/32768)
+- Range: 0.0 to ~2.0 (unsigned; 1/W is always non-negative, W ≥ 1)
 
 **Z Format (16 bits)**:
 - Unsigned, 0 = near plane, 0xFFFF = far plane
@@ -341,7 +340,7 @@ Write to VERTEX:
 Latches vertex position and 1/W without triggering triangle rasterization. Used to accumulate vertices for strips, fans, or explicit triangle submission.
 
 ```
-[63:48]   Q = 1/W (Q4.12 signed fixed-point)
+[63:48]   Q = 1/W (UQ1.15 unsigned fixed-point)
 [47:32]   Z depth (16 bits unsigned)
 [31:16]   Y coordinate (Q12.4 signed fixed-point)
 [15:0]    X coordinate (Q12.4 signed fixed-point)
@@ -369,7 +368,7 @@ Write to VERTEX_NOKICK:
 Latches vertex position and 1/W, then triggers triangle rasterization with vertex order (v[0], v[1], v[2]).
 
 ```
-[63:48]   Q = 1/W (Q4.12 signed fixed-point)
+[63:48]   Q = 1/W (UQ1.15 unsigned fixed-point)
 [47:32]   Z depth (16 bits unsigned)
 [31:16]   Y coordinate (Q12.4 signed fixed-point)
 [15:0]    X coordinate (Q12.4 signed fixed-point)
@@ -399,7 +398,7 @@ Write to VERTEX_KICK_012:
 Latches vertex position and 1/W, then triggers triangle rasterization with **reversed** vertex order (v[0], v[2], v[1]).
 
 ```
-[63:48]   Q = 1/W (Q4.12 signed fixed-point)
+[63:48]   Q = 1/W (UQ1.15 unsigned fixed-point)
 [47:32]   Z depth (16 bits unsigned)
 [31:16]   Y coordinate (Q12.4 signed fixed-point)
 [15:0]    X coordinate (Q12.4 signed fixed-point)
