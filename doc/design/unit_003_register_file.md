@@ -26,7 +26,7 @@ None
 
 - Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata.
   In Verilator simulation with `SIM_DIRECT_CMD` defined, these signals are driven by the injection path in gpu_top.sv (see UNIT-002), which bypasses UNIT-001 but presents the identical cmd_* bus to UNIT-003 — no change to register_file.sv itself is required.
-- Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses (includes tri_uv0, tri_uv1, tri_q, tri_color0, tri_color1 per vertex)
+- Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses (includes tri_st0, tri_st1, tri_q, tri_color0, tri_color1 per vertex)
 - Outputs render target configuration (fb_config, including `fb_width_log2` and `fb_height_log2`) to UNIT-005 (Rasterizer), UNIT-006 (Pixel Pipeline), and UNIT-007 (Memory Arbiter)
 - Outputs display configuration (fb_display, including `fb_display_width_log2` and `fb_line_double`) to UNIT-008 (Display Controller)
 - Outputs mode flags (mode_gouraud, mode_cull, mode_alpha_blend, mode_dither_en, mode_dither_pattern, mode_stipple_en, mode_alpha_test, mode_alpha_ref, mode_z_test, mode_z_write, mode_z_compare, mode_color_write) to UNIT-005 (Rasterizer) and UNIT-006 (Pixel Pipeline)
@@ -67,8 +67,8 @@ None
 | `tri_q[0:2]` | 3x16 | Vertex 1/W values (Q3.12) |
 | `tri_color0[0:2]` | 3x32 | Vertex COLOR0 RGBA8888 per vertex |
 | `tri_color1[0:2]` | 3x32 | Vertex COLOR1 RGBA8888 per vertex |
-| `tri_uv0[0:2]` | 3x32 | Vertex UV0 coordinates per vertex, packed {U[31:16], V[15:0]} in Q4.12 per component |
-| `tri_uv1[0:2]` | 3x32 | Vertex UV1 coordinates per vertex, packed {U[31:16], V[15:0]} in Q4.12 per component |
+| `tri_st0[0:2]` | 3x32 | Vertex ST0 pre-divided texture coordinates per vertex, packed {S[31:16], T[15:0]} in Q4.12 per component (S=U/W, T=V/W) |
+| `tri_st1[0:2]` | 3x32 | Vertex ST1 pre-divided texture coordinates per vertex, packed {S[31:16], T[15:0]} in Q4.12 per component (S=U/W, T=V/W) |
 | `mode_gouraud` | 1 | Gouraud shading enabled (RENDER_MODE[0]) |
 | `mode_z_test` | 1 | Z-test enabled (RENDER_MODE[2]) |
 | `mode_z_write` | 1 | Z-write enabled (RENDER_MODE[3]) |
@@ -113,9 +113,9 @@ None
 ### Internal State
 
 - **vertex_count** [1:0]: Counts submitted vertices (0, 1, 2); resets to 0 after kick
-- **vertex_buf**: Latched X/Y/Z/Q/COLOR0/COLOR1/UV0/UV1 for up to 3 buffered vertices
+- **vertex_buf**: Latched X/Y/Z/Q/COLOR0/COLOR1/ST0/ST1 for up to 3 buffered vertices
 - **current_color0** [63:0]: COLOR register value for next vertex write (default white)
-- **current_uv01** [63:0]: UV0_UV1 register value for next vertex write
+- **current_st01** [63:0]: ST0_ST1 register value for next vertex write
 - **render_mode** [63:0]: RENDER_MODE register
 - **z_range** [63:0]: Z_RANGE register (reset: Z_RANGE_MIN=0, Z_RANGE_MAX=0xFFFF)
 - **stipple_pattern** [63:0]: STIPPLE_PATTERN register (reset: all ones)
@@ -133,7 +133,7 @@ None
 | Address | Name | Access |
 |---------|------|--------|
 | 0x00 | COLOR | R/W |
-| 0x01 | UV0_UV1 | R/W |
+| 0x01 | ST0_ST1 | R/W |
 | 0x06 | VERTEX_NOKICK | W (buffers vertex, no triangle emit) |
 | 0x07 | VERTEX_KICK_012 | W (buffers vertex, emits triangle v[0],v[1],v[2]) |
 | 0x08 | VERTEX_KICK_021 | W (buffers vertex, emits triangle v[0],v[2],v[1]) |
@@ -161,9 +161,9 @@ None
 The register file maintains a 3-entry vertex ring buffer indexed by vertex_count.
 
 1. Host writes COLOR register to set COLOR0/COLOR1 for the next vertex
-2. Host writes UV0_UV1 register to set UV coordinates for the next vertex
+2. Host writes ST0_ST1 register to set pre-divided texture coordinates (S=U/W, T=V/W) for the next vertex
 3. Host writes a VERTEX register variant:
-   - **VERTEX_NOKICK (0x06):** Latch position data with current COLOR/UV into vertex_buf[vertex_count & 2]; advance vertex_count
+   - **VERTEX_NOKICK (0x06):** Latch position data with current COLOR/ST into vertex_buf[vertex_count & 2]; advance vertex_count
    - **VERTEX_KICK_012 (0x07):** Latch as above; assert tri_valid for one cycle; output vertex_buf entries as triangle (0,1,2); advance vertex_count
    - **VERTEX_KICK_021 (0x08):** Latch as above; assert tri_valid; output as (0,2,1) winding order
    - **VERTEX_KICK_RECT (0x09):** Use current and previous vertex as opposite corners; assert rect_valid
@@ -217,7 +217,7 @@ The register file maintains a 3-entry vertex ring buffer indexed by vertex_count
 
 Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 
-- Verify vertex submission: write COLOR + UV + VERTEX_KICK_012 for 3 vertices; confirm tri_valid pulse and correct tri_* outputs
+- Verify vertex submission: write COLOR + ST + VERTEX_KICK_012 for 3 vertices; confirm tri_valid pulse and correct tri_* outputs
 - Verify strip submission: write VERTEX_NOKICK for v0, v1 then VERTEX_KICK_012 for v2; confirm one tri_valid pulse
 - Verify VERTEX_KICK_021 emits opposite winding order
 - Verify color latching: change COLOR between vertices; confirm per-vertex colors on output

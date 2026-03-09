@@ -149,15 +149,16 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     };
     color_reg COLOR @ 0x000;  // index 0x00
 
-    reg uv0_uv1_reg {
-        name = "UV0_UV1";
-        desc = "Texture units 0+1 UV coordinates (Q4.12 fixed-point, range +/-8.0)";
-        field {} UV0_UQ[15:0]  = 0;
-        field {} UV0_VQ[31:16] = 0;
-        field {} UV1_UQ[47:32] = 0;
-        field {} UV1_VQ[63:48] = 0;
+    reg st0_st1_reg {
+        name = "ST0_ST1";
+        desc = "Texture units 0+1 pre-divided coordinates S=U/W, T=V/W (Q4.12 fixed-point, range +/-8.0).
+               GPU interpolates S, T, Q linearly, then computes true U=S/Q, V=T/Q per pixel.";
+        field {} S0[15:0]  = 0;
+        field {} T0[31:16] = 0;
+        field {} S1[47:32] = 0;
+        field {} T1[63:48] = 0;
     };
-    uv0_uv1_reg UV0_UV1 @ 0x008;  // index 0x01
+    st0_st1_reg ST0_ST1 @ 0x008;  // index 0x01
 
     // index 0x02: Reserved (was UV2_UV3, removed in v10.0)
 

@@ -24,8 +24,8 @@ module register_file (
     output reg  [2:0][15:0] tri_q,      // 1/W values (Q1.15 signed fixed)
     output reg  [2:0][31:0] tri_color0, // Diffuse RGBA8888 per vertex
     output reg  [2:0][31:0] tri_color1, // Specular RGBA8888 per vertex
-    output reg  [2:0][31:0] tri_uv0,    // UV0 coordinates per vertex
-    output reg  [2:0][31:0] tri_uv1,    // UV1 coordinates per vertex
+    output reg  [2:0][31:0] tri_st0,    // ST0 coordinates per vertex
+    output reg  [2:0][31:0] tri_st1,    // ST1 coordinates per vertex
 
     // Rectangle output (VERTEX_KICK_RECT)
     output reg          rect_valid,
@@ -114,7 +114,7 @@ module register_file (
     // ========================================================================
 
     localparam ADDR_COLOR              = 7'h00;  // Vertex color (diffuse + specular)
-    localparam ADDR_UV0_UV1            = 7'h01;  // UV coordinates for TEX0 + TEX1
+    localparam ADDR_ST0_ST1            = 7'h01;  // ST coordinates (S=U/W, T=V/W) for TEX0 + TEX1
     localparam ADDR_VERTEX_NOKICK      = 7'h06;  // Buffer vertex, no triangle emit
     localparam ADDR_VERTEX_KICK_012    = 7'h07;  // Buffer vertex, emit tri (0,1,2)
     localparam ADDR_VERTEX_KICK_021    = 7'h08;  // Buffer vertex, emit tri (0,2,1)
@@ -152,12 +152,12 @@ module register_file (
     reg [15:0] vertex_q_reg [0:2];      // Latched 1/W values
     reg [31:0] vertex_color0 [0:2];     // Latched diffuse colors
     reg [31:0] vertex_color1 [0:2];     // Latched specular colors
-    reg [31:0] vertex_uv0   [0:2];      // Latched UV0 coordinates
-    reg [31:0] vertex_uv1   [0:2];      // Latched UV1 coordinates
+    reg [31:0] vertex_st0   [0:2];      // Latched ST0 coordinates
+    reg [31:0] vertex_st1   [0:2];      // Latched ST1 coordinates
 
     // Current vertex attributes (latched on next VERTEX write)
     reg [63:0] current_color0;          // COLOR register value (diffuse[63:32] + specular[31:0])
-    reg [63:0] current_uv01;            // UV0_UV1 register value
+    reg [63:0] current_st01;            // ST0_ST1 register value
 
     // Configuration registers (64-bit storage)
     reg [63:0] render_mode_reg /* verilator public */; // RENDER_MODE register
@@ -313,7 +313,7 @@ module register_file (
 
     // Current vertex attributes
     reg [63:0] next_current_color0;
-    reg [63:0] next_current_uv01;
+    reg [63:0] next_current_st01;
 
     // Configuration registers
     reg [63:0] next_render_mode;
@@ -342,8 +342,8 @@ module register_file (
     reg [15:0] next_vertex_q     [0:2];
     reg [31:0] next_vertex_color0 [0:2];
     reg [31:0] next_vertex_color1 [0:2];
-    reg [31:0] next_vertex_uv0   [0:2];
-    reg [31:0] next_vertex_uv1   [0:2];
+    reg [31:0] next_vertex_st0   [0:2];
+    reg [31:0] next_vertex_st1   [0:2];
 
     // Triangle/rectangle outputs
     reg          next_tri_valid;
@@ -354,8 +354,8 @@ module register_file (
     reg [2:0][15:0] next_tri_q;
     reg [2:0][31:0] next_tri_color0;
     reg [2:0][31:0] next_tri_color1;
-    reg [2:0][31:0] next_tri_uv0;
-    reg [2:0][31:0] next_tri_uv1;
+    reg [2:0][31:0] next_tri_st0;
+    reg [2:0][31:0] next_tri_st1;
 
     // Pulse outputs with associated data
     reg          next_mem_fill_trigger;
@@ -382,7 +382,7 @@ module register_file (
     always_comb begin
         // ---- Default: hold current register values ----
         next_current_color0        = current_color0;
-        next_current_uv01          = current_uv01;
+        next_current_st01          = current_st01;
         next_render_mode           = render_mode_reg;
         next_z_range               = z_range_reg;
         next_stipple_pattern       = stipple_pattern_reg;
@@ -412,8 +412,8 @@ module register_file (
             next_vertex_q[i]      = vertex_q_reg[i];
             next_vertex_color0[i] = vertex_color0[i];
             next_vertex_color1[i] = vertex_color1[i];
-            next_vertex_uv0[i]    = vertex_uv0[i];
-            next_vertex_uv1[i]    = vertex_uv1[i];
+            next_vertex_st0[i]    = vertex_st0[i];
+            next_vertex_st1[i]    = vertex_st1[i];
         end
 
         // Default: hold triangle output data
@@ -423,8 +423,8 @@ module register_file (
         next_tri_q      = tri_q;
         next_tri_color0 = tri_color0;
         next_tri_color1 = tri_color1;
-        next_tri_uv0    = tri_uv0;
-        next_tri_uv1    = tri_uv1;
+        next_tri_st0    = tri_st0;
+        next_tri_st1    = tri_st1;
 
         // ---- Pulse outputs: clear each cycle ----
         next_tri_valid        = 1'b0;
@@ -459,20 +459,20 @@ module register_file (
                     next_current_color0 = cmd_wdata;
                 end
 
-                ADDR_UV0_UV1: begin
-                    next_current_uv01 = cmd_wdata;
+                ADDR_ST0_ST1: begin
+                    next_current_st01 = cmd_wdata;
                 end
 
                 ADDR_VERTEX_NOKICK: begin
-                    // Latch position + current COLOR/UV into vertex buffer
+                    // Latch position + current COLOR/ST into vertex buffer
                     next_vertex_x[vertex_count]      = cmd_wdata[15:0];
                     next_vertex_y[vertex_count]      = cmd_wdata[31:16];
                     next_vertex_z[vertex_count]      = cmd_wdata[47:32];
                     next_vertex_q[vertex_count]      = cmd_wdata[63:48];
                     next_vertex_color0[vertex_count] = current_color0[63:32]; // Diffuse
                     next_vertex_color1[vertex_count] = current_color0[31:0];  // Specular
-                    next_vertex_uv0[vertex_count]    = current_uv01[31:0];    // UV0
-                    next_vertex_uv1[vertex_count]    = current_uv01[63:32];   // UV1
+                    next_vertex_st0[vertex_count]    = current_st01[31:0];    // ST0
+                    next_vertex_st1[vertex_count]    = current_st01[63:32];   // ST1
                     // Advance vertex count only, no triangle emit
                     next_vertex_count = vertex_count_plus1;
                 end
@@ -485,8 +485,8 @@ module register_file (
                     next_vertex_q[vertex_count]      = cmd_wdata[63:48];
                     next_vertex_color0[vertex_count] = current_color0[63:32];
                     next_vertex_color1[vertex_count] = current_color0[31:0];
-                    next_vertex_uv0[vertex_count]    = current_uv01[31:0];
-                    next_vertex_uv1[vertex_count]    = current_uv01[63:32];
+                    next_vertex_st0[vertex_count]    = current_st01[31:0];
+                    next_vertex_st1[vertex_count]    = current_st01[63:32];
                     next_vertex_count = vertex_count_plus1;
 
                     // Emit triangle with (0,1,2) winding order
@@ -499,8 +499,8 @@ module register_file (
                     next_tri_q[0]      = vertex_q_reg[0];
                     next_tri_color0[0] = vertex_color0[0];
                     next_tri_color1[0] = vertex_color1[0];
-                    next_tri_uv0[0]    = vertex_uv0[0];
-                    next_tri_uv1[0]    = vertex_uv1[0];
+                    next_tri_st0[0]    = vertex_st0[0];
+                    next_tri_st1[0]    = vertex_st1[0];
 
                     // Output vertex 1
                     next_tri_x[1]      = vertex_x[1];
@@ -509,8 +509,8 @@ module register_file (
                     next_tri_q[1]      = vertex_q_reg[1];
                     next_tri_color0[1] = vertex_color0[1];
                     next_tri_color1[1] = vertex_color1[1];
-                    next_tri_uv0[1]    = vertex_uv0[1];
-                    next_tri_uv1[1]    = vertex_uv1[1];
+                    next_tri_st0[1]    = vertex_st0[1];
+                    next_tri_st1[1]    = vertex_st1[1];
 
                     // Output vertex 2 (current vertex data from cmd_wdata)
                     next_tri_x[2]      = cmd_wdata[15:0];
@@ -519,8 +519,8 @@ module register_file (
                     next_tri_q[2]      = cmd_wdata[63:48];
                     next_tri_color0[2] = current_color0[63:32];
                     next_tri_color1[2] = current_color0[31:0];
-                    next_tri_uv0[2]    = current_uv01[31:0];
-                    next_tri_uv1[2]    = current_uv01[63:32];
+                    next_tri_st0[2]    = current_st01[31:0];
+                    next_tri_st1[2]    = current_st01[63:32];
                 end
 
                 ADDR_VERTEX_KICK_021: begin
@@ -531,8 +531,8 @@ module register_file (
                     next_vertex_q[vertex_count]      = cmd_wdata[63:48];
                     next_vertex_color0[vertex_count] = current_color0[63:32];
                     next_vertex_color1[vertex_count] = current_color0[31:0];
-                    next_vertex_uv0[vertex_count]    = current_uv01[31:0];
-                    next_vertex_uv1[vertex_count]    = current_uv01[63:32];
+                    next_vertex_st0[vertex_count]    = current_st01[31:0];
+                    next_vertex_st1[vertex_count]    = current_st01[63:32];
                     next_vertex_count = vertex_count_plus1;
 
                     // Emit triangle with (0,2,1) winding order
@@ -545,8 +545,8 @@ module register_file (
                     next_tri_q[0]      = vertex_q_reg[0];
                     next_tri_color0[0] = vertex_color0[0];
                     next_tri_color1[0] = vertex_color1[0];
-                    next_tri_uv0[0]    = vertex_uv0[0];
-                    next_tri_uv1[0]    = vertex_uv1[0];
+                    next_tri_st0[0]    = vertex_st0[0];
+                    next_tri_st1[0]    = vertex_st1[0];
 
                     // Output vertex 2 (current) → tri[1]
                     next_tri_x[1]      = cmd_wdata[15:0];
@@ -555,8 +555,8 @@ module register_file (
                     next_tri_q[1]      = cmd_wdata[63:48];
                     next_tri_color0[1] = current_color0[63:32];
                     next_tri_color1[1] = current_color0[31:0];
-                    next_tri_uv0[1]    = current_uv01[31:0];
-                    next_tri_uv1[1]    = current_uv01[63:32];
+                    next_tri_st0[1]    = current_st01[31:0];
+                    next_tri_st1[1]    = current_st01[63:32];
 
                     // Output vertex 1 → tri[2]
                     next_tri_x[2]      = vertex_x[1];
@@ -565,8 +565,8 @@ module register_file (
                     next_tri_q[2]      = vertex_q_reg[1];
                     next_tri_color0[2] = vertex_color0[1];
                     next_tri_color1[2] = vertex_color1[1];
-                    next_tri_uv0[2]    = vertex_uv0[1];
-                    next_tri_uv1[2]    = vertex_uv1[1];
+                    next_tri_st0[2]    = vertex_st0[1];
+                    next_tri_st1[2]    = vertex_st1[1];
                 end
 
                 ADDR_VERTEX_KICK_RECT: begin
@@ -577,8 +577,8 @@ module register_file (
                     next_vertex_q[vertex_count]      = cmd_wdata[63:48];
                     next_vertex_color0[vertex_count] = current_color0[63:32];
                     next_vertex_color1[vertex_count] = current_color0[31:0];
-                    next_vertex_uv0[vertex_count]    = current_uv01[31:0];
-                    next_vertex_uv1[vertex_count]    = current_uv01[63:32];
+                    next_vertex_st0[vertex_count]    = current_st01[31:0];
+                    next_vertex_st1[vertex_count]    = current_st01[63:32];
                     next_vertex_count = vertex_count_plus1;
 
                     // Emit rectangle using current and previous vertex as opposite corners
@@ -591,8 +591,8 @@ module register_file (
                     next_tri_q[0]      = vertex_q_reg[prev_vertex_idx];
                     next_tri_color0[0] = vertex_color0[prev_vertex_idx];
                     next_tri_color1[0] = vertex_color1[prev_vertex_idx];
-                    next_tri_uv0[0]    = vertex_uv0[prev_vertex_idx];
-                    next_tri_uv1[0]    = vertex_uv1[prev_vertex_idx];
+                    next_tri_st0[0]    = vertex_st0[prev_vertex_idx];
+                    next_tri_st1[0]    = vertex_st1[prev_vertex_idx];
 
                     // Current vertex (corner 1)
                     next_tri_x[1]      = cmd_wdata[15:0];
@@ -601,8 +601,8 @@ module register_file (
                     next_tri_q[1]      = cmd_wdata[63:48];
                     next_tri_color0[1] = current_color0[63:32];
                     next_tri_color1[1] = current_color0[31:0];
-                    next_tri_uv0[1]    = current_uv01[31:0];
-                    next_tri_uv1[1]    = current_uv01[63:32];
+                    next_tri_st0[1]    = current_st01[31:0];
+                    next_tri_st1[1]    = current_st01[63:32];
                 end
 
                 ADDR_TEX0_CFG: begin
@@ -696,7 +696,7 @@ module register_file (
         if (!rst_n) begin
             // Reset current vertex attributes
             current_color0 <= 64'h0;
-            current_uv01   <= 64'h0;
+            current_st01   <= 64'h0;
 
             // Reset configuration registers
             render_mode_reg     <= 64'h0;
@@ -726,8 +726,8 @@ module register_file (
                 vertex_q_reg[i]  <= 16'h0;
                 vertex_color0[i] <= 32'h0;
                 vertex_color1[i] <= 32'h0;
-                vertex_uv0[i]    <= 32'h0;
-                vertex_uv1[i]    <= 32'h0;
+                vertex_st0[i]    <= 32'h0;
+                vertex_st1[i]    <= 32'h0;
             end
 
             // Reset triangle/rectangle outputs
@@ -739,8 +739,8 @@ module register_file (
             tri_q      <= '0;
             tri_color0 <= '0;
             tri_color1 <= '0;
-            tri_uv0    <= '0;
-            tri_uv1    <= '0;
+            tri_st0    <= '0;
+            tri_st1    <= '0;
 
             // Reset pulse outputs
             mem_fill_trigger <= 1'b0;
@@ -762,7 +762,7 @@ module register_file (
         end else begin
             // Current vertex attributes
             current_color0 <= next_current_color0;
-            current_uv01   <= next_current_uv01;
+            current_st01   <= next_current_st01;
 
             // Configuration registers
             render_mode_reg     <= next_render_mode;
@@ -790,8 +790,8 @@ module register_file (
                 vertex_q_reg[i]  <= next_vertex_q[i];
                 vertex_color0[i] <= next_vertex_color0[i];
                 vertex_color1[i] <= next_vertex_color1[i];
-                vertex_uv0[i]    <= next_vertex_uv0[i];
-                vertex_uv1[i]    <= next_vertex_uv1[i];
+                vertex_st0[i]    <= next_vertex_st0[i];
+                vertex_st1[i]    <= next_vertex_st1[i];
             end
 
             // Triangle/rectangle outputs
@@ -803,8 +803,8 @@ module register_file (
             tri_q      <= next_tri_q;
             tri_color0 <= next_tri_color0;
             tri_color1 <= next_tri_color1;
-            tri_uv0    <= next_tri_uv0;
-            tri_uv1    <= next_tri_uv1;
+            tri_st0    <= next_tri_st0;
+            tri_st1    <= next_tri_st1;
 
             // Pulse outputs with associated data
             mem_fill_trigger <= next_mem_fill_trigger;
@@ -835,7 +835,7 @@ module register_file (
 
         case (cmd_addr)
             ADDR_COLOR:           cmd_rdata = current_color0;
-            ADDR_UV0_UV1:         cmd_rdata = current_uv01;
+            ADDR_ST0_ST1:         cmd_rdata = current_st01;
             ADDR_RENDER_MODE:     cmd_rdata = render_mode_reg;
             ADDR_Z_RANGE:         cmd_rdata = z_range_reg;
             ADDR_STIPPLE_PATTERN: cmd_rdata = stipple_pattern_reg;

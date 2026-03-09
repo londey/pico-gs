@@ -14,7 +14,7 @@ fn test_gpu_regs_addresses() {
         base_addr.wrapping_byte_add(0x0)
     );
     assert_eq!(
-        dut.uv0_uv1().as_ptr() as *mut u8,
+        dut.st0_st1().as_ptr() as *mut u8,
         base_addr.wrapping_byte_add(0x8)
     );
     assert_eq!(

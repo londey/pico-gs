@@ -516,15 +516,15 @@ Submit a single triangle to the GPU by writing vertex state registers.
 **Sequence for Gouraud-shaded, textured triangle**:
 ```
 gpu_write(COLOR, v0.color_packed)         // COLOR0 + COLOR1
-gpu_write(UV0_UV1, v0.uv_packed)
+gpu_write(ST0_ST1, v0.st_packed)
 gpu_write(VERTEX_NOKICK, v0.position_packed)
 
 gpu_write(COLOR, v1.color_packed)
-gpu_write(UV0_UV1, v1.uv_packed)
+gpu_write(ST0_ST1, v1.st_packed)
 gpu_write(VERTEX_NOKICK, v1.position_packed)
 
 gpu_write(COLOR, v2.color_packed)
-gpu_write(UV0_UV1, v2.uv_packed)
+gpu_write(ST0_ST1, v2.st_packed)
 gpu_write(VERTEX_KICK_012, v2.position_packed)  // triggers rasterization
 ```
 
@@ -556,7 +556,7 @@ Pre-packed vertex data ready for GPU register writes.
 | Field | Format | GPU Register |
 |-------|--------|-------------|
 | color_packed | u64: COLOR0 in [31:0], COLOR1 in [63:32] (RGBA8888 each) | COLOR (0x00) |
-| uv_packed | u64: UV0_U in [15:0], UV0_V in [31:16], UV1_U in [47:32], UV1_V in [63:48] (S3.12) | UV0_UV1 (0x01) |
+| st_packed | u64: S0 in [15:0], T0 in [31:16], S1 in [47:32], T1 in [63:48] (S3.12, pre-divided texture coordinates S=U/W, T=V/W) | ST0_ST1 (0x01) |
 | position_packed | u64: X in [15:0], Y in [31:16], Z in [47:32], Q (1/W) in [63:48] (S12.4, S3.12) | VERTEX_NOKICK/KICK (0x06-0x09) |
 
 ---

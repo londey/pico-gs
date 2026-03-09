@@ -6,7 +6,7 @@
 -- Field packing matches registers/rdl/gpu_regs.rdl (register map v11.0).
 --
 -- Register index mapping (7-bit index, 64-bit data):
---   COLOR           = 0x00    UV0_UV1         = 0x01
+--   COLOR           = 0x00    ST0_ST1         = 0x01
 --   VERTEX_NOKICK   = 0x06    VERTEX_KICK_012 = 0x07
 --   VERTEX_KICK_021 = 0x08    TEX0_CFG        = 0x10
 --   CC_MODE         = 0x18    CONST_COLOR     = 0x19
@@ -172,18 +172,18 @@ function gpu.set_color(r0, g0, b0, a0, r1, g1, b1, a1)
     gpu.write_reg(0x00, data)
 end
 
---- Write the UV0_UV1 register (index 0x01).
---- Packs texture coordinates for units 0 and 1.
+--- Write the ST0_ST1 register (index 0x01).
+--- Packs pre-divided texture coordinates S=U/W, T=V/W for units 0 and 1.
 --- Each coordinate is a S3.12 signed fixed-point raw integer.
---- @param u0 integer UV0 U coordinate (S3.12 raw integer)
---- @param v0 integer UV0 V coordinate (S3.12 raw integer)
---- @param u1 integer UV1 U coordinate (S3.12 raw integer)
---- @param v1 integer UV1 V coordinate (S3.12 raw integer)
-function gpu.set_uv0_uv1(u0, v0, u1, v1)
-    local data = mask(u0, 16)
-               | (mask(v0, 16) << 16)
-               | (mask(u1, 16) << 32)
-               | (mask(v1, 16) << 48)
+--- @param s0 integer S0 coordinate (S3.12 raw integer)
+--- @param t0 integer T0 coordinate (S3.12 raw integer)
+--- @param s1 integer S1 coordinate (S3.12 raw integer)
+--- @param t1 integer T1 coordinate (S3.12 raw integer)
+function gpu.set_st0_st1(s0, t0, s1, t1)
+    local data = mask(s0, 16)
+               | (mask(t0, 16) << 16)
+               | (mask(s1, 16) << 32)
+               | (mask(t1, 16) << 48)
     gpu.write_reg(0x01, data)
 end
 

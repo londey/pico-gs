@@ -94,7 +94,7 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 
 6. **Memory upload** (`upload_memory()`): Write base address to MEM_ADDR (0x70), then write each data dword to MEM_DATA (0x71) which auto-increments the address.
 
-7. **Triangle submit** (`submit_triangle()`): For each of 3 vertices, write COLOR register (0x00), optionally UV0_UV1 register (0x01) if textured, then VERTEX_KICK_012 (0x07) for the third vertex or VERTEX_NOKICK (0x06) for the first two.
+7. **Triangle submit** (`submit_triangle()`): For each of 3 vertices, write COLOR register (0x00), optionally ST0_ST1 register (0x01) if textured, then VERTEX_KICK_012 (0x07) for the third vertex or VERTEX_NOKICK (0x06) for the first two.
 
 8. **Render mode** (`gpu_set_render_mode(...)`): Pack all RENDER_MODE fields per INT-010 bit layout and write to RENDER_MODE register (0x30).
    Dithering is now a field within RENDER_MODE (bit 10), not a separate register.
@@ -122,7 +122,7 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 
 15. **Color LUT prepare** (`gpu_prepare_lut(lut_addr, lut)`): Upload 384-byte LUT to SDRAM via MEM_ADDR/MEM_DATA. The LUT is auto-loaded during vblank when FB_DISPLAY.LUT_ADDR is set. See INT-020 for detailed sequence.
 
-16. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR (0x00), optionally UV0_UV1 (0x01), then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on `kick`.
+16. **Kicked vertex submit** (`submit_vertex_kicked(vertex, kick, textured)`): Write COLOR (0x00), optionally ST0_ST1 (0x01), then VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021 (0x08) based on `kick`.
 
 17. **Buffered register write** (`pack_write(buffer, offset, addr, data)`): Pack 9-byte SPI frame into SRAM buffer. Returns offset + 9.
 
@@ -143,7 +143,7 @@ Platform-agnostic GPU register protocol and flow control, generic over SPI trans
 - **Flow control test**: Verify `write()` spin-waits when CMD_FULL is asserted and proceeds when deasserted.
 - **Vsync test**: Verify `wait_vsync()` detects a low-to-high transition on the VSYNC pin.
 - **Buffer swap test**: Verify `swap_buffers()` exchanges draw/display configurations and writes FB_CONFIG and FB_DISPLAY.
-- **Triangle submit test**: Verify `submit_triangle()` writes COLOR + VERTEX (non-textured) or COLOR + UV0_UV1 + VERTEX (textured) for each of 3 vertices.
+- **Triangle submit test**: Verify `submit_triangle()` writes COLOR + VERTEX (non-textured) or COLOR + ST0_ST1 + VERTEX (textured) for each of 3 vertices.
 - **Render mode test**: Verify `gpu_set_render_mode()` packs all fields correctly into RENDER_MODE (0x30) per INT-010 bit layout. Verify dither flag maps to bit 10.
 - **Z range test**: Verify `gpu_set_z_range(0, 0xFFFF)` writes correct packed value to Z_RANGE (0x31).
 - **FB config test**: Verify `gpu_set_fb_config()` packs color_base, z_base, width_log2, height_log2 into FB_CONFIG (0x40).

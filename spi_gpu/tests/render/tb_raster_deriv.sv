@@ -57,24 +57,24 @@ module tb_raster_deriv;
     reg [7:0] c1_a2;       // Color1 alpha, vertex 2
 
     // ========================================================================
-    // DUT Signals — Vertex Depth, UV, Q
+    // DUT Signals — Vertex Depth, ST, Q
     // ========================================================================
 
     reg [15:0] z0;                   // Depth, vertex 0
     reg [15:0] z1;                   // Depth, vertex 1
     reg [15:0] z2;                   // Depth, vertex 2
-    reg signed [15:0] uv0_u0;       // UV0 U, vertex 0
-    reg signed [15:0] uv0_v0;       // UV0 V, vertex 0
-    reg signed [15:0] uv0_u1;       // UV0 U, vertex 1
-    reg signed [15:0] uv0_v1;       // UV0 V, vertex 1
-    reg signed [15:0] uv0_u2;       // UV0 U, vertex 2
-    reg signed [15:0] uv0_v2;       // UV0 V, vertex 2
-    reg signed [15:0] uv1_u0;       // UV1 U, vertex 0
-    reg signed [15:0] uv1_v0;       // UV1 V, vertex 0
-    reg signed [15:0] uv1_u1;       // UV1 U, vertex 1
-    reg signed [15:0] uv1_v1;       // UV1 V, vertex 1
-    reg signed [15:0] uv1_u2;       // UV1 U, vertex 2
-    reg signed [15:0] uv1_v2;       // UV1 V, vertex 2
+    reg signed [15:0] st0_s0;       // ST0 S, vertex 0
+    reg signed [15:0] st0_t0;       // ST0 T, vertex 0
+    reg signed [15:0] st0_s1;       // ST0 S, vertex 1
+    reg signed [15:0] st0_t1;       // ST0 T, vertex 1
+    reg signed [15:0] st0_s2;       // ST0 S, vertex 2
+    reg signed [15:0] st0_t2;       // ST0 T, vertex 2
+    reg signed [15:0] st1_s0;       // ST1 S, vertex 0
+    reg signed [15:0] st1_t0;       // ST1 T, vertex 0
+    reg signed [15:0] st1_s1;       // ST1 S, vertex 1
+    reg signed [15:0] st1_t1;       // ST1 T, vertex 1
+    reg signed [15:0] st1_s2;       // ST1 S, vertex 2
+    reg signed [15:0] st1_t2;       // ST1 T, vertex 2
     reg [15:0] q0;                   // Q/W, vertex 0
     reg [15:0] q1;                   // Q/W, vertex 1
     reg [15:0] q2;                   // Q/W, vertex 2
@@ -117,14 +117,14 @@ module tb_raster_deriv;
     wire signed [31:0] pre_c1a_dy;  // Color1 A dy
     wire signed [31:0] pre_z_dx;    // Z dx
     wire signed [31:0] pre_z_dy;    // Z dy
-    wire signed [31:0] pre_uv0u_dx; // UV0 U dx
-    wire signed [31:0] pre_uv0u_dy; // UV0 U dy
-    wire signed [31:0] pre_uv0v_dx; // UV0 V dx
-    wire signed [31:0] pre_uv0v_dy; // UV0 V dy
-    wire signed [31:0] pre_uv1u_dx; // UV1 U dx
-    wire signed [31:0] pre_uv1u_dy; // UV1 U dy
-    wire signed [31:0] pre_uv1v_dx; // UV1 V dx
-    wire signed [31:0] pre_uv1v_dy; // UV1 V dy
+    wire signed [31:0] pre_s0_dx; // ST0 S dx
+    wire signed [31:0] pre_s0_dy; // ST0 S dy
+    wire signed [31:0] pre_t0_dx; // ST0 T dx
+    wire signed [31:0] pre_t0_dy; // ST0 T dy
+    wire signed [31:0] pre_s1_dx; // ST1 S dx
+    wire signed [31:0] pre_s1_dy; // ST1 S dy
+    wire signed [31:0] pre_t1_dx; // ST1 T dx
+    wire signed [31:0] pre_t1_dy; // ST1 T dy
     wire signed [31:0] pre_q_dx;    // Q dx
     wire signed [31:0] pre_q_dy;    // Q dy
 
@@ -141,10 +141,10 @@ module tb_raster_deriv;
     wire signed [31:0] init_c1b;    // Color1 B initial
     wire signed [31:0] init_c1a;    // Color1 A initial
     wire signed [31:0] init_z;      // Z initial
-    wire signed [31:0] init_uv0u;   // UV0 U initial
-    wire signed [31:0] init_uv0v;   // UV0 V initial
-    wire signed [31:0] init_uv1u;   // UV1 U initial
-    wire signed [31:0] init_uv1v;   // UV1 V initial
+    wire signed [31:0] init_s0;   // ST0 S initial
+    wire signed [31:0] init_t0;   // ST0 T initial
+    wire signed [31:0] init_s1;   // ST1 S initial
+    wire signed [31:0] init_t1;   // ST1 T initial
     wire signed [31:0] init_q;      // Q initial
     /* verilator lint_on UNUSEDSIGNAL */
 
@@ -161,12 +161,12 @@ module tb_raster_deriv;
         .c1_r1(c1_r1), .c1_g1(c1_g1), .c1_b1(c1_b1), .c1_a1(c1_a1),
         .c1_r2(c1_r2), .c1_g2(c1_g2), .c1_b2(c1_b2), .c1_a2(c1_a2),
         .z0(z0), .z1(z1), .z2(z2),
-        .uv0_u0(uv0_u0), .uv0_v0(uv0_v0),
-        .uv0_u1(uv0_u1), .uv0_v1(uv0_v1),
-        .uv0_u2(uv0_u2), .uv0_v2(uv0_v2),
-        .uv1_u0(uv1_u0), .uv1_v0(uv1_v0),
-        .uv1_u1(uv1_u1), .uv1_v1(uv1_v1),
-        .uv1_u2(uv1_u2), .uv1_v2(uv1_v2),
+        .st0_s0(st0_s0), .st0_t0(st0_t0),
+        .st0_s1(st0_s1), .st0_t1(st0_t1),
+        .st0_s2(st0_s2), .st0_t2(st0_t2),
+        .st1_s0(st1_s0), .st1_t0(st1_t0),
+        .st1_s1(st1_s1), .st1_t1(st1_t1),
+        .st1_s2(st1_s2), .st1_t2(st1_t2),
         .q0(q0), .q1(q1), .q2(q2),
         .edge1_A(edge1_A), .edge1_B(edge1_B),
         .edge2_A(edge2_A), .edge2_B(edge2_B),
@@ -182,18 +182,18 @@ module tb_raster_deriv;
         .pre_c1b_dx(pre_c1b_dx), .pre_c1b_dy(pre_c1b_dy),
         .pre_c1a_dx(pre_c1a_dx), .pre_c1a_dy(pre_c1a_dy),
         .pre_z_dx(pre_z_dx), .pre_z_dy(pre_z_dy),
-        .pre_uv0u_dx(pre_uv0u_dx), .pre_uv0u_dy(pre_uv0u_dy),
-        .pre_uv0v_dx(pre_uv0v_dx), .pre_uv0v_dy(pre_uv0v_dy),
-        .pre_uv1u_dx(pre_uv1u_dx), .pre_uv1u_dy(pre_uv1u_dy),
-        .pre_uv1v_dx(pre_uv1v_dx), .pre_uv1v_dy(pre_uv1v_dy),
+        .pre_s0_dx(pre_s0_dx), .pre_s0_dy(pre_s0_dy),
+        .pre_t0_dx(pre_t0_dx), .pre_t0_dy(pre_t0_dy),
+        .pre_s1_dx(pre_s1_dx), .pre_s1_dy(pre_s1_dy),
+        .pre_t1_dx(pre_t1_dx), .pre_t1_dy(pre_t1_dy),
         .pre_q_dx(pre_q_dx), .pre_q_dy(pre_q_dy),
         .init_c0r(init_c0r), .init_c0g(init_c0g),
         .init_c0b(init_c0b), .init_c0a(init_c0a),
         .init_c1r(init_c1r), .init_c1g(init_c1g),
         .init_c1b(init_c1b), .init_c1a(init_c1a),
         .init_z(init_z),
-        .init_uv0u(init_uv0u), .init_uv0v(init_uv0v),
-        .init_uv1u(init_uv1u), .init_uv1v(init_uv1v),
+        .init_s0(init_s0), .init_t0(init_t0),
+        .init_s1(init_s1), .init_t1(init_t1),
         .init_q(init_q)
     );
 
@@ -229,12 +229,12 @@ module tb_raster_deriv;
             c1_r1 = 8'd0; c1_g1 = 8'd0; c1_b1 = 8'd0; c1_a1 = 8'd0;
             c1_r2 = 8'd0; c1_g2 = 8'd0; c1_b2 = 8'd0; c1_a2 = 8'd0;
             z0 = 16'd0; z1 = 16'd0; z2 = 16'd0;
-            uv0_u0 = 16'sd0; uv0_v0 = 16'sd0;
-            uv0_u1 = 16'sd0; uv0_v1 = 16'sd0;
-            uv0_u2 = 16'sd0; uv0_v2 = 16'sd0;
-            uv1_u0 = 16'sd0; uv1_v0 = 16'sd0;
-            uv1_u1 = 16'sd0; uv1_v1 = 16'sd0;
-            uv1_u2 = 16'sd0; uv1_v2 = 16'sd0;
+            st0_s0 = 16'sd0; st0_t0 = 16'sd0;
+            st0_s1 = 16'sd0; st0_t1 = 16'sd0;
+            st0_s2 = 16'sd0; st0_t2 = 16'sd0;
+            st1_s0 = 16'sd0; st1_t0 = 16'sd0;
+            st1_s1 = 16'sd0; st1_t1 = 16'sd0;
+            st1_s2 = 16'sd0; st1_t2 = 16'sd0;
             q0 = 16'd0; q1 = 16'd0; q2 = 16'd0;
             edge1_A = 11'sd0; edge1_B = 11'sd0;
             edge2_A = 11'sd0; edge2_B = 11'sd0;
@@ -318,7 +318,7 @@ module tb_raster_deriv;
         check32s("zero deltas: pre_c0r_dy", pre_c0r_dy, 32'sd0);
         check32s("zero deltas: pre_z_dx", pre_z_dx, 32'sd0);
         check32s("zero deltas: pre_z_dy", pre_z_dy, 32'sd0);
-        check32s("zero deltas: pre_uv0u_dx", pre_uv0u_dx, 32'sd0);
+        check32s("zero deltas: pre_s0_dx", pre_s0_dx, 32'sd0);
         check32s("zero deltas: pre_q_dx", pre_q_dx, 32'sd0);
 
         // Init values at bbox origin = vertex 0 position:
@@ -385,11 +385,11 @@ module tb_raster_deriv;
         check32s("Z wide: pre_z_dy", pre_z_dy, 32'sd805294080);
 
         // ============================================================
-        // Test 5: UV signed values
+        // Test 5: ST signed values
         // ============================================================
-        $display("--- Test 5: UV Signed Values ---");
+        $display("--- Test 5: ST Signed Values ---");
         zero_all_inputs;
-        uv0_u0 = -16'sd100; uv0_u1 = 16'sd200; uv0_u2 = -16'sd100;
+        st0_s0 = -16'sd100; st0_s1 = 16'sd200; st0_s2 = -16'sd100;
         edge1_A = 11'sd1; edge1_B = 11'sd0;
         edge2_A = 11'sd0; edge2_B = 11'sd0;
 
@@ -397,10 +397,10 @@ module tb_raster_deriv;
         bbox_min_x = 10'd0; bbox_min_y = 10'd0;
         run_deriv;
 
-        // d10_uv0u = 300, raw_dx = 300*1 = 300; scl = 300*65535 = 19660500
-        check32s("UV signed: pre_uv0u_dx", pre_uv0u_dx, 32'sd19660500);
-        // Init at origin: {uv0_u0, 16'b0} + 0 + 0 = {-100, 16'b0}
-        check32s("UV signed: init_uv0u", init_uv0u, {-16'sd100, 16'b0});
+        // d10_s0 = 300, raw_dx = 300*1 = 300; scl = 300*65535 = 19660500
+        check32s("ST signed: pre_s0_dx", pre_s0_dx, 32'sd19660500);
+        // Init at origin: {st0_s0, 16'b0} + 0 + 0 = {-100, 16'b0}
+        check32s("ST signed: init_s0", init_s0, {-16'sd100, 16'b0});
 
         // ============================================================
         // Test 6: Hardcoded INV_AREA/AREA_SHIFT (Phase 1 interim)

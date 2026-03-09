@@ -19,7 +19,7 @@ module tb_register_file;
     // Triangle outputs (unused in this test but must be connected)
     wire        tri_valid;
     wire [2:0][15:0] tri_x, tri_y, tri_z, tri_q;
-    wire [2:0][31:0] tri_color0, tri_color1, tri_uv0, tri_uv1;
+    wire [2:0][31:0] tri_color0, tri_color1, tri_st0, tri_st1;
     wire        rect_valid;
 
     // Mode outputs
@@ -101,8 +101,8 @@ module tb_register_file;
         .tri_q(tri_q),
         .tri_color0(tri_color0),
         .tri_color1(tri_color1),
-        .tri_uv0(tri_uv0),
-        .tri_uv1(tri_uv1),
+        .tri_st0(tri_st0),
+        .tri_st1(tri_st1),
         .rect_valid(rect_valid),
         .mode_gouraud(mode_gouraud),
         .mode_z_test(mode_z_test),

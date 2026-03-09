@@ -124,17 +124,17 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 6. **Submit vertex 0:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FF0000FF` (COLOR1=black in upper 32 bits, COLOR0=red in lower 32 bits).
-   - Write `UV0_UV1` (address `0x01`) with UV0 = (0.5, 0.0) packed per register format.
+   - Write `ST0_ST1` (address `0x01`) with UV0 = (0.5, 0.0) packed per register format.
    - Write `VERTEX_NOKICK` (address `0x06`) with V0 position (X=320, Y=60, Z=`0x0000`).
 
 7. **Submit vertex 1:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_00FF00FF` (COLOR1=black, COLOR0=green).
-   - Write `UV0_UV1` (address `0x01`) with UV0 = (0.0, 1.0).
+   - Write `ST0_ST1` (address `0x01`) with UV0 = (0.0, 1.0).
    - Write `VERTEX_NOKICK` (address `0x06`) with V1 position (X=100, Y=380, Z=`0x0000`).
 
 8. **Submit vertex 2 (with kick):**
    - Write `COLOR` (address `0x00`) with `0x000000FF_0000FFFF` (COLOR1=black, COLOR0=blue).
-   - Write `UV0_UV1` (address `0x01`) with UV0 = (1.0, 1.0).
+   - Write `ST0_ST1` (address `0x01`) with UV0 = (1.0, 1.0).
    - Write `VERTEX_KICK_012` (address `0x07`) with V2 position (X=540, Y=380, Z=`0x0000`).
 
 9. **Wait for completion:**

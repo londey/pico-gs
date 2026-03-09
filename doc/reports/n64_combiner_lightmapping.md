@@ -124,13 +124,13 @@ Lightmapping requires two independent UV coordinate sets per vertex:
 - **UV0**: Tiling diffuse texture coordinates (may repeat across the surface)
 - **UV1**: Unique lightmap coordinates (non-overlapping, each surface maps to a unique lightmap region)
 
-The pico-gs register map provides this directly via the `UV0_UV1` register at address `0x01` (`/workspaces/pico-gs/registers/rdl/gpu_regs.rdl`, lines 99-107):
+The pico-gs register map provides this directly via the `ST0_ST1` register at address `0x01` (`/workspaces/pico-gs/registers/rdl/gpu_regs.rdl`, lines 99-107):
 
 ```
-[63:48]   UV1_VQ = V1/W   (lightmap V, S3.12 fixed-point)
-[47:32]   UV1_UQ = U1/W   (lightmap U, S3.12 fixed-point)
-[31:16]   UV0_VQ = V0/W   (diffuse V, S3.12 fixed-point)
-[15:0]    UV0_UQ = U0/W   (diffuse U, S3.12 fixed-point)
+[63:48]   T1 = V1/W   (lightmap T, S3.12 fixed-point)
+[47:32]   S1 = U1/W   (lightmap S, S3.12 fixed-point)
+[31:16]   T0 = V0/W   (diffuse T, S3.12 fixed-point)
+[15:0]    S0 = U0/W   (diffuse S, S3.12 fixed-point)
 ```
 
 Both UV sets are packed into a single 64-bit register write, meaning a lightmapped triangle submission costs the same SPI bandwidth as any dual-textured triangle -- no extra register writes needed.
@@ -311,7 +311,7 @@ This handles fog + lightmap in a single rendering pass with zero extra bandwidth
 | **Dynamic response** | Fully dynamic. Lights can move, appear, disappear in real time. | Static only. Cannot respond to moving lights or objects without re-baking. |
 | **Host CPU cost** | Per-vertex lighting computation (N*dot products per vertex per light). With 4 lights and 5000 vertices: 20,000 dot products per frame. | Zero runtime cost for static lighting. Only UV coordinate transformation needed. |
 | **Memory cost** | Zero additional memory (vertex colors are part of vertex data). | Additional texture memory for lightmap atlases (0.2-4 MB typical). |
-| **SPI bandwidth** | Vertex color already in COLOR register; no extra writes. | Both UV sets packed in UV0_UV1; no extra writes either. |
+| **SPI bandwidth** | Vertex color already in COLOR register; no extra writes. | Both ST sets packed in ST0_ST1; no extra writes either. |
 | **Visual quality** | Smooth gradients but limited by vertex density. No shadow edges sharper than the mesh. | High-frequency shadows, soft penumbras, color bleeding, ambient occlusion -- all at lightmap resolution. |
 
 **Hybrid approach (recommended):** Use lightmaps for static geometry (walls, floors, ceilings) to capture global illumination, and use Gouraud vertex lighting for dynamic/moving objects (characters, items, projectiles).

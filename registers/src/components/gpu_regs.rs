@@ -14,9 +14,9 @@ pub mod named_types {
     pub mod mem_fill_reg;
     pub mod perf_timestamp_reg;
     pub mod render_mode_reg;
+    pub mod st0_st1_reg;
     pub mod stipple_pattern_reg;
     pub mod tex_cfg_reg;
-    pub mod uv0_uv1_reg;
     pub mod vertex_reg;
     pub mod z_range_reg;
 }
@@ -34,10 +34,10 @@ pub use crate::components::gpu_regs::named_types::mem_data_reg as mem_data;
 pub use crate::components::gpu_regs::named_types::mem_fill_reg as mem_fill;
 pub use crate::components::gpu_regs::named_types::perf_timestamp_reg as perf_timestamp;
 pub use crate::components::gpu_regs::named_types::render_mode_reg as render_mode;
+pub use crate::components::gpu_regs::named_types::st0_st1_reg as st0_st1;
 pub use crate::components::gpu_regs::named_types::stipple_pattern_reg as stipple_pattern;
 pub use crate::components::gpu_regs::named_types::tex_cfg_reg as tex0_cfg;
 pub use crate::components::gpu_regs::named_types::tex_cfg_reg as tex1_cfg;
-pub use crate::components::gpu_regs::named_types::uv0_uv1_reg as uv0_uv1;
 pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_nokick;
 pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_kick_012;
 pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_kick_021;
@@ -86,12 +86,13 @@ impl GpuRegs {
         unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x0).cast()) }
     }
 
-    /// UV0_UV1
+    /// ST0_ST1
     ///
-    /// Texture units 0+1 UV coordinates (Q4.12 fixed-point, range +/-8.0)
+    /// Texture units 0+1 pre-divided coordinates S=U/W, T=V/W (Q4.12 fixed-point, range +/-8.0).
+    /// GPU interpolates S, T, Q linearly, then computes true U=S/Q, V=T/Q per pixel.
     #[inline(always)]
     #[must_use]
-    pub const fn uv0_uv1(&self) -> crate::reg::Reg<uv0_uv1::Uv0Uv1Reg, crate::access::RW> {
+    pub const fn st0_st1(&self) -> crate::reg::Reg<st0_st1::St0St1Reg, crate::access::RW> {
         unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x8).cast()) }
     }
 

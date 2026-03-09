@@ -23,10 +23,10 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 ## Procedure
 
 1. **Vertex submission (VERTEX_KICK_012).**
-   Write COLOR (0x00) with a known RGBA value, write UV0_UV1 (0x01) with known UV coordinates, then write VERTEX_KICK_012 (0x07) with packed X/Y/Z/Q position data.
+   Write COLOR (0x00) with a known RGBA value, write ST0_ST1 (0x01) with known pre-divided texture coordinates, then write VERTEX_KICK_012 (0x07) with packed X/Y/Z/Q position data.
    Repeat for three vertices to fill the vertex ring buffer.
    Verify that `tri_valid` is asserted for exactly one cycle on the third vertex write.
-   Verify that `tri_x`, `tri_y`, `tri_z`, `tri_q`, `tri_color0`, `tri_color1`, `tri_uv0`, and `tri_uv1` outputs carry the correct per-vertex values matching what was written.
+   Verify that `tri_x`, `tri_y`, `tri_z`, `tri_q`, `tri_color0`, `tri_color1`, `tri_st0`, and `tri_st1` outputs carry the correct per-vertex values matching what was written.
 
 2. **Strip submission (VERTEX_NOKICK then VERTEX_KICK_012).**
    Write VERTEX_NOKICK (0x06) for vertex 0, then VERTEX_NOKICK for vertex 1, then VERTEX_KICK_012 (0x07) for vertex 2.
@@ -168,5 +168,5 @@ The testbenches drive register read/write sequences, vertex submission flows, an
   Coverage of the rasterizer's use of `fb_width_log2` and `fb_height_log2` is provided by VER-001.
   Coverage of the display controller's use of `fb_display_width_log2` and `fb_line_double` is provided by VER-010 through VER-013.
 - The unit tests in VER-003 verify that all register outputs decode and pass through correctly in isolation.
-  These outputs — including `mode_gouraud`, `mode_cull`, `mode_alpha_blend`, `mode_dither_en`, `mode_dither_pattern`, `mode_stipple_en`, `mode_alpha_test`, `mode_alpha_ref`, `tri_uv0`, `tri_uv1`, `tri_q`, `tri_color1`, `cc_mode`, `const_color`, `tex0_cfg`, `tex1_cfg` — all have live downstream consumers in UNIT-006 (Pixel Pipeline) and UNIT-010 (Color Combiner) after pixel pipeline integration.
+  These outputs — including `mode_gouraud`, `mode_cull`, `mode_alpha_blend`, `mode_dither_en`, `mode_dither_pattern`, `mode_stipple_en`, `mode_alpha_test`, `mode_alpha_ref`, `tri_st0`, `tri_st1`, `tri_q`, `tri_color1`, `cc_mode`, `const_color`, `tex0_cfg`, `tex1_cfg` — all have live downstream consumers in UNIT-006 (Pixel Pipeline) and UNIT-010 (Color Combiner) after pixel pipeline integration.
   The unit-level register file tests remain valid and unchanged; however, golden image tests VER-010 through VER-014 may require re-approval after integration because previously-inert register values now affect rendered output.

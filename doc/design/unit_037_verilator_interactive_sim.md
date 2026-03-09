@@ -90,7 +90,7 @@ The helper script provides one documented function per GPU register type, each a
 The `gpu.set_fb_config()` helper must accept `width_log2` and `height_log2` fields and pack them into the correct bit positions of the FB_CONFIG register (INT-010).
 The `gpu.set_fb_display()` helper must accept `fb_width_log2` and `line_double` fields and pack them into the correct bit positions of the FB_DISPLAY register (INT-010).
 
-With the pixel pipeline integration complete, the following register fields transition from having no RTL effect to being functionally active in the simulated GPU model: `mode_gouraud`, `mode_cull`, `mode_alpha_blend`, `mode_dither_en`, `mode_dither_pattern`, `mode_stipple_en`, `mode_alpha_test`, `mode_alpha_ref`, `tri_uv0`, `tri_uv1`, `tri_q`, `tri_color1`, `tex0_cfg`, `tex1_cfg`, `tex0_cache_inv`, `tex1_cache_inv`, `cc_mode`, and `const_color`.
+With the pixel pipeline integration complete, the following register fields transition from having no RTL effect to being functionally active in the simulated GPU model: `mode_gouraud`, `mode_cull`, `mode_alpha_blend`, `mode_dither_en`, `mode_dither_pattern`, `mode_stipple_en`, `mode_alpha_test`, `mode_alpha_ref`, `tri_st0`, `tri_st1`, `tri_q`, `tri_color1`, `tex0_cfg`, `tex1_cfg`, `tex0_cache_inv`, `tex1_cache_inv`, `cc_mode`, and `const_color`.
 Lua scripts that previously wrote these registers without effect will now alter rendered output.
 The `gpu_regs.lua` helper functions for these registers must pack the 3-bit `FORMAT` field into bits [4:2] of TEXn_FMT (not bits [3:2]) to match the widened field after INT-010 `tex_format` expansion (step 5 of the pixel pipeline integration).
 

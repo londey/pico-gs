@@ -11,7 +11,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 ## Verified Design Units
 
-- UNIT-003 (Register File -- TEX0_BASE, TEX0_FMT, UV0_UV1 register writes)
+- UNIT-003 (Register File -- TEX0_BASE, TEX0_FMT, ST0_ST1 register writes)
 - UNIT-005 (Rasterizer -- UV interpolation across triangle surface)
 - UNIT-006 (Pixel Pipeline -- texture cache lookup, cache miss fill FSM, texture decoder, RGBA5652 promotion)
 
@@ -90,17 +90,17 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 5. **Submit vertex 0:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque -- modulated with texture).
-   - Write `UV0_UV1` (address `0x01`) with UV0 = (0.5, 0.0) packed per register format.
+   - Write `ST0_ST1` (address `0x01`) with UV0 = (0.5, 0.0) packed per register format.
    - Write `VERTEX_NOKICK` (address `0x06`) with V0 position (X=320, Y=60, Z=`0x0000`).
 
 6. **Submit vertex 1:**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque).
-   - Write `UV0_UV1` (address `0x01`) with UV0 = (0.0, 1.0).
+   - Write `ST0_ST1` (address `0x01`) with UV0 = (0.0, 1.0).
    - Write `VERTEX_NOKICK` (address `0x06`) with V1 position (X=100, Y=380, Z=`0x0000`).
 
 7. **Submit vertex 2 (with kick):**
    - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque).
-   - Write `UV0_UV1` (address `0x01`) with UV0 = (1.0, 1.0).
+   - Write `ST0_ST1` (address `0x01`) with UV0 = (1.0, 1.0).
    - Write `VERTEX_KICK_012` (address `0x07`) with V2 position (X=540, Y=380, Z=`0x0000`).
 
 8. **Wait for completion:**

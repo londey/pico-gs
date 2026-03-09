@@ -75,21 +75,21 @@ module raster_deriv (
     input  wire [15:0]         z1,             // Depth, vertex 1
     input  wire [15:0]         z2,             // Depth, vertex 2
 
-    // Vertex UV0 (Q4.12 signed per component)
-    input  wire signed [15:0]  uv0_u0,         // UV0 U, vertex 0
-    input  wire signed [15:0]  uv0_v0,         // UV0 V, vertex 0
-    input  wire signed [15:0]  uv0_u1,         // UV0 U, vertex 1
-    input  wire signed [15:0]  uv0_v1,         // UV0 V, vertex 1
-    input  wire signed [15:0]  uv0_u2,         // UV0 U, vertex 2
-    input  wire signed [15:0]  uv0_v2,         // UV0 V, vertex 2
+    // Vertex ST0 (Q4.12 signed per component)
+    input  wire signed [15:0]  st0_s0,         // S0, vertex 0
+    input  wire signed [15:0]  st0_t0,         // T0, vertex 0
+    input  wire signed [15:0]  st0_s1,         // S0, vertex 1
+    input  wire signed [15:0]  st0_t1,         // T0, vertex 1
+    input  wire signed [15:0]  st0_s2,         // S0, vertex 2
+    input  wire signed [15:0]  st0_t2,         // T0, vertex 2
 
-    // Vertex UV1 (Q4.12 signed per component)
-    input  wire signed [15:0]  uv1_u0,         // UV1 U, vertex 0
-    input  wire signed [15:0]  uv1_v0,         // UV1 V, vertex 0
-    input  wire signed [15:0]  uv1_u1,         // UV1 U, vertex 1
-    input  wire signed [15:0]  uv1_v1,         // UV1 V, vertex 1
-    input  wire signed [15:0]  uv1_u2,         // UV1 U, vertex 2
-    input  wire signed [15:0]  uv1_v2,         // UV1 V, vertex 2
+    // Vertex ST1 (Q4.12 signed per component)
+    input  wire signed [15:0]  st1_s0,         // S1, vertex 0
+    input  wire signed [15:0]  st1_t0,         // T1, vertex 0
+    input  wire signed [15:0]  st1_s1,         // S1, vertex 1
+    input  wire signed [15:0]  st1_t1,         // T1, vertex 1
+    input  wire signed [15:0]  st1_s2,         // S1, vertex 2
+    input  wire signed [15:0]  st1_t2,         // T1, vertex 2
 
     // Vertex Q/W (Q4.12, unsigned)
     input  wire [15:0]         q0,             // Q/W, vertex 0
@@ -133,14 +133,14 @@ module raster_deriv (
     output reg  signed [31:0]  pre_c1a_dy,     // Color1 alpha dy derivative
     output reg  signed [31:0]  pre_z_dx,       // Depth dx derivative
     output reg  signed [31:0]  pre_z_dy,       // Depth dy derivative
-    output reg  signed [31:0]  pre_uv0u_dx,    // UV0 U dx derivative
-    output reg  signed [31:0]  pre_uv0u_dy,    // UV0 U dy derivative
-    output reg  signed [31:0]  pre_uv0v_dx,    // UV0 V dx derivative
-    output reg  signed [31:0]  pre_uv0v_dy,    // UV0 V dy derivative
-    output reg  signed [31:0]  pre_uv1u_dx,    // UV1 U dx derivative
-    output reg  signed [31:0]  pre_uv1u_dy,    // UV1 U dy derivative
-    output reg  signed [31:0]  pre_uv1v_dx,    // UV1 V dx derivative
-    output reg  signed [31:0]  pre_uv1v_dy,    // UV1 V dy derivative
+    output reg  signed [31:0]  pre_s0_dx,      // S0 dx derivative
+    output reg  signed [31:0]  pre_s0_dy,      // S0 dy derivative
+    output reg  signed [31:0]  pre_t0_dx,      // T0 dx derivative
+    output reg  signed [31:0]  pre_t0_dy,      // T0 dy derivative
+    output reg  signed [31:0]  pre_s1_dx,      // S1 dx derivative
+    output reg  signed [31:0]  pre_s1_dy,      // S1 dy derivative
+    output reg  signed [31:0]  pre_t1_dx,      // T1 dx derivative
+    output reg  signed [31:0]  pre_t1_dy,      // T1 dy derivative
     output reg  signed [31:0]  pre_q_dx,       // Q/W dx derivative
     output reg  signed [31:0]  pre_q_dy,       // Q/W dy derivative
 
@@ -154,10 +154,10 @@ module raster_deriv (
     output reg  signed [31:0]  init_c1b,       // Color1 blue initial value
     output reg  signed [31:0]  init_c1a,       // Color1 alpha initial value
     output reg  signed [31:0]  init_z,         // Depth initial value
-    output reg  signed [31:0]  init_uv0u,      // UV0 U initial value
-    output reg  signed [31:0]  init_uv0v,      // UV0 V initial value
-    output reg  signed [31:0]  init_uv1u,      // UV1 U initial value
-    output reg  signed [31:0]  init_uv1v,      // UV1 V initial value
+    output reg  signed [31:0]  init_s0,        // S0 initial value
+    output reg  signed [31:0]  init_t0,        // T0 initial value
+    output reg  signed [31:0]  init_s1,        // S1 initial value
+    output reg  signed [31:0]  init_t1,        // T1 initial value
     output reg  signed [31:0]  init_q          // Q/W initial value
 );
 
@@ -170,9 +170,9 @@ module raster_deriv (
     //   pair 1: c0_b (attr 2), c0_a (attr 3)
     //   pair 2: c1_r (attr 4), c1_g (attr 5)
     //   pair 3: c1_b (attr 6), c1_a (attr 7)
-    //   pair 4: z    (attr 8), uv0_u (attr 9)
-    //   pair 5: uv0_v(attr 10), q    (attr 11)
-    //   pair 6: uv1_u(attr 12), uv1_v (attr 13)
+    //   pair 4: z    (attr 8), s0 (attr 9)
+    //   pair 5: t0   (attr 10), q    (attr 11)
+    //   pair 6: s1   (attr 12), t1 (attr 13)
 
     reg  [2:0] pair_idx;
     reg        running;
@@ -244,17 +244,17 @@ module raster_deriv (
     wire signed [8:0] d10_c1a = $signed({1'b0, c1_a1}) - $signed({1'b0, c1_a0});
     wire signed [8:0] d20_c1a = $signed({1'b0, c1_a2}) - $signed({1'b0, c1_a0});
 
-    // Wide deltas (17-bit signed): Z (unsigned), UV (signed), Q (unsigned)
+    // Wide deltas (17-bit signed): Z (unsigned), ST (signed), Q (unsigned)
     wire signed [16:0] d10_z    = $signed({1'b0, z1})     - $signed({1'b0, z0});
     wire signed [16:0] d20_z    = $signed({1'b0, z2})     - $signed({1'b0, z0});
-    wire signed [16:0] d10_uv0u = {uv0_u1[15], uv0_u1} - {uv0_u0[15], uv0_u0};
-    wire signed [16:0] d20_uv0u = {uv0_u2[15], uv0_u2} - {uv0_u0[15], uv0_u0};
-    wire signed [16:0] d10_uv0v = {uv0_v1[15], uv0_v1} - {uv0_v0[15], uv0_v0};
-    wire signed [16:0] d20_uv0v = {uv0_v2[15], uv0_v2} - {uv0_v0[15], uv0_v0};
-    wire signed [16:0] d10_uv1u = {uv1_u1[15], uv1_u1} - {uv1_u0[15], uv1_u0};
-    wire signed [16:0] d20_uv1u = {uv1_u2[15], uv1_u2} - {uv1_u0[15], uv1_u0};
-    wire signed [16:0] d10_uv1v = {uv1_v1[15], uv1_v1} - {uv1_v0[15], uv1_v0};
-    wire signed [16:0] d20_uv1v = {uv1_v2[15], uv1_v2} - {uv1_v0[15], uv1_v0};
+    wire signed [16:0] d10_s0   = {st0_s1[15], st0_s1} - {st0_s0[15], st0_s0};
+    wire signed [16:0] d20_s0   = {st0_s2[15], st0_s2} - {st0_s0[15], st0_s0};
+    wire signed [16:0] d10_t0   = {st0_t1[15], st0_t1} - {st0_t0[15], st0_t0};
+    wire signed [16:0] d20_t0   = {st0_t2[15], st0_t2} - {st0_t0[15], st0_t0};
+    wire signed [16:0] d10_s1   = {st1_s1[15], st1_s1} - {st1_s0[15], st1_s0};
+    wire signed [16:0] d20_s1   = {st1_s2[15], st1_s2} - {st1_s0[15], st1_s0};
+    wire signed [16:0] d10_t1   = {st1_t1[15], st1_t1} - {st1_t0[15], st1_t0};
+    wire signed [16:0] d20_t1   = {st1_t2[15], st1_t2} - {st1_t0[15], st1_t0};
     wire signed [16:0] d10_q    = $signed({1'b0, q1})     - $signed({1'b0, q0});
     wire signed [16:0] d20_q    = $signed({1'b0, q2})     - $signed({1'b0, q0});
 
@@ -290,15 +290,15 @@ module raster_deriv (
             end
             3'd4: begin
                 d10_a = d10_z;         d20_a = d20_z;
-                d10_b = d10_uv0u;      d20_b = d20_uv0u;
+                d10_b = d10_s0;        d20_b = d20_s0;
             end
             3'd5: begin
-                d10_a = d10_uv0v;      d20_a = d20_uv0v;
+                d10_a = d10_t0;        d20_a = d20_t0;
                 d10_b = d10_q;         d20_b = d20_q;
             end
             3'd6: begin
-                d10_a = d10_uv1u;      d20_a = d20_uv1u;
-                d10_b = d10_uv1v;      d20_b = d20_uv1v;
+                d10_a = d10_s1;        d20_a = d20_s1;
+                d10_b = d10_t1;        d20_b = d20_t1;
             end
             default: begin
                 d10_a = 17'sd0;  d20_a = 17'sd0;
@@ -369,10 +369,10 @@ module raster_deriv (
     reg signed [31:0] next_pre_c1b_dx, next_pre_c1b_dy;
     reg signed [31:0] next_pre_c1a_dx, next_pre_c1a_dy;
     reg signed [31:0] next_pre_z_dx,   next_pre_z_dy;
-    reg signed [31:0] next_pre_uv0u_dx, next_pre_uv0u_dy;
-    reg signed [31:0] next_pre_uv0v_dx, next_pre_uv0v_dy;
-    reg signed [31:0] next_pre_uv1u_dx, next_pre_uv1u_dy;
-    reg signed [31:0] next_pre_uv1v_dx, next_pre_uv1v_dy;
+    reg signed [31:0] next_pre_s0_dx, next_pre_s0_dy;
+    reg signed [31:0] next_pre_t0_dx, next_pre_t0_dy;
+    reg signed [31:0] next_pre_s1_dx, next_pre_s1_dy;
+    reg signed [31:0] next_pre_t1_dx, next_pre_t1_dy;
     reg signed [31:0] next_pre_q_dx,   next_pre_q_dy;
 
     always_comb begin
@@ -385,10 +385,10 @@ module raster_deriv (
         next_pre_c1b_dx  = pre_c1b_dx;   next_pre_c1b_dy  = pre_c1b_dy;
         next_pre_c1a_dx  = pre_c1a_dx;   next_pre_c1a_dy  = pre_c1a_dy;
         next_pre_z_dx    = pre_z_dx;     next_pre_z_dy    = pre_z_dy;
-        next_pre_uv0u_dx = pre_uv0u_dx;  next_pre_uv0u_dy = pre_uv0u_dy;
-        next_pre_uv0v_dx = pre_uv0v_dx;  next_pre_uv0v_dy = pre_uv0v_dy;
-        next_pre_uv1u_dx = pre_uv1u_dx;  next_pre_uv1u_dy = pre_uv1u_dy;
-        next_pre_uv1v_dx = pre_uv1v_dx;  next_pre_uv1v_dy = pre_uv1v_dy;
+        next_pre_s0_dx = pre_s0_dx;  next_pre_s0_dy = pre_s0_dy;
+        next_pre_t0_dx = pre_t0_dx;  next_pre_t0_dy = pre_t0_dy;
+        next_pre_s1_dx = pre_s1_dx;  next_pre_s1_dy = pre_s1_dy;
+        next_pre_t1_dx = pre_t1_dx;  next_pre_t1_dy = pre_t1_dy;
         next_pre_q_dx    = pre_q_dx;     next_pre_q_dy    = pre_q_dy;
 
         if (running) begin
@@ -411,15 +411,15 @@ module raster_deriv (
                 end
                 3'd4: begin
                     next_pre_z_dx    = deriv_dx_a;  next_pre_z_dy    = deriv_dy_a;
-                    next_pre_uv0u_dx = deriv_dx_b;  next_pre_uv0u_dy = deriv_dy_b;
+                    next_pre_s0_dx = deriv_dx_b;  next_pre_s0_dy = deriv_dy_b;
                 end
                 3'd5: begin
-                    next_pre_uv0v_dx = deriv_dx_a;  next_pre_uv0v_dy = deriv_dy_a;
+                    next_pre_t0_dx = deriv_dx_a;  next_pre_t0_dy = deriv_dy_a;
                     next_pre_q_dx    = deriv_dx_b;  next_pre_q_dy    = deriv_dy_b;
                 end
                 3'd6: begin
-                    next_pre_uv1u_dx = deriv_dx_a;  next_pre_uv1u_dy = deriv_dy_a;
-                    next_pre_uv1v_dx = deriv_dx_b;  next_pre_uv1v_dy = deriv_dy_b;
+                    next_pre_s1_dx = deriv_dx_a;  next_pre_s1_dy = deriv_dy_a;
+                    next_pre_t1_dx = deriv_dx_b;  next_pre_t1_dy = deriv_dy_b;
                 end
                 default: begin
                     // No latch for invalid indices
@@ -439,10 +439,10 @@ module raster_deriv (
             pre_c1b_dx  <= 32'sd0;  pre_c1b_dy  <= 32'sd0;
             pre_c1a_dx  <= 32'sd0;  pre_c1a_dy  <= 32'sd0;
             pre_z_dx    <= 32'sd0;  pre_z_dy    <= 32'sd0;
-            pre_uv0u_dx <= 32'sd0;  pre_uv0u_dy <= 32'sd0;
-            pre_uv0v_dx <= 32'sd0;  pre_uv0v_dy <= 32'sd0;
-            pre_uv1u_dx <= 32'sd0;  pre_uv1u_dy <= 32'sd0;
-            pre_uv1v_dx <= 32'sd0;  pre_uv1v_dy <= 32'sd0;
+            pre_s0_dx <= 32'sd0;  pre_s0_dy <= 32'sd0;
+            pre_t0_dx <= 32'sd0;  pre_t0_dy <= 32'sd0;
+            pre_s1_dx <= 32'sd0;  pre_s1_dy <= 32'sd0;
+            pre_t1_dx <= 32'sd0;  pre_t1_dy <= 32'sd0;
             pre_q_dx    <= 32'sd0;  pre_q_dy    <= 32'sd0;
         end else begin
             pre_c0r_dx  <= next_pre_c0r_dx;   pre_c0r_dy  <= next_pre_c0r_dy;
@@ -454,10 +454,10 @@ module raster_deriv (
             pre_c1b_dx  <= next_pre_c1b_dx;   pre_c1b_dy  <= next_pre_c1b_dy;
             pre_c1a_dx  <= next_pre_c1a_dx;   pre_c1a_dy  <= next_pre_c1a_dy;
             pre_z_dx    <= next_pre_z_dx;      pre_z_dy    <= next_pre_z_dy;
-            pre_uv0u_dx <= next_pre_uv0u_dx;  pre_uv0u_dy <= next_pre_uv0u_dy;
-            pre_uv0v_dx <= next_pre_uv0v_dx;  pre_uv0v_dy <= next_pre_uv0v_dy;
-            pre_uv1u_dx <= next_pre_uv1u_dx;  pre_uv1u_dy <= next_pre_uv1u_dy;
-            pre_uv1v_dx <= next_pre_uv1v_dx;  pre_uv1v_dy <= next_pre_uv1v_dy;
+            pre_s0_dx <= next_pre_s0_dx;  pre_s0_dy <= next_pre_s0_dy;
+            pre_t0_dx <= next_pre_t0_dx;  pre_t0_dy <= next_pre_t0_dy;
+            pre_s1_dx <= next_pre_s1_dx;  pre_s1_dy <= next_pre_s1_dy;
+            pre_t1_dx <= next_pre_t1_dx;  pre_t1_dy <= next_pre_t1_dy;
             pre_q_dx    <= next_pre_q_dx;      pre_q_dy    <= next_pre_q_dy;
         end
     end
@@ -514,21 +514,21 @@ module raster_deriv (
             end
             3'd4: begin
                 init_dx_a = pre_z_dx;     init_dy_a = pre_z_dy;
-                init_dx_b = pre_uv0u_dx;  init_dy_b = pre_uv0u_dy;
+                init_dx_b = pre_s0_dx;  init_dy_b = pre_s0_dy;
                 init_f0_a = $signed({z0, 16'b0});
-                init_f0_b = $signed({uv0_u0, 16'b0});
+                init_f0_b = $signed({st0_s0, 16'b0});
             end
             3'd5: begin
-                init_dx_a = pre_uv0v_dx;  init_dy_a = pre_uv0v_dy;
+                init_dx_a = pre_t0_dx;  init_dy_a = pre_t0_dy;
                 init_dx_b = pre_q_dx;     init_dy_b = pre_q_dy;
-                init_f0_a = $signed({uv0_v0, 16'b0});
+                init_f0_a = $signed({st0_t0, 16'b0});
                 init_f0_b = $signed({q0, 16'b0});
             end
             3'd6: begin
-                init_dx_a = pre_uv1u_dx;  init_dy_a = pre_uv1u_dy;
-                init_dx_b = pre_uv1v_dx;  init_dy_b = pre_uv1v_dy;
-                init_f0_a = $signed({uv1_u0, 16'b0});
-                init_f0_b = $signed({uv1_v0, 16'b0});
+                init_dx_a = pre_s1_dx;  init_dy_a = pre_s1_dy;
+                init_dx_b = pre_t1_dx;  init_dy_b = pre_t1_dy;
+                init_f0_a = $signed({st1_s0, 16'b0});
+                init_f0_b = $signed({st1_t0, 16'b0});
             end
             default: begin
                 init_dx_a = 32'sd0;  init_dy_a = 32'sd0;
@@ -554,18 +554,18 @@ module raster_deriv (
     reg signed [31:0] next_init_c0b, next_init_c0a;
     reg signed [31:0] next_init_c1r, next_init_c1g;
     reg signed [31:0] next_init_c1b, next_init_c1a;
-    reg signed [31:0] next_init_z,   next_init_uv0u;
-    reg signed [31:0] next_init_uv0v, next_init_q;
-    reg signed [31:0] next_init_uv1u, next_init_uv1v;
+    reg signed [31:0] next_init_z,   next_init_s0;
+    reg signed [31:0] next_init_t0, next_init_q;
+    reg signed [31:0] next_init_s1, next_init_t1;
 
     always_comb begin
         next_init_c0r  = init_c0r;   next_init_c0g  = init_c0g;
         next_init_c0b  = init_c0b;   next_init_c0a  = init_c0a;
         next_init_c1r  = init_c1r;   next_init_c1g  = init_c1g;
         next_init_c1b  = init_c1b;   next_init_c1a  = init_c1a;
-        next_init_z    = init_z;     next_init_uv0u = init_uv0u;
-        next_init_uv0v = init_uv0v;  next_init_q    = init_q;
-        next_init_uv1u = init_uv1u;  next_init_uv1v = init_uv1v;
+        next_init_z    = init_z;     next_init_s0 = init_s0;
+        next_init_t0 = init_t0;  next_init_q    = init_q;
+        next_init_s1 = init_s1;  next_init_t1 = init_t1;
 
         if (init_active) begin
             case (init_pair)
@@ -587,15 +587,15 @@ module raster_deriv (
                 end
                 3'd4: begin
                     next_init_z    = computed_init_a;
-                    next_init_uv0u = computed_init_b;
+                    next_init_s0 = computed_init_b;
                 end
                 3'd5: begin
-                    next_init_uv0v = computed_init_a;
+                    next_init_t0 = computed_init_a;
                     next_init_q    = computed_init_b;
                 end
                 3'd6: begin
-                    next_init_uv1u = computed_init_a;
-                    next_init_uv1v = computed_init_b;
+                    next_init_s1 = computed_init_a;
+                    next_init_t1 = computed_init_b;
                 end
                 default: ;
             endcase
@@ -608,17 +608,17 @@ module raster_deriv (
             init_c0b  <= 32'sd0;  init_c0a  <= 32'sd0;
             init_c1r  <= 32'sd0;  init_c1g  <= 32'sd0;
             init_c1b  <= 32'sd0;  init_c1a  <= 32'sd0;
-            init_z    <= 32'sd0;  init_uv0u <= 32'sd0;
-            init_uv0v <= 32'sd0;  init_q    <= 32'sd0;
-            init_uv1u <= 32'sd0;  init_uv1v <= 32'sd0;
+            init_z    <= 32'sd0;  init_s0 <= 32'sd0;
+            init_t0 <= 32'sd0;  init_q    <= 32'sd0;
+            init_s1 <= 32'sd0;  init_t1 <= 32'sd0;
         end else begin
             init_c0r  <= next_init_c0r;   init_c0g  <= next_init_c0g;
             init_c0b  <= next_init_c0b;   init_c0a  <= next_init_c0a;
             init_c1r  <= next_init_c1r;   init_c1g  <= next_init_c1g;
             init_c1b  <= next_init_c1b;   init_c1a  <= next_init_c1a;
-            init_z    <= next_init_z;     init_uv0u <= next_init_uv0u;
-            init_uv0v <= next_init_uv0v;  init_q    <= next_init_q;
-            init_uv1u <= next_init_uv1u;  init_uv1v <= next_init_uv1v;
+            init_z    <= next_init_z;     init_s0 <= next_init_s0;
+            init_t0 <= next_init_t0;  init_q    <= next_init_q;
+            init_s1 <= next_init_s1;  init_t1 <= next_init_t1;
         end
     end
 

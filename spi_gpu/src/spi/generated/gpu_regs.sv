@@ -66,7 +66,7 @@ module gpu_regs (
     //--------------------------------------------------------------------------
     typedef struct {
         logic COLOR;
-        logic UV0_UV1;
+        logic ST0_ST1;
         logic VERTEX_NOKICK;
         logic VERTEX_KICK_012;
         logic VERTEX_KICK_021;
@@ -100,7 +100,7 @@ module gpu_regs (
         is_valid_addr = '1; // No error checking on valid address access
         is_invalid_rw = '0;
         decoded_reg_strb.COLOR = cpuif_req_masked & (cpuif_addr == 10'h0);
-        decoded_reg_strb.UV0_UV1 = cpuif_req_masked & (cpuif_addr == 10'h8);
+        decoded_reg_strb.ST0_ST1 = cpuif_req_masked & (cpuif_addr == 10'h8);
         decoded_reg_strb.VERTEX_NOKICK = cpuif_req_masked & (cpuif_addr == 10'h30);
         decoded_reg_strb.VERTEX_KICK_012 = cpuif_req_masked & (cpuif_addr == 10'h38);
         decoded_reg_strb.VERTEX_KICK_021 = cpuif_req_masked & (cpuif_addr == 10'h40);
@@ -171,20 +171,20 @@ module gpu_regs (
             struct {
                 logic [15:0] next;
                 logic load_next;
-            } UV0_UQ;
+            } S0;
             struct {
                 logic [15:0] next;
                 logic load_next;
-            } UV0_VQ;
+            } T0;
             struct {
                 logic [15:0] next;
                 logic load_next;
-            } UV1_UQ;
+            } S1;
             struct {
                 logic [15:0] next;
                 logic load_next;
-            } UV1_VQ;
-        } UV0_UV1;
+            } T1;
+        } ST0_ST1;
         struct {
             struct {
                 logic [15:0] next;
@@ -694,17 +694,17 @@ module gpu_regs (
         struct {
             struct {
                 logic [15:0] value;
-            } UV0_UQ;
+            } S0;
             struct {
                 logic [15:0] value;
-            } UV0_VQ;
+            } T0;
             struct {
                 logic [15:0] value;
-            } UV1_UQ;
+            } S1;
             struct {
                 logic [15:0] value;
-            } UV1_VQ;
-        } UV0_UV1;
+            } T1;
+        } ST0_ST1;
         struct {
             struct {
                 logic [15:0] value;
@@ -1258,98 +1258,98 @@ module gpu_regs (
         end
     end
     assign hwif_out.COLOR.COLOR1_A.value = field_storage.COLOR.COLOR1_A.value;
-    // Field: gpu_regs.UV0_UV1.UV0_UQ
+    // Field: gpu_regs.ST0_ST1.S0
     always_comb begin
         automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.UV0_UV1.UV0_UQ.value;
+        next_c = field_storage.ST0_ST1.S0.value;
         load_next_c = '0;
-        if(decoded_reg_strb.UV0_UV1 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.UV0_UV1.UV0_UQ.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
+        if(decoded_reg_strb.ST0_ST1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.ST0_ST1.S0.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
             load_next_c = '1;
         end
-        field_combo.UV0_UV1.UV0_UQ.next = next_c;
-        field_combo.UV0_UV1.UV0_UQ.load_next = load_next_c;
+        field_combo.ST0_ST1.S0.next = next_c;
+        field_combo.ST0_ST1.S0.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.UV0_UV1.UV0_UQ.value <= 16'h0;
+            field_storage.ST0_ST1.S0.value <= 16'h0;
         end else begin
-            if(field_combo.UV0_UV1.UV0_UQ.load_next) begin
-                field_storage.UV0_UV1.UV0_UQ.value <= field_combo.UV0_UV1.UV0_UQ.next;
+            if(field_combo.ST0_ST1.S0.load_next) begin
+                field_storage.ST0_ST1.S0.value <= field_combo.ST0_ST1.S0.next;
             end
         end
     end
-    assign hwif_out.UV0_UV1.UV0_UQ.value = field_storage.UV0_UV1.UV0_UQ.value;
-    // Field: gpu_regs.UV0_UV1.UV0_VQ
+    assign hwif_out.ST0_ST1.S0.value = field_storage.ST0_ST1.S0.value;
+    // Field: gpu_regs.ST0_ST1.T0
     always_comb begin
         automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.UV0_UV1.UV0_VQ.value;
+        next_c = field_storage.ST0_ST1.T0.value;
         load_next_c = '0;
-        if(decoded_reg_strb.UV0_UV1 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.UV0_UV1.UV0_VQ.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
+        if(decoded_reg_strb.ST0_ST1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.ST0_ST1.T0.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
             load_next_c = '1;
         end
-        field_combo.UV0_UV1.UV0_VQ.next = next_c;
-        field_combo.UV0_UV1.UV0_VQ.load_next = load_next_c;
+        field_combo.ST0_ST1.T0.next = next_c;
+        field_combo.ST0_ST1.T0.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.UV0_UV1.UV0_VQ.value <= 16'h0;
+            field_storage.ST0_ST1.T0.value <= 16'h0;
         end else begin
-            if(field_combo.UV0_UV1.UV0_VQ.load_next) begin
-                field_storage.UV0_UV1.UV0_VQ.value <= field_combo.UV0_UV1.UV0_VQ.next;
+            if(field_combo.ST0_ST1.T0.load_next) begin
+                field_storage.ST0_ST1.T0.value <= field_combo.ST0_ST1.T0.next;
             end
         end
     end
-    assign hwif_out.UV0_UV1.UV0_VQ.value = field_storage.UV0_UV1.UV0_VQ.value;
-    // Field: gpu_regs.UV0_UV1.UV1_UQ
+    assign hwif_out.ST0_ST1.T0.value = field_storage.ST0_ST1.T0.value;
+    // Field: gpu_regs.ST0_ST1.S1
     always_comb begin
         automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.UV0_UV1.UV1_UQ.value;
+        next_c = field_storage.ST0_ST1.S1.value;
         load_next_c = '0;
-        if(decoded_reg_strb.UV0_UV1 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.UV0_UV1.UV1_UQ.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
+        if(decoded_reg_strb.ST0_ST1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.ST0_ST1.S1.value & ~decoded_wr_biten[47:32]) | (decoded_wr_data[47:32] & decoded_wr_biten[47:32]);
             load_next_c = '1;
         end
-        field_combo.UV0_UV1.UV1_UQ.next = next_c;
-        field_combo.UV0_UV1.UV1_UQ.load_next = load_next_c;
+        field_combo.ST0_ST1.S1.next = next_c;
+        field_combo.ST0_ST1.S1.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.UV0_UV1.UV1_UQ.value <= 16'h0;
+            field_storage.ST0_ST1.S1.value <= 16'h0;
         end else begin
-            if(field_combo.UV0_UV1.UV1_UQ.load_next) begin
-                field_storage.UV0_UV1.UV1_UQ.value <= field_combo.UV0_UV1.UV1_UQ.next;
+            if(field_combo.ST0_ST1.S1.load_next) begin
+                field_storage.ST0_ST1.S1.value <= field_combo.ST0_ST1.S1.next;
             end
         end
     end
-    assign hwif_out.UV0_UV1.UV1_UQ.value = field_storage.UV0_UV1.UV1_UQ.value;
-    // Field: gpu_regs.UV0_UV1.UV1_VQ
+    assign hwif_out.ST0_ST1.S1.value = field_storage.ST0_ST1.S1.value;
+    // Field: gpu_regs.ST0_ST1.T1
     always_comb begin
         automatic logic [15:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.UV0_UV1.UV1_VQ.value;
+        next_c = field_storage.ST0_ST1.T1.value;
         load_next_c = '0;
-        if(decoded_reg_strb.UV0_UV1 && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.UV0_UV1.UV1_VQ.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
+        if(decoded_reg_strb.ST0_ST1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.ST0_ST1.T1.value & ~decoded_wr_biten[63:48]) | (decoded_wr_data[63:48] & decoded_wr_biten[63:48]);
             load_next_c = '1;
         end
-        field_combo.UV0_UV1.UV1_VQ.next = next_c;
-        field_combo.UV0_UV1.UV1_VQ.load_next = load_next_c;
+        field_combo.ST0_ST1.T1.next = next_c;
+        field_combo.ST0_ST1.T1.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.UV0_UV1.UV1_VQ.value <= 16'h0;
+            field_storage.ST0_ST1.T1.value <= 16'h0;
         end else begin
-            if(field_combo.UV0_UV1.UV1_VQ.load_next) begin
-                field_storage.UV0_UV1.UV1_VQ.value <= field_combo.UV0_UV1.UV1_VQ.next;
+            if(field_combo.ST0_ST1.T1.load_next) begin
+                field_storage.ST0_ST1.T1.value <= field_combo.ST0_ST1.T1.next;
             end
         end
     end
-    assign hwif_out.UV0_UV1.UV1_VQ.value = field_storage.UV0_UV1.UV1_VQ.value;
+    assign hwif_out.ST0_ST1.T1.value = field_storage.ST0_ST1.T1.value;
     // Field: gpu_regs.VERTEX_NOKICK.X
     always_comb begin
         automatic logic [15:0] next_c;
@@ -3909,10 +3909,10 @@ module gpu_regs (
     assign readback_array[0][47:40] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_G.value : '0;
     assign readback_array[0][55:48] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_B.value : '0;
     assign readback_array[0][63:56] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_A.value : '0;
-    assign readback_array[1][15:0] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV0_UQ.value : '0;
-    assign readback_array[1][31:16] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV0_VQ.value : '0;
-    assign readback_array[1][47:32] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV1_UQ.value : '0;
-    assign readback_array[1][63:48] = (decoded_reg_strb.UV0_UV1 && !decoded_req_is_wr) ? field_storage.UV0_UV1.UV1_VQ.value : '0;
+    assign readback_array[1][15:0] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.S0.value : '0;
+    assign readback_array[1][31:16] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.T0.value : '0;
+    assign readback_array[1][47:32] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.S1.value : '0;
+    assign readback_array[1][63:48] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.T1.value : '0;
     assign readback_array[2][15:0] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.X.value : '0;
     assign readback_array[2][31:16] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Y.value : '0;
     assign readback_array[2][47:32] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Z.value : '0;

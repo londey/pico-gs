@@ -45,26 +45,26 @@ def generate() -> list[str]:
 
     spec = rgba(0x00, 0x00, 0x00)
 
-    # V0: red at (320, 60) UV=(0.5, 0.0)
+    # V0: red at (320, 60) ST=(0.5, 0.0)
     red = rgba(0xFF, 0x00, 0x00)
     lines.append(emit(ADDR_COLOR, pack_color(red, spec), color_comment(red, spec)))
-    lines.append(emit(ADDR_UV0_UV1, pack_uv(0.5, 0.0), uv_comment(0.5, 0.0)))
+    lines.append(emit(ADDR_ST0_ST1, pack_st(0.5, 0.0), st_comment(0.5, 0.0)))
     lines.append(emit(ADDR_VERTEX_NOKICK, pack_vertex(320, 60, 0x0000),
                        vertex_comment(320, 60, 0x0000)))
     lines.append(emit_blank())
 
-    # V1: blue at (511, 380) UV=(1.0, 1.0)
+    # V1: blue at (511, 380) ST=(1.0, 1.0)
     blue = rgba(0x00, 0x00, 0xFF)
     lines.append(emit(ADDR_COLOR, pack_color(blue, spec), color_comment(blue, spec)))
-    lines.append(emit(ADDR_UV0_UV1, pack_uv(1.0, 1.0), uv_comment(1.0, 1.0)))
+    lines.append(emit(ADDR_ST0_ST1, pack_st(1.0, 1.0), st_comment(1.0, 1.0)))
     lines.append(emit(ADDR_VERTEX_NOKICK, pack_vertex(511, 380, 0x0000),
                        vertex_comment(511, 380, 0x0000)))
     lines.append(emit_blank())
 
-    # V2: green at (100, 380) UV=(0.0, 1.0) — kick
+    # V2: green at (100, 380) ST=(0.0, 1.0) — kick
     green = rgba(0x00, 0xFF, 0x00)
     lines.append(emit(ADDR_COLOR, pack_color(green, spec), color_comment(green, spec)))
-    lines.append(emit(ADDR_UV0_UV1, pack_uv(0.0, 1.0), uv_comment(0.0, 1.0)))
+    lines.append(emit(ADDR_ST0_ST1, pack_st(0.0, 1.0), st_comment(0.0, 1.0)))
     lines.append(emit(ADDR_VERTEX_KICK_012, pack_vertex(100, 380, 0x0000),
                        vertex_comment(100, 380, 0x0000)))
     lines.append(emit_blank())

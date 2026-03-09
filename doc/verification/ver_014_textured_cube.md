@@ -129,8 +129,8 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 6. **Submit cube triangles:**
    For each of the twelve triangles, in depth order (back faces first):
-   - For vertex 0 and vertex 1: write `COLOR`, `UV0_UV1`, `VERTEX_NOKICK`.
-   - For vertex 2: write `COLOR`, `UV0_UV1`, then `VERTEX_KICK_012` (or `VERTEX_KICK_021` for faces with opposite winding).
+   - For vertex 0 and vertex 1: write `COLOR`, `ST0_ST1`, `VERTEX_NOKICK`.
+   - For vertex 2: write `COLOR`, `ST0_ST1`, then `VERTEX_KICK_012` (or `VERTEX_KICK_021` for faces with opposite winding).
    Back-face triangles are submitted first to demonstrate that Z-testing correctly discards their fragments when the front-face triangles are rendered subsequently.
 
 7. **Wait for completion:**

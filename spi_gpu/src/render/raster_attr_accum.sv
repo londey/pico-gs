@@ -48,14 +48,14 @@ module raster_attr_accum (
     input  wire signed [31:0] pre_c1a_dy,  // Color1 A dy derivative
     input  wire signed [31:0] pre_z_dx,    // Z dx derivative
     input  wire signed [31:0] pre_z_dy,    // Z dy derivative
-    input  wire signed [31:0] pre_uv0u_dx, // UV0 U dx derivative
-    input  wire signed [31:0] pre_uv0u_dy, // UV0 U dy derivative
-    input  wire signed [31:0] pre_uv0v_dx, // UV0 V dx derivative
-    input  wire signed [31:0] pre_uv0v_dy, // UV0 V dy derivative
-    input  wire signed [31:0] pre_uv1u_dx, // UV1 U dx derivative
-    input  wire signed [31:0] pre_uv1u_dy, // UV1 U dy derivative
-    input  wire signed [31:0] pre_uv1v_dx, // UV1 V dx derivative
-    input  wire signed [31:0] pre_uv1v_dy, // UV1 V dy derivative
+    input  wire signed [31:0] pre_s0_dx, // S0 dx derivative
+    input  wire signed [31:0] pre_s0_dy, // S0 dy derivative
+    input  wire signed [31:0] pre_t0_dx, // T0 dx derivative
+    input  wire signed [31:0] pre_t0_dy, // T0 dy derivative
+    input  wire signed [31:0] pre_s1_dx, // S1 dx derivative
+    input  wire signed [31:0] pre_s1_dy, // S1 dy derivative
+    input  wire signed [31:0] pre_t1_dx, // T1 dx derivative
+    input  wire signed [31:0] pre_t1_dy, // T1 dy derivative
     input  wire signed [31:0] pre_q_dx,    // Q dx derivative
     input  wire signed [31:0] pre_q_dy,    // Q dy derivative
 
@@ -69,10 +69,10 @@ module raster_attr_accum (
     input  wire signed [31:0] init_c1b,    // Color1 B initial value at bbox origin
     input  wire signed [31:0] init_c1a,    // Color1 A initial value at bbox origin
     input  wire signed [31:0] init_z,      // Z initial value at bbox origin
-    input  wire signed [31:0] init_uv0u,   // UV0 U initial value at bbox origin
-    input  wire signed [31:0] init_uv0v,   // UV0 V initial value at bbox origin
-    input  wire signed [31:0] init_uv1u,   // UV1 U initial value at bbox origin
-    input  wire signed [31:0] init_uv1v,   // UV1 V initial value at bbox origin
+    input  wire signed [31:0] init_s0,   // S0 initial value at bbox origin
+    input  wire signed [31:0] init_t0,   // T0 initial value at bbox origin
+    input  wire signed [31:0] init_s1,   // S1 initial value at bbox origin
+    input  wire signed [31:0] init_t1,   // T1 initial value at bbox origin
     input  wire signed [31:0] init_q,      // Q initial value at bbox origin
 
     // Promoted/clamped color outputs (Q4.12)
@@ -88,11 +88,11 @@ module raster_attr_accum (
     // Clamped Z output
     output wire [15:0] out_z,              // Z clamped to 16-bit unsigned
 
-    // Raw accumulator outputs (top 16 bits used by fragment bus for UV/Q)
-    output wire signed [31:0] uv0u_acc_out, // UV0 U raw accumulator
-    output wire signed [31:0] uv0v_acc_out, // UV0 V raw accumulator
-    output wire signed [31:0] uv1u_acc_out, // UV1 U raw accumulator
-    output wire signed [31:0] uv1v_acc_out, // UV1 V raw accumulator
+    // Raw accumulator outputs (top 16 bits used by fragment bus for ST/Q)
+    output wire signed [31:0] s0_acc_out, // S0 raw accumulator
+    output wire signed [31:0] t0_acc_out, // T0 raw accumulator
+    output wire signed [31:0] s1_acc_out, // S1 raw accumulator
+    output wire signed [31:0] t1_acc_out, // T1 raw accumulator
     output wire signed [31:0] q_acc_out     // Q raw accumulator
 );
 
@@ -125,17 +125,17 @@ module raster_attr_accum (
     reg signed [31:0] z_dx;    // Z per-pixel X derivative
     reg signed [31:0] z_dy;    // Z per-pixel Y derivative
 
-    // UV0 derivatives
-    reg signed [31:0] uv0u_dx; // UV0 U per-pixel X derivative
-    reg signed [31:0] uv0u_dy; // UV0 U per-pixel Y derivative
-    reg signed [31:0] uv0v_dx; // UV0 V per-pixel X derivative
-    reg signed [31:0] uv0v_dy; // UV0 V per-pixel Y derivative
+    // S0/T0 derivatives
+    reg signed [31:0] s0_dx; // S0 per-pixel X derivative
+    reg signed [31:0] s0_dy; // S0 per-pixel Y derivative
+    reg signed [31:0] t0_dx; // T0 per-pixel X derivative
+    reg signed [31:0] t0_dy; // T0 per-pixel Y derivative
 
-    // UV1 derivatives
-    reg signed [31:0] uv1u_dx; // UV1 U per-pixel X derivative
-    reg signed [31:0] uv1u_dy; // UV1 U per-pixel Y derivative
-    reg signed [31:0] uv1v_dx; // UV1 V per-pixel X derivative
-    reg signed [31:0] uv1v_dy; // UV1 V per-pixel Y derivative
+    // S1/T1 derivatives
+    reg signed [31:0] s1_dx; // S1 per-pixel X derivative
+    reg signed [31:0] s1_dy; // S1 per-pixel Y derivative
+    reg signed [31:0] t1_dx; // T1 per-pixel X derivative
+    reg signed [31:0] t1_dy; // T1 per-pixel Y derivative
 
     // Q derivative
     reg signed [31:0] q_dx;    // Q per-pixel X derivative
@@ -170,17 +170,17 @@ module raster_attr_accum (
     reg signed [31:0] z_acc;   // Z current pixel accumulator
     reg signed [31:0] z_row;   // Z row start value
 
-    // UV0 accumulators (Q4.28 signed fixed-point)
-    reg signed [31:0] uv0u_acc; // UV0 U current pixel accumulator
-    reg signed [31:0] uv0u_row; // UV0 U row start value
-    reg signed [31:0] uv0v_acc; // UV0 V current pixel accumulator
-    reg signed [31:0] uv0v_row; // UV0 V row start value
+    // S0/T0 accumulators (Q4.28 signed fixed-point)
+    reg signed [31:0] s0_acc; // S0 current pixel accumulator
+    reg signed [31:0] s0_row; // S0 row start value
+    reg signed [31:0] t0_acc; // T0 current pixel accumulator
+    reg signed [31:0] t0_row; // T0 row start value
 
-    // UV1 accumulators (Q4.28 signed fixed-point)
-    reg signed [31:0] uv1u_acc; // UV1 U current pixel accumulator
-    reg signed [31:0] uv1u_row; // UV1 U row start value
-    reg signed [31:0] uv1v_acc; // UV1 V current pixel accumulator
-    reg signed [31:0] uv1v_row; // UV1 V row start value
+    // S1/T1 accumulators (Q4.28 signed fixed-point)
+    reg signed [31:0] s1_acc; // S1 current pixel accumulator
+    reg signed [31:0] s1_row; // S1 row start value
+    reg signed [31:0] t1_acc; // T1 current pixel accumulator
+    reg signed [31:0] t1_row; // T1 row start value
 
     // Q accumulators (Q4.28 signed fixed-point)
     reg signed [31:0] q_acc;   // Q current pixel accumulator
@@ -201,10 +201,10 @@ module raster_attr_accum (
     reg signed [31:0] c1b_trow, c1b_tcol;
     reg signed [31:0] c1a_trow, c1a_tcol;
     reg signed [31:0] z_trow, z_tcol;
-    reg signed [31:0] uv0u_trow, uv0u_tcol;
-    reg signed [31:0] uv0v_trow, uv0v_tcol;
-    reg signed [31:0] uv1u_trow, uv1u_tcol;
-    reg signed [31:0] uv1v_trow, uv1v_tcol;
+    reg signed [31:0] s0_trow, s0_tcol;
+    reg signed [31:0] t0_trow, t0_tcol;
+    reg signed [31:0] s1_trow, s1_tcol;
+    reg signed [31:0] t1_trow, t1_tcol;
     reg signed [31:0] q_trow, q_tcol;
 
     // ========================================================================
@@ -229,14 +229,14 @@ module raster_attr_accum (
     logic signed [31:0] next_c1a_dy;  // Next color1 A dy
     logic signed [31:0] next_z_dx;    // Next Z dx
     logic signed [31:0] next_z_dy;    // Next Z dy
-    logic signed [31:0] next_uv0u_dx; // Next UV0 U dx
-    logic signed [31:0] next_uv0u_dy; // Next UV0 U dy
-    logic signed [31:0] next_uv0v_dx; // Next UV0 V dx
-    logic signed [31:0] next_uv0v_dy; // Next UV0 V dy
-    logic signed [31:0] next_uv1u_dx; // Next UV1 U dx
-    logic signed [31:0] next_uv1u_dy; // Next UV1 U dy
-    logic signed [31:0] next_uv1v_dx; // Next UV1 V dx
-    logic signed [31:0] next_uv1v_dy; // Next UV1 V dy
+    logic signed [31:0] next_s0_dx; // Next S0 dx
+    logic signed [31:0] next_s0_dy; // Next S0 dy
+    logic signed [31:0] next_t0_dx; // Next T0 dx
+    logic signed [31:0] next_t0_dy; // Next T0 dy
+    logic signed [31:0] next_s1_dx; // Next S1 dx
+    logic signed [31:0] next_s1_dy; // Next S1 dy
+    logic signed [31:0] next_t1_dx; // Next T1 dx
+    logic signed [31:0] next_t1_dy; // Next T1 dy
     logic signed [31:0] next_q_dx;    // Next Q dx
     logic signed [31:0] next_q_dy;    // Next Q dy
 
@@ -262,14 +262,14 @@ module raster_attr_accum (
     logic signed [31:0] next_c1a_row; // Next color1 A row
     logic signed [31:0] next_z_acc;   // Next Z accumulator
     logic signed [31:0] next_z_row;   // Next Z row
-    logic signed [31:0] next_uv0u_acc; // Next UV0 U accumulator
-    logic signed [31:0] next_uv0u_row; // Next UV0 U row
-    logic signed [31:0] next_uv0v_acc; // Next UV0 V accumulator
-    logic signed [31:0] next_uv0v_row; // Next UV0 V row
-    logic signed [31:0] next_uv1u_acc; // Next UV1 U accumulator
-    logic signed [31:0] next_uv1u_row; // Next UV1 U row
-    logic signed [31:0] next_uv1v_acc; // Next UV1 V accumulator
-    logic signed [31:0] next_uv1v_row; // Next UV1 V row
+    logic signed [31:0] next_s0_acc; // Next S0 accumulator
+    logic signed [31:0] next_s0_row; // Next S0 row
+    logic signed [31:0] next_t0_acc; // Next T0 accumulator
+    logic signed [31:0] next_t0_row; // Next T0 row
+    logic signed [31:0] next_s1_acc; // Next S1 accumulator
+    logic signed [31:0] next_s1_row; // Next S1 row
+    logic signed [31:0] next_t1_acc; // Next T1 accumulator
+    logic signed [31:0] next_t1_row; // Next T1 row
     logic signed [31:0] next_q_acc;   // Next Q accumulator
     logic signed [31:0] next_q_row;   // Next Q row
 
@@ -283,10 +283,10 @@ module raster_attr_accum (
     logic signed [31:0] next_c1b_trow, next_c1b_tcol;
     logic signed [31:0] next_c1a_trow, next_c1a_tcol;
     logic signed [31:0] next_z_trow, next_z_tcol;
-    logic signed [31:0] next_uv0u_trow, next_uv0u_tcol;
-    logic signed [31:0] next_uv0v_trow, next_uv0v_tcol;
-    logic signed [31:0] next_uv1u_trow, next_uv1u_tcol;
-    logic signed [31:0] next_uv1v_trow, next_uv1v_tcol;
+    logic signed [31:0] next_s0_trow, next_s0_tcol;
+    logic signed [31:0] next_t0_trow, next_t0_tcol;
+    logic signed [31:0] next_s1_trow, next_s1_tcol;
+    logic signed [31:0] next_t1_trow, next_t1_tcol;
     logic signed [31:0] next_q_trow, next_q_tcol;
 
     // ========================================================================
@@ -315,14 +315,14 @@ module raster_attr_accum (
         next_c1a_dy  = c1a_dy;
         next_z_dx    = z_dx;
         next_z_dy    = z_dy;
-        next_uv0u_dx = uv0u_dx;
-        next_uv0u_dy = uv0u_dy;
-        next_uv0v_dx = uv0v_dx;
-        next_uv0v_dy = uv0v_dy;
-        next_uv1u_dx = uv1u_dx;
-        next_uv1u_dy = uv1u_dy;
-        next_uv1v_dx = uv1v_dx;
-        next_uv1v_dy = uv1v_dy;
+        next_s0_dx = s0_dx;
+        next_s0_dy = s0_dy;
+        next_t0_dx = t0_dx;
+        next_t0_dy = t0_dy;
+        next_s1_dx = s1_dx;
+        next_s1_dy = s1_dy;
+        next_t1_dx = t1_dx;
+        next_t1_dy = t1_dy;
         next_q_dx    = q_dx;
         next_q_dy    = q_dy;
 
@@ -346,14 +346,14 @@ module raster_attr_accum (
             next_c1a_dy  = pre_c1a_dy;
             next_z_dx    = pre_z_dx;
             next_z_dy    = pre_z_dy;
-            next_uv0u_dx = pre_uv0u_dx;
-            next_uv0u_dy = pre_uv0u_dy;
-            next_uv0v_dx = pre_uv0v_dx;
-            next_uv0v_dy = pre_uv0v_dy;
-            next_uv1u_dx = pre_uv1u_dx;
-            next_uv1u_dy = pre_uv1u_dy;
-            next_uv1v_dx = pre_uv1v_dx;
-            next_uv1v_dy = pre_uv1v_dy;
+            next_s0_dx = pre_s0_dx;
+            next_s0_dy = pre_s0_dy;
+            next_t0_dx = pre_t0_dx;
+            next_t0_dy = pre_t0_dy;
+            next_s1_dx = pre_s1_dx;
+            next_s1_dy = pre_s1_dy;
+            next_t1_dx = pre_t1_dx;
+            next_t1_dy = pre_t1_dy;
             next_q_dx    = pre_q_dx;
             next_q_dy    = pre_q_dy;
         end
@@ -386,14 +386,14 @@ module raster_attr_accum (
     wire signed [31:0] c1a_4dy = c1a_dy <<< 2;
     wire signed [31:0] z_4dx   = z_dx <<< 2;
     wire signed [31:0] z_4dy   = z_dy <<< 2;
-    wire signed [31:0] uv0u_4dx = uv0u_dx <<< 2;
-    wire signed [31:0] uv0u_4dy = uv0u_dy <<< 2;
-    wire signed [31:0] uv0v_4dx = uv0v_dx <<< 2;
-    wire signed [31:0] uv0v_4dy = uv0v_dy <<< 2;
-    wire signed [31:0] uv1u_4dx = uv1u_dx <<< 2;
-    wire signed [31:0] uv1u_4dy = uv1u_dy <<< 2;
-    wire signed [31:0] uv1v_4dx = uv1v_dx <<< 2;
-    wire signed [31:0] uv1v_4dy = uv1v_dy <<< 2;
+    wire signed [31:0] s0_4dx = s0_dx <<< 2;
+    wire signed [31:0] s0_4dy = s0_dy <<< 2;
+    wire signed [31:0] t0_4dx = t0_dx <<< 2;
+    wire signed [31:0] t0_4dy = t0_dy <<< 2;
+    wire signed [31:0] s1_4dx = s1_dx <<< 2;
+    wire signed [31:0] s1_4dy = s1_dy <<< 2;
+    wire signed [31:0] t1_4dx = t1_dx <<< 2;
+    wire signed [31:0] t1_4dy = t1_dy <<< 2;
     wire signed [31:0] q_4dx   = q_dx <<< 2;
     wire signed [31:0] q_4dy   = q_dy <<< 2;
 
@@ -417,14 +417,14 @@ module raster_attr_accum (
         next_c1a_row  = c1a_row;
         next_z_acc    = z_acc;
         next_z_row    = z_row;
-        next_uv0u_acc = uv0u_acc;
-        next_uv0u_row = uv0u_row;
-        next_uv0v_acc = uv0v_acc;
-        next_uv0v_row = uv0v_row;
-        next_uv1u_acc = uv1u_acc;
-        next_uv1u_row = uv1u_row;
-        next_uv1v_acc = uv1v_acc;
-        next_uv1v_row = uv1v_row;
+        next_s0_acc = s0_acc;
+        next_s0_row = s0_row;
+        next_t0_acc = t0_acc;
+        next_t0_row = t0_row;
+        next_s1_acc = s1_acc;
+        next_s1_row = s1_row;
+        next_t1_acc = t1_acc;
+        next_t1_row = t1_row;
         next_q_acc    = q_acc;
         next_q_row    = q_row;
 
@@ -437,10 +437,10 @@ module raster_attr_accum (
         next_c1b_trow = c1b_trow; next_c1b_tcol = c1b_tcol;
         next_c1a_trow = c1a_trow; next_c1a_tcol = c1a_tcol;
         next_z_trow   = z_trow;   next_z_tcol   = z_tcol;
-        next_uv0u_trow = uv0u_trow; next_uv0u_tcol = uv0u_tcol;
-        next_uv0v_trow = uv0v_trow; next_uv0v_tcol = uv0v_tcol;
-        next_uv1u_trow = uv1u_trow; next_uv1u_tcol = uv1u_tcol;
-        next_uv1v_trow = uv1v_trow; next_uv1v_tcol = uv1v_tcol;
+        next_s0_trow = s0_trow; next_s0_tcol = s0_tcol;
+        next_t0_trow = t0_trow; next_t0_tcol = t0_tcol;
+        next_s1_trow = s1_trow; next_s1_tcol = s1_tcol;
+        next_t1_trow = t1_trow; next_t1_tcol = t1_tcol;
         next_q_trow   = q_trow;   next_q_tcol   = q_tcol;
 
         if (latch_derivs) begin
@@ -463,14 +463,14 @@ module raster_attr_accum (
             next_c1a_trow = init_c1a; next_c1a_tcol = init_c1a;
             next_z_acc    = init_z;   next_z_row    = init_z;
             next_z_trow   = init_z;   next_z_tcol   = init_z;
-            next_uv0u_acc = init_uv0u; next_uv0u_row = init_uv0u;
-            next_uv0u_trow = init_uv0u; next_uv0u_tcol = init_uv0u;
-            next_uv0v_acc = init_uv0v; next_uv0v_row = init_uv0v;
-            next_uv0v_trow = init_uv0v; next_uv0v_tcol = init_uv0v;
-            next_uv1u_acc = init_uv1u; next_uv1u_row = init_uv1u;
-            next_uv1u_trow = init_uv1u; next_uv1u_tcol = init_uv1u;
-            next_uv1v_acc = init_uv1v; next_uv1v_row = init_uv1v;
-            next_uv1v_trow = init_uv1v; next_uv1v_tcol = init_uv1v;
+            next_s0_acc = init_s0; next_s0_row = init_s0;
+            next_s0_trow = init_s0; next_s0_tcol = init_s0;
+            next_t0_acc = init_t0; next_t0_row = init_t0;
+            next_t0_trow = init_t0; next_t0_tcol = init_t0;
+            next_s1_acc = init_s1; next_s1_row = init_s1;
+            next_s1_trow = init_s1; next_s1_tcol = init_s1;
+            next_t1_acc = init_t1; next_t1_row = init_t1;
+            next_t1_trow = init_t1; next_t1_tcol = init_t1;
             next_q_acc    = init_q;   next_q_row    = init_q;
             next_q_trow   = init_q;   next_q_tcol   = init_q;
         end else if (tile_col_step) begin
@@ -502,18 +502,18 @@ module raster_attr_accum (
             next_z_tcol   = z_tcol + z_4dx;
             next_z_row    = z_tcol + z_4dx;
             next_z_acc    = z_tcol + z_4dx;
-            next_uv0u_tcol = uv0u_tcol + uv0u_4dx;
-            next_uv0u_row  = uv0u_tcol + uv0u_4dx;
-            next_uv0u_acc  = uv0u_tcol + uv0u_4dx;
-            next_uv0v_tcol = uv0v_tcol + uv0v_4dx;
-            next_uv0v_row  = uv0v_tcol + uv0v_4dx;
-            next_uv0v_acc  = uv0v_tcol + uv0v_4dx;
-            next_uv1u_tcol = uv1u_tcol + uv1u_4dx;
-            next_uv1u_row  = uv1u_tcol + uv1u_4dx;
-            next_uv1u_acc  = uv1u_tcol + uv1u_4dx;
-            next_uv1v_tcol = uv1v_tcol + uv1v_4dx;
-            next_uv1v_row  = uv1v_tcol + uv1v_4dx;
-            next_uv1v_acc  = uv1v_tcol + uv1v_4dx;
+            next_s0_tcol = s0_tcol + s0_4dx;
+            next_s0_row  = s0_tcol + s0_4dx;
+            next_s0_acc  = s0_tcol + s0_4dx;
+            next_t0_tcol = t0_tcol + t0_4dx;
+            next_t0_row  = t0_tcol + t0_4dx;
+            next_t0_acc  = t0_tcol + t0_4dx;
+            next_s1_tcol = s1_tcol + s1_4dx;
+            next_s1_row  = s1_tcol + s1_4dx;
+            next_s1_acc  = s1_tcol + s1_4dx;
+            next_t1_tcol = t1_tcol + t1_4dx;
+            next_t1_row  = t1_tcol + t1_4dx;
+            next_t1_acc  = t1_tcol + t1_4dx;
             next_q_tcol   = q_tcol + q_4dx;
             next_q_row    = q_tcol + q_4dx;
             next_q_acc    = q_tcol + q_4dx;
@@ -555,22 +555,22 @@ module raster_attr_accum (
             next_z_tcol   = z_trow + z_4dy;
             next_z_row    = z_trow + z_4dy;
             next_z_acc    = z_trow + z_4dy;
-            next_uv0u_trow = uv0u_trow + uv0u_4dy;
-            next_uv0u_tcol = uv0u_trow + uv0u_4dy;
-            next_uv0u_row  = uv0u_trow + uv0u_4dy;
-            next_uv0u_acc  = uv0u_trow + uv0u_4dy;
-            next_uv0v_trow = uv0v_trow + uv0v_4dy;
-            next_uv0v_tcol = uv0v_trow + uv0v_4dy;
-            next_uv0v_row  = uv0v_trow + uv0v_4dy;
-            next_uv0v_acc  = uv0v_trow + uv0v_4dy;
-            next_uv1u_trow = uv1u_trow + uv1u_4dy;
-            next_uv1u_tcol = uv1u_trow + uv1u_4dy;
-            next_uv1u_row  = uv1u_trow + uv1u_4dy;
-            next_uv1u_acc  = uv1u_trow + uv1u_4dy;
-            next_uv1v_trow = uv1v_trow + uv1v_4dy;
-            next_uv1v_tcol = uv1v_trow + uv1v_4dy;
-            next_uv1v_row  = uv1v_trow + uv1v_4dy;
-            next_uv1v_acc  = uv1v_trow + uv1v_4dy;
+            next_s0_trow = s0_trow + s0_4dy;
+            next_s0_tcol = s0_trow + s0_4dy;
+            next_s0_row  = s0_trow + s0_4dy;
+            next_s0_acc  = s0_trow + s0_4dy;
+            next_t0_trow = t0_trow + t0_4dy;
+            next_t0_tcol = t0_trow + t0_4dy;
+            next_t0_row  = t0_trow + t0_4dy;
+            next_t0_acc  = t0_trow + t0_4dy;
+            next_s1_trow = s1_trow + s1_4dy;
+            next_s1_tcol = s1_trow + s1_4dy;
+            next_s1_row  = s1_trow + s1_4dy;
+            next_s1_acc  = s1_trow + s1_4dy;
+            next_t1_trow = t1_trow + t1_4dy;
+            next_t1_tcol = t1_trow + t1_4dy;
+            next_t1_row  = t1_trow + t1_4dy;
+            next_t1_acc  = t1_trow + t1_4dy;
             next_q_trow   = q_trow + q_4dy;
             next_q_tcol   = q_trow + q_4dy;
             next_q_row    = q_trow + q_4dy;
@@ -586,10 +586,10 @@ module raster_attr_accum (
             next_c1b_acc  = c1b_acc + c1b_dx;
             next_c1a_acc  = c1a_acc + c1a_dx;
             next_z_acc    = z_acc + z_dx;
-            next_uv0u_acc = uv0u_acc + uv0u_dx;
-            next_uv0v_acc = uv0v_acc + uv0v_dx;
-            next_uv1u_acc = uv1u_acc + uv1u_dx;
-            next_uv1v_acc = uv1v_acc + uv1v_dx;
+            next_s0_acc = s0_acc + s0_dx;
+            next_t0_acc = t0_acc + t0_dx;
+            next_s1_acc = s1_acc + s1_dx;
+            next_t1_acc = t1_acc + t1_dx;
             next_q_acc    = q_acc + q_dx;
         end else if (step_y) begin
             // New row: add dy derivatives to row registers and reload accumulators
@@ -611,14 +611,14 @@ module raster_attr_accum (
             next_c1a_acc  = c1a_row + c1a_dy;
             next_z_row    = z_row + z_dy;
             next_z_acc    = z_row + z_dy;
-            next_uv0u_row = uv0u_row + uv0u_dy;
-            next_uv0u_acc = uv0u_row + uv0u_dy;
-            next_uv0v_row = uv0v_row + uv0v_dy;
-            next_uv0v_acc = uv0v_row + uv0v_dy;
-            next_uv1u_row = uv1u_row + uv1u_dy;
-            next_uv1u_acc = uv1u_row + uv1u_dy;
-            next_uv1v_row = uv1v_row + uv1v_dy;
-            next_uv1v_acc = uv1v_row + uv1v_dy;
+            next_s0_row = s0_row + s0_dy;
+            next_s0_acc = s0_row + s0_dy;
+            next_t0_row = t0_row + t0_dy;
+            next_t0_acc = t0_row + t0_dy;
+            next_s1_row = s1_row + s1_dy;
+            next_s1_acc = s1_row + s1_dy;
+            next_t1_row = t1_row + t1_dy;
+            next_t1_acc = t1_row + t1_dy;
             next_q_row    = q_row + q_dy;
             next_q_acc    = q_row + q_dy;
         end
@@ -734,12 +734,12 @@ module raster_attr_accum (
     // ========================================================================
     // Raw Accumulator Output Assignments
     // ========================================================================
-    // Top 16 bits used by the fragment bus for UV and Q packing.
+    // Top 16 bits used by the fragment bus for ST and Q packing.
 
-    assign uv0u_acc_out = uv0u_acc;
-    assign uv0v_acc_out = uv0v_acc;
-    assign uv1u_acc_out = uv1u_acc;
-    assign uv1v_acc_out = uv1v_acc;
+    assign s0_acc_out = s0_acc;
+    assign t0_acc_out = t0_acc;
+    assign s1_acc_out = s1_acc;
+    assign t1_acc_out = t1_acc;
     assign q_acc_out    = q_acc;
 
     // ========================================================================
@@ -767,14 +767,14 @@ module raster_attr_accum (
             c1a_dy   <= 32'sb0;
             z_dx     <= 32'sb0;
             z_dy     <= 32'sb0;
-            uv0u_dx  <= 32'sb0;
-            uv0u_dy  <= 32'sb0;
-            uv0v_dx  <= 32'sb0;
-            uv0v_dy  <= 32'sb0;
-            uv1u_dx  <= 32'sb0;
-            uv1u_dy  <= 32'sb0;
-            uv1v_dx  <= 32'sb0;
-            uv1v_dy  <= 32'sb0;
+            s0_dx  <= 32'sb0;
+            s0_dy  <= 32'sb0;
+            t0_dx  <= 32'sb0;
+            t0_dy  <= 32'sb0;
+            s1_dx  <= 32'sb0;
+            s1_dy  <= 32'sb0;
+            t1_dx  <= 32'sb0;
+            t1_dy  <= 32'sb0;
             q_dx     <= 32'sb0;
             q_dy     <= 32'sb0;
             // Accumulator registers
@@ -787,10 +787,10 @@ module raster_attr_accum (
             c1b_acc  <= 32'sb0; c1b_row  <= 32'sb0;
             c1a_acc  <= 32'sb0; c1a_row  <= 32'sb0;
             z_acc    <= 32'sb0; z_row    <= 32'sb0;
-            uv0u_acc <= 32'sb0; uv0u_row <= 32'sb0;
-            uv0v_acc <= 32'sb0; uv0v_row <= 32'sb0;
-            uv1u_acc <= 32'sb0; uv1u_row <= 32'sb0;
-            uv1v_acc <= 32'sb0; uv1v_row <= 32'sb0;
+            s0_acc <= 32'sb0; s0_row <= 32'sb0;
+            t0_acc <= 32'sb0; t0_row <= 32'sb0;
+            s1_acc <= 32'sb0; s1_row <= 32'sb0;
+            t1_acc <= 32'sb0; t1_row <= 32'sb0;
             q_acc    <= 32'sb0; q_row    <= 32'sb0;
             // Tile-origin registers
             c0r_trow <= 32'sb0; c0r_tcol <= 32'sb0;
@@ -802,10 +802,10 @@ module raster_attr_accum (
             c1b_trow <= 32'sb0; c1b_tcol <= 32'sb0;
             c1a_trow <= 32'sb0; c1a_tcol <= 32'sb0;
             z_trow   <= 32'sb0; z_tcol   <= 32'sb0;
-            uv0u_trow <= 32'sb0; uv0u_tcol <= 32'sb0;
-            uv0v_trow <= 32'sb0; uv0v_tcol <= 32'sb0;
-            uv1u_trow <= 32'sb0; uv1u_tcol <= 32'sb0;
-            uv1v_trow <= 32'sb0; uv1v_tcol <= 32'sb0;
+            s0_trow <= 32'sb0; s0_tcol <= 32'sb0;
+            t0_trow <= 32'sb0; t0_tcol <= 32'sb0;
+            s1_trow <= 32'sb0; s1_tcol <= 32'sb0;
+            t1_trow <= 32'sb0; t1_tcol <= 32'sb0;
             q_trow   <= 32'sb0; q_tcol   <= 32'sb0;
         end else begin
             // Derivative registers
@@ -827,14 +827,14 @@ module raster_attr_accum (
             c1a_dy   <= next_c1a_dy;
             z_dx     <= next_z_dx;
             z_dy     <= next_z_dy;
-            uv0u_dx  <= next_uv0u_dx;
-            uv0u_dy  <= next_uv0u_dy;
-            uv0v_dx  <= next_uv0v_dx;
-            uv0v_dy  <= next_uv0v_dy;
-            uv1u_dx  <= next_uv1u_dx;
-            uv1u_dy  <= next_uv1u_dy;
-            uv1v_dx  <= next_uv1v_dx;
-            uv1v_dy  <= next_uv1v_dy;
+            s0_dx  <= next_s0_dx;
+            s0_dy  <= next_s0_dy;
+            t0_dx  <= next_t0_dx;
+            t0_dy  <= next_t0_dy;
+            s1_dx  <= next_s1_dx;
+            s1_dy  <= next_s1_dy;
+            t1_dx  <= next_t1_dx;
+            t1_dy  <= next_t1_dy;
             q_dx     <= next_q_dx;
             q_dy     <= next_q_dy;
             // Accumulator registers
@@ -847,10 +847,10 @@ module raster_attr_accum (
             c1b_acc  <= next_c1b_acc; c1b_row  <= next_c1b_row;
             c1a_acc  <= next_c1a_acc; c1a_row  <= next_c1a_row;
             z_acc    <= next_z_acc;   z_row    <= next_z_row;
-            uv0u_acc <= next_uv0u_acc; uv0u_row <= next_uv0u_row;
-            uv0v_acc <= next_uv0v_acc; uv0v_row <= next_uv0v_row;
-            uv1u_acc <= next_uv1u_acc; uv1u_row <= next_uv1u_row;
-            uv1v_acc <= next_uv1v_acc; uv1v_row <= next_uv1v_row;
+            s0_acc <= next_s0_acc; s0_row <= next_s0_row;
+            t0_acc <= next_t0_acc; t0_row <= next_t0_row;
+            s1_acc <= next_s1_acc; s1_row <= next_s1_row;
+            t1_acc <= next_t1_acc; t1_row <= next_t1_row;
             q_acc    <= next_q_acc;   q_row    <= next_q_row;
             // Tile-origin registers
             c0r_trow <= next_c0r_trow; c0r_tcol <= next_c0r_tcol;
@@ -862,10 +862,10 @@ module raster_attr_accum (
             c1b_trow <= next_c1b_trow; c1b_tcol <= next_c1b_tcol;
             c1a_trow <= next_c1a_trow; c1a_tcol <= next_c1a_tcol;
             z_trow   <= next_z_trow;   z_tcol   <= next_z_tcol;
-            uv0u_trow <= next_uv0u_trow; uv0u_tcol <= next_uv0u_tcol;
-            uv0v_trow <= next_uv0v_trow; uv0v_tcol <= next_uv0v_tcol;
-            uv1u_trow <= next_uv1u_trow; uv1u_tcol <= next_uv1u_tcol;
-            uv1v_trow <= next_uv1v_trow; uv1v_tcol <= next_uv1v_tcol;
+            s0_trow <= next_s0_trow; s0_tcol <= next_s0_tcol;
+            t0_trow <= next_t0_trow; t0_tcol <= next_t0_tcol;
+            s1_trow <= next_s1_trow; s1_tcol <= next_s1_tcol;
+            t1_trow <= next_t1_trow; t1_tcol <= next_t1_tcol;
             q_trow   <= next_q_trow;   q_tcol   <= next_q_tcol;
         end
     end

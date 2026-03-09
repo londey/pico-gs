@@ -130,8 +130,8 @@ Integrating the additional format decoders requires adding a format-select mux i
 The register file produces 17 signal groups that are declared in `gpu_top.sv` but have **no consumer module**:
 
 **Vertex Data (from tri_* bus):**
-- `tri_uv0[2:0][31:0]` — per-vertex TEX0 UV coordinates
-- `tri_uv1[2:0][31:0]` — per-vertex TEX1 UV coordinates
+- `tri_st0[2:0][31:0]` — per-vertex TEX0 pre-divided texture coordinates (S=U/W, T=V/W)
+- `tri_st1[2:0][31:0]` — per-vertex TEX1 pre-divided texture coordinates (S=U/W, T=V/W)
 - `tri_q[2:0][15:0]` — per-vertex perspective Q (1/W) values
 - `tri_color1[2:0][31:0]` — per-vertex specular RGBA8888
 

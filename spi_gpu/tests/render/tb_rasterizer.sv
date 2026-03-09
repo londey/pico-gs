@@ -28,17 +28,17 @@ module tb_rasterizer;
 
     reg [15:0]  v0_x, v0_y, v0_z;
     reg [31:0]  v0_color0, v0_color1;
-    reg [31:0]  v0_uv0, v0_uv1;
+    reg [31:0]  v0_st0, v0_st1;
     reg [15:0]  v0_q;
 
     reg [15:0]  v1_x, v1_y, v1_z;
     reg [31:0]  v1_color0, v1_color1;
-    reg [31:0]  v1_uv0, v1_uv1;
+    reg [31:0]  v1_st0, v1_st1;
     reg [15:0]  v1_q;
 
     reg [15:0]  v2_x, v2_y, v2_z;
     reg [31:0]  v2_color0, v2_color1;
-    reg [31:0]  v2_uv0, v2_uv1;
+    reg [31:0]  v2_st0, v2_st1;
     reg [15:0]  v2_q;
 
     // Fragment output bus
@@ -72,15 +72,15 @@ module tb_rasterizer;
 
         .v0_x(v0_x), .v0_y(v0_y), .v0_z(v0_z),
         .v0_color0(v0_color0), .v0_color1(v0_color1),
-        .v0_uv0(v0_uv0), .v0_uv1(v0_uv1), .v0_q(v0_q),
+        .v0_st0(v0_st0), .v0_st1(v0_st1), .v0_q(v0_q),
 
         .v1_x(v1_x), .v1_y(v1_y), .v1_z(v1_z),
         .v1_color0(v1_color0), .v1_color1(v1_color1),
-        .v1_uv0(v1_uv0), .v1_uv1(v1_uv1), .v1_q(v1_q),
+        .v1_st0(v1_st0), .v1_st1(v1_st1), .v1_q(v1_q),
 
         .v2_x(v2_x), .v2_y(v2_y), .v2_z(v2_z),
         .v2_color0(v2_color0), .v2_color1(v2_color1),
-        .v2_uv0(v2_uv0), .v2_uv1(v2_uv1), .v2_q(v2_q),
+        .v2_st0(v2_st0), .v2_st1(v2_st1), .v2_q(v2_q),
 
         .frag_valid(frag_valid),
         .frag_ready(frag_ready),
@@ -163,18 +163,18 @@ module tb_rasterizer;
     task set_default_attrs;
         begin
             v0_color1 = 32'h00000000;
-            v0_uv0 = 32'h00000000;
-            v0_uv1 = 32'h00000000;
+            v0_st0 = 32'h00000000;
+            v0_st1 = 32'h00000000;
             v0_q = 16'h1000;  // Q = 1.0 in Q4.12
 
             v1_color1 = 32'h00000000;
-            v1_uv0 = 32'h00000000;
-            v1_uv1 = 32'h00000000;
+            v1_st0 = 32'h00000000;
+            v1_st1 = 32'h00000000;
             v1_q = 16'h1000;
 
             v2_color1 = 32'h00000000;
-            v2_uv0 = 32'h00000000;
-            v2_uv1 = 32'h00000000;
+            v2_st0 = 32'h00000000;
+            v2_st1 = 32'h00000000;
             v2_q = 16'h1000;
         end
     endtask
@@ -674,9 +674,9 @@ module tb_rasterizer;
         v0_z = 16'h1000;
         v0_color0 = 32'hFF000000;
         v0_color1 = 32'h00000000;
-        // UV0: U=0.0, V=0.0 in Q4.12
-        v0_uv0 = {16'h0000, 16'h0000};
-        v0_uv1 = 32'h00000000;
+        // ST0: S=0.0, T=0.0 in Q4.12
+        v0_st0 = {16'h0000, 16'h0000};
+        v0_st1 = 32'h00000000;
         v0_q = 16'h1000;
 
         v1_x = 16'd320;   // 20 << 4
@@ -684,9 +684,9 @@ module tb_rasterizer;
         v1_z = 16'h2000;
         v1_color0 = 32'h00FF0000;
         v1_color1 = 32'h00000000;
-        // UV0: U=2.0, V=0.0 -- wraps past 1.0
-        v1_uv0 = {16'h2000, 16'h0000};
-        v1_uv1 = 32'h00000000;
+        // ST0: S=2.0, T=0.0 -- wraps past 1.0
+        v1_st0 = {16'h2000, 16'h0000};
+        v1_st1 = 32'h00000000;
         v1_q = 16'h1000;
 
         v2_x = 16'd240;   // 15 << 4
@@ -694,9 +694,9 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
         v2_color1 = 32'h00000000;
-        // UV0: U=-1.0, V=2.0 -- negative U, wrapping V
-        v2_uv0 = {16'hF000, 16'h2000};
-        v2_uv1 = 32'h00000000;
+        // ST0: S=-1.0, T=2.0 -- negative S, wrapping T
+        v2_st0 = {16'hF000, 16'h2000};
+        v2_st1 = 32'h00000000;
         v2_q = 16'h1000;
 
 
@@ -729,7 +729,7 @@ module tb_rasterizer;
         // Computes reference derivatives and initial values using the same
         // formula as the rasterizer, then checks the first emitted fragment
         // for a match within 1 ULP.
-        // NOTE: UV0 outputs now carry true perspective-correct U/V (S/Q, T/Q)
+        // NOTE: ST0 outputs now carry true perspective-correct U/V (S/Q, T/Q)
         // rather than raw S/T projections.  The reference model accounts for
         // the perspective correction step performed by the rasterizer.
         // ====================================================================
@@ -744,8 +744,8 @@ module tb_rasterizer;
         v0_z = 16'h1000;
         v0_color0 = 32'hFF000000;   // R=255, G=0, B=0, A=0
         v0_color1 = 32'h00000000;
-        v0_uv0 = {16'h0000, 16'h0000};  // UV0=(0.0, 0.0)
-        v0_uv1 = 32'h00000000;
+        v0_st0 = {16'h0000, 16'h0000};  // ST0=(0.0, 0.0)
+        v0_st1 = 32'h00000000;
         v0_q = 16'h1000;   // Q = 1.0 in Q4.12
 
         v1_x = 16'd480;   // 30 << 4
@@ -753,8 +753,8 @@ module tb_rasterizer;
         v1_z = 16'h3000;
         v1_color0 = 32'h00FF0000;   // R=0, G=255, B=0, A=0
         v1_color1 = 32'h00000000;
-        v1_uv0 = {16'h1000, 16'h0000};  // UV0=(1.0, 0.0)
-        v1_uv1 = 32'h00000000;
+        v1_st0 = {16'h1000, 16'h0000};  // ST0=(1.0, 0.0)
+        v1_st1 = 32'h00000000;
         v1_q = 16'h1000;
 
         v2_x = 16'd320;   // 20 << 4
@@ -762,8 +762,8 @@ module tb_rasterizer;
         v2_z = 16'h2000;
         v2_color0 = 32'h0000FF00;   // R=0, G=0, B=255, A=0
         v2_color1 = 32'h00000000;
-        v2_uv0 = {16'h0000, 16'h1000};  // UV0=(0.0, 1.0)
-        v2_uv1 = 32'h00000000;
+        v2_st0 = {16'h0000, 16'h1000};  // ST0=(0.0, 1.0)
+        v2_st1 = 32'h00000000;
         v2_q = 16'h2000;   // Q = 2.0 in Q4.12
 
         // 2*area = |(30-10)*(30-10)-(20-10)*(10-10)| = |20*20-10*0| = 400
@@ -800,8 +800,8 @@ module tb_rasterizer;
             reg signed [31:0] ref_c0g_dx, ref_c0g_dy;
             reg signed [31:0] ref_c0b_dx, ref_c0b_dy;
             reg signed [31:0] ref_z_dx, ref_z_dy;
-            reg signed [31:0] ref_uv0u_dx, ref_uv0u_dy;
-            reg signed [31:0] ref_uv0v_dx, ref_uv0v_dy;
+            reg signed [31:0] ref_s0_dx, ref_s0_dy;
+            reg signed [31:0] ref_t0_dx, ref_t0_dy;
             reg signed [31:0] ref_q_dx, ref_q_dy;
             integer interp_fail;
 
@@ -843,22 +843,22 @@ module tb_rasterizer;
             // UV reference values are Q4.12 (16-bit signed: sign [15], integer [14:12], fractional [11:0])
             // per UNIT-005 fragment bus spec and fp_types_pkg.sv q4_12_t typedef.
 
-            // UV0 U: u0=0x0000, u1=0x1000, u2=0x0000
-            ref_uv0u_dx = ref_deriv_16bit(
+            // ST0 S: s0=0x0000, s1=0x1000, s2=0x0000
+            ref_s0_dx = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
-            ref_uv0u_dy = ref_deriv_16bit(
+            ref_s0_dy = ref_deriv_16bit(
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
 
-            // UV0 V: v0=0x0000, v1=0x0000, v2=0x1000
-            ref_uv0v_dx = ref_deriv_16bit(
+            // ST0 T: t0=0x0000, t1=0x0000, t2=0x1000
+            ref_t0_dx = ref_deriv_16bit(
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 ref_e1A, ref_e2A, dut_inv_area, dut_area_shift);
-            ref_uv0v_dy = ref_deriv_16bit(
+            ref_t0_dy = ref_deriv_16bit(
                 {1'b0, 16'h0000} - {1'b0, 16'h0000},
                 {1'b0, 16'h1000} - {1'b0, 16'h0000},
                 ref_e1B, ref_e2B, dut_inv_area, dut_area_shift);
@@ -957,42 +957,42 @@ module tb_rasterizer;
                 interp_fail = 1;
             end
 
-            // Check UV0 U dx (Q4.12)
-            $display("    uv0u_dx (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0u_dx, ref_uv0u_dx);
-            if (dut.u_attr_accum.uv0u_dx == ref_uv0u_dx) begin
+            // Check ST0 S dx (Q4.12)
+            $display("    s0_dx (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.s0_dx, ref_s0_dx);
+            if (dut.u_attr_accum.s0_dx == ref_s0_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0u_dx (Q4.12) mismatch");
+                $display("    FAIL: s0_dx (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
 
-            // Check UV0 U dy (Q4.12)
-            $display("    uv0u_dy (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0u_dy, ref_uv0u_dy);
-            if (dut.u_attr_accum.uv0u_dy == ref_uv0u_dy) begin
+            // Check ST0 S dy (Q4.12)
+            $display("    s0_dy (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.s0_dy, ref_s0_dy);
+            if (dut.u_attr_accum.s0_dy == ref_s0_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0u_dy (Q4.12) mismatch");
+                $display("    FAIL: s0_dy (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
 
-            // Check UV0 V dx (Q4.12)
-            $display("    uv0v_dx (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0v_dx, ref_uv0v_dx);
-            if (dut.u_attr_accum.uv0v_dx == ref_uv0v_dx) begin
+            // Check ST0 T dx (Q4.12)
+            $display("    t0_dx (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.t0_dx, ref_t0_dx);
+            if (dut.u_attr_accum.t0_dx == ref_t0_dx) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0v_dx (Q4.12) mismatch");
+                $display("    FAIL: t0_dx (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
 
-            // Check UV0 V dy (Q4.12)
-            $display("    uv0v_dy (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.uv0v_dy, ref_uv0v_dy);
-            if (dut.u_attr_accum.uv0v_dy == ref_uv0v_dy) begin
+            // Check ST0 T dy (Q4.12)
+            $display("    t0_dy (Q4.12): DUT=%0d, ref=%0d", dut.u_attr_accum.t0_dy, ref_t0_dy);
+            if (dut.u_attr_accum.t0_dy == ref_t0_dy) begin
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("    FAIL: uv0v_dy (Q4.12) mismatch");
+                $display("    FAIL: t0_dy (Q4.12) mismatch");
                 test_fail_count = test_fail_count + 1;
                 interp_fail = 1;
             end
@@ -1018,9 +1018,9 @@ module tb_rasterizer;
             end
 
             if (interp_fail == 0) begin
-                $display("  PASS: All derivative registers match reference model (UV0, UV1 (Q4.12))");
+                $display("  PASS: All derivative registers match reference model (ST0, ST1 (Q4.12))");
             end else begin
-                $display("  FAIL: One or more derivative registers differ from reference (UV0, UV1 (Q4.12))");
+                $display("  FAIL: One or more derivative registers differ from reference (ST0, ST1 (Q4.12))");
             end
         end
 
@@ -1229,8 +1229,8 @@ module tb_rasterizer;
         v0_z = 16'h1000;
         v0_color0 = 32'hFF000000;
         v0_color1 = 32'h00000000;
-        v0_uv0 = {16'h0000, 16'h0000};  // S=0.0, T=0.0
-        v0_uv1 = 32'h00000000;
+        v0_st0 = {16'h0000, 16'h0000};  // S=0.0, T=0.0
+        v0_st1 = 32'h00000000;
         v0_q = 16'h1000;   // Q = 1.0
 
         v1_x = 16'd480;   // 30 << 4
@@ -1238,8 +1238,8 @@ module tb_rasterizer;
         v1_z = 16'h2000;
         v1_color0 = 32'h00FF0000;
         v1_color1 = 32'h00000000;
-        v1_uv0 = {16'h1000, 16'h0000};  // S=1.0, T=0.0
-        v1_uv1 = 32'h00000000;
+        v1_st0 = {16'h1000, 16'h0000};  // S=1.0, T=0.0
+        v1_st1 = 32'h00000000;
         v1_q = 16'h2000;   // Q = 2.0
 
         v2_x = 16'd320;   // 20 << 4
@@ -1247,8 +1247,8 @@ module tb_rasterizer;
         v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
         v2_color1 = 32'h00000000;
-        v2_uv0 = {16'h0000, 16'h1000};  // S=0.0, T=1.0
-        v2_uv1 = 32'h00000000;
+        v2_st0 = {16'h0000, 16'h1000};  // S=0.0, T=1.0
+        v2_st1 = 32'h00000000;
         v2_q = 16'h0800;   // Q = 0.5
 
         begin : persp_test
@@ -1323,22 +1323,22 @@ module tb_rasterizer;
         v0_x = 16'd160;   v0_y = 16'd160;   v0_z = 16'h1000;
         v0_color0 = 32'hFF000000;
         v0_color1 = 32'h00000000;
-        v0_uv0 = {16'h0000, 16'h0000};
-        v0_uv1 = 32'h00000000;
+        v0_st0 = {16'h0000, 16'h0000};
+        v0_st1 = 32'h00000000;
         v0_q = 16'h1000;   // Q = 1.0 in Q4.12
 
         v1_x = 16'd480;   v1_y = 16'd160;   v1_z = 16'h2000;
         v1_color0 = 32'h00FF0000;
         v1_color1 = 32'h00000000;
-        v1_uv0 = {16'h1000, 16'h0000};
-        v1_uv1 = 32'h00000000;
+        v1_st0 = {16'h1000, 16'h0000};
+        v1_st1 = 32'h00000000;
         v1_q = 16'h1000;   // Q = 1.0 (uniform)
 
         v2_x = 16'd320;   v2_y = 16'd480;   v2_z = 16'h3000;
         v2_color0 = 32'h0000FF00;
         v2_color1 = 32'h00000000;
-        v2_uv0 = {16'h0000, 16'h1000};
-        v2_uv1 = 32'h00000000;
+        v2_st0 = {16'h0000, 16'h1000};
+        v2_st1 = 32'h00000000;
         v2_q = 16'h1000;   // Q = 1.0 (uniform)
 
         begin : lod_test

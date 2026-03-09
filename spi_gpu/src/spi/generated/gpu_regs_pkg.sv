@@ -53,26 +53,26 @@ package gpu_regs_pkg;
 
     typedef struct {
         logic [15:0] value;
-    } gpu_regs__uv0_uv1_reg__UV0_UQ__out_t;
+    } gpu_regs__st0_st1_reg__S0__out_t;
 
     typedef struct {
         logic [15:0] value;
-    } gpu_regs__uv0_uv1_reg__UV0_VQ__out_t;
+    } gpu_regs__st0_st1_reg__T0__out_t;
 
     typedef struct {
         logic [15:0] value;
-    } gpu_regs__uv0_uv1_reg__UV1_UQ__out_t;
+    } gpu_regs__st0_st1_reg__S1__out_t;
 
     typedef struct {
         logic [15:0] value;
-    } gpu_regs__uv0_uv1_reg__UV1_VQ__out_t;
+    } gpu_regs__st0_st1_reg__T1__out_t;
 
     typedef struct {
-        gpu_regs__uv0_uv1_reg__UV0_UQ__out_t UV0_UQ;
-        gpu_regs__uv0_uv1_reg__UV0_VQ__out_t UV0_VQ;
-        gpu_regs__uv0_uv1_reg__UV1_UQ__out_t UV1_UQ;
-        gpu_regs__uv0_uv1_reg__UV1_VQ__out_t UV1_VQ;
-    } gpu_regs__uv0_uv1_reg__out_t;
+        gpu_regs__st0_st1_reg__S0__out_t S0;
+        gpu_regs__st0_st1_reg__T0__out_t T0;
+        gpu_regs__st0_st1_reg__S1__out_t S1;
+        gpu_regs__st0_st1_reg__T1__out_t T1;
+    } gpu_regs__st0_st1_reg__out_t;
 
     typedef struct {
         logic [15:0] value;
@@ -561,7 +561,7 @@ package gpu_regs_pkg;
 
     typedef struct {
         gpu_regs__color_reg__out_t COLOR;
-        gpu_regs__uv0_uv1_reg__out_t UV0_UV1;
+        gpu_regs__st0_st1_reg__out_t ST0_ST1;
         gpu_regs__vertex_reg__out_t VERTEX_NOKICK;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_012;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_021;

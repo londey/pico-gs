@@ -81,7 +81,7 @@ Rasterizer-relevant registers from [gpu_regs.rdl](../../registers/rdl/gpu_regs.r
 | Register | Index | Key Fields | Format |
 |----------|-------|------------|--------|
 | COLOR | 0x00 | COLOR0 [31:0], COLOR1 [63:32] | RGBA8888 UNORM8 each |
-| UV0_UV1 | 0x01 | UV0_UQ/VQ [31:0], UV1_UQ/VQ [63:32] | Q4.12 per component |
+| ST0_ST1 | 0x01 | S0/T0 [31:0], S1/T1 [63:32] | Q4.12 per component (S=U/W, T=V/W) |
 | AREA_SETUP | 0x05 | INV_AREA [15:0], AREA_SHIFT [19:16] | UQ0.16 + 4-bit shift |
 | VERTEX_* | 0x06-0x09 | X [15:0], Y [31:16], Z [47:32], Q [63:48] | Q12.4, Q12.4, U16, Q4.12 |
 
@@ -122,7 +122,7 @@ The current design takes a hybrid approach that is not clearly articulated in an
 
 **What IS perspective-correct (partially):**
 - UV texture coordinates: The removed host software (`pack_uv`) pre-multiplied U and V by 1/W before packing.
-  The values in the UV0_UV1 register were therefore already s=u/w, t=v/w (i.e., "ST" format), even though the register names say "UV."
+  The values in the ST0_ST1 register are s=u/w, t=v/w (pre-divided texture coordinates), matching the PS2 GS-style "ST" naming convention.
 - Q (1/W) is interpolated as a scalar attribute and passed to UNIT-006 for downstream UV/Q division.
 
 **What is NOT perspective-correct:**
@@ -148,10 +148,10 @@ The perspective-correction denominator Q (1/W) has inconsistent format definitio
 | RTL | `rasterizer.sv` line 44: `v0_q` port comment | Q3.12 | +/-4.0 |
 | Old Software | Removed `pack_uv` function | Q1.15 | +/-1.0 |
 
-Additionally, the old software packed Q into the UV0_UV1 register at bits [47:32] (the UV1_UQ field), **not** into the VERTEX register at bits [63:48] where the RDL defines it.
+Additionally, the old software packed Q into the ST0_ST1 register at bits [47:32] (the S1 field), **not** into the VERTEX register at bits [63:48] where the RDL defines it.
 The RTL's `raster_edge_walk.sv` outputs `frag_q` by extracting bits [31:16] from the Q accumulator, treating it as "Q3.12" per its comment.
 
-This three-way disagreement (Q4.12 vs Q3.12 vs Q1.15, VERTEX register vs UV0_UV1 register) is a concrete example of how the rewrites caused format drift.
+This three-way disagreement (Q4.12 vs Q3.12 vs Q1.15, VERTEX register vs ST0_ST1 register) is a concrete example of how the rewrites caused format drift.
 
 ### Finding 4: Inverse Area — Host Burden Not Implemented in Driver
 
@@ -649,7 +649,7 @@ Hierarchical tile rejection (test tile corners) skips fully-outside tiles.
 
 **Q5: What register changes are needed?**
 - Remove AREA_SETUP register (index 0x05) — rasterizer computes reciprocal internally
-- UV0_UV1 register name stays as-is — the host writes S/T (pre-divided by W) but the rasterizer outputs true U/V, so "UV" accurately describes the fragment bus contract
+- ST0_ST1 register name reflects that the host writes S/T (pre-divided by W); the rasterizer outputs true U/V on the fragment bus, so the fragment bus signals remain named `frag_uv0`/`frag_uv1`
 - Resolve Q format to a single canonical definition (Q4.12 per the RDL) and ensure it lives in the VERTEX register; Q is consumed internally by the rasterizer and removed from the fragment bus
 - COLOR register (index 0x00) remains unchanged — UNORM8 format, two colors packed per 64-bit register (resolved, see Finding 7)
 

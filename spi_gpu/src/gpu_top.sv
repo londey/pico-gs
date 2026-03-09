@@ -139,8 +139,8 @@ module gpu_top (
     wire [2:0][15:0] tri_q;
     wire [2:0][31:0] tri_color0;    // Diffuse RGBA8888 per vertex
     wire [2:0][31:0] tri_color1;    // Specular RGBA8888 per vertex
-    wire [2:0][31:0] tri_uv0;
-    wire [2:0][31:0] tri_uv1;
+    wire [2:0][31:0] tri_st0;
+    wire [2:0][31:0] tri_st1;
 
     // Rectangle output
     wire rect_valid;
@@ -291,8 +291,8 @@ module gpu_top (
         .tri_q(tri_q),
         .tri_color0(tri_color0),
         .tri_color1(tri_color1),
-        .tri_uv0(tri_uv0),
-        .tri_uv1(tri_uv1),
+        .tri_st0(tri_st0),
+        .tri_st1(tri_st1),
 
         // Rectangle output
         .rect_valid(rect_valid),
@@ -836,8 +836,8 @@ module gpu_top (
         .v0_z(tri_z[0]),
         .v0_color0(tri_color0[0]),
         .v0_color1(tri_color1[0]),
-        .v0_uv0(tri_uv0[0]),
-        .v0_uv1(tri_uv1[0]),
+        .v0_st0(tri_st0[0]),
+        .v0_st1(tri_st1[0]),
         .v0_q(tri_q[0]),
 
         // Vertex 1
@@ -846,8 +846,8 @@ module gpu_top (
         .v1_z(tri_z[1]),
         .v1_color0(tri_color0[1]),
         .v1_color1(tri_color1[1]),
-        .v1_uv0(tri_uv0[1]),
-        .v1_uv1(tri_uv1[1]),
+        .v1_st0(tri_st0[1]),
+        .v1_st1(tri_st1[1]),
         .v1_q(tri_q[1]),
 
         // Vertex 2
@@ -856,8 +856,8 @@ module gpu_top (
         .v2_z(tri_z[2]),
         .v2_color0(tri_color0[2]),
         .v2_color1(tri_color1[2]),
-        .v2_uv0(tri_uv0[2]),
-        .v2_uv1(tri_uv1[2]),
+        .v2_st0(tri_st0[2]),
+        .v2_st1(tri_st1[2]),
         .v2_q(tri_q[2]),
 
         // Fragment output bus (DD-025 valid/ready handshake)

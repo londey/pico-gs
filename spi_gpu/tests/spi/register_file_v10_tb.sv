@@ -22,7 +22,7 @@ module register_file_v10_tb;
     wire        tri_valid;
     wire [2:0][15:0] tri_x, tri_y, tri_z, tri_q;
     wire [2:0][31:0] tri_color0, tri_color1;
-    wire [2:0][31:0] tri_uv0, tri_uv1;
+    wire [2:0][31:0] tri_st0, tri_st1;
     wire        rect_valid;
 
     // Mode outputs (many only spot-checked; suppress unused warnings)
@@ -102,7 +102,7 @@ module register_file_v10_tb;
 
     // Register addresses (v10.0)
     localparam ADDR_COLOR           = 7'h00;
-    localparam ADDR_UV0_UV1         = 7'h01;
+    localparam ADDR_ST0_ST1         = 7'h01;
     localparam ADDR_VERTEX_NOKICK   = 7'h06;
     localparam ADDR_VERTEX_KICK_012 = 7'h07;
     localparam ADDR_VERTEX_KICK_021 = 7'h08;
@@ -133,8 +133,8 @@ module register_file_v10_tb;
         .tri_q(tri_q),
         .tri_color0(tri_color0),
         .tri_color1(tri_color1),
-        .tri_uv0(tri_uv0),
-        .tri_uv1(tri_uv1),
+        .tri_st0(tri_st0),
+        .tri_st1(tri_st1),
         .rect_valid(rect_valid),
         .mode_gouraud(mode_gouraud),
         .mode_z_test(mode_z_test),
@@ -319,20 +319,20 @@ module register_file_v10_tb;
         // Write COLOR for vertex 0: diffuse[63:32], specular[31:0]
         write_reg(ADDR_COLOR, 64'hDDDD_DDDD_AAAA_AAAA);
 
-        // Write UV0_UV1 for vertex 0: uv1[63:32], uv0[31:0]
-        write_reg(ADDR_UV0_UV1, 64'hBBBB_CCCC_EEEE_FFFF);
+        // Write ST0_ST1 for vertex 0: st1[63:32], st0[31:0]
+        write_reg(ADDR_ST0_ST1, 64'hBBBB_CCCC_EEEE_FFFF);
 
         // Write VERTEX_NOKICK for vertex 0: X=0x0100, Y=0x0200, Z=0x0300, Q=0x0400
         write_reg(ADDR_VERTEX_NOKICK, 64'h0400_0300_0200_0100);
 
         // Vertex 1: different color/UV
         write_reg(ADDR_COLOR, 64'hAAAA_BBBB_CCCC_DDDD);
-        write_reg(ADDR_UV0_UV1, 64'h1111_2222_3333_4444);
+        write_reg(ADDR_ST0_ST1, 64'h1111_2222_3333_4444);
         write_reg(ADDR_VERTEX_NOKICK, 64'h0800_0700_0600_0500);
 
         // Vertex 2: trigger kick
         write_reg(ADDR_COLOR, 64'hFF00_00FF_1234_5678);
-        write_reg(ADDR_UV0_UV1, 64'h5555_6666_7777_8888);
+        write_reg(ADDR_ST0_ST1, 64'h5555_6666_7777_8888);
         write_reg(ADDR_VERTEX_KICK_012, 64'h0C00_0B00_0A00_0900);
         @(posedge clk);
 

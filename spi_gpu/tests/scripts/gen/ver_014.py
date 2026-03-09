@@ -83,7 +83,7 @@ def _emit_tri(lines, verts, kick_addr):
     for i, (x, y, z, u, v) in enumerate(verts):
         lines.append(emit(ADDR_COLOR, pack_color(white, spec),
                            color_comment(white, spec)))
-        lines.append(emit(ADDR_UV0_UV1, pack_uv(u, v), uv_comment(u, v)))
+        lines.append(emit(ADDR_ST0_ST1, pack_st(u, v), st_comment(u, v)))
         is_kick = (i == 2)
         addr = kick_addr if is_kick else ADDR_VERTEX_NOKICK
         lines.append(emit(addr, pack_vertex(x, y, z), vertex_comment(x, y, z)))

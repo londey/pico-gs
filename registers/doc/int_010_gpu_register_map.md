@@ -102,7 +102,7 @@ All register semantics are identical regardless of command source.
 ## Address Space Organization
 
 ```
-0x00-0x0F: Vertex State (COLOR, UV0_UV1, LIGHT_DIR, VERTEX variants)
+0x00-0x0F: Vertex State (COLOR, ST0_ST1, LIGHT_DIR, VERTEX variants)
 0x10-0x17: Texture Configuration (2 units × 4 registers each)
 0x18-0x1F: Color Combiner (CC_MODE, MAT_COLOR0, MAT_COLOR1, FOG_COLOR, reserved)
 0x20-0x2F: Reserved (freed from old texture registers)
@@ -127,7 +127,7 @@ All register semantics are identical regardless of command source.
 |------|------|-----|-------------|
 | **Vertex State** ||||
 | 0x00 | COLOR | W | Diffuse[63:32] + Specular[31:0] vertex colors |
-| 0x01 | UV0_UV1 | W | Texture units 0+1 coordinates (packed) |
+| 0x01 | ST0_ST1 | W | Texture units 0+1 pre-divided coordinates (packed S=U/W, T=V/W) |
 | 0x02 | - | - | Reserved |
 | 0x03 | LIGHT_DIR | W | Light direction XYZ for DOT3 (X8Y8Z8) |
 | 0x04-0x05 | - | - | Reserved (future vertex attributes) |
@@ -213,17 +213,17 @@ Step 3: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
 
 ---
 
-### 0x01: UV0_UV1
+### 0x01: ST0_ST1
 
-Latches texture coordinates for texture units 0 and 1.
-Values are pre-divided by W for perspective correction.
+Latches pre-divided texture coordinates for texture units 0 and 1.
+Values are pre-divided by W for perspective correction (S=U/W, T=V/W).
 **Note**: 1/W (Q) is stored in VERTEX registers.
 
 ```
-[63:48]   UV1_VQ = V1/W (Q4.12 signed fixed-point)
-[47:32]   UV1_UQ = U1/W (Q4.12 signed fixed-point)
-[31:16]   UV0_VQ = V0/W (Q4.12 signed fixed-point)
-[15:0]    UV0_UQ = U0/W (Q4.12 signed fixed-point)
+[63:48]   T1 = V1/W (Q4.12 signed fixed-point)
+[47:32]   S1 = U1/W (Q4.12 signed fixed-point)
+[31:16]   T0 = V0/W (Q4.12 signed fixed-point)
+[15:0]    S0 = U0/W (Q4.12 signed fixed-point)
 ```
 
 **Fixed-Point Format (Q4.12)**:
@@ -234,10 +234,10 @@ Values are pre-divided by W for perspective correction.
 - Resolution: 1/4096 ≈ 0.000244
 
 **Notes**:
-- Host must compute U/W, V/W per vertex for each texture unit
-- GPU reconstructs U = UQ/Q, V = VQ/Q per pixel using Q from VERTEX register
-- If only UV0 is used (single texture), write UV1 fields as 0
-- UV coordinates for disabled texture units are ignored
+- Host must compute S=U/W, T=V/W per vertex for each texture unit
+- GPU reconstructs U = S/Q, V = T/Q per pixel using Q from VERTEX register
+- If only ST0 is used (single texture), write ST1 fields as 0
+- ST coordinates for disabled texture units are ignored
 
 **Reset Value**: 0x0000000000000000
 
@@ -245,7 +245,7 @@ Values are pre-divided by W for perspective correction.
 
 ### 0x02: UV2_UV3 (Removed)
 
-Removed. With only 2 texture units, UV0_UV1 (0x01) provides all needed texture coordinates. This address is now reserved.
+Removed. With only 2 texture units, ST0_ST1 (0x01) provides all needed texture coordinates. This address is now reserved.
 
 ---
 
@@ -315,7 +315,7 @@ Deprecated. Use VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021
 - Bit 15: Sign
 - Bits 14:12: Integer part (3 bits, range -8 to +7)
 - Bits 11:0: Fractional value (resolution 1/4096)
-- Range: -8.0 to +7.999 (same format as UV0_UV1 ST coordinates)
+- Range: -8.0 to +7.999 (same format as ST0_ST1 coordinates)
 
 **Z Format (16 bits)**:
 - Unsigned, 0 = near plane, 0xFFFF = far plane
@@ -325,7 +325,7 @@ Deprecated. Use VERTEX_NOKICK (0x06), VERTEX_KICK_012 (0x07), or VERTEX_KICK_021
 **Vertex Push Behavior**:
 ```
 Write to VERTEX:
-  vertex[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z}
+  vertex[vertex_count] = {current_COLOR, current_ST0_ST1, X, Y, Z}
   vertex_count++
   if vertex_count == 3:
     submit_triangle(vertex[0], vertex[1], vertex[2])
@@ -350,7 +350,7 @@ Latches vertex position and 1/W without triggering triangle rasterization. Used 
 **Behavior**:
 ```
 Write to VERTEX_NOKICK:
-  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z, Q}
+  vertex_buffer[vertex_count] = {current_COLOR, current_ST0_ST1, X, Y, Z, Q}
   vertex_count = (vertex_count + 1) % 3  // Wrap at 3
   // No triangle submission
 ```
@@ -378,7 +378,7 @@ Latches vertex position and 1/W, then triggers triangle rasterization with verte
 **Behavior**:
 ```
 Write to VERTEX_KICK_012:
-  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z, Q}
+  vertex_buffer[vertex_count] = {current_COLOR, current_ST0_ST1, X, Y, Z, Q}
   vertex_count = (vertex_count + 1) % 3
   submit_triangle(vertex_buffer[0], vertex_buffer[1], vertex_buffer[2])  // CW winding
 ```
@@ -408,7 +408,7 @@ Latches vertex position and 1/W, then triggers triangle rasterization with **rev
 **Behavior**:
 ```
 Write to VERTEX_KICK_021:
-  vertex_buffer[vertex_count] = {current_COLOR, current_UV0_UV1, X, Y, Z, Q}
+  vertex_buffer[vertex_count] = {current_COLOR, current_ST0_ST1, X, Y, Z, Q}
   vertex_count = (vertex_count + 1) % 3
   submit_triangle(vertex_buffer[0], vertex_buffer[2], vertex_buffer[1])  // Reversed
 ```
@@ -425,11 +425,11 @@ Write to VERTEX_KICK_021:
 **Strip Example**:
 ```c
 // 5-vertex triangle strip
-gpu_write(COLOR, color0); gpu_write(UV0_UV1, uv0); gpu_write(VERTEX_NOKICK, v0);  // v[0]
-gpu_write(COLOR, color1); gpu_write(UV0_UV1, uv1); gpu_write(VERTEX_NOKICK, v1);  // v[1]
-gpu_write(COLOR, color2); gpu_write(UV0_UV1, uv2); gpu_write(VERTEX_KICK_012, v2); // Draw tri(v0,v1,v2)
-gpu_write(COLOR, color3); gpu_write(UV0_UV1, uv3); gpu_write(VERTEX_KICK_021, v3); // Draw tri(v2,v1,v3)
-gpu_write(COLOR, color4); gpu_write(UV0_UV1, uv4); gpu_write(VERTEX_KICK_012, v4); // Draw tri(v2,v3,v4)
+gpu_write(COLOR, color0); gpu_write(ST0_ST1, st0); gpu_write(VERTEX_NOKICK, v0);  // v[0]
+gpu_write(COLOR, color1); gpu_write(ST0_ST1, st1); gpu_write(VERTEX_NOKICK, v1);  // v[1]
+gpu_write(COLOR, color2); gpu_write(ST0_ST1, st2); gpu_write(VERTEX_KICK_012, v2); // Draw tri(v0,v1,v2)
+gpu_write(COLOR, color3); gpu_write(ST0_ST1, st3); gpu_write(VERTEX_KICK_021, v3); // Draw tri(v2,v1,v3)
+gpu_write(COLOR, color4); gpu_write(ST0_ST1, st4); gpu_write(VERTEX_KICK_012, v4); // Draw tri(v2,v3,v4)
 ```
 
 **Reset Value**: N/A (write-only trigger)
@@ -1515,7 +1515,7 @@ After hardware reset or power-on:
 | Register | Reset Value | Description |
 |----------|-------------|-------------|
 | COLOR | 0x00000000_00000000 | Both diffuse and specular transparent black |
-| UV0_UV1 | 0x0000000000000000 | Zero coordinates |
+| ST0_ST1 | 0x0000000000000000 | Zero coordinates |
 | UV2_UV3 | N/A | Removed |
 | LIGHT_DIR | 0x0000000000000000 | Zero vector |
 | VERTEX_NOKICK | N/A | Write-only trigger |
@@ -1572,8 +1572,8 @@ Active-high outputs from GPU to host.
 
 **Triangle Submission** (typical multi-texture):
 - Minimum: 3 VERTEX writes = 8.64 µs
-- Typical (1 texture): RENDER_MODE + 3×(COLOR + UV0_UV1 + VERTEX) = 28.8 µs
-- Max (2 textures): RENDER_MODE + 3×(COLOR + UV0_UV1 + VERTEX) = 28.8 µs (same, UV0_UV1 holds both)
+- Typical (1 texture): RENDER_MODE + 3×(COLOR + ST0_ST1 + VERTEX) = 28.8 µs
+- Max (2 textures): RENDER_MODE + 3×(COLOR + ST0_ST1 + VERTEX) = 28.8 µs (same, ST0_ST1 holds both)
 - Theoretical max: ~35,000 triangles/second
 
 ## Constraints

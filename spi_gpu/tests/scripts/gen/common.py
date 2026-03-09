@@ -15,7 +15,7 @@ from typing import List
 # ---------------------------------------------------------------------------
 
 ADDR_COLOR = 0x00
-ADDR_UV0_UV1 = 0x01
+ADDR_ST0_ST1 = 0x01
 ADDR_VERTEX_NOKICK = 0x06
 ADDR_VERTEX_KICK_012 = 0x07
 ADDR_VERTEX_KICK_021 = 0x08
@@ -29,7 +29,7 @@ ADDR_MEM_FILL = 0x44
 # Human-readable register names for comments
 REG_NAMES = {
     0x00: "COLOR",
-    0x01: "UV0_UV1",
+    0x01: "ST0_ST1",
     0x06: "VERTEX_NOKICK",
     0x07: "VERTEX_KICK_012",
     0x08: "VERTEX_KICK_021",
@@ -122,8 +122,8 @@ def pack_fb_control(x: int, y: int, width: int, height: int) -> int:
     )
 
 
-def pack_uv(u0: float, v0: float) -> int:
-    """Pack UV0_UV1 register.  UV1 is zero (TEX1 not used).
+def pack_st(u0: float, v0: float) -> int:
+    """Pack ST0_ST1 register.  ST1 is zero (TEX1 not used).
 
     Q1.15 encoding: value * 32768.
     """
@@ -257,9 +257,9 @@ def vertex_comment(x: int, y: int, z: int) -> str:
     return f"x={x} y={y} z=0x{z:04X}"
 
 
-def uv_comment(u: float, v: float) -> str:
-    """Format UV0_UV1 comment."""
-    return f"u0={u:g} v0={v:g}"
+def st_comment(u: float, v: float) -> str:
+    """Format ST0_ST1 comment."""
+    return f"s0={u:g} t0={v:g}"
 
 
 def write_hex_file(path: str, lines: List[str]) -> None:

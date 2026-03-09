@@ -13,7 +13,7 @@
 //   valid/ready over alternatives.
 //
 // Format: Fragment output bus carries interpolated attributes in extended
-// precision (Q4.12 color, 16-bit Z, Q4.12 UV, UQ4.4 LOD).
+// precision (Q4.12 color, 16-bit Z, Q4.12 ST/UV, UQ4.4 LOD).
 //   Color packing: 4x16-bit Q4.12 channels packed into 64-bit bus.
 //   Each 16-bit channel: 1 sign + 3 integer + 12 fractional bits.
 //   UNORM8 [0,255] promoted to Q4.12 [0x0000, 0x0FFF].
@@ -51,8 +51,8 @@ module rasterizer (
     input  wire [15:0]  v0_z,           // 16-bit depth
     input  wire [31:0]  v0_color0,      // RGBA8888 primary color
     input  wire [31:0]  v0_color1,      // RGBA8888 secondary color
-    input  wire [31:0]  v0_uv0,         // UV0 {U[31:16], V[15:0]} Q4.12
-    input  wire [31:0]  v0_uv1,         // UV1 {U[31:16], V[15:0]} Q4.12
+    input  wire [31:0]  v0_st0,         // ST0 {S[31:16], T[15:0]} Q4.12
+    input  wire [31:0]  v0_st1,         // ST1 {S[31:16], T[15:0]} Q4.12
     input  wire [15:0]  v0_q,           // Q/W (Q4.12 perspective denominator)
 
     // Vertex 1
@@ -61,8 +61,8 @@ module rasterizer (
     input  wire [15:0]  v1_z,
     input  wire [31:0]  v1_color0,
     input  wire [31:0]  v1_color1,
-    input  wire [31:0]  v1_uv0,
-    input  wire [31:0]  v1_uv1,
+    input  wire [31:0]  v1_st0,
+    input  wire [31:0]  v1_st1,
     input  wire [15:0]  v1_q,
 
     // Vertex 2
@@ -71,8 +71,8 @@ module rasterizer (
     input  wire [15:0]  v2_z,
     input  wire [31:0]  v2_color0,
     input  wire [31:0]  v2_color1,
-    input  wire [31:0]  v2_uv0,
-    input  wire [31:0]  v2_uv1,
+    input  wire [31:0]  v2_st0,
+    input  wire [31:0]  v2_st1,
     input  wire [15:0]  v2_q,
 
     // Fragment output bus (to UNIT-006 Pixel Pipeline)
@@ -216,21 +216,21 @@ module rasterizer (
     reg [7:0] c1_b2;
     reg [7:0] c1_a2;
 
-    // Vertex UV0 (Q4.12 signed per component)
-    reg signed [15:0] uv0_u0;
-    reg signed [15:0] uv0_v0;
-    reg signed [15:0] uv0_u1;
-    reg signed [15:0] uv0_v1;
-    reg signed [15:0] uv0_u2;
-    reg signed [15:0] uv0_v2;
+    // Vertex ST0 (Q4.12 signed per component)
+    reg signed [15:0] st0_s0;
+    reg signed [15:0] st0_t0;
+    reg signed [15:0] st0_s1;
+    reg signed [15:0] st0_t1;
+    reg signed [15:0] st0_s2;
+    reg signed [15:0] st0_t2;
 
-    // Vertex UV1 (Q4.12 signed per component)
-    reg signed [15:0] uv1_u0;
-    reg signed [15:0] uv1_v0;
-    reg signed [15:0] uv1_u1;
-    reg signed [15:0] uv1_v1;
-    reg signed [15:0] uv1_u2;
-    reg signed [15:0] uv1_v2;
+    // Vertex ST1 (Q4.12 signed per component)
+    reg signed [15:0] st1_s0;
+    reg signed [15:0] st1_t0;
+    reg signed [15:0] st1_s1;
+    reg signed [15:0] st1_t1;
+    reg signed [15:0] st1_s2;
+    reg signed [15:0] st1_t2;
 
     // Vertex Q/W (Q4.12)
     reg [15:0] q0;
@@ -403,7 +403,7 @@ module rasterizer (
     //   3 edges x (11-bit A + 11-bit B + 21-bit C) = 3 x 43 = 129 bits
     //   4 bbox registers x 10 bits = 40 bits
     //   inv_area: 18 bits (UQ1.17) + area_shift: 5 bits = 23 bits
-    //   3 vertices x (depth 16 + color0 32 + color1 32 + uv0 32 + uv1 32 + q 16) = 3 x 160 = 480 bits
+    //   3 vertices x (depth 16 + color0 32 + color1 32 + st0 32 + st1 32 + q 16) = 3 x 160 = 480 bits
     //   3 vertex positions x (10 + 10) = 60 bits
     //   Total: 129 + 40 + 23 + 480 + 60 = 732 bits
     localparam FIFO_WIDTH = 732;
@@ -464,10 +464,10 @@ module rasterizer (
         c1_r0, c1_g0, c1_b0, c1_a0,
         c1_r1, c1_g1, c1_b1, c1_a1,
         c1_r2, c1_g2, c1_b2, c1_a2,
-        // Vertex UV0 (96 bits)
-        uv0_u0, uv0_v0, uv0_u1, uv0_v1, uv0_u2, uv0_v2,
-        // Vertex UV1 (96 bits)
-        uv1_u0, uv1_v0, uv1_u1, uv1_v1, uv1_u2, uv1_v2,
+        // Vertex ST0 (96 bits)
+        st0_s0, st0_t0, st0_s1, st0_t1, st0_s2, st0_t2,
+        // Vertex ST1 (96 bits)
+        st1_s0, st1_t0, st1_s1, st1_t1, st1_s2, st1_t2,
         // Vertex Q (48 bits)
         q0, q1, q2
     };
@@ -506,14 +506,14 @@ module rasterizer (
     wire signed [31:0] pre_c1a_dy;
     wire signed [31:0] pre_z_dx;
     wire signed [31:0] pre_z_dy;
-    wire signed [31:0] pre_uv0u_dx;
-    wire signed [31:0] pre_uv0u_dy;
-    wire signed [31:0] pre_uv0v_dx;
-    wire signed [31:0] pre_uv0v_dy;
-    wire signed [31:0] pre_uv1u_dx;
-    wire signed [31:0] pre_uv1u_dy;
-    wire signed [31:0] pre_uv1v_dx;
-    wire signed [31:0] pre_uv1v_dy;
+    wire signed [31:0] pre_s0_dx;
+    wire signed [31:0] pre_s0_dy;
+    wire signed [31:0] pre_t0_dx;
+    wire signed [31:0] pre_t0_dy;
+    wire signed [31:0] pre_s1_dx;
+    wire signed [31:0] pre_s1_dy;
+    wire signed [31:0] pre_t1_dx;
+    wire signed [31:0] pre_t1_dy;
     wire signed [31:0] pre_q_dx;
     wire signed [31:0] pre_q_dy;
 
@@ -527,10 +527,10 @@ module rasterizer (
     wire signed [31:0] init_c1b;
     wire signed [31:0] init_c1a;
     wire signed [31:0] init_z;
-    wire signed [31:0] init_uv0u;
-    wire signed [31:0] init_uv0v;
-    wire signed [31:0] init_uv1u;
-    wire signed [31:0] init_uv1v;
+    wire signed [31:0] init_s0;
+    wire signed [31:0] init_t0;
+    wire signed [31:0] init_s1;
+    wire signed [31:0] init_t1;
     wire signed [31:0] init_q;
 
     raster_deriv u_deriv (
@@ -568,20 +568,20 @@ module rasterizer (
         .z0             (z0),
         .z1             (z1),
         .z2             (z2),
-        // Vertex UV0
-        .uv0_u0         (uv0_u0),
-        .uv0_v0         (uv0_v0),
-        .uv0_u1         (uv0_u1),
-        .uv0_v1         (uv0_v1),
-        .uv0_u2         (uv0_u2),
-        .uv0_v2         (uv0_v2),
-        // Vertex UV1
-        .uv1_u0         (uv1_u0),
-        .uv1_v0         (uv1_v0),
-        .uv1_u1         (uv1_u1),
-        .uv1_v1         (uv1_v1),
-        .uv1_u2         (uv1_u2),
-        .uv1_v2         (uv1_v2),
+        // Vertex ST0
+        .st0_s0         (st0_s0),
+        .st0_t0         (st0_t0),
+        .st0_s1         (st0_s1),
+        .st0_t1         (st0_t1),
+        .st0_s2         (st0_s2),
+        .st0_t2         (st0_t2),
+        // Vertex ST1
+        .st1_s0         (st1_s0),
+        .st1_t0         (st1_t0),
+        .st1_s1         (st1_s1),
+        .st1_t1         (st1_t1),
+        .st1_s2         (st1_s2),
+        .st1_t2         (st1_t2),
         // Vertex Q
         .q0             (q0),
         .q1             (q1),
@@ -619,14 +619,14 @@ module rasterizer (
         .pre_c1a_dy     (pre_c1a_dy),
         .pre_z_dx       (pre_z_dx),
         .pre_z_dy       (pre_z_dy),
-        .pre_uv0u_dx    (pre_uv0u_dx),
-        .pre_uv0u_dy    (pre_uv0u_dy),
-        .pre_uv0v_dx    (pre_uv0v_dx),
-        .pre_uv0v_dy    (pre_uv0v_dy),
-        .pre_uv1u_dx    (pre_uv1u_dx),
-        .pre_uv1u_dy    (pre_uv1u_dy),
-        .pre_uv1v_dx    (pre_uv1v_dx),
-        .pre_uv1v_dy    (pre_uv1v_dy),
+        .pre_s0_dx    (pre_s0_dx),
+        .pre_s0_dy    (pre_s0_dy),
+        .pre_t0_dx    (pre_t0_dx),
+        .pre_t0_dy    (pre_t0_dy),
+        .pre_s1_dx    (pre_s1_dx),
+        .pre_s1_dy    (pre_s1_dy),
+        .pre_t1_dx    (pre_t1_dx),
+        .pre_t1_dy    (pre_t1_dy),
         .pre_q_dx       (pre_q_dx),
         .pre_q_dy       (pre_q_dy),
         // Initial attribute value outputs
@@ -639,10 +639,10 @@ module rasterizer (
         .init_c1b       (init_c1b),
         .init_c1a       (init_c1a),
         .init_z         (init_z),
-        .init_uv0u      (init_uv0u),
-        .init_uv0v      (init_uv0v),
-        .init_uv1u      (init_uv1u),
-        .init_uv1v      (init_uv1v),
+        .init_s0      (init_s0),
+        .init_t0      (init_t0),
+        .init_s1      (init_s1),
+        .init_t1      (init_t1),
         .init_q         (init_q)
     );
 
@@ -679,13 +679,13 @@ module rasterizer (
     wire [15:0] out_c1b;               // Promoted color1 B (Q4.12)
     wire [15:0] out_c1a;               // Promoted color1 A (Q4.12)
     wire [15:0] out_z;                 // Clamped Z (16-bit unsigned)
-    wire signed [31:0] uv0u_acc;       // UV0 U raw accumulator (top 16 bits used)
-    wire signed [31:0] uv0v_acc;       // UV0 V raw accumulator (top 16 bits used)
-    wire signed [31:0] uv1u_acc;       // UV1 U raw accumulator (top 16 bits used)
-    wire signed [31:0] uv1v_acc;       // UV1 V raw accumulator (top 16 bits used)
+    wire signed [31:0] s0_acc;       // S0 raw accumulator (top 16 bits used)
+    wire signed [31:0] t0_acc;       // T0 raw accumulator (top 16 bits used)
+    wire signed [31:0] s1_acc;       // S1 raw accumulator (top 16 bits used)
+    wire signed [31:0] t1_acc;       // T1 raw accumulator (top 16 bits used)
     wire signed [31:0] q_acc;          // Q raw accumulator (top 16 bits used)
 
-    // Lower 16 bits of UV/Q accumulators are fractional guard bits;
+    // Lower 16 bits of ST/Q accumulators are fractional guard bits;
     // suppression annotations are in raster_edge_walk sub-module.
 
     // ========================================================================
@@ -720,14 +720,14 @@ module rasterizer (
         .pre_c1a_dy     (pre_c1a_dy),
         .pre_z_dx       (pre_z_dx),
         .pre_z_dy       (pre_z_dy),
-        .pre_uv0u_dx    (pre_uv0u_dx),
-        .pre_uv0u_dy    (pre_uv0u_dy),
-        .pre_uv0v_dx    (pre_uv0v_dx),
-        .pre_uv0v_dy    (pre_uv0v_dy),
-        .pre_uv1u_dx    (pre_uv1u_dx),
-        .pre_uv1u_dy    (pre_uv1u_dy),
-        .pre_uv1v_dx    (pre_uv1v_dx),
-        .pre_uv1v_dy    (pre_uv1v_dy),
+        .pre_s0_dx    (pre_s0_dx),
+        .pre_s0_dy    (pre_s0_dy),
+        .pre_t0_dx    (pre_t0_dx),
+        .pre_t0_dy    (pre_t0_dy),
+        .pre_s1_dx    (pre_s1_dx),
+        .pre_s1_dy    (pre_s1_dy),
+        .pre_t1_dx    (pre_t1_dx),
+        .pre_t1_dy    (pre_t1_dy),
         .pre_q_dx       (pre_q_dx),
         .pre_q_dy       (pre_q_dy),
         // Initial attribute values
@@ -740,10 +740,10 @@ module rasterizer (
         .init_c1b       (init_c1b),
         .init_c1a       (init_c1a),
         .init_z         (init_z),
-        .init_uv0u      (init_uv0u),
-        .init_uv0v      (init_uv0v),
-        .init_uv1u      (init_uv1u),
-        .init_uv1v      (init_uv1v),
+        .init_s0      (init_s0),
+        .init_t0      (init_t0),
+        .init_s1      (init_s1),
+        .init_t1      (init_t1),
         .init_q         (init_q),
         // Promoted/clamped outputs
         .out_c0r        (out_c0r),
@@ -756,10 +756,10 @@ module rasterizer (
         .out_c1a        (out_c1a),
         .out_z          (out_z),
         // Raw accumulator outputs
-        .uv0u_acc_out   (uv0u_acc),
-        .uv0v_acc_out   (uv0v_acc),
-        .uv1u_acc_out   (uv1u_acc),
-        .uv1v_acc_out   (uv1v_acc),
+        .s0_acc_out   (s0_acc),
+        .t0_acc_out   (t0_acc),
+        .s1_acc_out   (s1_acc),
+        .t1_acc_out   (t1_acc),
         .q_acc_out      (q_acc)
     );
 
@@ -805,10 +805,10 @@ module rasterizer (
         .out_c1a        (out_c1a),
         .out_z          (out_z),
         // S/T accumulator values (renamed from uv*_acc)
-        .s0_acc         (uv0u_acc),
-        .t0_acc         (uv0v_acc),
-        .s1_acc         (uv1u_acc),
-        .t1_acc         (uv1v_acc),
+        .s0_acc         (s0_acc),
+        .t0_acc         (t0_acc),
+        .s1_acc         (s1_acc),
+        .t1_acc         (t1_acc),
         // Q/W accumulator
         .q_acc          (q_acc),
         // Reciprocal interface (dedicated raster_recip_q module, UQ4.14)
@@ -1039,18 +1039,18 @@ module rasterizer (
     logic [7:0]        next_c1_g2;
     logic [7:0]        next_c1_b2;
     logic [7:0]        next_c1_a2;
-    logic signed [15:0] next_uv0_u0;
-    logic signed [15:0] next_uv0_v0;
-    logic signed [15:0] next_uv0_u1;
-    logic signed [15:0] next_uv0_v1;
-    logic signed [15:0] next_uv0_u2;
-    logic signed [15:0] next_uv0_v2;
-    logic signed [15:0] next_uv1_u0;
-    logic signed [15:0] next_uv1_v0;
-    logic signed [15:0] next_uv1_u1;
-    logic signed [15:0] next_uv1_v1;
-    logic signed [15:0] next_uv1_u2;
-    logic signed [15:0] next_uv1_v2;
+    logic signed [15:0] next_st0_s0;
+    logic signed [15:0] next_st0_t0;
+    logic signed [15:0] next_st0_s1;
+    logic signed [15:0] next_st0_t1;
+    logic signed [15:0] next_st0_s2;
+    logic signed [15:0] next_st0_t2;
+    logic signed [15:0] next_st1_s0;
+    logic signed [15:0] next_st1_t0;
+    logic signed [15:0] next_st1_s1;
+    logic signed [15:0] next_st1_t1;
+    logic signed [15:0] next_st1_s2;
+    logic signed [15:0] next_st1_t2;
     logic [15:0]       next_q0;
     logic [15:0]       next_q1;
     logic [15:0]       next_q2;
@@ -1121,18 +1121,18 @@ module rasterizer (
         next_c1_g2 = c1_g2;
         next_c1_b2 = c1_b2;
         next_c1_a2 = c1_a2;
-        next_uv0_u0 = uv0_u0;
-        next_uv0_v0 = uv0_v0;
-        next_uv0_u1 = uv0_u1;
-        next_uv0_v1 = uv0_v1;
-        next_uv0_u2 = uv0_u2;
-        next_uv0_v2 = uv0_v2;
-        next_uv1_u0 = uv1_u0;
-        next_uv1_v0 = uv1_v0;
-        next_uv1_u1 = uv1_u1;
-        next_uv1_v1 = uv1_v1;
-        next_uv1_u2 = uv1_u2;
-        next_uv1_v2 = uv1_v2;
+        next_st0_s0 = st0_s0;
+        next_st0_t0 = st0_t0;
+        next_st0_s1 = st0_s1;
+        next_st0_t1 = st0_t1;
+        next_st0_s2 = st0_s2;
+        next_st0_t2 = st0_t2;
+        next_st1_s0 = st1_s0;
+        next_st1_t0 = st1_t0;
+        next_st1_s1 = st1_s1;
+        next_st1_t1 = st1_t1;
+        next_st1_s2 = st1_s2;
+        next_st1_t2 = st1_t2;
         next_q0 = q0;
         next_q1 = q1;
         next_q2 = q2;
@@ -1178,10 +1178,10 @@ module rasterizer (
                     next_c1_g0 = v0_color1[23:16];
                     next_c1_b0 = v0_color1[15:8];
                     next_c1_a0 = v0_color1[7:0];
-                    next_uv0_u0 = $signed(v0_uv0[31:16]);
-                    next_uv0_v0 = $signed(v0_uv0[15:0]);
-                    next_uv1_u0 = $signed(v0_uv1[31:16]);
-                    next_uv1_v0 = $signed(v0_uv1[15:0]);
+                    next_st0_s0 = $signed(v0_st0[31:16]);
+                    next_st0_t0 = $signed(v0_st0[15:0]);
+                    next_st1_s0 = $signed(v0_st1[31:16]);
+                    next_st1_t0 = $signed(v0_st1[15:0]);
                     next_q0 = v0_q;
 
                     next_x1 = px1;
@@ -1195,10 +1195,10 @@ module rasterizer (
                     next_c1_g1 = v1_color1[23:16];
                     next_c1_b1 = v1_color1[15:8];
                     next_c1_a1 = v1_color1[7:0];
-                    next_uv0_u1 = $signed(v1_uv0[31:16]);
-                    next_uv0_v1 = $signed(v1_uv0[15:0]);
-                    next_uv1_u1 = $signed(v1_uv1[31:16]);
-                    next_uv1_v1 = $signed(v1_uv1[15:0]);
+                    next_st0_s1 = $signed(v1_st0[31:16]);
+                    next_st0_t1 = $signed(v1_st0[15:0]);
+                    next_st1_s1 = $signed(v1_st1[31:16]);
+                    next_st1_t1 = $signed(v1_st1[15:0]);
                     next_q1 = v1_q;
 
                     next_x2 = px2;
@@ -1212,10 +1212,10 @@ module rasterizer (
                     next_c1_g2 = v2_color1[23:16];
                     next_c1_b2 = v2_color1[15:8];
                     next_c1_a2 = v2_color1[7:0];
-                    next_uv0_u2 = $signed(v2_uv0[31:16]);
-                    next_uv0_v2 = $signed(v2_uv0[15:0]);
-                    next_uv1_u2 = $signed(v2_uv1[31:16]);
-                    next_uv1_v2 = $signed(v2_uv1[15:0]);
+                    next_st0_s2 = $signed(v2_st0[31:16]);
+                    next_st0_t2 = $signed(v2_st0[15:0]);
+                    next_st1_s2 = $signed(v2_st1[31:16]);
+                    next_st1_t2 = $signed(v2_st1[15:0]);
                     next_q2 = v2_q;
 
                     next_tri_ready = 1'b0;
@@ -1286,8 +1286,8 @@ module rasterizer (
              next_c1_r0, next_c1_g0, next_c1_b0, next_c1_a0,
              next_c1_r1, next_c1_g1, next_c1_b1, next_c1_a1,
              next_c1_r2, next_c1_g2, next_c1_b2, next_c1_a2,
-             next_uv0_u0, next_uv0_v0, next_uv0_u1, next_uv0_v1, next_uv0_u2, next_uv0_v2,
-             next_uv1_u0, next_uv1_v0, next_uv1_u1, next_uv1_v1, next_uv1_u2, next_uv1_v2,
+             next_st0_s0, next_st0_t0, next_st0_s1, next_st0_t1, next_st0_s2, next_st0_t2,
+             next_st1_s0, next_st1_t0, next_st1_s1, next_st1_t1, next_st1_s2, next_st1_t2,
              next_q0, next_q1, next_q2} = fifo_rd_data;
         end
     end
@@ -1336,18 +1336,18 @@ module rasterizer (
             c1_g2 <= 8'b0;
             c1_b2 <= 8'b0;
             c1_a2 <= 8'b0;
-            uv0_u0 <= 16'sb0;
-            uv0_v0 <= 16'sb0;
-            uv0_u1 <= 16'sb0;
-            uv0_v1 <= 16'sb0;
-            uv0_u2 <= 16'sb0;
-            uv0_v2 <= 16'sb0;
-            uv1_u0 <= 16'sb0;
-            uv1_v0 <= 16'sb0;
-            uv1_u1 <= 16'sb0;
-            uv1_v1 <= 16'sb0;
-            uv1_u2 <= 16'sb0;
-            uv1_v2 <= 16'sb0;
+            st0_s0 <= 16'sb0;
+            st0_t0 <= 16'sb0;
+            st0_s1 <= 16'sb0;
+            st0_t1 <= 16'sb0;
+            st0_s2 <= 16'sb0;
+            st0_t2 <= 16'sb0;
+            st1_s0 <= 16'sb0;
+            st1_t0 <= 16'sb0;
+            st1_s1 <= 16'sb0;
+            st1_t1 <= 16'sb0;
+            st1_s2 <= 16'sb0;
+            st1_t2 <= 16'sb0;
             q0 <= 16'b0;
             q1 <= 16'b0;
             q2 <= 16'b0;
@@ -1402,18 +1402,18 @@ module rasterizer (
             c1_g2 <= next_c1_g2;
             c1_b2 <= next_c1_b2;
             c1_a2 <= next_c1_a2;
-            uv0_u0 <= next_uv0_u0;
-            uv0_v0 <= next_uv0_v0;
-            uv0_u1 <= next_uv0_u1;
-            uv0_v1 <= next_uv0_v1;
-            uv0_u2 <= next_uv0_u2;
-            uv0_v2 <= next_uv0_v2;
-            uv1_u0 <= next_uv1_u0;
-            uv1_v0 <= next_uv1_v0;
-            uv1_u1 <= next_uv1_u1;
-            uv1_v1 <= next_uv1_v1;
-            uv1_u2 <= next_uv1_u2;
-            uv1_v2 <= next_uv1_v2;
+            st0_s0 <= next_st0_s0;
+            st0_t0 <= next_st0_t0;
+            st0_s1 <= next_st0_s1;
+            st0_t1 <= next_st0_t1;
+            st0_s2 <= next_st0_s2;
+            st0_t2 <= next_st0_t2;
+            st1_s0 <= next_st1_s0;
+            st1_t0 <= next_st1_t0;
+            st1_s1 <= next_st1_s1;
+            st1_t1 <= next_st1_t1;
+            st1_s2 <= next_st1_s2;
+            st1_t2 <= next_st1_t2;
             q0 <= next_q0;
             q1 <= next_q1;
             q2 <= next_q2;

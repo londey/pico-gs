@@ -27,7 +27,7 @@ module tb_raster_attr_accum;
     reg step_y;        // New row
 
     // ========================================================================
-    // Derivative Inputs (from raster_deriv, only c0r/z/uv0u/q used in tests)
+    // Derivative Inputs (from raster_deriv, only c0r/z/s0/q used in tests)
     // ========================================================================
 
     reg signed [31:0] pre_c0r_dx;   // Color0 R dx
@@ -48,14 +48,14 @@ module tb_raster_attr_accum;
     reg signed [31:0] pre_c1a_dy;   // Color1 A dy
     reg signed [31:0] pre_z_dx;     // Z dx
     reg signed [31:0] pre_z_dy;     // Z dy
-    reg signed [31:0] pre_uv0u_dx;  // UV0 U dx
-    reg signed [31:0] pre_uv0u_dy;  // UV0 U dy
-    reg signed [31:0] pre_uv0v_dx;  // UV0 V dx
-    reg signed [31:0] pre_uv0v_dy;  // UV0 V dy
-    reg signed [31:0] pre_uv1u_dx;  // UV1 U dx
-    reg signed [31:0] pre_uv1u_dy;  // UV1 U dy
-    reg signed [31:0] pre_uv1v_dx;  // UV1 V dx
-    reg signed [31:0] pre_uv1v_dy;  // UV1 V dy
+    reg signed [31:0] pre_s0_dx;  // ST0 S dx
+    reg signed [31:0] pre_s0_dy;  // ST0 S dy
+    reg signed [31:0] pre_t0_dx;  // ST0 T dx
+    reg signed [31:0] pre_t0_dy;  // ST0 T dy
+    reg signed [31:0] pre_s1_dx;  // ST1 S dx
+    reg signed [31:0] pre_s1_dy;  // ST1 S dy
+    reg signed [31:0] pre_t1_dx;  // ST1 T dx
+    reg signed [31:0] pre_t1_dy;  // ST1 T dy
     reg signed [31:0] pre_q_dx;     // Q dx
     reg signed [31:0] pre_q_dy;     // Q dy
 
@@ -72,10 +72,10 @@ module tb_raster_attr_accum;
     reg signed [31:0] init_c1b;     // Color1 B initial
     reg signed [31:0] init_c1a;     // Color1 A initial
     reg signed [31:0] init_z;       // Z initial
-    reg signed [31:0] init_uv0u;    // UV0 U initial
-    reg signed [31:0] init_uv0v;    // UV0 V initial
-    reg signed [31:0] init_uv1u;    // UV1 U initial
-    reg signed [31:0] init_uv1v;    // UV1 V initial
+    reg signed [31:0] init_s0;    // ST0 S initial
+    reg signed [31:0] init_t0;    // ST0 T initial
+    reg signed [31:0] init_s1;    // ST1 S initial
+    reg signed [31:0] init_t1;    // ST1 T initial
     reg signed [31:0] init_q;       // Q initial
 
     // ========================================================================
@@ -92,10 +92,10 @@ module tb_raster_attr_accum;
     wire [15:0] out_c1b;            // Color1 B promoted (Q4.12)
     wire [15:0] out_c1a;            // Color1 A promoted (Q4.12)
     wire [15:0] out_z;              // Z clamped (16-bit unsigned)
-    wire signed [31:0] uv0u_acc_out; // UV0 U raw accumulator
-    wire signed [31:0] uv0v_acc_out; // UV0 V raw accumulator
-    wire signed [31:0] uv1u_acc_out; // UV1 U raw accumulator
-    wire signed [31:0] uv1v_acc_out; // UV1 V raw accumulator
+    wire signed [31:0] s0_acc_out; // ST0 S raw accumulator
+    wire signed [31:0] t0_acc_out; // ST0 T raw accumulator
+    wire signed [31:0] s1_acc_out; // ST1 S raw accumulator
+    wire signed [31:0] t1_acc_out; // ST1 T raw accumulator
     wire signed [31:0] q_acc_out;   // Q raw accumulator
     /* verilator lint_on UNUSEDSIGNAL */
 
@@ -118,26 +118,26 @@ module tb_raster_attr_accum;
         .pre_c1b_dx(pre_c1b_dx), .pre_c1b_dy(pre_c1b_dy),
         .pre_c1a_dx(pre_c1a_dx), .pre_c1a_dy(pre_c1a_dy),
         .pre_z_dx(pre_z_dx), .pre_z_dy(pre_z_dy),
-        .pre_uv0u_dx(pre_uv0u_dx), .pre_uv0u_dy(pre_uv0u_dy),
-        .pre_uv0v_dx(pre_uv0v_dx), .pre_uv0v_dy(pre_uv0v_dy),
-        .pre_uv1u_dx(pre_uv1u_dx), .pre_uv1u_dy(pre_uv1u_dy),
-        .pre_uv1v_dx(pre_uv1v_dx), .pre_uv1v_dy(pre_uv1v_dy),
+        .pre_s0_dx(pre_s0_dx), .pre_s0_dy(pre_s0_dy),
+        .pre_t0_dx(pre_t0_dx), .pre_t0_dy(pre_t0_dy),
+        .pre_s1_dx(pre_s1_dx), .pre_s1_dy(pre_s1_dy),
+        .pre_t1_dx(pre_t1_dx), .pre_t1_dy(pre_t1_dy),
         .pre_q_dx(pre_q_dx), .pre_q_dy(pre_q_dy),
         .init_c0r(init_c0r), .init_c0g(init_c0g),
         .init_c0b(init_c0b), .init_c0a(init_c0a),
         .init_c1r(init_c1r), .init_c1g(init_c1g),
         .init_c1b(init_c1b), .init_c1a(init_c1a),
         .init_z(init_z),
-        .init_uv0u(init_uv0u), .init_uv0v(init_uv0v),
-        .init_uv1u(init_uv1u), .init_uv1v(init_uv1v),
+        .init_s0(init_s0), .init_t0(init_t0),
+        .init_s1(init_s1), .init_t1(init_t1),
         .init_q(init_q),
         .out_c0r(out_c0r), .out_c0g(out_c0g),
         .out_c0b(out_c0b), .out_c0a(out_c0a),
         .out_c1r(out_c1r), .out_c1g(out_c1g),
         .out_c1b(out_c1b), .out_c1a(out_c1a),
         .out_z(out_z),
-        .uv0u_acc_out(uv0u_acc_out), .uv0v_acc_out(uv0v_acc_out),
-        .uv1u_acc_out(uv1u_acc_out), .uv1v_acc_out(uv1v_acc_out),
+        .s0_acc_out(s0_acc_out), .t0_acc_out(t0_acc_out),
+        .s1_acc_out(s1_acc_out), .t1_acc_out(t1_acc_out),
         .q_acc_out(q_acc_out)
     );
 
@@ -186,18 +186,18 @@ module tb_raster_attr_accum;
             pre_c1b_dx = 32'sd0; pre_c1b_dy = 32'sd0;
             pre_c1a_dx = 32'sd0; pre_c1a_dy = 32'sd0;
             pre_z_dx = 32'sd0; pre_z_dy = 32'sd0;
-            pre_uv0u_dx = 32'sd0; pre_uv0u_dy = 32'sd0;
-            pre_uv0v_dx = 32'sd0; pre_uv0v_dy = 32'sd0;
-            pre_uv1u_dx = 32'sd0; pre_uv1u_dy = 32'sd0;
-            pre_uv1v_dx = 32'sd0; pre_uv1v_dy = 32'sd0;
+            pre_s0_dx = 32'sd0; pre_s0_dy = 32'sd0;
+            pre_t0_dx = 32'sd0; pre_t0_dy = 32'sd0;
+            pre_s1_dx = 32'sd0; pre_s1_dy = 32'sd0;
+            pre_t1_dx = 32'sd0; pre_t1_dy = 32'sd0;
             pre_q_dx = 32'sd0; pre_q_dy = 32'sd0;
             init_c0r = 32'sd0; init_c0g = 32'sd0;
             init_c0b = 32'sd0; init_c0a = 32'sd0;
             init_c1r = 32'sd0; init_c1g = 32'sd0;
             init_c1b = 32'sd0; init_c1a = 32'sd0;
             init_z = 32'sd0;
-            init_uv0u = 32'sd0; init_uv0v = 32'sd0;
-            init_uv1u = 32'sd0; init_uv1v = 32'sd0;
+            init_s0 = 32'sd0; init_t0 = 32'sd0;
+            init_s1 = 32'sd0; init_t1 = 32'sd0;
             init_q = 32'sd0;
         end
     endtask
@@ -261,7 +261,7 @@ module tb_raster_attr_accum;
         check16("reset: out_c0r", out_c0r, 16'h0000);
         check16("reset: out_c0g", out_c0g, 16'h0000);
         check16("reset: out_z", out_z, 16'h0000);
-        check32s("reset: uv0u_acc_out", uv0u_acc_out, 32'sd0);
+        check32s("reset: s0_acc_out", s0_acc_out, 32'sd0);
         check32s("reset: q_acc_out", q_acc_out, 32'sd0);
 
         // ============================================================
@@ -276,7 +276,7 @@ module tb_raster_attr_accum;
         init_c0g = 32'sh00FF_0000;  // c0_g = 255 in 8.16
         init_c0b = 32'sh0000_0000;  // c0_b = 0 in 8.16
         init_z   = 32'sh4000_0000;  // Z = 0x4000 in 16.16
-        init_uv0u = 32'sh1234_5678; // UV0 U raw
+        init_s0 = 32'sh1234_5678; // ST0 S raw
         init_q   = 32'sh0100_0000;  // Q raw
         // Set dx so we can test stepping later
         pre_c0r_dx = 32'sh0010_0000;  // c0_r advances by 16 per pixel
@@ -294,8 +294,8 @@ module tb_raster_attr_accum;
         check16("latch: out_c0b (0)", out_c0b, 16'h0000);
         // Z: bits [31:16] = 0x4000
         check16("latch: out_z", out_z, 16'h4000);
-        // UV/Q passthrough
-        check32s("latch: uv0u_acc_out", uv0u_acc_out, 32'sh1234_5678);
+        // ST/Q passthrough
+        check32s("latch: s0_acc_out", s0_acc_out, 32'sh1234_5678);
         check32s("latch: q_acc_out", q_acc_out, 32'sh0100_0000);
 
         // ============================================================
@@ -402,51 +402,51 @@ module tb_raster_attr_accum;
         check16("Z clamp: out_z after step (clamped)", out_z, 16'h0000);
 
         // ============================================================
-        // Test 9: UV/Q raw accumulator passthrough
+        // Test 9: ST/Q raw accumulator passthrough
         // ============================================================
-        $display("--- Test 9: UV/Q Accumulator Passthrough ---");
+        $display("--- Test 9: ST/Q Accumulator Passthrough ---");
         zero_all_derivs;
-        init_uv0u = 32'shAAAA_BBBB;
-        init_uv0v = 32'shCCCC_DDDD;
-        init_uv1u = 32'sh1111_2222;
-        init_uv1v = 32'sh3333_4444;
+        init_s0 = 32'shAAAA_BBBB;
+        init_t0 = 32'shCCCC_DDDD;
+        init_s1 = 32'sh1111_2222;
+        init_t1 = 32'sh3333_4444;
         init_q    = 32'sh5555_6666;
         pulse_latch;
         @(posedge clk);
         #1;
 
-        check32s("UV/Q: uv0u_acc_out", uv0u_acc_out, 32'shAAAA_BBBB);
-        check32s("UV/Q: uv0v_acc_out", uv0v_acc_out, 32'shCCCC_DDDD);
-        check32s("UV/Q: uv1u_acc_out", uv1u_acc_out, 32'sh1111_2222);
-        check32s("UV/Q: uv1v_acc_out", uv1v_acc_out, 32'sh3333_4444);
-        check32s("UV/Q: q_acc_out", q_acc_out, 32'sh5555_6666);
+        check32s("ST/Q: s0_acc_out", s0_acc_out, 32'shAAAA_BBBB);
+        check32s("ST/Q: t0_acc_out", t0_acc_out, 32'shCCCC_DDDD);
+        check32s("ST/Q: s1_acc_out", s1_acc_out, 32'sh1111_2222);
+        check32s("ST/Q: t1_acc_out", t1_acc_out, 32'sh3333_4444);
+        check32s("ST/Q: q_acc_out", q_acc_out, 32'sh5555_6666);
 
         // ============================================================
-        // Test 10: UV stepping
+        // Test 10: ST stepping
         // ============================================================
-        $display("--- Test 10: UV Accumulator Stepping ---");
+        $display("--- Test 10: ST Accumulator Stepping ---");
         zero_all_derivs;
-        init_uv0u = 32'sh0100_0000;
-        pre_uv0u_dx = 32'sh0010_0000;
-        pre_uv0u_dy = 32'sh0020_0000;
+        init_s0 = 32'sh0100_0000;
+        pre_s0_dx = 32'sh0010_0000;
+        pre_s0_dy = 32'sh0020_0000;
         pulse_latch;
         @(posedge clk);
         #1;
 
-        check32s("UV step: initial", uv0u_acc_out, 32'sh0100_0000);
+        check32s("ST step: initial", s0_acc_out, 32'sh0100_0000);
 
         // Step X: 0x01000000 + 0x00100000 = 0x01100000
         pulse_step_x;
         @(posedge clk);
         #1;
-        check32s("UV step: after step_x", uv0u_acc_out, 32'sh0110_0000);
+        check32s("ST step: after step_x", s0_acc_out, 32'sh0110_0000);
 
         // Step Y: row was 0x01000000, row += dy = 0x01000000+0x00200000 = 0x01200000
         // acc reloads from new row = 0x01200000
         pulse_step_y;
         @(posedge clk);
         #1;
-        check32s("UV step: after step_y", uv0u_acc_out, 32'sh0120_0000);
+        check32s("ST step: after step_y", s0_acc_out, 32'sh0120_0000);
 
         // ============================================================
         // Summary

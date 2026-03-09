@@ -6,7 +6,7 @@
 //!
 //! # RTL Implementation Notes
 //! The register file (UNIT-003) latches vertex positions, colors, and
-//! UVs on VERTEX_NOKICK writes, advancing a vertex counter. A
+//! STs on VERTEX_NOKICK writes, advancing a vertex counter. A
 //! VERTEX_KICK_012 write stores the final vertex and triggers
 //! rasterization with winding order (0, 1, 2).
 //!
@@ -21,8 +21,8 @@ use crate::reg_ext::{reg_from_raw, reg_to_raw};
 use gpu_registers::components::gpu_regs::named_types::{
     cc_mode_reg::CcModeReg, color_reg::ColorReg, const_color_reg::ConstColorReg,
     fb_config_reg::FbConfigReg, fb_control_reg::FbControlReg, fb_display_reg::FbDisplayReg,
-    render_mode_reg::RenderModeReg, stipple_pattern_reg::StipplePatternReg, tex_cfg_reg::TexCfgReg,
-    uv0_uv1_reg::Uv0Uv1Reg, vertex_reg::VertexReg, z_range_reg::ZRangeReg,
+    render_mode_reg::RenderModeReg, st0_st1_reg::St0St1Reg, stipple_pattern_reg::StipplePatternReg,
+    tex_cfg_reg::TexCfgReg, vertex_reg::VertexReg, z_range_reg::ZRangeReg,
 };
 
 // ── Register addresses (7-bit index, matching INT-010) ───────────────────────
@@ -30,8 +30,8 @@ use gpu_registers::components::gpu_regs::named_types::{
 /// COLOR register: `[63:32]=color0 RGBA8888`, `[31:0]=color1 RGBA8888`.
 pub const ADDR_COLOR: u8 = 0x00;
 
-/// UV0/UV1 texture coordinates.
-pub const ADDR_UV0_UV1: u8 = 0x01;
+/// ST0/ST1 pre-divided texture coordinates (S=U/W, T=V/W).
+pub const ADDR_ST0_ST1: u8 = 0x01;
 
 /// VERTEX_NOKICK: store vertex + advance counter, no rasterization.
 pub const ADDR_VERTEX_NOKICK: u8 = 0x06;
@@ -139,11 +139,11 @@ struct VertexSlot {
     /// Specular color (RGBA8888).
     color1: Rgba8888,
 
-    /// UV0 packed (from UV0_UV1 register [31:0]).
-    uv0: u32,
+    /// ST0 packed (from ST0_ST1 register [31:0]).
+    st0: u32,
 
-    /// UV1 packed (from UV0_UV1 register [63:32]).
-    uv1: u32,
+    /// ST1 packed (from ST0_ST1 register [63:32]).
+    st1: u32,
 }
 
 impl VertexSlot {
@@ -177,8 +177,8 @@ pub struct RegisterFile {
     /// COLOR: per-vertex diffuse + specular colors (RGBA8888 each).
     color: ColorReg,
 
-    /// UV0_UV1: texture coordinates (Q4.12 each).
-    uv0_uv1: Uv0Uv1Reg,
+    /// ST0_ST1: pre-divided texture coordinates S=U/W, T=V/W (Q4.12 each).
+    st0_st1: St0St1Reg,
 
     /// RENDER_MODE: unified rendering state flags.
     pub render_mode: RenderModeReg,
@@ -228,8 +228,8 @@ impl RegisterFile {
                 self.color = reg_from_raw(data);
             }
 
-            ADDR_UV0_UV1 => {
-                self.uv0_uv1 = reg_from_raw(data);
+            ADDR_ST0_ST1 => {
+                self.st0_st1 = reg_from_raw(data);
             }
 
             ADDR_VERTEX_NOKICK => {
@@ -295,7 +295,7 @@ impl RegisterFile {
         }
     }
 
-    /// Latch current vertex data + color/UV into the current slot.
+    /// Latch current vertex data + color/ST into the current slot.
     ///
     /// Matches RTL register_file.sv ADDR_VERTEX_NOKICK decode:
     /// ```text
@@ -317,10 +317,10 @@ impl RegisterFile {
         let color_raw = reg_to_raw(self.color);
         slot.color0 = Rgba8888((color_raw >> 32) as u32);
         slot.color1 = Rgba8888((color_raw & 0xFFFF_FFFF) as u32);
-        // UV0/UV1 from current latch
-        let uv_raw = reg_to_raw(self.uv0_uv1);
-        slot.uv0 = (uv_raw & 0xFFFF_FFFF) as u32;
-        slot.uv1 = ((uv_raw >> 32) & 0xFFFF_FFFF) as u32;
+        // ST0/ST1 from current latch
+        let st_raw = reg_to_raw(self.st0_st1);
+        slot.st0 = (st_raw & 0xFFFF_FFFF) as u32;
+        slot.st1 = ((st_raw >> 32) & 0xFFFF_FFFF) as u32;
     }
 
     /// Trigger rasterization with the given winding order.
