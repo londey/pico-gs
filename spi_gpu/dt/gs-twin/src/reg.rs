@@ -23,8 +23,9 @@ use crate::reg_ext::{reg_from_raw, reg_to_raw};
 use gpu_registers::components::gpu_regs::named_types::{
     cc_mode_reg::CcModeReg, color_reg::ColorReg, const_color_reg::ConstColorReg,
     fb_config_reg::FbConfigReg, fb_control_reg::FbControlReg, fb_display_reg::FbDisplayReg,
-    render_mode_reg::RenderModeReg, st0_st1_reg::St0St1Reg, stipple_pattern_reg::StipplePatternReg,
-    tex_cfg_reg::TexCfgReg, vertex_reg::VertexReg, z_range_reg::ZRangeReg,
+    mem_fill_reg::MemFillReg, render_mode_reg::RenderModeReg, st0_st1_reg::St0St1Reg,
+    stipple_pattern_reg::StipplePatternReg, tex_cfg_reg::TexCfgReg, vertex_reg::VertexReg,
+    z_range_reg::ZRangeReg,
 };
 
 // ── Register addresses (7-bit index, matching INT-010) ───────────────────────
@@ -268,6 +269,10 @@ impl RegisterFile {
                 self.fb_control = reg_from_raw(data);
             }
 
+            ADDR_MEM_FILL => {
+                self.execute_mem_fill(data, memory);
+            }
+
             _ => {
                 // Unknown register — ignored (matches RTL default case)
             }
@@ -284,6 +289,21 @@ impl RegisterFile {
         slot.vertex = reg_from_raw(data);
         slot.color = self.color;
         slot.st0_st1 = self.st0_st1;
+    }
+
+    /// Execute a hardware memory fill (REQ-005.08).
+    ///
+    /// Writes `FILL_VALUE` to `FILL_COUNT` consecutive 16-bit words starting
+    /// at byte address `FILL_BASE << 9`.  The fill is a pure memory operation
+    /// independent of framebuffer configuration.
+    fn execute_mem_fill(&self, data: u64, memory: &mut GpuMemory) {
+        let reg: MemFillReg = reg_from_raw(data);
+        let base = reg.fill_base();
+        let value = reg.fill_value();
+        let count = reg.fill_count() as usize;
+
+        let byte_addr = (base as usize) << 9;
+        memory.fill(byte_addr, value, count);
     }
 
     /// Trigger rasterization with the given winding order.

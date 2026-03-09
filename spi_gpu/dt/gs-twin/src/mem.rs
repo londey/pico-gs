@@ -29,9 +29,19 @@ pub struct GpuMemory {
 
     /// Texture slot storage.
     pub textures: TextureStore,
+
+    /// Flat SDRAM backing store (16-bit words).
+    ///
+    /// TODO: Replace typed `framebuffer` / `raw_zbuf` with views into this
+    /// flat store so that MEM_FILL, pixel writes, and Z-test all operate on
+    /// the same address space.
+    pub sdram: Vec<u16>,
 }
 
 impl GpuMemory {
+    /// Total SDRAM size in 16-bit words (32 MiB / 2).
+    const SDRAM_WORDS: usize = 32 * 1024 * 1024 / 2;
+
     /// Create GPU memory with the given framebuffer dimensions.
     ///
     /// # Arguments
@@ -45,6 +55,26 @@ impl GpuMemory {
             raw_zbuf: RawZBuffer::new(width, height),
             vertex_sram: vec![0u8; 64 * 1024], // 64 KiB vertex/index SRAM
             textures: TextureStore::default(),
+            sdram: vec![0u16; Self::SDRAM_WORDS],
+        }
+    }
+
+    /// Fill a contiguous SDRAM region with a 16-bit constant (MEM_FILL).
+    ///
+    /// Writes directly to the flat SDRAM backing store.  Independent of
+    /// framebuffer configuration — purely an address + value + count
+    /// operation matching the RTL fill unit.
+    ///
+    /// # Arguments
+    ///
+    /// * `byte_addr` - Start byte address in SDRAM.
+    /// * `value` - 16-bit fill value (RGB565 or Z16).
+    /// * `count` - Number of 16-bit words to fill.
+    pub fn fill(&mut self, byte_addr: usize, value: u16, count: usize) {
+        let word_addr = byte_addr / 2;
+        let end = (word_addr + count).min(self.sdram.len());
+        if word_addr < end {
+            self.sdram[word_addr..end].fill(value);
         }
     }
 }

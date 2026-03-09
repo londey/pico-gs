@@ -10,27 +10,9 @@
 
 ## PHASE: zclear
 
+44 0004_0000_FFFF_0800  # MEM_FILL: base=0x0800 value=0xFFFF count=262144
 40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
 43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
-30 0000_0000_0000_C00C  # RENDER_MODE: Z_TEST_EN | Z_WRITE_EN | Z_COMPARE=ALWAYS
-
-# Z-clear triangle 1: (0,0)-(511,0)-(0,511)
-00 0000_00FF_0000_00FF  # COLOR: diffuse=black specular=black
-06 0000_FFFF_0000_0000  # VERTEX_NOKICK: x=0 y=0 z=0xFFFF
-00 0000_00FF_0000_00FF  # COLOR: diffuse=black specular=black
-06 0000_FFFF_0000_1FF0  # VERTEX_NOKICK: x=511 y=0 z=0xFFFF
-00 0000_00FF_0000_00FF  # COLOR: diffuse=black specular=black
-07 0000_FFFF_1FF0_0000  # VERTEX_KICK_012: x=0 y=511 z=0xFFFF
-
-# Z-clear triangle 2: (511,0)-(511,511)-(0,511)
-00 0000_00FF_0000_00FF  # COLOR: diffuse=black specular=black
-06 0000_FFFF_0000_1FF0  # VERTEX_NOKICK: x=511 y=0 z=0xFFFF
-00 0000_00FF_0000_00FF  # COLOR: diffuse=black specular=black
-06 0000_FFFF_1FF0_1FF0  # VERTEX_NOKICK: x=511 y=511 z=0xFFFF
-00 0000_00FF_0000_00FF  # COLOR: diffuse=black specular=black
-07 0000_FFFF_1FF0_0000  # VERTEX_KICK_012: x=0 y=511 z=0xFFFF
-
-00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)
 
 ## PHASE: setup
 

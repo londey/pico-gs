@@ -12,45 +12,20 @@ ZBUFFER_BASE_512 = 0x0800
 
 
 def _zclear_phase() -> list[str]:
-    """Z-buffer clear: two screen-covering triangles with Z=0xFFFF."""
+    """Z-buffer clear via MEM_FILL (REQ-005.08)."""
     lines = []
     lines.append(emit_phase("zclear"))
     lines.append(emit_blank())
+
+    fill_count = 512 * 512  # 1 << 9 * 1 << 9
+    lines.append(emit(ADDR_MEM_FILL,
+                       pack_mem_fill(ZBUFFER_BASE_512, 0xFFFF, fill_count),
+                       mem_fill_comment(ZBUFFER_BASE_512, 0xFFFF, fill_count)))
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 480),
                        "scissor x=0 y=0 w=512 h=480"))
-
-    mode = Z_TEST_EN | Z_WRITE_EN | Z_COMPARE_ALWAYS
-    lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
-    lines.append(emit_blank())
-
-    # C++ zclear uses pack_color(rgba(0,0,0)) with default specular=0xFF000000
-    blk = rgba(0x00, 0x00, 0x00)
-
-    # Triangle 1: (0,0)-(511,0)-(0,479)
-    lines.append(emit_comment("Z-clear triangle 1: (0,0)-(511,0)-(0,479)"))
-    for (x, y, kick) in [(0, 0, False), (511, 0, False), (0, 479, True)]:
-        lines.append(emit(ADDR_COLOR, pack_color(blk),
-                           color_comment(blk, 0xFF000000)))
-        addr = ADDR_VERTEX_KICK_012 if kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, 0xFFFF),
-                           vertex_comment(x, y, 0xFFFF)))
-
-    lines.append(emit_blank())
-
-    # Triangle 2: (511,0)-(511,479)-(0,479)
-    lines.append(emit_comment("Z-clear triangle 2: (511,0)-(511,479)-(0,479)"))
-    for (x, y, kick) in [(511, 0, False), (511, 479, False), (0, 479, True)]:
-        lines.append(emit(ADDR_COLOR, pack_color(blk),
-                           color_comment(blk, 0xFF000000)))
-        addr = ADDR_VERTEX_KICK_012 if kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, 0xFFFF),
-                           vertex_comment(x, y, 0xFFFF)))
-
-    lines.append(emit_blank())
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 

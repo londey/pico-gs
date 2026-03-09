@@ -12,39 +12,20 @@ TEX0_BASE_WORD = 0x80000
 
 
 def _zclear_phase() -> list[str]:
-    """Z-buffer clear for 512x512 surface."""
+    """Z-buffer clear via MEM_FILL (REQ-005.08)."""
     lines = []
     lines.append(emit_phase("zclear"))
     lines.append(emit_blank())
+
+    fill_count = 512 * 512  # 1 << 9 * 1 << 9
+    lines.append(emit(ADDR_MEM_FILL,
+                       pack_mem_fill(ZBUFFER_BASE_512, 0xFFFF, fill_count),
+                       mem_fill_comment(ZBUFFER_BASE_512, 0xFFFF, fill_count)))
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
-
-    mode = Z_TEST_EN | Z_WRITE_EN | Z_COMPARE_ALWAYS
-    lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
-    lines.append(emit_blank())
-
-    blk = rgba(0x00, 0x00, 0x00)
-    spec = rgba(0x00, 0x00, 0x00)
-
-    lines.append(emit_comment("Z-clear triangle 1: (0,0)-(511,0)-(0,511)"))
-    for (x, y, kick) in [(0, 0, False), (511, 0, False), (0, 511, True)]:
-        lines.append(emit(ADDR_COLOR, pack_color(blk, spec), color_comment(blk, spec)))
-        addr = ADDR_VERTEX_KICK_012 if kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, 0xFFFF), vertex_comment(x, y, 0xFFFF)))
-
-    lines.append(emit_blank())
-
-    lines.append(emit_comment("Z-clear triangle 2: (511,0)-(511,511)-(0,511)"))
-    for (x, y, kick) in [(511, 0, False), (511, 511, False), (0, 511, True)]:
-        lines.append(emit(ADDR_COLOR, pack_color(blk, spec), color_comment(blk, spec)))
-        addr = ADDR_VERTEX_KICK_012 if kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, 0xFFFF), vertex_comment(x, y, 0xFFFF)))
-
-    lines.append(emit_blank())
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 

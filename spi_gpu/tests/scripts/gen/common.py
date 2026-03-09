@@ -112,6 +112,20 @@ def pack_fb_config(color_base: int, z_base: int,
     )
 
 
+def pack_mem_fill(base: int, value: int, count: int) -> int:
+    """Pack MEM_FILL register.
+
+    base: target address in 512-byte units (matches COLOR_BASE / Z_BASE).
+    value: 16-bit constant to write (RGB565 or Z16).
+    count: number of 16-bit words to fill.
+    """
+    return (
+        ((count & 0xFFFFF) << 32) |
+        ((value & 0xFFFF) << 16) |
+        (base & 0xFFFF)
+    )
+
+
 def pack_fb_control(x: int, y: int, width: int, height: int) -> int:
     """Pack FB_CONTROL (scissor) register."""
     return (
@@ -241,6 +255,11 @@ def color_name(rgba_val: int) -> str:
 def color_comment(diffuse: int, specular: int) -> str:
     """Format COLOR register comment with decoded channel values."""
     return f"diffuse={color_name(diffuse)} specular={color_name(specular)}"
+
+
+def mem_fill_comment(base: int, value: int, count: int) -> str:
+    """Format MEM_FILL register comment."""
+    return f"base=0x{base:04X} value=0x{value:04X} count={count}"
 
 
 def vertex_comment_q4(x_q4: int, y_q4: int, z: int) -> str:
