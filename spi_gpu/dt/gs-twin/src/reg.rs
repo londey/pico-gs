@@ -451,6 +451,26 @@ impl RegisterFile {
     pub fn render_mode(&self) -> RenderModeReg {
         self.render_mode
     }
+
+    /// Access the CC_MODE register latch.
+    pub fn cc_mode(&self) -> CcModeReg {
+        self.cc_mode
+    }
+
+    /// Access the CONST_COLOR register latch.
+    pub fn const_color(&self) -> ConstColorReg {
+        self.const_color
+    }
+
+    /// Access the Z_RANGE register latch.
+    pub fn z_range(&self) -> ZRangeReg {
+        self.z_range
+    }
+
+    /// Access the STIPPLE_PATTERN register latch.
+    pub fn stipple_pattern(&self) -> StipplePatternReg {
+        self.stipple_pattern
+    }
 }
 
 /// Winding order for vertex kick.

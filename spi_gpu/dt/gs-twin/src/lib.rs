@@ -65,10 +65,12 @@ mod reg_ext;
 pub mod test_harness;
 
 use math::Rgb565;
-use pipeline::fragment::RasterFragment;
+use pipeline::fragment::{ColorQ412, ColoredFragment, RasterFragment};
 use pipeline::rasterize;
 use pipeline::tex_sample::TextureSampler;
+use qfixed::Q;
 use reg::GpuAction;
+use reg_ext::reg_to_raw;
 
 /// Top-level GPU model.
 ///
@@ -165,26 +167,95 @@ impl Gpu {
         }
     }
 
-    /// Execute a triangle kick: rasterize and write fragments to SDRAM.
+    /// Execute a triangle kick: rasterize and process fragments through
+    /// the pixel pipeline, writing results to SDRAM.
     fn execute_kick(&mut self, tri: &rasterize::RasterTriangle) {
-        if let Some(setup) = rasterize::triangle_setup(tri) {
-            let rm = self.regs.render_mode();
-            for frag in rasterize::rasterize_iter(setup) {
-                self.write_fragment(&frag, &rm);
+        let Some(setup) = rasterize::triangle_setup(tri) else {
+            return;
+        };
+        for frag in rasterize::rasterize_iter(setup) {
+            if let Some(colored) = self.execute_fragment_pipeline(frag) {
+                self.write_colored_fragment(&colored);
             }
         }
     }
 
-    /// Write a single fragment to SDRAM with optional Z-test.
+    /// Execute the pixel fragment pipeline from rasterizer output through
+    /// alpha test.
     ///
-    /// Accepts `RasterFragment` with Q4.12 colors and converts shade0
-    /// to RGB565 for color write (truncating, matching dither bypass).
-    /// Uses 4x4 block-tiled addressing via fb_config (INT-011).
-    fn write_fragment(
-        &mut self,
-        frag: &RasterFragment,
-        rm: &gpu_registers::components::gpu_regs::named_types::render_mode_reg::RenderModeReg,
-    ) {
+    /// Runs stipple → depth_range_clip → early_z → tex_sample →
+    /// color_combine_0 → color_combine_1 → alpha_test, returning the
+    /// fragment ready for alpha blend.
+    ///
+    /// # Arguments
+    ///
+    /// * `frag` - Rasterizer output fragment.
+    ///
+    /// # Returns
+    ///
+    /// `Some(ColoredFragment)` ready for alpha blend, or `None` if any
+    /// kill stage discards the fragment.
+    fn execute_fragment_pipeline(&mut self, frag: RasterFragment) -> Option<ColoredFragment> {
+        let rm = self.regs.render_mode();
+        let fb_cfg = self.regs.fb_config();
+
+        // Stage 0a: Stipple test
+        let frag = pipeline::stipple::stipple_test(
+            frag,
+            rm.stipple_en(),
+            self.regs.stipple_pattern().pattern(),
+        )?;
+
+        // Stage 0b: Depth range clip
+        let zr = self.regs.z_range();
+        let frag =
+            pipeline::depth_range::depth_range_clip(frag, zr.z_range_min(), zr.z_range_max())?;
+
+        // Stage 0c: Early Z test
+        let frag = pipeline::early_z::early_z_test(
+            frag,
+            &mut self.memory,
+            &fb_cfg,
+            rm.z_test_en(),
+            rm.z_write_en(),
+            rm.z_compare(),
+        )?;
+
+        // Stage 1-3: Texture sampling (TEX0 + TEX1)
+        let frag = pipeline::tex_sample::tex_sample(
+            frag,
+            &mut self.tex0_sampler,
+            &mut self.tex1_sampler,
+            &self.memory.sdram,
+        );
+
+        // Stage 4-5: Color combiner (two-stage (A-B)*C+D)
+        let cc_raw = reg_to_raw(self.regs.cc_mode());
+        let cc = self.regs.const_color();
+        let const0 =
+            ColorQ412::from_unorm8(cc.const0_r(), cc.const0_g(), cc.const0_b(), cc.const0_a());
+        let const1 =
+            ColorQ412::from_unorm8(cc.const1_r(), cc.const1_g(), cc.const1_b(), cc.const1_a());
+        let frag = pipeline::color_combine::color_combine_0(frag, cc_raw, const0);
+        let frag = pipeline::color_combine::color_combine_1(frag, cc_raw, const1);
+
+        // Stage 6: Alpha test
+        // Note: existing stub takes ZCompareE; should use AlphaTestE
+        // when alpha_test is fully implemented.
+        let alpha_ref_u8 = rm.alpha_ref();
+        let alpha_ref_q412 =
+            Q::<4, 12>::from_bits(((alpha_ref_u8 as u16) << 4 | (alpha_ref_u8 as u16) >> 4) as i64);
+        pipeline::alpha_test::alpha_test(frag, true, rm.z_compare(), alpha_ref_q412)
+    }
+
+    /// Write a colored fragment to the framebuffer (post-pipeline shim).
+    ///
+    /// Performs bounds checking, optional Z-test/write, and Q4.12 → RGB565
+    /// truncation (matching dither bypass).
+    /// This is a temporary bridge until `alpha_blend` → `dither` →
+    /// `pixel_write` are fully implemented.
+    fn write_colored_fragment(&mut self, frag: &ColoredFragment) {
+        let rm = self.regs.render_mode();
         let fb_cfg = self.regs.fb_config();
         let (fx, fy) = (frag.x as u32, frag.y as u32);
         let fb_width = 1u32 << fb_cfg.width_log2();
@@ -195,26 +266,19 @@ impl Gpu {
 
         let wl2 = fb_cfg.width_log2();
 
-        // Early Z-test (matching early_z.sv) — now in SDRAM
-        if rm.z_test_en() {
-            if !self
-                .memory
-                .z_test_and_set(fb_cfg.z_base(), wl2, fx, fy, frag.z, rm.z_compare())
-            {
-                return;
-            }
-        } else if rm.z_write_en() {
+        // Z-test/write is already handled by early_z in the pipeline.
+        // Unconditional Z-write for fragments that survived early_z
+        // when z_write was deferred (z_test disabled but z_write enabled).
+        if !rm.z_test_en() && rm.z_write_en() {
             self.memory
                 .write_tiled(fb_cfg.z_base(), wl2, fx, fy, frag.z);
         }
 
         if rm.color_write_en() {
-            // Convert shade0 Q4.12 → RGB565 (truncating, no dither)
-            // Q4.12 range [0, 0x0FFF] maps to UNORM: extract top bits
-            // R: 5 bits from Q4.12 → >>7, G: 6 bits → >>6, B: 5 bits → >>7
-            let r_q412 = frag.shade0.r.to_bits().max(0) as u16;
-            let g_q412 = frag.shade0.g.to_bits().max(0) as u16;
-            let b_q412 = frag.shade0.b.to_bits().max(0) as u16;
+            // Q4.12 → RGB565 truncation (no dither)
+            let r_q412 = frag.color.r.to_bits().max(0) as u16;
+            let g_q412 = frag.color.g.to_bits().max(0) as u16;
+            let b_q412 = frag.color.b.to_bits().max(0) as u16;
 
             let r5 = (r_q412 >> 7).min(31) as u8;
             let g6 = (g_q412 >> 6).min(63) as u8;

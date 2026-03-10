@@ -48,6 +48,38 @@ pub struct ColorQ412 {
     pub a: Q<4, 12>,
 }
 
+impl ColorQ412 {
+    /// Promote RGBA8888 UNORM8 channels to Q4.12.
+    ///
+    /// Matches RTL `fp_types_pkg` constant-color promotion:
+    /// `{4'b0, unorm8[7:0], unorm8[7:4]}` → 16-bit Q4.12.
+    ///
+    /// # Arguments
+    ///
+    /// * `r` - Red channel, 8-bit UNORM.
+    /// * `g` - Green channel, 8-bit UNORM.
+    /// * `b` - Blue channel, 8-bit UNORM.
+    /// * `a` - Alpha channel, 8-bit UNORM.
+    ///
+    /// # Returns
+    ///
+    /// `ColorQ412` with channels in `[0x0000, 0x0FF0]` (UNORM \[0.0, ~1.0\]).
+    #[must_use]
+    pub fn from_unorm8(r: u8, g: u8, b: u8, a: u8) -> Self {
+        let promote = |v: u8| -> Q<4, 12> {
+            let v16 = v as u16;
+            // {4'b0, unorm8[7:0], unorm8[7:4]}
+            Q::from_bits(((v16 << 4) | (v16 >> 4)) as i64)
+        };
+        Self {
+            r: promote(r),
+            g: promote(g),
+            b: promote(b),
+            a: promote(a),
+        }
+    }
+}
+
 // ── Rasterizer output ────────────────────────────────────────────────────────
 
 /// Fragment emitted by the rasterizer, carrying all interpolated data lanes.
