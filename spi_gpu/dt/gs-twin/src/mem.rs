@@ -96,6 +96,27 @@ impl GpuMemory {
         }
     }
 
+    /// Write a 64-bit dword to flat SDRAM (MEM_DATA).
+    ///
+    /// Stores four consecutive 16-bit words in little-endian order
+    /// starting at `byte_addr`.  This matches the RTL's MEM_DATA
+    /// register write path used for texture and data uploads.
+    ///
+    /// # Arguments
+    ///
+    /// * `byte_addr` - Start byte address in SDRAM (must be 8-byte aligned
+    ///   when originating from MEM_ADDR, but no alignment check is performed).
+    /// * `data` - 64-bit value; bits [15:0] go to the lowest address.
+    pub fn write_dword(&mut self, byte_addr: usize, data: u64) {
+        let word_addr = byte_addr / 2;
+        for i in 0..4 {
+            let idx = word_addr + i;
+            if idx < self.sdram.len() {
+                self.sdram[idx] = (data >> (i * 16)) as u16;
+            }
+        }
+    }
+
     /// Read a 16-bit value from a tiled surface in SDRAM.
     ///
     /// # Arguments

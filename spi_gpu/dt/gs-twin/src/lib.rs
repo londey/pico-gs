@@ -35,15 +35,17 @@
 //!        ▼
 //!  ┌──────────────┐
 //!  │  reg::        │
-//!  │  RegisterFile │  decode register writes, latch vertices
+//!  │  RegisterFile │  decode + latch → returns GpuAction
 //!  └──────┬───────┘
-//!         │  vertex kick → IntTriangle
+//!         │  GpuAction enum
 //!         ▼
 //!  ┌──────────────┐
-//!  │  pipeline::   │
-//!  │  rasterize    │  integer edge functions → IntFragment
+//!  │  Gpu          │  dispatches actions:
+//!  │  (lib.rs)     │    Kick → rasterize + write fragments
+//!  │               │    MemFill / MemData → SDRAM writes
+//!  │               │    TexConfig → sampler reconfigure
 //!  └──────┬───────┘
-//!         │  depth test + color write
+//!         │
 //!         ▼
 //!  ┌──────────────┐
 //!  │  mem::        │
@@ -62,9 +64,17 @@ pub mod reg;
 mod reg_ext;
 pub mod test_harness;
 
+use math::Rgb565;
+use pipeline::fragment::RasterFragment;
+use pipeline::rasterize;
+use pipeline::tex_sample::TextureSampler;
+use reg::GpuAction;
+
 /// Top-level GPU model.
 ///
-/// Holds memory state and the register file matching the RTL's register_file.sv.
+/// Owns memory, register file, and pipeline components (texture samplers).
+/// Dispatches `GpuAction` values returned by `RegisterFile::write()` to
+/// perform rasterization, memory fills, and texture configuration.
 ///
 /// The only interface is `reg_write()` / `reg_write_script()` with raw
 /// register addresses and data, matching the RTL for bit-exact golden reference.
@@ -74,6 +84,12 @@ pub struct Gpu {
 
     /// Register file state matching register_file.sv.
     pub regs: reg::RegisterFile,
+
+    /// Texture unit 0 sampler (owns block cache).
+    tex0_sampler: TextureSampler,
+
+    /// Texture unit 1 sampler (owns block cache).
+    tex1_sampler: TextureSampler,
 
     /// Default framebuffer width (used when fb_config hasn't been set).
     pub default_width: u32,
@@ -97,6 +113,8 @@ impl Gpu {
         Self {
             memory: mem::GpuMemory::new(),
             regs: reg::RegisterFile::default(),
+            tex0_sampler: TextureSampler::default(),
+            tex1_sampler: TextureSampler::default(),
             default_width: width,
             default_height: height,
         }
@@ -105,13 +123,35 @@ impl Gpu {
     /// Process a single register write (RTL-matching interface).
     ///
     /// Each call mirrors one SPI register write as consumed by register_file.sv.
+    /// The register file decodes and latches, returning a `GpuAction` that
+    /// this method dispatches.
     ///
     /// # Arguments
     ///
     /// * `addr` - 7-bit register index (0..127).
     /// * `data` - 64-bit register data.
     pub fn reg_write(&mut self, addr: u8, data: u64) {
-        self.regs.write(addr, data, &mut self.memory);
+        let action = self.regs.write(addr, data);
+        match action {
+            GpuAction::None => {}
+            GpuAction::KickTriangle(tri) => {
+                self.execute_kick(&tri);
+            }
+            GpuAction::MemFill { base, value, count } => {
+                let byte_addr = (base as usize) << 9;
+                self.memory.fill(byte_addr, value, count);
+            }
+            GpuAction::Tex0Config(cfg) => {
+                self.tex0_sampler.set_tex_cfg(cfg);
+            }
+            GpuAction::Tex1Config(cfg) => {
+                self.tex1_sampler.set_tex_cfg(cfg);
+            }
+            GpuAction::MemData { dword_addr, data } => {
+                let byte_addr = (dword_addr as usize) * 8;
+                self.memory.write_dword(byte_addr, data);
+            }
+        }
     }
 
     /// Process a sequence of register writes.
@@ -122,6 +162,68 @@ impl Gpu {
     pub fn reg_write_script(&mut self, script: &[reg::RegWrite]) {
         for rw in script {
             self.reg_write(rw.addr, rw.data);
+        }
+    }
+
+    /// Execute a triangle kick: rasterize and write fragments to SDRAM.
+    fn execute_kick(&mut self, tri: &rasterize::RasterTriangle) {
+        if let Some(setup) = rasterize::triangle_setup(tri) {
+            let fragments = rasterize::rasterize_triangle(&setup);
+            let rm = self.regs.render_mode();
+            for frag in &fragments {
+                self.write_fragment(frag, &rm);
+            }
+        }
+    }
+
+    /// Write a single fragment to SDRAM with optional Z-test.
+    ///
+    /// Accepts `RasterFragment` with Q4.12 colors and converts shade0
+    /// to RGB565 for color write (truncating, matching dither bypass).
+    /// Uses 4x4 block-tiled addressing via fb_config (INT-011).
+    fn write_fragment(
+        &mut self,
+        frag: &RasterFragment,
+        rm: &gpu_registers::components::gpu_regs::named_types::render_mode_reg::RenderModeReg,
+    ) {
+        let fb_cfg = self.regs.fb_config();
+        let (fx, fy) = (frag.x as u32, frag.y as u32);
+        let fb_width = 1u32 << fb_cfg.width_log2();
+        let fb_height = 1u32 << fb_cfg.height_log2();
+        if fx >= fb_width || fy >= fb_height {
+            return;
+        }
+
+        let wl2 = fb_cfg.width_log2();
+
+        // Early Z-test (matching early_z.sv) — now in SDRAM
+        if rm.z_test_en() {
+            if !self
+                .memory
+                .z_test_and_set(fb_cfg.z_base(), wl2, fx, fy, frag.z, rm.z_compare())
+            {
+                return;
+            }
+        } else if rm.z_write_en() {
+            self.memory
+                .write_tiled(fb_cfg.z_base(), wl2, fx, fy, frag.z);
+        }
+
+        if rm.color_write_en() {
+            // Convert shade0 Q4.12 → RGB565 (truncating, no dither)
+            // Q4.12 range [0, 0x0FFF] maps to UNORM: extract top bits
+            // R: 5 bits from Q4.12 → >>7, G: 6 bits → >>6, B: 5 bits → >>7
+            let r_q412 = frag.shade0.r.to_bits().max(0) as u16;
+            let g_q412 = frag.shade0.g.to_bits().max(0) as u16;
+            let b_q412 = frag.shade0.b.to_bits().max(0) as u16;
+
+            let r5 = (r_q412 >> 7).min(31) as u8;
+            let g6 = (g_q412 >> 6).min(63) as u8;
+            let b5 = (b_q412 >> 7).min(31) as u8;
+
+            let color = Rgb565(((r5 as u16) << 11) | ((g6 as u16) << 5) | (b5 as u16));
+            self.memory
+                .write_tiled(fb_cfg.color_base(), wl2, fx, fy, color.0);
         }
     }
 

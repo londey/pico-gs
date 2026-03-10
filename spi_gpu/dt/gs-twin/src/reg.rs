@@ -2,24 +2,21 @@
 //!
 //! The GPU accepts 72-bit SPI frames: `{rw(1), addr(7), data(64)}`.
 //! This module models the register file's state machine and vertex
-//! buffering, decoding register writes into pipeline operations.
+//! buffering, decoding register writes into `GpuAction` values that
+//! the caller (`Gpu`) dispatches.
 //!
 //! # RTL Implementation Notes
 //! The register file (UNIT-003) latches vertex positions, colors, and
-//! STs on VERTEX_NOKICK writes, advancing a vertex counter. A
-//! VERTEX_KICK_012 write stores the final vertex and triggers
-//! rasterization with winding order (0, 1, 2).
+//! STs on VERTEX_NOKICK writes, advancing a vertex counter.
+//! A VERTEX_KICK write stores the final vertex and returns a
+//! `GpuAction::KickTriangle` containing the assembled `RasterTriangle`.
 //!
 //! # References
 //! - INT-010 (GPU Register Map)
 //! - UNIT-003 (Register File)
 //! - INT-021 (Render Command Format)
 
-use crate::math::Rgb565;
-use crate::mem::GpuMemory;
-use crate::pipeline::fragment::RasterFragment;
-use crate::pipeline::rasterize;
-use crate::pipeline::tex_sample::TextureSampler;
+use crate::pipeline::rasterize::{self, RasterTriangle};
 use crate::reg_ext::{reg_from_raw, reg_to_raw};
 use gpu_registers::components::gpu_regs::named_types::{
     cc_mode_reg::CcModeReg, color_reg::ColorReg, const_color_reg::ConstColorReg,
@@ -90,6 +87,48 @@ pub const ADDR_MEM_ADDR: u8 = 0x70;
 
 /// MEM_DATA: memory data register (bidirectional, auto-increment).
 pub const ADDR_MEM_DATA: u8 = 0x71;
+
+// ── GPU action enum ──────────────────────────────────────────────────────────
+
+/// Action resulting from a register write, dispatched by the caller.
+///
+/// `RegisterFile::write()` returns this enum to tell the `Gpu` what
+/// side-effect (if any) the write requires.  This keeps the register
+/// model passive — it latches state and assembles data, but never
+/// touches GPU memory or pipeline components directly.
+pub enum GpuAction {
+    /// Pure register latch — no further action needed.
+    None,
+
+    /// Triangle kick — vertices assembled, ready for `triangle_setup()`.
+    KickTriangle(RasterTriangle),
+
+    /// Hardware memory fill (REQ-005.08).
+    MemFill {
+        /// Fill-base register field (byte address = `base << 9`).
+        base: u16,
+        /// 16-bit fill value.
+        value: u16,
+        /// Number of 16-bit words to fill.
+        count: usize,
+    },
+
+    /// Texture unit 0 config changed — invalidate cache / reconfigure sampler.
+    Tex0Config(TexCfgReg),
+
+    /// Texture unit 1 config changed — invalidate cache / reconfigure sampler.
+    Tex1Config(TexCfgReg),
+
+    /// Write 64-bit dword to SDRAM at the given dword address.
+    ///
+    /// The register file auto-increments MEM_ADDR after each write.
+    MemData {
+        /// 22-bit dword address (byte address = `dword_addr * 8`).
+        dword_addr: u32,
+        /// 64-bit data to write.
+        data: u64,
+    },
+}
 
 // ── RGBA8888 color helper ────────────────────────────────────────────────────
 
@@ -162,7 +201,7 @@ pub struct RegisterFile {
     st0_st1: St0St1Reg,
 
     /// RENDER_MODE: unified rendering state flags.
-    pub render_mode: RenderModeReg,
+    render_mode: RenderModeReg,
 
     /// Z_RANGE: depth range clipping (min/max).
     z_range: ZRangeReg,
@@ -185,105 +224,140 @@ pub struct RegisterFile {
     /// TEX1_CFG: texture unit 1 configuration.
     tex1_cfg: TexCfgReg,
 
-    /// Texture unit 0 sampler (owns block cache, configured via TEX0_CFG).
-    tex0_sampler: TextureSampler,
-
-    /// Texture unit 1 sampler (owns block cache, configured via TEX1_CFG).
-    tex1_sampler: TextureSampler,
-
     /// CC_MODE: color combiner equation configuration.
     cc_mode: CcModeReg,
 
     /// CONST_COLOR: per-draw constant colors.
     const_color: ConstColorReg,
+
+    /// MEM_ADDR: 22-bit dword address pointer for MEM_DATA access.
+    mem_addr: u32,
 }
 
 impl RegisterFile {
     /// Process a single register write (addr + 64-bit data).
     ///
     /// This mirrors the RTL's register_file.sv combinational decode logic.
-    /// On VERTEX_KICK_012, triggers rasterization and fragment processing.
+    /// Returns a `GpuAction` describing what side-effect (if any) the
+    /// caller must execute.  The register file itself never touches GPU
+    /// memory or pipeline components.
     ///
     /// # Arguments
     ///
     /// * `addr` - 7-bit register index.
     /// * `data` - 64-bit register data.
-    /// * `memory` - GPU memory state (framebuffer, Z-buffer) for fragment writes.
-    pub fn write(&mut self, addr: u8, data: u64, memory: &mut GpuMemory) {
+    ///
+    /// # Returns
+    ///
+    /// A `GpuAction` for the caller to dispatch.
+    pub fn write(&mut self, addr: u8, data: u64) -> GpuAction {
         match addr {
             ADDR_COLOR => {
                 self.color = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_ST0_ST1 => {
                 self.st0_st1 = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_VERTEX_NOKICK => {
                 self.latch_vertex(data);
                 self.vertex_count = (self.vertex_count + 1) % 3;
+                GpuAction::None
             }
 
             ADDR_VERTEX_KICK_012 => {
                 self.latch_vertex(data);
                 self.vertex_count = (self.vertex_count + 1) % 3;
-                self.kick(WindingOrder::V012, memory);
+                GpuAction::KickTriangle(self.assemble_triangle(WindingOrder::V012))
             }
 
             ADDR_VERTEX_KICK_021 => {
                 self.latch_vertex(data);
                 self.vertex_count = (self.vertex_count + 1) % 3;
-                self.kick(WindingOrder::V021, memory);
+                GpuAction::KickTriangle(self.assemble_triangle(WindingOrder::V021))
             }
 
             ADDR_TEX0_CFG => {
                 self.tex0_cfg = reg_from_raw(data);
-                self.tex0_sampler.set_tex_cfg(self.tex0_cfg);
+                GpuAction::Tex0Config(self.tex0_cfg)
             }
 
             ADDR_TEX1_CFG => {
                 self.tex1_cfg = reg_from_raw(data);
-                self.tex1_sampler.set_tex_cfg(self.tex1_cfg);
+                GpuAction::Tex1Config(self.tex1_cfg)
             }
 
             ADDR_CC_MODE => {
                 self.cc_mode = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_CONST_COLOR => {
                 self.const_color = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_RENDER_MODE => {
                 self.render_mode = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_Z_RANGE => {
                 self.z_range = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_STIPPLE_PATTERN => {
                 self.stipple_pattern = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_FB_CONFIG => {
                 self.fb_config = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_FB_DISPLAY => {
                 self.fb_display = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_FB_CONTROL => {
                 self.fb_control = reg_from_raw(data);
+                GpuAction::None
             }
 
             ADDR_MEM_FILL => {
-                self.execute_mem_fill(data, memory);
+                let reg: MemFillReg = reg_from_raw(data);
+                GpuAction::MemFill {
+                    base: reg.fill_base(),
+                    value: reg.fill_value(),
+                    count: reg.fill_count() as usize,
+                }
+            }
+
+            ADDR_MEM_ADDR => {
+                let reg: gpu_registers::components::gpu_regs::named_types::mem_addr_reg::MemAddrReg =
+                    reg_from_raw(data);
+                self.mem_addr = reg.addr();
+                GpuAction::None
+            }
+
+            ADDR_MEM_DATA => {
+                let addr = self.mem_addr;
+                self.mem_addr = self.mem_addr.wrapping_add(1) & 0x3F_FFFF;
+                GpuAction::MemData {
+                    dword_addr: addr,
+                    data,
+                }
             }
 
             _ => {
                 // Unknown register — ignored (matches RTL default case)
+                GpuAction::None
             }
         }
     }
@@ -300,26 +374,12 @@ impl RegisterFile {
         slot.st0_st1 = self.st0_st1;
     }
 
-    /// Execute a hardware memory fill (REQ-005.08).
+    /// Assemble a `RasterTriangle` from the current vertex buffer state.
     ///
-    /// Writes `FILL_VALUE` to `FILL_COUNT` consecutive 16-bit words starting
-    /// at byte address `FILL_BASE << 9`.  The fill is a pure memory operation
-    /// independent of framebuffer configuration.
-    fn execute_mem_fill(&self, data: u64, memory: &mut GpuMemory) {
-        let reg: MemFillReg = reg_from_raw(data);
-        let base = reg.fill_base();
-        let value = reg.fill_value();
-        let count = reg.fill_count() as usize;
-
-        let byte_addr = (base as usize) << 9;
-        memory.fill(byte_addr, value, count);
-    }
-
-    /// Trigger rasterization with the given winding order.
-    ///
-    /// KICK_012: (slot[0], slot[1], just-latched) — CCW winding.
-    /// KICK_021: (slot[0], just-latched, slot[1]) — reversed (CW→CCW).
-    fn kick(&mut self, winding: WindingOrder, memory: &mut GpuMemory) {
+    /// Resolves the winding order into concrete vertex slot selection,
+    /// computes scissor-clamped bounding box, and packs per-vertex
+    /// attributes into `RasterVertex` values ready for `triangle_setup()`.
+    fn assemble_triangle(&self, winding: WindingOrder) -> RasterTriangle {
         let kick_idx = if self.vertex_count == 0 {
             2
         } else {
@@ -363,7 +423,7 @@ impl RegisterFile {
             }
         };
 
-        let tri = rasterize::RasterTriangle {
+        RasterTriangle {
             verts: [
                 make_vert(&tri_slots[0]),
                 make_vert(&tri_slots[1]),
@@ -374,57 +434,6 @@ impl RegisterFile {
             bbox_min_y: 0,
             bbox_max_y: scissor_max_y.saturating_sub(1),
             gouraud_en: self.render_mode.gouraud(),
-        };
-
-        // Rasterize and write fragments with optional Z-test
-        if let Some(setup) = rasterize::triangle_setup(&tri) {
-            let fragments = rasterize::rasterize_triangle(&setup);
-            let rm = &self.render_mode;
-            for frag in &fragments {
-                self.write_fragment(frag, rm, memory);
-            }
-        }
-    }
-
-    /// Write a single fragment to SDRAM with optional Z-test.
-    ///
-    /// Accepts `RasterFragment` with Q4.12 colors and converts shade0
-    /// to RGB565 for color write (truncating, matching dither bypass).
-    /// Uses 4x4 block-tiled addressing via fb_config (INT-011).
-    fn write_fragment(&self, frag: &RasterFragment, rm: &RenderModeReg, memory: &mut GpuMemory) {
-        let (fx, fy) = (frag.x as u32, frag.y as u32);
-        let fb_width = 1u32 << self.fb_config.width_log2();
-        let fb_height = 1u32 << self.fb_config.height_log2();
-        if fx >= fb_width || fy >= fb_height {
-            return;
-        }
-
-        let wl2 = self.fb_config.width_log2();
-
-        // Early Z-test (matching early_z.sv) — now in SDRAM
-        if rm.z_test_en() {
-            if !memory.z_test_and_set(self.fb_config.z_base(), wl2, fx, fy, frag.z, rm.z_compare())
-            {
-                return;
-            }
-        } else if rm.z_write_en() {
-            memory.write_tiled(self.fb_config.z_base(), wl2, fx, fy, frag.z);
-        }
-
-        if rm.color_write_en() {
-            // Convert shade0 Q4.12 → RGB565 (truncating, no dither)
-            // Q4.12 range [0, 0x0FFF] maps to UNORM: extract top bits
-            // R: 5 bits from Q4.12 → >>7, G: 6 bits → >>6, B: 5 bits → >>7
-            let r_q412 = frag.shade0.r.to_bits().max(0) as u16;
-            let g_q412 = frag.shade0.g.to_bits().max(0) as u16;
-            let b_q412 = frag.shade0.b.to_bits().max(0) as u16;
-
-            let r5 = (r_q412 >> 7).min(31) as u8;
-            let g6 = (g_q412 >> 6).min(63) as u8;
-            let b5 = (b_q412 >> 7).min(31) as u8;
-
-            let color = Rgb565(((r5 as u16) << 11) | ((g6 as u16) << 5) | (b5 as u16));
-            memory.write_tiled(self.fb_config.color_base(), wl2, fx, fy, color.0);
         }
     }
 
@@ -432,10 +441,20 @@ impl RegisterFile {
     pub fn fb_config(&self) -> FbConfigReg {
         self.fb_config
     }
+
+    /// Access the FB_CONTROL register latch.
+    pub fn fb_control(&self) -> FbControlReg {
+        self.fb_control
+    }
+
+    /// Access the RENDER_MODE register latch.
+    pub fn render_mode(&self) -> RenderModeReg {
+        self.render_mode
+    }
 }
 
 /// Winding order for vertex kick.
-enum WindingOrder {
+pub enum WindingOrder {
     /// (slot[0], slot[1], just-latched) — standard CCW.
     V012,
     /// (slot[0], just-latched, slot[1]) — reversed for back-facing triangles.
