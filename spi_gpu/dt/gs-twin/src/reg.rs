@@ -19,6 +19,7 @@ use crate::math::Rgb565;
 use crate::mem::GpuMemory;
 use crate::pipeline::fragment::RasterFragment;
 use crate::pipeline::rasterize;
+use crate::pipeline::tex_sample::TextureSampler;
 use crate::reg_ext::{reg_from_raw, reg_to_raw};
 use gpu_registers::components::gpu_regs::named_types::{
     cc_mode_reg::CcModeReg, color_reg::ColorReg, const_color_reg::ConstColorReg,
@@ -184,6 +185,12 @@ pub struct RegisterFile {
     /// TEX1_CFG: texture unit 1 configuration.
     tex1_cfg: TexCfgReg,
 
+    /// Texture unit 0 sampler (owns block cache, configured via TEX0_CFG).
+    tex0_sampler: TextureSampler,
+
+    /// Texture unit 1 sampler (owns block cache, configured via TEX1_CFG).
+    tex1_sampler: TextureSampler,
+
     /// CC_MODE: color combiner equation configuration.
     cc_mode: CcModeReg,
 
@@ -231,10 +238,12 @@ impl RegisterFile {
 
             ADDR_TEX0_CFG => {
                 self.tex0_cfg = reg_from_raw(data);
+                self.tex0_sampler.set_tex_cfg(self.tex0_cfg);
             }
 
             ADDR_TEX1_CFG => {
                 self.tex1_cfg = reg_from_raw(data);
+                self.tex1_sampler.set_tex_cfg(self.tex1_cfg);
             }
 
             ADDR_CC_MODE => {
