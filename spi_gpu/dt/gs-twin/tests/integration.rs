@@ -139,7 +139,6 @@ fn ver_011_depth_test() {
 const VER_012_HEX: &str = include_str!("../../../tests/scripts/ver_012_textured.hex");
 
 #[test]
-#[ignore = "requires texture pipeline (TEX0_CFG, UV interpolation, texture sampling)"]
 fn ver_012_textured_triangle() {
     let png_path = dt_out_dir().join("textured_triangle.png");
     let _ = std::fs::remove_file(&png_path);
@@ -160,7 +159,6 @@ fn ver_012_textured_triangle() {
 const VER_013_HEX: &str = include_str!("../../../tests/scripts/ver_013_color_combined.hex");
 
 #[test]
-#[ignore = "requires texture pipeline + color combiner (CC_MODE, MODULATE)"]
 fn ver_013_color_combined() {
     let png_path = dt_out_dir().join("color_combined.png");
     let _ = std::fs::remove_file(&png_path);
@@ -181,7 +179,6 @@ fn ver_013_color_combined() {
 const VER_014_HEX: &str = include_str!("../../../tests/scripts/ver_014_textured_cube.hex");
 
 #[test]
-#[ignore = "requires texture pipeline (TEX0_CFG, UV interpolation, texture sampling)"]
 fn ver_014_textured_cube() {
     let png_path = dt_out_dir().join("textured_cube.png");
     let _ = std::fs::remove_file(&png_path);
