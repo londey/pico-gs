@@ -114,6 +114,7 @@ struct EdgeCoeffs {
 }
 
 /// Result of triangle setup — all precomputed data for fragment iteration.
+#[derive(Clone, Copy)]
 pub struct TriangleSetup {
     /// Edge function coefficients for 3 edges.
     edges: [EdgeCoeffs; 3],
@@ -343,104 +344,325 @@ pub fn triangle_setup(tri: &RasterTriangle) -> Option<TriangleSetup> {
 
 // ── Per-fragment iteration ─────────────────────────────────────────────────
 
-/// Rasterize a triangle from precomputed setup data.
+/// Rasterize a triangle from precomputed setup data, returning fragments
+/// as a collected `Vec`.
 ///
-/// Walks the bounding box in 4×4 tiles, performs hierarchical edge rejection,
-/// per-pixel edge testing, incremental attribute accumulation, and perspective
-/// correction.
-///
-/// Matches raster_edge_walk.sv + raster_attr_accum.sv.
+/// Convenience wrapper around [`rasterize_iter`]; prefer the iterator
+/// form when fragments are consumed one-at-a-time.
 pub fn rasterize_triangle(setup: &TriangleSetup) -> Vec<RasterFragment> {
-    let mut fragments = Vec::new();
+    rasterize_iter(*setup).collect()
+}
 
-    let min_x = setup.bbox_min_x;
-    let min_y = setup.bbox_min_y;
-    let max_x = setup.bbox_max_x;
-    let max_y = setup.bbox_max_y;
+/// Return an iterator that yields [`RasterFragment`]s for a triangle.
+///
+/// Walks the bounding box in 4×4 tiles with hierarchical rejection,
+/// per-pixel edge testing, incremental attribute accumulation, and
+/// perspective correction — matching `raster_edge_walk.sv` +
+/// `raster_attr_accum.sv`.
+pub fn rasterize_iter(setup: TriangleSetup) -> TriangleIter {
+    TriangleIter::new(setup)
+}
 
-    if min_x > max_x || min_y > max_y {
-        return fragments;
-    }
+/// Streaming iterator over rasterized fragments of a single triangle.
+///
+/// Created by [`rasterize_iter`].  Each call to [`Iterator::next`]
+/// advances the hierarchical 4×4 tile walker to the next inside-triangle
+/// pixel and returns its fully-formed [`RasterFragment`].
+pub struct TriangleIter {
+    // ── Copied setup fields ──────────────────────────────────────
+    edges: [EdgeCoeffs; 3],
+    ccw: bool,
+    max_x: u16,
+    max_y: u16,
+    dx: [i32; NUM_ATTRS],
+    dy: [i32; NUM_ATTRS],
+    min_x: u16,
 
-    // ── Initialize edge values at (min_x, min_y) ──────────────────
-    let init_edge = |e: &EdgeCoeffs| -> i32 { e.a * (min_x as i32) + e.b * (min_y as i32) + e.c };
+    // ── Precomputed tile-step constants ──────────────────────────
+    a4: [i32; 3],
+    b4: [i32; 3],
+    a3: [i32; 3],
+    b3: [i32; 3],
 
-    // Tile-row-level edge accumulators
-    let mut e_trow = [
-        init_edge(&setup.edges[0]),
-        init_edge(&setup.edges[1]),
-        init_edge(&setup.edges[2]),
-    ];
+    // ── 4-level accumulator hierarchy ────────────────────────────
+    e_trow: [i32; 3],
+    attr_trow: [i32; NUM_ATTRS],
+    e_tcol: [i32; 3],
+    attr_tcol: [i32; NUM_ATTRS],
+    e_row: [i32; 3],
+    attr_row: [i32; NUM_ATTRS],
+    e_acc: [i32; 3],
+    attr_acc: [i32; NUM_ATTRS],
 
-    // Pre-compute 4*A and 4*B for tile stepping (shift, no multiply)
-    let a4: [i32; 3] = [
-        setup.edges[0].a * 4,
-        setup.edges[1].a * 4,
-        setup.edges[2].a * 4,
-    ];
-    let b4: [i32; 3] = [
-        setup.edges[0].b * 4,
-        setup.edges[1].b * 4,
-        setup.edges[2].b * 4,
-    ];
+    // ── Loop positions ───────────────────────────────────────────
+    tile_y: u16,
+    tile_x: u16,
+    py_offset: u16,
+    px_offset: u16,
 
-    // Pre-compute 3*A and 3*B for tile corner testing
-    let a3: [i32; 3] = [
-        setup.edges[0].a * 3,
-        setup.edges[1].a * 3,
-        setup.edges[2].a * 3,
-    ];
-    let b3: [i32; 3] = [
-        setup.edges[0].b * 3,
-        setup.edges[1].b * 3,
-        setup.edges[2].b * 3,
-    ];
+    done: bool,
+}
 
-    // Attribute accumulators: 4-level hierarchy
-    let mut attr_trow = setup.inits;
+impl TriangleIter {
+    fn new(setup: TriangleSetup) -> Self {
+        let min_x = setup.bbox_min_x;
+        let min_y = setup.bbox_min_y;
+        let max_x = setup.bbox_max_x;
+        let max_y = setup.bbox_max_y;
 
-    // Tile-row loop
-    let mut tile_y = min_y;
-    while tile_y <= max_y {
-        let mut e_tcol = e_trow;
-        let mut attr_tcol = attr_trow;
-
-        // Tile-column loop
-        let mut tile_x = min_x;
-        while tile_x <= max_x {
-            // ── Hierarchical tile rejection ────────────────────────
-            // Test 4 corners of 4×4 tile: TL, TR, BL, BR
-            // TR = e + 3*A, BL = e + 3*B, BR = e + 3*A + 3*B
-            let tile_rejected = tile_reject(&e_tcol, &a3, &b3, setup.ccw);
-
-            if !tile_rejected {
-                walk_tile(
-                    setup,
-                    &e_tcol,
-                    &attr_tcol,
-                    tile_x,
-                    tile_y,
-                    max_x,
-                    max_y,
-                    &mut fragments,
-                );
-            }
-
-            // Tile column step: tcol += 4*A / 4*dx
-            step_edges(&mut e_tcol, &a4);
-            step_attrs(&mut attr_tcol, &setup.dx, 4);
-
-            tile_x = tile_x.saturating_add(TILE_SIZE);
+        if min_x > max_x || min_y > max_y {
+            return Self::empty(&setup);
         }
 
-        // Tile row step: trow += 4*B / 4*dy
-        step_edges(&mut e_trow, &b4);
-        step_attrs(&mut attr_trow, &setup.dy, 4);
+        // Initialize edge values at (min_x, min_y)
+        let init_edge =
+            |e: &EdgeCoeffs| -> i32 { e.a * (min_x as i32) + e.b * (min_y as i32) + e.c };
 
-        tile_y = tile_y.saturating_add(TILE_SIZE);
+        let e_trow = [
+            init_edge(&setup.edges[0]),
+            init_edge(&setup.edges[1]),
+            init_edge(&setup.edges[2]),
+        ];
+
+        let a4 = [
+            setup.edges[0].a * 4,
+            setup.edges[1].a * 4,
+            setup.edges[2].a * 4,
+        ];
+        let b4 = [
+            setup.edges[0].b * 4,
+            setup.edges[1].b * 4,
+            setup.edges[2].b * 4,
+        ];
+        let a3 = [
+            setup.edges[0].a * 3,
+            setup.edges[1].a * 3,
+            setup.edges[2].a * 3,
+        ];
+        let b3 = [
+            setup.edges[0].b * 3,
+            setup.edges[1].b * 3,
+            setup.edges[2].b * 3,
+        ];
+
+        let mut iter = Self {
+            edges: setup.edges,
+            ccw: setup.ccw,
+            max_x,
+            max_y,
+            dx: setup.dx,
+            dy: setup.dy,
+            min_x,
+            a4,
+            b4,
+            a3,
+            b3,
+            e_trow,
+            attr_trow: setup.inits,
+            e_tcol: e_trow,
+            attr_tcol: setup.inits,
+            e_row: e_trow,
+            attr_row: setup.inits,
+            e_acc: e_trow,
+            attr_acc: setup.inits,
+            tile_y: min_y,
+            tile_x: min_x,
+            py_offset: 0,
+            px_offset: 0,
+            done: false,
+        };
+
+        // Advance past the first tile if it is rejected.
+        if tile_reject(&iter.e_tcol, &a3, &b3, setup.ccw) {
+            iter.advance_to_next_tile();
+        }
+
+        iter
     }
 
-    fragments
+    /// Create an immediately-exhausted iterator (degenerate bbox).
+    fn empty(setup: &TriangleSetup) -> Self {
+        Self {
+            edges: setup.edges,
+            ccw: setup.ccw,
+            max_x: 0,
+            max_y: 0,
+            dx: setup.dx,
+            dy: setup.dy,
+            min_x: 0,
+            a4: [0; 3],
+            b4: [0; 3],
+            a3: [0; 3],
+            b3: [0; 3],
+            e_trow: [0; 3],
+            attr_trow: [0; NUM_ATTRS],
+            e_tcol: [0; 3],
+            attr_tcol: [0; NUM_ATTRS],
+            e_row: [0; 3],
+            attr_row: [0; NUM_ATTRS],
+            e_acc: [0; 3],
+            attr_acc: [0; NUM_ATTRS],
+            tile_y: 0,
+            tile_x: 0,
+            py_offset: 0,
+            px_offset: 0,
+            done: true,
+        }
+    }
+
+    /// Advance past the current tile to the next non-rejected tile,
+    /// stepping tile-col and tile-row accumulators as needed.
+    /// Sets `self.done` if the entire bbox is exhausted.
+    ///
+    /// On success, `e_row`/`attr_row`/`e_acc`/`attr_acc` and
+    /// `py_offset`/`px_offset` are initialized for the new tile.
+    fn advance_to_next_tile(&mut self) {
+        // Step past current tile-col
+        self.step_tile_col();
+
+        loop {
+            if self.scan_tile_row() {
+                return;
+            }
+            self.advance_tile_row();
+            if self.done {
+                return;
+            }
+        }
+    }
+
+    /// Scan remaining tile-cols in the current tile-row for a
+    /// non-rejected tile.  Returns `true` if one was found.
+    fn scan_tile_row(&mut self) -> bool {
+        while self.tile_x <= self.max_x {
+            if !tile_reject(&self.e_tcol, &self.a3, &self.b3, self.ccw) {
+                self.init_tile_pixels();
+                return true;
+            }
+            self.step_tile_col();
+        }
+        false
+    }
+
+    /// Step tile-col accumulators to the next 4×4 column.
+    fn step_tile_col(&mut self) {
+        step_edges(&mut self.e_tcol, &self.a4);
+        step_attrs(&mut self.attr_tcol, &self.dx, 4);
+        self.tile_x = self.tile_x.saturating_add(TILE_SIZE);
+    }
+
+    /// Advance to the next tile-row, resetting tile-col to `min_x`.
+    /// Sets `self.done` if beyond `max_y`.
+    fn advance_tile_row(&mut self) {
+        step_edges(&mut self.e_trow, &self.b4);
+        step_attrs(&mut self.attr_trow, &self.dy, 4);
+        self.tile_y = self.tile_y.saturating_add(TILE_SIZE);
+
+        if self.tile_y > self.max_y {
+            self.done = true;
+            return;
+        }
+
+        self.e_tcol = self.e_trow;
+        self.attr_tcol = self.attr_trow;
+        self.tile_x = self.min_x;
+    }
+
+    /// Initialize pixel-row and pixel-col accumulators from the current
+    /// tile-col accumulators, resetting offsets to 0.
+    fn init_tile_pixels(&mut self) {
+        self.e_row = self.e_tcol;
+        self.attr_row = self.attr_tcol;
+        self.e_acc = self.e_tcol;
+        self.attr_acc = self.attr_tcol;
+        self.py_offset = 0;
+        self.px_offset = 0;
+    }
+
+    /// Test the current pixel against the edge functions.
+    fn pixel_inside(&self) -> bool {
+        if self.ccw {
+            self.e_acc[0] >= 0 && self.e_acc[1] >= 0 && self.e_acc[2] >= 0
+        } else {
+            self.e_acc[0] <= 0 && self.e_acc[1] <= 0 && self.e_acc[2] <= 0
+        }
+    }
+
+    /// Step the pixel-col accumulators in X (unconditional per pixel).
+    fn step_pixel_x(&mut self) {
+        for (e, edge) in self.e_acc.iter_mut().zip(self.edges.iter()) {
+            *e = e.wrapping_add(edge.a);
+        }
+        for (a, d) in self.attr_acc.iter_mut().zip(self.dx.iter()) {
+            *a = a.wrapping_add(*d);
+        }
+    }
+
+    /// Step to the next pixel-row within the current tile.
+    ///
+    /// Returns `true` if a valid row was entered, `false` if the tile
+    /// is exhausted.
+    fn advance_pixel_row(&mut self) -> bool {
+        self.py_offset += 1;
+        if self.py_offset >= TILE_SIZE || (self.tile_y + self.py_offset) > self.max_y {
+            return false;
+        }
+        for (e, edge) in self.e_row.iter_mut().zip(self.edges.iter()) {
+            *e = e.wrapping_add(edge.b);
+        }
+        for (a, d) in self.attr_row.iter_mut().zip(self.dy.iter()) {
+            *a = a.wrapping_add(*d);
+        }
+        self.e_acc = self.e_row;
+        self.attr_acc = self.attr_row;
+        self.px_offset = 0;
+        true
+    }
+}
+
+impl Iterator for TriangleIter {
+    type Item = RasterFragment;
+
+    fn next(&mut self) -> Option<RasterFragment> {
+        loop {
+            if self.done {
+                return None;
+            }
+            if let Some(frag) = self.scan_pixels() {
+                return Some(frag);
+            }
+            if !self.advance_pixel_row() {
+                self.advance_to_next_tile();
+            }
+        }
+    }
+}
+
+impl TriangleIter {
+    /// Scan remaining pixels in the current pixel-row, returning the
+    /// first inside-triangle fragment (if any).  Advances `px_offset`
+    /// and steps X accumulators for every pixel visited.
+    fn scan_pixels(&mut self) -> Option<RasterFragment> {
+        while self.px_offset < TILE_SIZE {
+            let px = self.tile_x + self.px_offset;
+            self.px_offset += 1;
+
+            if px > self.max_x {
+                break;
+            }
+
+            let inside = self.pixel_inside();
+            let py = self.tile_y + self.py_offset;
+            let frag = inside.then(|| emit_fragment(px, py, &self.attr_acc));
+
+            self.step_pixel_x();
+
+            if frag.is_some() {
+                return frag;
+            }
+        }
+        None
+    }
 }
 
 // ── Helper functions ───────────────────────────────────────────────────────
@@ -484,66 +706,6 @@ fn step_edges(edges: &mut [i32; 3], deltas: &[i32; 3]) {
 fn step_attrs(attrs: &mut [i32; NUM_ATTRS], derivs: &[i32; NUM_ATTRS], scale: i32) {
     for (a, d) in attrs.iter_mut().zip(derivs.iter()) {
         *a = a.wrapping_add(d.wrapping_mul(scale));
-    }
-}
-
-/// Walk pixels within a single 4×4 tile, emitting fragments for inside pixels.
-#[allow(clippy::too_many_arguments)]
-fn walk_tile(
-    setup: &TriangleSetup,
-    e_tcol: &[i32; 3],
-    attr_tcol: &[i32; NUM_ATTRS],
-    tile_x: u16,
-    tile_y: u16,
-    max_x: u16,
-    max_y: u16,
-    fragments: &mut Vec<RasterFragment>,
-) {
-    let mut attr_row = *attr_tcol;
-    let mut e_row = *e_tcol;
-
-    for py_offset in 0..TILE_SIZE {
-        let py = tile_y + py_offset;
-        if py > max_y {
-            break;
-        }
-
-        let mut attr_acc = attr_row;
-        let mut e_acc = e_row;
-
-        for px_offset in 0..TILE_SIZE {
-            let px = tile_x + px_offset;
-            if px > max_x {
-                break;
-            }
-
-            // Per-pixel edge test
-            let inside = if setup.ccw {
-                e_acc[0] >= 0 && e_acc[1] >= 0 && e_acc[2] >= 0
-            } else {
-                e_acc[0] <= 0 && e_acc[1] <= 0 && e_acc[2] <= 0
-            };
-
-            if inside {
-                fragments.push(emit_fragment(px, py, &attr_acc));
-            }
-
-            // Step X: edge += A, attr += dx
-            for (e, edge) in e_acc.iter_mut().zip(setup.edges.iter()) {
-                *e = e.wrapping_add(edge.a);
-            }
-            for (a, d) in attr_acc.iter_mut().zip(setup.dx.iter()) {
-                *a = a.wrapping_add(*d);
-            }
-        }
-
-        // Step Y: row += B/dy
-        for (e, edge) in e_row.iter_mut().zip(setup.edges.iter()) {
-            *e = e.wrapping_add(edge.b);
-        }
-        for (a, d) in attr_row.iter_mut().zip(setup.dy.iter()) {
-            *a = a.wrapping_add(*d);
-        }
     }
 }
 

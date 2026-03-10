@@ -168,10 +168,9 @@ impl Gpu {
     /// Execute a triangle kick: rasterize and write fragments to SDRAM.
     fn execute_kick(&mut self, tri: &rasterize::RasterTriangle) {
         if let Some(setup) = rasterize::triangle_setup(tri) {
-            let fragments = rasterize::rasterize_triangle(&setup);
             let rm = self.regs.render_mode();
-            for frag in &fragments {
-                self.write_fragment(frag, &rm);
+            for frag in rasterize::rasterize_iter(setup) {
+                self.write_fragment(&frag, &rm);
             }
         }
     }
