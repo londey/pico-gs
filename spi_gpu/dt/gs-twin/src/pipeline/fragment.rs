@@ -49,6 +49,14 @@ pub struct ColorQ412 {
 }
 
 impl ColorQ412 {
+    /// Opaque white: all channels at 1.0 (`0x1000` in Q4.12).
+    pub const OPAQUE_WHITE: Self = Self {
+        r: Q::ONE,
+        g: Q::ONE,
+        b: Q::ONE,
+        a: Q::ONE,
+    };
+
     /// Promote RGBA8888 UNORM8 channels to Q4.12.
     ///
     /// Matches RTL `fp_types_pkg` constant-color promotion:

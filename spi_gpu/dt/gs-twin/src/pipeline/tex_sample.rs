@@ -16,6 +16,8 @@
 use std::collections::HashMap;
 
 use gpu_registers::components::gpu_regs::named_types::tex_cfg_reg::TexCfgReg;
+use gpu_registers::components::tex_format_e::TexFormatE;
+use gpu_registers::components::wrap_mode_e::WrapModeE;
 use qfixed::Q;
 
 use super::fragment::{ColorQ412, RasterFragment, TexturedFragment};
@@ -131,6 +133,80 @@ impl Rgba5652 {
     }
 }
 
+// ── Format conversion helpers ───────────────────────────────────────────────
+
+/// Convert an RGB565 word to [`Rgba5652`] (fully opaque).
+///
+/// RGB565 layout: `[15:11]=R5, [10:5]=G6, [4:0]=B5`.
+fn rgb565_to_rgba5652(raw: u16) -> Rgba5652 {
+    let r5 = ((raw >> 11) & 0x1F) as u8;
+    let g6 = ((raw >> 5) & 0x3F) as u8;
+    let b5 = (raw & 0x1F) as u8;
+    Rgba5652::new(r5, g6, b5, 3) // A2=3 → fully opaque
+}
+
+/// Convert an RGBA8888 value to [`Rgba5652`] by truncation.
+///
+/// RGBA8888 layout (little-endian u32):
+/// `[7:0]=R8, [15:8]=G8, [23:16]=B8, [31:24]=A8`.
+fn rgba8888_to_rgba5652(rgba: u32) -> Rgba5652 {
+    let r5 = ((rgba >> 3) & 0x1F) as u8;
+    let g6 = ((rgba >> 10) & 0x3F) as u8;
+    let b5 = ((rgba >> 19) & 0x1F) as u8;
+    let a2 = ((rgba >> 30) & 0x03) as u8;
+    Rgba5652::new(r5, g6, b5, a2)
+}
+
+/// Convert an R8 grayscale byte to [`Rgba5652`] (fully opaque, gray).
+///
+/// Maps the 8-bit value to all three color channels (R5, G6, B5).
+fn r8_to_rgba5652(val: u8) -> Rgba5652 {
+    let r5 = val >> 3;
+    let g6 = val >> 2;
+    let b5 = val >> 3;
+    Rgba5652::new(r5, g6, b5, 3)
+}
+
+// ── Wrap-mode helpers ───────────────────────────────────────────────────────
+
+/// Convert a Q4.12 UV coordinate to an integer texel index, applying
+/// the specified wrap mode.
+///
+/// # Arguments
+///
+/// * `coord` - UV coordinate in Q4.12 signed fixed-point.
+/// * `dim` - Texture dimension in texels (power of 2).
+/// * `dim_log2` - Log₂ of `dim`.
+/// * `wrap` - Wrap mode to apply.
+fn wrap_texel(coord: Q<4, 12>, dim: u32, dim_log2: u8, wrap: WrapModeE) -> u32 {
+    // Multiply UV by dimension: texel = floor(coord * dim).
+    // coord is Q4.12 (16-bit signed, 12 fractional bits), dim = 1 << dim_log2.
+    // Sign-extend the 16-bit value to i64 before shifting.
+    let bits = coord.to_bits() as u16 as i16 as i64;
+    let texel_raw: i64 = if dim_log2 <= 12 {
+        bits >> (12 - dim_log2)
+    } else {
+        bits << (dim_log2 - 12)
+    };
+
+    let dim_i = dim as i64;
+    match wrap {
+        WrapModeE::Repeat => texel_raw.rem_euclid(dim_i) as u32,
+        WrapModeE::ClampToEdge => texel_raw.clamp(0, dim_i - 1) as u32,
+        WrapModeE::Mirror => {
+            let period = dim_i * 2;
+            let t = texel_raw.rem_euclid(period);
+            if t < dim_i {
+                t as u32
+            } else {
+                (period - 1 - t) as u32
+            }
+        }
+        // Octahedral: treat as repeat for this initial implementation.
+        WrapModeE::Octahedral => texel_raw.rem_euclid(dim_i) as u32,
+    }
+}
+
 // ── Texture sampler ─────────────────────────────────────────────────────────
 
 /// Per-unit texture sampler with block cache, modeling one RTL
@@ -243,9 +319,69 @@ impl TextureSampler {
     /// from each parity bank) to support single-cycle bilinear filtering.
     /// The DT models this as sequential lookups into the block cache.
     /// See `texture_cache.sv`, UNIT-006 Stage 3.
-    pub fn sample(&mut self, _u: Q<4, 12>, _v: Q<4, 12>, _lod: u8, _sdram: &[u16]) -> ColorQ412 {
-        // Stub: return opaque white (matching current pipeline behavior)
-        ColorQ412::default()
+    pub fn sample(&mut self, u: Q<4, 12>, v: Q<4, 12>, _lod: u8, sdram: &[u16]) -> ColorQ412 {
+        let cfg = match &self.cfg {
+            Some(c) if c.enable() => c,
+            _ => return ColorQ412::OPAQUE_WHITE,
+        };
+
+        let w_log2 = cfg.width_log2();
+        let h_log2 = cfg.height_log2();
+        let width = 1u32 << w_log2;
+        let height = 1u32 << h_log2;
+
+        // Convert Q4.12 UV to integer texel coordinates and apply wrap mode.
+        let tx = wrap_texel(u, width, w_log2, cfg.u_wrap());
+        let ty = wrap_texel(v, height, h_log2, cfg.v_wrap());
+
+        // Block coordinates (each block is 4×4 texels).
+        let bx = tx / 4;
+        let by = ty / 4;
+        let blocks_per_row = width.div_ceil(4);
+        let block_index = by * blocks_per_row + bx;
+
+        // Row-major offset within the 4×4 block.
+        let local = (ty & 3) * 4 + (tx & 3);
+
+        // BASE_ADDR × 512 bytes = BASE_ADDR × 256 u16 words.
+        let base_words = cfg.base_addr() as u32 * 256;
+
+        let format = match cfg.format() {
+            Ok(f) => f,
+            Err(_) => return ColorQ412::OPAQUE_WHITE,
+        };
+
+        let texel = match format {
+            TexFormatE::Rgb565 => {
+                // 16 texels × 2 bytes = 32 bytes = 16 u16 words per block.
+                let addr = (base_words + block_index * 16 + local) as usize;
+                let raw = sdram.get(addr).copied().unwrap_or(0);
+                rgb565_to_rgba5652(raw)
+            }
+            TexFormatE::Rgba8888 => {
+                // 16 texels × 4 bytes = 64 bytes = 32 u16 words per block.
+                let addr = (base_words + block_index * 32 + local * 2) as usize;
+                let lo = sdram.get(addr).copied().unwrap_or(0);
+                let hi = sdram.get(addr + 1).copied().unwrap_or(0);
+                let rgba = (hi as u32) << 16 | lo as u32;
+                rgba8888_to_rgba5652(rgba)
+            }
+            TexFormatE::R8 => {
+                // 16 texels × 1 byte = 16 bytes = 8 u16 words per block.
+                let addr = (base_words + block_index * 8 + local / 2) as usize;
+                let word = sdram.get(addr).copied().unwrap_or(0);
+                let byte = if local & 1 == 0 {
+                    (word & 0xFF) as u8
+                } else {
+                    (word >> 8) as u8
+                };
+                r8_to_rgba5652(byte)
+            }
+            // BC1–BC4 compressed formats: not yet implemented.
+            _ => return ColorQ412::OPAQUE_WHITE,
+        };
+
+        texel.promote_to_q412()
     }
 
     /// Return the current configuration, if any.
