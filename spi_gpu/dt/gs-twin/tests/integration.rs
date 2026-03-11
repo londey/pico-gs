@@ -179,7 +179,9 @@ const VER_014_HEX: &str = include_str!("../../../tests/scripts/ver_014_textured_
 #[test]
 fn ver_014_textured_cube() {
     let png_path = dt_out_dir().join("textured_cube.png");
+    let z_path = dt_out_dir().join("textured_cube_z.png");
     let _ = std::fs::remove_file(&png_path);
+    let _ = std::fs::remove_file(&z_path);
 
     let script = hex_parser::parse_hex_str(VER_014_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
@@ -188,7 +190,9 @@ fn ver_014_textured_cube() {
     }
 
     gpu.framebuffer_to_png(&png_path).unwrap();
+    gpu.zbuffer_to_png(&z_path).unwrap();
     eprintln!("VER-014 golden image: {}", png_path.display());
+    eprintln!("VER-014 Z-buffer:     {}", z_path.display());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

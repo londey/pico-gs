@@ -325,4 +325,22 @@ impl Gpu {
         let (base, wl2, w, h) = self.effective_fb_dims();
         self.memory.extract_rgb565_linear(base, wl2, w, h)
     }
+
+    /// Export the current Z-buffer as a grayscale PNG image.
+    ///
+    /// Near (low Z) appears dark, far (high Z) appears bright.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Output file path for the PNG.
+    ///
+    /// # Errors
+    ///
+    /// Returns `image::ImageError` if the PNG cannot be written.
+    pub fn zbuffer_to_png(&self, path: &std::path::Path) -> Result<(), image::ImageError> {
+        let cfg = self.regs.fb_config();
+        let wl2 = cfg.width_log2();
+        let (_, _, w, h) = self.effective_fb_dims();
+        self.memory.save_zbuffer_png(cfg.z_base(), wl2, w, h, path)
+    }
 }

@@ -33,12 +33,38 @@ use gpu_registers::components::z_compare_e::ZCompareE;
 /// `None` if the fragment fails the depth test.
 pub fn early_z_test(
     frag: RasterFragment,
-    _memory: &mut GpuMemory,
-    _fb_config: &FbConfigReg,
-    _z_test_en: bool,
-    _z_write_en: bool,
-    _z_compare: ZCompareE,
+    memory: &mut GpuMemory,
+    fb_config: &FbConfigReg,
+    z_test_en: bool,
+    z_write_en: bool,
+    z_compare: ZCompareE,
 ) -> Option<RasterFragment> {
-    // TODO: implement Z-buffer test and conditional write via tiled SDRAM
+    let wl2 = fb_config.width_log2();
+    let z_base = fb_config.z_base();
+    let x = frag.x as u32;
+    let y = frag.y as u32;
+
+    if z_test_en {
+        let stored = memory.read_tiled(z_base, wl2, x, y);
+        let pass = match z_compare {
+            ZCompareE::Never => false,
+            ZCompareE::Less => frag.z < stored,
+            ZCompareE::Lequal => frag.z <= stored,
+            ZCompareE::Equal => frag.z == stored,
+            ZCompareE::Greater => frag.z > stored,
+            ZCompareE::Gequal => frag.z >= stored,
+            ZCompareE::Notequal => frag.z != stored,
+            ZCompareE::Always => true,
+        };
+        if !pass {
+            return None;
+        }
+        if z_write_en {
+            memory.write_tiled(z_base, wl2, x, y, frag.z);
+        }
+    } else if z_write_en {
+        memory.write_tiled(z_base, wl2, x, y, frag.z);
+    }
+
     Some(frag)
 }
