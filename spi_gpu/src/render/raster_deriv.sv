@@ -109,6 +109,7 @@ module raster_deriv (
     // Inverse area and shift (from raster_recip_area, UQ1.17 normalized mantissa)
     input  wire [17:0]         inv_area,       // UQ1.17 reciprocal mantissa
     input  wire [4:0]          area_shift,     // Right-shift for area denormalization
+    input  wire                ccw,            // Triangle winding: 1=CCW, 0=CW
 
     // Vertex 0 position (screen-space integer pixels)
     input  wire [9:0]          x0,             // Vertex 0 X
@@ -351,10 +352,17 @@ module raster_deriv (
     wire signed [46:0] scaled_dx_b = t_dxb_e1 + t_dxb_e2;
     wire signed [46:0] scaled_dy_b = t_dyb_e1 + t_dyb_e2;
 
-    wire signed [31:0] deriv_dx_a = 32'(scaled_dx_a >>> area_shift);
-    wire signed [31:0] deriv_dy_a = 32'(scaled_dy_a >>> area_shift);
-    wire signed [31:0] deriv_dx_b = 32'(scaled_dx_b >>> area_shift);
-    wire signed [31:0] deriv_dy_b = 32'(scaled_dy_b >>> area_shift);
+    // For CW triangles (area < 0), negate derivatives because
+    // raster_recip_area uses |area|.  Matching DT rasterize.rs:282-284.
+    wire signed [31:0] raw_dx_a = 32'(scaled_dx_a >>> area_shift);
+    wire signed [31:0] raw_dy_a = 32'(scaled_dy_a >>> area_shift);
+    wire signed [31:0] raw_dx_b = 32'(scaled_dx_b >>> area_shift);
+    wire signed [31:0] raw_dy_b = 32'(scaled_dy_b >>> area_shift);
+
+    wire signed [31:0] deriv_dx_a = ccw ? raw_dx_a : -raw_dx_a;
+    wire signed [31:0] deriv_dy_a = ccw ? raw_dy_a : -raw_dy_a;
+    wire signed [31:0] deriv_dx_b = ccw ? raw_dx_b : -raw_dx_b;
+    wire signed [31:0] deriv_dy_b = ccw ? raw_dy_b : -raw_dy_b;
 
     // ========================================================================
     // Derivative output register latching (2 pairs per cycle)

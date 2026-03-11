@@ -107,19 +107,21 @@ def _setup_phase() -> list[str]:
 def _emit_tri(lines, verts, color):
     """Emit one textured triangle.
 
-    verts: list of 3 tuples (sx_q4, sy_q4, z16, u, v).
+    verts: list of 3 tuples (sx_q4, sy_q4, z16, u, v, w).
     """
     shade = rgba(color[0], color[1], color[2])
     spec = rgba(0x00, 0x00, 0x00)
 
-    for i, (sx, sy, z16, u, v) in enumerate(verts):
+    for i, (sx, sy, z16, u, v, w) in enumerate(verts):
+        q = q_perspective(w)
         lines.append(emit(ADDR_COLOR, pack_color(shade, spec),
                            color_comment(shade, spec)))
-        lines.append(emit(ADDR_ST0_ST1, pack_st(u, v), st_comment(u, v)))
+        lines.append(emit(ADDR_ST0_ST1, pack_st_perspective(u, v, w),
+                           st_persp_comment(u, v, w)))
         is_kick = (i == 2)
         addr = ADDR_VERTEX_KICK_012 if is_kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex_q4(sx, sy, z16, Q_AFFINE),
-                           vertex_comment_q4(sx, sy, z16)))
+        lines.append(emit(addr, pack_vertex_q4(sx, sy, z16, q),
+                           vertex_comment_q4(sx, sy, z16, q)))
 
 
 def _triangles_phase() -> list[str]:
@@ -151,7 +153,7 @@ def _triangles_phase() -> list[str]:
         z16 = int(round(sz * 65535.0))
         z16 = max(0, min(0xFFFF, z16))
 
-        screen_verts.append((sx_q4, sy_q4, z16, ROAD_UVS[i][0], ROAD_UVS[i][1]))
+        screen_verts.append((sx_q4, sy_q4, z16, ROAD_UVS[i][0], ROAD_UVS[i][1], w))
 
     # Two triangles: (0,1,2) and (0,2,3) — standard quad split.
     lines.append(emit_comment("Road triangle 1 (near-left, near-right, far-right)"))

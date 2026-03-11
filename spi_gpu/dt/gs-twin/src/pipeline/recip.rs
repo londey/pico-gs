@@ -88,7 +88,12 @@ pub struct RecipQ {
 /// 3. Linear interpolation with 8-bit fraction
 /// 4. Denormalize to UQ4.14
 ///
-/// Input is the top 16 bits of the Q accumulator, zero-extended to 32 bits.
+/// Input is UQ1.15 (the top 16 bits of the Q accumulator), zero-extended
+/// to 32 bits.  The value represents 1/W: raw 0x8000 = 1.0, raw 0x4000 = 0.5.
+/// Output is 1/(input_value) = W in UQ4.14 (18-bit unsigned).
+///
+/// Denormalization uses `>> 19` (= 34 − 15) to account for the 15 fractional
+/// bits in the UQ1.15 input, so that recip_q(0x8000) = 0x4000 (1.0 in UQ4.14).
 pub fn recip_q(operand: u32) -> RecipQ {
     if operand == 0 {
         return RecipQ { recip: 0, lod: 0 };
@@ -128,9 +133,15 @@ pub fn recip_q(operand: u32) -> RecipQ {
 
     // Denormalize to UQ4.14:
     //   shifted = raw_recip << clz_count (in a 49-bit field)
-    //   result = shifted[48:34] zero-extended to 18 bits
+    //   For UQ1.15 input: result = shifted >> 19 (= 34 − 15 fractional bits)
+    //   Saturate to 18 bits (UQ4.14 max ≈ 16.0) for large W values.
     let shifted = (raw_recip as u64) << (clz_count & 0x1F);
-    let uq414 = ((shifted >> 34) & 0x7FFF) as u32; // 15 bits, zero-extended to 18
+    let raw_result = shifted >> 19;
+    let uq414 = if raw_result > 0x3_FFFF {
+        0x3_FFFF_u32 // saturate to 18-bit max
+    } else {
+        raw_result as u32
+    };
 
     // LOD = {clz[4:0], 3'b000} — integer mip level from CLZ
     let lod = (clz_count & 0x1F) << 3;
@@ -244,17 +255,23 @@ mod tests {
     }
 
     #[test]
-    fn recip_q_basic() {
-        // operand = 1: reciprocal should be 1.0 in UQ4.14 = 0x4000.
-        let result = recip_q(1);
-        assert_eq!(result.recip, 0x4000, "recip(1) should be 1.0 in UQ4.14");
+    fn recip_q_one_uq115() {
+        // UQ1.15 input: 0x8000 = 1.0. Reciprocal = 1.0 in UQ4.14 = 0x4000.
+        let result = recip_q(0x8000);
+        assert_eq!(
+            result.recip, 0x4000,
+            "recip(1.0 UQ1.15) should be 1.0 in UQ4.14"
+        );
     }
 
     #[test]
-    fn recip_q_two() {
-        // operand = 2: reciprocal should be 0.5 in UQ4.14 = 0x2000.
-        let result = recip_q(2);
-        assert_eq!(result.recip, 0x2000, "recip(2) should be 0.5 in UQ4.14");
+    fn recip_q_half_uq115() {
+        // UQ1.15 input: 0x4000 = 0.5. Reciprocal = 2.0 in UQ4.14 = 0x8000.
+        let result = recip_q(0x4000);
+        assert_eq!(
+            result.recip, 0x8000,
+            "recip(0.5 UQ1.15) should be 2.0 in UQ4.14"
+        );
     }
 
     #[test]
@@ -262,5 +279,15 @@ mod tests {
         let result = recip_q(0);
         assert_eq!(result.recip, 0);
         assert_eq!(result.lod, 0);
+    }
+
+    #[test]
+    fn recip_q_large_w_saturates() {
+        // Very small Q (far object, W >> 16) should saturate to UQ4.14 max.
+        let result = recip_q(1); // Q ≈ 0.0000305, W ≈ 32768
+        assert_eq!(
+            result.recip, 0x3_FFFF,
+            "extreme W should saturate to UQ4.14 max"
+        );
     }
 }

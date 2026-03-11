@@ -101,9 +101,29 @@ def pack_color(diffuse: int, specular: int = 0xFF000000) -> int:
 
 
 # Q field value for affine (non-perspective) texture mapping.
-# The rasterizer's recip_q computes 1/(raw integer Q), so Q=1
-# produces a reciprocal of 1.0 in UQ4.14, passing UVs through unchanged.
-Q_AFFINE = 0x0001
+# Q is encoded as UQ1.15: value = raw / 32768.
+# Q=0x8000 means 1.0, so recip_q produces 1.0 in UQ4.14, passing UVs
+# through unchanged.
+Q_AFFINE = 0x8000
+
+
+def q_perspective(w: float) -> int:
+    """Encode Q = 1/W as UQ1.15 for the VERTEX register Q field.
+
+    UQ1.15: 1 integer bit, 15 fractional bits, 16 bits total.
+    Value = raw / 32768.  Range [0, ~2.0).
+    """
+    q_val = 1.0 / w
+    raw = int(round(q_val * 32768.0))
+    return max(0, min(0xFFFF, raw))
+
+
+def pack_st_perspective(u: float, v: float, w: float) -> int:
+    """Pack ST0_ST1 with perspective-divided texture coordinates.
+
+    Writes S=U/W, T=V/W as Q4.12.  ST1 is zero (TEX1 not used).
+    """
+    return pack_st(u / w, v / w)
 
 
 def pack_vertex(x: int, y: int, z: int, q: int = 0) -> int:
@@ -310,13 +330,16 @@ def emit_fb_clear(color_base_512: int, w_log2: int, h_log2: int,
     return lines
 
 
-def vertex_comment_q4(x_q4: int, y_q4: int, z: int) -> str:
+def vertex_comment_q4(x_q4: int, y_q4: int, z: int, q: int | None = None) -> str:
     """Format VERTEX comment from Q12.4 coords."""
     x_px = x_q4 / 16.0
     y_px = y_q4 / 16.0
     x_str = f"{x_px:g}"
     y_str = f"{y_px:g}"
-    return f"x={x_str} y={y_str} z=0x{z:04X}"
+    base = f"x={x_str} y={y_str} z=0x{z:04X}"
+    if q is not None:
+        return f"{base} q=0x{q:04X}"
+    return base
 
 
 def vertex_comment(x: int, y: int, z: int) -> str:
@@ -327,6 +350,11 @@ def vertex_comment(x: int, y: int, z: int) -> str:
 def st_comment(u: float, v: float) -> str:
     """Format ST0_ST1 comment."""
     return f"s0={u:g} t0={v:g}"
+
+
+def st_persp_comment(u: float, v: float, w: float) -> str:
+    """Format ST0_ST1 comment for perspective-divided coordinates."""
+    return f"s0={u / w:g} t0={v / w:g} (u={u:g} v={v:g} w={w:.3f})"
 
 
 def tiled_word_addr(base_word: int, width_log2: int, x: int, y: int) -> int:

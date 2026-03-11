@@ -16,6 +16,7 @@ from transforms import (
     mat4_identity, mat4_mul, mat4_mul_vec4, mat4_rotate_x, mat4_rotate_y,
     mat4_look_at, mat4_perspective, perspective_divide, viewport_transform,
 )
+# Perspective-correct texturing: use pack_st_perspective, q_perspective from common
 
 ZBUFFER_BASE_512 = 0x0800
 # Place texture after the Z-buffer to avoid overlap.
@@ -131,19 +132,21 @@ def _setup_phase() -> list[str]:
 def _emit_tri(lines, verts, diffuse):
     """Emit one textured triangle as 3 independent vertices (NK, NK, KICK_012).
 
-    verts: [(sx_q4, sy_q4, z16, u, v), ...] — 3 vertices.
+    verts: [(sx_q4, sy_q4, z16, u, v, w), ...] — 3 vertices.
     diffuse: (r, g, b) tuple.
     """
     shade = rgba(diffuse[0], diffuse[1], diffuse[2])
     spec = rgba(0x00, 0x00, 0x00)
 
-    for i, (sx, sy, z16, u, v) in enumerate(verts):
+    for i, (sx, sy, z16, u, v, w) in enumerate(verts):
+        q = q_perspective(w)
         lines.append(emit(ADDR_COLOR, pack_color(shade, spec),
                            color_comment(shade, spec)))
-        lines.append(emit(ADDR_ST0_ST1, pack_st(u, v), st_comment(u, v)))
+        lines.append(emit(ADDR_ST0_ST1, pack_st_perspective(u, v, w),
+                           st_persp_comment(u, v, w)))
         addr = ADDR_VERTEX_KICK_012 if (i == 2) else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex_q4(sx, sy, z16, Q_AFFINE),
-                           vertex_comment_q4(sx, sy, z16)))
+        lines.append(emit(addr, pack_vertex_q4(sx, sy, z16, q),
+                           vertex_comment_q4(sx, sy, z16, q)))
 
 
 def _triangles_phase() -> list[str]:
@@ -169,7 +172,7 @@ def _triangles_phase() -> list[str]:
     vp_w, vp_h = 512.0, 512.0
 
     # --- Transform all 8 cube vertices ---
-    screen_verts = []  # (sx_q4, sy_q4, z16)
+    screen_verts = []  # (sx_q4, sy_q4, z16, w)
     for vx, vy, vz in CUBE_VERTS:
         clip = mat4_mul_vec4(mvp, (vx, vy, vz, 1.0))
         ndc_x, ndc_y, ndc_z, w = perspective_divide(clip)
@@ -181,7 +184,7 @@ def _triangles_phase() -> list[str]:
         z16 = int(round(sz * 65535.0))  # 16-bit unsigned
         z16 = max(0, min(0xFFFF, z16))
 
-        screen_verts.append((sx_q4, sy_q4, z16))
+        screen_verts.append((sx_q4, sy_q4, z16, w))
 
     # --- Emit all faces (no back-face cull; Z-test resolves visibility) ---
     # Each quad is split into two independent triangles (0,1,2) and (0,2,3).
@@ -196,7 +199,7 @@ def _triangles_phase() -> list[str]:
         tri1 = []
         for idx, (u, v) in [(i0, uv[0]), (i1, uv[1]), (i2, uv[2])]:
             sv = screen_verts[idx]
-            tri1.append((sv[0], sv[1], sv[2], u, v))
+            tri1.append((sv[0], sv[1], sv[2], u, v, sv[3]))
         _emit_tri(lines, tri1, color)
         lines.append(emit_blank())
 
@@ -204,7 +207,7 @@ def _triangles_phase() -> list[str]:
         tri2 = []
         for idx, (u, v) in [(i0, uv[0]), (i2, uv[2]), (i3, uv[3])]:
             sv = screen_verts[idx]
-            tri2.append((sv[0], sv[1], sv[2], u, v))
+            tri2.append((sv[0], sv[1], sv[2], u, v, sv[3]))
         _emit_tri(lines, tri2, color)
         lines.append(emit_blank())
 
