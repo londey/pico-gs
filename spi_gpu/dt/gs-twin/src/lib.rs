@@ -210,13 +210,12 @@ impl Gpu {
         let frag =
             pipeline::depth_range::depth_range_clip(frag, zr.z_range_min(), zr.z_range_max())?;
 
-        // Stage 0c: Early Z test
+        // Stage 0c: Early Z test (read-compare only, no write)
         let frag = pipeline::early_z::early_z_test(
             frag,
-            &mut self.memory,
+            &self.memory,
             &fb_cfg,
             rm.z_test_en(),
-            rm.z_write_en(),
             rm.z_compare(),
         )?;
 
@@ -265,10 +264,9 @@ impl Gpu {
 
         let wl2 = fb_cfg.width_log2();
 
-        // Z-test/write is already handled by early_z in the pipeline.
-        // Unconditional Z-write for fragments that survived early_z
-        // when z_write was deferred (z_test disabled but z_write enabled).
-        if !rm.z_test_en() && rm.z_write_en() {
+        // Z-buffer write: deferred from early_z to here so that
+        // alpha-killed fragments do not pollute the Z-buffer.
+        if rm.z_write_en() {
             self.memory
                 .write_tiled(fb_cfg.z_base(), wl2, fx, fy, frag.z);
         }

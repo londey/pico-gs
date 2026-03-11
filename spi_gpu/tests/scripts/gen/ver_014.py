@@ -1,8 +1,10 @@
 """VER-014: Textured Cube Golden Image Test — hex generator.
 
-12-triangle cube (6 faces) with depth testing and white/black checker
-texture.  Vertices are generated from a unit cube via a full
-model/view/projection/viewport transformation pipeline.
+12-triangle cube (6 faces × 2 triangles) with depth testing and
+white/black checker texture.  Each face has a distinct diffuse color.
+All faces are submitted (no back-face culling); the Z-buffer resolves
+visibility.  Each triangle is submitted as 3 independent vertices
+(nokick, nokick, kick_012).
 
 Three phases: zclear, setup, triangles.
 """
@@ -13,7 +15,6 @@ from common import *
 from transforms import (
     mat4_identity, mat4_mul, mat4_mul_vec4, mat4_rotate_x, mat4_rotate_y,
     mat4_look_at, mat4_perspective, perspective_divide, viewport_transform,
-    screen_cross_z,
 )
 
 ZBUFFER_BASE_512 = 0x0800
@@ -40,28 +41,35 @@ CUBE_VERTS = [
     (-1,  1,  1),  # 7: left  top    front
 ]
 
-# 6 faces, each defined as (vertex_indices, uv_coords).
+# 6 faces, each defined as (vertex_indices, uv_coords, diffuse_color).
 # Indices are ordered for CCW front-facing when viewed from outside.
 # UV corners map the checker texture across each face.
+# Colors chosen so visible faces (+Z front, -X left, -Y bottom) are distinct.
 CUBE_FACES = [
     # +Z front face (v4, v5, v6, v7)
     {"name": "+Z (front)",  "quad": (4, 5, 6, 7),
-     "uv": ((0, 0), (1, 0), (1, 1), (0, 1))},
+     "uv": ((0, 0), (1, 0), (1, 1), (0, 1)),
+     "color": (0x00, 0x00, 0xFF)},       # blue
     # -Z back face (v1, v0, v3, v2) — reversed winding viewed from -Z
     {"name": "-Z (back)",   "quad": (1, 0, 3, 2),
-     "uv": ((0, 0), (1, 0), (1, 1), (0, 1))},
+     "uv": ((0, 0), (1, 0), (1, 1), (0, 1)),
+     "color": (0xFF, 0xFF, 0x00)},       # yellow
     # +X right face (v5, v1, v2, v6)
     {"name": "+X (right)",  "quad": (5, 1, 2, 6),
-     "uv": ((0, 0), (1, 0), (1, 1), (0, 1))},
+     "uv": ((0, 0), (1, 0), (1, 1), (0, 1)),
+     "color": (0xFF, 0x00, 0x00)},       # red
     # -X left face (v0, v4, v7, v3)
     {"name": "-X (left)",   "quad": (0, 4, 7, 3),
-     "uv": ((0, 0), (1, 0), (1, 1), (0, 1))},
+     "uv": ((0, 0), (1, 0), (1, 1), (0, 1)),
+     "color": (0x00, 0xFF, 0xFF)},       # cyan
     # +Y top face (v7, v6, v2, v3)
     {"name": "+Y (top)",    "quad": (7, 6, 2, 3),
-     "uv": ((0, 0), (1, 0), (1, 1), (0, 1))},
+     "uv": ((0, 0), (1, 0), (1, 1), (0, 1)),
+     "color": (0x00, 0xFF, 0x00)},       # green
     # -Y bottom face (v0, v1, v5, v4)
     {"name": "-Y (bottom)", "quad": (0, 1, 5, 4),
-     "uv": ((0, 0), (1, 0), (1, 1), (0, 1))},
+     "uv": ((0, 0), (1, 0), (1, 1), (0, 1)),
+     "color": (0xFF, 0x00, 0xFF)},       # magenta
 ]
 
 
@@ -75,11 +83,11 @@ def _zclear_phase() -> list[str]:
     lines.extend(emit_fb_clear(0x0000, 9, 9))
     lines.append(emit_blank())
 
-    # Clear Z-buffer
+    # Clear Z-buffer to 0x0000 (reverse-Z: far plane = 0)
     fill_count = 512 * 512  # 1 << 9 * 1 << 9
     lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(ZBUFFER_BASE_512, 0xFFFF, fill_count),
-                       mem_fill_comment(ZBUFFER_BASE_512, 0xFFFF, fill_count)))
+                       pack_mem_fill(ZBUFFER_BASE_512, 0x0000, fill_count),
+                       mem_fill_comment(ZBUFFER_BASE_512, 0x0000, fill_count)))
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
@@ -107,12 +115,12 @@ def _setup_phase() -> list[str]:
 
     tex_cfg = pack_tex0_cfg(1, 0, 4, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
-                       "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800"))
+                       "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0C00"))
 
     lines.append(emit(ADDR_CC_MODE, CC_MODE_MODULATE,
                        "MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE"))
 
-    mode = GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE_LEQUAL
+    mode = GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE_GEQUAL
     lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
 
     lines.append(emit_blank())
@@ -120,24 +128,20 @@ def _setup_phase() -> list[str]:
     return lines
 
 
-def _emit_tri_screen(lines, verts, kick_addr):
-    """Emit one textured white triangle with screen-space vertex data.
+def _emit_tri(lines, verts, diffuse):
+    """Emit one textured triangle as 3 independent vertices (NK, NK, KICK_012).
 
-    verts: [(screen_x_q4, screen_y_q4, z16, u, v), ...] — 3 vertices.
-    screen_x_q4, screen_y_q4 are in Q12.4 fixed-point.
-    z16 is 16-bit unsigned depth.
-    u, v are texture coordinates as floats (0.0–1.0).
-    kick_addr: ADDR_VERTEX_KICK_012 or ADDR_VERTEX_KICK_021.
+    verts: [(sx_q4, sy_q4, z16, u, v), ...] — 3 vertices.
+    diffuse: (r, g, b) tuple.
     """
-    white = rgba(0xFF, 0xFF, 0xFF)
+    shade = rgba(diffuse[0], diffuse[1], diffuse[2])
     spec = rgba(0x00, 0x00, 0x00)
 
     for i, (sx, sy, z16, u, v) in enumerate(verts):
-        lines.append(emit(ADDR_COLOR, pack_color(white, spec),
-                           color_comment(white, spec)))
+        lines.append(emit(ADDR_COLOR, pack_color(shade, spec),
+                           color_comment(shade, spec)))
         lines.append(emit(ADDR_ST0_ST1, pack_st(u, v), st_comment(u, v)))
-        is_kick = (i == 2)
-        addr = kick_addr if is_kick else ADDR_VERTEX_NOKICK
+        addr = ADDR_VERTEX_KICK_012 if (i == 2) else ADDR_VERTEX_NOKICK
         lines.append(emit(addr, pack_vertex_q4(sx, sy, z16, Q_AFFINE),
                            vertex_comment_q4(sx, sy, z16)))
 
@@ -149,11 +153,11 @@ def _triangles_phase() -> list[str]:
     lines.append(emit_blank())
 
     # --- Build MVP matrix ---
-    # Model: rotate to show front, top, and right faces.
-    model = mat4_mul(mat4_rotate_y(math.radians(30)),
-                     mat4_rotate_x(math.radians(-20)))
+    # Model: gentle rotation to show +Z front, -X left, -Y bottom.
+    model = mat4_mul(mat4_rotate_y(math.radians(25)),
+                     mat4_rotate_x(math.radians(20)))
 
-    # View: camera looking at origin from -Z.
+    # View: camera looking at origin from +Z.
     view = mat4_look_at(eye=(0, 0, 5), center=(0, 0, 0), up=(0, 1, 0))
 
     # Projection: perspective, 45° vertical FOV, square aspect.
@@ -179,46 +183,30 @@ def _triangles_phase() -> list[str]:
 
         screen_verts.append((sx_q4, sy_q4, z16))
 
-    # --- Emit front-facing triangles ---
+    # --- Emit all faces (no back-face cull; Z-test resolves visibility) ---
+    # Each quad is split into two independent triangles (0,1,2) and (0,2,3).
     for face in CUBE_FACES:
         i0, i1, i2, i3 = face["quad"]
         uv = face["uv"]
+        color = face["color"]
 
-        # Split quad into two triangles: (0,1,2) and (0,2,3).
-        tris = [
-            ((i0, uv[0]), (i1, uv[1]), (i2, uv[2])),
-            ((i0, uv[0]), (i2, uv[2]), (i3, uv[3])),
-        ]
+        lines.append(emit_comment(f"Face: {face['name']}"))
 
-        emitted = False
-        for tri in tris:
-            (a_idx, a_uv), (b_idx, b_uv), (c_idx, c_uv) = tri
-            a = screen_verts[a_idx]
-            b = screen_verts[b_idx]
-            c = screen_verts[c_idx]
+        # Triangle 1: (v0, v1, v2)
+        tri1 = []
+        for idx, (u, v) in [(i0, uv[0]), (i1, uv[1]), (i2, uv[2])]:
+            sv = screen_verts[idx]
+            tri1.append((sv[0], sv[1], sv[2], u, v))
+        _emit_tri(lines, tri1, color)
+        lines.append(emit_blank())
 
-            # Back-face cull: positive cross = CCW = front-facing (Y-down).
-            cross = screen_cross_z(
-                (a[0] / 16.0, a[1] / 16.0),
-                (b[0] / 16.0, b[1] / 16.0),
-                (c[0] / 16.0, c[1] / 16.0),
-            )
-            if cross <= 0:
-                continue
-
-            if not emitted:
-                lines.append(emit_comment(f"Face: {face['name']}"))
-                emitted = True
-
-            # Affine texturing (Q_AFFINE=1): UVs are not divided by W.
-            vert_data = []
-            for idx, (u, v) in [(a_idx, a_uv), (b_idx, b_uv), (c_idx, c_uv)]:
-                sv = screen_verts[idx]
-                sx_q4, sy_q4, z16 = sv
-                vert_data.append((sx_q4, sy_q4, z16, u, v))
-
-            _emit_tri_screen(lines, vert_data, ADDR_VERTEX_KICK_012)
-            lines.append(emit_blank())
+        # Triangle 2: (v0, v2, v3)
+        tri2 = []
+        for idx, (u, v) in [(i0, uv[0]), (i2, uv[2]), (i3, uv[3])]:
+            sv = screen_verts[idx]
+            tri2.append((sv[0], sv[1], sv[2], u, v))
+        _emit_tri(lines, tri2, color)
+        lines.append(emit_blank())
 
     lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
@@ -228,8 +216,8 @@ def generate() -> list[str]:
     lines = []
     lines.append(emit_comment("VER-014: Textured Cube Golden Image Test"))
     lines.append(emit_comment(""))
-    lines.append(emit_comment("12-triangle cube with depth testing and checker texture."))
-    lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0xFFFF"))
+    lines.append(emit_comment("12-triangle cube with per-face color, depth testing, checker texture."))
+    lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z far)"))
     lines.append(emit_comment("Phase 'setup': configure texture and render mode"))
     lines.append(emit_comment("Phase 'triangles': submit cube triangles (MVP-transformed)"))
     lines.append(emit_blank())

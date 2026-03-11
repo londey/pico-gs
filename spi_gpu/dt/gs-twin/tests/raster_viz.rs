@@ -260,7 +260,7 @@ fn uv_viz_medium_triangle() {
 #[test]
 fn uv_viz_thin_sliver() {
     let n = rasterize_uv_visualize(
-        vertex_uv(50, 5, 0x0000, 0x0000),  // UV=(0,0)
+        vertex_uv(50, 5, 0x0000, 0x0000),   // UV=(0,0)
         vertex_uv(55, 195, 0x1000, 0x0000), // UV=(1,0)
         vertex_uv(48, 190, 0x0000, 0x1000), // UV=(0,1)
         110,
@@ -273,8 +273,8 @@ fn uv_viz_thin_sliver() {
 #[test]
 fn uv_viz_large_triangle() {
     let n = rasterize_uv_visualize(
-        vertex_uv(10, 10, 0x0000, 0x0000),  // UV=(0,0)
-        vertex_uv(220, 30, 0x1000, 0x0000), // UV=(1,0)
+        vertex_uv(10, 10, 0x0000, 0x0000),   // UV=(0,0)
+        vertex_uv(220, 30, 0x1000, 0x0000),  // UV=(1,0)
         vertex_uv(100, 210, 0x0000, 0x1000), // UV=(0,1)
         240,
         220,

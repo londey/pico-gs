@@ -327,9 +327,11 @@ test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file)
 
 # Copy reciprocal LUT hex files to sim_out (needed by raster_recip_area/q $readmemh)
+# Symlink tests/ so the harness can locate hex scripts via relative paths.
 copy-recip-hex: | $(SIM_OUT_DIR)
 	cp -f $(RTL_DIR)/render/recip_area_init.hex $(SIM_OUT_DIR)/
 	cp -f $(RTL_DIR)/render/recip_q_init.hex $(SIM_OUT_DIR)/
+	ln -sfn $(abspath $(TB_DIR)) $(SIM_OUT_DIR)/tests
 
 # Render targets — always generate output images (parallelizable)
 render-gouraud: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)

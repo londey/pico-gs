@@ -4,8 +4,8 @@
 // Rasterizer Derivative Precomputation (UNIT-005.02 sequential, Option A)
 // ============================================================================
 
-// Spec-ref: unit_005_rasterizer.md `43b4390c9803abd3` 2026-03-07
-// Spec-ref: unit_005.02_derivative_precomputation.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005_rasterizer.md `43b4390c9803abd3` 2026-03-11
+// Spec-ref: unit_005.02_derivative_precomputation.md `e2a848e7ea906f7d` 2026-03-11
 
 // Sequential time-multiplexed derivative computation module.
 // Computes per-attribute dx/dy derivatives for all 14 interpolated attributes

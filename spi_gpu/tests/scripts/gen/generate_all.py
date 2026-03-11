@@ -25,6 +25,7 @@ import ver_012
 import ver_013
 import ver_014
 import ver_015
+import ver_016
 
 
 GENERATORS = [
@@ -34,6 +35,7 @@ GENERATORS = [
     ("ver_013_color_combined.hex", ver_013),
     ("ver_014_textured_cube.hex", ver_014),
     ("ver_015_size_grid.hex", ver_015),
+    ("ver_016_perspective_road.hex", ver_016),
 ]
 
 

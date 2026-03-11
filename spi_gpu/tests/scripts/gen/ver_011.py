@@ -1,8 +1,12 @@
 """VER-011: Depth-Tested Overlapping Triangles — hex generator.
 
 Two overlapping flat-colored triangles at different depths.
-Triangle A (far, red, Z=0x8000) rendered first; Triangle B (near, blue,
-Z=0x4000) rendered second.  A Z-buffer clear pass precedes drawing.
+Triangle A (far, red, Z=0x4000) rendered first; Triangle B (near, blue,
+Z=0x8000) rendered second.  A Z-buffer clear pass precedes drawing.
+
+Uses reverse-Z convention: near = high Z, far = low Z, clear = 0x0000,
+compare = GEQUAL.
+
 Three phases: zclear, tri_a, tri_b.
 """
 
@@ -21,11 +25,11 @@ def _zclear_phase() -> list[str]:
     lines.extend(emit_fb_clear(0x0000, 9, 9))
     lines.append(emit_blank())
 
-    # Clear Z-buffer
+    # Clear Z-buffer to 0x0000 (reverse-Z: far plane = 0)
     fill_count = 512 * 512  # 1 << 9 * 1 << 9
     lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(ZBUFFER_BASE_512, 0xFFFF, fill_count),
-                       mem_fill_comment(ZBUFFER_BASE_512, 0xFFFF, fill_count)))
+                       pack_mem_fill(ZBUFFER_BASE_512, 0x0000, fill_count),
+                       mem_fill_comment(ZBUFFER_BASE_512, 0x0000, fill_count)))
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
@@ -37,12 +41,12 @@ def _zclear_phase() -> list[str]:
 
 
 def _tri_a_phase() -> list[str]:
-    """Triangle A: far, red, Z=0x8000."""
+    """Triangle A: far, red, Z=0x4000."""
     lines = []
     lines.append(emit_phase("tri_a"))
     lines.append(emit_blank())
 
-    mode = GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE_LEQUAL
+    mode = GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE_GEQUAL
     lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
     lines.append(emit_blank())
 
@@ -54,8 +58,8 @@ def _tri_a_phase() -> list[str]:
         lines.append(emit(ADDR_COLOR, pack_color(red, spec),
                            color_comment(red, spec)))
         addr = ADDR_VERTEX_KICK_012 if kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, 0x8000),
-                           vertex_comment(x, y, 0x8000)))
+        lines.append(emit(addr, pack_vertex(x, y, 0x4000),
+                           vertex_comment(x, y, 0x4000)))
 
     lines.append(emit_blank())
     lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
@@ -63,7 +67,7 @@ def _tri_a_phase() -> list[str]:
 
 
 def _tri_b_phase() -> list[str]:
-    """Triangle B: near, blue, Z=0x4000."""
+    """Triangle B: near, blue, Z=0x8000."""
     lines = []
     lines.append(emit_phase("tri_b"))
     lines.append(emit_blank())
@@ -76,8 +80,8 @@ def _tri_b_phase() -> list[str]:
         lines.append(emit(ADDR_COLOR, pack_color(blue, spec),
                            color_comment(blue, spec)))
         addr = ADDR_VERTEX_KICK_012 if kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, 0x4000),
-                           vertex_comment(x, y, 0x4000)))
+        lines.append(emit(addr, pack_vertex(x, y, 0x8000),
+                           vertex_comment(x, y, 0x8000)))
 
     lines.append(emit_blank())
     lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
@@ -88,9 +92,9 @@ def generate() -> list[str]:
     lines = []
     lines.append(emit_comment("VER-011: Depth-Tested Overlapping Triangles"))
     lines.append(emit_comment(""))
-    lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0xFFFF"))
-    lines.append(emit_comment("Phase 'tri_a': red triangle at Z=0x8000 (far)"))
-    lines.append(emit_comment("Phase 'tri_b': blue triangle at Z=0x4000 (near, occludes A)"))
+    lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z)"))
+    lines.append(emit_comment("Phase 'tri_a': red triangle at Z=0x4000 (far)"))
+    lines.append(emit_comment("Phase 'tri_b': blue triangle at Z=0x8000 (near, occludes A)"))
     lines.append(emit_blank())
     lines.append(emit_framebuffer(512, 480))
     lines.append(emit_blank())

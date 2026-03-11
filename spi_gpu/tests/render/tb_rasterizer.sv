@@ -592,10 +592,12 @@ module tb_rasterizer;
         wait(tri_ready == 0);
         tri_valid = 0;
 
-        // Wait for rasterizer to reach INTERPOLATE (DD-025 handshake).
-        // Need enough cycles for setup (SETUP -> SETUP_2 -> SETUP_3 ->
-        // ITER_START -> INIT_E1 -> INIT_E2 -> EDGE_TEST -> INTERPOLATE).
-        repeat(20) @(posedge clk);
+        // Wait for rasterizer to reach first fragment emission.
+        // Pipeline stages: SETUP -> SETUP_2 -> SETUP_3 -> RECIP_WAIT (2 cyc) ->
+        // RECIP_DONE -> FIFO -> ITER_START -> INIT_E1 -> INIT_E2 ->
+        // DERIV_WAIT (8 cyc, raster_deriv sequential) -> EDGE_TEST -> INTERPOLATE.
+        // Total: ~7 (setup) + 3 (edge init) + 8 (deriv) + edge walk = ~20+ cycles.
+        repeat(30) @(posedge clk);
 
         // If frag_valid is asserted and we haven't accepted, pixel_count should be 0
         if (pixel_count == 0 && frag_valid) begin
@@ -1508,6 +1510,281 @@ module tb_rasterizer;
         repeat(20) @(posedge clk);
 
         // ====================================================================
+        // Test 14: Small-triangle derivative precision (VER-001 step 4)
+        // A ~4x4 pixel triangle exercises derivative precision with large
+        // inv_area values.  Small triangles have large 1/area, which can
+        // overflow 32-bit derivative registers if not handled correctly.
+        // Verifies all 14 derivative values are within expected tolerance.
+        // ====================================================================
+        $display("\nTest 14: Small-triangle derivative precision (4x4 pixel triangle)");
+        fb_width_log2  = 4'd9;
+        fb_height_log2 = 4'd9;
+        pixel_count = 0;
+
+        // Triangle: V0=(100,100), V1=(104,100), V2=(102,104) -- ~4x4 pixels
+        // 2*area = |(104-100)*(104-100) - (102-100)*(100-100)| = |4*4 - 2*0| = 16
+        // inv_area = 1/16 => large value in UQ1.17 reciprocal format
+        v0_x = 16'd1600;  // 100 << 4
+        v0_y = 16'd1600;  // 100 << 4
+        v0_z = 16'h1000;
+        v0_color0 = 32'hFF000000;  // R=255, G=0, B=0, A=0
+        v0_color1 = 32'h00FF0000;  // R=0, G=255, B=0, A=0
+        v0_st0 = {16'h0000, 16'h0000};  // S=0.0, T=0.0
+        v0_st1 = {16'h0000, 16'h0000};
+        v0_q = 16'h1000;  // Q = 1.0
+
+        v1_x = 16'd1664;  // 104 << 4
+        v1_y = 16'd1600;  // 100 << 4
+        v1_z = 16'h3000;
+        v1_color0 = 32'h00FF0000;  // R=0, G=255, B=0, A=0
+        v1_color1 = 32'h0000FF00;  // R=0, G=0, B=255, A=0
+        v1_st0 = {16'h1000, 16'h0000};  // S=1.0, T=0.0
+        v1_st1 = {16'h1000, 16'h0000};
+        v1_q = 16'h2000;  // Q = 2.0
+
+        v2_x = 16'd1632;  // 102 << 4
+        v2_y = 16'd1664;  // 104 << 4
+        v2_z = 16'h2000;
+        v2_color0 = 32'h0000FF00;  // R=0, G=0, B=255, A=0
+        v2_color1 = 32'h000000FF;  // R=0, G=0, B=0, A=255
+        v2_st0 = {16'h0000, 16'h1000};  // S=0.0, T=1.0
+        v2_st1 = {16'h0000, 16'h1000};
+        v2_q = 16'h0800;  // Q = 0.5
+
+        frag_ready = 1;
+        submit_triangle_and_wait;
+        $display("  Small-triangle test completed at time %0t, fragments=%0d", $time, pixel_count);
+
+        // Verify fragment count: a 4x4 pixel right triangle should produce
+        // approximately 8 fragments (half of 16 pixels in the bounding box).
+        // Exact count depends on edge function tie-breaking rules.
+        if (pixel_count > 0 && pixel_count <= 16) begin
+            $display("  PASS: Small triangle emitted %0d fragments (expected 1-16)", pixel_count);
+            test_pass_count = test_pass_count + 1;
+        end else begin
+            $display("  FAIL: Small triangle fragment count=%0d (expected 1-16)", pixel_count);
+            test_fail_count = test_fail_count + 1;
+        end
+
+        // Verify derivative registers are within valid range (no overflow)
+        // For a 4x4 triangle with large inv_area, derivatives should be large
+        // but not overflow the 32-bit signed format.
+        begin : small_tri_deriv
+            reg signed [10:0] st_e1A, st_e1B, st_e2A, st_e2B;
+            reg [17:0] st_inv_area;
+            reg [4:0]  st_area_shift;
+            reg signed [31:0] st_ref_c0r_dx, st_ref_c0r_dy;
+            reg signed [31:0] st_ref_c0g_dx, st_ref_c0g_dy;
+            reg signed [31:0] st_ref_c0b_dx, st_ref_c0b_dy;
+            reg signed [31:0] st_ref_z_dx, st_ref_z_dy;
+            reg signed [31:0] st_ref_q_dx, st_ref_q_dy;
+            reg signed [31:0] st_ref_s0_dx, st_ref_s0_dy;
+            reg signed [31:0] st_ref_t0_dx, st_ref_t0_dy;
+            integer st_fail;
+
+            // Edge coefficients: x0=100,y0=100, x1=104,y1=100, x2=102,y2=104
+            st_e1A = $signed(11'd104) - $signed(11'd100);  // y2 - y0 = 4
+            st_e1B = $signed(11'd100) - $signed(11'd102);  // x0 - x2 = -2
+            st_e2A = $signed(11'd100) - $signed(11'd100);  // y0 - y1 = 0
+            st_e2B = $signed(11'd104) - $signed(11'd100);  // x1 - x0 = 4
+
+            // Read the DUT's actual inv_area
+            st_inv_area = dut.inv_area;
+            st_area_shift = dut.area_shift;
+            $display("  DUT inv_area (UQ1.17) = 0x%05x (%0d), area_shift = %0d",
+                     st_inv_area, st_inv_area, st_area_shift);
+
+            st_fail = 0;
+
+            // Color0 R: f0=255, f1=0, f2=0
+            st_ref_c0r_dx = ref_deriv_8bit(8'd255, 8'd0, 8'd0, st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_c0r_dy = ref_deriv_8bit(8'd255, 8'd0, 8'd0, st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("  Small-tri derivative verification (DUT vs reference):");
+            $display("    c0r_dx: DUT=%0d, ref=%0d", dut.u_attr_accum.c0r_dx, st_ref_c0r_dx);
+            if (dut.u_attr_accum.c0r_dx == st_ref_c0r_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: c0r_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    c0r_dy: DUT=%0d, ref=%0d", dut.u_attr_accum.c0r_dy, st_ref_c0r_dy);
+            if (dut.u_attr_accum.c0r_dy == st_ref_c0r_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: c0r_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            // Color0 G: f0=0, f1=255, f2=0
+            st_ref_c0g_dx = ref_deriv_8bit(8'd0, 8'd255, 8'd0, st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_c0g_dy = ref_deriv_8bit(8'd0, 8'd255, 8'd0, st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("    c0g_dx: DUT=%0d, ref=%0d", dut.u_attr_accum.c0g_dx, st_ref_c0g_dx);
+            if (dut.u_attr_accum.c0g_dx == st_ref_c0g_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: c0g_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    c0g_dy: DUT=%0d, ref=%0d", dut.u_attr_accum.c0g_dy, st_ref_c0g_dy);
+            if (dut.u_attr_accum.c0g_dy == st_ref_c0g_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: c0g_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            // Color0 B: f0=0, f1=0, f2=255
+            st_ref_c0b_dx = ref_deriv_8bit(8'd0, 8'd0, 8'd255, st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_c0b_dy = ref_deriv_8bit(8'd0, 8'd0, 8'd255, st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("    c0b_dx: DUT=%0d, ref=%0d", dut.u_attr_accum.c0b_dx, st_ref_c0b_dx);
+            if (dut.u_attr_accum.c0b_dx == st_ref_c0b_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: c0b_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    c0b_dy: DUT=%0d, ref=%0d", dut.u_attr_accum.c0b_dy, st_ref_c0b_dy);
+            if (dut.u_attr_accum.c0b_dy == st_ref_c0b_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: c0b_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            // Z: z0=0x1000, z1=0x3000, z2=0x2000
+            st_ref_z_dx = ref_deriv_16bit(
+                $signed({1'b0, 16'h3000}) - $signed({1'b0, 16'h1000}),
+                $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
+                st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_z_dy = ref_deriv_16bit(
+                $signed({1'b0, 16'h3000}) - $signed({1'b0, 16'h1000}),
+                $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
+                st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("    z_dx:   DUT=%0d, ref=%0d", dut.u_attr_accum.z_dx, st_ref_z_dx);
+            if (dut.u_attr_accum.z_dx == st_ref_z_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: z_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    z_dy:   DUT=%0d, ref=%0d", dut.u_attr_accum.z_dy, st_ref_z_dy);
+            if (dut.u_attr_accum.z_dy == st_ref_z_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: z_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            // Q: q0=0x1000, q1=0x2000, q2=0x0800
+            st_ref_q_dx = ref_deriv_16bit(
+                $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
+                $signed({1'b0, 16'h0800}) - $signed({1'b0, 16'h1000}),
+                st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_q_dy = ref_deriv_16bit(
+                $signed({1'b0, 16'h2000}) - $signed({1'b0, 16'h1000}),
+                $signed({1'b0, 16'h0800}) - $signed({1'b0, 16'h1000}),
+                st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("    q_dx:   DUT=%0d, ref=%0d", dut.u_attr_accum.q_dx, st_ref_q_dx);
+            if (dut.u_attr_accum.q_dx == st_ref_q_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: q_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    q_dy:   DUT=%0d, ref=%0d", dut.u_attr_accum.q_dy, st_ref_q_dy);
+            if (dut.u_attr_accum.q_dy == st_ref_q_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: q_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            // ST0 S: s0=0x0000, s1=0x1000, s2=0x0000
+            st_ref_s0_dx = ref_deriv_16bit(
+                {1'b0, 16'h1000} - {1'b0, 16'h0000},
+                {1'b0, 16'h0000} - {1'b0, 16'h0000},
+                st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_s0_dy = ref_deriv_16bit(
+                {1'b0, 16'h1000} - {1'b0, 16'h0000},
+                {1'b0, 16'h0000} - {1'b0, 16'h0000},
+                st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("    s0_dx:  DUT=%0d, ref=%0d", dut.u_attr_accum.s0_dx, st_ref_s0_dx);
+            if (dut.u_attr_accum.s0_dx == st_ref_s0_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: s0_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    s0_dy:  DUT=%0d, ref=%0d", dut.u_attr_accum.s0_dy, st_ref_s0_dy);
+            if (dut.u_attr_accum.s0_dy == st_ref_s0_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: s0_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            // ST0 T: t0=0x0000, t1=0x0000, t2=0x1000
+            st_ref_t0_dx = ref_deriv_16bit(
+                {1'b0, 16'h0000} - {1'b0, 16'h0000},
+                {1'b0, 16'h1000} - {1'b0, 16'h0000},
+                st_e1A, st_e2A, st_inv_area, st_area_shift);
+            st_ref_t0_dy = ref_deriv_16bit(
+                {1'b0, 16'h0000} - {1'b0, 16'h0000},
+                {1'b0, 16'h1000} - {1'b0, 16'h0000},
+                st_e1B, st_e2B, st_inv_area, st_area_shift);
+
+            $display("    t0_dx:  DUT=%0d, ref=%0d", dut.u_attr_accum.t0_dx, st_ref_t0_dx);
+            if (dut.u_attr_accum.t0_dx == st_ref_t0_dx) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: t0_dx mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            $display("    t0_dy:  DUT=%0d, ref=%0d", dut.u_attr_accum.t0_dy, st_ref_t0_dy);
+            if (dut.u_attr_accum.t0_dy == st_ref_t0_dy) begin
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("    FAIL: t0_dy mismatch");
+                test_fail_count = test_fail_count + 1;
+                st_fail = 1;
+            end
+
+            if (st_fail == 0) begin
+                $display("  PASS: All small-triangle derivative registers match reference model");
+            end else begin
+                $display("  FAIL: One or more small-triangle derivative registers differ from reference");
+            end
+        end
+
+        repeat(20) @(posedge clk);
+
+        // ====================================================================
         // Summary
         // ====================================================================
         $display("\n=== Rasterizer Test Summary ===");
@@ -1527,7 +1804,7 @@ module tb_rasterizer;
 
     // Timeout watchdog
     initial begin
-        #80000000;  // 80ms timeout (increased for FIFO overlap and perspective tests)
+        #100000000;  // 100ms timeout (increased for derivative sequencing and small-triangle tests)
         $display("\nERROR: Timeout - simulation ran too long");
         $finish;
     end

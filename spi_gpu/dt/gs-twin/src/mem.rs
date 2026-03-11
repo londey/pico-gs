@@ -271,9 +271,11 @@ impl GpuMemory {
     /// Save a tiled Z-buffer region as a grayscale PNG with auto-ranging.
     ///
     /// Finds the min/max Z values among written pixels (excluding the
-    /// clear value 0xFFFF) and maps that range to 0–255.
-    /// Unwritten pixels (0xFFFF) render as black (0).
-    /// Near (low Z) appears bright, far (high Z) appears dim.
+    /// clear value 0x0000) and maps that range to 0–255.
+    /// With reverse-Z convention (near = high Z, far = low Z, clear = 0):
+    ///   - Near objects appear **white** (high Z → 255).
+    ///   - Far objects appear **dark** (low Z → dim).
+    ///   - Background (cleared to 0) appears **black**.
     ///
     /// # Arguments
     ///
@@ -297,32 +299,29 @@ impl GpuMemory {
         // First pass: find min/max Z among written pixels.
         let mut z_min: u16 = u16::MAX;
         let mut z_max: u16 = 0;
-        for y in 0..height {
-            for x in 0..width {
-                let z16 = self.read_tiled(z_base_reg, width_log2, x, y);
-                if z16 != 0xFFFF {
-                    z_min = z_min.min(z16);
-                    z_max = z_max.max(z16);
-                }
+        let pixels = (0..height).flat_map(|y| (0..width).map(move |x| (x, y)));
+        for (x, y) in pixels {
+            let z16 = self.read_tiled(z_base_reg, width_log2, x, y);
+            if z16 != 0 {
+                z_min = z_min.min(z16);
+                z_max = z_max.max(z16);
             }
         }
 
         let range = if z_max > z_min { z_max - z_min } else { 1 };
 
         // Second pass: render with auto-ranging.
-        // Near (low Z) = bright (255), far (high Z) = dim, unwritten = black.
+        // Reverse-Z: high Z = near = white, low Z = far = dark, 0 = black.
         let mut img = image::GrayImage::new(width, height);
-        for y in 0..height {
-            for x in 0..width {
-                let z16 = self.read_tiled(z_base_reg, width_log2, x, y);
-                let gray = if z16 == 0xFFFF {
-                    0u8
-                } else {
-                    let normalized = ((z16 - z_min) as u32 * 255 / range as u32) as u8;
-                    255 - normalized
-                };
-                img.put_pixel(x, y, image::Luma([gray]));
-            }
+        let pixels = (0..height).flat_map(|y| (0..width).map(move |x| (x, y)));
+        for (x, y) in pixels {
+            let z16 = self.read_tiled(z_base_reg, width_log2, x, y);
+            let gray = if z16 == 0 {
+                0u8
+            } else {
+                ((z16 - z_min) as u32 * 255 / range as u32) as u8
+            };
+            img.put_pixel(x, y, image::Luma([gray]));
         }
         img.save(path)
     }

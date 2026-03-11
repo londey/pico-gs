@@ -269,15 +269,19 @@ impl RegisterFile {
             }
 
             ADDR_VERTEX_KICK_012 => {
+                // Assemble BEFORE latch: RTL reads current (old) slot values,
+                // latch goes into next_vertex (visible next cycle).
+                let tri = self.assemble_kick(data, WindingOrder::V012);
                 self.latch_vertex(data);
                 self.vertex_count = (self.vertex_count + 1) % 3;
-                GpuAction::KickTriangle(self.assemble_triangle(WindingOrder::V012))
+                GpuAction::KickTriangle(tri)
             }
 
             ADDR_VERTEX_KICK_021 => {
+                let tri = self.assemble_kick(data, WindingOrder::V021);
                 self.latch_vertex(data);
                 self.vertex_count = (self.vertex_count + 1) % 3;
-                GpuAction::KickTriangle(self.assemble_triangle(WindingOrder::V021))
+                GpuAction::KickTriangle(tri)
             }
 
             ADDR_TEX0_CFG => {
@@ -374,20 +378,24 @@ impl RegisterFile {
         slot.st0_st1 = self.st0_st1;
     }
 
-    /// Assemble a `RasterTriangle` from the current vertex buffer state.
+    /// Assemble a `RasterTriangle` from vertex slots and incoming kick data.
     ///
-    /// Resolves the winding order into concrete vertex slot selection,
-    /// computes scissor-clamped bounding box, and packs per-vertex
-    /// attributes into `RasterVertex` values ready for `triangle_setup()`.
-    fn assemble_triangle(&self, winding: WindingOrder) -> RasterTriangle {
-        let kick_idx = if self.vertex_count == 0 {
-            2
-        } else {
-            self.vertex_count - 1
+    /// Matches RTL register_file.sv: KICK_012 outputs (slot[0], slot[1],
+    /// cmd_wdata) and KICK_021 outputs (slot[0], cmd_wdata, slot[1]).
+    /// The incoming `data` is used directly as the kicked vertex (matching
+    /// RTL's use of cmd_wdata), while slots 0 and 1 are read from the
+    /// pre-latch buffer state.
+    fn assemble_kick(&self, data: u64, winding: WindingOrder) -> RasterTriangle {
+        // Build the kicked vertex from incoming data + current color/ST latches
+        // (matching RTL which reads current_color0 and current_st01 directly).
+        let kick_slot = VertexSlot {
+            vertex: reg_from_raw(data),
+            color: self.color,
+            st0_st1: self.st0_st1,
         };
         let tri_slots = match winding {
-            WindingOrder::V012 => [self.vertices[0], self.vertices[1], self.vertices[kick_idx]],
-            WindingOrder::V021 => [self.vertices[0], self.vertices[kick_idx], self.vertices[1]],
+            WindingOrder::V012 => [self.vertices[0], self.vertices[1], kick_slot],
+            WindingOrder::V021 => [self.vertices[0], kick_slot, self.vertices[1]],
         };
 
         let fb_width = 1u32 << self.fb_config.width_log2();
@@ -475,9 +483,9 @@ impl RegisterFile {
 
 /// Winding order for vertex kick.
 pub enum WindingOrder {
-    /// (slot[0], slot[1], just-latched) — standard CCW.
+    /// (slot[0], slot[1], incoming) — standard winding.
     V012,
-    /// (slot[0], just-latched, slot[1]) — reversed for back-facing triangles.
+    /// (slot[0], incoming, slot[1]) — reversed winding.
     V021,
 }
 

@@ -276,9 +276,12 @@ pub fn triangle_setup(tri: &RasterTriangle) -> Option<TriangleSetup> {
         let scaled_dx = d10_inv * edge1_a + d20_inv * edge2_a;
         let scaled_dy = d10_inv * edge1_b + d20_inv * edge2_b;
 
-        // Step 3: arithmetic right shift by area_shift, truncate to 32-bit
-        dx_derivs[i] = (scaled_dx >> area_shift) as i32;
-        dy_derivs[i] = (scaled_dy >> area_shift) as i32;
+        // Step 3: arithmetic right shift by area_shift, truncate to 32-bit.
+        // The reciprocal is computed from |area|, so for CW triangles
+        // (area < 0) we must negate to get the correct signed 1/area.
+        let sign = if ccw { 1i32 } else { -1 };
+        dx_derivs[i] = ((scaled_dx >> area_shift) as i32).wrapping_mul(sign);
+        dy_derivs[i] = ((scaled_dy >> area_shift) as i32).wrapping_mul(sign);
     }
 
     // Force color derivatives to zero when Gouraud is disabled

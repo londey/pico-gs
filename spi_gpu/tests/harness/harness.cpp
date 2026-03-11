@@ -42,17 +42,13 @@
 // Register-write command script entry
 // ---------------------------------------------------------------------------
 
-// Use HexRegWrite from hex_parser.hpp as the register-write type.
-using RegWrite = HexRegWrite;
-
-// ---------------------------------------------------------------------------
-// Command scripts (one per golden image test)
-// ---------------------------------------------------------------------------
-
 // Hex file parser for shared test scripts (.hex format).
 // Test scripts are loaded from spi_gpu/tests/scripts/ver_NNN_*.hex files
 // which are shared between this Verilator harness and the digital twin.
 #include "hex_parser.hpp"
+
+// Use HexRegWrite from hex_parser.hpp as the register-write type.
+using RegWrite = HexRegWrite;
 
 // ---------------------------------------------------------------------------
 // Texture generators

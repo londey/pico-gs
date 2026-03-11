@@ -24,6 +24,26 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
   All warnings are treated as errors; no pragma suppressions are permitted per the project SystemVerilog style rules.
 - **Configuration:** Invoked via `cd spi_gpu && make lint`.
 
+## Design Decisions
+
+### Reverse-Z Depth Convention
+
+All depth-tested rendering uses the **reverse-Z** convention:
+
+| Property | Value |
+|----------|-------|
+| Near plane Z | 1.0 (0xFFFF in 16-bit unsigned) |
+| Far plane Z | 0.0 (0x0000) |
+| Z-buffer clear value | 0x0000 |
+| Z compare function | GEQUAL |
+
+**Rationale:** With a 16-bit unsigned Z-buffer, reverse-Z produces an intuitive greyscale visualization: near objects appear white (high Z) and far objects appear black (low Z).
+The cleared background (0x0000) naturally renders as black.
+With floating-point Z-buffers, reverse-Z also improves precision distribution, though this benefit does not apply to integer formats.
+
+**Convention summary:** The perspective projection matrix maps `near → 1` and `far → 0`.
+Nearer fragments have *higher* Z values and pass the GEQUAL test against farther (lower Z) fragments or the cleared background (0).
+
 ## Test Approaches
 
 ### Unit Testbenches

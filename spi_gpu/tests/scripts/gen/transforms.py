@@ -132,26 +132,27 @@ def mat4_look_at(eye: Vec3, center: Vec3, up: Vec3) -> Mat4:
 
 def mat4_perspective(fov_y: float, aspect: float,
                      near: float, far: float) -> Mat4:
-    """Right-handed perspective projection matrix.
+    """Right-handed reverse-Z perspective projection matrix.
 
-    Maps Z from [near, far] to [0, 1] (suitable for the GPU's unsigned
-    Z-buffer) following the "reverse depth" convention where near maps to 1
-    and far maps to 0, matching the GPU's default Z-compare LEQUAL with
-    Z-buffer cleared to 0xFFFF.
+    Maps Z from [near, far] to [1, 0] (reverse-Z convention):
+      - Near plane → NDC Z = 1 → Z-buffer 0xFFFF (white)
+      - Far plane  → NDC Z = 0 → Z-buffer 0x0000 (black)
 
-    Actually, for this GPU the Z-buffer is cleared to 0xFFFF and
-    Z_COMPARE_LEQUAL is used, so nearer fragments have *smaller* Z.
-    We use a standard forward-Z mapping: near→0, far→0xFFFF.
+    Z-buffer is cleared to 0x0000 and Z_COMPARE_GEQUAL is used,
+    so nearer fragments (higher Z) pass the test against farther
+    fragments (lower Z) or the cleared background.
     """
     f = 1.0 / math.tan(fov_y / 2.0)
-    # Standard right-handed perspective, NDC Z in [0, 1]
-    # near plane → 0, far plane → 1
+    # Reverse-Z: near → 1, far → 0
+    # Derived from standard RH [0,1] by substituting z' = 1 - z:
+    #   m22 = near / (far - near)
+    #   m23 = (near * far) / (far - near)
     m = [0.0] * 16
     _set(m, 0, 0, f / aspect)
     _set(m, 1, 1, f)
-    _set(m, 2, 2, far / (near - far))
+    _set(m, 2, 2, near / (far - near))
     _set(m, 3, 2, -1.0)
-    _set(m, 2, 3, (near * far) / (near - far))
+    _set(m, 2, 3, (near * far) / (far - near))
     return m
 
 
