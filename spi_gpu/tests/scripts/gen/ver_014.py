@@ -17,8 +17,12 @@ from transforms import (
 )
 
 ZBUFFER_BASE_512 = 0x0800
-TEX0_BASE_ADDR_512 = 0x0800
-TEX0_BASE_WORD = 0x80000
+# Place texture after the Z-buffer to avoid overlap.
+# Color FB: 0x0000..0x03FF (512x512 = 256K words)
+# Z-buffer: 0x0800..0x0BFF (512x512 = 256K words)
+# Texture:  0x0C00 onwards
+TEX0_BASE_ADDR_512 = 0x0C00
+TEX0_BASE_WORD = 0x0C00 * 256
 
 # ---------------------------------------------------------------------------
 # Unit cube definition (model space)

@@ -6,7 +6,7 @@
 # Phase 'triangles': submit cube triangles (MVP-transformed)
 
 ## FRAMEBUFFER: 512 512
-## TEXTURE: checker_wb base=0x80000 format=RGB565 width_log2=4
+## TEXTURE: checker_wb base=0xC0000 format=RGB565 width_log2=4
 
 ## PHASE: zclear
 
@@ -19,8 +19,8 @@
 
 ## PHASE: setup
 
-# Upload 16x16 white/black checker texture at word 0x80000
-70 0000_0000_0002_0000  # MEM_ADDR: dword_addr=0x20000
+# Upload 16x16 white/black checker texture at word 0xC0000
+70 0000_0000_0003_0000  # MEM_ADDR: dword_addr=0x30000
 71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[0]
 71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[1]
 71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[2]
@@ -88,7 +88,7 @@
 
 40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
 43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
-10 0000_0800_0000_4441  # TEX0_CFG: ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800
+10 0000_0C00_0000_4441  # TEX0_CFG: ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800
 18 7670_7670_7371_7371  # CC_MODE: MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE
 30 0000_0000_0000_201D  # RENDER_MODE: GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE=LEQUAL
 
