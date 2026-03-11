@@ -18,6 +18,10 @@ def generate() -> list[str]:
     lines.append(emit_phase("main"))
     lines.append(emit_blank())
 
+    # Clear framebuffer
+    lines.extend(emit_fb_clear(0x0000, 9, 9))
+    lines.append(emit_blank())
+
     # Framebuffer config
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 9, 9),
                        "color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9"))
@@ -25,6 +29,10 @@ def generate() -> list[str]:
     # Scissor
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 480),
                        "scissor x=0 y=0 w=512 h=480"))
+
+    # Color combiner: shade0 pass-through
+    lines.append(emit(ADDR_CC_MODE, CC_MODE_SHADE_PASSTHROUGH,
+                       "SHADE_PASSTHROUGH: cycle0=SHADE0*ONE cycle1=COMBINED*ONE"))
 
     # Render mode
     mode = GOURAUD_EN | COLOR_WRITE_EN

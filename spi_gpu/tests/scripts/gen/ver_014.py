@@ -17,6 +17,11 @@ def _zclear_phase() -> list[str]:
     lines.append(emit_phase("zclear"))
     lines.append(emit_blank())
 
+    # Clear color buffer
+    lines.extend(emit_fb_clear(0x0000, 9, 9))
+    lines.append(emit_blank())
+
+    # Clear Z-buffer
     fill_count = 512 * 512  # 1 << 9 * 1 << 9
     lines.append(emit(ADDR_MEM_FILL,
                        pack_mem_fill(ZBUFFER_BASE_512, 0xFFFF, fill_count),
@@ -35,6 +40,12 @@ def _setup_phase() -> list[str]:
     lines.append(emit_phase("setup"))
     lines.append(emit_blank())
 
+    # Upload 16x16 white/black checker texture
+    lines.extend(emit_checker_texture(TEX0_BASE_WORD, 4,
+                                       RGB565_WHITE, RGB565_BLACK,
+                                       "white/black checker"))
+    lines.append(emit_blank())
+
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
@@ -43,6 +54,9 @@ def _setup_phase() -> list[str]:
     tex_cfg = pack_tex0_cfg(1, 0, 4, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
                        "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800"))
+
+    lines.append(emit(ADDR_CC_MODE, CC_MODE_MODULATE,
+                       "MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE"))
 
     mode = GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE_LEQUAL
     lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
@@ -67,7 +81,8 @@ def _emit_tri(lines, verts, kick_addr):
         lines.append(emit(ADDR_ST0_ST1, pack_st(u, v), st_comment(u, v)))
         is_kick = (i == 2)
         addr = kick_addr if is_kick else ADDR_VERTEX_NOKICK
-        lines.append(emit(addr, pack_vertex(x, y, z), vertex_comment(x, y, z)))
+        lines.append(emit(addr, pack_vertex(x, y, z, Q_AFFINE),
+                           vertex_comment(x, y, z)))
 
 
 def _triangles_phase() -> list[str]:

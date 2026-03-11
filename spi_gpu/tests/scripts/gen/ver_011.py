@@ -17,6 +17,11 @@ def _zclear_phase() -> list[str]:
     lines.append(emit_phase("zclear"))
     lines.append(emit_blank())
 
+    # Clear color buffer
+    lines.extend(emit_fb_clear(0x0000, 9, 9))
+    lines.append(emit_blank())
+
+    # Clear Z-buffer
     fill_count = 512 * 512  # 1 << 9 * 1 << 9
     lines.append(emit(ADDR_MEM_FILL,
                        pack_mem_fill(ZBUFFER_BASE_512, 0xFFFF, fill_count),
@@ -26,6 +31,8 @@ def _zclear_phase() -> list[str]:
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 480),
                        "scissor x=0 y=0 w=512 h=480"))
+    lines.append(emit(ADDR_CC_MODE, CC_MODE_SHADE_PASSTHROUGH,
+                       "SHADE_PASSTHROUGH: cycle0=SHADE0*ONE cycle1=COMBINED*ONE"))
     return lines
 
 

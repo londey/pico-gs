@@ -25,6 +25,8 @@ ADDR_RENDER_MODE = 0x30
 ADDR_FB_CONFIG = 0x40
 ADDR_FB_CONTROL = 0x43
 ADDR_MEM_FILL = 0x44
+ADDR_MEM_ADDR = 0x70
+ADDR_MEM_DATA = 0x71
 
 # Human-readable register names for comments
 REG_NAMES = {
@@ -39,6 +41,8 @@ REG_NAMES = {
     0x40: "FB_CONFIG",
     0x43: "FB_CONTROL",
     0x44: "MEM_FILL",
+    0x70: "MEM_ADDR",
+    0x71: "MEM_DATA",
 }
 
 # ---------------------------------------------------------------------------
@@ -62,6 +66,27 @@ Z_COMPARE_NEVER = 7 << 13
 
 
 # ---------------------------------------------------------------------------
+# CC_MODE presets
+#
+# Equation: (A - B) * C + D, independent RGB and alpha.
+# Per-cycle layout (32-bit):
+#   [3:0]=A  [7:4]=B  [11:8]=C  [15:12]=D  (RGB)
+#   [19:16]=A  [23:20]=B  [27:24]=C  [31:28]=D  (Alpha)
+# Full register: [63:32]=cycle1  [31:0]=cycle0
+# ---------------------------------------------------------------------------
+
+# SHADE_PASSTHROUGH: output = SHADE0 (vertex color)
+#   Cycle 0: A=SHADE0(3), B=ZERO(7), C=ONE(6), D=ZERO(7)
+#   Cycle 1: A=COMBINED(0), B=ZERO(7), C=ONE(6), D=ZERO(7)
+CC_MODE_SHADE_PASSTHROUGH = 0x7670_7670_7673_7673
+
+# MODULATE: output = TEX0 * SHADE0
+#   Cycle 0: A=TEX0(1), B=ZERO(7), C=SHADE0(3), D=ZERO(7)
+#   Cycle 1: A=COMBINED(0), B=ZERO(7), C=ONE(6), D=ZERO(7)
+CC_MODE_MODULATE = 0x7670_7670_7371_7371
+
+
+# ---------------------------------------------------------------------------
 # Data packing helpers
 # ---------------------------------------------------------------------------
 
@@ -75,25 +100,33 @@ def pack_color(diffuse: int, specular: int = 0xFF000000) -> int:
     return ((diffuse & 0xFFFFFFFF) << 32) | (specular & 0xFFFFFFFF)
 
 
-def pack_vertex(x: int, y: int, z: int) -> int:
+# Q field value for affine (non-perspective) texture mapping.
+# The rasterizer's recip_q computes 1/(raw integer Q), so Q=1
+# produces a reciprocal of 1.0 in UQ4.14, passing UVs through unchanged.
+Q_AFFINE = 0x0001
+
+
+def pack_vertex(x: int, y: int, z: int, q: int = 0) -> int:
     """Pack VERTEX register from integer pixel coordinates.
 
     X, Y are converted to Q12.4 (multiply by 16).
-    Z is 16-bit unsigned.  Q (1/W) is set to 0.
+    Z is 16-bit unsigned.
+    Q is UQ1.15 (1/W); use Q_AFFINE for textured triangles without
+    perspective correction.
     """
     x_q4 = (x * 16) & 0xFFFF
     y_q4 = (y * 16) & 0xFFFF
     z = z & 0xFFFF
-    q = 0
+    q = q & 0xFFFF
     return (q << 48) | (z << 32) | (y_q4 << 16) | x_q4
 
 
-def pack_vertex_q4(x_q4: int, y_q4: int, z: int) -> int:
+def pack_vertex_q4(x_q4: int, y_q4: int, z: int, q: int = 0) -> int:
     """Pack VERTEX register from Q12.4 fixed-point coordinates directly."""
     x_q4 = x_q4 & 0xFFFF
     y_q4 = y_q4 & 0xFFFF
     z = z & 0xFFFF
-    q = 0
+    q = q & 0xFFFF
     return (q << 48) | (z << 32) | (y_q4 << 16) | x_q4
 
 
@@ -139,15 +172,14 @@ def pack_fb_control(x: int, y: int, width: int, height: int) -> int:
 def pack_st(u0: float, v0: float) -> int:
     """Pack ST0_ST1 register.  ST1 is zero (TEX1 not used).
 
-    Q1.15 encoding: value * 32768.
+    Q4.12 encoding: value * 4096.  Range +/-8.0.
     """
-    def to_q1_15(val: float) -> int:
-        fixed = int(val * 32768.0)
-        # Match C++ int16_t cast: wrap and mask to unsigned 16-bit
+    def to_q4_12(val: float) -> int:
+        fixed = int(val * 4096.0)
         return fixed & 0xFFFF
 
-    u_packed = to_q1_15(u0)
-    v_packed = to_q1_15(v0)
+    u_packed = to_q4_12(u0)
+    v_packed = to_q4_12(v0)
     return (v_packed << 16) | u_packed
 
 
@@ -262,6 +294,22 @@ def mem_fill_comment(base: int, value: int, count: int) -> str:
     return f"base=0x{base:04X} value=0x{value:04X} count={count}"
 
 
+def emit_fb_clear(color_base_512: int, w_log2: int, h_log2: int,
+                  value: int = 0x0000) -> List[str]:
+    """Emit MEM_FILL to clear the color framebuffer.
+
+    Clears (1 << w_log2) * (1 << h_log2) words at the given base.
+    """
+    count = (1 << w_log2) * (1 << h_log2)
+    lines = []
+    lines.append(emit_comment(f"Clear color buffer: base=0x{color_base_512:04X}"
+                               f" value=0x{value:04X} count={count}"))
+    lines.append(emit(ADDR_MEM_FILL,
+                       pack_mem_fill(color_base_512, value, count),
+                       mem_fill_comment(color_base_512, value, count)))
+    return lines
+
+
 def vertex_comment_q4(x_q4: int, y_q4: int, z: int) -> str:
     """Format VERTEX comment from Q12.4 coords."""
     x_px = x_q4 / 16.0
@@ -279,6 +327,69 @@ def vertex_comment(x: int, y: int, z: int) -> str:
 def st_comment(u: float, v: float) -> str:
     """Format ST0_ST1 comment."""
     return f"s0={u:g} t0={v:g}"
+
+
+def tiled_word_addr(base_word: int, width_log2: int, x: int, y: int) -> int:
+    """Compute SDRAM word address for (x, y) in a 4x4 block-tiled surface.
+
+    Mirrors the DT's mem::tiled_word_addr function (INT-011).
+    """
+    block_x = x >> 2
+    block_y = y >> 2
+    local_x = x & 3
+    local_y = y & 3
+    block_idx = (block_y << (width_log2 - 2)) | block_x
+    return base_word + block_idx * 16 + local_y * 4 + local_x
+
+
+def emit_checker_texture(base_word: int, width_log2: int,
+                         color_a: int, color_b: int,
+                         label: str = "checker") -> List[str]:
+    """Emit MEM_ADDR + MEM_DATA writes to upload a checker texture.
+
+    Generates a per-texel checkerboard in 4x4 block-tiled layout.
+    Uses MEM_DATA (64-bit, 4 words per write) with auto-increment.
+
+    base_word: SDRAM word address of texture (e.g. 0x80000).
+    width_log2: log2 of texture dimension (square, e.g. 4 for 16x16).
+    color_a: RGB565 color for even texels (x+y even).
+    color_b: RGB565 color for odd texels (x+y odd).
+    """
+    size = 1 << width_log2
+    total_words = size * size
+    total_dwords = total_words // 4
+
+    # Build flat word array in tiled order.
+    words = [0] * total_words
+    for y in range(size):
+        for x in range(size):
+            addr = tiled_word_addr(0, width_log2, x, y)
+            color = color_a if (x + y) % 2 == 0 else color_b
+            words[addr] = color
+
+    # Set MEM_ADDR to the dword address of the texture base.
+    dword_addr = base_word // 4
+    lines = []
+    lines.append(emit_comment(f"Upload {size}x{size} {label} texture at word 0x{base_word:05X}"))
+    lines.append(emit(ADDR_MEM_ADDR, dword_addr,
+                       f"dword_addr=0x{dword_addr:05X}"))
+
+    # Write 64-bit dwords (4 words each), auto-incrementing.
+    for i in range(total_dwords):
+        w0 = words[i * 4 + 0]
+        w1 = words[i * 4 + 1]
+        w2 = words[i * 4 + 2]
+        w3 = words[i * 4 + 3]
+        data = w0 | (w1 << 16) | (w2 << 32) | (w3 << 48)
+        lines.append(emit(ADDR_MEM_DATA, data, f"dwords[{i}]"))
+
+    return lines
+
+
+# RGB565 color constants for checker textures
+RGB565_WHITE = 0xFFFF
+RGB565_BLACK = 0x0000
+RGB565_MID_GRAY = 0x7BEF  # (15,31,15) ≈ 50% gray
 
 
 def write_hex_file(path: str, lines: List[str]) -> None:

@@ -70,7 +70,6 @@ use pipeline::rasterize;
 use pipeline::tex_sample::TextureSampler;
 use qfixed::Q;
 use reg::GpuAction;
-use reg_ext::reg_to_raw;
 
 /// Top-level GPU model.
 ///
@@ -230,14 +229,14 @@ impl Gpu {
         );
 
         // Stage 4-5: Color combiner (two-stage (A-B)*C+D)
-        let cc_raw = reg_to_raw(self.regs.cc_mode());
+        let cc_mode = self.regs.cc_mode();
         let cc = self.regs.const_color();
         let const0 =
             ColorQ412::from_unorm8(cc.const0_r(), cc.const0_g(), cc.const0_b(), cc.const0_a());
         let const1 =
             ColorQ412::from_unorm8(cc.const1_r(), cc.const1_g(), cc.const1_b(), cc.const1_a());
-        let frag = pipeline::color_combine::color_combine_0(frag, cc_raw, const0);
-        let frag = pipeline::color_combine::color_combine_1(frag, cc_raw, const1);
+        let frag = pipeline::color_combine::color_combine_0(frag, cc_mode, const0, const1);
+        let frag = pipeline::color_combine::color_combine_1(frag, cc_mode, const0, const1);
 
         // Stage 6: Alpha test
         // Note: existing stub takes ZCompareE; should use AlphaTestE

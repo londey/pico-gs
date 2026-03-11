@@ -245,9 +245,16 @@ mod tests {
 
     #[test]
     fn recip_q_basic() {
-        // operand = 0x1000 (Q4.12 value of 1.0 when top 16 bits)
-        let result = recip_q(0x1000);
-        assert!(result.recip > 0);
+        // operand = 1: reciprocal should be 1.0 in UQ4.14 = 0x4000.
+        let result = recip_q(1);
+        assert_eq!(result.recip, 0x4000, "recip(1) should be 1.0 in UQ4.14");
+    }
+
+    #[test]
+    fn recip_q_two() {
+        // operand = 2: reciprocal should be 0.5 in UQ4.14 = 0x2000.
+        let result = recip_q(2);
+        assert_eq!(result.recip, 0x2000, "recip(2) should be 0.5 in UQ4.14");
     }
 
     #[test]

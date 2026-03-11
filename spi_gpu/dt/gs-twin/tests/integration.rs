@@ -145,7 +145,6 @@ fn ver_012_textured_triangle() {
 
     let script = hex_parser::parse_hex_str(VER_012_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
-    // TODO: upload checker texture to GPU memory based on script.textures
     gpu.reg_write_script(&script.all_commands());
 
     gpu.framebuffer_to_png(&png_path).unwrap();
@@ -165,7 +164,6 @@ fn ver_013_color_combined() {
 
     let script = hex_parser::parse_hex_str(VER_013_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
-    // TODO: upload mid-gray checker texture, configure CC_MODE
     gpu.reg_write_script(&script.all_commands());
 
     gpu.framebuffer_to_png(&png_path).unwrap();
@@ -185,7 +183,6 @@ fn ver_014_textured_cube() {
 
     let script = hex_parser::parse_hex_str(VER_014_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
-    // TODO: upload checker texture to GPU memory based on script.textures
     for phase in &script.phases {
         gpu.reg_write_script(&phase.commands);
     }

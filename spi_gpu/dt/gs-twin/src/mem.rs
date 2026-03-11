@@ -5,7 +5,7 @@
 //! PNG export) go through the same address space using 4x4 block-tiled
 //! addressing as defined in INT-011.
 
-use crate::math::{Rgb565, TexCoord};
+use crate::math::Rgb565;
 use gpu_registers::components::z_compare_e::ZCompareE;
 use std::path::Path;
 
@@ -50,12 +50,6 @@ pub struct GpuMemory {
     /// All framebuffer, Z-buffer, and texture data lives here.
     /// Addressed via 4x4 block-tiled layout (INT-011).
     pub sdram: Vec<u16>,
-
-    /// Vertex / index SRAM (64 KiB).
-    pub vertex_sram: Vec<u8>,
-
-    /// Texture slot storage.
-    pub textures: TextureStore,
 }
 
 impl Default for GpuMemory {
@@ -68,13 +62,23 @@ impl GpuMemory {
     /// Total SDRAM size in 16-bit words (32 MiB / 2).
     const SDRAM_WORDS: usize = 32 * 1024 * 1024 / 2;
 
-    /// Create GPU memory with zeroed 32 MiB SDRAM.
+    /// Create GPU memory with pseudo-random SDRAM contents.
+    ///
+    /// Real SDRAM powers up with indeterminate contents.
+    /// Using a deterministic PRNG ensures reproducible results while
+    /// catching any code that reads uninitialized memory.
     pub fn new() -> Self {
-        Self {
-            sdram: vec![0u16; Self::SDRAM_WORDS],
-            vertex_sram: vec![0u8; 64 * 1024],
-            textures: TextureStore::default(),
+        let mut sdram = vec![0u16; Self::SDRAM_WORDS];
+        // Simple xorshift32 PRNG — deterministic, fast, good enough
+        // for filling uninitialized memory with non-zero garbage.
+        let mut state: u32 = 0xDEAD_BEEF;
+        for word in &mut sdram {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            *word = state as u16;
         }
+        Self { sdram }
     }
 
     /// Fill a contiguous SDRAM region with a 16-bit constant (MEM_FILL).
@@ -292,68 +296,4 @@ pub fn load_raw_rgb565(path: &Path, width: u32, height: u32) -> std::io::Result<
         .chunks_exact(2)
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect())
-}
-
-// ── Texture store ───────────────────────────────────────────────────────────
-
-/// Simple texture slot storage. Mirrors the RTL's texture SRAM region.
-#[derive(Default)]
-pub struct TextureStore {
-    /// Up to 16 texture slots (indexed by texture unit).
-    pub slots: [Option<Texture>; 16],
-}
-
-/// A single texture in GPU memory.
-pub struct Texture {
-    /// Texture width in texels.
-    pub width: u16,
-
-    /// Texture height in texels.
-    pub height: u16,
-
-    /// RGB565 texel data, row-major.
-    pub data: Vec<u16>,
-}
-
-impl TextureStore {
-    /// Sample a texture with nearest-neighbor filtering.
-    ///
-    /// # Arguments
-    ///
-    /// * `slot` - Texture slot index (0..15).
-    /// * `u` - Horizontal texture coordinate (Q2.14).
-    /// * `v` - Vertical texture coordinate (Q2.14).
-    ///
-    /// # Returns
-    ///
-    /// Sampled RGB565 texel color, or white if no texture is bound.
-    ///
-    /// # Numeric Behavior
-    ///
-    /// - Input UVs: Q2.14, wrapping to [0, 1) by masking off the integer bits
-    /// - Texel address: `floor(u_frac * width)`, `floor(v_frac * height)`
-    /// - No filtering (nearest-neighbor only, matching RTL)
-    ///
-    /// # RTL Implementation Notes
-    ///
-    /// UV wrapping is a bitmask on the 14 fractional bits. The texel
-    /// address computation is a multiply of the fractional UV by the
-    /// texture dimension (power-of-two only in v1.0, so this becomes
-    /// a shift). Non-power-of-two textures require a full multiply.
-    pub fn sample_nearest(&self, slot: u8, u: TexCoord, v: TexCoord) -> Rgb565 {
-        let Some(tex) = &self.slots[slot as usize] else {
-            return Rgb565(0xFFFF); // white if no texture bound
-        };
-
-        // Wrap to [0, 1): mask off integer bits, keep 14 fractional bits
-        let u_frac = (u.to_bits() as i16) & 0x3FFF; // 14-bit fractional part
-        let v_frac = (v.to_bits() as i16) & 0x3FFF;
-
-        // Texel address: (frac * dimension) >> 14
-        // This is a Q0.14 * u16 multiply, yielding the integer texel index.
-        let tx = ((u_frac as u32 * tex.width as u32) >> 14) as u16 % tex.width;
-        let ty = ((v_frac as u32 * tex.height as u32) >> 14) as u16 % tex.height;
-
-        Rgb565(tex.data[(ty as usize) * (tex.width as usize) + (tx as usize)])
-    }
 }

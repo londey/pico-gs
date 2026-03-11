@@ -9,10 +9,7 @@ from common import *
 TEX0_BASE_ADDR_512 = 0x0800
 TEX0_BASE_WORD = 0x80000
 
-# MODULATE CC_MODE:
-#   Cycle 0: A=TEX0(1), B=ZERO(7), C=SHADE0(3), D=ZERO(7)
-#   Cycle 1: A=COMBINED(0), B=ZERO(7), C=ONE(6), D=ZERO(7) (pass-through)
-CC_MODE_MODULATE = 0x7670767073717371
+# CC_MODE_MODULATE imported from common.py
 
 
 def generate() -> list[str]:
@@ -23,8 +20,17 @@ def generate() -> list[str]:
     lines.append(emit_comment("16x16 white/mid-gray checker; red/green/blue vertex colors."))
     lines.append(emit_blank())
     lines.append(emit_framebuffer(512, 512))
-    lines.append(emit_texture("checker_wg", f"{TEX0_BASE_WORD:05X}", "RGB565", 4))
     lines.append(emit_phase("main"))
+    lines.append(emit_blank())
+
+    # Clear framebuffer
+    lines.extend(emit_fb_clear(0x0000, 9, 9))
+    lines.append(emit_blank())
+
+    # Upload 16x16 white/mid-gray checker texture
+    lines.extend(emit_checker_texture(TEX0_BASE_WORD, 4,
+                                       RGB565_WHITE, RGB565_MID_GRAY,
+                                       "white/gray checker"))
     lines.append(emit_blank())
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 9, 9),
@@ -49,7 +55,7 @@ def generate() -> list[str]:
     red = rgba(0xFF, 0x00, 0x00)
     lines.append(emit(ADDR_COLOR, pack_color(red, spec), color_comment(red, spec)))
     lines.append(emit(ADDR_ST0_ST1, pack_st(0.5, 0.0), st_comment(0.5, 0.0)))
-    lines.append(emit(ADDR_VERTEX_NOKICK, pack_vertex(320, 60, 0x0000),
+    lines.append(emit(ADDR_VERTEX_NOKICK, pack_vertex(320, 60, 0x0000, Q_AFFINE),
                        vertex_comment(320, 60, 0x0000)))
     lines.append(emit_blank())
 
@@ -57,7 +63,7 @@ def generate() -> list[str]:
     blue = rgba(0x00, 0x00, 0xFF)
     lines.append(emit(ADDR_COLOR, pack_color(blue, spec), color_comment(blue, spec)))
     lines.append(emit(ADDR_ST0_ST1, pack_st(1.0, 1.0), st_comment(1.0, 1.0)))
-    lines.append(emit(ADDR_VERTEX_NOKICK, pack_vertex(511, 380, 0x0000),
+    lines.append(emit(ADDR_VERTEX_NOKICK, pack_vertex(511, 380, 0x0000, Q_AFFINE),
                        vertex_comment(511, 380, 0x0000)))
     lines.append(emit_blank())
 
@@ -65,7 +71,7 @@ def generate() -> list[str]:
     green = rgba(0x00, 0xFF, 0x00)
     lines.append(emit(ADDR_COLOR, pack_color(green, spec), color_comment(green, spec)))
     lines.append(emit(ADDR_ST0_ST1, pack_st(0.0, 1.0), st_comment(0.0, 1.0)))
-    lines.append(emit(ADDR_VERTEX_KICK_012, pack_vertex(100, 380, 0x0000),
+    lines.append(emit(ADDR_VERTEX_KICK_012, pack_vertex(100, 380, 0x0000, Q_AFFINE),
                        vertex_comment(100, 380, 0x0000)))
     lines.append(emit_blank())
 
