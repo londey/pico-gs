@@ -121,6 +121,20 @@ pub fn compare_framebuffers(a: &[u16], b: &[u16], width: u32, height: u32) -> Di
     }
 }
 
+/// Overwrite `path` with a 32x32 magenta placeholder PNG.
+///
+/// Used before simulation runs so that VS Code keeps the image tab open.
+/// If the simulation panics before writing the real output, the magenta
+/// placeholder makes the failure immediately obvious.
+///
+/// # Errors
+///
+/// Returns `image::ImageError` if the PNG cannot be written.
+pub fn write_placeholder_png(path: &Path) -> Result<(), image::ImageError> {
+    let img = image::RgbImage::from_pixel(32, 32, image::Rgb([255, 0, 255]));
+    img.save(path)
+}
+
 /// Save a visual diff image highlighting pixel differences.
 ///
 /// Magenta channel = difference magnitude, scaled x4 for visibility.
