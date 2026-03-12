@@ -619,7 +619,7 @@ module gpu_regs (
         } FB_CONTROL;
         struct {
             struct {
-                logic [15:0] next;
+                logic [23:0] next;
                 logic load_next;
             } FILL_BASE;
             struct {
@@ -631,7 +631,7 @@ module gpu_regs (
                 logic load_next;
             } FILL_COUNT;
             struct {
-                logic [11:0] next;
+                logic [3:0] next;
                 logic load_next;
             } RSVD;
         } MEM_FILL;
@@ -1038,7 +1038,7 @@ module gpu_regs (
         } FB_CONTROL;
         struct {
             struct {
-                logic [15:0] value;
+                logic [23:0] value;
             } FILL_BASE;
             struct {
                 logic [15:0] value;
@@ -1047,7 +1047,7 @@ module gpu_regs (
                 logic [19:0] value;
             } FILL_COUNT;
             struct {
-                logic [11:0] value;
+                logic [3:0] value;
             } RSVD;
         } MEM_FILL;
         struct {
@@ -3675,12 +3675,12 @@ module gpu_regs (
     assign hwif_out.FB_CONTROL.RSVD_HI.value = field_storage.FB_CONTROL.RSVD_HI.value;
     // Field: gpu_regs.MEM_FILL.FILL_BASE
     always_comb begin
-        automatic logic [15:0] next_c;
+        automatic logic [23:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.MEM_FILL.FILL_BASE.value;
         load_next_c = '0;
         if(decoded_reg_strb.MEM_FILL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.MEM_FILL.FILL_BASE.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
+            next_c = (field_storage.MEM_FILL.FILL_BASE.value & ~decoded_wr_biten[23:0]) | (decoded_wr_data[23:0] & decoded_wr_biten[23:0]);
             load_next_c = '1;
         end
         field_combo.MEM_FILL.FILL_BASE.next = next_c;
@@ -3688,7 +3688,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.MEM_FILL.FILL_BASE.value <= 16'h0;
+            field_storage.MEM_FILL.FILL_BASE.value <= 24'h0;
         end else begin
             if(field_combo.MEM_FILL.FILL_BASE.load_next) begin
                 field_storage.MEM_FILL.FILL_BASE.value <= field_combo.MEM_FILL.FILL_BASE.next;
@@ -3703,7 +3703,7 @@ module gpu_regs (
         next_c = field_storage.MEM_FILL.FILL_VALUE.value;
         load_next_c = '0;
         if(decoded_reg_strb.MEM_FILL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.MEM_FILL.FILL_VALUE.value & ~decoded_wr_biten[31:16]) | (decoded_wr_data[31:16] & decoded_wr_biten[31:16]);
+            next_c = (field_storage.MEM_FILL.FILL_VALUE.value & ~decoded_wr_biten[39:24]) | (decoded_wr_data[39:24] & decoded_wr_biten[39:24]);
             load_next_c = '1;
         end
         field_combo.MEM_FILL.FILL_VALUE.next = next_c;
@@ -3726,7 +3726,7 @@ module gpu_regs (
         next_c = field_storage.MEM_FILL.FILL_COUNT.value;
         load_next_c = '0;
         if(decoded_reg_strb.MEM_FILL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.MEM_FILL.FILL_COUNT.value & ~decoded_wr_biten[51:32]) | (decoded_wr_data[51:32] & decoded_wr_biten[51:32]);
+            next_c = (field_storage.MEM_FILL.FILL_COUNT.value & ~decoded_wr_biten[59:40]) | (decoded_wr_data[59:40] & decoded_wr_biten[59:40]);
             load_next_c = '1;
         end
         field_combo.MEM_FILL.FILL_COUNT.next = next_c;
@@ -3744,12 +3744,12 @@ module gpu_regs (
     assign hwif_out.MEM_FILL.FILL_COUNT.value = field_storage.MEM_FILL.FILL_COUNT.value;
     // Field: gpu_regs.MEM_FILL.RSVD
     always_comb begin
-        automatic logic [11:0] next_c;
+        automatic logic [3:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.MEM_FILL.RSVD.value;
         load_next_c = '0;
         if(decoded_reg_strb.MEM_FILL && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.MEM_FILL.RSVD.value & ~decoded_wr_biten[63:52]) | (decoded_wr_data[63:52] & decoded_wr_biten[63:52]);
+            next_c = (field_storage.MEM_FILL.RSVD.value & ~decoded_wr_biten[63:60]) | (decoded_wr_data[63:60] & decoded_wr_biten[63:60]);
             load_next_c = '1;
         end
         field_combo.MEM_FILL.RSVD.next = next_c;
@@ -3757,7 +3757,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.MEM_FILL.RSVD.value <= 12'h0;
+            field_storage.MEM_FILL.RSVD.value <= 4'h0;
         end else begin
             if(field_combo.MEM_FILL.RSVD.load_next) begin
                 field_storage.MEM_FILL.RSVD.value <= field_combo.MEM_FILL.RSVD.next;
@@ -4014,10 +4014,10 @@ module gpu_regs (
     assign readback_array[15][29:20] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_WIDTH.value : '0;
     assign readback_array[15][39:30] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_HEIGHT.value : '0;
     assign readback_array[15][63:40] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_HI.value : '0;
-    assign readback_array[16][15:0] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_BASE.value : '0;
-    assign readback_array[16][31:16] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_VALUE.value : '0;
-    assign readback_array[16][51:32] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_COUNT.value : '0;
-    assign readback_array[16][63:52] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.RSVD.value : '0;
+    assign readback_array[16][23:0] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_BASE.value : '0;
+    assign readback_array[16][39:24] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_VALUE.value : '0;
+    assign readback_array[16][59:40] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_COUNT.value : '0;
+    assign readback_array[16][63:60] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.RSVD.value : '0;
     assign readback_array[17][22:0] = (decoded_reg_strb.PERF_TIMESTAMP && !decoded_req_is_wr) ? field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value : '0;
     assign readback_array[17][63:23] = (decoded_reg_strb.PERF_TIMESTAMP && !decoded_req_is_wr) ? field_storage.PERF_TIMESTAMP.RSVD.value : '0;
     assign readback_array[18][21:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;

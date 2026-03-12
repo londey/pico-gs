@@ -485,7 +485,7 @@ package gpu_regs_pkg;
     } gpu_regs__fb_control_reg__out_t;
 
     typedef struct {
-        logic [15:0] value;
+        logic [23:0] value;
     } gpu_regs__mem_fill_reg__FILL_BASE__out_t;
 
     typedef struct {
@@ -497,7 +497,7 @@ package gpu_regs_pkg;
     } gpu_regs__mem_fill_reg__FILL_COUNT__out_t;
 
     typedef struct {
-        logic [11:0] value;
+        logic [3:0] value;
     } gpu_regs__mem_fill_reg__RSVD__out_t;
 
     typedef struct {

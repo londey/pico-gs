@@ -105,8 +105,8 @@ pub enum GpuAction {
 
     /// Hardware memory fill (REQ-005.08).
     MemFill {
-        /// Fill-base register field (byte address = `base << 9`).
-        base: u16,
+        /// Fill-base word address (byte address = `base * 2`).
+        base: u32,
         /// 16-bit fill value.
         value: u16,
         /// Number of 16-bit words to fill.

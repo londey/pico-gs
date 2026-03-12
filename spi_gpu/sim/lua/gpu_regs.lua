@@ -457,13 +457,13 @@ end
 
 --- Write the MEM_FILL register (index 0x44).
 --- Triggers a hardware memory fill. Blocks the GPU pipeline until complete.
---- @param fill_base integer Target address in 512-byte units (16-bit)
+--- @param fill_base integer Target word address (byte_addr = fill_base * 2), 24-bit
 --- @param fill_value integer 16-bit constant value (RGB565 or Z16)
 --- @param fill_count integer Number of 16-bit words to fill (20-bit, up to 1048576)
 function gpu.set_mem_fill(fill_base, fill_value, fill_count)
-    local data = mask(fill_base, 16)
-               | (mask(fill_value, 16) << 16)
-               | (mask(fill_count, 20) << 32)
+    local data = mask(fill_base, 24)
+               | (mask(fill_value, 16) << 24)
+               | (mask(fill_count, 20) << 40)
     gpu.write_reg(0x44, data)
 end
 
@@ -479,8 +479,8 @@ gpu.set_fb_control(0, 0, 320, 240)  -- scissor to 320x240
 gpu.set_z_range(0x0000, 0xFFFF)     -- full depth range
 
 -- 2. Clear color buffer (black) and Z-buffer (far plane)
-gpu.set_mem_fill(0, 0x0000, 320*240)       -- clear color to black
-gpu.set_mem_fill(0x0800, 0xFFFF, 320*240)  -- clear Z to far
+gpu.set_mem_fill(0, 0x0000, 320*240)             -- clear color to black
+gpu.set_mem_fill(0x0800*256, 0xFFFF, 320*240)    -- clear Z to far (word addr)
 
 -- 3. Set render mode: Gouraud + Z test + Z write + color write
 gpu.set_render_mode({

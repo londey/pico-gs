@@ -1,95 +1,65 @@
 # VER-016: Perspective Road Z-Test
 # 
-# Two-triangle road stretching into the distance.
+# Four-triangle road (2 quads) stretching into the distance.
 # Tests Z interpolation and perspective depth gradient.
+# 64x64 checker texture with 16x16 squares, bilinear filtered.
+# Road split into 2 strips to keep V within Q4.12 range (max 4.0).
 # Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z far)
 # Phase 'setup': configure texture and render mode
-# Phase 'triangles': submit road quad (MVP-transformed)
+# Phase 'triangles': submit road strips (MVP-transformed)
 
 ## FRAMEBUFFER: 512 512
-## TEXTURE: checker_wb base=0xC0000 format=RGB565 width_log2=4
+## TEXTURE: checker_wb base=0xC0000 format=RGB565 width_log2=6
 
 ## PHASE: zclear
 
-# Clear color buffer: base=0x0000 value=0x0000 count=262144
-44 0004_0000_0000_0000  # MEM_FILL: base=0x0000 value=0x0000 count=262144
+# Clear color buffer: base_word=0x000000 value=0x0000 count=262144
+44 0400_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=262144
 
-44 0004_0000_0000_0800  # MEM_FILL: base=0x0800 value=0x0000 count=262144
+44 0400_0000_0008_0000  # MEM_FILL: base_word=0x080000 value=0x0000 count=262144
 40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
 43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
 
 ## PHASE: setup
 
-# Upload 16x16 white/black checker texture at word 0xC0000
-70 0000_0000_0003_0000  # MEM_ADDR: dword_addr=0x30000
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[0]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[1]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[2]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[3]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[4]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[5]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[6]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[7]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[8]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[9]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[10]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[11]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[12]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[13]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[14]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[15]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[16]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[17]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[18]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[19]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[20]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[21]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[22]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[23]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[24]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[25]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[26]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[27]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[28]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[29]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[30]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[31]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[32]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[33]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[34]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[35]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[36]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[37]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[38]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[39]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[40]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[41]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[42]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[43]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[44]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[45]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[46]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[47]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[48]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[49]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[50]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[51]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[52]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[53]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[54]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[55]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[56]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[57]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[58]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[59]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[60]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[61]
-71 0000_FFFF_0000_FFFF  # MEM_DATA: dwords[62]
-71 FFFF_0000_FFFF_0000  # MEM_DATA: dwords[63]
+# Upload 64x64 white/black checker (16x16 squares) texture at word 0xC0000
+44 0010_00FF_FF0C_0000  # MEM_FILL: Fill 64x64 with 0xFFFF
+44 0000_4000_000C_0040  # MEM_FILL: row 0 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_00C0  # MEM_FILL: row 0 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0140  # MEM_FILL: row 1 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_01C0  # MEM_FILL: row 1 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0240  # MEM_FILL: row 2 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_02C0  # MEM_FILL: row 2 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0340  # MEM_FILL: row 3 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_03C0  # MEM_FILL: row 3 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0400  # MEM_FILL: row 4 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0480  # MEM_FILL: row 4 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0500  # MEM_FILL: row 5 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0580  # MEM_FILL: row 5 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0600  # MEM_FILL: row 6 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0680  # MEM_FILL: row 6 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0700  # MEM_FILL: row 7 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0780  # MEM_FILL: row 7 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0840  # MEM_FILL: row 8 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_08C0  # MEM_FILL: row 8 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0940  # MEM_FILL: row 9 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_09C0  # MEM_FILL: row 9 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0A40  # MEM_FILL: row 10 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_0AC0  # MEM_FILL: row 10 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0B40  # MEM_FILL: row 11 bx 4..7 (4 blk, 64 words)
+44 0000_4000_000C_0BC0  # MEM_FILL: row 11 bx 12..15 (4 blk, 64 words)
+44 0000_4000_000C_0C00  # MEM_FILL: row 12 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0C80  # MEM_FILL: row 12 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0D00  # MEM_FILL: row 13 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0D80  # MEM_FILL: row 13 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0E00  # MEM_FILL: row 14 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0E80  # MEM_FILL: row 14 bx 8..11 (4 blk, 64 words)
+44 0000_4000_000C_0F00  # MEM_FILL: row 15 bx 0..3 (4 blk, 64 words)
+44 0000_4000_000C_0F80  # MEM_FILL: row 15 bx 8..11 (4 blk, 64 words)
 
 40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
 43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
-10 0000_0C00_0000_4441  # TEX0_CFG: ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0C00
+10 0000_0C00_0000_6645  # TEX0_CFG: ENABLE=1 BILINEAR RGB565 64x64 REPEAT base=0x0C00
 18 7670_7670_7371_7371  # CC_MODE: MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE
 30 0000_0000_0000_601D  # RENDER_MODE: GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE=GEQUAL
 
@@ -97,7 +67,7 @@
 
 ## PHASE: triangles
 
-# Road triangle 1 (near-left, near-right, far-right)
+# Strip 0 tri 1 (near-left, near-right, far-right)
 00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
 01 0000_0000_0000_0000  # ST0_ST1: s0=0 t0=0 (u=0 v=0 w=4.369)
 06 1D4D_389B_1F6E_0350  # VERTEX_NOKICK: x=53 y=502.875 z=0x389B q=0x1D4D
@@ -105,18 +75,40 @@
 01 0000_0000_0000_0753  # ST0_ST1: s0=0.457806 t0=0 (u=2 v=0 w=4.369)
 06 1D4D_389B_1F6E_1CB0  # VERTEX_NOKICK: x=459 y=502.875 z=0x389B q=0x1D4D
 00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
-01 0000_0000_0277_009D  # ST0_ST1: s0=0.0385145 t0=0.154058 (u=2 v=8 w=51.929)
-07 0277_0265_0DD6_1111  # VERTEX_KICK_012: x=273.062 y=221.375 z=0x0265 q=0x0277
+01 0000_0000_0123_0123  # ST0_ST1: s0=0.0710515 t0=0.0710515 (u=2 v=2 w=28.149)
+07 048C_069A_0F34_11F8  # VERTEX_KICK_012: x=287.5 y=243.25 z=0x069A q=0x048C
 
-# Road triangle 2 (near-left, far-right, far-left)
+# Strip 0 tri 2 (near-left, far-right, far-left)
 00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
 01 0000_0000_0000_0000  # ST0_ST1: s0=0 t0=0 (u=0 v=0 w=4.369)
 06 1D4D_389B_1F6E_0350  # VERTEX_NOKICK: x=53 y=502.875 z=0x389B q=0x1D4D
 00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
-01 0000_0000_0277_009D  # ST0_ST1: s0=0.0385145 t0=0.154058 (u=2 v=8 w=51.929)
+01 0000_0000_0123_0123  # ST0_ST1: s0=0.0710515 t0=0.0710515 (u=2 v=2 w=28.149)
+06 048C_069A_0F34_11F8  # VERTEX_NOKICK: x=287.5 y=243.25 z=0x069A q=0x048C
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0123_0000  # ST0_ST1: s0=0 t0=0.0710515 (u=0 v=2 w=28.149)
+07 048C_069A_0F34_0E08  # VERTEX_KICK_012: x=224.5 y=243.25 z=0x069A q=0x048C
+
+# Strip 1 tri 1 (near-left, near-right, far-right)
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0123_0000  # ST0_ST1: s0=0 t0=0.0710515 (u=0 v=2 w=28.149)
+06 048C_069A_0F34_0E08  # VERTEX_NOKICK: x=224.5 y=243.25 z=0x069A q=0x048C
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0123_0123  # ST0_ST1: s0=0.0710515 t0=0.0710515 (u=2 v=2 w=28.149)
+06 048C_069A_0F34_11F8  # VERTEX_NOKICK: x=287.5 y=243.25 z=0x069A q=0x048C
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_013B_009D  # ST0_ST1: s0=0.0385145 t0=0.077029 (u=2 v=4 w=51.929)
+07 0277_0265_0DD6_1111  # VERTEX_KICK_012: x=273.062 y=221.375 z=0x0265 q=0x0277
+
+# Strip 1 tri 2 (near-left, far-right, far-left)
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0123_0000  # ST0_ST1: s0=0 t0=0.0710515 (u=0 v=2 w=28.149)
+06 048C_069A_0F34_0E08  # VERTEX_NOKICK: x=224.5 y=243.25 z=0x069A q=0x048C
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_013B_009D  # ST0_ST1: s0=0.0385145 t0=0.077029 (u=2 v=4 w=51.929)
 06 0277_0265_0DD6_1111  # VERTEX_NOKICK: x=273.062 y=221.375 z=0x0265 q=0x0277
 00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
-01 0000_0000_0277_0000  # ST0_ST1: s0=0 t0=0.154058 (u=0 v=8 w=51.929)
+01 0000_0000_013B_0000  # ST0_ST1: s0=0 t0=0.077029 (u=0 v=4 w=51.929)
 07 0277_0265_0DD6_0EEF  # VERTEX_KICK_012: x=238.938 y=221.375 z=0x0265 q=0x0277
 
 00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)

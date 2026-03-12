@@ -139,7 +139,7 @@ impl Gpu {
                 self.execute_kick(&tri);
             }
             GpuAction::MemFill { base, value, count } => {
-                let byte_addr = (base as usize) << 9;
+                let byte_addr = (base as usize) * 2;
                 self.memory.fill(byte_addr, value, count);
             }
             GpuAction::Tex0Config(cfg) => {

@@ -1,9 +1,12 @@
 """VER-016: Perspective Road Z-Test — hex generator.
 
-Two textured triangles forming a road that stretches from the bottom of the
-screen into the distance.  Uses the full MVP pipeline so depth varies
-smoothly from near (bottom) to far (top).  Checker texture shows perspective
-foreshortening (affine — no per-pixel perspective correction).
+Four textured triangles (two quads) forming a road that stretches from the
+bottom of the screen into the distance.  Uses the full MVP pipeline so depth
+varies smoothly from near (bottom) to far (top).  64x64 checker texture with
+16x16 squares shows perspective foreshortening and bilinear filtering.
+
+The road is split into two strips to keep V coordinates within Q4.12 range
+(max 4.0 instead of 8.0 which would overflow).
 
 Three phases: zclear, setup, triangles.
 """
@@ -21,32 +24,82 @@ ZBUFFER_BASE_512 = 0x0800
 TEX0_BASE_ADDR_512 = 0x0C00
 TEX0_BASE_WORD = 0x0C00 * 256
 
+TEX_LOG2 = 6          # 64x64 texture
+SQUARE_SIZE = 16      # 16x16 texel checker squares
+
 # ---------------------------------------------------------------------------
-# Road quad in world space
+# Road geometry in world space
 # ---------------------------------------------------------------------------
-# A flat quad on the XZ plane (Y=0), stretching from z_near to z_far.
+# A flat road on the XZ plane (Y=0), stretching from z_near to z_far.
+# Split into NUM_STRIPS quads to keep V coordinates within Q4.12 range.
 ROAD_WIDTH = 2.0
 ROAD_NEAR = 2.0    # near edge (close to camera)
 ROAD_FAR = 50.0    # far edge (vanishing point)
 
-# 4 vertices: near-left, near-right, far-right, far-left
-ROAD_VERTS = [
-    (-ROAD_WIDTH, 0, -ROAD_NEAR),   # 0: near-left
-    ( ROAD_WIDTH, 0, -ROAD_NEAR),   # 1: near-right
-    ( ROAD_WIDTH, 0, -ROAD_FAR),    # 2: far-right
-    (-ROAD_WIDTH, 0, -ROAD_FAR),    # 3: far-left
-]
+NUM_STRIPS = 2     # 2 quads = 4 triangles
 
-# UV: tile the checker texture multiple times along the road length.
+# UV: tile the checker texture along the road.
 UV_REPEATS_U = 2.0    # across the road
-UV_REPEATS_V = 8.0    # along the road (Q4.12 max ~7.999; 16.0 overflows)
+UV_REPEATS_V = 4.0    # along the road (max V per vertex; fits Q4.12 signed)
 
-ROAD_UVS = [
-    (0.0,           0.0),            # 0: near-left
-    (UV_REPEATS_U,  0.0),            # 1: near-right
-    (UV_REPEATS_U,  UV_REPEATS_V),   # 2: far-right
-    (0.0,           UV_REPEATS_V),   # 3: far-left
-]
+
+def _emit_block_checker_texture(base_word: int, width_log2: int,
+                                square_size: int,
+                                color_a: int, color_b: int,
+                                label: str) -> list[str]:
+    """Emit a checker texture where each square is block-aligned.
+
+    Uses MEM_FILL to paint the entire texture with color_a, then
+    overwrites color_b runs with additional MEM_FILL commands.
+    Each checker square must be a multiple of 4 (block size).
+
+    base_word: SDRAM word address for the texture.
+    width_log2: log2 of texture dimension (square texture).
+    square_size: side length of each checker square in texels (must be >= 4).
+    color_a: RGB565 fill color (majority / base).
+    color_b: RGB565 overwrite color.
+    """
+    size = 1 << width_log2
+    blocks_per_row = size >> 2
+    blocks_per_square = square_size >> 2
+    total_words = size * size
+
+    lines = []
+    lines.append(emit_comment(
+        f"Upload {size}x{size} {label} texture at word 0x{base_word:05X}"))
+
+    # Step 1: MEM_FILL entire texture with color_a.
+    lines.append(emit(ADDR_MEM_FILL,
+                       pack_mem_fill(base_word, color_a, total_words),
+                       f"Fill {size}x{size} with 0x{color_a:04X}"))
+
+    # Step 2: overwrite color_b blocks with MEM_FILL (one per contiguous run).
+    for by in range(blocks_per_row):
+        run_start = None
+        for bx in range(blocks_per_row + 1):
+            # Determine checker color for this block.
+            if bx < blocks_per_row:
+                sq_x = (bx * 4) // square_size
+                sq_y = (by * 4) // square_size
+                is_b = (sq_x + sq_y) % 2 != 0
+            else:
+                is_b = False  # flush any pending run
+
+            if is_b and run_start is None:
+                run_start = bx
+            elif not is_b and run_start is not None:
+                run_len = bx - run_start  # blocks
+                block_idx = by * blocks_per_row + run_start
+                word_addr = base_word + block_idx * 16
+                run_words = run_len * 16
+
+                lines.append(emit(ADDR_MEM_FILL,
+                                   pack_mem_fill(word_addr, color_b, run_words),
+                                   f"row {by} bx {run_start}..{bx - 1} "
+                                   f"({run_len} blk, {run_words} words)"))
+                run_start = None
+
+    return lines
 
 
 def _zclear_phase() -> list[str]:
@@ -62,8 +115,8 @@ def _zclear_phase() -> list[str]:
     # Clear Z-buffer to 0x0000 (reverse-Z far plane; GEQUAL passes everything)
     fill_count = 512 * 512
     lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(ZBUFFER_BASE_512, 0x0000, fill_count),
-                       mem_fill_comment(ZBUFFER_BASE_512, 0x0000, fill_count)))
+                       pack_mem_fill(ZBUFFER_BASE_512 * 256, 0x0000, fill_count),
+                       mem_fill_comment(ZBUFFER_BASE_512 * 256, 0x0000, fill_count)))
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
@@ -78,10 +131,11 @@ def _setup_phase() -> list[str]:
     lines.append(emit_phase("setup"))
     lines.append(emit_blank())
 
-    # Upload 16x16 white/black checker texture
-    lines.extend(emit_checker_texture(TEX0_BASE_WORD, 4,
-                                       RGB565_WHITE, RGB565_BLACK,
-                                       "white/black checker"))
+    # Upload 64x64 white/black checker texture (16x16 squares)
+    lines.extend(_emit_block_checker_texture(
+        TEX0_BASE_WORD, TEX_LOG2, SQUARE_SIZE,
+        RGB565_WHITE, RGB565_BLACK,
+        "white/black checker (16x16 squares)"))
     lines.append(emit_blank())
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
@@ -89,9 +143,12 @@ def _setup_phase() -> list[str]:
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
 
-    tex_cfg = pack_tex0_cfg(1, 0, 4, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
+    # filt=1 (BILINEAR), fmt=4 (RGB565), width_log2=6, height_log2=6
+    tex_cfg = pack_tex0_cfg(1, 1, 4, TEX_LOG2, TEX_LOG2, 0, 0, 0,
+                            TEX0_BASE_ADDR_512)
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
-                       "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0C00"))
+                       f"ENABLE=1 BILINEAR RGB565 {1 << TEX_LOG2}x"
+                       f"{1 << TEX_LOG2} REPEAT base=0x{TEX0_BASE_ADDR_512:04X}"))
 
     lines.append(emit(ADDR_CC_MODE, CC_MODE_MODULATE,
                        "MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE"))
@@ -125,7 +182,7 @@ def _emit_tri(lines, verts, color):
 
 
 def _triangles_phase() -> list[str]:
-    """Transform road quad through MVP and emit two triangles."""
+    """Transform road strips through MVP and emit 4 triangles (2 quads)."""
     lines = []
     lines.append(emit_phase("triangles"))
     lines.append(emit_blank())
@@ -141,30 +198,44 @@ def _triangles_phase() -> list[str]:
 
     vp_w, vp_h = 512.0, 512.0
 
-    # Transform all 4 road vertices.
-    screen_verts = []
-    for i, (vx, vy, vz) in enumerate(ROAD_VERTS):
-        clip = mat4_mul_vec4(mvp, (vx, vy, vz, 1.0))
-        ndc_x, ndc_y, ndc_z, w = perspective_divide(clip)
-        sx, sy, sz = viewport_transform(ndc_x, ndc_y, ndc_z, vp_w, vp_h)
+    # Build NUM_STRIPS+1 rows of vertices along the road (left, right per row).
+    # Z is interpolated linearly from ROAD_NEAR to ROAD_FAR.
+    # V is interpolated from 0.0 to UV_REPEATS_V.
+    rows = []  # each row: [(left_screen_vert), (right_screen_vert)]
+    for row in range(NUM_STRIPS + 1):
+        t = row / NUM_STRIPS
+        z_world = ROAD_NEAR + t * (ROAD_FAR - ROAD_NEAR)
+        v_coord = t * UV_REPEATS_V
 
-        sx_q4 = int(round(sx * 16.0))
-        sy_q4 = int(round(sy * 16.0))
-        z16 = int(round(sz * 65535.0))
-        z16 = max(0, min(0xFFFF, z16))
+        row_verts = []
+        for side, u_coord in [(-ROAD_WIDTH, 0.0), (ROAD_WIDTH, UV_REPEATS_U)]:
+            world = (side, 0.0, -z_world)
+            clip = mat4_mul_vec4(mvp, (world[0], world[1], world[2], 1.0))
+            ndc_x, ndc_y, ndc_z, w = perspective_divide(clip)
+            sx, sy, sz = viewport_transform(ndc_x, ndc_y, ndc_z, vp_w, vp_h)
 
-        screen_verts.append((sx_q4, sy_q4, z16, ROAD_UVS[i][0], ROAD_UVS[i][1], w))
+            sx_q4 = int(round(sx * 16.0))
+            sy_q4 = int(round(sy * 16.0))
+            z16 = int(round(sz * 65535.0))
+            z16 = max(0, min(0xFFFF, z16))
 
-    # Two triangles: (0,1,2) and (0,2,3) — standard quad split.
-    lines.append(emit_comment("Road triangle 1 (near-left, near-right, far-right)"))
-    _emit_tri(lines, [screen_verts[0], screen_verts[1], screen_verts[2]],
-              color=(0xFF, 0xFF, 0xFF))
-    lines.append(emit_blank())
+            row_verts.append((sx_q4, sy_q4, z16, u_coord, v_coord, w))
+        rows.append(row_verts)
 
-    lines.append(emit_comment("Road triangle 2 (near-left, far-right, far-left)"))
-    _emit_tri(lines, [screen_verts[0], screen_verts[2], screen_verts[3]],
-              color=(0xFF, 0xFF, 0xFF))
-    lines.append(emit_blank())
+    # Emit 2 triangles per strip (standard quad split).
+    for s in range(NUM_STRIPS):
+        nl, nr = rows[s]      # near-left, near-right
+        fl, fr = rows[s + 1]  # far-left, far-right
+
+        lines.append(emit_comment(
+            f"Strip {s} tri 1 (near-left, near-right, far-right)"))
+        _emit_tri(lines, [nl, nr, fr], color=(0xFF, 0xFF, 0xFF))
+        lines.append(emit_blank())
+
+        lines.append(emit_comment(
+            f"Strip {s} tri 2 (near-left, far-right, far-left)"))
+        _emit_tri(lines, [nl, fr, fl], color=(0xFF, 0xFF, 0xFF))
+        lines.append(emit_blank())
 
     lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
@@ -174,14 +245,16 @@ def generate() -> list[str]:
     lines = []
     lines.append(emit_comment("VER-016: Perspective Road Z-Test"))
     lines.append(emit_comment(""))
-    lines.append(emit_comment("Two-triangle road stretching into the distance."))
+    lines.append(emit_comment("Four-triangle road (2 quads) stretching into the distance."))
     lines.append(emit_comment("Tests Z interpolation and perspective depth gradient."))
+    lines.append(emit_comment("64x64 checker texture with 16x16 squares, bilinear filtered."))
+    lines.append(emit_comment("Road split into 2 strips to keep V within Q4.12 range (max 4.0)."))
     lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z far)"))
     lines.append(emit_comment("Phase 'setup': configure texture and render mode"))
-    lines.append(emit_comment("Phase 'triangles': submit road quad (MVP-transformed)"))
+    lines.append(emit_comment("Phase 'triangles': submit road strips (MVP-transformed)"))
     lines.append(emit_blank())
     lines.append(emit_framebuffer(512, 512))
-    lines.append(emit_texture("checker_wb", f"{TEX0_BASE_WORD:05X}", "RGB565", 4))
+    lines.append(emit_texture("checker_wb", f"{TEX0_BASE_WORD:05X}", "RGB565", TEX_LOG2))
     lines.append(emit_blank())
     lines.extend(_zclear_phase())
     lines.append(emit_blank())

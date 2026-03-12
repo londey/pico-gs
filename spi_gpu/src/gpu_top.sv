@@ -180,7 +180,7 @@ module gpu_top (
 
     // Memory fill (MEM_FILL)
     wire        mem_fill_trigger;
-    wire [15:0] mem_fill_base;
+    wire [23:0] mem_fill_base;
     wire [15:0] mem_fill_value;
     wire [19:0] mem_fill_count;
 
@@ -980,7 +980,7 @@ module gpu_top (
     wire [9:0]  _unused_scissor_w   = scissor_width;
     wire [9:0]  _unused_scissor_h   = scissor_height;
     wire        _unused_fill_trigger = mem_fill_trigger;
-    wire [15:0] _unused_fill_base   = mem_fill_base;
+    wire [23:0] _unused_fill_base   = mem_fill_base;
     wire [15:0] _unused_fill_value  = mem_fill_value;
     wire [19:0] _unused_fill_count  = mem_fill_count;
     wire [15:0] _unused_fb_lut_addr = fb_lut_addr;

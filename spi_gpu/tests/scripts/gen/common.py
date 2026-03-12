@@ -165,17 +165,17 @@ def pack_fb_config(color_base: int, z_base: int,
     )
 
 
-def pack_mem_fill(base: int, value: int, count: int) -> int:
+def pack_mem_fill(base_word: int, value: int, count: int) -> int:
     """Pack MEM_FILL register.
 
-    base: target address in 512-byte units (matches COLOR_BASE / Z_BASE).
+    base_word: target word address (byte_addr = base_word * 2), 24-bit.
     value: 16-bit constant to write (RGB565 or Z16).
     count: number of 16-bit words to fill.
     """
     return (
-        ((count & 0xFFFFF) << 32) |
-        ((value & 0xFFFF) << 16) |
-        (base & 0xFFFF)
+        ((count & 0xFFFFF) << 40) |
+        ((value & 0xFFFF) << 24) |
+        (base_word & 0xFFFFFF)
     )
 
 
@@ -309,9 +309,9 @@ def color_comment(diffuse: int, specular: int) -> str:
     return f"diffuse={color_name(diffuse)} specular={color_name(specular)}"
 
 
-def mem_fill_comment(base: int, value: int, count: int) -> str:
+def mem_fill_comment(base_word: int, value: int, count: int) -> str:
     """Format MEM_FILL register comment."""
-    return f"base=0x{base:04X} value=0x{value:04X} count={count}"
+    return f"base_word=0x{base_word:06X} value=0x{value:04X} count={count}"
 
 
 def emit_fb_clear(color_base_512: int, w_log2: int, h_log2: int,
@@ -319,14 +319,16 @@ def emit_fb_clear(color_base_512: int, w_log2: int, h_log2: int,
     """Emit MEM_FILL to clear the color framebuffer.
 
     Clears (1 << w_log2) * (1 << h_log2) words at the given base.
+    color_base_512: base address in 512-byte units (converted to word address).
     """
     count = (1 << w_log2) * (1 << h_log2)
+    base_word = color_base_512 * 256  # 512 bytes = 256 words
     lines = []
-    lines.append(emit_comment(f"Clear color buffer: base=0x{color_base_512:04X}"
+    lines.append(emit_comment(f"Clear color buffer: base_word=0x{base_word:06X}"
                                f" value=0x{value:04X} count={count}"))
     lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(color_base_512, value, count),
-                       mem_fill_comment(color_base_512, value, count)))
+                       pack_mem_fill(base_word, value, count),
+                       mem_fill_comment(base_word, value, count)))
     return lines
 
 

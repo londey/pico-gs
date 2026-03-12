@@ -28,8 +28,8 @@ def _zclear_phase() -> list[str]:
     # Clear Z-buffer to 0x0000 (reverse-Z: far plane = 0)
     fill_count = 512 * 512  # 1 << 9 * 1 << 9
     lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(ZBUFFER_BASE_512, 0x0000, fill_count),
-                       mem_fill_comment(ZBUFFER_BASE_512, 0x0000, fill_count)))
+                       pack_mem_fill(ZBUFFER_BASE_512 * 256, 0x0000, fill_count),
+                       mem_fill_comment(ZBUFFER_BASE_512 * 256, 0x0000, fill_count)))
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))

@@ -65,7 +65,7 @@ module register_file (
 
     // Memory fill (MEM_FILL)
     output reg          mem_fill_trigger,    // One-cycle pulse
-    output reg  [15:0]  mem_fill_base,       // Fill base address (x512)
+    output reg  [23:0]  mem_fill_base,       // Fill word address (byte_addr = base * 2)
     output reg  [15:0]  mem_fill_value,      // Fill constant value
     output reg  [19:0]  mem_fill_count,      // Fill word count
 
@@ -359,7 +359,7 @@ module register_file (
 
     // Pulse outputs with associated data
     reg          next_mem_fill_trigger;
-    reg [15:0]   next_mem_fill_base;
+    reg [23:0]   next_mem_fill_base;
     reg [15:0]   next_mem_fill_value;
     reg [19:0]   next_mem_fill_count;
     reg          next_tex0_cache_inv;
@@ -652,9 +652,9 @@ module register_file (
                 ADDR_MEM_FILL: begin
                     // One-cycle pulse with fill parameters
                     next_mem_fill_trigger = 1'b1;
-                    next_mem_fill_base    = cmd_wdata[15:0];
-                    next_mem_fill_value   = cmd_wdata[31:16];
-                    next_mem_fill_count   = cmd_wdata[51:32];
+                    next_mem_fill_base    = cmd_wdata[23:0];
+                    next_mem_fill_value   = cmd_wdata[39:24];
+                    next_mem_fill_count   = cmd_wdata[59:40];
                 end
 
                 ADDR_PERF_TIMESTAMP: begin
@@ -744,7 +744,7 @@ module register_file (
 
             // Reset pulse outputs
             mem_fill_trigger <= 1'b0;
-            mem_fill_base    <= 16'h0;
+            mem_fill_base    <= 24'h0;
             mem_fill_value   <= 16'h0;
             mem_fill_count   <= 20'h0;
             tex0_cache_inv   <= 1'b0;

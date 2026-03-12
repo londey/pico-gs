@@ -333,8 +333,8 @@ impl GpuRegs {
     ///
     /// Hardware memory fill (write-triggers-fill).
     /// Writes a 16-bit constant value to a contiguous region of SDRAM.
-    /// FILL_BASE uses the same 512-byte-granularity encoding as
-    /// COLOR_BASE, Z_BASE, and texture BASE_ADDR.
+    /// FILL_BASE is a 24-bit word address (byte_addr = FILL_BASE * 2),
+    /// giving 2-byte granularity and addressing up to 32 MB.
     /// The fill unit generates sequential SDRAM burst writes for
     /// maximum throughput.  Blocks the GPU pipeline until complete;
     /// the SPI command FIFO continues accepting commands.

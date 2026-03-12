@@ -6,8 +6,8 @@
 ## FRAMEBUFFER: 512 512
 ## PHASE: main
 
-# Clear color buffer: base=0x0000 value=0x0000 count=262144
-44 0004_0000_0000_0000  # MEM_FILL: base=0x0000 value=0x0000 count=262144
+# Clear color buffer: base_word=0x000000 value=0x0000 count=262144
+44 0400_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=262144
 
 # Upload 16x16 white/black checker texture at word 0x80000
 70 0000_0000_0002_0000  # MEM_ADDR: dword_addr=0x20000

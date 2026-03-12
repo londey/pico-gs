@@ -16,9 +16,10 @@
 use std::collections::HashMap;
 
 use gpu_registers::components::gpu_regs::named_types::tex_cfg_reg::TexCfgReg;
+use gpu_registers::components::tex_filter_e::TexFilterE;
 use gpu_registers::components::tex_format_e::TexFormatE;
 use gpu_registers::components::wrap_mode_e::WrapModeE;
-use qfixed::Q;
+use qfixed::{Q, UQ};
 
 use super::fragment::{ColorQ412, RasterFragment, TexturedFragment};
 
@@ -133,6 +134,94 @@ impl Rgba5652 {
     }
 }
 
+// ── UQ1.8 texel format for bilinear blending ───────────────────────────────
+
+/// Per-channel UQ1.8 UNORM texel for bilinear blending.
+///
+/// Each channel is a 9-bit unsigned fixed-point value in \[0.0, 1.0\]
+/// where `0x100` represents exactly 1.0.
+/// This format matches the ECP5 MULT18X18D dual 9-bit sub-mode used
+/// by the RTL bilinear filter.
+///
+/// # RTL Implementation Notes
+///
+/// The RTL multiplies two UQ1.8 operands (texel × weight) in the 9×9
+/// sub-mode of the DSP block, producing a UQ2.16 partial product.
+/// Four partial products are accumulated and truncated back to UQ1.8.
+#[derive(Debug, Clone, Copy, Default)]
+struct TexelUq18 {
+    /// Red channel, UQ1.8 UNORM.
+    r: UQ<1, 8>,
+
+    /// Green channel, UQ1.8 UNORM.
+    g: UQ<1, 8>,
+
+    /// Blue channel, UQ1.8 UNORM.
+    b: UQ<1, 8>,
+
+    /// Alpha channel, UQ1.8 UNORM.
+    a: UQ<1, 8>,
+}
+
+impl TexelUq18 {
+    /// Promote to Q4.12 RGBA for the downstream fragment pipeline.
+    ///
+    /// Converts each UQ1.8 channel (0..=0x100) to Q4.12 (0..=0x1000)
+    /// by left-shifting 4 bits.
+    ///
+    /// # Returns
+    ///
+    /// `ColorQ412` with channels in \[0x0000, 0x1000\] (UNORM \[0.0, 1.0\]).
+    fn to_q412(self) -> ColorQ412 {
+        ColorQ412 {
+            r: Q::from_bits((self.r.to_bits() << 4) as i64),
+            g: Q::from_bits((self.g.to_bits() << 4) as i64),
+            b: Q::from_bits((self.b.to_bits() << 4) as i64),
+            a: Q::from_bits((self.a.to_bits() << 4) as i64),
+        }
+    }
+}
+
+impl Rgba5652 {
+    /// Convert to UQ1.8 UNORM per channel for bilinear blending.
+    ///
+    /// Uses MSB-replication with a correction term so that full-scale
+    /// inputs map to exactly `UQ1.8::ONE` (0x100 = 1.0):
+    /// - R5: `(r5 << 3) | (r5 >> 2) + (r5 >> 4)` → 0..=256
+    /// - G6: `(g6 << 2) | (g6 >> 4) + (g6 >> 5)` → 0..=256
+    /// - B5: same as R5
+    /// - A2: four-level LUT `[0, 0x55, 0xAA, 0x100]`
+    ///
+    /// # RTL Implementation Notes
+    ///
+    /// The correction term (`>> 4` / `>> 5`) adds at most 1 LSB and
+    /// requires a single adder in the RTL.
+    fn to_uq18(self) -> TexelUq18 {
+        let r5 = self.r5() as u16;
+        let g6 = self.g6() as u16;
+        let b5 = self.b5() as u16;
+        let a2 = self.a2();
+
+        let r = ((r5 << 3) | (r5 >> 2)) + (r5 >> 4);
+        let g = ((g6 << 2) | (g6 >> 4)) + (g6 >> 5);
+        let b = ((b5 << 3) | (b5 >> 2)) + (b5 >> 4);
+        let a: u16 = match a2 {
+            0 => 0x000,
+            1 => 0x055,
+            2 => 0x0AA,
+            3 => 0x100,
+            _ => unreachable!(),
+        };
+
+        TexelUq18 {
+            r: UQ::from_bits(r as u64),
+            g: UQ::from_bits(g as u64),
+            b: UQ::from_bits(b as u64),
+            a: UQ::from_bits(a as u64),
+        }
+    }
+}
+
 // ── Format conversion helpers ───────────────────────────────────────────────
 
 /// Convert an RGB565 word to [`Rgba5652`] (fully opaque).
@@ -204,6 +293,254 @@ fn wrap_texel(coord: Q<4, 12>, dim: u32, dim_log2: u8, wrap: WrapModeE) -> u32 {
         }
         // Octahedral: treat as repeat for this initial implementation.
         WrapModeE::Octahedral => texel_raw.rem_euclid(dim_i) as u32,
+    }
+}
+
+// ── Bilinear address generation ─────────────────────────────────────────────
+
+/// Address of a single texel within the block-tiled texture layout.
+///
+/// Pre-computed from the wrapped texel index so the sampler can go
+/// straight to SDRAM without recomputing block math per tap.
+#[derive(Debug, Clone, Copy)]
+struct BilinearTap {
+    /// Block index within the mip level (row-major block grid).
+    block_index: u32,
+
+    /// Row-major offset within the 4×4 block: `(ty & 3) * 4 + (tx & 3)`.
+    local: u32,
+}
+
+/// Result of bilinear address generation: four taps and their weights.
+///
+/// Tap order: `[00, 10, 01, 11]` where the first index is U (x) and
+/// the second is V (y).
+/// `weights` are UQ1.8 values summing to exactly `UQ1.8::ONE` (0x100).
+#[derive(Debug, Clone, Copy)]
+struct BilinearSample {
+    /// Four texel addresses in the block-tiled layout.
+    taps: [BilinearTap; 4],
+
+    /// Per-tap blending weights, UQ1.8 UNORM.
+    weights: [UQ<1, 8>; 4],
+}
+
+/// Apply a single-axis wrap mode to a raw (pre-wrap) texel index.
+///
+/// This is the same logic as [`wrap_texel`] but operates on an
+/// arbitrary `i64` texel index rather than a Q4.12 coordinate.
+fn wrap_axis(texel_raw: i64, dim: i64, wrap: WrapModeE) -> u32 {
+    match wrap {
+        WrapModeE::Repeat => texel_raw.rem_euclid(dim) as u32,
+        WrapModeE::ClampToEdge => texel_raw.clamp(0, dim - 1) as u32,
+        WrapModeE::Mirror => {
+            let period = dim * 2;
+            let t = texel_raw.rem_euclid(period);
+            if t < dim {
+                t as u32
+            } else {
+                (period - 1 - t) as u32
+            }
+        }
+        // Octahedral: treat as repeat for this initial implementation.
+        WrapModeE::Octahedral => texel_raw.rem_euclid(dim) as u32,
+    }
+}
+
+/// Compute four bilinear taps and their UQ1.8 weights from Q4.12 UVs.
+///
+/// Multiplies each UV coordinate by its texture dimension, extracts the
+/// integer texel index and the UQ0.8 fractional offset, generates the
+/// 2×2 grid of neighbor indices, wraps each independently, and derives
+/// the four bilinear weights.
+///
+/// # Arguments
+///
+/// * `u`, `v` - Texture coordinates in Q4.12 signed fixed-point.
+/// * `width`, `height` - Texture dimensions in texels (power of 2).
+/// * `w_log2`, `h_log2` - Log₂ of each dimension.
+/// * `u_wrap`, `v_wrap` - Per-axis wrap modes.
+///
+/// # Returns
+///
+/// A [`BilinearSample`] with four taps and weights summing to 1.0.
+#[allow(clippy::too_many_arguments)]
+fn wrap_bilinear(
+    u: Q<4, 12>,
+    v: Q<4, 12>,
+    width: u32,
+    height: u32,
+    w_log2: u8,
+    h_log2: u8,
+    u_wrap: WrapModeE,
+    v_wrap: WrapModeE,
+) -> BilinearSample {
+    // Multiply UV by dimension, keeping 8 sub-texel fractional bits.
+    // coord is Q4.12; we want texel_fixed = coord * dim in Q(4+dim_log2).12,
+    // then extract the top integer part and 8 fractional bits.
+    //
+    // For bilinear, the sampling point is offset by -0.5 texels so that
+    // integer UV coordinates land on texel centers rather than edges.
+    // This matches the standard OpenGL/D3D bilinear convention.
+    let u_bits = u.to_bits() as u16 as i16 as i64;
+    let v_bits = v.to_bits() as u16 as i16 as i64;
+
+    // Scale to fixed-point texel coordinates with 8 fractional bits.
+    // Original: 12 fractional bits from Q4.12; we want 8, so shift
+    // right by (12 - 8 - dim_log2) = (4 - dim_log2) when dim_log2 <= 4,
+    // or left by (dim_log2 - 4) otherwise.
+    // Result is in signed fixed-point with 8 fractional bits.
+    let u_fixed = if w_log2 <= 4 {
+        u_bits >> (4 - w_log2)
+    } else {
+        u_bits << (w_log2 - 4)
+    };
+    let v_fixed = if h_log2 <= 4 {
+        v_bits >> (4 - h_log2)
+    } else {
+        v_bits << (h_log2 - 4)
+    };
+
+    // Apply the -0.5 texel offset for bilinear center sampling.
+    // 0.5 texels in UQ0.8 = 0x80.
+    let u_offset = u_fixed - 0x80;
+    let v_offset = v_fixed - 0x80;
+
+    // Integer texel index (floor) and 8-bit fractional part.
+    let tx0 = u_offset >> 8;
+    let ty0 = v_offset >> 8;
+    let tx1 = tx0 + 1;
+    let ty1 = ty0 + 1;
+
+    // Use Euclidean remainder so negative coordinates produce a valid
+    // UQ0.8 fractional part in 0..=255.
+    let fu = (u_offset.rem_euclid(256)) as u8;
+    let fv = (v_offset.rem_euclid(256)) as u8;
+
+    // Wrap each of the four texel indices independently.
+    let dim_w = width as i64;
+    let dim_h = height as i64;
+    let blocks_per_row = width.div_ceil(4);
+
+    let coords = [
+        (wrap_axis(tx0, dim_w, u_wrap), wrap_axis(ty0, dim_h, v_wrap)),
+        (wrap_axis(tx1, dim_w, u_wrap), wrap_axis(ty0, dim_h, v_wrap)),
+        (wrap_axis(tx0, dim_w, u_wrap), wrap_axis(ty1, dim_h, v_wrap)),
+        (wrap_axis(tx1, dim_w, u_wrap), wrap_axis(ty1, dim_h, v_wrap)),
+    ];
+
+    let taps = coords.map(|(tx, ty)| {
+        let bx = tx / 4;
+        let by = ty / 4;
+        BilinearTap {
+            block_index: by * blocks_per_row + bx,
+            local: (ty & 3) * 4 + (tx & 3),
+        }
+    });
+
+    // Compute bilinear weights in UQ1.8.
+    // fu, fv are UQ0.8 (0..=255). 1-fu and 1-fv are UQ1.8 (0x100 - fu).
+    let one = 0x100u16;
+    let fu16 = fu as u16;
+    let fv16 = fv as u16;
+    let ifu = one - fu16; // 1 - fu, range 1..=256
+    let ifv = one - fv16; // 1 - fv, range 1..=256
+
+    // w = (1-fu)*(1-fv), fu*(1-fv), (1-fu)*fv, fu*fv
+    // Each product is UQ1.8 × UQ1.8 → UQ2.16, truncated to UQ1.8
+    // by shifting right 8 bits.
+    let raw_weights = [
+        (ifu as u32 * ifv as u32) >> 8,
+        (fu16 as u32 * ifv as u32) >> 8,
+        (ifu as u32 * fv16 as u32) >> 8,
+        (fu16 as u32 * fv16 as u32) >> 8,
+    ];
+
+    let weights = raw_weights.map(|w| UQ::<1, 8>::from_bits(w as u64));
+
+    BilinearSample { taps, weights }
+}
+
+// ── Texel fetch and blend helpers ────────────────────────────────────────────
+
+/// Fetch a single texel from SDRAM and return it as [`Rgba5652`].
+///
+/// # Arguments
+///
+/// * `base_words` - Texture base address in u16 words (`BASE_ADDR × 256`).
+/// * `block_index` - Block index within the mip level (row-major).
+/// * `local` - Row-major offset within the 4×4 block.
+/// * `format` - Texture pixel format.
+/// * `sdram` - Flat SDRAM backing store.
+fn fetch_texel(
+    base_words: u32,
+    block_index: u32,
+    local: u32,
+    format: TexFormatE,
+    sdram: &[u16],
+) -> Rgba5652 {
+    match format {
+        TexFormatE::Rgb565 => {
+            // 16 texels × 2 bytes = 32 bytes = 16 u16 words per block.
+            let addr = (base_words + block_index * 16 + local) as usize;
+            let raw = sdram.get(addr).copied().unwrap_or(0);
+            rgb565_to_rgba5652(raw)
+        }
+        TexFormatE::Rgba8888 => {
+            // 16 texels × 4 bytes = 64 bytes = 32 u16 words per block.
+            let addr = (base_words + block_index * 32 + local * 2) as usize;
+            let lo = sdram.get(addr).copied().unwrap_or(0);
+            let hi = sdram.get(addr + 1).copied().unwrap_or(0);
+            let rgba = (hi as u32) << 16 | lo as u32;
+            rgba8888_to_rgba5652(rgba)
+        }
+        TexFormatE::R8 => {
+            // 16 texels × 1 byte = 16 bytes = 8 u16 words per block.
+            let addr = (base_words + block_index * 8 + local / 2) as usize;
+            let word = sdram.get(addr).copied().unwrap_or(0);
+            let byte = if local & 1 == 0 {
+                (word & 0xFF) as u8
+            } else {
+                (word >> 8) as u8
+            };
+            r8_to_rgba5652(byte)
+        }
+        // BC1–BC4 compressed formats: not yet implemented.
+        _ => Rgba5652::default(),
+    }
+}
+
+/// Blend four UQ1.8 texels using bilinear weights.
+///
+/// Per channel: `result = Σ(texel[i] × weight[i])` for i in 0..4.
+///
+/// The multiply is UQ1.8 × UQ1.8 → 18-bit product (matching the
+/// ECP5 9×9 DSP sub-mode).
+/// Four products are accumulated in 20 bits and truncated to UQ1.8.
+///
+/// # Arguments
+///
+/// * `texels` - Four [`TexelUq18`] values at the bilinear tap positions.
+/// * `weights` - Four UQ1.8 weights summing to 1.0 (0x100).
+fn bilinear_blend(texels: &[TexelUq18; 4], weights: &[UQ<1, 8>; 4]) -> TexelUq18 {
+    // Blend one channel: accumulate 4 × (UQ1.8 × UQ1.8) products.
+    // Each product is at most 0x100 × 0x100 = 0x10000 (17 bits).
+    // Sum of 4 products ≤ 0x40000 (19 bits) but since weights sum
+    // to 0x100, the true max is 0x100 × 0x100 = 0x10000.
+    // Right-shift by 8 to get back to UQ1.8.
+    let blend = |c0: UQ<1, 8>, c1: UQ<1, 8>, c2: UQ<1, 8>, c3: UQ<1, 8>| -> UQ<1, 8> {
+        let acc = c0.to_bits() as u32 * weights[0].to_bits() as u32
+            + c1.to_bits() as u32 * weights[1].to_bits() as u32
+            + c2.to_bits() as u32 * weights[2].to_bits() as u32
+            + c3.to_bits() as u32 * weights[3].to_bits() as u32;
+        UQ::from_bits((acc >> 8) as u64)
+    };
+
+    TexelUq18 {
+        r: blend(texels[0].r, texels[1].r, texels[2].r, texels[3].r),
+        g: blend(texels[0].g, texels[1].g, texels[2].g, texels[3].g),
+        b: blend(texels[0].b, texels[1].b, texels[2].b, texels[3].b),
+        a: blend(texels[0].a, texels[1].a, texels[2].a, texels[3].a),
     }
 }
 
@@ -330,19 +667,6 @@ impl TextureSampler {
         let width = 1u32 << w_log2;
         let height = 1u32 << h_log2;
 
-        // Convert Q4.12 UV to integer texel coordinates and apply wrap mode.
-        let tx = wrap_texel(u, width, w_log2, cfg.u_wrap());
-        let ty = wrap_texel(v, height, h_log2, cfg.v_wrap());
-
-        // Block coordinates (each block is 4×4 texels).
-        let bx = tx / 4;
-        let by = ty / 4;
-        let blocks_per_row = width.div_ceil(4);
-        let block_index = by * blocks_per_row + bx;
-
-        // Row-major offset within the 4×4 block.
-        let local = (ty & 3) * 4 + (tx & 3);
-
         // BASE_ADDR × 512 bytes = BASE_ADDR × 256 u16 words.
         let base_words = cfg.base_addr() as u32 * 256;
 
@@ -351,37 +675,42 @@ impl TextureSampler {
             Err(_) => return ColorQ412::OPAQUE_WHITE,
         };
 
-        let texel = match format {
-            TexFormatE::Rgb565 => {
-                // 16 texels × 2 bytes = 32 bytes = 16 u16 words per block.
-                let addr = (base_words + block_index * 16 + local) as usize;
-                let raw = sdram.get(addr).copied().unwrap_or(0);
-                rgb565_to_rgba5652(raw)
-            }
-            TexFormatE::Rgba8888 => {
-                // 16 texels × 4 bytes = 64 bytes = 32 u16 words per block.
-                let addr = (base_words + block_index * 32 + local * 2) as usize;
-                let lo = sdram.get(addr).copied().unwrap_or(0);
-                let hi = sdram.get(addr + 1).copied().unwrap_or(0);
-                let rgba = (hi as u32) << 16 | lo as u32;
-                rgba8888_to_rgba5652(rgba)
-            }
-            TexFormatE::R8 => {
-                // 16 texels × 1 byte = 16 bytes = 8 u16 words per block.
-                let addr = (base_words + block_index * 8 + local / 2) as usize;
-                let word = sdram.get(addr).copied().unwrap_or(0);
-                let byte = if local & 1 == 0 {
-                    (word & 0xFF) as u8
-                } else {
-                    (word >> 8) as u8
-                };
-                r8_to_rgba5652(byte)
-            }
-            // BC1–BC4 compressed formats: not yet implemented.
-            _ => return ColorQ412::OPAQUE_WHITE,
-        };
+        let filter = cfg.filter().unwrap_or(TexFilterE::Nearest);
 
-        texel.promote_to_q412()
+        match filter {
+            TexFilterE::Nearest => {
+                // Single texel lookup at floor(UV × dim).
+                let tx = wrap_texel(u, width, w_log2, cfg.u_wrap());
+                let ty = wrap_texel(v, height, h_log2, cfg.v_wrap());
+                let bx = tx / 4;
+                let by = ty / 4;
+                let blocks_per_row = width.div_ceil(4);
+                let block_index = by * blocks_per_row + bx;
+                let local = (ty & 3) * 4 + (tx & 3);
+
+                fetch_texel(base_words, block_index, local, format, sdram).promote_to_q412()
+            }
+            // Bilinear: 2×2 weighted average.
+            // Trilinear falls back to bilinear (single mip, LOD ignored).
+            TexFilterE::Bilinear | TexFilterE::Trilinear => {
+                let bs = wrap_bilinear(
+                    u,
+                    v,
+                    width,
+                    height,
+                    w_log2,
+                    h_log2,
+                    cfg.u_wrap(),
+                    cfg.v_wrap(),
+                );
+
+                let texels = bs.taps.map(|tap| {
+                    fetch_texel(base_words, tap.block_index, tap.local, format, sdram).to_uq18()
+                });
+
+                bilinear_blend(&texels, &bs.weights).to_q412()
+            }
+        }
     }
 
     /// Return the current configuration, if any.

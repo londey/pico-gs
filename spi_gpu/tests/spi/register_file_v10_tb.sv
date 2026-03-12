@@ -60,7 +60,7 @@ module register_file_v10_tb;
 
     // MEM_FILL
     wire        mem_fill_trigger;
-    wire [15:0] mem_fill_base;
+    wire [23:0] mem_fill_base;
     wire [15:0] mem_fill_value;
     wire [19:0] mem_fill_count;
 
@@ -267,6 +267,15 @@ module register_file_v10_tb;
             fail_count = fail_count + 1;
         end
     endtask
+
+    task check24(input string name, input logic [23:0] actual, input logic [23:0] expected);
+        if (actual === expected) begin
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL: %s - expected 0x%06x, got 0x%06x", name, expected, actual);
+            fail_count = fail_count + 1;
+        end
+    endtask
     /* verilator lint_on UNUSEDSIGNAL */
 
     // Write register helper
@@ -388,12 +397,13 @@ module register_file_v10_tb;
         // ============================================================
         $display("--- Test 3: MEM_FILL ---");
 
-        // Write MEM_FILL: base=0x0100, value=0x1234, count=0x0800
-        write_reg(ADDR_MEM_FILL, 64'h0000_0800_1234_0100);
+        // Write MEM_FILL: base=0x000100, value=0x1234, count=0x00800
+        // New layout: [23:0]=base, [39:24]=value, [59:40]=count
+        write_reg(ADDR_MEM_FILL, 64'h0080_0012_3400_0100);
         @(posedge clk);
 
         // mem_fill_trigger should have pulsed (check one cycle after write)
-        check16("mem_fill_base",  mem_fill_base,  16'h0100);
+        check24("mem_fill_base",  mem_fill_base,  24'h000100);
         check16("mem_fill_value", mem_fill_value, 16'h1234);
         check20("mem_fill_count", mem_fill_count, 20'h00800);
 

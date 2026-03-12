@@ -4,8 +4,8 @@
 ///
 /// Hardware memory fill (write-triggers-fill).
 /// Writes a 16-bit constant value to a contiguous region of SDRAM.
-/// FILL_BASE uses the same 512-byte-granularity encoding as
-/// COLOR_BASE, Z_BASE, and texture BASE_ADDR.
+/// FILL_BASE is a 24-bit word address (byte_addr = FILL_BASE * 2),
+/// giving 2-byte granularity and addressing up to 32 MB.
 /// The fill unit generates sequential SDRAM burst writes for
 /// maximum throughput.  Blocks the GPU pipeline until complete;
 /// the SPI command FIFO continues accepting commands.
@@ -37,27 +37,27 @@ impl crate::reg::Register for MemFillReg {
 
 impl MemFillReg {
     pub const FILL_BASE_OFFSET: usize = 0;
-    pub const FILL_BASE_WIDTH: usize = 16;
-    pub const FILL_BASE_MASK: u64 = 0xFFFF;
+    pub const FILL_BASE_WIDTH: usize = 24;
+    pub const FILL_BASE_MASK: u64 = 0xFF_FFFF;
 
     /// FILL_BASE
     #[inline(always)]
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
-    pub fn fill_base(&self) -> u16 {
+    pub fn fill_base(&self) -> u32 {
         let val = (self.0 >> Self::FILL_BASE_OFFSET) & Self::FILL_BASE_MASK;
-        val as u16
+        val as u32
     }
 
     /// FILL_BASE
     #[inline(always)]
-    pub fn set_fill_base(&mut self, val: u16) {
+    pub fn set_fill_base(&mut self, val: u32) {
         let val = val as u64;
         self.0 = (self.0 & !(Self::FILL_BASE_MASK << Self::FILL_BASE_OFFSET))
             | ((val & Self::FILL_BASE_MASK) << Self::FILL_BASE_OFFSET);
     }
 
-    pub const FILL_VALUE_OFFSET: usize = 16;
+    pub const FILL_VALUE_OFFSET: usize = 24;
     pub const FILL_VALUE_WIDTH: usize = 16;
     pub const FILL_VALUE_MASK: u64 = 0xFFFF;
 
@@ -78,7 +78,7 @@ impl MemFillReg {
             | ((val & Self::FILL_VALUE_MASK) << Self::FILL_VALUE_OFFSET);
     }
 
-    pub const FILL_COUNT_OFFSET: usize = 32;
+    pub const FILL_COUNT_OFFSET: usize = 40;
     pub const FILL_COUNT_WIDTH: usize = 20;
     pub const FILL_COUNT_MASK: u64 = 0xF_FFFF;
 
@@ -99,22 +99,22 @@ impl MemFillReg {
             | ((val & Self::FILL_COUNT_MASK) << Self::FILL_COUNT_OFFSET);
     }
 
-    pub const RSVD_OFFSET: usize = 52;
-    pub const RSVD_WIDTH: usize = 12;
-    pub const RSVD_MASK: u64 = 0xFFF;
+    pub const RSVD_OFFSET: usize = 60;
+    pub const RSVD_WIDTH: usize = 4;
+    pub const RSVD_MASK: u64 = 0xF;
 
     /// RSVD
     #[inline(always)]
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
-    pub fn rsvd(&self) -> u16 {
+    pub fn rsvd(&self) -> u8 {
         let val = (self.0 >> Self::RSVD_OFFSET) & Self::RSVD_MASK;
-        val as u16
+        val as u8
     }
 
     /// RSVD
     #[inline(always)]
-    pub fn set_rsvd(&mut self, val: u16) {
+    pub fn set_rsvd(&mut self, val: u8) {
         let val = val as u64;
         self.0 = (self.0 & !(Self::RSVD_MASK << Self::RSVD_OFFSET))
             | ((val & Self::RSVD_MASK) << Self::RSVD_OFFSET);

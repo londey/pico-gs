@@ -50,7 +50,8 @@ module tb_register_file;
 
     // Memory fill
     wire        mem_fill_trigger;
-    wire [15:0] mem_fill_base, mem_fill_value;
+    wire [23:0] mem_fill_base;
+    wire [15:0] mem_fill_value;
     wire [19:0] mem_fill_count;
 
     // Display config

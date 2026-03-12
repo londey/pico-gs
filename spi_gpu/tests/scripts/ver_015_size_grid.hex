@@ -6,8 +6,8 @@
 ## FRAMEBUFFER: 512 480
 ## PHASE: main
 
-# Clear color buffer: base=0x0000 value=0x0000 count=262144
-44 0004_0000_0000_0000  # MEM_FILL: base=0x0000 value=0x0000 count=262144
+# Clear color buffer: base_word=0x000000 value=0x0000 count=262144
+44 0400_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=262144
 
 40 0000_0099_0000_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9
 43 0000_0078_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=480
