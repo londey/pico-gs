@@ -125,7 +125,7 @@ module gpu_top (
     wire [9:0]  fifo_rd_count;
 
     // Register file signals
-    wire        reg_cmd_valid;
+    reg         reg_cmd_valid;
     wire        reg_cmd_rw;
     wire [6:0]  reg_cmd_addr;
     wire [63:0] reg_cmd_wdata;
@@ -264,12 +264,23 @@ module gpu_top (
         .rd_count(fifo_rd_count)
     );
 
-    // Unpack FIFO data to register interface
-    assign reg_cmd_valid = !fifo_rd_empty;
+    // Unpack FIFO data to register interface (data path is combinational —
+    // async_fifo already registers rd_data, so it aligns with the pipelined valid)
     assign reg_cmd_rw = fifo_rd_data[71];
     assign reg_cmd_addr = fifo_rd_data[70:64];
     assign reg_cmd_wdata = fifo_rd_data[63:0];
     assign fifo_rd_en = !fifo_rd_empty && !gpu_busy;  // Read when data available and GPU not busy
+
+    // Pipeline cmd_valid by one cycle to match async_fifo read latency.
+    // The FIFO uses a standard (non-FWFT) read: rd_data updates one cycle
+    // after rd_en fires.  Delaying valid by the same amount ensures the
+    // register file sees valid HIGH in the same cycle that rd_data is stable.
+    always_ff @(posedge clk_core or negedge rst_n_core) begin
+        if (!rst_n_core)
+            reg_cmd_valid <= 1'b0;
+        else
+            reg_cmd_valid <= fifo_rd_en;
+    end
 
     // Register File instantiation (INT-010 v10.0)
     register_file u_register_file (
@@ -377,7 +388,7 @@ module gpu_top (
 
     // GPIO outputs
     assign gpio_cmd_full = fifo_wr_almost_full;
-    assign gpio_cmd_empty = fifo_rd_empty;
+    assign gpio_cmd_empty = fifo_rd_empty && !reg_cmd_valid;
 
     // Stall the command FIFO when the rasterizer cannot accept a new triangle.
     // This prevents VERTEX_KICK pulses from being lost while the rasterizer is

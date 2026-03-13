@@ -12,6 +12,7 @@
 //! The digital twin is transaction-level (not cycle-accurate) but bit-accurate
 //! for the math.
 
+use super::debug_pixel::RasterAccumulatorDebug;
 use super::fragment::{ColorQ412, RasterFragment};
 use super::recip;
 use crate::reg::Rgba8888;
@@ -366,6 +367,19 @@ pub fn rasterize_iter(setup: TriangleSetup) -> TriangleIter {
     TriangleIter::new(setup)
 }
 
+/// Return a debug-aware iterator that captures accumulator state for a
+/// specific pixel coordinate.
+///
+/// When `debug_pixel` is `Some((x, y))`, the iterator captures raw
+/// accumulator state and perspective correction intermediates for
+/// fragments at that coordinate.  The caller retrieves this via
+/// [`TriangleIter::take_debug`] after each [`Iterator::next`] call.
+pub fn rasterize_iter_debug(setup: TriangleSetup, debug_pixel: Option<(u16, u16)>) -> TriangleIter {
+    let mut iter = TriangleIter::new(setup);
+    iter.debug_pixel = debug_pixel;
+    iter
+}
+
 /// Streaming iterator over rasterized fragments of a single triangle.
 ///
 /// Created by [`rasterize_iter`].  Each call to [`Iterator::next`]
@@ -404,6 +418,13 @@ pub struct TriangleIter {
     px_offset: u16,
 
     done: bool,
+
+    // ── Debug pixel support ─────────────────────────────────────
+    /// When set, capture accumulator debug state for fragments at this pixel.
+    debug_pixel: Option<(u16, u16)>,
+
+    /// Last captured debug state (taken by caller after each `next()`).
+    last_debug: Option<RasterAccumulatorDebug>,
 }
 
 impl TriangleIter {
@@ -473,6 +494,8 @@ impl TriangleIter {
             py_offset: 0,
             px_offset: 0,
             done: false,
+            debug_pixel: None,
+            last_debug: None,
         };
 
         // Advance past the first tile if it is rejected.
@@ -510,6 +533,8 @@ impl TriangleIter {
             py_offset: 0,
             px_offset: 0,
             done: true,
+            debug_pixel: None,
+            last_debug: None,
         }
     }
 
@@ -656,15 +681,38 @@ impl TriangleIter {
 
             let inside = self.pixel_inside();
             let py = self.tile_y + self.py_offset;
-            let frag = inside.then(|| emit_fragment(px, py, &self.attr_acc));
+            let result = inside.then(|| self.emit_or_debug(px, py));
 
             self.step_pixel_x();
 
-            if frag.is_some() {
-                return frag;
+            if let Some(frag) = result {
+                return Some(frag);
             }
         }
         None
+    }
+
+    /// Emit a fragment, capturing debug state if this pixel is the debug target.
+    fn emit_or_debug(&mut self, px: u16, py: u16) -> RasterFragment {
+        let is_debug = self
+            .debug_pixel
+            .is_some_and(|(dx, dy)| px == dx && py == dy);
+        if is_debug {
+            let (f, dbg) = emit_fragment_debug(px, py, &self.attr_acc);
+            self.last_debug = Some(dbg);
+            f
+        } else {
+            emit_fragment(px, py, &self.attr_acc)
+        }
+    }
+
+    /// Take the last captured debug accumulator state, if any.
+    ///
+    /// Returns `Some` only when the most recently yielded fragment was
+    /// at the debug pixel coordinate.  The value is consumed (set to
+    /// `None`) by this call.
+    pub fn take_debug(&mut self) -> Option<RasterAccumulatorDebug> {
+        self.last_debug.take()
     }
 }
 
@@ -826,4 +874,75 @@ fn emit_fragment(px: u16, py: u16, acc: &[i32; NUM_ATTRS]) -> RasterFragment {
         v1: persp_correct(acc[ATTR_T1], rq.recip),
         lod: rq.lod,
     }
+}
+
+/// Perspective correction returning both the result and the raw product.
+fn persp_correct_debug(s_acc: i32, inv_q: u32) -> (qfixed::Q<4, 12>, i16, i64) {
+    let s_top = (s_acc >> 16) as i16 as i32;
+    let inv_q_signed = inv_q as i32;
+    let product = (s_top as i64) * (inv_q_signed as i64);
+    let result = ((product >> 14) & 0xFFFF) as i16;
+    (qfixed::Q::from_bits(result as i64), s_top as i16, product)
+}
+
+/// Emit a fragment with debug accumulator capture.
+///
+/// Same computation as [`emit_fragment`] but also captures raw
+/// accumulator state and perspective correction intermediates.
+fn emit_fragment_debug(
+    px: u16,
+    py: u16,
+    acc: &[i32; NUM_ATTRS],
+) -> (RasterFragment, RasterAccumulatorDebug) {
+    let z = extract_z(acc[ATTR_Z]);
+
+    let q_top = (acc[ATTR_Q] >> 16) as u16;
+    let rq = recip::recip_q(q_top as u32);
+
+    let (u0, s0_top, s0_product) = persp_correct_debug(acc[ATTR_S0], rq.recip);
+    let (v0, t0_top, t0_product) = persp_correct_debug(acc[ATTR_T0], rq.recip);
+    let (u1, s1_top, s1_product) = persp_correct_debug(acc[ATTR_S1], rq.recip);
+    let (v1, t1_top, t1_product) = persp_correct_debug(acc[ATTR_T1], rq.recip);
+
+    let frag = RasterFragment {
+        x: px,
+        y: py,
+        z,
+        shade0: ColorQ412 {
+            r: promote_color_q412(acc[ATTR_C0R]),
+            g: promote_color_q412(acc[ATTR_C0G]),
+            b: promote_color_q412(acc[ATTR_C0B]),
+            a: promote_color_q412(acc[ATTR_C0A]),
+        },
+        shade1: ColorQ412 {
+            r: promote_color_q412(acc[ATTR_C1R]),
+            g: promote_color_q412(acc[ATTR_C1G]),
+            b: promote_color_q412(acc[ATTR_C1B]),
+            a: promote_color_q412(acc[ATTR_C1A]),
+        },
+        u0,
+        v0,
+        u1,
+        v1,
+        lod: rq.lod,
+    };
+
+    let mut acc_copy = [0i32; 14];
+    acc_copy.copy_from_slice(acc);
+
+    let dbg = RasterAccumulatorDebug {
+        acc: acc_copy,
+        q_top,
+        inv_q: rq.recip,
+        s0_top,
+        t0_top,
+        s1_top,
+        t1_top,
+        s0_product,
+        t0_product,
+        s1_product,
+        t1_product,
+    };
+
+    (frag, dbg)
 }

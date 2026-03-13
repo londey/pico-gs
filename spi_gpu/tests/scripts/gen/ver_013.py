@@ -75,5 +75,4 @@ def generate() -> list[str]:
                        vertex_comment(100, 380, 0x0000)))
     lines.append(emit_blank())
 
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines

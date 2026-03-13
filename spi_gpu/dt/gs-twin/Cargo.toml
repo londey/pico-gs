@@ -15,3 +15,6 @@ gpu-registers = { path = "../../../registers", default-features = false }
 
 # Image output for golden reference PNGs
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Debugger breakpoint (triggers only when debugger is attached)
+dbg_breakpoint = { version = "0.1", default-features = false }

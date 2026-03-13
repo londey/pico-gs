@@ -479,6 +479,16 @@ impl RegisterFile {
     pub fn stipple_pattern(&self) -> StipplePatternReg {
         self.stipple_pattern
     }
+
+    /// Access the TEX0_CFG register latch.
+    pub fn tex0_cfg(&self) -> TexCfgReg {
+        self.tex0_cfg
+    }
+
+    /// Access the TEX1_CFG register latch.
+    pub fn tex1_cfg(&self) -> TexCfgReg {
+        self.tex1_cfg
+    }
 }
 
 /// Winding order for vertex kick.

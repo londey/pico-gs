@@ -36,11 +36,11 @@ ROAD_WIDTH = 2.0
 ROAD_NEAR = 2.0    # near edge (close to camera)
 ROAD_FAR = 50.0    # far edge (vanishing point)
 
-NUM_STRIPS = 2     # 2 quads = 4 triangles
+NUM_STRIPS = 1     # 2 quads = 4 triangles
 
 # UV: tile the checker texture along the road.
 UV_REPEATS_U = 2.0    # across the road
-UV_REPEATS_V = 4.0    # along the road (max V per vertex; fits Q4.12 signed)
+UV_REPEATS_V = 7.0    # along the road (max V per vertex; fits Q4.12 signed)
 
 
 def _emit_block_checker_texture(base_word: int, width_log2: int,
@@ -157,7 +157,6 @@ def _setup_phase() -> list[str]:
     lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
 
     lines.append(emit_blank())
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 
@@ -205,7 +204,7 @@ def _triangles_phase() -> list[str]:
     for row in range(NUM_STRIPS + 1):
         t = row / NUM_STRIPS
         z_world = ROAD_NEAR + t * (ROAD_FAR - ROAD_NEAR)
-        v_coord = t * UV_REPEATS_V
+        v_coord = (t * UV_REPEATS_V) - 4.0
 
         row_verts = []
         for side, u_coord in [(-ROAD_WIDTH, 0.0), (ROAD_WIDTH, UV_REPEATS_U)]:
@@ -229,15 +228,14 @@ def _triangles_phase() -> list[str]:
 
         lines.append(emit_comment(
             f"Strip {s} tri 1 (near-left, near-right, far-right)"))
-        _emit_tri(lines, [nl, nr, fr], color=(0xFF, 0xFF, 0xFF))
+        _emit_tri(lines, [nl, nr, fr], color=(0xFF, 0x00, 0x00))
         lines.append(emit_blank())
 
         lines.append(emit_comment(
             f"Strip {s} tri 2 (near-left, far-right, far-left)"))
-        _emit_tri(lines, [nl, fr, fl], color=(0xFF, 0xFF, 0xFF))
+        _emit_tri(lines, [nl, fr, fl], color=(0x00, 0xFF, 0x00))
         lines.append(emit_blank())
 
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 

@@ -65,6 +65,8 @@ mod reg_ext;
 pub mod test_harness;
 
 use math::Rgb565;
+use pipeline::color_combine::CcInputs;
+use pipeline::debug_pixel;
 use pipeline::fragment::{ColorQ412, ColoredFragment, RasterFragment};
 use pipeline::rasterize;
 use pipeline::tex_sample::TextureSampler;
@@ -97,6 +99,10 @@ pub struct Gpu {
 
     /// Default framebuffer height (used when fb_config hasn't been set).
     pub default_height: u32,
+
+    /// When set, enables detailed debug tracing for fragments at this
+    /// pixel coordinate.  Set via `--debug-pixel X,Y` in the CLI.
+    pub debug_pixel: Option<(u16, u16)>,
 }
 
 impl Gpu {
@@ -118,6 +124,7 @@ impl Gpu {
             tex1_sampler: TextureSampler::default(),
             default_width: width,
             default_height: height,
+            debug_pixel: None,
         }
     }
 
@@ -172,8 +179,16 @@ impl Gpu {
         let Some(setup) = rasterize::triangle_setup(tri) else {
             return;
         };
-        for frag in rasterize::rasterize_iter(setup) {
-            if let Some(colored) = self.execute_fragment_pipeline(frag) {
+        let mut iter = rasterize::rasterize_iter_debug(setup, self.debug_pixel);
+        while let Some(frag) = iter.next() {
+            let dbg = iter.take_debug();
+            if let Some(ref accum) = dbg {
+                debug_pixel::print_triangle_header(frag.x, frag.y, tri);
+                debug_pixel::print_raster_accum(accum);
+                debug_pixel::print_perspective_correction(accum, &frag);
+                debug_pixel::print_raster_fragment(&frag);
+            }
+            if let Some(colored) = self.execute_fragment_pipeline(frag, dbg.is_some()) {
                 self.write_colored_fragment(&colored);
             }
         }
@@ -189,12 +204,17 @@ impl Gpu {
     /// # Arguments
     ///
     /// * `frag` - Rasterizer output fragment.
+    /// * `debug` - Whether to print debug state at each stage.
     ///
     /// # Returns
     ///
     /// `Some(ColoredFragment)` ready for alpha blend, or `None` if any
     /// kill stage discards the fragment.
-    fn execute_fragment_pipeline(&mut self, frag: RasterFragment) -> Option<ColoredFragment> {
+    fn execute_fragment_pipeline(
+        &mut self,
+        frag: RasterFragment,
+        debug: bool,
+    ) -> Option<ColoredFragment> {
         let rm = self.regs.render_mode();
         let fb_cfg = self.regs.fb_config();
 
@@ -227,6 +247,10 @@ impl Gpu {
             &self.memory.sdram,
         );
 
+        if debug {
+            debug_pixel::print_textured_fragment(&frag);
+        }
+
         // Stage 4-5: Color combiner (two-stage (A-B)*C+D)
         let cc_mode = self.regs.cc_mode();
         let cc = self.regs.const_color();
@@ -235,7 +259,38 @@ impl Gpu {
         let const1 =
             ColorQ412::from_unorm8(cc.const1_r(), cc.const1_g(), cc.const1_b(), cc.const1_a());
         let frag = pipeline::color_combine::color_combine_0(frag, cc_mode, const0, const1);
+
+        if debug {
+            let cc0_inputs = CcInputs {
+                tex0: frag.tex0,
+                tex1: frag.tex1,
+                shade0: frag.shade0,
+                shade1: frag.shade1,
+                const0,
+                const1,
+                combined: ColorQ412::OPAQUE_WHITE,
+            };
+            debug_pixel::print_combiner_stage(
+                0,
+                cc_mode,
+                &cc0_inputs,
+                &frag.comb.unwrap_or_default(),
+            );
+        }
+
         let frag = pipeline::color_combine::color_combine_1(frag, cc_mode, const0, const1);
+
+        if debug {
+            debug_pixel::print_final_fragment(&frag);
+            debug_pixel::print_register_snapshot(
+                rm,
+                cc_mode,
+                self.tex0_sampler.tex_cfg(),
+                self.tex1_sampler.tex_cfg(),
+                cc,
+            );
+            debug_pixel::debug_breakpoint(frag.x, frag.y);
+        }
 
         // Stage 6: Alpha test
         // Note: existing stub takes ZCompareE; should use AlphaTestE

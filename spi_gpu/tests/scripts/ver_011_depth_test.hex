@@ -27,7 +27,6 @@
 00 FF00_00FF_0000_00FF  # COLOR: diffuse=red specular=black
 07 0000_4000_17C0_0C80  # VERTEX_KICK_012: x=200 y=380 z=0x4000
 
-00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)
 
 ## PHASE: tri_b
 
@@ -38,4 +37,3 @@
 00 0000_FFFF_0000_00FF  # COLOR: diffuse=blue specular=black
 07 0000_8000_1680_1180  # VERTEX_KICK_012: x=280 y=360 z=0x8000
 
-00 0000_0000_0000_0000  # COLOR: dummy NOP (FIFO FWFT workaround)

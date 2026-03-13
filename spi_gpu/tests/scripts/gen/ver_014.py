@@ -125,7 +125,6 @@ def _setup_phase() -> list[str]:
     lines.append(emit(ADDR_RENDER_MODE, mode, render_mode_comment(mode)))
 
     lines.append(emit_blank())
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 
@@ -211,7 +210,6 @@ def _triangles_phase() -> list[str]:
         _emit_tri(lines, tri2, color)
         lines.append(emit_blank())
 
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 

@@ -618,6 +618,11 @@ impl TextureSampler {
         self.cache.clear();
     }
 
+    /// Get the current texture configuration, if set.
+    pub fn tex_cfg(&self) -> Option<TexCfgReg> {
+        self.cfg
+    }
+
     /// Sample a texel at the given UV coordinates and LOD level.
     ///
     /// Applies wrap mode, computes the texel block address, checks the

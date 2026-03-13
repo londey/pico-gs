@@ -68,7 +68,4 @@ def generate() -> list[str]:
 
     lines.append(emit_blank())
 
-    # Dummy trailing NOP (FIFO FWFT workaround)
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
-
     return lines

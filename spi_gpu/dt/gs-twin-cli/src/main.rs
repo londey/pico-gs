@@ -62,6 +62,12 @@ enum Commands {
 
         #[arg(long, default_value = "240")]
         height: u32,
+
+        /// Debug a specific pixel: print full pipeline state each time
+        /// the rasterizer emits a fragment at this coordinate.
+        /// Format: X,Y (e.g., --debug-pixel 256,256).
+        #[arg(long, value_parser = parse_pixel_coord)]
+        debug_pixel: Option<(u16, u16)>,
     },
 
     /// Compare a reference PNG against a raw RGB565 framebuffer dump.
@@ -87,6 +93,22 @@ enum Commands {
     },
 }
 
+/// Parse a pixel coordinate from "X,Y" string.
+fn parse_pixel_coord(s: &str) -> std::result::Result<(u16, u16), String> {
+    let (x_str, y_str) = s
+        .split_once(',')
+        .ok_or_else(|| "expected format: X,Y (e.g., 256,256)".to_string())?;
+    let x = x_str
+        .trim()
+        .parse::<u16>()
+        .map_err(|e| format!("invalid X coordinate: {e}"))?;
+    let y = y_str
+        .trim()
+        .parse::<u16>()
+        .map_err(|e| format!("invalid Y coordinate: {e}"))?;
+    Ok((x, y))
+}
+
 /// Render a scene from a hex script string.
 ///
 /// Uses framebuffer dimensions from the `## FRAMEBUFFER:` directive when
@@ -106,7 +128,9 @@ fn render_hex_scene(hex_content: &str, gpu: &mut gs_twin::Gpu) -> Result<()> {
 
     // Use framebuffer dimensions from hex file if available
     if script.fb_width > 0 && script.fb_height > 0 {
+        let debug_pixel = gpu.debug_pixel;
         *gpu = gs_twin::Gpu::new(script.fb_width, script.fb_height);
+        gpu.debug_pixel = debug_pixel;
     }
 
     // Execute each phase separately (respects pipeline drain boundaries)
@@ -126,8 +150,10 @@ fn main() -> Result<()> {
             output,
             width,
             height,
+            debug_pixel,
         } => {
             let mut gpu = gs_twin::Gpu::new(width, height);
+            gpu.debug_pixel = debug_pixel;
 
             match scene.as_str() {
                 "ver_010" => {

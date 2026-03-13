@@ -26,6 +26,7 @@ pub mod recip;
 pub mod alpha_blend;
 pub mod alpha_test;
 pub mod color_combine;
+pub mod debug_pixel;
 pub mod depth_range;
 pub mod dither;
 pub mod early_z;

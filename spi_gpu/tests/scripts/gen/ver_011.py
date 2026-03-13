@@ -62,7 +62,6 @@ def _tri_a_phase() -> list[str]:
                            vertex_comment(x, y, 0x4000)))
 
     lines.append(emit_blank())
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 
@@ -84,7 +83,6 @@ def _tri_b_phase() -> list[str]:
                            vertex_comment(x, y, 0x8000)))
 
     lines.append(emit_blank())
-    lines.append(emit(ADDR_COLOR, 0, "dummy NOP (FIFO FWFT workaround)"))
     return lines
 
 
