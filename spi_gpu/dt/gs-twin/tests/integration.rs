@@ -74,7 +74,7 @@ const VER_010_HEX: &str = include_str!("../../../tests/scripts/ver_010_gouraud.h
 
 #[test]
 fn ver_010_gouraud_triangle() {
-    let png_path = dt_out_dir().join("gouraud_triangle.png");
+    let png_path = dt_out_dir().join("ver_010_gouraud_triangle.png");
     let _ = test_harness::write_placeholder_png(&png_path);
 
     let script = hex_parser::parse_hex_str(VER_010_HEX).unwrap();
@@ -102,7 +102,7 @@ const VER_011_HEX: &str = include_str!("../../../tests/scripts/ver_011_depth_tes
 
 #[test]
 fn ver_011_depth_test() {
-    let png_path = dt_out_dir().join("depth_test.png");
+    let png_path = dt_out_dir().join("ver_011_depth_test.png");
     let _ = test_harness::write_placeholder_png(&png_path);
 
     let script = hex_parser::parse_hex_str(VER_011_HEX).unwrap();
@@ -140,7 +140,7 @@ const VER_012_HEX: &str = include_str!("../../../tests/scripts/ver_012_textured.
 
 #[test]
 fn ver_012_textured_triangle() {
-    let png_path = dt_out_dir().join("textured_triangle.png");
+    let png_path = dt_out_dir().join("ver_012_textured_triangle.png");
     let _ = test_harness::write_placeholder_png(&png_path);
 
     let script = hex_parser::parse_hex_str(VER_012_HEX).unwrap();
@@ -159,7 +159,7 @@ const VER_013_HEX: &str = include_str!("../../../tests/scripts/ver_013_color_com
 
 #[test]
 fn ver_013_color_combined() {
-    let png_path = dt_out_dir().join("color_combined.png");
+    let png_path = dt_out_dir().join("ver_013_color_combined.png");
     let _ = test_harness::write_placeholder_png(&png_path);
 
     let script = hex_parser::parse_hex_str(VER_013_HEX).unwrap();
@@ -178,8 +178,8 @@ const VER_014_HEX: &str = include_str!("../../../tests/scripts/ver_014_textured_
 
 #[test]
 fn ver_014_textured_cube() {
-    let png_path = dt_out_dir().join("textured_cube.png");
-    let z_path = dt_out_dir().join("textured_cube_z.png");
+    let png_path = dt_out_dir().join("ver_014_textured_cube.png");
+    let z_path = dt_out_dir().join("ver_014_textured_cube_z.png");
     let _ = test_harness::write_placeholder_png(&png_path);
     let _ = test_harness::write_placeholder_png(&z_path);
 
@@ -203,7 +203,7 @@ const VER_015_HEX: &str = include_str!("../../../tests/scripts/ver_015_size_grid
 
 #[test]
 fn ver_015_size_grid() {
-    let png_path = dt_out_dir().join("size_grid.png");
+    let png_path = dt_out_dir().join("ver_015_size_grid.png");
     let _ = test_harness::write_placeholder_png(&png_path);
 
     let script = hex_parser::parse_hex_str(VER_015_HEX).unwrap();
@@ -230,8 +230,8 @@ const VER_016_HEX: &str = include_str!("../../../tests/scripts/ver_016_perspecti
 
 #[test]
 fn ver_016_perspective_road() {
-    let png_path = dt_out_dir().join("perspective_road.png");
-    let z_path = dt_out_dir().join("perspective_road_z.png");
+    let png_path = dt_out_dir().join("ver_016_perspective_road.png");
+    let z_path = dt_out_dir().join("ver_016_perspective_road_z.png");
     let _ = test_harness::write_placeholder_png(&png_path);
     let _ = test_harness::write_placeholder_png(&z_path);
 

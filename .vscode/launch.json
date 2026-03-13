@@ -1,0 +1,97 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug ver_016 perspective_road (debug-pixel)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/cargo/debug/gs-twin-cli",
+            "args": [
+                "render",
+                "--scene", "ver_016",
+                "--output", "${workspaceFolder}/build/dt_out/perspective_road_debug.png",
+                "--debug-pixel", "${input:debugPixelCoord}"
+            ],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Skip SIGTRAP from breakpoint_if_debugging",
+                    "text": "handle SIGTRAP nostop",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build gs-twin-cli (debug)",
+            "sourceFileMap": {
+                "/rustc/": ""
+            }
+        },
+        {
+            "name": "Debug ver_016 (stop at debug breakpoint)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/cargo/debug/gs-twin-cli",
+            "args": [
+                "render",
+                "--scene", "ver_016",
+                "--output", "${workspaceFolder}/build/dt_out/perspective_road_debug.png",
+                "--debug-pixel", "${input:debugPixelCoord}"
+            ],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build gs-twin-cli (debug)",
+            "sourceFileMap": {
+                "/rustc/": ""
+            }
+        },
+        {
+            "name": "Debug gs-twin-cli (custom args)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/cargo/debug/gs-twin-cli",
+            "args": ["${input:cliArgs}"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build gs-twin-cli (debug)",
+            "sourceFileMap": {
+                "/rustc/": ""
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "debugPixelCoord",
+            "type": "promptString",
+            "description": "Debug pixel coordinate (X,Y)",
+            "default": "256,256"
+        },
+        {
+            "id": "cliArgs",
+            "type": "promptString",
+            "description": "gs-twin-cli arguments",
+            "default": "render --scene ver_016 --output build/dt_out/perspective_road_debug.png --debug-pixel 256,256"
+        }
+    ]
+}

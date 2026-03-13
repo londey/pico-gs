@@ -1,0 +1,50 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build gs-twin-cli (debug)",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["build", "-p", "gs-twin-cli"],
+            "group": "build",
+            "problemMatcher": "$rustc"
+        },
+        {
+            "label": "Run ver_016 with debug-pixel",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "run", "-p", "gs-twin-cli", "--",
+                "render",
+                "--scene", "ver_016",
+                "--output", "${workspaceFolder}/build/dt_out/perspective_road_debug.png",
+                "--debug-pixel", "${input:debugPixelCoord}"
+            ],
+            "dependsOn": "Build gs-twin-cli (debug)",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Run DT integration tests",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["test", "-p", "gs-twin", "--", "--nocapture"],
+            "group": "test",
+            "problemMatcher": "$rustc",
+            "presentation": {
+                "reveal": "always"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "debugPixelCoord",
+            "type": "promptString",
+            "description": "Debug pixel coordinate (X,Y)",
+            "default": "256,256"
+        }
+    ]
+}

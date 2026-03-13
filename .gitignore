@@ -1,49 +1,8 @@
-**/*.local.json
-/.specify
-
-# Rust
-**/*.rs.bk
-*.rlib
-*.prof*
-
-# All build outputs consolidated under build/
-/build/
-
-# Safety net: catch waveform files if test binary runs from wrong directory
-*.vcd
-*.fst
-
-# Harness scaffold smoke-test output
-spi_gpu/test_scaffold.png
-
-# FPGA-specific file types (outside build/)
-*.config
-*.bit
-*.svf
-*.asc
-*.asc.json
-*_out.json
-
-# Generated assets (regenerated on build)
-assets/compiled/
-host_app/src/assets/*.rs
-!host_app/src/assets/mod.rs
-
-# IDE
-.idea/
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment
-.env*
-*.log
-
+__pycache__
 .syskit
+*.bk
+*.pyc
+**/*.local.json
+build/
 spi_gpu/obj_dir
 target/
-build/
-spi_gpu/tests/scripts/gen/__pycache__/common.cpython-311.pyc
-*.pyc

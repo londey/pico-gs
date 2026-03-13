@@ -46,6 +46,8 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     # PDF rendering (for datasheet reading)
     poppler-utils \
+    # Debugging
+    gdb \
     # Utilities
     make \
     sudo \

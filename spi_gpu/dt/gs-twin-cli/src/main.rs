@@ -33,8 +33,20 @@ mod scripts {
     /// VER-011: Depth-tested overlapping triangles.
     pub const VER_011: &str = include_str!("../../../tests/scripts/ver_011_depth_test.hex");
 
+    /// VER-012: Textured triangle.
+    pub const VER_012: &str = include_str!("../../../tests/scripts/ver_012_textured.hex");
+
+    /// VER-013: Color-combined triangle.
+    pub const VER_013: &str = include_str!("../../../tests/scripts/ver_013_color_combined.hex");
+
+    /// VER-014: Textured cube.
+    pub const VER_014: &str = include_str!("../../../tests/scripts/ver_014_textured_cube.hex");
+
     /// VER-015: Triangle size grid.
     pub const VER_015: &str = include_str!("../../../tests/scripts/ver_015_size_grid.hex");
+
+    /// VER-016: Perspective road with checker texture.
+    pub const VER_016: &str = include_str!("../../../tests/scripts/ver_016_perspective_road.hex");
 }
 
 /// Top-level CLI argument parser.
@@ -162,11 +174,25 @@ fn main() -> Result<()> {
                 "ver_011" => {
                     render_hex_scene(scripts::VER_011, &mut gpu)?;
                 }
+                "ver_012" => {
+                    render_hex_scene(scripts::VER_012, &mut gpu)?;
+                }
+                "ver_013" => {
+                    render_hex_scene(scripts::VER_013, &mut gpu)?;
+                }
+                "ver_014" => {
+                    render_hex_scene(scripts::VER_014, &mut gpu)?;
+                }
                 "ver_015" => {
                     render_hex_scene(scripts::VER_015, &mut gpu)?;
                 }
+                "ver_016" => {
+                    render_hex_scene(scripts::VER_016, &mut gpu)?;
+                }
                 other => {
-                    anyhow::bail!("unknown scene: {other}\navailable: ver_010, ver_011, ver_015")
+                    anyhow::bail!(
+                        "unknown scene: {other}\navailable: ver_010, ver_011, ver_012, ver_013, ver_014, ver_015, ver_016"
+                    )
                 }
             };
 

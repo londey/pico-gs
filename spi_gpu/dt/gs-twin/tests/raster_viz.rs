@@ -182,7 +182,7 @@ fn rasterize_and_visualize(
     let mut img = RgbImage::new(img_w, img_h);
 
     for (i, frag) in frags.iter().enumerate() {
-        let hue = (i as f32 / total as f32) * 300.0; // red → magenta
+        let hue = (i as f32 % 128.0) / 128.0 * 300.0; // cycle every ~128 pixels
         let rgb = hsv_to_rgb(hue, 1.0, 1.0);
         let x = frag.x as u32;
         let y = frag.y as u32;
