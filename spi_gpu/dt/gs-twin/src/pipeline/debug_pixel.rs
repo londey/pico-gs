@@ -32,7 +32,7 @@ pub struct RasterAccumulatorDebug {
     /// Top 16 bits of Q accumulator (input to `recip_q`).
     pub q_top: u16,
 
-    /// UQ4.14 reciprocal of Q from `recip_q`.
+    /// UQ7.10 reciprocal of Q from `recip_q`.
     pub inv_q: u32,
 
     /// Top 16 bits of S0 accumulator (signed, before perspective correction).
@@ -58,6 +58,15 @@ pub struct RasterAccumulatorDebug {
 
     /// Full signed product `t1_top * inv_q`.
     pub t1_product: i64,
+
+    /// CLZ count of the Q input to `recip_q`.
+    pub recip_clz: u8,
+
+    /// 10-bit LUT index used by `recip_q`.
+    pub recip_lut_index: u16,
+
+    /// Error of the computed 1/Q in UQ7.10 LSBs (positive = too small).
+    pub recip_error_lsb: i32,
 }
 
 /// Print the debug-pixel header and triangle vertex data.
@@ -109,9 +118,19 @@ pub fn print_perspective_correction(dbg: &RasterAccumulatorDebug, frag: &RasterF
     eprintln!("╠──────────────────────────────────────────────────────────────╣");
     eprintln!("║  Perspective Correction");
     eprintln!("╠──────────────────────────────────────────────────────────────╣");
+    // Compute the floating-point value of 1/Q for readability
+    let inv_q_float = dbg.inv_q as f64 / 1024.0;
+    let q_float = dbg.q_top as f64 / 32768.0;
     eprintln!(
-        "  q_top = 0x{:04X}  inv_q = 0x{:05X} (UQ4.14)",
-        dbg.q_top, dbg.inv_q
+        "  q_top = 0x{:04X} ({:.6})  inv_q = 0x{:05X} (UQ7.10 = {:.6})",
+        dbg.q_top, q_float, dbg.inv_q, inv_q_float
+    );
+    eprintln!(
+        "  recip: clz={} lut_index={} error={} LSB ({:.4} UQ7.10)",
+        dbg.recip_clz,
+        dbg.recip_lut_index,
+        dbg.recip_error_lsb,
+        dbg.recip_error_lsb as f64 / 1024.0
     );
     eprintln!(
         "  S0: s_top=0x{:04X} ({:>6})  product=0x{:010X}  u0=0x{:04X} ({})",

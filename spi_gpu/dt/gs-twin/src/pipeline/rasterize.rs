@@ -823,21 +823,23 @@ fn extract_z(acc: i32) -> u16 {
 /// Apply perspective correction to a texture coordinate accumulator.
 ///
 /// Matches raster_edge_walk.sv:
-///   `mul = $signed(s_acc[31:16]) * $signed({1'b0, persp_recip})`
-///   `result = mul[29:14]` → Q4.12
+///   `mul = $signed(s_acc[31:16]) * $signed(persp_recip)`
+///   `result = mul[25:10]` → Q4.12
 ///
 /// `s_acc`: 32-bit signed attribute accumulator (top 16 bits = Q4.12)
-/// `inv_q`: UQ4.14 (18-bit unsigned from recip_q)
+/// `inv_q`: UQ7.10 (17-bit unsigned in 18-bit register from recip_q)
 fn persp_correct(s_acc: i32, inv_q: u32) -> qfixed::Q<4, 12> {
     // Extract top 16 bits as signed Q4.12
     let s_top = (s_acc >> 16) as i16 as i32;
 
-    // Signed multiply: signed(16) × signed({1'b0, 18-bit}) = signed 35-bit
-    let inv_q_signed = inv_q as i32; // {1'b0, UQ4.14} — always positive
-    let product = (s_top as i64) * (inv_q_signed as i64); // Q9.26 (35-bit)
+    // Signed multiply: signed(16) × signed(18) = signed 34-bit
+    // persp_recip is UQ7.10 in 18-bit register (bit 17 always 0),
+    // so $signed(persp_recip) is non-negative.
+    let inv_q_signed = inv_q as i32;
+    let product = (s_top as i64) * (inv_q_signed as i64); // Q12.22 (34-bit)
 
-    // Extract bits [29:14] → Q4.12 (16-bit signed)
-    let result = ((product >> 14) & 0xFFFF) as i16;
+    // Extract bits [25:10] → Q4.12 (16-bit signed)
+    let result = ((product >> 10) & 0xFFFF) as i16;
     qfixed::Q::from_bits(result as i64)
 }
 
@@ -881,7 +883,7 @@ fn persp_correct_debug(s_acc: i32, inv_q: u32) -> (qfixed::Q<4, 12>, i16, i64) {
     let s_top = (s_acc >> 16) as i16 as i32;
     let inv_q_signed = inv_q as i32;
     let product = (s_top as i64) * (inv_q_signed as i64);
-    let result = ((product >> 14) & 0xFFFF) as i16;
+    let result = ((product >> 10) & 0xFFFF) as i16;
     (qfixed::Q::from_bits(result as i64), s_top as i16, product)
 }
 
@@ -942,6 +944,9 @@ fn emit_fragment_debug(
         t0_product,
         s1_product,
         t1_product,
+        recip_clz: rq.clz,
+        recip_lut_index: rq.lut_index,
+        recip_error_lsb: rq.error_lsb,
     };
 
     (frag, dbg)

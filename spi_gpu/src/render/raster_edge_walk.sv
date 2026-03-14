@@ -74,7 +74,7 @@ module raster_edge_walk (
     // Dedicated per-pixel reciprocal interface (raster_recip_q)
     output reg         [31:0] recip_operand,   // Unsigned operand to raster_recip_q
     output reg                recip_valid_in,   // Valid strobe to raster_recip_q
-    input  wire        [17:0] recip_out,        // 1/Q result, UQ4.14 unsigned
+    input  wire        [17:0] recip_out,        // 1/Q result, UQ7.10 unsigned
     input  wire        [4:0]  recip_clz_out,    // CLZ count from raster_recip_q
 
     // Attribute accumulator step commands (to raster_attr_accum)
@@ -232,7 +232,7 @@ module raster_edge_walk (
     // Perspective Correction Registers
     // ========================================================================
 
-    reg        [17:0] persp_recip;        // 1/Q from raster_recip_q (UQ4.14)
+    reg        [17:0] persp_recip;        // 1/Q from raster_recip_q (UQ7.10)
     reg        [7:0]  persp_lod;          // UQ4.4 LOD
 
     reg [9:0]  latched_x;                // Latched X for emission
@@ -244,25 +244,26 @@ module raster_edge_walk (
     // ========================================================================
     // Perspective Correction Multiplies (4 MULT18X18D)
     // ========================================================================
-    // S/T are Q4.12 (signed 16-bit), 1/Q is UQ4.14 (unsigned 18-bit).
-    // Signed multiply: $signed(S) * $signed({1'b0, persp_recip})
-    //   = signed 16 × signed 19 = signed 35-bit product (Q9.26).
-    // Extract Q4.12 from bits [29:14].
+    // S/T are Q4.12 (signed 16-bit), 1/Q is UQ7.10 (17-bit in 18-bit reg).
+    // persp_recip bit 17 is always 0 (UQ7.10 max = 0x1FFFF), so
+    // $signed(persp_recip) is non-negative — exactly 1 MULT18X18D each.
+    // Product: signed 16 × signed 18 = signed 34-bit (Q12.22).
+    // Extract Q4.12 from bits [25:10].
 
-    wire signed [34:0] mul_u0 = $signed(s0_acc[31:16]) * $signed({1'b0, persp_recip});
-    wire signed [34:0] mul_v0 = $signed(t0_acc[31:16]) * $signed({1'b0, persp_recip});
-    wire signed [34:0] mul_u1 = $signed(s1_acc[31:16]) * $signed({1'b0, persp_recip});
-    wire signed [34:0] mul_v1 = $signed(t1_acc[31:16]) * $signed({1'b0, persp_recip});
+    wire signed [33:0] mul_u0 = $signed(s0_acc[31:16]) * $signed(persp_recip);
+    wire signed [33:0] mul_v0 = $signed(t0_acc[31:16]) * $signed(persp_recip);
+    wire signed [33:0] mul_u1 = $signed(s1_acc[31:16]) * $signed(persp_recip);
+    wire signed [33:0] mul_v1 = $signed(t1_acc[31:16]) * $signed(persp_recip);
 
     // Unused bits from multiply products
-    wire [13:0] _unused_mul_u0_lo = mul_u0[13:0];
-    wire [13:0] _unused_mul_v0_lo = mul_v0[13:0];
-    wire [13:0] _unused_mul_u1_lo = mul_u1[13:0];
-    wire [13:0] _unused_mul_v1_lo = mul_v1[13:0];
-    wire [4:0]  _unused_mul_u0_hi = mul_u0[34:30];
-    wire [4:0]  _unused_mul_v0_hi = mul_v0[34:30];
-    wire [4:0]  _unused_mul_u1_hi = mul_u1[34:30];
-    wire [4:0]  _unused_mul_v1_hi = mul_v1[34:30];
+    wire [9:0]  _unused_mul_u0_lo = mul_u0[9:0];
+    wire [9:0]  _unused_mul_v0_lo = mul_v0[9:0];
+    wire [9:0]  _unused_mul_u1_lo = mul_u1[9:0];
+    wire [9:0]  _unused_mul_v1_lo = mul_v1[9:0];
+    wire [7:0]  _unused_mul_u0_hi = mul_u0[33:26];
+    wire [7:0]  _unused_mul_v0_hi = mul_v0[33:26];
+    wire [7:0]  _unused_mul_u1_hi = mul_u1[33:26];
+    wire [7:0]  _unused_mul_v1_hi = mul_v1[33:26];
 
     // ========================================================================
     // Next-State Declarations
@@ -491,8 +492,12 @@ module raster_edge_walk (
 
             EW_EDGE_TEST: begin
                 if (inside_triangle) begin
-                    // Issue 1/Q lookup to raster_recip_q (unsigned operand)
-                    next_recip_operand = q_acc[31:0];
+                    // Issue 1/Q lookup to raster_recip_q.
+                    // Pass only the top 16 bits (the UQ1.15 Q value) zero-extended
+                    // to 32.  The bottom 16 bits are sub-pixel accumulation fraction
+                    // and must NOT be included — raster_recip_q's denormalization
+                    // is calibrated for the 16-bit Q value range.
+                    next_recip_operand = {16'd0, q_acc[31:16]};
                     next_recip_valid_in = 1'b1;
                 end
             end
@@ -509,7 +514,7 @@ module raster_edge_walk (
 
             EW_PERSP_1: begin
                 // BRAM read result available (2-cycle latency from raster_recip_q)
-                // Latch 18-bit UQ4.14 reciprocal
+                // Latch 18-bit UQ7.10 reciprocal
                 next_persp_recip = recip_out;
                 // CLZ to UQ4.4: integer mip level from CLZ, fractional = 0
                 next_persp_lod = {recip_clz_out[4:0], 3'b000};
@@ -523,8 +528,8 @@ module raster_edge_walk (
                 next_frag_z = latched_z;
                 next_frag_color0 = latched_color0;
                 next_frag_color1 = latched_color1;
-                next_frag_uv0 = {mul_u0[29:14], mul_v0[29:14]};
-                next_frag_uv1 = {mul_u1[29:14], mul_v1[29:14]};
+                next_frag_uv0 = {mul_u0[25:10], mul_v0[25:10]};
+                next_frag_uv1 = {mul_u1[25:10], mul_v1[25:10]};
                 next_frag_lod = persp_lod;
                 next_frag_tile_start = tile_first_emission;
                 next_tile_first_emission = 1'b0;

@@ -23,7 +23,7 @@
 //   6. delta = ROM[index] - ROM[index+1] (non-negative, 1/x is decreasing)
 //   7. correction = (delta * fraction) >> 8 using 1 MULT18X18D
 //   8. raw_recip = ROM[index] - correction (UQ1.17)
-//   9. Denormalize: shift right to produce UQ4.14
+//   9. Denormalize: shift right to produce UQ7.10
 //
 // LUT values: ROM[i] = round(2^17 / (1 + i/1024)) for i = 0..1023
 //   1024 entries in UQ1.17 format, representing 1/mantissa for
@@ -37,7 +37,7 @@ module raster_recip_q (
     input  wire        [31:0] operand_in,   // Unsigned Q/W value (always positive)
     input  wire               valid_in,     // Input valid handshake
 
-    output reg         [17:0] recip_out,    // Output reciprocal, UQ4.14 unsigned
+    output reg         [17:0] recip_out,    // Output reciprocal, UQ7.10 unsigned
     output reg          [4:0] clz_out,      // CLZ count of input (for frag_lod)
     output reg                valid_out     // Output valid (2-cycle latency)
 );
@@ -164,37 +164,54 @@ module raster_recip_q (
     // Interpolated reciprocal of normalized mantissa (UQ1.17)
     wire [17:0] raw_recip = s1_rom_a - correction;             // UQ1.17
 
-    // Denormalization — Convert to UQ4.14 Output
+    // Denormalization — Convert to UQ7.10 Output
     //
     // raw_recip is UQ1.17 and represents 1/normalized_mantissa.
     //
+    // The operand is the Q/W value from the top 16 bits of the Q accumulator,
+    // zero-extended to 32.  The vertex Q register is UQ1.15 (16-bit unsigned,
+    // 15 fractional bits), so the integer input represents Q_value × 2^15.
+    //
     // Derivation:
-    //   operand_in = normalized >> clz_count, where normalized has bit 31 set.
-    //   raw_recip ≈ 2^17 / (normalized / 2^31) = 2^48 / normalized.
-    //   1/operand_in = 2^clz_count / normalized = raw_recip * 2^(clz_count - 48).
-    //   UQ4.14 representation = 1/operand_in * 2^14
-    //     = raw_recip * 2^(clz_count + 14 - 48)
-    //     = raw_recip * 2^(clz_count - 34)
-    //     = (raw_recip << clz_count) >> 34.
+    //   operand_in = Q_value × 2^15 (UQ1.15 zero-extended to 32)
+    //   normalized = operand_in << clz_count (bit 31 set)
+    //   raw_recip ≈ 2^48 / normalized
+    //   1/operand_in = raw_recip × 2^(clz_count - 48)
+    //
+    //   We want 1/Q_value (= W) in UQ7.10:
+    //     UQ7.10 = (1/Q_value) × 2^10
+    //            = (1/operand_in) × 2^15 × 2^10
+    //            = (1/operand_in) × 2^25
+    //            = raw_recip × 2^(clz_count - 48) × 2^25
+    //            = raw_recip × 2^(clz_count - 23)
+    //            = (raw_recip << clz_count) >> 23.
     //
     // raw_recip is 18 bits, max clz is 31, so max shifted value is 49 bits.
-    // Result taken from shifted_recip[48:34] (15 bits), zero-extended to 18.
+    // (shifted >> 23) can exceed 17 bits for very large W; saturate to
+    // UQ7.10 max (0x1FFFF ≈ 128.0).  Bit 17 of the 18-bit output is
+    // always 0, ensuring $signed(recip_out) is non-negative for the
+    // MULT18X18D perspective correction multiply.
     //
-    // Verification:
-    //   clz=31, raw_recip=0x20000 (=1.0 in UQ1.17): shifted=2^48,
-    //     [48:34]=16384 → 1.0 in UQ4.14. Correct (1/1 = 1.0).
-    //   clz=30, raw_recip=0x20000: shifted=2^47,
-    //     [48:34]=8192 → 0.5 in UQ4.14. Correct (1/2 = 0.5).
-    //   clz=0,  raw_recip=0x20000: shifted=0x20000,
-    //     [48:34]=0. Correct (1/2^31 ≈ 0).
+    // Verification (UQ1.15 input, zero-extended to 32):
+    //   Q=1.0 → operand=0x8000, clz=16, shifted=0x20000<<16=2^33,
+    //     >>23 = 2^10 = 0x0400 = 1.0 UQ7.10. Correct (W=1/1=1.0).
+    //   Q=0.5 → operand=0x4000, clz=17, shifted=0x20000<<17=2^34,
+    //     >>23 = 2^11 = 0x0800 = 2.0 UQ7.10. Correct (W=1/0.5=2.0).
+    //   Q=0.0625 → operand=0x0800, clz=20, shifted=0x20000<<20=2^37,
+    //     >>23 = 2^14 = 0x4000 = 16.0 UQ7.10. Correct (fits in 17 bits).
 
     wire [48:0] shifted_recip = {31'd0, raw_recip} << s1_clz[4:0]; // Shift by CLZ
 
-    // Extract UQ4.14 result (18 bits, zero-extended from 15 bits)
-    wire [17:0] uq414_result = {3'd0, shifted_recip[48:34]};  // UQ4.14
+    // Extract with >> 23 for UQ1.15 input format → UQ7.10 output.
+    // shifted_recip[48:23] is 26 bits; saturate to 17-bit UQ7.10
+    // (bit 17 always 0 for signed MULT18X18D compatibility).
+    wire [25:0] denorm_wide = shifted_recip[48:23];                  // 26-bit result
+    wire        denorm_ovf  = |denorm_wide[25:17];                   // Overflow if >17 bits
+    wire [17:0] uq710_result = denorm_ovf ? 18'h1FFFF               // Saturate to UQ7.10 max
+                                          : {1'b0, denorm_wide[16:0]}; // Normal extraction
 
     // Unused low bits from the shift (rounding residue)
-    wire [33:0] _unused_shift_lo = shifted_recip[33:0];
+    wire [22:0] _unused_shift_lo = shifted_recip[22:0];
 
     // Compute next-state values for output registers
     logic [17:0] next_recip_out;                               // Next recip_out value
@@ -208,7 +225,7 @@ module raster_recip_q (
         if (s1_is_zero) begin
             next_recip_out = 18'd0;
         end else begin
-            next_recip_out = uq414_result;
+            next_recip_out = uq710_result;
         end
     end
 

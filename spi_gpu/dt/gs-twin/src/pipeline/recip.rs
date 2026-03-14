@@ -71,13 +71,25 @@ pub fn recip_area(area: i32) -> Option<RecipArea> {
 
 /// Result of per-pixel 1/Q reciprocal computation.
 ///
-/// Matches raster_recip_q.sv output: UQ4.14 reciprocal and UQ4.4 LOD.
+/// Matches raster_recip_q.sv output: UQ7.10 reciprocal and UQ4.4 LOD.
+/// Includes diagnostic fields for debug pixel analysis.
 pub struct RecipQ {
-    /// UQ4.14 reciprocal (18-bit unsigned).
+    /// UQ7.10 reciprocal (17-bit unsigned in 18-bit register).
     pub recip: u32,
 
     /// UQ4.4 level-of-detail estimate (CLZ-based).
     pub lod: u8,
+
+    /// CLZ count of the input operand (0..31, or 32 if zero).
+    pub clz: u8,
+
+    /// 10-bit LUT index used for the ROM lookup.
+    pub lut_index: u16,
+
+    /// Error in UQ7.10 LSBs: `(exact_recip_uq710 - computed_recip)`.
+    /// Positive means the computed value is too small.
+    /// Zero when the operand is zero.
+    pub error_lsb: i32,
 }
 
 /// Compute reciprocal of unsigned Q/W value for perspective correction.
@@ -86,17 +98,24 @@ pub struct RecipQ {
 /// 1. CLZ on 32-bit unsigned input
 /// 2. Normalize and look up in 1024-entry ROM
 /// 3. Linear interpolation with 8-bit fraction
-/// 4. Denormalize to UQ4.14
+/// 4. Denormalize to UQ7.10
 ///
 /// Input is UQ1.15 (the top 16 bits of the Q accumulator), zero-extended
 /// to 32 bits.  The value represents 1/W: raw 0x8000 = 1.0, raw 0x4000 = 0.5.
-/// Output is 1/(input_value) = W in UQ4.14 (18-bit unsigned).
+/// Output is 1/(input_value) = W in UQ7.10 (17-bit unsigned in 18-bit register).
 ///
-/// Denormalization uses `>> 19` (= 34 − 15) to account for the 15 fractional
-/// bits in the UQ1.15 input, so that recip_q(0x8000) = 0x4000 (1.0 in UQ4.14).
+/// Denormalization uses `>> 23` to produce UQ7.10, so that
+/// recip_q(0x8000) = 0x0400 (1.0 in UQ7.10).  Bit 17 is always 0, ensuring
+/// `$signed(recip_out)` is non-negative for the MULT18X18D perspective multiply.
 pub fn recip_q(operand: u32) -> RecipQ {
     if operand == 0 {
-        return RecipQ { recip: 0, lod: 0 };
+        return RecipQ {
+            recip: 0,
+            lod: 0,
+            clz: 0,
+            lut_index: 0,
+            error_lsb: 0,
+        };
     }
 
     // CLZ on 32-bit unsigned input
@@ -131,22 +150,41 @@ pub fn recip_q(operand: u32) -> RecipQ {
     // Interpolated reciprocal (UQ1.17)
     let raw_recip = rom_a - correction;
 
-    // Denormalize to UQ4.14:
+    // Denormalize to UQ7.10:
     //   shifted = raw_recip << clz_count (in a 49-bit field)
-    //   For UQ1.15 input: result = shifted >> 19 (= 34 − 15 fractional bits)
-    //   Saturate to 18 bits (UQ4.14 max ≈ 16.0) for large W values.
+    //   For UQ1.15 input: result = shifted >> 23
+    //
+    //   UQ7.10 = (1/Q_value) × 2^10
+    //          = raw_recip × 2^(clz_count - 48) × 2^15 × 2^10
+    //          = raw_recip × 2^(clz_count - 23)
+    //          = (raw_recip << clz_count) >> 23
+    //
+    //   Saturate to 17-bit max (0x1FFFF ≈ 128.0) so bit 17 of the 18-bit
+    //   register is always 0 — required for the signed MULT18X18D multiply.
     let shifted = (raw_recip as u64) << (clz_count & 0x1F);
-    let raw_result = shifted >> 19;
-    let uq414 = if raw_result > 0x3_FFFF {
-        0x3_FFFF_u32 // saturate to 18-bit max
+    let raw_result = (shifted >> 23) as u32;
+    let uq710 = if raw_result > 0x1_FFFF {
+        0x1_FFFF
     } else {
-        raw_result as u32
+        raw_result
     };
 
     // LOD = {clz[4:0], 3'b000} — integer mip level from CLZ
     let lod = (clz_count & 0x1F) << 3;
 
-    RecipQ { recip: uq414, lod }
+    // Compute exact reciprocal for error analysis.
+    // Input is UQ1.15: value = operand / 32768.  Reciprocal = 32768 / operand.
+    // In UQ7.10: exact = 32768.0 / operand * 1024.0 = 33554432.0 / operand.
+    let exact_uq710 = 33_554_432.0_f64 / (operand as f64);
+    let error_lsb = (exact_uq710.round() as i64 - uq710 as i64) as i32;
+
+    RecipQ {
+        recip: uq710,
+        lod,
+        clz: clz_count,
+        lut_index: lut_index as u16,
+        error_lsb,
+    }
 }
 
 // ============================================================================
@@ -256,21 +294,21 @@ mod tests {
 
     #[test]
     fn recip_q_one_uq115() {
-        // UQ1.15 input: 0x8000 = 1.0. Reciprocal = 1.0 in UQ4.14 = 0x4000.
+        // UQ1.15 input: 0x8000 = 1.0. Reciprocal = 1.0 in UQ7.10 = 0x0400.
         let result = recip_q(0x8000);
         assert_eq!(
-            result.recip, 0x4000,
-            "recip(1.0 UQ1.15) should be 1.0 in UQ4.14"
+            result.recip, 0x0400,
+            "recip(1.0 UQ1.15) should be 1.0 in UQ7.10"
         );
     }
 
     #[test]
     fn recip_q_half_uq115() {
-        // UQ1.15 input: 0x4000 = 0.5. Reciprocal = 2.0 in UQ4.14 = 0x8000.
+        // UQ1.15 input: 0x4000 = 0.5. Reciprocal = 2.0 in UQ7.10 = 0x0800.
         let result = recip_q(0x4000);
         assert_eq!(
-            result.recip, 0x8000,
-            "recip(0.5 UQ1.15) should be 2.0 in UQ4.14"
+            result.recip, 0x0800,
+            "recip(0.5 UQ1.15) should be 2.0 in UQ7.10"
         );
     }
 
@@ -283,11 +321,13 @@ mod tests {
 
     #[test]
     fn recip_q_large_w_saturates() {
-        // Very small Q (far object, W >> 16) should saturate to UQ4.14 max.
+        // Very small Q (far object, W >> 128) saturates to UQ7.10 max.
+        // Bit 17 of the 18-bit register is always 0 for signed multiply compat.
         let result = recip_q(1); // Q ≈ 0.0000305, W ≈ 32768
         assert_eq!(
-            result.recip, 0x3_FFFF,
-            "extreme W should saturate to UQ4.14 max"
+            result.recip, 0x1_FFFF,
+            "extreme W should saturate to UQ7.10 max: got 0x{:X}",
+            result.recip
         );
     }
 }
