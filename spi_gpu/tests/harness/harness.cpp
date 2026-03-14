@@ -900,15 +900,17 @@ int main(int argc, char** argv) {
             }
 
             // Once the rasterizer returns to IDLE and we've started, we can
-            // stop early — but only when the command FIFO is also empty and
-            // no more vertices are pending in the register file.  For
-            // multi-triangle tests (VER-014), the rasterizer briefly returns
-            // to IDLE between triangles; checking FIFO empty prevents
-            // premature exit before all triangles have been processed.
+            // stop early — but only when the command FIFO is also empty,
+            // no more vertices are pending, and no triangle is being
+            // submitted (tri_valid).  With serialized setup/iteration,
+            // the rasterizer returns to IDLE between every triangle pair;
+            // checking tri_valid prevents premature exit when a new
+            // triangle is being accepted on the same cycle.
             bool fifo_empty = top->gpio_cmd_empty;
             unsigned vtx_count = top->rootp->gpu_top->u_register_file->vertex_count;
             bool setup_fifo_empty = top->rootp->gpu_top->u_rasterizer->fifo_empty;
-            if (rast_started && rast_state == 0 && fifo_empty && setup_fifo_empty && vtx_count == 0 && i > 100) {
+            bool tri_valid_now = top->rootp->gpu_top->tri_valid;
+            if (rast_started && rast_state == 0 && fifo_empty && setup_fifo_empty && vtx_count == 0 && !tri_valid_now && i > 100) {
                 std::cout << std::format(
                     "DIAG: Rasterizer returned to IDLE at drain cycle {}\n", i
                 );

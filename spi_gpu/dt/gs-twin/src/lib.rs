@@ -349,7 +349,14 @@ impl Gpu {
         let wl2 = cfg.width_log2();
         if wl2 > 0 {
             let w = 1u32 << wl2;
-            let h = 1u32 << cfg.height_log2();
+            // Use default_height when available: the framebuffer allocation
+            // is power-of-2 (height_log2) but the visible area may be
+            // smaller (e.g. 480 rows in a 512-row allocation).
+            let h = if self.default_height > 0 {
+                self.default_height
+            } else {
+                1u32 << cfg.height_log2()
+            };
             (cfg.color_base(), wl2, w, h)
         } else {
             // fb_config not yet programmed — use defaults

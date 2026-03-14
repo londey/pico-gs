@@ -99,7 +99,7 @@ RUN cargo install cargo-deny cargo-audit
 RUN cargo install --git https://github.com/sysdoc-rs/sysdoc.git
 
 # Install PeakRDL for register interface code generation (SystemRDL → SV + Rust)
-RUN pip3 install --break-system-packages peakrdl peakrdl-regblock peakrdl-rust
+RUN pip3 install --break-system-packages peakrdl peakrdl-regblock peakrdl-rust Pillow
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code

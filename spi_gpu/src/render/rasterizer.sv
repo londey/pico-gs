@@ -1164,12 +1164,16 @@ module rasterizer (
                 // setup FSM is idle AND FIFO is not full.
                 // Can accept a new triangle when:
                 // 1. FIFO is not full
-                // 2. Iteration FSM is not using the shared multiplier
-                //    (I_ITER_START/I_INIT_E1/I_INIT_E2 contend for smul)
+                // 2. Iteration FSM is idle (not using shared working registers)
+                //
+                // The setup and iteration FSMs share working registers
+                // (edge coefficients, bbox, vertices, inv_area, etc.).
+                // If setup accepts a new triangle while iteration is walking,
+                // S_SETUP overwrites registers the edge walker still reads
+                // (bbox_min_x for pixel coordinates, edge coefficients for
+                // stepping), corrupting the current triangle's rasterization.
                 next_tri_ready = !fifo_full &&
-                    (iter_state != I_ITER_START) &&
-                    (iter_state != I_INIT_E1) &&
-                    (iter_state != I_INIT_E2);
+                    (iter_state == I_IDLE);
                 if (tri_valid && tri_ready) begin
                     // Latch triangle vertices
                     next_x0 = px0;

@@ -717,23 +717,25 @@ module pixel_pipeline (
     // SDRAM Interface Registers
     // ====================================================================
 
-    // Write data registers (latched in PP_WRITE / PP_Z_WRITE states)
-    reg  [15:0] zb_write_data_r;
-    reg  [15:0] fb_write_data_r;
-
     // Request signals are combinational, asserted while the FSM is in the
     // corresponding state.  This ensures the arbiter sees the request on the
     // same cycle the FSM enters the state, avoiding one-shot timing issues.
+    //
+    // Write data is driven combinationally (not registered) so the arbiter
+    // captures the correct value on the first cycle of PP_WRITE / PP_Z_WRITE.
+    // A registered copy (fb_write_data_r) would be one cycle late because
+    // the non-blocking update happens at the same clock edge the arbiter
+    // latches port_wdata — the arbiter would see the previous fragment's data.
     assign zbuf_read_req   = (state == PP_Z_READ);
     assign zbuf_read_addr  = zb_addr_reg;
     assign zbuf_write_req  = (state == PP_Z_WRITE);
     assign zbuf_write_addr = zb_addr_reg;
-    assign zbuf_write_data = zb_write_data_r;
+    assign zbuf_write_data = post_cc_z;
 
     // FB write request: asserted when in PP_WRITE with color_write_en
     assign fb_write_req    = (state == PP_WRITE) && color_write_en;
     assign fb_write_addr   = fb_addr_reg;
-    assign fb_write_data   = fb_write_data_r;
+    assign fb_write_data   = rgb565_pixel;
     // FB read request: asserted when in PP_FB_READ
     assign fb_read_req     = (state == PP_FB_READ);
     assign fb_read_addr    = fb_addr_reg;
@@ -936,9 +938,6 @@ module pixel_pipeline (
             post_cc_x      <= 10'b0;
             post_cc_y      <= 10'b0;
             post_cc_z      <= 16'b0;
-
-            zb_write_data_r<= 16'b0;
-            fb_write_data_r<= 16'b0;
         end else begin
             // Default: deassert one-shot CC valid
             cc_valid       <= 1'b0;
@@ -1018,15 +1017,13 @@ module pixel_pipeline (
                 end
 
                 PP_WRITE: begin
-                    // FB write request is combinational (fb_write_req).
-                    // Latch write data for the combinational output mux.
-                    fb_write_data_r <= rgb565_pixel;
+                    // FB write data driven combinationally (fb_write_data = rgb565_pixel).
+                    // No registered action needed.
                 end
 
                 PP_Z_WRITE: begin
-                    // Z-buffer write request is combinational (zbuf_write_req).
-                    // Latch write data for the combinational output mux.
-                    zb_write_data_r <= post_cc_z;
+                    // Z-buffer write data driven combinationally (zbuf_write_data = post_cc_z).
+                    // No registered action needed.
                 end
 
                 PP_TEX_LOOKUP: begin
