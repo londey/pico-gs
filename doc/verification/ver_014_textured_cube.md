@@ -15,7 +15,7 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
 - UNIT-003 (Register File — TEX0_BASE, TEX0_FMT, FB_CONFIG, FB_ZBUFFER, RENDER_MODE register writes)
 - UNIT-004 (Triangle Setup — edge function setup for twelve triangles with varying orientations)
 - UNIT-005 (Rasterizer — perspective-correct UV interpolation across faces with varying depth and projection angle)
-- UNIT-006 (Pixel Pipeline — early Z-test, texture cache lookup across multiple cache fill patterns, texture decoder, RGBA5652 promotion, MODULATE combiner)
+- UNIT-006 (Pixel Pipeline — early Z-test, texture cache lookup across multiple cache fill patterns, texture decoder, cache-format promotion to Q4.12, MODULATE combiner)
 
 ## Preconditions
 
@@ -163,7 +163,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   - Back faces bleed through front faces in the overlap region, indicating Z-test not functioning.
   - Z-buffer not cleared to `0xFFFF` before rendering, causing the first triangle to fail the depth test.
   - Texture appears as solid color, indicating cache miss not handled or texture not loaded into SDRAM model.
-  - Incorrect texel colors, indicating RGB565 decoder error or RGBA5652 promotion error.
+  - Incorrect texel colors, indicating RGB565 decoder error or cache-format promotion error.
   - Cache fill FSM issues incorrect burst length (not `burst_len=16` for RGB565).
   - Texture appears shifted or mirrored, indicating incorrect UV wrapping or 4×4 block addressing error.
   - Seams or discontinuities between the two triangles of a face, indicating triangle-setup edge case at shared edges.
@@ -200,9 +200,11 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for deterministic, reproducible output.
 - **tex_format 3-bit field:** After the pixel pipeline integration, the FORMAT field in TEXn_FMT is 3 bits wide (bits [4:2]), supporting all seven texture formats (BC1=0 through R8=6) as defined in INT-032.
   The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
+- **Cache mode and golden image:** This test runs with TEXn_CFG.CACHE_MODE=0 (18-bit RGBA5652 cache) unless explicitly noted otherwise.
+  If the default cache mode changes to CACHE_MODE=1 (36-bit UQ1.8), the promotion path changes and final RGB565 pixel values may differ across all cube faces; the golden image must be re-approved under the new default before marking this test as passing.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured-cube`.
 - **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PPM, copy it to `spi_gpu/tests/golden/textured_cube.ppm`, and commit.
-  The golden image must be regenerated and re-approved whenever: the rasterizer tiled address stride changes; the perspective-correct interpolation logic in UNIT-005 is modified (including the reciprocal module split replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs); the derivative precomputation module `raster_deriv.sv` is converted from combinational to sequential time-multiplexed computation (UNIT-005.02); the format-select mux path in UNIT-006 changes; the COMBINE_MODE=MODULATE pipeline behavior in UNIT-010 changes; or the rasterizer traversal order changes.
+  The golden image must be regenerated and re-approved whenever: the rasterizer tiled address stride changes; the perspective-correct interpolation logic in UNIT-005 is modified (including the reciprocal module split replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs); the derivative precomputation module `raster_deriv.sv` is converted from combinational to sequential time-multiplexed computation (UNIT-005.02); the format-select mux path in UNIT-006 changes; the COMBINE_MODE=MODULATE pipeline behavior in UNIT-010 changes; the rasterizer traversal order changes; or the default TEXn_CFG.CACHE_MODE value changes.
   The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations; perspective foreshortening on cube faces is particularly sensitive to this.
   The sequential derivative computation shares 1-2 MULT18X18D blocks across all 28 derivative multiplications; any rounding difference in the shared multiplier path compared to the previous combinational multiplies may shift interpolated UV and color values, and perspective foreshortening on cube faces amplifies these differences.
 - **VER-014 together with VER-005** (Texture Decoder Unit Testbench) and **VER-012** (Textured Triangle) provide supplementary integration coverage of REQ-003.01.

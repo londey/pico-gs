@@ -13,7 +13,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 - UNIT-003 (Register File -- TEX0_BASE, TEX0_FMT, ST0_ST1 register writes)
 - UNIT-005 (Rasterizer -- UV interpolation across triangle surface)
-- UNIT-006 (Pixel Pipeline -- texture cache lookup, cache miss fill FSM, texture decoder, RGBA5652 promotion)
+- UNIT-006 (Pixel Pipeline -- texture cache lookup, cache miss fill FSM, texture decoder, cache-format promotion to Q4.12)
 
 ## Preconditions
 
@@ -131,7 +131,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   Common failure modes include:
   - Texture appears as solid color (indicating cache miss was not handled, or texture was not loaded into SDRAM model).
   - Checker pattern is distorted or warped (indicating affine rather than perspective-correct UV interpolation).
-  - Incorrect texel colors (indicating RGB565 decoder error or RGBA5652 promotion error).
+  - Incorrect texel colors (indicating RGB565 decoder error or cache-format promotion error).
   - Cache fill FSM issues incorrect burst length (not `burst_len=16` for RGB565).
   - Texture appears shifted or mirrored (indicating incorrect UV wrapping or 4x4 block addressing).
   - Background bleeds into texture (indicating incorrect cache tag matching or set indexing).
@@ -165,7 +165,9 @@ The integration harness drives the following register-write sequence into UNIT-0
   VER-005 verifies individual format decoders at the unit level; VER-012 verifies the full texture sampling path through the integrated pipeline.
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to the format-select mux path in UNIT-006.
+- **Cache mode and golden image:** This test runs with TEXn_CFG.CACHE_MODE=0 (18-bit RGBA5652 cache) unless explicitly noted otherwise.
+  If the default cache mode changes to CACHE_MODE=1 (36-bit UQ1.8), the promotion path changes and the final RGB565 pixel values may differ; the golden image must be re-approved under the new default mode before marking this test as passing.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), after any change to the format-select mux path in UNIT-006, or after any change to the default TEXn_CFG.CACHE_MODE value.
   The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations.
   The conversion of derivative precomputation (UNIT-005.02) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing.
   However, if the derivative computation fix also corrects rendering bugs (displaced fragments, incorrect UV interpolation) that affect textured output, golden image re-approval is required.

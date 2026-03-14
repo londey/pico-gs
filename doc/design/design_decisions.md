@@ -36,6 +36,155 @@ When adding a new decision, copy this template:
 <!-- Add decisions below, newest first -->
 
 
+## DD-040: Switchable 18/36-bit Texture Cache Mode Bit in TEXn_CFG
+
+**Date:** 2026-03-14
+**Status:** Proposed
+
+### Context
+
+The texture cache can store texels in either 18-bit RGBA5652 format or 36-bit UQ1.8 format (see DD-037, DD-038).
+A hard switch between the two formats would require recompilation or a global register; neither is practical when the host application may need one sampler at 18-bit (low-bandwidth, e.g. for a small tileset) and the other at 36-bit (high-quality, e.g. for a BC-compressed normal map).
+
+### Decision
+
+A per-sampler CACHE_MODE bit is added to TEXn_CFG (TEXn_FMT register, INT-010).
+When CACHE_MODE=0, the sampler uses 18-bit RGBA5652 storage and 18-bit EBR mode.
+When CACHE_MODE=1, the sampler uses 36-bit UQ1.8 storage and 36-bit EBR mode (DD-037).
+Writing TEXn_CFG invalidates the corresponding cache regardless of CACHE_MODE value.
+
+### Rationale
+
+A per-sampler bit is the minimal change that gives the host full flexibility without adding a global configuration register.
+The CACHE_MODE bit is naturally co-located with the FORMAT and FILTER fields that already control how texels are decoded; an application configures format and cache precision together in a single register write.
+The invalidation-on-write rule (already required for FORMAT and BASE changes) covers CACHE_MODE changes at no additional cost.
+
+### Consequences
+
+INT-010 (GPU Register Map) gains a CACHE_MODE field in TEXn_FMT.
+INT-032 (Texture Cache Architecture) documents the mode-bit semantics and per-mode EBR layout.
+UNIT-006 (Pixel Pipeline) must route the CACHE_MODE bit from UNIT-003 to the cache bank address and promotion logic.
+REQ-003.08 FR-131-5 is updated to reflect mode-selectable rather than fixed cache format.
+
+---
+
+## DD-039: Shift+Add Reciprocal-Multiply Replaces Verilog Division in BC Decoders
+
+**Date:** 2026-03-14
+**Status:** Proposed
+
+### Context
+
+The BC1/BC2/BC3 color interpolation formulas contain integer divisions by 3 (for the 1/3 and 2/3 lerp points in the 4-color palette) and BC3/BC4 alpha interpolation contains divisions by 5 and 7.
+Synthesising these with the Verilog `/` operator causes Yosys to infer combinational dividers that consume 2–4 MULT18X18D DSP slices per decoder, eating into the tight DSP budget (16 slices total, 12–14 already allocated — see REQ-011.02 FR-051-1).
+The divisions are by small compile-time constants over narrow operands (8-bit numerators), so exact closed-form multiply-shift formulas exist.
+
+### Decision
+
+Replace all Verilog `/` in BC decoder RTL with explicit shift+add reciprocal-multiply formulas:
+
+- Divide by 3: `x/3 ≈ (x * 171) >> 9` — exact for 8-bit unsigned x.
+- Divide by 5: `x/5 ≈ (x * 205) >> 10` — exact for 8-bit unsigned x.
+- Divide by 7: `x/7 ≈ (x * 147) >> 10` — exact for 7-bit unsigned x (alpha values 0–255 map to 0–127 after halving, or use `(x * 37) >> 8` for values up to 255 with correct truncation).
+
+Each multiply uses a constant coefficient; Yosys maps these to LUT logic rather than MULT18X18D blocks, consuming 0 DSP slices.
+
+### Rationale
+
+The DSP budget is fully committed (12–14 of 16 slices for rasterizer and color combiner).
+Inferring even 2 additional DSP slices per BC decoder would overrun the budget across the four decoders (BC1–BC4).
+Shift+add formulas for division by small constants are standard RTL practice; they produce identical results to integer division for the restricted operand ranges here.
+The formulas are verifiable by exhaustive simulation over all 8-bit inputs.
+
+### Consequences
+
+BC1, BC2, BC3, and BC4 decoder RTL use shift+add formulas instead of `/`.
+UNIT-006 resource estimate for BC1 and BC2/BC3 decoders drops from 2–4 DSP slices to 0 DSP slices per decoder.
+REQ-011.02 FR-051-1 DSP allocation table is updated to reflect 0 DSPs for BC decoders.
+VER-005 step 6–9 test vectors remain valid (the computed values are unchanged).
+
+---
+
+## DD-038: UQ1.8 (9 bits per channel, 36-bit RGBA) as High-Quality Cache Storage Format
+
+**Date:** 2026-03-14
+**Status:** Proposed
+
+### Context
+
+The existing RGBA5652 cache format (R5 G6 B5 A2, 18 bits per texel) was chosen to fit one texel per 18-bit EBR word (see DD-010).
+When BC-compressed textures are decompressed, the endpoint colors are 5-bit (R,B) or 6-bit (G) per channel; RGBA5652 preserves this precision exactly.
+For RGBA8888 source textures, truncation to RGBA5652 loses 3 bits per channel of color precision and 6 bits of alpha precision.
+The promotion from RGBA5652 to Q4.12 for the color combiner introduces a further approximation step.
+
+### Decision
+
+When CACHE_MODE=1 (DD-040), the cache stores texels in **UQ1.8** format: 9 unsigned fractional bits per channel, 4 channels (R, G, B, A), 36 bits per texel.
+The UQ1.8 value 0x000 represents 0.0 and 0x100 represents 1.0 (256/256).
+Source formats are converted as follows:
+
+- R5 → UQ1.8: `{R5, R5[4:0], 3'b0}` → 9-bit value spanning [0, 255/256].
+  Alternatively: `{R5, 4'b0}` to produce a value with resolution 1/16, padded with zero; the preferred mapping is `{R5, R5[4:1], 3'b0}` (bit-replicated expansion for approximate span to 1.0).
+- G6 → UQ1.8: `{G6, G6[5:3], 3'b0}` — 9-bit.
+- B5 → UQ1.8: same as R5.
+- A8 → UQ1.8: `A8[7:0]` → directly the top 8 bits plus zero-extend to 9; exact mapping is `{A8, 1'b0}` to 9 bits.
+- For BC endpoint promotion, each 5-bit or 6-bit endpoint is promoted to 8-bit using bit-replication before interpolation, and the 8-bit interpolated result maps to UQ1.8[8:1] (shift left by 1 to produce a 9-bit value).
+
+Promotion from UQ1.8 to Q4.12 is: `{3'b000, channel_9bit, 3'b000}` for a 15-bit value, or equivalently left-shift by 3 to align the UQ1.8 integer bit to Q4.12 bit 12.
+
+### Rationale
+
+UQ1.8 preserves 8 bits per channel (one bit more than the 5/6/5 RGBA5652 fields), improving color fidelity especially for RGBA8888 and BC3/BC4 textures.
+The 36-bit word width maps exactly to PDPW16KD 512×36 mode (DD-037), keeping one texel per EBR word.
+The UQ1.8 → Q4.12 promotion is a simple left-shift with zero-pad, cheaper than the per-channel biased expansions required for RGBA5652 promotion.
+
+### Consequences
+
+INT-032 gains UQ1.8 format definition, conversion tables from each source format, and UQ1.8 → Q4.12 promotion formula.
+UNIT-006 `texel_promote.sv` gains a mode input selecting RGBA5652 or UQ1.8 promotion path.
+VER-005 gains test vectors for UQ1.8 promotion (step 4 extended).
+Golden images (VER-012, VER-014) require re-approval if the cache defaults to CACHE_MODE=1 for RGB565 textures.
+
+---
+
+## DD-037: PDPW16KD in 512×36 Mode for 36-bit Texture Cache Banks
+
+**Date:** 2026-03-14
+**Status:** Proposed
+
+### Context
+
+The existing texture cache uses DP16KD EBR primitives in 1024×18 mode, storing one RGBA5652 texel (18 bits) per address.
+Each physical EBR block in the ECP5 is a 16Kbit resource that can be configured as 1024×16 (DP16KD) or 512×32 (PDPW16KD pseudo-dual-port wide mode).
+The 512×36 configuration of PDPW16KD uses one physical EBR for the 32-bit data path and a second EBR's parity bits for the additional 4 bits, yielding 36 effective data bits per address — sufficient for a 36-bit UQ1.8 texel (DD-038).
+The 512×36 PDPW16KD halves the address depth relative to 1024×18 DP16KD.
+
+### Decision
+
+When CACHE_MODE=1, each of the 4 interleaved banks per sampler instantiates a PDPW16KD in 512×36 mode rather than a DP16KD in 1024×18 mode.
+The bank holds 512 entries × 4 texels per cache line = 2048 cache lines per bank.
+With 4 banks and 256 sets × 4 ways (as in RGBA5652 mode), the total per-sampler capacity in 36-bit mode is: 4 banks × 512 entries = 2048 entries per bank ÷ 4 ways = 512 sets → reduced from 256 sets in 18-bit mode, or equivalently the effective per-sampler texel count drops from 16,384 to 8,192 in 36-bit mode.
+The EBR count per bank remains 1 physical EBR in 36-bit mode because PDPW16KD 512×36 uses the parity bits of a single EBR block for the extra 4 bits; the nominal EBR count stays 4 EBR per sampler.
+
+**Note (pending verification):** The exact EBR consumption of PDPW16KD 512×36 mode must be confirmed with Yosys/nextpnr synthesis before this decision is finalized.
+If PDPW16KD 512×36 consumes 2 physical EBR per bank (rather than 1), the per-sampler EBR count doubles to 8, making the 2-sampler total 32 EBR — within the 39 EBR budget but consuming more headroom.
+See the impact analysis recommended next steps in the analysis folder for the resolution path.
+
+### Rationale
+
+PDPW16KD 512×36 is the narrowest ECP5 EBR primitive that provides a 36-bit data word, matching the UQ1.8 texel width.
+Using the parity bits of a single EBR block for the extra 4 bits avoids the area penalty of a second full EBR block just for 4 additional bits.
+The address depth reduction (512 vs 1024 entries per bank) is acceptable in 36-bit mode because RGBA8888 and BC textures gain sufficient quality benefit to justify the smaller working set.
+
+### Consequences
+
+INT-032 documents PDPW16KD 512×36 as the EBR primitive for 36-bit mode banks.
+REQ-011.02 EBR budget note must be updated once PDPW16KD EBR consumption is confirmed by synthesis.
+UNIT-006 Internal State note is updated to reflect the mode-dependent bank depth.
+The cache fill FSM address counter width narrows from 10-bit to 9-bit in 36-bit mode.
+
+---
+
 ## DD-036: Sequential Time-Multiplexed Derivative Computation
 
 **Date:** 2026-03-07

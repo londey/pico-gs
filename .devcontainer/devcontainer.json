@@ -42,7 +42,9 @@
                 "rust-lang.rust-analyzer",
                 "streetsidesoftware.code-spell-checker-australian-english",
                 "streetsidesoftware.code-spell-checker",
-                "tamasfe.even-better-toml"
+                "tamasfe.even-better-toml",
+                "yzhang.markdown-all-in-one",
+                "DavidAnson.vscode-markdownlint"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",

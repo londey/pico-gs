@@ -97,7 +97,7 @@ All internal fragment processing uses **Q4.12 signed fixed-point format** (16 bi
 ### Internal State
 
 - Texture decode pipeline registers
-- Per-sampler texture cache (2 caches, each with 4x4096x18-bit EBR banks for 16384 texels per sampler)
+- Per-sampler texture cache (2 caches; each with 4 EBR banks per sampler: 4096×18-bit in 18-bit mode or 512×36-bit in 36-bit mode, selected by TEXn_CFG.CACHE_MODE)
 - Cache tags, valid bits, and pseudo-LRU replacement state per sampler
 - Cache fill state machine (burst SDRAM read + decompress + bank write)
 - Burst length register driven to UNIT-007 memory arbiter (format-dependent, see cache miss handling)
@@ -106,7 +106,7 @@ All internal fragment processing uses **Q4.12 signed fixed-point format** (16 bi
 ### Algorithm / Behavior
 
 The pixel pipeline processes rasterized fragments through a staged pipeline.
-All texture operations deliver results in RGBA5652 cache format, which is promoted to Q4.12 before the color combiner.
+All texture operations deliver results in the per-sampler cache format (RGBA5652 or UQ1.8, selected by TEXn_CFG.CACHE_MODE), which is promoted to Q4.12 before the color combiner.
 Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
 
 **Stage 0a: Stipple Test:**
@@ -140,24 +140,31 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
 - **MISS:** Stall pipeline, execute cache fill (see below), then read texels
 
 **Stage 2: Texture Sampling (per enabled texture unit, up to 2):**
-- On cache hit: read decompressed RGBA5652 texels directly from cache banks
-- On cache miss: fetch 4×4 block from SDRAM via burst read, decompress/convert to RGBA5652, fill cache line:
-  - FORMAT=BC1 (0): Burst read 8 bytes (burst_len=4), decompress 4-color/alpha blocks to RGBA5652
-  - FORMAT=BC2 (1): Burst read 16 bytes (burst_len=8), decompress explicit alpha blocks to RGBA5652
-  - FORMAT=BC3 (2): Burst read 16 bytes (burst_len=8), decompress interpolated alpha blocks to RGBA5652
-  - FORMAT=BC4 (3): Burst read 8 bytes (burst_len=4), decompress single-channel to RGBA5652 (replicate R→RGB)
-  - FORMAT=RGB565 (4): Burst read 32 bytes (burst_len=16), store as RGBA5652 (A=11 = opaque)
-  - FORMAT=RGBA8888 (5): Burst read 64 bytes (burst_len=32), convert to RGBA5652 (truncate to RGBA5652 precision)
-  - FORMAT=R8 (6): Burst read 16 bytes (burst_len=8), convert to RGBA5652 (R replicated to G and B, A=11)
+
+- On cache hit: read decompressed texels directly from cache banks (RGBA5652 or UQ1.8 depending on CACHE_MODE)
+- On cache miss: fetch 4×4 block from SDRAM via burst read, decompress/convert to the active cache format, fill cache line.
+  In 18-bit mode (CACHE_MODE=0) the target format is RGBA5652; in 36-bit mode (CACHE_MODE=1) the target format is UQ1.8 (DD-037, DD-038):
+  - FORMAT=BC1 (0): Burst read 8 bytes (burst_len=4), decompress 4-color/alpha blocks; palette interpolation uses shift+add reciprocal-multiply (DD-039, no DSP slices)
+  - FORMAT=BC2 (1): Burst read 16 bytes (burst_len=8), decompress explicit alpha blocks; color interpolation uses shift+add (DD-039)
+  - FORMAT=BC3 (2): Burst read 16 bytes (burst_len=8), decompress interpolated alpha blocks; color and alpha interpolation use shift+add (DD-039)
+  - FORMAT=BC4 (3): Burst read 8 bytes (burst_len=4), decompress single-channel; interpolation uses shift+add (DD-039); replicate R→RGB
+  - FORMAT=RGB565 (4): Burst read 32 bytes (burst_len=16); in CACHE_MODE=0 store as RGBA5652 (A=11=opaque); in CACHE_MODE=1 expand to UQ1.8
+  - FORMAT=RGBA8888 (5): Burst read 64 bytes (burst_len=32); in CACHE_MODE=0 truncate to RGBA5652; in CACHE_MODE=1 expand to UQ1.8 (A8→UQ1.8[8:1])
+  - FORMAT=R8 (6): Burst read 16 bytes (burst_len=8); replicate R to G and B; A=opaque; convert to active cache format
 - Apply swizzle pattern (REQ-003.04, TEXn_CFG.SWIZZLE)
 - Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels using LOD = `frag_lod[7:4]` + `TEXn_MIP_BIAS`; the fractional blend weight is `frag_lod[3:0]`; requires MIP_LEVELS > 1
 
-**Stage 3: Format Promotion (RGBA5652 → Q4.12):**
-- Promote texture data to Q4.12 via `texel_promote.sv` (combinational):
+**Stage 3: Format Promotion (cache format → Q4.12):**
+
+Promote texture data to Q4.12 via `texel_promote.sv` (combinational); the promotion path is selected by CACHE_MODE:
+
+- **CACHE_MODE=0 (RGBA5652 → Q4.12):**
   - R5 → Q4.12: `{3'b0, R5, 8'b0}` → value = R5/31.0 approximately; exact: `{3'b0, R5, R5[4:1], 3'b0}` to span [0, 1.0]
   - G6 → Q4.12: Expand G6 to Q4.12 in [0, 1.0] range
   - B5 → Q4.12: same as R5
   - A2 → Q4.12: expand (00→0x0000, 01→0x0555, 10→0x0AAA, 11→0x1000)
+- **CACHE_MODE=1 (UQ1.8 → Q4.12):**
+  - Each 9-bit UQ1.8 channel → Q4.12: left-shift by 3 and zero-pad — `{3'b000, channel_9bit, 3'b000}` (15-bit result, aligned to Q4.12 bit 12)
 - Vertex colors (SHADE0, SHADE1) arrive from rasterizer already in Q4.12
 - CONST0 and CONST1 (RGBA8888 UNORM8) are promoted to Q4.12 at combiner input
 - Also compute Z_FACTOR: extract fragment Z high byte [15:8], scale to Q4.12 [0.0, 1.0] for fog
@@ -210,25 +217,27 @@ Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes
 
 **Texture Format Decoders:**
 
-Each decoder converts a compressed or uncompressed 4×4 block to 16 RGBA5652 texels.
+Each decoder converts a compressed or uncompressed 4×4 block to 16 texels in the active cache format (RGBA5652 when CACHE_MODE=0, UQ1.8 when CACHE_MODE=1).
+All palette interpolation in BC decoders uses shift+add reciprocal-multiply formulas instead of Verilog `/` to avoid inferring DSP division hardware (DD-039, 0 DSP slices).
 
 *BC1 Decoder:*
 - Fetch 8 bytes: two 16-bit endpoint colors + 32-bit index word
-- Generate 4-color palette: C0, C1, lerp(C0,C1,1/3), lerp(C0,C1,2/3); or C0, C1, lerp(C0,C1,1/2), transparent (if C0 ≤ C1)
+- Expand endpoints to 8-bit per channel (bit-replicated: R5→R8 via `{R5, R5[4:3]}`, etc.) before interpolation in 36-bit mode
+- Generate 4-color palette: C0, C1, lerp(C0,C1,1/3), lerp(C0,C1,2/3) using shift+add; or C0, C1, lerp(C0,C1,1/2), transparent (if C0 ≤ C1)
 - Assign palette entry to each of the 16 texels via 2-bit indices
-- Alpha: 1-bit punch-through; 0 = transparent (A2=00), 1 = opaque (A2=11)
+- Alpha: 1-bit punch-through; 0 = transparent, 1 = opaque
 
 *RGB565 Decoder:*
-- Fetch 32 bytes (16 × 16-bit pixels), store each as RGBA5652 with A2=11
+- Fetch 32 bytes (16 × 16-bit pixels); in CACHE_MODE=0 store each as RGBA5652 with A2=11; in CACHE_MODE=1 expand each channel to UQ1.8 and store as 36-bit texel with A=opaque
 
 *RGBA8888 Decoder:*
-- Fetch 64 bytes (16 × 32-bit pixels), truncate each to RGBA5652 (R8→R5, G8→G6, B8→B5, A8→A2)
+- Fetch 64 bytes (16 × 32-bit pixels); in CACHE_MODE=0 truncate each to RGBA5652 (R8→R5, G8→G6, B8→B5, A8→A2); in CACHE_MODE=1 expand to UQ1.8 (A8 top 8 bits → UQ1.8[8:1])
 
 *R8 Decoder:*
-- Fetch 16 bytes (16 × 8-bit values), replicate R8 to G and B channels, truncate to RGBA5652 (R8→R5, G=R5, B=R5, A2=11)
+- Fetch 16 bytes (16 × 8-bit values), replicate R8 to G and B channels, A=opaque; convert to active cache format
 
 *BC2/BC3 Decoders:*
-- 16-byte blocks; first 8 bytes encode alpha (explicit 4-bit for BC2, interpolated 8-bit for BC3), last 8 bytes encode RGB as BC1 (no punch-through)
+- 16-byte blocks; first 8 bytes encode alpha (explicit 4-bit for BC2, interpolated 8-bit for BC3 using shift+add), last 8 bytes encode RGB as BC1 (no punch-through, shift+add interpolation)
 
 **Texture Cache Architecture (REQ-003.08):**
 
@@ -236,14 +245,21 @@ Each of the 2 samplers has an independent 4-way set-associative texture cache wi
 
 ```
 Per-Sampler Cache (2 samplers total):
-  4 x EBR blocks (4096x18-bit each), interleaved by texel parity:
-    Bank 0: (even_x, even_y) texels — 4 per cache line, 4096 entries
-    Bank 1: (odd_x, even_y)  texels — 4 per cache line, 4096 entries
-    Bank 2: (even_x, odd_y)  texels — 4 per cache line, 4096 entries
-    Bank 3: (odd_x, odd_y)   texels — 4 per cache line, 4096 entries
+  4 x EBR banks, interleaved by texel parity:
+    Bank 0: (even_x, even_y) texels — 4 per cache line
+    Bank 1: (odd_x, even_y)  texels — 4 per cache line
+    Bank 2: (even_x, odd_y)  texels — 4 per cache line
+    Bank 3: (odd_x, odd_y)   texels — 4 per cache line
 
-  1024 cache lines = 256 sets x 4 ways
-  Cache line = 4x4 block of RGBA5652 (18 bits/texel)
+  CACHE_MODE=0 (18-bit): DP16KD 1024x18-bit per bank; 4096 entries/bank
+    1024 cache lines = 256 sets x 4 ways
+    Cache line = 4x4 block of RGBA5652 (18 bits/texel)
+
+  CACHE_MODE=1 (36-bit): PDPW16KD 512x36-bit per bank; 512 entries/bank
+    512 cache lines = 128 sets x 4 ways
+    Cache line = 4x4 block of UQ1.8 (36 bits/texel)
+    EBR count per bank: pending synthesis verification (see DD-037)
+
   Tag = texture_base[31:12] + mip_level[3:0] + block_addr (sufficient bits)
 
   Set index = block_x[7:0] ^ block_y[7:0]  (XOR-folded, 8-bit for 256 sets)
@@ -262,19 +278,20 @@ Invalidation:
   - TEXn_CFG write → clear all valid bits for sampler N (N=0..1)
 ```
 
-**EBR Budget Note:** Each 4096x18-bit bank requires 4 physical EBR blocks (each EBR is 1024x18).
+**EBR Budget Note:** In 18-bit mode (CACHE_MODE=0), each DP16KD 1024×18-bit bank requires 4 physical EBR blocks (each EBR is 1024×18).
 Per sampler: 4 banks × 4 EBR = 16 EBR.
-Two samplers: 32 EBR total for texture cache.
-The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for dither (1), scanline FIFO (1), command FIFO (2), and other uses.
+Two samplers: 32 EBR total for texture cache in 18-bit mode.
+In 36-bit mode (CACHE_MODE=1), each PDPW16KD 512×36-bit bank uses parity bits of a single EBR; physical EBR consumption is pending synthesis verification (see DD-037).
+The ECP5-25K has 56 EBR blocks; the 18-bit-mode texture cache consumes 32, leaving 24 for other uses.
 
 **Estimated FPGA Resources:**
-- BC1 decoder: ~150-200 LUTs, 2-4 DSPs (for division)
+- BC1 decoder: ~180-250 LUTs, 0 DSPs (shift+add replaces division, DD-039)
 - RGB565 decoder: ~30 LUTs, 0 DSPs
 - RGBA8888 decoder: ~50 LUTs, 0 DSPs
 - R8 decoder: ~20 LUTs, 0 DSPs
-- BC2/BC3 decoders: ~200-300 LUTs, 2-4 DSPs
-- Texture cache (per sampler): 16 EBR blocks, ~300-500 LUTs (tags, comparators, FSM)
-- Texture cache (both samplers): 32 EBR blocks total, ~600-1000 LUTs
+- BC2/BC3 decoders: ~250-350 LUTs, 0 DSPs (shift+add replaces division, DD-039)
+- Texture cache (per sampler): 16 EBR blocks (18-bit mode), ~300-500 LUTs (tags, comparators, FSM)
+- Texture cache (both samplers): 32 EBR blocks total (18-bit mode), ~600-1000 LUTs
 - Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
 - Texel/FB promotion: ~200-400 LUTs (combinational)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs

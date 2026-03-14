@@ -437,218 +437,41 @@ gpu_write(COLOR, color4); gpu_write(ST0_ST1, st4); gpu_write(VERTEX_KICK_012, v4
 
 ## Texture Configuration Registers (0x10-0x17)
 
-Each texture unit has 4 registers (0x10-0x13 for unit 0, 0x14-0x17 for unit 1). The register layout is identical for both units. Reduced from 4 texture units to 2.
-
-**Cache Invalidation**: Any write to a texture configuration register invalidates the texture cache for the corresponding texture unit.
-Software does not need to issue a separate cache flush command when changing texture parameters or base address.
-
-### TEXn_BASE (0x10, 0x14)
-
-Base address of texture in SDRAM. Must be 4K aligned.
-
-```
-[63:32]   Reserved (write as 0)
-[31:12]   Base address bits [31:12]
-[11:0]    Ignored (assumed 0 for 4K alignment)
-```
-
-**Example**:
-- Texture at SDRAM address 0x340000
-- Write value: 0x00000000_00340000
-- Effective address: 0x340000
-
-**Reset Value**: 0x0000000000000000
+Each texture unit has a single 64-bit configuration register (TEXn_CFG).
+TEX0_CFG is at index 0x10, TEX1_CFG at 0x11.
+Indices 0x12–0x17 are reserved (freed by register consolidation).
 
 ---
 
-### TEXn_FMT (0x11, 0x15) - Expanded
+### TEXn_CFG (0x10, 0x11) — Texture Sampler Configuration
 
-Texture format, dimensions, swizzle, **blend mode**, **filtering**, and mipmap levels.
+> **Authoritative bit-field layout:** `registers/rdl/gpu_regs.rdl`, register `tex_cfg_reg`.
+> This section documents behavioral semantics only; see the RDL for field positions and encodings.
 
-```
-[63:27]   Reserved (write as 0)
-[26:24]   Reserved (was BLEND, now handled by CC_MODE color combiner register)
-[23:20]   MIP_LEVELS: Number of mipmap levels (0-15)
-          0000 = No mipmaps (disabled, single level only)
-          0001 = Base level only (equivalent to 0, backward compatible)
-          0010 = Base + 1 mip level (2 levels total)
-          ...
-          1011 = Base + 10 mip levels (11 levels total, max for 1024×1024)
-          1100-1111 = Reserved
-[19:16]   SWIZZLE: Channel reordering pattern (4 bits, see encoding below)
-[15:12]   HEIGHT_LOG2: log₂(height), valid 3-10 (8 to 1024 pixels)
-[11:8]    WIDTH_LOG2: log₂(width), valid 3-10 (8 to 1024 pixels)
-[7:6]     FILTER: Filtering mode (2 bits)
-          00 = NEAREST (sharp, pixelated, no interpolation)
-          01 = BILINEAR (smooth, 2×2 tap filter)
-          10 = TRILINEAR (smooth + mipmap blend, requires MIP_LEVELS>1)
-          11 = Reserved
-[5]       Reserved (write as 0)
-[4:2]     FORMAT: Texture format encoding (3 bits; see INT-014 for block layout)
-          000 = BC1      (4 bpp block-compressed, 8 bytes per 4×4 block)
-          001 = BC2      (8 bpp block-compressed with explicit 4-bit alpha, 16 bytes per 4×4 block)
-          010 = BC3      (8 bpp block-compressed with interpolated alpha, 16 bytes per 4×4 block)
-          011 = BC4      (4 bpp single-channel block-compressed, 8 bytes per 4×4 block)
-          100 = RGB565   (16 bpp uncompressed, 32 bytes per 4×4 block)
-          101 = RGBA8888 (32 bpp uncompressed, 64 bytes per 4×4 block)
-          110 = R8       (8 bpp single-channel uncompressed, 16 bytes per 4×4 block)
-          111 = Reserved (write as 0)
-[1]       Reserved (write as 0)
-[0]       ENABLE: 0=disabled, 1=enabled
-```
+Each sampler has a single 64-bit configuration register consolidating base address, format, dimensions, filtering, wrap modes, and mipmap levels.
+Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT-032).
 
-**BLEND Mode** (Removed):
+**Key fields** (see RDL for exact bit positions):
 
-TEXn_FMT.BLEND has been removed. Texture blending is now handled by the color combiner (CC_MODE register 0x18). DOT3 bump mapping is configured via CC_MODE input selection.
+- **ENABLE** — activates the sampler; the hardware routes cache miss fills to the decoder selected by FORMAT.
+- **FORMAT** — selects the texture format (BC1–BC4, RGB565, RGBA8888, R8); see INT-014 for block layouts.
+- **FILTER** — NEAREST, BILINEAR, or TRILINEAR (trilinear falls back to bilinear when MIP_LEVELS ≤ 1).
+- **WIDTH_LOG2, HEIGHT_LOG2** — log₂ of texture dimensions (valid 3–10, i.e. 8–1024 pixels).
+- **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR (octahedral wrap implements coupled diagonal mirroring).
+- **MIP_LEVELS** — number of mipmap levels (0 or 1 = single level; max = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)); see INT-014 for mipmap chain memory layout.
+- **BASE_ADDR** — 16-bit value × 512 = byte address in SDRAM (512-byte granularity, 32 MiB addressable).
+- **RSVD_7** — reserved; planned for CACHE_MODE (switchable 18/36-bit cache format, see INT-032).
 
-**FILTER Mode Details**:
+**Behavioral notes:**
 
-- **NEAREST** (00): Sample single texel, no interpolation. Sharp pixelated look, lowest cost.
-- **BILINEAR** (01): 2×2 texel interpolation within a mip level. Smooth, moderate cost.
-- **TRILINEAR** (10): Bilinear + blend between two mip levels. Smoothest, highest cost. Falls back to BILINEAR if MIP_LEVELS ≤ 1.
+- Block-compressed formats (BC1–BC4) require dimensions that are multiples of 4; uncompressed formats require power-of-two dimensions.
+- The texture cache (INT-032) converts all source formats to RGBA5652 on cache fill; FORMAT determines the burst length and decoder used on cache miss.
+- Textures are sampled independently and passed to the color combiner (CC_MODE, 0x18).
+- Swizzle patterns (SWIZZLE field) apply after texture decode; see INT-014 for channel reordering encodings.
 
-**Texture Sampling**: Textures are sampled independently and passed to the color combiner:
-```
-Step 1: Sample TEX0, filter → TEX_COLOR0
-Step 2: Sample TEX1, filter → TEX_COLOR1 (if enabled)
-Step 3: Color combiner combines all inputs per CC_MODE equation (see 0x18)
-Step 4: Apply alpha blend with framebuffer if ALPHA_BLEND mode enabled
-```
-
-**Note**: Sequential texture blending has been replaced by the color combiner. See CC_MODE (0x18) for combining equations.
-
-**Behavioral Note**: tex0_cfg and tex1_cfg (the full 64-bit TEXn_FMT register value) are consumed by the pixel pipeline (UNIT-006) after pixel pipeline integration.
-Writing TEXn_FMT with ENABLE=1 and a valid FORMAT activates texture sampling for that unit; the hardware routes the cache miss fill FSM to the appropriate decoder based on FORMAT[4:2].
-Writing any TEXn_FMT register also invalidates the corresponding sampler's texture cache (see INT-032).
-
-**Format Notes**:
-- Block-compressed formats (BC1–BC4, FORMAT 000–011) require width and height to be multiples of 4.
-  Attempting to use non-multiple-of-4 dimensions with block-compressed formats produces undefined behavior.
-- Uncompressed formats (RGB565, RGBA8888, R8, FORMAT 100–110) require power-of-two dimensions.
-- Swizzle patterns apply after texture decode (see INT-014).
-- The texture cache (INT-032) converts all source formats to RGBA5652 on fill; FORMAT determines the burst length and decoder used on cache miss.
-- See INT-014 for detailed texture memory layout and per-format block size specifications.
-
-**Mipmap Notes**:
-- MIP_LEVELS=0 or MIP_LEVELS=1: Single level only, no mipmap addressing
-- MIP_LEVELS=N (N>1): Texture has N mipmap levels stored sequentially per INT-014
-- Maximum mip levels = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)
-  - Example: 256×256 (log2=8) can have up to 9 levels (256→128→64→32→16→8→4→2→1)
-- See INT-014 for mipmap chain memory layout
-
-**Dimension Encoding**:
-
-| Value | Dimension |
-|-------|-----------|
-| 3 | 8 |
-| 4 | 16 |
-| 5 | 32 |
-| 6 | 64 |
-| 7 | 128 |
-| 8 | 256 |
-| 9 | 512 |
-| 10 | 1024 |
-
-**Swizzle Pattern Encoding** (4 bits [19:16]):
-
-| Code | Pattern | Description |
-|------|---------|-------------|
-| 0x0 | RGBA | Identity (default) |
-| 0x1 | BGRA | Swap red/blue channels |
-| 0x2 | ARGB | Alpha first |
-| 0x3 | ABGR | Alpha first, blue/red swapped |
-| 0x4 | GBRA | Green first |
-| 0x5 | R000 | Red only, others zero |
-| 0x6 | 000A | Alpha only, RGB zero |
-| 0x7 | RRR1 | Red replicated to RGB, alpha=1 (grayscale) |
-| 0x8 | GGG1 | Green replicated to RGB, alpha=1 |
-| 0x9 | BBB1 | Blue replicated to RGB, alpha=1 |
-| 0xA | AAA1 | Alpha replicated to RGB, alpha=1 |
-| 0xB | 1110 | RGB=1 (white), alpha=0 |
-| 0xC | 111A | RGB=1 (white), preserve alpha |
-| 0xD-0xF | Reserved | Default to RGBA |
-
-**Example**: 64×64 texture, RGB565, enabled, bilinear, no mipmaps
-→ WIDTH_LOG2=6, HEIGHT_LOG2=6, FORMAT=100 (RGB565), FILTER=01, MIP_LEVELS=1
-→ TEXn_FMT = (1 << 20) | (0 << 16) | (6 << 12) | (6 << 8) | (0x1 << 6) | (0x4 << 2) | 0x1
-→ write 0x00000000_001006D1
-
-**Example**: 256×256 texture, BC1, enabled, trilinear, 9 mipmap levels
-→ WIDTH_LOG2=8, HEIGHT_LOG2=8, FORMAT=000 (BC1), FILTER=10, MIP_LEVELS=9
-→ TEXn_FMT = (9 << 20) | (0 << 16) | (8 << 12) | (8 << 8) | (0x2 << 6) | (0x0 << 2) | 0x1
-→ write 0x00000000_00988881
-
-**Reset Value**: 0x0000000000000000 (disabled, BC1, 8×8, nearest, no mipmaps)
+**Reset Value**: 0x0000000000000000 (disabled, BC1, 8×8, nearest, repeat, no mipmaps)
 
 ---
-
-### TEXn_BLEND (Removed)
-
-Previously at addresses 0x12, 0x1A, 0x22, 0x2A.
-BLEND mode is now packed into TEXn_FMT[26:24]. This register no longer exists as a separate entity.
-
-These addresses are now used for TEXn_MIP_BIAS.
-
----
-
-### TEXn_MIP_BIAS (0x12, 0x16)
-
-Mipmap LOD (Level of Detail) bias for artistic control.
-
-```
-[63:8]    Reserved (write as 0)
-[7:0]     MIP_BIAS: Signed 8-bit fixed-point bias (-4.0 to +3.99)
-          Format: 2's complement, 2 fractional bits
-          Range: -128 to +127 → -4.00 to +3.96875
-          Examples:
-            0x00 = 0.0 (no bias)
-            0x04 = 1.0 (sharper, select higher-res mip)
-            0xFC = -1.0 (blurrier, select lower-res mip)
-```
-
-**LOD Calculation**:
-
-The rasterizer (UNIT-005) derives a per-pixel LOD estimate from the interpolated Q (1/W) value using CLZ (count leading zeros).
-The result is emitted on the fragment bus as `frag_lod` in UQ4.4 format (4-bit integer mip level, 4-bit trilinear blend fraction).
-The pixel pipeline (UNIT-006) applies the bias:
-
-```
-rasterizer_lod = CLZ_derived_LOD(Q)          // UQ4.4 from UNIT-005
-biased_lod     = rasterizer_lod[7:4] + MIP_BIAS
-final_lod      = clamp(biased_lod, 0, MIP_LEVELS - 1)
-blend_fraction = rasterizer_lod[3:0]          // trilinear weight
-```
-
-**Use Cases**:
-- Positive bias: Sharper textures (reduce blurriness at distance)
-- Negative bias: Softer textures (reduce aliasing, shimmer)
-- Typical range: -0.5 to +0.5
-
-**Reset Value**: 0x0000000000000000 (no bias)
-
----
-
-### TEXn_WRAP (0x13, 0x17)
-
-UV coordinate wrapping mode.
-
-```
-[63:4]    Reserved (write as 0)
-[3:2]     V_WRAP mode:
-          00 = REPEAT (wrap around)
-          01 = CLAMP_TO_EDGE (clamp to [0, height-1])
-          10 = CLAMP_TO_ZERO (out of bounds = transparent)
-          11 = MIRROR (reflect at boundaries)
-[1:0]     U_WRAP mode: (same encoding as V_WRAP)
-```
-
-**Wrapping Behavior**:
-- **REPEAT**: UV mod texture_size (U=1.5 becomes U=0.5)
-- **CLAMP_TO_EDGE**: Clamp to [0, size-1], prevents edge artifacts
-- **CLAMP_TO_ZERO**: Out of bounds samples return RGBA=(0,0,0,0)
-- **MIRROR**: Reflect at boundaries (0→1→0→1...), reduces tiling
-
-**Reset Value**: 0x0000000000000000 (repeat on both axes)
 
 ---
 
