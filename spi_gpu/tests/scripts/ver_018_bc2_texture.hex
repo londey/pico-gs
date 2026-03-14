@@ -1,0 +1,43 @@
+# VER-018: BC2 Texture Golden Image Test
+# 
+# Textured quad with 256x256 BC2-compressed Skyline texture.
+# Tests BC2 explicit 4-bit alpha + BC1 color decode.
+
+## FRAMEBUFFER: 64 64
+## PHASE: main
+
+# Clear color buffer: base_word=0x000000 value=0x0000 count=4096
+44 0010_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=4096
+
+## INCLUDE: textures/skyline_256x256_bc2.hex
+
+40 0000_0066_0000_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0000 w_log2=6 h_log2=6
+43 0000_0010_0400_0000  # FB_CONTROL: scissor x=0 y=0 w=64 h=64
+10 0000_0200_0000_8811  # TEX0_CFG: ENABLE=1 NEAREST BC2 256x256 REPEAT base=0x0200
+18 7670_7670_7371_7371  # CC_MODE: MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE
+30 0000_0000_0000_0010  # RENDER_MODE: COLOR_WRITE_EN
+
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0000_0000  # ST0_ST1: s0=0 t0=0
+06 8000_0000_0040_0040  # VERTEX_NOKICK: x=4 y=4 z=0x0000
+
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0000_1000  # ST0_ST1: s0=1 t0=0
+06 8000_0000_0040_03C0  # VERTEX_NOKICK: x=60 y=4 z=0x0000
+
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_1000_1000  # ST0_ST1: s0=1 t0=1
+07 8000_0000_03C0_03C0  # VERTEX_KICK_012: x=60 y=60 z=0x0000
+
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_0000_0000  # ST0_ST1: s0=0 t0=0
+06 8000_0000_0040_0040  # VERTEX_NOKICK: x=4 y=4 z=0x0000
+
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_1000_1000  # ST0_ST1: s0=1 t0=1
+06 8000_0000_03C0_03C0  # VERTEX_NOKICK: x=60 y=60 z=0x0000
+
+00 FFFF_FFFF_0000_00FF  # COLOR: diffuse=white specular=black
+01 0000_0000_1000_0000  # ST0_ST1: s0=0 t0=1
+07 8000_0000_03C0_0040  # VERTEX_KICK_012: x=4 y=60 z=0x0000
+

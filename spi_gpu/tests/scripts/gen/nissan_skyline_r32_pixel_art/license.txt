@@ -1,0 +1,11 @@
+Model Information:
+* title:	Nissan Skyline R32 (Pixel Art)
+* source:	https://sketchfab.com/3d-models/nissan-skyline-r32-pixel-art-d0910544f4c445b0b4b760f7082d6eee
+* author:	wallon (https://sketchfab.com/realwallon)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Nissan Skyline R32 (Pixel Art)" (https://sketchfab.com/3d-models/nissan-skyline-r32-pixel-art-d0910544f4c445b0b4b760f7082d6eee) by wallon (https://sketchfab.com/realwallon) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

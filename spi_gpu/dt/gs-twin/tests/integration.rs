@@ -5,6 +5,7 @@ use gs_twin::math::Rgb565;
 use gs_twin::test_harness;
 use gs_twin::Gpu;
 use std::path::Path;
+use std::path::PathBuf;
 
 #[test]
 fn exact_match_identical_framebuffers() {
@@ -53,7 +54,7 @@ fn rgb565_roundtrip_consistency() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Helper to get the golden-image output directory (build/dt_out/).
-fn dt_out_dir() -> std::path::PathBuf {
+fn dt_out_dir() -> PathBuf {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -64,6 +65,16 @@ fn dt_out_dir() -> std::path::PathBuf {
         .join("build/dt_out");
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// Helper to get the test scripts directory (spi_gpu/tests/scripts/).
+fn scripts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tests/scripts")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -245,4 +256,76 @@ fn ver_016_perspective_road() {
     gpu.zbuffer_to_png(&z_path).unwrap();
     eprintln!("VER-016 golden image: {}", png_path.display());
     eprintln!("VER-016 Z-buffer:     {}", z_path.display());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-017: BC1 Texture (uses ## INCLUDE: for shared texture data)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn ver_017_bc1_texture() {
+    let png_path = dt_out_dir().join("ver_017_bc1_texture.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let hex_path = scripts_dir().join("ver_017_bc1_texture.hex");
+    let script = hex_parser::parse_hex_file(&hex_path).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+    gpu.reg_write_script(&script.all_commands());
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-017 golden image: {}", png_path.display());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-018: BC2 Texture (explicit alpha)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn ver_018_bc2_texture() {
+    let png_path = dt_out_dir().join("ver_018_bc2_texture.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let hex_path = scripts_dir().join("ver_018_bc2_texture.hex");
+    let script = hex_parser::parse_hex_file(&hex_path).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+    gpu.reg_write_script(&script.all_commands());
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-018 golden image: {}", png_path.display());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-019: BC3 Texture (interpolated alpha)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn ver_019_bc3_texture() {
+    let png_path = dt_out_dir().join("ver_019_bc3_texture.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let hex_path = scripts_dir().join("ver_019_bc3_texture.hex");
+    let script = hex_parser::parse_hex_file(&hex_path).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+    gpu.reg_write_script(&script.all_commands());
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-019 golden image: {}", png_path.display());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-020: BC4 Texture (single-channel grayscale)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn ver_020_bc4_texture() {
+    let png_path = dt_out_dir().join("ver_020_bc4_texture.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let hex_path = scripts_dir().join("ver_020_bc4_texture.hex");
+    let script = hex_parser::parse_hex_file(&hex_path).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+    gpu.reg_write_script(&script.all_commands());
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-020 golden image: {}", png_path.display());
 }

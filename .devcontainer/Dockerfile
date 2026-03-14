@@ -98,9 +98,6 @@ RUN cargo install cargo-deny cargo-audit
 # Install sysdoc from git
 RUN cargo install --git https://github.com/sysdoc-rs/sysdoc.git
 
-# Install PeakRDL for register interface code generation (SystemRDL → SV + Rust)
-RUN pip3 install --break-system-packages peakrdl peakrdl-regblock peakrdl-rust Pillow
-
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
@@ -114,6 +111,18 @@ RUN mkdir -p /opt \
     && wget -q "https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_SUITE_DATE}/oss-cad-suite-linux-x64-${OSS_CAD_SUITE_VERSION}.tgz" \
     && tar -xzf oss-cad-suite-linux-x64-${OSS_CAD_SUITE_VERSION}.tgz \
     && rm oss-cad-suite-linux-x64-${OSS_CAD_SUITE_VERSION}.tgz
+
+# Install Python packages into BOTH Pythons:
+# - oss-cad-suite's bundled Python 3.11 (what `python3` resolves to at runtime
+#   after `source oss-cad-suite/environment` prepends it to PATH)
+# - system Python 3.12 (fallback, and used by any script that calls /usr/bin/python3)
+#
+# PeakRDL: register interface code generation (SystemRDL → SV + Rust)
+# Pillow: PNG loading for texture compression test tooling
+RUN /opt/oss-cad-suite/bin/tabbypy3 -m pip install \
+        peakrdl peakrdl-regblock peakrdl-rust Pillow \
+    && pip3 install --break-system-packages \
+        peakrdl peakrdl-regblock peakrdl-rust Pillow
 
 # Create non-root user for development (handle existing UID/GID 1000)
 ARG USERNAME=vscode

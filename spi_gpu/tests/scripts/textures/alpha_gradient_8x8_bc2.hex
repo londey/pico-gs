@@ -1,0 +1,12 @@
+# Texture data: alpha_gradient_8x8 BC2 (8x8, 8bpp)
+# Base word address: 0x80000 (32 words, 64 bytes)
+
+70 0000_0000_0002_0000  # MEM_ADDR: dword_addr=0x20000
+71 6543_5432_4321_3210  # MEM_DATA: dwords[0]
+71 2525_2525_C800_D800  # MEM_DATA: dwords[1]
+71 BA97_A976_9765_7654  # MEM_DATA: dwords[2]
+71 2D2D_2D2D_E000_F800  # MEM_DATA: dwords[3]
+71 BA97_A976_9765_7654  # MEM_DATA: dwords[4]
+71 2525_2525_C800_D800  # MEM_DATA: dwords[5]
+71 FEDC_EDCB_DCBA_CBA9  # MEM_DATA: dwords[6]
+71 2D2D_2D2D_E000_F800  # MEM_DATA: dwords[7]

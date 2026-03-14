@@ -11,6 +11,7 @@
 //! - `## PHASE: <name>` delimits named phases
 //! - `## FRAMEBUFFER: <width> <height>` declares output dimensions
 //! - `## TEXTURE: <type> base=<hex> format=<fmt> width_log2=<n>`
+//! - `## INCLUDE: <relative-path>` includes another hex file
 
 use crate::reg::RegWrite;
 
@@ -127,12 +128,15 @@ fn parse_texture_directive(line: &str) -> Option<TextureDirective> {
 }
 
 /// Handle a `##` directive line, updating script/phase state.
+///
+/// Returns `Some(path)` if the directive is an `## INCLUDE:` that needs
+/// to be processed by the caller (since it requires filesystem access).
 fn handle_directive(
     line: &str,
     script: &mut HexScript,
     current_phase: &mut HexPhase,
     has_explicit_phase: &mut bool,
-) {
+) -> Option<String> {
     if let Some(name) = line.strip_prefix("## PHASE:") {
         if !current_phase.commands.is_empty() || *has_explicit_phase {
             let prev = std::mem::replace(
@@ -151,7 +155,10 @@ fn handle_directive(
         script.fb_height = h;
     } else if let Some(td) = parse_texture_directive(line) {
         script.textures.push(td);
+    } else if let Some(path) = line.strip_prefix("## INCLUDE:") {
+        return Some(path.trim().to_string());
     }
+    None
 }
 
 /// Parse a `## FRAMEBUFFER:` directive, returning (width, height).
@@ -187,7 +194,45 @@ fn parse_data_line(line: &str, line_no: usize) -> Result<RegWrite, String> {
     })
 }
 
-/// Parse a hex script from a string.
+/// Resolve and splice an `## INCLUDE:` directive into the current parse state.
+fn process_include(
+    include_path: &str,
+    base_dir: &std::path::Path,
+    line_no: usize,
+    script: &mut HexScript,
+    current_phase: &mut HexPhase,
+) -> Result<(), String> {
+    let full_path = base_dir.join(include_path);
+    let included = std::fs::read_to_string(&full_path).map_err(|e| {
+        format!(
+            "Line {}: cannot include '{}': {}",
+            line_no + 1,
+            full_path.display(),
+            e
+        )
+    })?;
+    // Parse the included file (non-recursive; includes within includes
+    // are not supported).
+    let inc_script = parse_hex_str(&included)?;
+    // Splice included commands into the current phase.
+    for phase in &inc_script.phases {
+        current_phase.commands.extend_from_slice(&phase.commands);
+    }
+    // Merge included textures and framebuffer directives.
+    script.textures.extend(inc_script.textures);
+    if inc_script.fb_width > 0 {
+        script.fb_width = inc_script.fb_width;
+    }
+    if inc_script.fb_height > 0 {
+        script.fb_height = inc_script.fb_height;
+    }
+    Ok(())
+}
+
+/// Parse a hex script from a string (no `## INCLUDE:` support).
+///
+/// Use [`parse_hex_str_with_base`] or [`parse_hex_file`] when the script
+/// may contain `## INCLUDE:` directives.
 ///
 /// # Arguments
 ///
@@ -197,6 +242,26 @@ fn parse_data_line(line: &str, line_no: usize) -> Result<RegWrite, String> {
 ///
 /// Returns a descriptive error string if any data line is malformed.
 pub fn parse_hex_str(content: &str) -> Result<HexScript, String> {
+    parse_hex_str_with_base(content, None)
+}
+
+/// Parse a hex script from a string, resolving `## INCLUDE:` directives
+/// relative to `base_dir`.
+///
+/// # Arguments
+///
+/// * `content` - The hex script text to parse.
+/// * `base_dir` - Directory for resolving include paths.
+///   If `None`, `## INCLUDE:` directives are silently ignored.
+///
+/// # Errors
+///
+/// Returns a descriptive error string if any data line is malformed
+/// or an included file cannot be read.
+pub fn parse_hex_str_with_base(
+    content: &str,
+    base_dir: Option<&std::path::Path>,
+) -> Result<HexScript, String> {
     let mut script = HexScript {
         fb_width: 0,
         fb_height: 0,
@@ -215,12 +280,15 @@ pub fn parse_hex_str(content: &str) -> Result<HexScript, String> {
 
         // Check for directives (## lines) before stripping comments
         if line.starts_with("##") {
-            handle_directive(
+            let include_path = handle_directive(
                 line,
                 &mut script,
                 &mut current_phase,
                 &mut has_explicit_phase,
             );
+            if let (Some(path), Some(base)) = (include_path, base_dir) {
+                process_include(&path, base, line_no, &mut script, &mut current_phase)?;
+            }
             continue;
         }
 
@@ -248,6 +316,9 @@ pub fn parse_hex_str(content: &str) -> Result<HexScript, String> {
 
 /// Parse a hex script from a file path.
 ///
+/// Supports `## INCLUDE:` directives resolved relative to the file's
+/// parent directory.
+///
 /// # Arguments
 ///
 /// * `path` - Path to the `.hex` file.
@@ -258,7 +329,8 @@ pub fn parse_hex_str(content: &str) -> Result<HexScript, String> {
 pub fn parse_hex_file(path: &std::path::Path) -> Result<HexScript, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
-    parse_hex_str(&content)
+    let base_dir = path.parent();
+    parse_hex_str_with_base(&content, base_dir)
 }
 
 #[cfg(test)]
@@ -316,5 +388,20 @@ mod tests {
         assert_eq!(script.textures[0].base_word, 0x80000);
         assert_eq!(script.textures[0].format, "RGB565");
         assert_eq!(script.textures[0].width_log2, 4);
+    }
+
+    #[test]
+    fn test_include_directive_ignored_without_base() {
+        let hex = "\
+## FRAMEBUFFER: 64 64
+## INCLUDE: textures/nonexistent.hex
+## PHASE: main
+40 0000000000000000
+";
+        // Without a base dir, INCLUDE is silently ignored
+        let script = parse_hex_str(hex).unwrap();
+        assert_eq!(script.fb_width, 64);
+        assert_eq!(script.phases.len(), 1);
+        assert_eq!(script.phases[0].commands.len(), 1);
     }
 }

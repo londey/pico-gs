@@ -10,12 +10,14 @@
 //   - '## PHASE: <name>' delimits named phases
 //   - '## FRAMEBUFFER: <width> <height>' declares output dimensions
 //   - '## TEXTURE: <type> base=<hex> format=<fmt> width_log2=<n>'
+//   - '## INCLUDE: <relative-path>' includes another hex file
 
 #ifndef HEX_PARSER_HPP
 #define HEX_PARSER_HPP
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -119,8 +121,23 @@ inline TextureDirective parse_texture_directive(const std::string& line) {
 
 } // namespace hex_parser_detail
 
-/// Parse a hex script from a string.
+// Forward declaration for parse_hex_string_with_base
+inline HexScript parse_hex_string_with_base(
+    const std::string& content,
+    const std::string& base_dir);
+
+/// Parse a hex script from a string (no ## INCLUDE: support).
 inline HexScript parse_hex_string(const std::string& content) {
+    return parse_hex_string_with_base(content, "");
+}
+
+/// Parse a hex script from a string, resolving ## INCLUDE: directives
+/// relative to base_dir.  If base_dir is empty, includes are silently
+/// ignored.
+inline HexScript parse_hex_string_with_base(
+    const std::string& content,
+    const std::string& base_dir)
+{
     HexScript script;
     HexPhase current_phase;
     current_phase.name = "main"; // default phase name
@@ -162,6 +179,47 @@ inline HexScript parse_hex_string(const std::string& content) {
             if (line.find("## TEXTURE:") == 0) {
                 script.textures.push_back(
                     hex_parser_detail::parse_texture_directive(line));
+                continue;
+            }
+            if (line.find("## INCLUDE:") == 0) {
+                if (!base_dir.empty()) {
+                    std::string rel_path = line.substr(11);
+                    // Trim leading whitespace
+                    auto start = rel_path.find_first_not_of(" \t");
+                    if (start != std::string::npos) {
+                        rel_path = rel_path.substr(start);
+                    }
+                    auto full_path =
+                        std::filesystem::path(base_dir) / rel_path;
+                    std::ifstream inc_file(full_path);
+                    if (!inc_file.is_open()) {
+                        throw std::runtime_error(
+                            "Cannot include: " + full_path.string());
+                    }
+                    std::string inc_content(
+                        (std::istreambuf_iterator<char>(inc_file)),
+                        std::istreambuf_iterator<char>());
+                    // Parse included file (non-recursive)
+                    auto inc_script = parse_hex_string(inc_content);
+                    // Splice included commands into current phase
+                    for (const auto& phase : inc_script.phases) {
+                        current_phase.commands.insert(
+                            current_phase.commands.end(),
+                            phase.commands.begin(),
+                            phase.commands.end());
+                    }
+                    // Merge textures and framebuffer directives
+                    script.textures.insert(
+                        script.textures.end(),
+                        inc_script.textures.begin(),
+                        inc_script.textures.end());
+                    if (inc_script.fb_width > 0) {
+                        script.fb_width = inc_script.fb_width;
+                    }
+                    if (inc_script.fb_height > 0) {
+                        script.fb_height = inc_script.fb_height;
+                    }
+                }
                 continue;
             }
             // Other ## directives: ignore
@@ -213,6 +271,7 @@ inline HexScript parse_hex_string(const std::string& content) {
 }
 
 /// Parse a hex script from a file path.
+/// Supports ## INCLUDE: directives resolved relative to the file's directory.
 inline HexScript parse_hex_file(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -221,7 +280,8 @@ inline HexScript parse_hex_file(const std::string& filepath) {
     std::string content(
         (std::istreambuf_iterator<char>(file)),
         std::istreambuf_iterator<char>());
-    return parse_hex_string(content);
+    auto base_dir = std::filesystem::path(filepath).parent_path().string();
+    return parse_hex_string_with_base(content, base_dir);
 }
 
 #endif // HEX_PARSER_HPP
