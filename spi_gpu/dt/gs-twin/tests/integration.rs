@@ -329,3 +329,21 @@ fn ver_020_bc4_texture() {
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-020 golden image: {}", png_path.display());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-021: RGBA8888 Texture (uncompressed 32bpp)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn ver_021_rgba8888_texture() {
+    let png_path = dt_out_dir().join("ver_021_rgba8888_texture.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let hex_path = scripts_dir().join("ver_021_rgba8888_texture.hex");
+    let script = hex_parser::parse_hex_file(&hex_path).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+    gpu.reg_write_script(&script.all_commands());
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-021 golden image: {}", png_path.display());
+}

@@ -1,7 +1,7 @@
-# VER-018: BC2 Texture Golden Image Test
+# VER-021: RGBA8888 Texture Golden Image Test
 # 
-# 256x256 BC2-compressed Skyline texture on a 512x480 quad.
-# Tests BC2 explicit 4-bit alpha + BC1 color decode.
+# 256x256 RGBA8888 uncompressed Skyline texture on a 512x480 quad.
+# Tests 32bpp 4x4-tiled uncompressed decode path.
 
 ## FRAMEBUFFER: 512 480
 ## PHASE: main
@@ -9,11 +9,11 @@
 # Clear color buffer: base_word=0x000000 value=0x0000 count=262144
 44 0400_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=262144
 
-## INCLUDE: textures/skyline_256x256_bc2.hex
+## INCLUDE: textures/skyline_256x256_rgba8888.hex
 
 40 0000_0099_0000_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9
 43 0000_0078_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=480
-10 0000_0800_0000_8811  # TEX0_CFG: ENABLE=1 NEAREST BC2 256x256 REPEAT base=0x0800
+10 0000_0800_0000_8851  # TEX0_CFG: ENABLE=1 NEAREST RGBA8888 256x256 REPEAT base=0x0800
 18 7670_7670_7371_7371  # CC_MODE: MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE
 30 0000_0000_0000_0010  # RENDER_MODE: COLOR_WRITE_EN
 

@@ -1,6 +1,7 @@
 """VER-020: BC4 Texture Golden Image Test — hex generator.
 
-Textured quad with 256x256 BC4-compressed Skyline R32 texture (grayscale).
+Textured quad with 256x256 BC4-compressed Skyline R32 texture (grayscale)
+rendered into a 512x480 framebuffer.
 White vertex colors; MODULATE produces texture pass-through.
 Tests BC4 single-channel decode with red replicated to RGB.
 """
@@ -13,26 +14,26 @@ def generate() -> list[str]:
     lines = []
     lines.append(emit_comment("VER-020: BC4 Texture Golden Image Test"))
     lines.append(emit_comment(""))
-    lines.append(emit_comment("Textured quad with 256x256 BC4-compressed Skyline (grayscale)."))
+    lines.append(emit_comment("256x256 BC4-compressed Skyline (grayscale) on a 512x480 quad."))
     lines.append(emit_comment("Tests single-channel red decode, replicated to RGB."))
     lines.append(emit_blank())
-    lines.append(emit_framebuffer(64, 64))
+    lines.append(emit_framebuffer(512, 480))
     lines.append(emit_phase("main"))
     lines.append(emit_blank())
 
-    # Clear framebuffer
-    lines.extend(emit_fb_clear(0x0000, 6, 6))
+    # Clear framebuffer (512x512 backing surface)
+    lines.extend(emit_fb_clear(0x0000, 9, 9))
     lines.append(emit_blank())
 
     # Include shared BC4 texture data
     lines.append("## INCLUDE: textures/skyline_256x256_bc4.hex")
     lines.append(emit_blank())
 
-    # Framebuffer config
-    lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 6, 6),
-                       "color_base=0x0000 z_base=0x0000 w_log2=6 h_log2=6"))
-    lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 64, 64),
-                       "scissor x=0 y=0 w=64 h=64"))
+    # Framebuffer config: 512x512 backing surface (w_log2=9, h_log2=9)
+    lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 9, 9),
+                       "color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9"))
+    lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 480),
+                       "scissor x=0 y=0 w=512 h=480"))
 
     # TEX0_CFG: ENABLE=1, NEAREST, BC4 (format 3), 256x256, REPEAT, 0 mips
     tex_cfg = pack_tex0_cfg(1, 0, 3, 8, 8, 0, 0, 0, TEX_SLOT_0_512)
@@ -52,9 +53,9 @@ def generate() -> list[str]:
     white = rgba(0xFF, 0xFF, 0xFF)
     spec = rgba(0x00, 0x00, 0x00)
 
-    # Quad as two triangles
-    for tri in [((4,4,0.0,0.0), (60,4,1.0,0.0), (60,60,1.0,1.0)),
-                ((4,4,0.0,0.0), (60,60,1.0,1.0), (4,60,0.0,1.0))]:
+    # Quad as two triangles covering the 512x480 viewport
+    for tri in [((0,0,0.0,0.0), (512,0,1.0,0.0), (512,480,1.0,1.0)),
+                ((0,0,0.0,0.0), (512,480,1.0,1.0), (0,480,0.0,1.0))]:
         for vi, (x, y, u, v) in enumerate(tri):
             lines.append(emit(ADDR_COLOR, pack_color(white, spec),
                                color_comment(white, spec)))

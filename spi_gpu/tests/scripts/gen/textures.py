@@ -41,13 +41,13 @@ from bc_compress import (
 # word_address = BASE_ADDR_512 * 256.
 # ---------------------------------------------------------------------------
 
-# Texture slot 0: byte 0x100000, word 0x80000, BASE_ADDR=0x0200
+# Texture slot 0: byte 0x100000, word 0x80000, BASE_ADDR=0x0800
 TEX_SLOT_0_WORD = 0x80000
-TEX_SLOT_0_512 = 0x0200
+TEX_SLOT_0_512 = 0x0800
 
-# Texture slot 1: byte 0x120000, word 0x90000, BASE_ADDR=0x0240
+# Texture slot 1: byte 0x120000, word 0x90000, BASE_ADDR=0x0900
 TEX_SLOT_1_WORD = 0x90000
-TEX_SLOT_1_512 = 0x0240
+TEX_SLOT_1_512 = 0x0900
 
 # Path to the representative source texture (relative to this script)
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
