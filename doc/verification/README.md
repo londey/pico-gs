@@ -49,6 +49,8 @@ Verification methods:
 - [VER-012: Textured Triangle Golden Image Test](ver_012_textured_triangle.md)
 - [VER-013: Color-Combined Output Golden Image Test](ver_013_color_combined_output.md)
 - [VER-014: Textured Cube Golden Image Test](ver_014_textured_cube.md)
+- [VER-015: Triangle Size Grid Golden Image Test](ver_015_size_grid.md)
+- [VER-016: Perspective Road Golden Image Test](ver_016_perspective_road.md)
 <!-- TOC-END -->
 
 ## Planned Verification Documents
