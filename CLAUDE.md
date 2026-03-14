@@ -5,6 +5,7 @@
 - `./build.sh --check` must pass after every change (Verilator lint, cargo fmt, cargo check, cargo clippy).
 - Minimize blast radius: only change code directly related to the current task. If you notice problems in other areas, mention them but don't fix them without approval.
 - `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
+- `spi_gpu/dt/gs-twin/` is the authoritative detailed design for the pixel pipeline; read the corresponding gs-twin module before modifying RTL in `spi_gpu/src/render/`.
 - `registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `registers/scripts/generate.sh` is what code must reference for register values and constants.
 - All code follows its respective style guide:
   - SystemVerilog: `.claude/skills/claude-skill-verilog/SKILL.md`
@@ -39,6 +40,9 @@ pico-gs/
 ├── spi_gpu/                  # FPGA RTL component (SystemVerilog)
 │   ├── src/                  # RTL sources
 │   │   └── spi/generated/    # PeakRDL-generated SV package + register module
+│   ├── dt/                   # Digital twin (bit-accurate Rust model)
+│   │   ├── gs-twin/          # Library: authoritative pipeline algorithms
+│   │   └── gs-twin-cli/      # CLI: render golden references, diff vs Verilator
 │   ├── tests/                # Testbenches
 │   ├── constraints/          # FPGA constraints
 │   └── Makefile              # FPGA build system
@@ -50,6 +54,50 @@ pico-gs/
 ├── build.sh                  # Unified build script
 └── Cargo.toml                # Workspace root
 ```
+
+## Digital Twin (gs-twin)
+
+The digital twin (`spi_gpu/dt/gs-twin/`) is the **authoritative detailed design** for the GPU's rasterizer and pixel pipeline.
+Its rustdoc on each type and function IS the design spec for the corresponding RTL module.
+It is a bit-accurate, transaction-level Rust model — not cycle-accurate (Verilator owns that role).
+
+### When to consult gs-twin
+
+- **Before implementing or modifying pixel pipeline SystemVerilog**, read the corresponding gs-twin module first to understand the expected bit-accurate behavior.
+- **When debugging RTL mismatches**, gs-twin output is the "expected" result — the RTL must match it exactly at the RGB565 pixel level.
+- **When adding new pipeline features**, implement in gs-twin first, verify with golden image tests, then implement the RTL to match.
+
+### Module mapping (gs-twin → RTL)
+
+| gs-twin module | RTL module(s) | Pipeline stage |
+|----------------|---------------|----------------|
+| `pipeline/rasterize.rs` | `rasterizer.sv`, `raster_recip_area.sv`, `raster_deriv.sv`, `raster_edge_walk.sv` | Triangle setup + iteration |
+| `pipeline/stipple.rs` | `stipple.sv` | Stipple test |
+| `pipeline/early_z.rs` | `early_z.sv` | Early depth test |
+| `pipeline/tex_sample.rs` | `texture_cache.sv`, `texture_*.sv` decoders | Texture sampling |
+| `pipeline/color_combine.rs` | `color_combiner.sv` | Color combiner |
+| `pipeline/alpha_blend.rs` | `alpha_blend.sv` | Alpha blending |
+| `pipeline/dither.rs` | `dither.sv` | Ordered dithering |
+| `pipeline/pixel_write.rs` | `pixel_pipeline.sv` | Framebuffer write |
+| `reg.rs` | `register_file.sv` | Register decode |
+| `mem.rs` | `sram_arbiter.sv` (INT-011 tiled layout) | Memory model |
+| `pipeline/recip.rs` | `raster_recip_lut.sv`, `raster_recip_q.sv` | Reciprocal LUTs |
+
+### Verification workflow
+
+- `cargo test -p gs-twin` — runs golden image tests (exact RGB565 match)
+- `cargo run -p gs-twin-cli -- render` — generates reference PNGs
+- Same `.hex` scripts in `spi_gpu/dt/gs-twin/tests/scripts/` feed both gs-twin and Verilator testbenches
+- Any pixel mismatch = real bug in RTL (not floating-point divergence)
+- Full workflow: `./build.sh --dt-only`
+
+### Scope boundaries
+
+- **gs-twin owns:** rasterization algorithms, pixel pipeline math, fixed-point formats, memory addressing
+- **gs-twin does NOT model:** scan-out/display (UNIT-008), cycle-level timing, SPI transport
+- **syskit UNIT docs** for algorithmic pipeline modules are thin pointers to gs-twin source
+
+For detailed architecture, see `spi_gpu/dt/README.md`.
 
 ## Commands
 
@@ -76,6 +124,10 @@ cargo test -p pico-gs-core
 # PC debug host build
 cargo build -p pico-gs-pc
 
+# Digital twin build and test
+./build.sh --dt-only
+cargo test -p gs-twin
+
 ## Rust Code Style
 
 - Follow standard Rust conventions and idioms; use `rustfmt` for formatting
@@ -97,6 +149,8 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 
 - All `.sv` files MUST follow `.claude/skills/claude-skill-verilog/SKILL.md`.
 - Lint with `verilator --lint-only -Wall`; fix all warnings, do not suppress with pragmas.
+- Before modifying pixel pipeline RTL (`spi_gpu/src/render/`), read the corresponding gs-twin module in `spi_gpu/dt/gs-twin/src/pipeline/` to understand the expected bit-accurate behavior.
+  The Rust twin is the authoritative algorithm spec; the RTL must produce identical results.
 
 ## C++ Code Style
 
