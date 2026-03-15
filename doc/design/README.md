@@ -14,9 +14,7 @@ This document set constitutes the Design Description Document (DDD) for pico-gs.
 
 | Range | Scope |
 |-------|-------|
-| UNIT-001 – UNIT-009 | FPGA RTL modules (SPI slave, FIFO, register file, rasterizer, pixel pipeline, SRAM arbiter, display, DVI) |
-| UNIT-020 – UNIT-027 | Host firmware modules (scene manager, render executor, GPU driver, transform, lighting, USB, inter-core queue, demo state) |
-| UNIT-030 – UNIT-034 | Asset build tool modules (PNG decoder, OBJ parser, mesh splitter, codegen, build orchestrator) |
+| UNIT-001 – UNIT-010 | FPGA RTL modules (SPI slave, FIFO, register file, rasterizer, pixel pipeline, SRAM arbiter, display, DVI, color combiner) |
 
 Each design unit traces to the requirements it satisfies and the interfaces it provides or consumes, and links directly to source and test files for full traceability.
 
@@ -57,20 +55,4 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-008: Display Controller](unit_008_display_controller.md)
 - [UNIT-009: DVI TMDS Encoder](unit_009_dvi_tmds_encoder.md)
 - [UNIT-010: Color Combiner](unit_010_color_combiner.md)
-- [UNIT-020: Core 0 Scene Manager](unit_020_core_0_scene_manager.md)
-- [UNIT-021: Core 1 Render Executor](unit_021_core_1_render_executor.md)
-- [UNIT-022: GPU Driver Layer](unit_022_gpu_driver_layer.md)
-- [UNIT-023: Transformation Pipeline](unit_023_transformation_pipeline.md)
-- [UNIT-024: Lighting Calculator](unit_024_lighting_calculator.md)
-- [UNIT-025: USB Keyboard Handler](unit_025_usb_keyboard_handler.md)
-- [UNIT-026: Inter-Core Queue](unit_026_intercore_queue.md)
-- [UNIT-027: Demo State Machine](unit_027_demo_state_machine.md)
-- [UNIT-030: PNG Decoder](unit_030_png_decoder.md)
-- [UNIT-031: OBJ Parser](unit_031_obj_parser.md)
-- [UNIT-032: Mesh Patch Splitter](unit_032_mesh_patch_splitter.md)
-- [UNIT-033: Codegen Engine](unit_033_codegen_engine.md)
-- [UNIT-034: Build.rs Orchestrator](unit_034_buildrs_orchestrator.md)
-- [UNIT-035: PC SPI Driver (FT232H)](unit_035_pc_spi_driver.md)
-- [UNIT-036: PC Input Handler](unit_036_pc_input_handler.md)
-- [UNIT-037: Verilator Interactive Simulator App](unit_037_verilator_interactive_sim.md)
 <!-- TOC-END -->

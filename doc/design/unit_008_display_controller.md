@@ -60,7 +60,7 @@ Scanline FIFO and display pipeline
 | `disp_vsync_out` | 1 | Vertical sync output — rising edge marks frame start |
 
 These signals are the post-LUT, post-color-grading RGB888 values driven into UNIT-009 in hardware.
-In the Verilator interactive simulator (UNIT-037), the SDL3 display window reads these signals directly, bypassing UNIT-009 entirely.
+In the Verilator interactive simulator, the SDL3 display window reads these signals directly, bypassing UNIT-009 entirely.
 UNIT-009 need not be instantiated in the simulation top-level wrapper.
 
 ### Internal State
@@ -291,7 +291,7 @@ The scaler and LINE_DOUBLE control operate in the `clk_pixel` domain (25 MHz), d
 The FIFO crossing and burst prefetch operate in `clk_core` (100 MHz) as before.
 
 **SDRAM Behavioral Model (Verilator Simulation):**
-In the Verilator interactive simulator (UNIT-037), the physical W9825G6KH SDRAM is replaced by a C++ behavioral model.
+In the Verilator interactive simulator, the physical W9825G6KH SDRAM is replaced by a C++ behavioral model.
 The model presents the same mem_req/mem_we/mem_addr/mem_wdata/mem_rdata/mem_ack/mem_ready/mem_burst_* handshake interface to UNIT-007 (Memory Arbiter).
 To ensure the prefetch FSM and LUT DMA controller behave correctly, the model must replicate CAS latency CL=3, row activation timing (tRCD), auto-refresh blocking periods, and burst completion sequencing as specified in UNIT-007's SDRAM interface notes.
 A model that omits these timing behaviors will cause FIFO underruns or incorrect LUT loads during interactive simulation.

@@ -14,7 +14,6 @@
 //! # References
 //! - INT-010 (GPU Register Map)
 //! - UNIT-003 (Register File)
-//! - INT-021 (Render Command Format)
 
 use crate::pipeline::rasterize::{self, RasterTriangle};
 use crate::reg_ext::{reg_from_raw, reg_to_raw};

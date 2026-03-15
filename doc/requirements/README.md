@@ -14,10 +14,9 @@ This document set constitutes the System Requirements Specification (SRS) for pi
 
 | Range | Scope |
 |-------|-------|
-| REQ-001.01 – REQ-029 | GPU hardware capabilities (rendering, display, memory) |
-| REQ-011.01 – REQ-011.03 | Non-functional requirements (performance, resources, reliability) |
-| REQ-100 – REQ-004.02 | Host firmware capabilities (scene management, driver, rendering features) |
-| REQ-012.01 – REQ-012.03 | Asset build tool capabilities |
+| REQ-001 – REQ-006 | GPU hardware capabilities (SPI, rasterization, textures, color combiner, framebuffer, display) |
+| REQ-011 | Non-functional requirements (performance, resources, reliability) |
+| REQ-013 | Host SPI driver protocol |
 
 Each requirement is individually testable and traceable to the design units (UNIT-NNN) that implement it and the interfaces (INT-NNN) it depends on.
 
@@ -74,7 +73,6 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - [REQ-005.02: Depth Tested Triangle](req_005.02_depth_tested_triangle.md)
 - [REQ-005.03: Alpha Blending](req_005.03_alpha_blending.md)
 - [REQ-005.04: Enhanced Z-Buffer](req_005.04_enhanced_zbuffer.md)
-- [REQ-005.05: Triangle-Based Clearing](req_005.05_trianglebased_clearing.md)
 - [REQ-005.06: Framebuffer Format](req_005.06_framebuffer_format.md)
 - [REQ-005.07: Z-Buffer Operations](req_005.07_zbuffer_operations.md)
 - [REQ-005.08: Clear Framebuffer](req_005.08_clear_framebuffer.md)
@@ -85,36 +83,12 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - [REQ-006.02: Display Output Timing](req_006.02_display_output_timing.md)
 - [REQ-006.03: Color Grading LUT](req_006.03_color_grading_lut.md)
 - [REQ-006: Screen Scan Out](req_006_screen_scan_out.md)
-- [REQ-007.01: Matrix Transformation Pipeline](req_007.01_matrix_transformation.md)
-- [REQ-007.02: Render Mesh Patch](req_007.02_render_mesh_patch.md)
-- [REQ-007: Vertex Transformation](req_007_vertex_transformation.md)
-- [REQ-008.01: Scene Management](req_008.01_scene_management.md)
-- [REQ-008.02: Render Pipeline Execution](req_008.02_render_pipeline_execution.md)
-- [REQ-008.03: Scene Graph Management](req_008.03_scene_graph_management.md)
-- [REQ-008.04: Render Command Queue](req_008.04_render_command_queue.md)
-- [REQ-008.05: Default Demo Startup](req_008.05_default_demo_startup.md)
-- [REQ-008: Scene Graph / ECS](req_008_scene_graph.md)
-- [REQ-009.01: USB Keyboard Input](req_009.01_usb_keyboard_input.md)
-- [REQ-009.02: Gamepad Input](req_009.02_gamepad_input.md)
-- [REQ-009: Keyboard and Controller Input](req_009_input.md)
-- [REQ-010.01: PC Debug Host](req_010.01_pc_debug_host.md)
-- [REQ-010.02: Verilator Interactive Simulator](req_010.02_verilator_interactive_simulator.md)
-- [REQ-010: GPU Interactive Simulator](req_010_debug_gui.md)
 - [REQ-011.01: Performance Targets](req_011.01_performance_targets.md)
 - [REQ-011.02: Resource Constraints](req_011.02_resource_constraints.md)
 - [REQ-011.03: Reliability Requirements](req_011.03_reliability_requirements.md)
 - [REQ-011: System Constraints](req_011_system_constraints.md)
-- [REQ-012.01: PNG Asset Processing](req_012.01_png_asset_processing.md)
-- [REQ-012.02: OBJ Mesh Processing](req_012.02_obj_mesh_processing.md)
-- [REQ-012.03: Asset Build Orchestration](req_012.03_asset_build_orchestration.md)
-- [REQ-012: Asset Pipeline](req_012_asset_pipeline.md)
 - [REQ-013.01: GPU Communication Protocol](req_013.01_gpu_communication_protocol.md)
 - [REQ-013.02: Upload Texture](req_013.02_upload_texture.md)
 - [REQ-013.03: VSync Synchronization](req_013.03_vsync_synchronization.md)
 - [REQ-013: Host SPI Driver](req_013_host_spi_driver.md)
-- [REQ-014.01: Lightmapped Static Mesh](req_014.01_lightmapped_static_mesh.md)
-- [REQ-014.02: Static Mesh with Directional Lighting](req_014.02_static_mesh_directional_lighting.md)
-- [REQ-014.03: Skinned Mesh (3-Bone)](req_014.03_skinned_mesh.md)
-- [REQ-014.04: Particle System](req_014.04_particle_system.md)
-- [REQ-014: Render Modes](req_014_render_modes.md)
 <!-- TOC-END -->

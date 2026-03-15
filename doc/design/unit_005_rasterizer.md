@@ -12,7 +12,6 @@ Incremental derivative-based rasterization engine with internal perspective corr
 - REQ-004.02 (Extended Precision Fragment Processing) — RGBA8 interpolation output promotion to Q4.12
 - REQ-005.02 (Depth Tested Triangle)
 - REQ-005.04 (Enhanced Z-Buffer) — emits Z values for downstream Z-buffer operations
-- REQ-005.05 (Triangle-Based Clearing) — rasterizes screen-covering clear triangles
 - REQ-005.07 (Z-Buffer Operations) — generates per-fragment Z values for Z-buffer read/write
 - REQ-011.01 (Performance Targets) — triangle throughput and fill rate are primary performance drivers
 - REQ-002 (Rasterizer)
@@ -168,10 +167,6 @@ Key verification points:
 - VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-001 (Rasterizer Unit Testbench)
-
-The Verilator interactive simulator (REQ-010.02, `make sim-interactive`) extends the golden image harness concept to a live interactive tool.
-It injects commands via `SIM_DIRECT_CMD` ports into the same register-file input path that VER-010–VER-014 use, but renders output live to an SDL3 window rather than comparing against a static reference image.
-The interactive sim is a companion development tool, not a replacement for the golden image regression tests.
 
 ## Design Notes
 

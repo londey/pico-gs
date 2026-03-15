@@ -9,7 +9,6 @@
 // Uses pll_core_sim.sv (passthrough stub) instead of pll_core.sv
 // (ECP5 EHXPLLL vendor primitive).
 //
-// See: UNIT-037 (Verilator Interactive Simulator App)
 
 // Enable SIM_DIRECT_CMD injection ports in gpu_top.sv
 +define+SIM_DIRECT_CMD

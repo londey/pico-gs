@@ -10,11 +10,7 @@
 // sdram_csn, etc.) using --pins-inout-enables, matching the integration
 // harness approach. The SdramModelSim provides the backing memory store.
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
-//
 // References:
-//   REQ-010.02 (Verilator Interactive Simulator)
-//   UNIT-037 (Verilator Interactive Simulator App)
 //   UNIT-002 (Command FIFO) -- SIM_DIRECT_CMD injection ports
 //   UNIT-008 (Display Controller) -- pixel tap signals
 //   INT-012 (SPI Transaction Format) -- 72-bit logical encoding

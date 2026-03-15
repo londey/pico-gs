@@ -131,7 +131,7 @@ None
 Migrated from speckit module specification.
 
 **Verilator Simulation Exclusion:**
-The interactive Verilator simulator (UNIT-037) does not instantiate UNIT-009.
+The Verilator interactive simulator does not instantiate UNIT-009.
 The SDL3 display window consumes raw RGB888 pixel data directly from the `disp_pixel_red/green/blue`, `disp_enable`, and `disp_vsync_out` tap signals on gpu_top.sv (see UNIT-008), upstream of where UNIT-009 normally receives its inputs.
 The simulation top-level wrapper therefore omits or stubs the `dvi_output` module.
 UNIT-009 RTL remains unchanged; its functionality is covered by its own unit testbench independently of the interactive sim.

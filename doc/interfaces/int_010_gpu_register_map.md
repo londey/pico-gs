@@ -21,7 +21,7 @@ Internal
 - Area 2: Rasterizer (REQ-002.02, REQ-002.03)
 - Area 3: Texture Samplers (REQ-003.01, REQ-003.02, REQ-003.03, REQ-003.04, REQ-003.05, REQ-003.06, REQ-003.08)
 - Area 4: Fragment Processor/Color Combiner (REQ-004.01, REQ-004.02)
-- Area 5: Blend/Frame Buffer Store (REQ-005.01, REQ-005.02, REQ-005.04, REQ-005.05, REQ-005.06, REQ-005.07, REQ-005.08, REQ-005.09, REQ-005.10)
+- Area 5: Blend/Frame Buffer Store (REQ-005.01, REQ-005.02, REQ-005.04, REQ-005.06, REQ-005.07, REQ-005.08, REQ-005.09, REQ-005.10)
 - Area 6: Screen Scan Out (REQ-006.02, REQ-006.03)
 - Area 11: System Constraints (REQ-011.01, REQ-011.02, REQ-011.03)
 
@@ -40,7 +40,6 @@ Internal
 - REQ-005.03 (Alpha Blending) — Area 5: Blend/Frame Buffer Store
 - REQ-005.04 (Enhanced Z-Buffer) — Area 5: Blend/Frame Buffer Store
 - REQ-001.02 (Memory Upload Interface) — Area 1: GPU SPI Controller
-- REQ-005.05 (Triangle-Based Clearing) — Area 5: Blend/Frame Buffer Store
 - REQ-001.05 (Vertex Submission Protocol) — Area 1: GPU SPI Controller
 - REQ-002.03 (Rasterization Algorithm) — Area 2: Rasterizer
 - REQ-003.06 (Texture Sampling) — Area 3: Texture Samplers

@@ -9,7 +9,7 @@ This investigation was prompted by a desire to **standardize the project's simul
 The project currently has two C++ applications that interface with Verilator:
 
 1. **Integration test harness** (`spi_gpu/tests/harness/`) — drives golden image tests (VER-010 through VER-013) via SPI bit-banging, behavioral SDRAM model, PNG output, and pixel-exact comparison.
-2. **Interactive GPU simulator** (`spi_gpu/sim/gpu_sim.cpp`, UNIT-037) — SDL3 live display with Lua 5.4 scripting via sol2, command injection through `SIM_DIRECT_CMD` ports, and backpressure-aware register writes.
+2. **Interactive GPU simulator** (`spi_gpu/sim/gpu_sim.cpp`) — SDL3 live display with Lua 5.4 scripting via sol2, command injection through `SIM_DIRECT_CMD` ports, and backpressure-aware register writes.
 
 [Marlin](https://github.com/ethanuppal/marlin) (v0.11.1) is a Rust crate that wraps Verilator, allowing hardware modules to be instantiated as Rust structs and tested via standard `cargo test`.
 The question is whether Marlin could replace direct Verilator/C++ usage for both test harnesses while keeping Lua 5.4 for interactive scripting.

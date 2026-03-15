@@ -218,7 +218,7 @@ Each lower-priority port is only ready when no higher-priority port is requestin
 Migrated from speckit module specification.
 
 **SDRAM Behavioral Model for Verilator Simulation:**
-The Verilator interactive simulator (UNIT-037) replaces the physical W9825G6KH SDRAM controller with a C++ behavioral model.
+The Verilator interactive simulator replaces the physical W9825G6KH SDRAM controller with a C++ behavioral model.
 The model must implement the complete SDRAM controller interface consumed by UNIT-007:
 
 | Signal | Direction (model perspective) | Required behavior |

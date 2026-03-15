@@ -245,7 +245,7 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - VER-012 (Textured Triangle Golden Image Test)
 - VER-013 (Color-Combined Output Golden Image Test)
 - VER-014 (Textured Cube Golden Image Test)
-- The interactive Verilator simulator (UNIT-037) generalises the VER-010 through VER-013 injection approach into a live interactive tool.
+- The Verilator interactive simulator generalises the VER-010 through VER-013 injection approach into a live interactive tool.
 
 ## Design Notes
 

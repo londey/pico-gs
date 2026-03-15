@@ -21,13 +21,10 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 - REQ-005.02 (Depth Tested Triangle)
 - REQ-005.03 (Alpha Blending)
 - REQ-005.04 (Enhanced Z-Buffer)
-- REQ-005.05 (Triangle-Based Clearing)
 - REQ-005.06 (Framebuffer Format)
 - REQ-005.07 (Z-Buffer Operations)
 - REQ-005.09 (Double-Buffered Rendering) — writes to off-screen render target via FB_CONFIG
 - REQ-005.10 (Ordered Dithering)
-- REQ-014.01 (Lightmapped Static Mesh) — dual-texture blending supports lightmap compositing
-- REQ-014 (Render Modes)
 - REQ-002 (Rasterizer)
 - REQ-003 (Texture Samplers)
 - REQ-004 (Fragment Processor / Color Combiner)
@@ -350,11 +347,6 @@ See DD-026 for the port 3 sharing rationale and the latch-and-serialize scheme u
 
 **Texture format encoding:** The `tex_format` field in TEX0_CFG and TEX1_CFG is 3 bits wide, encoding 7 formats as defined in INT-010 and INT-032: BC1=0, BC2=1, BC3=2, BC4=3, RGB565=4, RGBA8888=5, R8=6.
 All 7 format decoders are connected to the texture cache via a format-select mux driven by this 3-bit field.
-
-**Verilator interactive simulator:** The interactive GPU simulator (REQ-010.02) substitutes a behavioral SDRAM model for the physical W9825G6KH.
-The model must faithfully implement W9825G6KH burst mode, CAS latency (CL=3), row activation timing, and auto-refresh behavior so that texture cache fills, Z-buffer accesses, and framebuffer writes from this unit behave correctly in simulation.
-A simplified or incorrectly-timed SDRAM model will cause the pixel pipeline to malfunction during interactive simulation; performance observations from the interactive sim (fill rate, frame time) will not precisely reflect hardware timing.
-See UNIT-007 for the SDRAM controller interface signals that the behavioral model must implement.
 
 The pipeline operates at 100 MHz in a unified clock domain with the SDRAM controller.
 This eliminates CDC FIFOs and synchronizers for all memory transactions (framebuffer, Z-buffer, texture), simplifying the design and reducing latency.

@@ -361,25 +361,7 @@ flowchart LR
     UNIT_008["UNIT-008: Display Controller"]
     UNIT_009["UNIT-009: DVI TMDS Encoder"]
     UNIT_010["UNIT-010: Color Combiner"]
-    UNIT_020["UNIT-020: Core 0 Scene Manager"]
-    UNIT_021["UNIT-021: Core 1 Render Executor"]
-    UNIT_022["UNIT-022: GPU Driver Layer"]
-    UNIT_023["UNIT-023: Transformation Pipeline"]
-    UNIT_024["UNIT-024: Lighting Calculator"]
-    UNIT_025["UNIT-025: USB Keyboard Handler"]
-    UNIT_026["UNIT-026: Inter-Core Queue"]
-    UNIT_027["UNIT-027: Demo State Machine"]
-    UNIT_030["UNIT-030: PNG Decoder"]
-    UNIT_031["UNIT-031: OBJ Parser"]
-    UNIT_032["UNIT-032: Mesh Patch Splitter"]
-    UNIT_033["UNIT-033: Codegen Engine"]
-    UNIT_034["UNIT-034: Build.rs Orchestrator"]
-    UNIT_035["UNIT-035: PC SPI Driver (FT232H)"]
-    UNIT_036["UNIT-036: PC Input Handler"]
-    UNIT_037["UNIT-037: Verilator Interactive Simulator App"]
     UNIT_001 -->|INT-001| UNIT_001
-    UNIT_001 -->|INT-001| UNIT_022
-    UNIT_001 -->|INT-001| UNIT_035
     UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
     UNIT_003 -->|INT-010| UNIT_004
@@ -387,18 +369,7 @@ flowchart LR
     UNIT_003 -->|INT-010| UNIT_006
     UNIT_003 -->|INT-010| UNIT_008
     UNIT_003 -->|INT-010| UNIT_010
-    UNIT_003 -->|INT-010| UNIT_022
-    UNIT_022 -->|INT-020| UNIT_020
-    UNIT_022 -->|INT-020| UNIT_021
-    UNIT_026 -->|INT-021| UNIT_020
-    UNIT_026 -->|INT-021| UNIT_021
-    UNIT_026 -->|INT-021| UNIT_027
-    UNIT_034 -->|INT-031| UNIT_026
-    UNIT_034 -->|INT-031| UNIT_032
-    UNIT_034 -->|INT-031| UNIT_033
-    UNIT_034 -->|INT-031| UNIT_034
     UNIT_006 -->|INT-032| UNIT_006
-    UNIT_036 -->|INT-040| UNIT_022
 ```
 
 ### Software Units
@@ -419,20 +390,4 @@ flowchart LR
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
 | UNIT-010 | Color Combiner | Two-stage pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
-| UNIT-020 | Core 0 Scene Manager | Scene graph management and animation |
-| UNIT-021 | Core 1 Render Executor | Render command queue consumer |
-| UNIT-022 | GPU Driver Layer | Platform-agnostic GPU register protocol and flow control, generic over SPI transport |
-| UNIT-023 | Transformation Pipeline | MVP matrix transforms |
-| UNIT-024 | Lighting Calculator | Gouraud shading calculations |
-| UNIT-025 | USB Keyboard Handler | USB HID keyboard input processing |
-| UNIT-026 | Inter-Core Queue | SPSC queue for render command dispatch (Core 0→Core 1 on RP2350; single-threaded equivalent on other platforms) |
-| UNIT-027 | Demo State Machine | Demo selection and switching logic |
-| UNIT-030 | PNG Decoder | PNG file loading, RGBA conversion, and texture format encoding (RGBA4444/BC1) |
-| UNIT-031 | OBJ Parser | OBJ file parsing and geometry extraction |
-| UNIT-032 | Mesh Patch Splitter | Mesh splitting with vertex/index limits |
-| UNIT-033 | Codegen Engine | Rust source and binary data generation for compiled assets |
-| UNIT-034 | Build.rs Orchestrator | Asset pipeline entry point |
-| UNIT-035 | PC SPI Driver (FT232H) | SPI transport implementation for PC platform via Adafruit FT232H breakout board |
-| UNIT-036 | PC Input Handler | Terminal keyboard input handling for the PC debug host platform. |
-| UNIT-037 | Verilator Interactive Simulator App | Standalone C++/Lua Verilator application for GPU development and debugging without FPGA hardware or an RP2350. |
 <!-- syskit-arch-end -->

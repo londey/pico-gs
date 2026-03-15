@@ -11,7 +11,7 @@ It drives a 640×480 DVI output from a double-buffered framebuffer stored in 32 
 
 The SPI host is an external system.
 In production, this is a Raspberry Pi Pico 2 (RP2350) running the pico-racer application (https://github.com/londey/pico-racer).
-For development and testing, the Verilator interactive simulator (UNIT-037) drives the GPU model directly via the SIM_DIRECT_CMD injection port, bypassing SPI serial framing.
+For development and testing, the Verilator interactive simulator drives the GPU model directly via the SIM_DIRECT_CMD injection port, bypassing SPI serial framing.
 
 Each SPI transaction is a 9-byte frame (1-byte address + 8-byte data) that writes to the GPU register file.
 The register file accumulates vertex data and triggers rasterization on every third VERTEX write.

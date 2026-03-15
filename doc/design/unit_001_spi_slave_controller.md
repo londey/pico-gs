@@ -91,7 +91,7 @@ Receives 72-bit SPI transactions and writes to register file
 - Verify back-to-back transactions with varying CS gaps
 - Verify reset behavior: sys_rst_n clears all sys_clk domain registers
 
-**Simulation note:** The interactive Verilator simulator (UNIT-037) uses the `SIM_DIRECT_CMD` injection path in UNIT-002 and does not exercise UNIT-001.
+**Simulation note:** The interactive Verilator simulator uses the `SIM_DIRECT_CMD` injection path in UNIT-002 and does not exercise UNIT-001.
 SPI slave controller coverage is provided separately by VER-003 and the UNIT-001 unit testbench.
 No RTL changes to spi_slave.sv are required for the interactive sim.
 

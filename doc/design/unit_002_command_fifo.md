@@ -163,7 +163,7 @@ The boot screen rasterization (two clear triangles + one Gouraud triangle) compl
 - Verify boot command content: after reset, read all BOOT_COUNT entries and confirm each matches the expected register address and data values from the boot sequence
 - Verify boot-to-normal transition: after all boot commands are consumed, confirm FIFO reports empty; then perform normal SPI write/read operations and confirm correct behavior
 - Verify write pointer initialization: after reset, confirm the first SPI-originated write is stored at mem[BOOT_COUNT] (not mem[0])
-- **SIM_DIRECT_CMD injection**: When `SIM_DIRECT_CMD` is defined, the interactive Verilator simulator (see UNIT-037) drives `sim_cmd_valid/rw/addr/wdata` directly and confirms entries appear at the read side without involving UNIT-001.
+- **SIM_DIRECT_CMD injection**: When `SIM_DIRECT_CMD` is defined, the interactive Verilator simulator drives `sim_cmd_valid/rw/addr/wdata` directly and confirms entries appear at the read side without involving UNIT-001.
   This path is exercised by the interactive sim, not by the unit testbench; SPI path coverage is provided separately by VER-003 and the UNIT-001 testbench.
 
 ## Design Notes

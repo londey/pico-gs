@@ -16,9 +16,7 @@ External Standard
 ## Parties
 
 - **Provider:** External
-- **Consumer:** UNIT-020 (Core 0 Scene Manager), Host firmware
-- **Consumer:** UNIT-022 (GPU Driver Layer)
-- **Consumer:** UNIT-035 (PC SPI Driver (FT232H))
+- **Consumer:** Host firmware
 
 ## Referenced By
 

@@ -122,7 +122,7 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
 ### Frame Time
 
 - **Observation:** Track actual frame times via VSYNC timing
-- **Measurement Method:** Count VSYNC pulses per unit time using the Verilator simulator (UNIT-037) or logic analyzer on the physical board
+- **Measurement Method:** Count VSYNC pulses per unit time using the Verilator interactive simulator or logic analyzer on the physical board
 - **References:** UNIT-008 (Display Controller)
 - **Note:** Content-dependent; simple scenes may run much faster than 60 fps, complex scenes may drop below
 
@@ -177,7 +177,7 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
 - **Verilator:** RTL simulation and coverage analysis
 
 ### Performance Profiling
-- **Verilator simulation:** Triangle count, pixel count via RTL debug signals (UNIT-037)
+- **Verilator simulation:** Triangle count, pixel count via RTL debug signals
 - **Logic analyzer / oscilloscope:** VSYNC period and SPI transaction timing on physical hardware
 
 ---
@@ -190,4 +190,3 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
 - [INT-011: SDRAM Memory Layout](../interfaces/int_011_sram_memory_layout.md) (bandwidth budget)
 - [UNIT-005: Rasterizer](../design/unit_005_rasterizer.md)
 - [UNIT-008: Display Controller](../design/unit_008_display_controller.md)
-- [UNIT-037: Verilator Interactive Simulator App](../design/unit_037_verilator_simulator.md)

@@ -12,13 +12,10 @@
 // mask prefetch FSM and texture cache timing hazards as documented in
 // UNIT-007 and UNIT-008.
 //
-// Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
-//
 // References:
 //   UNIT-007 (Memory Arbiter) -- SDRAM Behavioral Model spec
 //   UNIT-008 (Display Controller) -- Scanline prefetch timing
 //   UNIT-006 (Pixel Pipeline) -- Texture cache fill timing
-//   REQ-010.02 (Verilator Interactive Simulator)
 
 #pragma once
 

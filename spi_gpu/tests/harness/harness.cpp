@@ -7,7 +7,6 @@
 // References:
 //   INT-011 (SDRAM Memory Layout)
 //   INT-014 (Texture Memory Layout)
-//   INT-021 (Render Command Format)
 //   INT-032 (Texture Cache Architecture)
 
 #include <algorithm>
@@ -535,7 +534,7 @@ static void spi_write_transaction(
 ///
 /// Each RegWrite is transmitted as a 72-bit SPI write transaction through
 /// the spi_sck/spi_mosi/spi_cs_n top-level pins, replicating the
-/// register-write sequences that INT-021 RenderMeshPatch and
+/// register-write sequences that RenderMeshPatch and
 /// ClearFramebuffer commands produce.
 ///
 /// The harness respects the command FIFO backpressure signal

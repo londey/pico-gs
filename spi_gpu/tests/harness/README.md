@@ -14,8 +14,8 @@ The harness consists of four components:
 
 3. **PNG writer** (`png_writer.h`, `png_writer.cpp`) -- Reads an RGB565 framebuffer array and writes a PNG file using stb_image_write, converting 16-bit RGB565 pixels to 8-bit-per-channel RGB.
 
-4. **Command scripts** -- C++ arrays of `{addr, data}` pairs encoding INT-021 register-write sequences.
-   Each VER test scene provides its own command script that replicates the register writes produced by `RenderMeshPatch`, `ClearFramebuffer`, and other render commands.
+4. **Command scripts** -- C++ arrays of `{addr, data}` pairs encoding register-write sequences per INT-010 and INT-012.
+   Each VER test scene provides its own command script that replicates the register writes for rendering and clearing operations.
 
 ## Verilator Invocation
 
@@ -84,7 +84,7 @@ static const RegWrite ver_010_script[] = {
 };
 ```
 
-This format directly encodes the register-write sequences that INT-021 `RenderMeshPatch` and `ClearFramebuffer` commands produce on the SPI bus.
+This format directly encodes register-write sequences per INT-010 and INT-012.
 The harness drives these writes into the register file inputs of the Verilated model.
 
 ## PNG Output
@@ -117,7 +117,6 @@ tests/
 
 - **INT-011** (SDRAM Memory Layout) -- 4x4 block-tiled address calculation, memory map, SDRAM timing.
 - **INT-014** (Texture Memory Layout) -- Texture format encodings and block sizes.
-- **INT-021** (Render Command Format) -- Register-write sequences for render commands.
 - **INT-032** (Texture Cache Architecture) -- Cache miss burst lengths per texture format.
 - **VER-010** -- Flat-Shaded Triangle Golden Image Test.
 - **VER-011** -- Depth-Tested Overlapping Triangles Golden Image Test.

@@ -607,10 +607,8 @@ $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR) $
 	cp $(OBJ_DIR)/harness $(BUILD_DIR)/harness
 
 # =========================================================================
-# Interactive GPU Simulator (UNIT-037)
+# Interactive GPU Simulator
 # =========================================================================
-#
-# Spec-ref: unit_037_verilator_interactive_sim.md `1a4b995821bd694a` 2026-02-28
 #
 # Verilator interactive simulator with SDL3 display and Lua scripting.
 # Drives the GPU RTL via SIM_DIRECT_CMD injection ports (bypasses SPI).
@@ -755,7 +753,7 @@ help:
 	@echo "  lint-memory      - Lint memory subsystem RTL"
 	@echo "  harness-scaffold - Compile integration harness scaffold (no RTL)"
 	@echo ""
-	@echo "Interactive simulator (UNIT-037):"
+	@echo "Interactive simulator:"
 	@echo "  sim-interactive  - Build and run interactive GPU sim (requires SCRIPT=<path>)"
 	@echo ""
 	@echo "Maintenance:"

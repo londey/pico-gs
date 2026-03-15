@@ -707,9 +707,9 @@ This frees 13–14 DSP blocks, creating headroom for color combiner (UNIT-010, 4
 
 ### Context
 
-The Verilator interactive simulator (REQ-010.02, UNIT-037) needs to drive the GPU RTL model for live visual debugging.
+The Verilator interactive simulator needs to drive the GPU RTL model for live visual debugging.
 A key question was whether this simulator should implement a Rust `SpiTransport` shim, allowing host application driver code to run against the Verilator model without modification.
-The host application driver code (formerly UNIT-022) has moved to the pico-racer repository; this repo retains only the GPU RTL and test harness.
+The host application driver code has moved to the pico-racer repository; this repo retains only the GPU RTL and test harness.
 
 ### Decision
 
@@ -724,14 +724,8 @@ Since the host application code lives in pico-racer, there is no Rust workspace 
 
 ### Consequences
 
-- UNIT-037 is a standalone C++/Lua binary in `spi_gpu/`; it does not require a Rust workspace.
+- The interactive simulator is a standalone C++/Lua binary in `spi_gpu/`; it does not require a Rust workspace.
 - The GPU RTL is tested via direct command injection at the INT-010 register-write level, matching what the physical SPI host produces.
-
-### References
-
-- REQ-010.02 (Verilator Interactive Simulator)
-- UNIT-037 (Verilator Interactive Simulator App)
-
 
 ## DD-022: SystemVerilog Style Guide Conformance
 

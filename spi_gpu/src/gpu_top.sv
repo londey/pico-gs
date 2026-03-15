@@ -233,7 +233,7 @@ module gpu_top (
 
     // Pack SPI transaction into FIFO format (synthesis) or sim injection (simulation)
     `ifdef SIM_DIRECT_CMD
-        // Sim-only: direct command injection bypasses UNIT-001 (see UNIT-002, UNIT-037)
+        // Sim-only: direct command injection bypasses UNIT-001 (see UNIT-002)
         // Signals driven by the Verilator C++ wrapper (gpu_sim.cpp)
         /* verilator lint_off UNDRIVEN */
         logic        sim_cmd_valid  /* verilator public */;  // Sim write enable
@@ -768,7 +768,7 @@ module gpu_top (
         .vsync_out(disp_vsync_out)
     );
 
-    // DVI Output instantiation (excluded in sim mode; see UNIT-037)
+    // DVI Output instantiation (excluded in sim mode; see interactive simulator)
     `ifndef SIM_DIRECT_CMD
     dvi_output u_dvi_out (
         .clk_pixel(clk_pixel),
