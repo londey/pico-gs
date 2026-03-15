@@ -39,7 +39,7 @@ When adding a new decision, copy this template:
 ## DD-040: Switchable 18/36-bit Texture Cache Mode Bit in TEXn_CFG
 
 **Date:** 2026-03-14
-**Status:** Proposed
+**Status:** Superseded
 
 ### Context
 
@@ -65,6 +65,16 @@ INT-010 (GPU Register Map) gains a CACHE_MODE field in TEXn_FMT.
 INT-032 (Texture Cache Architecture) documents the mode-bit semantics and per-mode EBR layout.
 UNIT-006 (Pixel Pipeline) must route the CACHE_MODE bit from UNIT-003 to the cache bank address and promotion logic.
 REQ-003.08 FR-131-5 is updated to reflect mode-selectable rather than fixed cache format.
+
+### Superseded Note
+
+**Date:** 2026-03-15
+
+DD-040 has been superseded.
+The 18-bit RGBA5652 cache mode has been removed; the texture cache now operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
+The CACHE_MODE bit in TEXn_FMT is reserved and has no effect.
+The UQ1.8 format provides superior precision for all source formats except RGB565 (which sees no quality difference), and the simplified single-mode design eliminates the dual-path promotion logic and EBR configuration complexity.
+The RSVD_7 field in TEXn_FMT (INT-010) is documented as reserved.
 
 ---
 

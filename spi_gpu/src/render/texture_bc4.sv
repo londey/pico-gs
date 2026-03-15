@@ -4,16 +4,13 @@
 //
 // BC4 Texture Decoder — FORMAT=3
 //
-// Decodes a 64-bit BC4 compressed block to produce one texel in either
-// RGBA5652 format (CACHE_MODE=0) or UQ1.8 format (CACHE_MODE=1).
+// Decodes a 64-bit BC4 compressed block to produce one texel in UQ1.8 format.
 //
 // BC4 stores a single channel (red) using the BC3 alpha block encoding:
 //   Bytes 0-1: red0 (u8), red1 (u8)
 //   Bytes 2-7: 6-byte 3-bit index table (16 texels)
 //
-// CACHE_MODE=0: R=decoded value, replicated to G and B; A=opaque (A2=11).
-//   INT-032: R5={R8[7:3]}, G6={R8[7:2]}, B5={R8[7:3]}, A2=11
-// CACHE_MODE=1: R8→UQ1.8 replicated to G and B; A=opaque (A9=9'h100).
+// Output: R8→UQ1.8 replicated to G and B; A=opaque (A9=9'h100).
 //   R9=G9=B9={1'b0, R8} + R8[7], A9=9'h100
 //
 // Interpolation uses shift+add reciprocal-multiply (DD-039, 0 DSP slices):
@@ -21,7 +18,7 @@
 //   /5: (x * 3277) >> 14  (exact for x <= 1277)
 //
 // See: INT-014 (Texture Memory Layout, Format 3), INT-032 (Texture Cache, BC4),
-//      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-037, DD-038, DD-039
+//      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-038, DD-039
 
 module texture_bc4 (
     // Block data: 64 bits (8 bytes, little-endian)
@@ -33,12 +30,7 @@ module texture_bc4 (
     // Texel selection within 4x4 block (0..15, row-major: t = y*4 + x)
     input  wire [3:0]   texel_idx,
 
-    // Cache mode: 0 = RGBA5652 (18-bit), 1 = UQ1.8 (36-bit)
-    input  wire         cache_mode,
-
-    // Decoded output: 36 bits
-    //   CACHE_MODE=0: [35:18]=0, [17:0]=RGBA5652 {R5, G6, B5, A2}
-    //   CACHE_MODE=1: [35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9 (UQ1.8)
+    // Decoded output: 36 bits = {R9, G9, B9, A9} in UQ1.8 per channel.
     output wire [35:0]  texel_out
 );
 
@@ -113,18 +105,12 @@ module texture_bc4 (
     wire [7:0] decoded_red = red_palette[red_index];
 
     // ========================================================================
-    // Output Assembly
+    // Output Assembly: UQ1.8 channel replication
     // ========================================================================
-
-    // CACHE_MODE=0: RGBA5652 channel replication
-    // INT-032: R5={R8[7:3]}, G6={R8[7:2]}, B5={R8[7:3]}, A2=11
-    wire [17:0] rgba5652 = {decoded_red[7:3], decoded_red[7:2], decoded_red[7:3], 2'b11};
-
-    // CACHE_MODE=1: UQ1.8 channel replication
     // R9 = {1'b0, R8} + R8[7] → 0..256 (0x100 = 1.0)
     wire [8:0] red9 = {1'b0, decoded_red} + {8'b0, decoded_red[7]};
 
-    assign texel_out = cache_mode ? {red9, red9, red9, 9'h100} : {18'b0, rgba5652};
+    assign texel_out = {red9, red9, red9, 9'h100};
 
 endmodule
 

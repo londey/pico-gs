@@ -4,8 +4,7 @@
 //
 // BC1 (DXT1) Texture Decoder — FORMAT=0
 //
-// Decodes a 64-bit BC1 compressed block to produce one texel in either
-// RGBA5652 format (CACHE_MODE=0) or UQ1.8 format (CACHE_MODE=1).
+// Decodes a 64-bit BC1 compressed block to produce one texel in UQ1.8 format.
 //
 // BC1 block structure (8 bytes):
 //   Bytes 0-1: color0 (RGB565, little-endian)
@@ -23,12 +22,11 @@
 //   2/3: (C0 + 2*C1 + 1) * 683 >> 11
 //   1/2: (C0 + C1 + 1) >> 1
 //
-// CACHE_MODE=0: Output RGBA5652 in bits [17:0], bits [35:18] = 0.
-// CACHE_MODE=1: Endpoints expanded to UQ1.8 (9 bits) before interpolation;
-//   output {R9, G9, B9, A9} in bits [35:0].
+// Endpoints expanded to UQ1.8 (9 bits) before interpolation;
+// output {R9, G9, B9, A9} in bits [35:0].
 //
 // See: INT-014 (Texture Memory Layout, Format 0), INT-032 (Texture Cache),
-//      UNIT-006 (Pixel Pipeline), REQ-003.03, DD-037, DD-038, DD-039
+//      UNIT-006 (Pixel Pipeline), REQ-003.03, DD-038, DD-039
 
 module texture_bc1 (
     // Block data: 64 bits (8 bytes, little-endian)
@@ -40,12 +38,7 @@ module texture_bc1 (
     // Texel selection within 4x4 block (0..15, row-major: t = y*4 + x)
     input  wire [3:0]   texel_idx,
 
-    // Cache mode: 0 = RGBA5652 (18-bit), 1 = UQ1.8 (36-bit)
-    input  wire         cache_mode,
-
-    // Decoded output: 36 bits
-    //   CACHE_MODE=0: [35:18]=0, [17:0]=RGBA5652 {R5, G6, B5, A2}
-    //   CACHE_MODE=1: [35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9 (UQ1.8)
+    // Decoded output: 36 bits = {R9, G9, B9, A9} in UQ1.8 per channel.
     output wire [35:0]  texel_out
 );
 
@@ -76,57 +69,11 @@ module texture_bc1 (
     wire [4:0] c1_b = color1[4:0];
 
     // ========================================================================
-    // CACHE_MODE=0: RGBA5652 Interpolation (5/6/5 bit endpoints)
-    // ========================================================================
-    // Division by 3 uses shift+add: (x * 683) >> 11 (DD-039, exact for x <= 769)
-    // Only the quotient bits [N+10:11] of each product are used; lower and
-    // upper bits are intentionally discarded.
-
-    // 1/3 point: (2*C0 + C1 + 1) / 3
-    wire [6:0] sum13_r = {2'b0, c0_r} + {2'b0, c0_r} + {2'b0, c1_r} + 7'd1;
-    wire [7:0] sum13_g = {2'b0, c0_g} + {2'b0, c0_g} + {2'b0, c1_g} + 8'd1;
-    wire [6:0] sum13_b = {2'b0, c0_b} + {2'b0, c0_b} + {2'b0, c1_b} + 7'd1;
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire [16:0] prod13_r = {10'b0, sum13_r} * 17'd683;
-    wire [17:0] prod13_g = {10'b0, sum13_g} * 18'd683;
-    wire [16:0] prod13_b = {10'b0, sum13_b} * 17'd683;
-    // verilator lint_on UNUSEDSIGNAL
-
-    wire [4:0] interp13_r = prod13_r[15:11];
-    wire [5:0] interp13_g = prod13_g[16:11];
-    wire [4:0] interp13_b = prod13_b[15:11];
-
-    // 2/3 point: (C0 + 2*C1 + 1) / 3
-    wire [6:0] sum23_r = {2'b0, c0_r} + {2'b0, c1_r} + {2'b0, c1_r} + 7'd1;
-    wire [7:0] sum23_g = {2'b0, c0_g} + {2'b0, c1_g} + {2'b0, c1_g} + 8'd1;
-    wire [6:0] sum23_b = {2'b0, c0_b} + {2'b0, c1_b} + {2'b0, c1_b} + 7'd1;
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire [16:0] prod23_r = {10'b0, sum23_r} * 17'd683;
-    wire [17:0] prod23_g = {10'b0, sum23_g} * 18'd683;
-    wire [16:0] prod23_b = {10'b0, sum23_b} * 17'd683;
-    // verilator lint_on UNUSEDSIGNAL
-
-    wire [4:0] interp23_r = prod23_r[15:11];
-    wire [5:0] interp23_g = prod23_g[16:11];
-    wire [4:0] interp23_b = prod23_b[15:11];
-
-    // 1/2 point: (C0 + C1 + 1) / 2 — bit-select [N:1] of sum
-    // verilator lint_off UNUSEDSIGNAL
-    wire [5:0] sum12_r = {1'b0, c0_r} + {1'b0, c1_r} + 6'd1;
-    wire [6:0] sum12_g = {1'b0, c0_g} + {1'b0, c1_g} + 7'd1;
-    wire [5:0] sum12_b = {1'b0, c0_b} + {1'b0, c1_b} + 6'd1;
-    // verilator lint_on UNUSEDSIGNAL
-    wire [4:0] interp12_r = sum12_r[5:1];
-    wire [5:0] interp12_g = sum12_g[6:1];
-    wire [4:0] interp12_b = sum12_b[5:1];
-
-    // ========================================================================
-    // CACHE_MODE=1: UQ1.8 Interpolation (9-bit promoted endpoints)
+    // UQ1.8 Interpolation (9-bit promoted endpoints)
     // ========================================================================
     // Expand R5/G6/B5 endpoints to UQ1.8 (9-bit) via bit-replication + correction,
-    // matching gs-twin to_uq18() formulas. Then interpolate at 9-bit precision.
+    // matching gs-twin ch5_to_uq18()/ch6_to_uq18() formulas. Then interpolate
+    // at 9-bit precision.
     //
     // R5→UQ1.8: {r5, r5[4:2]} + r5[4] = (r5<<3 | r5>>2) + (r5>>4)
     // G6→UQ1.8: {g6, g6[5:4]} + g6[5] = (g6<<2 | g6>>4) + (g6>>5)
@@ -186,30 +133,16 @@ module texture_bc1 (
     reg [35:0] palette [0:3];
 
     always_comb begin
-        if (!cache_mode) begin
-            // ---- CACHE_MODE=0: RGBA5652 (18-bit, upper 18 bits zero) ----
-            palette[0] = {18'b0, color0, 2'b11};
-            palette[1] = {18'b0, color1, 2'b11};
+        // UQ1.8 {R9, G9, B9, A9} = 36 bits
+        palette[0] = {c0_r9, c0_g9, c0_b9, 9'h100};
+        palette[1] = {c1_r9, c1_g9, c1_b9, 9'h100};
 
-            if (four_color_mode) begin
-                palette[2] = {18'b0, interp13_r, interp13_g, interp13_b, 2'b11};
-                palette[3] = {18'b0, interp23_r, interp23_g, interp23_b, 2'b11};
-            end else begin
-                palette[2] = {18'b0, interp12_r, interp12_g, interp12_b, 2'b11};
-                palette[3] = 36'b0;  // transparent black (A2=00)
-            end
+        if (four_color_mode) begin
+            palette[2] = {interp13_r9, interp13_g9, interp13_b9, 9'h100};
+            palette[3] = {interp23_r9, interp23_g9, interp23_b9, 9'h100};
         end else begin
-            // ---- CACHE_MODE=1: UQ1.8 {R9, G9, B9, A9} = 36 bits ----
-            palette[0] = {c0_r9, c0_g9, c0_b9, 9'h100};
-            palette[1] = {c1_r9, c1_g9, c1_b9, 9'h100};
-
-            if (four_color_mode) begin
-                palette[2] = {interp13_r9, interp13_g9, interp13_b9, 9'h100};
-                palette[3] = {interp23_r9, interp23_g9, interp23_b9, 9'h100};
-            end else begin
-                palette[2] = {interp12_r9, interp12_g9, interp12_b9, 9'h100};
-                palette[3] = 36'b0;  // transparent black (A9=0)
-            end
+            palette[2] = {interp12_r9, interp12_g9, interp12_b9, 9'h100};
+            palette[3] = 36'b0;  // transparent black (A9=0)
         end
     end
 

@@ -4,12 +4,10 @@
 //
 // RGBA8888 Texture Decoder — FORMAT=5
 //
-// Converts a 4x4 block of uncompressed RGBA8888 texels to RGBA5652 (CACHE_MODE=0)
-// or UQ1.8 RGBA (CACHE_MODE=1) format.
+// Converts a 4x4 block of uncompressed RGBA8888 texels to UQ1.8 RGBA format.
 // Each texel is a 32-bit value: [7:0]=R, [15:8]=G, [23:16]=B, [31:24]=A.
 //
-// CACHE_MODE=0: Truncation to RGBA5652: R8->R5, G8->G6, B8->B5, A8->A2.
-// CACHE_MODE=1: Expansion to UQ1.8: {ch8[7:0], ch8[7]} per channel (DD-038).
+// Each 8-bit channel is expanded to UQ1.8: {ch8[7:0], ch8[7]} per channel (DD-038).
 //   R9={R8, R8[7]}, G9={G8, G8[7]}, B9={B8, B8[7]}, A9={A8, A8[7]}.
 //
 // The block_data input holds 16 texels x 32 bits = 512 bits.
@@ -25,12 +23,7 @@ module texture_rgba8888 (
     // Texel selection within 4x4 block (0..15, row-major: t = y*4 + x)
     input  wire [3:0]   texel_idx,
 
-    // Cache mode: 0 = RGBA5652 (18-bit), 1 = UQ1.8 RGBA (36-bit)
-    input  wire         cache_mode,
-
-    // Decoded output: 36 bits wide.
-    // CACHE_MODE=0: [17:0] = RGBA5652 {R5, G6, B5, A2}, [35:18] = 0.
-    // CACHE_MODE=1: [35:0] = {A9, B9, G9, R9} in UQ1.8 per channel.
+    // Decoded output: 36 bits = {A9, B9, G9, R9} in UQ1.8 per channel.
     output wire [35:0]  texel_out
 );
 
@@ -53,14 +46,7 @@ module texture_rgba8888 (
     wire [7:0] a8 = pixel[31:24];
 
     // ========================================================================
-    // CACHE_MODE=0: Truncation to RGBA5652 (18-bit)
-    // ========================================================================
-    // R8[7:3] -> R5, G8[7:2] -> G6, B8[7:3] -> B5, A8[7:6] -> A2
-
-    wire [17:0] mode0_out = {r8[7:3], g8[7:2], b8[7:3], a8[7:6]};
-
-    // ========================================================================
-    // CACHE_MODE=1: UQ1.8 Expansion (36-bit)
+    // UQ1.8 Expansion (36-bit)
     // ========================================================================
     // Each 8-bit channel expanded to 9-bit UQ1.8: {ch8[7:0], ch8[7]}
     // ch8=0xFF -> 9'h1FF (max UQ1.8, slightly below 1.0)
@@ -71,13 +57,7 @@ module texture_rgba8888 (
     wire [8:0] b9 = {b8, b8[7]};
     wire [8:0] a9 = {a8, a8[7]};
 
-    wire [35:0] mode1_out = {a9, b9, g9, r9};
-
-    // ========================================================================
-    // Output Mux
-    // ========================================================================
-
-    assign texel_out = cache_mode ? mode1_out : {18'b0, mode0_out};
+    assign texel_out = {a9, b9, g9, r9};
 
 endmodule
 

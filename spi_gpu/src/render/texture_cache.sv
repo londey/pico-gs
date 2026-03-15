@@ -4,9 +4,7 @@
 //
 // Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative texture cache for one sampler.
-// Dual-mode cache line format selected by cache_mode (TEXn_CFG.CACHE_MODE):
-//   CACHE_MODE=0: RGBA5652 (18 bits/texel), DP16KD 1024×18 EBR banks
-//   CACHE_MODE=1: UQ1.8 per channel (36 bits/texel), PDPW16KD 512×36 EBR banks
+// Cache format: UQ1.8 per channel (36 bits/texel), PDPW16KD 512×36 EBR banks.
 // Cache fill uses burst SRAM reads via UNIT-007 arbiter (port 3).
 //
 // Cache Fill FSM: IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
@@ -18,17 +16,15 @@
 //       RGB565 (format 4):   burst_len=16 (32 bytes, 16 x 16-bit words)
 //       RGBA8888 (format 5): burst_len=32 (64 bytes, 32 x 16-bit words)
 //       R8 (format 6):       burst_len=8  (16 bytes, 8 x 16-bit words)
-//   - DECOMPRESS converts raw data to 16 texels in the active cache format
+//   - DECOMPRESS converts raw data to 16 texels in UQ1.8 format
 //   - WRITE_BANKS stores texels to 4 interleaved EBR banks
 //
-// Both DP16KD and PDPW16KD bank arrays are instantiated; cache_mode selects
-// which is written during fill and which is read on hit (runtime mux).
-// Writing TEXn_CFG (including CACHE_MODE changes) triggers invalidation,
-// ensuring the first access after a mode change is a guaranteed miss.
+// Writing TEXn_CFG triggers invalidation, ensuring the first access
+// after a config change is a guaranteed miss.
 //
 // See: INT-032 (Texture Cache Architecture), UNIT-006 (Pixel Pipeline),
 //      INT-014 (Texture Memory Layout), REQ-003.08 (Texture Cache),
-//      DD-037 (PDPW16KD EBR), DD-038 (UQ1.8 Format), DD-040 (Cache Mode)
+//      DD-037 (PDPW16KD EBR), DD-038 (UQ1.8 Format)
 
 module texture_cache (
     input  wire         clk,            // 100 MHz core clock
@@ -43,7 +39,6 @@ module texture_cache (
     input  wire [23:0]  tex_base_addr,  // Texture base address in SRAM (from TEXn_BASE)
     input  wire [2:0]   tex_format,     // Texture format (3-bit): 0=BC1,1=BC2,2=BC3,3=BC4,4=RGB565,5=RGBA8888,6=R8
     input  wire [7:0]   tex_width_log2, // Texture width as log2 (e.g., 8 for 256)
-    input  wire         cache_mode,     // 0=RGBA5652 (18-bit), 1=UQ1.8 (36-bit)
 
     // ====================================================================
     // Cache Lookup Result
@@ -51,7 +46,7 @@ module texture_cache (
     output wire         cache_hit,      // Lookup hit (texels available this cycle)
     output wire         cache_ready,    // Cache idle, ready for lookup
     output wire         fill_done,      // Cache fill complete (after miss)
-    output wire [35:0]  texel_out_0,    // Texel from bank 0 (even_x, even_y); [17:0] RGBA5652, [35:18] UQ1.8 upper
+    output wire [35:0]  texel_out_0,    // Texel from bank 0 (even_x, even_y); UQ1.8 {R9, G9, B9, A9}
     output wire [35:0]  texel_out_1,    // Texel from bank 1 (odd_x, even_y)
     output wire [35:0]  texel_out_2,    // Texel from bank 2 (even_x, odd_y)
     output wire [35:0]  texel_out_3,    // Texel from bank 3 (odd_x, odd_y)
@@ -139,23 +134,12 @@ module texture_cache (
     reg [2:0]  lru_state [0:NUM_SETS-1];
 
     // ====================================================================
-    // Cache Data Banks — Dual-Mode (runtime mux)
+    // Cache Data Banks — PDPW16KD 512×36-bit (UQ1.8 RGBA)
     //
-    // CACHE_MODE=0: DP16KD 1024×18-bit banks (4 banks, 4096 entries total)
-    // CACHE_MODE=1: PDPW16KD 512×36-bit banks (4 banks, 2048 entries total)
-    //
-    // Both bank arrays are instantiated; cache_mode selects which is
-    // written during fill and read on hit. This costs additional EBR but
-    // allows runtime mode switching via TEXn_CFG register writes.
+    // 4 banks × 512 entries = 2048 texels per sampler (8,192 total).
+    // Each bank stores texels for one (x_parity, y_parity) quadrant.
     // ====================================================================
 
-    // 18-bit banks (CACHE_MODE=0)
-    reg [17:0] bank0_18 [0:1023];  // (even_x, even_y) texels
-    reg [17:0] bank1_18 [0:1023];  // (odd_x, even_y) texels
-    reg [17:0] bank2_18 [0:1023];  // (even_x, odd_y) texels
-    reg [17:0] bank3_18 [0:1023];  // (odd_x, odd_y) texels
-
-    // 36-bit banks (CACHE_MODE=1)
     reg [35:0] bank0_36 [0:511];   // (even_x, even_y) texels, UQ1.8 RGBA
     reg [35:0] bank1_36 [0:511];   // (odd_x, even_y) texels
     reg [35:0] bank2_36 [0:511];   // (even_x, odd_y) texels
@@ -221,20 +205,13 @@ module texture_cache (
     // Bank address = {set_index, way, sub_texel} matching fill_bank_base layout
     // Sub-block quad select: pixel_x[1], pixel_y[1] pick which 2×2 quad
     // within the 4×4 block to read (0..3 per bank per cache line).
-    wire [9:0] read_bank_addr_18 = {set_index, hit_way, pixel_y[1], pixel_x[1]};
     // 36-bit banks have 512 entries (9-bit addr): {set_index[4:0], way[1:0], quad_y, quad_x}
-    // Uses 5-bit set index (32 sets in CACHE_MODE=1) instead of 6-bit
-    wire [8:0] read_bank_addr_36 = {set_index[4:0], hit_way, pixel_y[1], pixel_x[1]};
+    wire [8:0] read_bank_addr = {set_index[4:0], hit_way, pixel_y[1], pixel_x[1]};
 
-    // Runtime mux: select 18-bit or 36-bit bank output based on cache_mode
-    assign texel_out_0 = cache_mode ? bank0_36[read_bank_addr_36]
-                                    : {18'b0, bank0_18[read_bank_addr_18]};
-    assign texel_out_1 = cache_mode ? bank1_36[read_bank_addr_36]
-                                    : {18'b0, bank1_18[read_bank_addr_18]};
-    assign texel_out_2 = cache_mode ? bank2_36[read_bank_addr_36]
-                                    : {18'b0, bank2_18[read_bank_addr_18]};
-    assign texel_out_3 = cache_mode ? bank3_36[read_bank_addr_36]
-                                    : {18'b0, bank3_18[read_bank_addr_18]};
+    assign texel_out_0 = bank0_36[read_bank_addr];
+    assign texel_out_1 = bank1_36[read_bank_addr];
+    assign texel_out_2 = bank2_36[read_bank_addr];
+    assign texel_out_3 = bank3_36[read_bank_addr];
 
     // ====================================================================
     // Burst Length Determination (combinational)
@@ -316,9 +293,7 @@ module texture_cache (
     end
 
     // ====================================================================
-    // Decompressed Texel Buffer (16 texels x 36 bits)
-    // In CACHE_MODE=0: only [17:0] used (RGBA5652)
-    // In CACHE_MODE=1: full [35:0] used (UQ1.8 RGBA = 4×9 bits)
+    // Decompressed Texel Buffer (16 texels x 36 bits, UQ1.8 RGBA)
     // ====================================================================
 
     reg [35:0] decomp_texels [0:15];
@@ -327,7 +302,7 @@ module texture_cache (
     //  All seven formats use 3-bit tex_format encoding per INT-032.)
 
     // ====================================================================
-    // BC1 → RGBA5652 Decompression (combinational for all 16 texels)
+    // BC1 → RGB565 Decompression helpers (combinational)
     // Input: 4 x 16-bit words = 64 bits
     //   words 0-1: color0 (RGB565), color1 (RGB565)
     //   words 2-3: 32-bit index word (2 bits per texel, 16 texels)
@@ -365,8 +340,6 @@ module texture_cache (
         end
     endfunction
 
-    // rgb565_to_rgba5652 conversion inlined at call site: {color, 2'b11}
-
     // ====================================================================
     // Decompress Registers
     // ====================================================================
@@ -375,7 +348,6 @@ module texture_cache (
     reg [5:0]  fill_set_index;  // Latched set index for fill
     reg [23:0] fill_tag;        // Latched tag for fill
     reg [1:0]  fill_victim_way; // Latched victim way for fill
-    reg        fill_cache_mode; // Latched cache_mode for current fill
 
     // ====================================================================
     // Fill FSM — State Register
@@ -461,7 +433,6 @@ module texture_cache (
             fill_set_index  <= 6'b0;
             fill_tag        <= 24'b0;
             fill_victim_way <= 2'b0;
-            fill_cache_mode <= 1'b0;
 
             for (idx = 0; idx < 32; idx = idx + 1) begin
                 burst_buf[idx] <= 16'b0;
@@ -482,7 +453,6 @@ module texture_cache (
                         fill_set_index  <= set_index;
                         fill_tag        <= lookup_tag;
                         fill_victim_way <= victim_way;
-                        fill_cache_mode <= cache_mode;
                         burst_word_count <= 6'b0;
 
                         // Issue burst read request
@@ -587,7 +557,7 @@ module texture_cache (
                     bc1_color1  = burst_buf[1];
                     bc1_indices = {burst_buf[3], burst_buf[2]}; // Little-endian 32-bit
 
-                    // Generate palette (RGB565 space for CACHE_MODE=0)
+                    // Generate palette (RGB565 endpoints, expanded to UQ1.8 below)
                     bc1_palette[0] = bc1_color0;
                     bc1_palette[1] = bc1_color1;
 
@@ -601,50 +571,32 @@ module texture_cache (
                         bc1_palette[3] = 16'h0000; // Transparent black
                     end
 
-                    if (!fill_cache_mode) begin
-                        // CACHE_MODE=0: RGBA5652 (18 bits in [17:0])
-                        for (int t = 0; t < 16; t++) begin
-                            if (bc1_color0 <= bc1_color1 && bc1_indices[t*2 +: 2] == 2'b11) begin
-                                decomp_texels[t] = 36'b0;
-                            end else begin
-                                decomp_texels[t] = {18'b0, bc1_palette[bc1_indices[t*2 +: 2]], 2'b11};
-                            end
-                        end
-                    end else begin
-                        // CACHE_MODE=1: UQ1.8 RGBA (36 bits)
-                        // Expand endpoints to 8-bit, interpolate at 8-bit precision
-                        for (int t = 0; t < 16; t++) begin
-                            if (bc1_color0 <= bc1_color1 && bc1_indices[t*2 +: 2] == 2'b11) begin
-                                // Transparent black
-                                decomp_texels[t] = 36'b0;
-                            end else begin
-                                decomp_texels[t] = {
-                                    9'h100, // A9: opaque
-                                    {1'b0, b5_to_b8(bc1_palette[bc1_indices[t*2 +: 2]][4:0])},
-                                    {1'b0, g6_to_g8(bc1_palette[bc1_indices[t*2 +: 2]][10:5])},
-                                    {1'b0, r5_to_r8(bc1_palette[bc1_indices[t*2 +: 2]][15:11])}
-                                };
-                            end
+                    // UQ1.8 RGBA (36 bits)
+                    // Expand endpoints to 8-bit, interpolate at 8-bit precision
+                    for (int t = 0; t < 16; t++) begin
+                        if (bc1_color0 <= bc1_color1 && bc1_indices[t*2 +: 2] == 2'b11) begin
+                            // Transparent black
+                            decomp_texels[t] = 36'b0;
+                        end else begin
+                            decomp_texels[t] = {
+                                9'h100, // A9: opaque
+                                {1'b0, b5_to_b8(bc1_palette[bc1_indices[t*2 +: 2]][4:0])},
+                                {1'b0, g6_to_g8(bc1_palette[bc1_indices[t*2 +: 2]][10:5])},
+                                {1'b0, r5_to_r8(bc1_palette[bc1_indices[t*2 +: 2]][15:11])}
+                            };
                         end
                     end
                 end
 
                 3'd4: begin
-                    if (!fill_cache_mode) begin
-                        // CACHE_MODE=0: RGB565 → RGBA5652 with A=opaque
-                        for (int t = 0; t < 16; t++) begin
-                            decomp_texels[t] = {18'b0, burst_buf[t], 2'b11};
-                        end
-                    end else begin
-                        // CACHE_MODE=1: RGB565 → UQ1.8 with MSB replication
-                        for (int t = 0; t < 16; t++) begin
-                            decomp_texels[t] = {
-                                9'h100,
-                                {1'b0, b5_to_b8(burst_buf[t][4:0])},
-                                {1'b0, g6_to_g8(burst_buf[t][10:5])},
-                                {1'b0, r5_to_r8(burst_buf[t][15:11])}
-                            };
-                        end
+                    // RGB565 → UQ1.8 with MSB replication
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_texels[t] = {
+                            9'h100,
+                            {1'b0, b5_to_b8(burst_buf[t][4:0])},
+                            {1'b0, g6_to_g8(burst_buf[t][10:5])},
+                            {1'b0, r5_to_r8(burst_buf[t][15:11])}
+                        };
                     end
                 end
 
@@ -673,9 +625,8 @@ module texture_cache (
     // So 4 texels go to each bank per cache line.
 
     wire [7:0] fill_line_idx = {fill_set_index, fill_victim_way};
-    wire [9:0] fill_bank_base_18 = {fill_line_idx, 2'b00};
     // 36-bit banks: 512 entries, 9-bit address; use {set[4:0], way[1:0], 2'b00}
-    wire [8:0] fill_bank_base_36 = {fill_set_index[4:0], fill_victim_way, 2'b00};
+    wire [8:0] fill_bank_base = {fill_set_index[4:0], fill_victim_way, 2'b00};
 
     always_ff @(posedge clk) begin
         if (fill_state == FILL_WRITE) begin
@@ -686,65 +637,34 @@ module texture_cache (
             //   cycle 1: sub (2,0),(3,0),(2,1),(3,1) → all banks, sub_addr=1
             //   cycle 2: sub (0,2),(1,2),(0,3),(1,3) → all banks, sub_addr=2
             //   cycle 3: sub (2,2),(3,2),(2,3),(3,3) → all banks, sub_addr=3
-            if (!fill_cache_mode) begin
-                // CACHE_MODE=0: write to 18-bit banks
-                case (write_count[1:0])
-                    2'd0: begin
-                        bank0_18[fill_bank_base_18 + 10'd0] <= decomp_texels[0][17:0];
-                        bank1_18[fill_bank_base_18 + 10'd0] <= decomp_texels[1][17:0];
-                        bank2_18[fill_bank_base_18 + 10'd0] <= decomp_texels[4][17:0];
-                        bank3_18[fill_bank_base_18 + 10'd0] <= decomp_texels[5][17:0];
-                    end
-                    2'd1: begin
-                        bank0_18[fill_bank_base_18 + 10'd1] <= decomp_texels[2][17:0];
-                        bank1_18[fill_bank_base_18 + 10'd1] <= decomp_texels[3][17:0];
-                        bank2_18[fill_bank_base_18 + 10'd1] <= decomp_texels[6][17:0];
-                        bank3_18[fill_bank_base_18 + 10'd1] <= decomp_texels[7][17:0];
-                    end
-                    2'd2: begin
-                        bank0_18[fill_bank_base_18 + 10'd2] <= decomp_texels[8][17:0];
-                        bank1_18[fill_bank_base_18 + 10'd2] <= decomp_texels[9][17:0];
-                        bank2_18[fill_bank_base_18 + 10'd2] <= decomp_texels[12][17:0];
-                        bank3_18[fill_bank_base_18 + 10'd2] <= decomp_texels[13][17:0];
-                    end
-                    2'd3: begin
-                        bank0_18[fill_bank_base_18 + 10'd3] <= decomp_texels[10][17:0];
-                        bank1_18[fill_bank_base_18 + 10'd3] <= decomp_texels[11][17:0];
-                        bank2_18[fill_bank_base_18 + 10'd3] <= decomp_texels[14][17:0];
-                        bank3_18[fill_bank_base_18 + 10'd3] <= decomp_texels[15][17:0];
-                    end
-                    default: begin end
-                endcase
-            end else begin
-                // CACHE_MODE=1: write to 36-bit banks
-                case (write_count[1:0])
-                    2'd0: begin
-                        bank0_36[fill_bank_base_36 + 9'd0] <= decomp_texels[0];
-                        bank1_36[fill_bank_base_36 + 9'd0] <= decomp_texels[1];
-                        bank2_36[fill_bank_base_36 + 9'd0] <= decomp_texels[4];
-                        bank3_36[fill_bank_base_36 + 9'd0] <= decomp_texels[5];
-                    end
-                    2'd1: begin
-                        bank0_36[fill_bank_base_36 + 9'd1] <= decomp_texels[2];
-                        bank1_36[fill_bank_base_36 + 9'd1] <= decomp_texels[3];
-                        bank2_36[fill_bank_base_36 + 9'd1] <= decomp_texels[6];
-                        bank3_36[fill_bank_base_36 + 9'd1] <= decomp_texels[7];
-                    end
-                    2'd2: begin
-                        bank0_36[fill_bank_base_36 + 9'd2] <= decomp_texels[8];
-                        bank1_36[fill_bank_base_36 + 9'd2] <= decomp_texels[9];
-                        bank2_36[fill_bank_base_36 + 9'd2] <= decomp_texels[12];
-                        bank3_36[fill_bank_base_36 + 9'd2] <= decomp_texels[13];
-                    end
-                    2'd3: begin
-                        bank0_36[fill_bank_base_36 + 9'd3] <= decomp_texels[10];
-                        bank1_36[fill_bank_base_36 + 9'd3] <= decomp_texels[11];
-                        bank2_36[fill_bank_base_36 + 9'd3] <= decomp_texels[14];
-                        bank3_36[fill_bank_base_36 + 9'd3] <= decomp_texels[15];
-                    end
-                    default: begin end
-                endcase
-            end
+            // Write to 36-bit UQ1.8 banks
+            case (write_count[1:0])
+                2'd0: begin
+                    bank0_36[fill_bank_base + 9'd0] <= decomp_texels[0];
+                    bank1_36[fill_bank_base + 9'd0] <= decomp_texels[1];
+                    bank2_36[fill_bank_base + 9'd0] <= decomp_texels[4];
+                    bank3_36[fill_bank_base + 9'd0] <= decomp_texels[5];
+                end
+                2'd1: begin
+                    bank0_36[fill_bank_base + 9'd1] <= decomp_texels[2];
+                    bank1_36[fill_bank_base + 9'd1] <= decomp_texels[3];
+                    bank2_36[fill_bank_base + 9'd1] <= decomp_texels[6];
+                    bank3_36[fill_bank_base + 9'd1] <= decomp_texels[7];
+                end
+                2'd2: begin
+                    bank0_36[fill_bank_base + 9'd2] <= decomp_texels[8];
+                    bank1_36[fill_bank_base + 9'd2] <= decomp_texels[9];
+                    bank2_36[fill_bank_base + 9'd2] <= decomp_texels[12];
+                    bank3_36[fill_bank_base + 9'd2] <= decomp_texels[13];
+                end
+                2'd3: begin
+                    bank0_36[fill_bank_base + 9'd3] <= decomp_texels[10];
+                    bank1_36[fill_bank_base + 9'd3] <= decomp_texels[11];
+                    bank2_36[fill_bank_base + 9'd3] <= decomp_texels[14];
+                    bank3_36[fill_bank_base + 9'd3] <= decomp_texels[15];
+                end
+                default: begin end
+            endcase
         end
     end
 

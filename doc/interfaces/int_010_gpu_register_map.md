@@ -460,12 +460,12 @@ Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT
 - **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR (octahedral wrap implements coupled diagonal mirroring).
 - **MIP_LEVELS** — number of mipmap levels (0 or 1 = single level; max = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)); see INT-014 for mipmap chain memory layout.
 - **BASE_ADDR** — 16-bit value × 512 = byte address in SDRAM (512-byte granularity, 32 MiB addressable).
-- **RSVD_7** — reserved; planned for CACHE_MODE (switchable 18/36-bit cache format, see INT-032).
+- **RSVD_7** — reserved (formerly planned for CACHE_MODE; the cache now operates exclusively in UQ1.8 mode, see INT-032).
 
 **Behavioral notes:**
 
 - Block-compressed formats (BC1–BC4) require dimensions that are multiples of 4; uncompressed formats require power-of-two dimensions.
-- The texture cache (INT-032) converts all source formats to RGBA5652 on cache fill; FORMAT determines the burst length and decoder used on cache miss.
+- The texture cache (INT-032) converts all source formats to UQ1.8 on cache fill; FORMAT determines the burst length and decoder used on cache miss.
 - Textures are sampled independently and passed to the color combiner (CC_MODE, 0x18).
 - Swizzle patterns (SWIZZLE field) apply after texture decode; see INT-014 for channel reordering encodings.
 

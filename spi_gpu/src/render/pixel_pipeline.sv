@@ -164,13 +164,13 @@ module pixel_pipeline (
     /* verilator lint_off UNUSEDSIGNAL */
     wire [15:0] _unused_frag_u1 = frag_u1;
     wire [15:0] _unused_frag_v1 = frag_v1;
-    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [7] CACHE_MODE, [11:8] WIDTH_LOG2,
+    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [11:8] WIDTH_LOG2,
     // [15:12] HEIGHT_LOG2, [23:20] MIP_LEVELS used; [31:24] (reserved),
-    // [19:16] (wrap), [3:1] (filter reserved) unused
-    wire [14:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:24], reg_tex0_cfg[19:16],
-                                         reg_tex0_cfg[3:1]};
-    wire [22:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:24], reg_tex1_cfg[19:8],
-                                         reg_tex1_cfg[3:1]};
+    // [19:16] (wrap), [7] (reserved), [3:1] (filter reserved) unused
+    wire [15:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:24], reg_tex0_cfg[19:16],
+                                         reg_tex0_cfg[7], reg_tex0_cfg[3:1]};
+    wire [23:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:24], reg_tex1_cfg[19:8],
+                                         reg_tex1_cfg[7], reg_tex1_cfg[3:1]};
     // LOD signals used for mip selection; blend weight and per-tex mip levels
     // consumed by trilinear filtering (stub: currently nearest-only)
     wire [3:0]  _unused_lod_blend      = lod_blend;
@@ -331,12 +331,10 @@ module pixel_pipeline (
 
     wire        tex0_enable      = reg_tex0_cfg[0];
     wire [2:0]  tex0_format      = reg_tex0_cfg[6:4];
-    wire        tex0_cache_mode  = reg_tex0_cfg[7];   // CACHE_MODE: 0=RGBA5652, 1=UQ1.8
     wire [3:0]  tex0_width_log2  = reg_tex0_cfg[11:8];
     wire [3:0]  tex0_height_log2 = reg_tex0_cfg[15:12];
     wire        tex1_enable      = reg_tex1_cfg[0];
     wire [2:0]  tex1_format      = reg_tex1_cfg[6:4];
-    wire        tex1_cache_mode  = reg_tex1_cfg[7];   // CACHE_MODE for TEX1
 
     // MIP_LEVELS field: maximum available mip levels per texture unit
     wire [3:0]  tex0_mip_levels = reg_tex0_cfg[23:20];
@@ -371,7 +369,7 @@ module pixel_pipeline (
     // Stage 2: Texture Decoders (per-format, combinational)
     // ====================================================================
     // Each decoder takes a block of raw texture data and a texel index,
-    // and outputs a single RGBA5652 texel. The format-select mux chooses
+    // and outputs a single UQ1.8 texel (36 bits). The format-select mux chooses
     // the correct decoder output based on tex_format[2:0].
     //
     // Texture cache fill provides block data; until the cache is
@@ -393,7 +391,7 @@ module pixel_pipeline (
     texture_bc1 u_tex0_bc1 (
         .bc1_data   (stub_bc1_data),
         .texel_idx  (stub_texel_idx),
-        .cache_mode (tex0_cache_mode),
+
         .texel_out  (bc1_texel_out)
     );
 
@@ -403,7 +401,7 @@ module pixel_pipeline (
     texture_bc2 u_tex0_bc2 (
         .block_data (stub_bc2_data),
         .texel_idx  (stub_texel_idx),
-        .cache_mode (tex0_cache_mode),
+
         .texel_out  (bc2_texel_out)
     );
 
@@ -413,7 +411,7 @@ module pixel_pipeline (
     texture_bc3 u_tex0_bc3 (
         .block_data (stub_bc3_data),
         .texel_idx  (stub_texel_idx),
-        .cache_mode (tex0_cache_mode),
+
         .texel_out  (bc3_texel_out)
     );
 
@@ -423,7 +421,7 @@ module pixel_pipeline (
     texture_bc4 u_tex0_bc4 (
         .block_data (stub_bc4_data),
         .texel_idx  (stub_texel_idx),
-        .cache_mode (tex0_cache_mode),
+
         .texel_out  (bc4_texel_out)
     );
 
@@ -435,7 +433,6 @@ module pixel_pipeline (
     texture_rgb565 u_tex0_rgb565 (
         .block_data  (stub_rgb565_data),
         .texel_idx   (stub_texel_idx),
-        .cache_mode  (tex0_cache_mode),
         .texel_out   (rgb565_texel_out)
     );
 
@@ -444,7 +441,6 @@ module pixel_pipeline (
     texture_rgba8888 u_tex0_rgba8888 (
         .block_data  (stub_rgba8888_data),
         .texel_idx   (stub_texel_idx),
-        .cache_mode  (tex0_cache_mode),
         .texel_out   (rgba8888_texel_out)
     );
 
@@ -453,7 +449,6 @@ module pixel_pipeline (
     texture_r8 u_tex0_r8 (
         .block_data  (stub_r8_data),
         .texel_idx   (stub_texel_idx),
-        .cache_mode  (tex0_cache_mode),
         .texel_out   (r8_texel_out)
     );
 
@@ -462,8 +457,7 @@ module pixel_pipeline (
     // ====================================================================
     // Routes the correct decoder output for the configured texture format.
     // Seven valid encodings (0-6); encoding 7 is reserved (outputs zero).
-    // In CACHE_MODE=0, only [17:0] carries RGBA5652 data; [35:18] is zero.
-    // In CACHE_MODE=1, full 36 bits carry UQ1.8 RGBA data.
+    // Full 36 bits carry UQ1.8 RGBA data {R9, G9, B9, A9}.
 
     reg [35:0] tex0_mux_texel;
 
@@ -479,9 +473,6 @@ module pixel_pipeline (
             default: tex0_mux_texel = 36'b0;
         endcase
     end
-
-    // Legacy 18-bit aliases for backward compatibility
-    wire [17:0] tex0_mux_rgba5652 = tex0_mux_texel[17:0];
 
     // For TEX1, use the same decoder outputs with tex1_format select.
     // (In final integration, TEX1 will have its own decoder instances
@@ -501,8 +492,6 @@ module pixel_pipeline (
         endcase
     end
 
-    wire [17:0] tex1_mux_rgba5652 = tex1_mux_texel[17:0];
-
     // ====================================================================
     // Texture Cache (TEX0) — 4-way set-associative with burst SRAM fill
     // ====================================================================
@@ -514,8 +503,7 @@ module pixel_pipeline (
     // Latched UV coordinates and cached texel (registered in datapath FSM)
     reg [15:0] lat_u0;
     reg [15:0] lat_v0;
-    reg [35:0] lat_tex0_texel;       // Full 36-bit cached texel (supports both cache modes)
-    wire [17:0] lat_tex0_rgba5652 = lat_tex0_texel[17:0]; // 18-bit alias for RGBA5652 path
+    reg [35:0] lat_tex0_texel;       // Full 36-bit cached texel (UQ1.8 RGBA)
 
     // UV → texel coordinate conversion (combinational)
     // UV coordinates arrive in Q4.12 format as true perspective-correct U, V
@@ -537,7 +525,7 @@ module pixel_pipeline (
     wire        tc_sram_we;
     wire [31:0] tc_sram_wdata;
 
-    // Texture cache lookup result wires (36-bit to support both cache modes)
+    // Texture cache lookup result wires (36-bit UQ1.8 RGBA)
     wire        tc_cache_hit;
     wire        tc_cache_ready;
     wire        tc_fill_done;
@@ -558,7 +546,6 @@ module pixel_pipeline (
         .tex_base_addr       (tex0_base_addr),
         .tex_format          (tex0_format),
         .tex_width_log2      ({4'b0, tex0_width_log2}),
-        .cache_mode          (tex0_cache_mode),
         .invalidate          (tex0_cache_inv),
         .cache_hit           (tc_cache_hit),
         .cache_ready         (tc_cache_ready),
@@ -583,7 +570,7 @@ module pixel_pipeline (
     assign tex_sram_addr      = tc_sram_addr;
     assign tex_sram_burst_len = tc_sram_burst_len;
 
-    // Nearest-neighbor texel selection from cache output (36-bit for dual-mode)
+    // Nearest-neighbor texel selection from cache output (36-bit UQ1.8 RGBA)
     // Select one texel based on sub-block position {texel_y[0], texel_x[0]}
     reg [35:0] tc_nearest_texel;
 
@@ -602,37 +589,27 @@ module pixel_pipeline (
     wire        _unused_tc_sram_we    = tc_sram_we;
     wire [31:0] _unused_tc_sram_wdata = tc_sram_wdata;
     wire        _unused_tc_fill_done  = tc_fill_done;
-    wire [17:0] _unused_tex0_mux      = tex0_mux_rgba5652;
-    wire [17:0] _unused_tex0_mux_hi  = tex0_mux_texel[35:18];
-    wire [17:0] _unused_lat_rgba5652 = lat_tex0_rgba5652;
-    wire [17:0] _unused_tex1_mux     = tex1_mux_rgba5652;
+    wire [35:0] _unused_tex0_mux      = tex0_mux_texel;
+    wire [35:0] _unused_tex1_mux      = tex1_mux_texel;
     wire [3:0]  _unused_lat_u0_hi     = lat_u0[15:12];
     wire [3:0]  _unused_lat_v0_hi     = lat_v0[15:12];
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
-    // Stage 3: Texel Promote (RGBA5652 / UQ1.8 -> Q4.12)
+    // Stage 3: Texel Promote (UQ1.8 -> Q4.12)
     // ====================================================================
     // Promote cached texels to Q4.12 for color combiner.
-    // CACHE_MODE=0: RGBA5652 path (lower 18 bits).
-    // CACHE_MODE=1: UQ1.8 path (all 36 bits, four 9-bit channels).
 
-    // When texture unit is disabled (ENABLE=0), output white opaque
-    // RGBA5652 so MODULATE degenerates to pass-through of shade color.
-    // White opaque RGBA5652: R5=31, G6=63, B5=31, A2=3.
-    localparam [17:0] RGBA5652_WHITE_OPAQUE = 18'h3FFFF;
-
-    // When texture is enabled, use the cached texel (latched in PP_TEX_LOOKUP).
-    // When disabled, output white opaque so MODULATE degenerates to pass-through.
-    // CACHE_MODE=0: lower 18 bits are RGBA5652; upper 18 bits zero.
-    // CACHE_MODE=1: all 36 bits are UQ1.8 {R9, G9, B9, A9}.
-    localparam [35:0] TEXEL_WHITE_OPAQUE = {18'b0, RGBA5652_WHITE_OPAQUE};
+    // When texture unit is disabled (ENABLE=0), output white opaque UQ1.8
+    // so MODULATE degenerates to pass-through of shade color.
+    // White opaque UQ1.8: R9=0x100, G9=0x100, B9=0x100, A9=0x100 (1.0 each).
+    localparam [35:0] TEXEL_WHITE_OPAQUE = {9'h100, 9'h100, 9'h100, 9'h100};
     wire [35:0] tex0_texel = tex0_enable ? lat_tex0_texel
                                          : TEXEL_WHITE_OPAQUE;
     wire [15:0] tex0_r_q412, tex0_g_q412, tex0_b_q412, tex0_a_q412;
 
     texel_promote u_tex0_promote (
-        .cache_mode (tex0_cache_mode),
+
         .texel_in   (tex0_texel),
         .r_q412     (tex0_r_q412),
         .g_q412     (tex0_g_q412),
@@ -645,7 +622,6 @@ module pixel_pipeline (
     wire [15:0] tex1_r_q412, tex1_g_q412, tex1_b_q412, tex1_a_q412;
 
     texel_promote u_tex1_promote (
-        .cache_mode (tex1_cache_mode),
         .texel_in   (tex1_texel),
         .r_q412     (tex1_r_q412),
         .g_q412     (tex1_g_q412),
@@ -944,7 +920,7 @@ module pixel_pipeline (
             lat_u0         <= 16'b0;
             lat_v0         <= 16'b0;
             lat_frag_lod   <= 8'b0;
-            lat_tex0_texel <= {18'b0, RGBA5652_WHITE_OPAQUE};
+            lat_tex0_texel <= TEXEL_WHITE_OPAQUE;
             cc_result_pending <= 1'b0;
             zbuf_data_lat  <= 16'b0;
             fb_data_lat    <= 16'b0;

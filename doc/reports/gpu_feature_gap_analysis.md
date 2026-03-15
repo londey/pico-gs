@@ -34,7 +34,7 @@ Register map correctness is assumed (INT-010 through INT-014 are authoritative).
 - `spi_gpu/src/render/stipple.sv` — 8x8 stipple pattern test
 - `spi_gpu/src/render/dither.sv` — 16x16 Bayer ordered dither
 - `spi_gpu/src/render/alpha_blend.sv` — 4-mode alpha blending
-- `spi_gpu/src/render/texel_promote.sv` — RGBA5652 to Q4.12 promotion
+- `spi_gpu/src/render/texel_promote.sv` — UQ1.8 to Q4.12 promotion
 - `spi_gpu/src/render/fb_promote.sv` — RGB565 to Q4.12 promotion
 - `spi_gpu/src/render/texture_rgb565.sv` — RGB565 texel decoder
 - `spi_gpu/src/render/texture_rgba8888.sv` — RGBA8888 texel decoder
@@ -112,7 +112,7 @@ Of 20 render-related RTL modules, 14 have complete logic but only 1 (rasterizer)
 | `stipple.sv` | Complete | Via stub | Instantiated inside pixel_pipeline |
 | `dither.sv` | Complete | Via stub | Instantiated inside pixel_pipeline |
 | `alpha_blend.sv` | Complete | Via stub | Instantiated inside pixel_pipeline |
-| `texel_promote.sv` | Complete | Via stub | Instantiated inside pixel_pipeline (x2) |
+| `texel_promote.sv` | Complete | Via stub | UQ1.8→Q4.12 promotion; instantiated inside pixel_pipeline (x2) |
 | `fb_promote.sv` | Complete | Via stub | Instantiated inside pixel_pipeline |
 | `texture_rgb565.sv` | Complete | **No** | Format decoder, not wired to cache |
 | `texture_rgba8888.sv` | Complete | **No** | Format decoder, not wired to cache |
@@ -169,7 +169,7 @@ The six standalone texture decoders handle the full format set from INT-014:
 - RGB565, RGBA8888 (uncompressed)
 - R8 (single-channel grayscale)
 
-These decoders all produce 18-bit RGBA5652 output but are not connected to the cache.
+These decoders all produce 36-bit UQ1.8 output but are not connected to the cache.
 The cache's `tex_format` input is 2 bits wide, which cannot represent all 7 formats (needs at least 3 bits per `tex_format_e` in `gpu_regs.rdl`).
 
 ### Finding 5: SDRAM Arbiter Port 3 — Shared Timestamp/Texture

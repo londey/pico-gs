@@ -9,7 +9,9 @@
 //! # RTL Implementation Notes
 //!
 //! Each texture unit has an independent 4-way set-associative cache
-//! storing decompressed 4×4 texel blocks in RGBA5652 format.
+//! storing decompressed 4×4 texel blocks in UQ1.8 RGBA format
+//! (9 bits per channel, 36 bits per texel) using PDPW16KD EBR banks
+//! in 512×36 mode.
 //! Cache misses stall the pipeline until the SDRAM fill completes.
 //! See UNIT-006, texture_cache.sv.
 
@@ -23,151 +25,45 @@ use qfixed::{Q, UQ};
 
 use super::fragment::{ColorQ412, RasterFragment, TexturedFragment};
 
-// ── RGBA5652 intermediate texel format ──────────────────────────────────────
+// ── UQ1.8 texel format (texture cache intermediate) ─────────────────────────
 
-/// RGBA5652 intermediate texel format matching the RTL texture cache.
-///
-/// The RTL texture cache stores decompressed texels in this 18-bit format:
-/// `[17:13]=R5, [12:7]=G6, [6:2]=B5, [1:0]=A2`.
-/// All texture formats (BC1–BC4, RGB565, RGBA8888, R8) are decoded to
-/// RGBA5652 before entering the fragment pipeline.
-///
-/// # RTL Implementation Notes
-///
-/// The 2-bit alpha channel provides only four levels (0.0, 0.333, 0.666,
-/// 1.0).
-/// BC1 1-bit alpha maps to A2=0 or A2=3.
-/// See INT-032 (Texture Cache Architecture), `texel_promote.sv`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Rgba5652 {
-    /// Packed 18-bit value: `[17:13]=R5, [12:7]=G6, [6:2]=B5, [1:0]=A2`.
-    pub bits: u32,
-}
-
-impl Rgba5652 {
-    /// Create from individual channel values.
-    ///
-    /// # Arguments
-    ///
-    /// * `r5` - Red channel (5 bits, 0–31).
-    /// * `g6` - Green channel (6 bits, 0–63).
-    /// * `b5` - Blue channel (5 bits, 0–31).
-    /// * `a2` - Alpha channel (2 bits, 0–3).
-    #[must_use]
-    pub fn new(r5: u8, g6: u8, b5: u8, a2: u8) -> Self {
-        Self {
-            bits: ((r5 as u32 & 0x1F) << 13)
-                | ((g6 as u32 & 0x3F) << 7)
-                | ((b5 as u32 & 0x1F) << 2)
-                | (a2 as u32 & 0x03),
-        }
-    }
-
-    /// Extract the red channel (5 bits).
-    #[must_use]
-    pub fn r5(self) -> u8 {
-        ((self.bits >> 13) & 0x1F) as u8
-    }
-
-    /// Extract the green channel (6 bits).
-    #[must_use]
-    pub fn g6(self) -> u8 {
-        ((self.bits >> 7) & 0x3F) as u8
-    }
-
-    /// Extract the blue channel (5 bits).
-    #[must_use]
-    pub fn b5(self) -> u8 {
-        ((self.bits >> 2) & 0x1F) as u8
-    }
-
-    /// Extract the alpha channel (2 bits).
-    #[must_use]
-    pub fn a2(self) -> u8 {
-        (self.bits & 0x03) as u8
-    }
-
-    /// Promote to Q4.12 RGBA, matching the RTL's `texel_promote.sv`.
-    ///
-    /// Applies MSB-replication formulas from `fp_types_pkg`:
-    /// - R5 → `{3'b000, R5, R5, R5[4:2]}` (16-bit Q4.12)
-    /// - G6 → `{3'b000, G6, G6, 1'b0}` (16-bit Q4.12)
-    /// - B5 → same as R5
-    /// - A2 → LUT: `0→0x0000, 1→0x0555, 2→0x0AAA, 3→0x1000`
-    ///
-    /// # Returns
-    ///
-    /// `ColorQ412` with channels in `[0x0000, 0x1000]` (UNORM \[0.0, 1.0\]).
-    ///
-    /// # RTL Implementation Notes
-    ///
-    /// See `fp_types_pkg::promote_r5_to_q412()` and siblings,
-    /// INT-032 (Onward Conversion to Q4.12).
-    #[must_use]
-    pub fn promote_to_q412(self) -> ColorQ412 {
-        let r5 = self.r5() as u16;
-        let g6 = self.g6() as u16;
-        let b5 = self.b5() as u16;
-        let a2 = self.a2();
-
-        // R5: {3'b000, r5[4:0], r5[4:0], r5[4:2]}
-        let r = (r5 << 8) | (r5 << 3) | (r5 >> 2);
-        // G6: {3'b000, g6[5:0], g6[5:0], 1'b0}
-        let g = (g6 << 7) | (g6 << 1);
-        // B5: same as R5
-        let b = (b5 << 8) | (b5 << 3) | (b5 >> 2);
-        // A2: four-level LUT
-        let a: u16 = match a2 {
-            0 => 0x0000,
-            1 => 0x0555,
-            2 => 0x0AAA,
-            3 => 0x1000,
-            _ => unreachable!(),
-        };
-
-        ColorQ412 {
-            r: Q::from_bits(r as i64),
-            g: Q::from_bits(g as i64),
-            b: Q::from_bits(b as i64),
-            a: Q::from_bits(a as i64),
-        }
-    }
-}
-
-// ── UQ1.8 texel format for bilinear blending ───────────────────────────────
-
-/// Per-channel UQ1.8 UNORM texel for bilinear blending.
+/// Per-channel UQ1.8 UNORM texel, the sole texture cache storage format.
 ///
 /// Each channel is a 9-bit unsigned fixed-point value in \[0.0, 1.0\]
 /// where `0x100` represents exactly 1.0.
-/// This format matches the ECP5 MULT18X18D dual 9-bit sub-mode used
-/// by the RTL bilinear filter.
+/// All texture formats (BC1–BC4, RGB565, RGBA8888, R8) are decoded to
+/// this format before entering the cache and the fragment pipeline.
+///
+/// The 36-bit layout in EBR (per INT-032):
+/// `[35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9`.
 ///
 /// # RTL Implementation Notes
 ///
 /// The RTL multiplies two UQ1.8 operands (texel × weight) in the 9×9
 /// sub-mode of the DSP block, producing a UQ2.16 partial product.
 /// Four partial products are accumulated and truncated back to UQ1.8.
+/// See `texture_cache.sv`, `texel_promote.sv`.
 #[derive(Debug, Clone, Copy, Default)]
-struct TexelUq18 {
+pub struct TexelUq18 {
     /// Red channel, UQ1.8 UNORM.
-    r: UQ<1, 8>,
+    pub r: UQ<1, 8>,
 
     /// Green channel, UQ1.8 UNORM.
-    g: UQ<1, 8>,
+    pub g: UQ<1, 8>,
 
     /// Blue channel, UQ1.8 UNORM.
-    b: UQ<1, 8>,
+    pub b: UQ<1, 8>,
 
     /// Alpha channel, UQ1.8 UNORM.
-    a: UQ<1, 8>,
+    pub a: UQ<1, 8>,
 }
 
 impl TexelUq18 {
     /// Promote to Q4.12 RGBA for the downstream fragment pipeline.
     ///
     /// Converts each UQ1.8 channel (0..=0x100) to Q4.12 (0..=0x1000)
-    /// by left-shifting 4 bits.
+    /// by left-shifting 4 bits, matching `texel_promote.sv`'s
+    /// `promote_uq18_to_q412()`.
     ///
     /// # Returns
     ///
@@ -182,78 +78,93 @@ impl TexelUq18 {
     }
 }
 
-impl Rgba5652 {
-    /// Convert to UQ1.8 UNORM per channel for bilinear blending.
-    ///
-    /// Uses MSB-replication with a correction term so that full-scale
-    /// inputs map to exactly `UQ1.8::ONE` (0x100 = 1.0):
-    /// - R5: `(r5 << 3) | (r5 >> 2) + (r5 >> 4)` → 0..=256
-    /// - G6: `(g6 << 2) | (g6 >> 4) + (g6 >> 5)` → 0..=256
-    /// - B5: same as R5
-    /// - A2: four-level LUT `[0, 0x55, 0xAA, 0x100]`
-    ///
-    /// # RTL Implementation Notes
-    ///
-    /// The correction term (`>> 4` / `>> 5`) adds at most 1 LSB and
-    /// requires a single adder in the RTL.
-    fn to_uq18(self) -> TexelUq18 {
-        let r5 = self.r5() as u16;
-        let g6 = self.g6() as u16;
-        let b5 = self.b5() as u16;
-        let a2 = self.a2();
+// ── Format conversion helpers ───────────────────────────────────────────────
 
-        let r = ((r5 << 3) | (r5 >> 2)) + (r5 >> 4);
-        let g = ((g6 << 2) | (g6 >> 4)) + (g6 >> 5);
-        let b = ((b5 << 3) | (b5 >> 2)) + (b5 >> 4);
-        let a: u16 = match a2 {
-            0 => 0x000,
-            1 => 0x055,
-            2 => 0x0AA,
-            3 => 0x100,
-            _ => unreachable!(),
-        };
+/// Expand an 8-bit UNORM channel to 9-bit UQ1.8.
+///
+/// Replicates the MSB: `{ch8, ch8[7]}`.
+/// Full-scale 0xFF maps to 0x1FF which is clamped to 0x100 (= 1.0).
+///
+/// # RTL Implementation Notes
+///
+/// Matches the RTL decoder expansion in `texture_rgba8888.sv`.
+fn ch8_to_uq18(ch8: u16) -> UQ<1, 8> {
+    let expanded = ((ch8 & 0xFF) << 1) | ((ch8 >> 7) & 1);
+    // Clamp to UQ1.8 max (0x100 = 1.0).
+    UQ::from_bits(expanded.min(0x100) as u64)
+}
 
-        TexelUq18 {
-            r: UQ::from_bits(r as u64),
-            g: UQ::from_bits(g as u64),
-            b: UQ::from_bits(b as u64),
-            a: UQ::from_bits(a as u64),
-        }
+/// Expand a 5-bit channel to 9-bit UQ1.8 via MSB-replication + correction.
+///
+/// Formula: `(r5 << 3) | (r5 >> 2) + (r5 >> 4)`.
+/// Full-scale 31 → 0x100 (exactly 1.0).
+///
+/// # RTL Implementation Notes
+///
+/// Matches the RTL decoder expansion in `texture_rgb565.sv`.
+fn ch5_to_uq18(ch5: u16) -> UQ<1, 8> {
+    let val = ((ch5 << 3) | (ch5 >> 2)) + (ch5 >> 4);
+    UQ::from_bits(val as u64)
+}
+
+/// Expand a 6-bit channel to 9-bit UQ1.8 via MSB-replication + correction.
+///
+/// Formula: `(g6 << 2) | (g6 >> 4) + (g6 >> 5)`.
+/// Full-scale 63 → 0x100 (exactly 1.0).
+///
+/// # RTL Implementation Notes
+///
+/// Matches the RTL decoder expansion in `texture_rgb565.sv`.
+fn ch6_to_uq18(ch6: u16) -> UQ<1, 8> {
+    let val = ((ch6 << 2) | (ch6 >> 4)) + (ch6 >> 5);
+    UQ::from_bits(val as u64)
+}
+
+/// Convert an RGB565 word to [`TexelUq18`] (fully opaque).
+///
+/// RGB565 layout: `[15:11]=R5, [10:5]=G6, [4:0]=B5`.
+/// Each channel is expanded to UQ1.8 via MSB-replication with correction.
+fn rgb565_to_uq18(raw: u16) -> TexelUq18 {
+    let r5 = (raw >> 11) & 0x1F;
+    let g6 = (raw >> 5) & 0x3F;
+    let b5 = raw & 0x1F;
+    TexelUq18 {
+        r: ch5_to_uq18(r5),
+        g: ch6_to_uq18(g6),
+        b: ch5_to_uq18(b5),
+        a: UQ::from_bits(0x100), // Fully opaque
     }
 }
 
-// ── Format conversion helpers ───────────────────────────────────────────────
-
-/// Convert an RGB565 word to [`Rgba5652`] (fully opaque).
-///
-/// RGB565 layout: `[15:11]=R5, [10:5]=G6, [4:0]=B5`.
-fn rgb565_to_rgba5652(raw: u16) -> Rgba5652 {
-    let r5 = ((raw >> 11) & 0x1F) as u8;
-    let g6 = ((raw >> 5) & 0x3F) as u8;
-    let b5 = (raw & 0x1F) as u8;
-    Rgba5652::new(r5, g6, b5, 3) // A2=3 → fully opaque
-}
-
-/// Convert an RGBA8888 value to [`Rgba5652`] by truncation.
+/// Convert an RGBA8888 value to [`TexelUq18`].
 ///
 /// RGBA8888 layout (little-endian u32):
 /// `[7:0]=R8, [15:8]=G8, [23:16]=B8, [31:24]=A8`.
-fn rgba8888_to_rgba5652(rgba: u32) -> Rgba5652 {
-    let r5 = ((rgba >> 3) & 0x1F) as u8;
-    let g6 = ((rgba >> 10) & 0x3F) as u8;
-    let b5 = ((rgba >> 19) & 0x1F) as u8;
-    let a2 = ((rgba >> 30) & 0x03) as u8;
-    Rgba5652::new(r5, g6, b5, a2)
+/// Each 8-bit channel is expanded to UQ1.8 via `{ch8, ch8[7]}`.
+fn rgba8888_to_uq18(rgba: u32) -> TexelUq18 {
+    let r8 = (rgba & 0xFF) as u16;
+    let g8 = ((rgba >> 8) & 0xFF) as u16;
+    let b8 = ((rgba >> 16) & 0xFF) as u16;
+    let a8 = ((rgba >> 24) & 0xFF) as u16;
+    TexelUq18 {
+        r: ch8_to_uq18(r8),
+        g: ch8_to_uq18(g8),
+        b: ch8_to_uq18(b8),
+        a: ch8_to_uq18(a8),
+    }
 }
 
-/// Convert an R8 grayscale byte to [`Rgba5652`] (fully opaque, gray).
+/// Convert an R8 grayscale byte to [`TexelUq18`] (fully opaque, gray).
 ///
-/// Maps the 8-bit value to all three color channels (R5, G6, B5).
-fn r8_to_rgba5652(val: u8) -> Rgba5652 {
-    let r5 = val >> 3;
-    let g6 = val >> 2;
-    let b5 = val >> 3;
-    Rgba5652::new(r5, g6, b5, 3)
+/// The 8-bit value is replicated to all three color channels.
+fn r8_to_uq18(val: u8) -> TexelUq18 {
+    let ch = ch8_to_uq18(val as u16);
+    TexelUq18 {
+        r: ch,
+        g: ch,
+        b: ch,
+        a: UQ::from_bits(0x100), // Fully opaque
+    }
 }
 
 // ── Wrap-mode helpers ───────────────────────────────────────────────────────
@@ -463,7 +374,7 @@ fn wrap_bilinear(
 
 // ── Texel fetch and blend helpers ────────────────────────────────────────────
 
-/// Fetch a single texel from SDRAM and return it as [`Rgba5652`].
+/// Fetch a single texel from SDRAM and return it as [`TexelUq18`].
 ///
 /// # Arguments
 ///
@@ -478,13 +389,13 @@ fn fetch_texel(
     local: u32,
     format: TexFormatE,
     sdram: &[u16],
-) -> Rgba5652 {
+) -> TexelUq18 {
     match format {
         TexFormatE::Rgb565 => {
             // 16 texels × 2 bytes = 32 bytes = 16 u16 words per block.
             let addr = (base_words + block_index * 16 + local) as usize;
             let raw = sdram.get(addr).copied().unwrap_or(0);
-            rgb565_to_rgba5652(raw)
+            rgb565_to_uq18(raw)
         }
         TexFormatE::Rgba8888 => {
             // 16 texels × 4 bytes = 64 bytes = 32 u16 words per block.
@@ -492,7 +403,7 @@ fn fetch_texel(
             let lo = sdram.get(addr).copied().unwrap_or(0);
             let hi = sdram.get(addr + 1).copied().unwrap_or(0);
             let rgba = (hi as u32) << 16 | lo as u32;
-            rgba8888_to_rgba5652(rgba)
+            rgba8888_to_uq18(rgba)
         }
         TexFormatE::R8 => {
             // 16 texels × 1 byte = 16 bytes = 8 u16 words per block.
@@ -503,10 +414,10 @@ fn fetch_texel(
             } else {
                 (word >> 8) as u8
             };
-            r8_to_rgba5652(byte)
+            r8_to_uq18(byte)
         }
         // BC1–BC4 compressed formats: not yet implemented.
-        _ => Rgba5652::default(),
+        _ => TexelUq18::default(),
     }
 }
 
@@ -552,7 +463,8 @@ fn bilinear_blend(texels: &[TexelUq18; 4], weights: &[UQ<1, 8>; 4]) -> TexelUq18
 /// Each `TextureSampler` corresponds to one hardware texture unit
 /// (TEX0 or TEX1).
 /// It holds the current [`TexCfgReg`] configuration and an internal
-/// cache of decompressed 4×4 texel blocks in [`Rgba5652`] format.
+/// cache of decompressed 4×4 texel blocks in [`TexelUq18`] format
+/// (9 bits per channel, 36 bits per texel).
 ///
 /// The sampler does not own SDRAM — callers pass `&[u16]` on each
 /// sample call, allowing the sampler to fill cache misses by reading
@@ -561,7 +473,7 @@ fn bilinear_blend(texels: &[TexelUq18; 4], weights: &[UQ<1, 8>; 4]) -> TexelUq18
 /// # RTL Implementation Notes
 ///
 /// The RTL `texture_cache.sv` implements a 4-way set-associative cache
-/// with 1024 lines (256 sets × 4 ways).
+/// with 256 sets × 4 ways using PDPW16KD EBR banks in 512×36 mode.
 /// The DT uses a simpler block-indexed map that models the same
 /// behavioral contract: decompressed blocks are cached until
 /// invalidation.
@@ -577,9 +489,9 @@ pub struct TextureSampler {
     ///
     /// Block index is computed from the texel block coordinates within
     /// the mip level.
-    /// Each entry stores 16 `Rgba5652` texels in row-major order
+    /// Each entry stores 16 [`TexelUq18`] texels in row-major order
     /// within the 4×4 block.
-    cache: HashMap<(u8, u32), [Rgba5652; 16]>,
+    cache: HashMap<(u8, u32), [TexelUq18; 16]>,
 }
 
 impl Default for TextureSampler {
@@ -627,7 +539,7 @@ impl TextureSampler {
     ///
     /// Applies wrap mode, computes the texel block address, checks the
     /// internal cache (filling from SDRAM on miss), decompresses to
-    /// [`Rgba5652`], and promotes to Q4.12.
+    /// [`TexelUq18`], and promotes to Q4.12.
     ///
     /// If the sampler is disabled (`enable` = false in the current
     /// config), returns opaque white (`ColorQ412` with all channels
@@ -645,8 +557,7 @@ impl TextureSampler {
     ///
     /// # Returns
     ///
-    /// Sampled texel color in Q4.12 RGBA format, after [`Rgba5652`]
-    /// promotion.
+    /// Sampled texel color in Q4.12 RGBA format, after UQ1.8 promotion.
     ///
     /// # Filter modes
     ///
@@ -657,7 +568,7 @@ impl TextureSampler {
     ///
     /// # RTL Implementation Notes
     ///
-    /// The RTL texture cache returns 4 RGBA5652 texels per cycle (one
+    /// The RTL texture cache returns 4 UQ1.8 texels per cycle (one
     /// from each parity bank) to support single-cycle bilinear filtering.
     /// The DT models this as sequential lookups into the block cache.
     /// See `texture_cache.sv`, UNIT-006 Stage 3.
@@ -693,7 +604,7 @@ impl TextureSampler {
                 let block_index = by * blocks_per_row + bx;
                 let local = (ty & 3) * 4 + (tx & 3);
 
-                fetch_texel(base_words, block_index, local, format, sdram).promote_to_q412()
+                fetch_texel(base_words, block_index, local, format, sdram).to_q412()
             }
             // Bilinear: 2×2 weighted average.
             // Trilinear falls back to bilinear (single mip, LOD ignored).
@@ -709,9 +620,9 @@ impl TextureSampler {
                     cfg.v_wrap(),
                 );
 
-                let texels = bs.taps.map(|tap| {
-                    fetch_texel(base_words, tap.block_index, tap.local, format, sdram).to_uq18()
-                });
+                let texels = bs
+                    .taps
+                    .map(|tap| fetch_texel(base_words, tap.block_index, tap.local, format, sdram));
 
                 bilinear_blend(&texels, &bs.weights).to_q412()
             }

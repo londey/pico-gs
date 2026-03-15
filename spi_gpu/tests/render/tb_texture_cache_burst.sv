@@ -4,14 +4,14 @@
 // Tests:
 //   1. Reset state
 //   2. BC1 cache miss: burst_len=4, ~5 cycle latency
-//   3. RGBA4444 cache miss: burst_len=16, ~11 cycle latency
-//   4. Cache hit after fill (data integrity)
-//   5. BC1 decompression correctness (known test vector)
-//   6. RGBA4444 conversion correctness (known test vector)
-//   7. Back-to-back cache misses
-//   8. Cache invalidation (TEXn_BASE/FMT write)
+//   3. BC1 cache hit after fill (UQ1.8 data integrity)
+//   4. RGB565 cache miss: burst_len=16, ~11 cycle latency
+//   5. RGB565 cache hit + data integrity (UQ1.8 expected values)
+//   6. burst_len determined by format register, not hardcoded
+//   7. Cache invalidation (TEXn_BASE/FMT write)
+//   8. Back-to-back cache misses
 //   9. Burst preemption and re-request
-//  10. burst_len determined by format register, not hardcoded
+//  10. BC1 decompression correctness (known test vector)
 
 module tb_texture_cache_burst;
 
@@ -43,15 +43,15 @@ module tb_texture_cache_burst;
     reg  [9:0]  pixel_x;
     reg  [9:0]  pixel_y;
     reg  [23:0] tex_base_addr;
-    reg  [1:0]  tex_format;
+    reg  [2:0]  tex_format;      // 3-bit format: 0=BC1, 4=RGB565
     reg  [7:0]  tex_width_log2;
     wire        cache_hit;
     wire        cache_ready;
     wire        fill_done;
-    wire [17:0] texel_out_0;
-    wire [17:0] texel_out_1;
-    wire [17:0] texel_out_2;
-    wire [17:0] texel_out_3;
+    wire [35:0] texel_out_0;     // UQ1.8 {A9[35:27], B9[26:18], G9[17:9], R9[8:0]}
+    wire [35:0] texel_out_1;     // UQ1.8 {A9, B9, G9, R9}
+    wire [35:0] texel_out_2;     // UQ1.8 {A9, B9, G9, R9}
+    wire [35:0] texel_out_3;     // UQ1.8 {A9, B9, G9, R9}
     reg         invalidate;
     wire        sram_req;
     wire [23:0] sram_addr;
@@ -118,11 +118,11 @@ module tb_texture_cache_burst;
         end
     endtask
 
-    task check_val18(input string name, input logic [17:0] actual, input logic [17:0] expected);
+    task check_val36(input string name, input logic [35:0] actual, input logic [35:0] expected);
         if (actual === expected) begin
             pass_count = pass_count + 1;
         end else begin
-            $display("FAIL: %s — expected %05h, got %05h @ %0t", name, expected, actual, $time);
+            $display("FAIL: %s — expected %09h, got %09h @ %0t", name, expected, actual, $time);
             fail_count = fail_count + 1;
         end
     endtask
@@ -197,7 +197,7 @@ module tb_texture_cache_burst;
 
         // Configure for BC1 format, 256x256 texture
         tex_base_addr  = 24'h001000;
-        tex_format     = 2'b01;       // BC1
+        tex_format     = 3'd0;        // BC1
         tex_width_log2 = 8'd8;        // 256 pixels
 
         // Lookup pixel (0,0) → block (0,0) → block_index=0, sram_addr = base + 0*4 = 0x1000
@@ -248,7 +248,7 @@ module tb_texture_cache_burst;
         check_bit("BC1 cache_ready after fill", cache_ready, 1'b1);
 
         // ============================================================
-        // Test 3: BC1 Cache Hit — verify data after fill
+        // Test 3: BC1 Cache Hit — verify UQ1.8 data after fill
         // ============================================================
         $display("--- Test 3: BC1 Cache Hit After Fill ---");
 
@@ -262,23 +262,27 @@ module tb_texture_cache_burst;
         check_bit("BC1 cache hit after fill", cache_hit, 1'b1);
         check_bit("BC1 no sram_req on hit", sram_req, 1'b0);
 
-        // Verify decompressed data: all texels should be red (0xF800 RGB565 → RGBA5652)
-        // F800 RGB565 = R=11111, G=000000, B=00000 → RGBA5652 = {11111, 000000, 00000, 11} = 0x3C003
-        check_val18("BC1 texel_out_0 (red)", texel_out_0, {5'b11111, 6'b000000, 5'b00000, 2'b11});
-        check_val18("BC1 texel_out_1 (red)", texel_out_1, {5'b11111, 6'b000000, 5'b00000, 2'b11});
+        // Verify decompressed data: all texels = color0 = red (0xF800 RGB565)
+        // R5=31 → r5_to_r8 = {11111,111} = 8'hFF → R9 = {0, 8'hFF} = 9'h0FF
+        // G6=0  → g6_to_g8 = {000000,00} = 8'h00 → G9 = 9'h000
+        // B5=0  → b5_to_b8 = {00000,000} = 8'h00 → B9 = 9'h000
+        // A9 = 9'h100 (opaque)
+        // UQ1.8 texel = {A9, B9, G9, R9} = {9'h100, 9'h000, 9'h000, 9'h0FF}
+        check_val36("BC1 texel_out_0 (red)", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h0FF});
+        check_val36("BC1 texel_out_1 (red)", texel_out_1, {9'h100, 9'h000, 9'h000, 9'h0FF});
 
         @(posedge clk); #1;
 
         // ============================================================
-        // Test 4: RGBA4444 Cache Miss — burst_len=16
+        // Test 4: RGB565 Cache Miss — burst_len=16
         // ============================================================
-        $display("--- Test 4: RGBA4444 Cache Miss (burst_len=16) ---");
+        $display("--- Test 4: RGB565 Cache Miss (burst_len=16) ---");
 
-        // Load RGBA4444 block: 16 pixels, each a distinct RGBA4444 value
+        // Load RGB565 block: 16 pixels, each a distinct RGB565 value
         // Block at address 0x2000 for a different texture
+        // Pattern: pixel[i] = {R5=i[4:0], G6=~i[5:0], B5=i[4:0]}
         for (i = 0; i < 16; i = i + 1) begin
-            // Pattern: R=i, G=F-i, B=i, A=F
-            sram_model[16'h2000 + i[15:0]] = {i[3:0], 4'hF - i[3:0], i[3:0], 4'hF};
+            sram_model[16'h2000 + i[15:0]] = {i[4:0], ~i[5:0], i[4:0]};
         end
 
         // Invalidate cache first (new texture config)
@@ -287,9 +291,9 @@ module tb_texture_cache_burst;
         invalidate = 1'b0;
         @(posedge clk); #1;
 
-        // Configure for RGBA4444 format
+        // Configure for RGB565 format
         tex_base_addr  = 24'h002000;
-        tex_format     = 2'b00;       // RGBA4444
+        tex_format     = 3'd4;        // RGB565
         tex_width_log2 = 8'd8;        // 256 pixels
 
         // Lookup pixel (0,0) → block (0,0)
@@ -301,15 +305,15 @@ module tb_texture_cache_burst;
         lookup_req = 1'b0;
 
         // Verify miss and correct burst_len
-        check_bit("RGBA4444 initial miss", cache_hit, 1'b0);
+        check_bit("RGB565 initial miss", cache_hit, 1'b0);
 
         cycle_count = 0;
         while (!sram_req && cycle_count < 5) begin
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
         end
-        check_bit("RGBA4444 sram_req", sram_req, 1'b1);
-        check_val8("RGBA4444 burst_len=16", sram_burst_len, 8'd16);
+        check_bit("RGB565 sram_req", sram_req, 1'b1);
+        check_val8("RGB565 burst_len=16", sram_burst_len, 8'd16);
 
         // Serve 16-word burst
         @(posedge clk); #1; // Address setup
@@ -332,13 +336,13 @@ module tb_texture_cache_burst;
             cycle_count = cycle_count + 1;
         end
 
-        $display("  RGBA4444 fill completed in %0d cycles after ack", cycle_count);
-        check_bit("RGBA4444 cache_ready after fill", cache_ready, 1'b1);
+        $display("  RGB565 fill completed in %0d cycles after ack", cycle_count);
+        check_bit("RGB565 cache_ready after fill", cache_ready, 1'b1);
 
         // ============================================================
-        // Test 5: RGBA4444 Cache Hit + Data Integrity
+        // Test 5: RGB565 Cache Hit + Data Integrity
         // ============================================================
-        $display("--- Test 5: RGBA4444 Cache Hit + Data Integrity ---");
+        $display("--- Test 5: RGB565 Cache Hit + Data Integrity ---");
 
         lookup_req = 1'b1;
         pixel_x = 10'd0;
@@ -346,23 +350,25 @@ module tb_texture_cache_burst;
         @(posedge clk); #1;
         lookup_req = 1'b0;
 
-        check_bit("RGBA4444 cache hit after fill", cache_hit, 1'b1);
+        check_bit("RGB565 cache hit after fill", cache_hit, 1'b1);
 
-        // Verify decompressed texel 0 (pixel 0,0): R=0, G=F, B=0, A=F
-        // RGBA4444 = 0x0F0F → RGBA5652:
-        //   R4=0 → R5={0000,0}=00000
-        //   G4=F → G6={1111,11}=111111
-        //   B4=0 → B5={0000,0}=00000
-        //   A4=F → A2=11
-        check_val18("RGBA4444 texel_out_0", texel_out_0, {5'b00000, 6'b111111, 5'b00000, 2'b11});
+        // Verify decompressed texel 0 (pixel 0,0):
+        // sram_model[0x2000] = {R5=0, G6=6'b111111, B5=0} = 16'h07E0
+        // R5=0  → r5_to_r8 = 8'h00 → R9 = 9'h000
+        // G6=63 → g6_to_g8 = {111111,11} = 8'hFF → G9 = 9'h0FF
+        // B5=0  → b5_to_b8 = 8'h00 → B9 = 9'h000
+        // A9 = 9'h100 (opaque)
+        // UQ1.8 texel = {A9, B9, G9, R9} = {9'h100, 9'h000, 9'h0FF, 9'h000}
+        check_val36("RGB565 texel_out_0", texel_out_0, {9'h100, 9'h000, 9'h0FF, 9'h000});
 
-        // Verify texel 1 (pixel 1,0): R=1, G=E, B=1, A=F
-        // RGBA4444 = 0x1E1F → RGBA5652:
-        //   R4=1 → R5={0001,0}=00010
-        //   G4=E → G6={1110,11}=111011
-        //   B4=1 → B5={0001,0}=00010
-        //   A4=F → A2=11
-        check_val18("RGBA4444 texel_out_1", texel_out_1, {5'b00010, 6'b111011, 5'b00010, 2'b11});
+        // Verify texel 1 (pixel 1,0):
+        // sram_model[0x2001] = {R5=1, G6=6'b111110, B5=1} = {00001,111110,00001}
+        // R5=1  → r5_to_r8 = {00001,000} = 8'h08 → R9 = 9'h008
+        // G6=62 → g6_to_g8 = {111110,11} = 8'hFB → G9 = 9'h0FB
+        // B5=1  → b5_to_b8 = {00001,000} = 8'h08 → B9 = 9'h008
+        // A9 = 9'h100
+        // UQ1.8 texel = {9'h100, 9'h008, 9'h0FB, 9'h008}
+        check_val36("RGB565 texel_out_1", texel_out_1, {9'h100, 9'h008, 9'h0FB, 9'h008});
 
         @(posedge clk); #1;
 
@@ -384,7 +390,7 @@ module tb_texture_cache_burst;
         sram_model[16'h3003] = 16'h5555;
 
         tex_base_addr  = 24'h003000;
-        tex_format     = 2'b01; // BC1
+        tex_format     = 3'd0; // BC1
         tex_width_log2 = 8'd6; // 64 pixels
 
         pixel_x = 10'd0;
@@ -418,13 +424,13 @@ module tb_texture_cache_burst;
             @(posedge clk); #1;
         end
 
-        // Now invalidate and switch to RGBA4444
+        // Now invalidate and switch to RGB565
         invalidate = 1'b1;
         @(posedge clk); #1;
         invalidate = 1'b0;
         @(posedge clk); #1;
 
-        tex_format = 2'b00; // RGBA4444
+        tex_format = 3'd4; // RGB565
         for (i = 0; i < 16; i = i + 1) begin
             sram_model[16'h3000 + i[15:0]] = 16'hFFFF;
         end
@@ -440,7 +446,7 @@ module tb_texture_cache_burst;
             @(posedge clk); #1;
             cycle_count = cycle_count + 1;
         end
-        check_val8("RGBA4444 format → burst_len=16", sram_burst_len, 8'd16);
+        check_val8("RGB565 format → burst_len=16", sram_burst_len, 8'd16);
 
         // Serve and complete
         @(posedge clk); #1;
@@ -514,12 +520,12 @@ module tb_texture_cache_burst;
         invalidate = 1'b0;
         @(posedge clk); #1;
 
-        tex_format     = 2'b01; // BC1
+        tex_format     = 3'd0; // BC1
         tex_base_addr  = 24'h004000;
         tex_width_log2 = 8'd8;
 
         // Load two different blocks
-        sram_model[16'h4000] = 16'hF800; // block 0
+        sram_model[16'h4000] = 16'hF800; // block 0 (red)
         sram_model[16'h4001] = 16'h001F;
         sram_model[16'h4002] = 16'h0000;
         sram_model[16'h4003] = 16'h0000;
@@ -603,9 +609,10 @@ module tb_texture_cache_burst;
         lookup_req = 1'b0;
         check_bit("Back-to-back block 1 hit", cache_hit, 1'b1);
 
-        // Verify block 1 data: green (0x07E0) → RGBA5652 = {00000, 111111, 00000, 11}
-        // 0x07E0 RGB565: R[15:11]=00000, G[10:5]=111111, B[4:0]=00000
-        check_val18("Block 1 texel_out_0 (green)", texel_out_0, {5'b00000, 6'b111111, 5'b00000, 2'b11});
+        // Verify block 1 data: green (0x07E0) → UQ1.8 {A9, B9, G9, R9}
+        // 0x07E0 RGB565: R5=0, G6=63, B5=0
+        // R9 = 9'h000, G9 = 9'h0FF, B9 = 9'h000, A9 = 9'h100
+        check_val36("Block 1 texel_out_0 (green)", texel_out_0, {9'h100, 9'h000, 9'h0FF, 9'h000});
 
         @(posedge clk); #1;
 
@@ -619,13 +626,13 @@ module tb_texture_cache_burst;
         invalidate = 1'b0;
         @(posedge clk); #1;
 
-        // RGBA4444 with 16 words, but preempt after 8
-        tex_format     = 2'b00; // RGBA4444
+        // RGB565 with 16 words, but preempt after 8
+        tex_format     = 3'd4; // RGB565
         tex_base_addr  = 24'h005000;
         tex_width_log2 = 8'd8;
 
         for (i = 0; i < 16; i = i + 1) begin
-            sram_model[16'h5000 + i[15:0]] = 16'hA000 + i[15:0];
+            sram_model[16'h5000 + i[15:0]] = 16'hF800 + i[15:0];
         end
 
         pixel_x = 10'd0;
@@ -692,12 +699,10 @@ module tb_texture_cache_burst;
         lookup_req = 1'b0;
         check_bit("Hit after preempt-resume", cache_hit, 1'b1);
 
-        // Verify first texel: 0xA000 → R=A, G=0, B=0, A=0
-        // R4=A → R5={1010,1}=10101
-        // G4=0 → G6={0000,00}=000000
-        // B4=0 → B5={0000,0}=00000
-        // A4=0 → A2=00
-        check_val18("Preempt texel_out_0", texel_out_0, {5'b10101, 6'b000000, 5'b00000, 2'b00});
+        // Verify first texel: 0xF800 = R5=31, G6=0, B5=0
+        // R9 = {1'b0, {11111, 111}} = 9'h0FF
+        // G9 = 9'h000, B9 = 9'h000, A9 = 9'h100
+        check_val36("Preempt texel_out_0", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h0FF});
 
         @(posedge clk); #1;
 
@@ -722,7 +727,7 @@ module tb_texture_cache_burst;
         sram_model[16'h6002] = 16'h5555; // indices low: all 01 (palette[1])
         sram_model[16'h6003] = 16'h5555; // indices high: all 01 (palette[1])
 
-        tex_format     = 2'b01; // BC1
+        tex_format     = 3'd0; // BC1
         tex_base_addr  = 24'h006000;
         tex_width_log2 = 8'd8;
 
@@ -756,9 +761,10 @@ module tb_texture_cache_burst;
         check_bit("BC1 decompression hit", cache_hit, 1'b1);
 
         // All texels use palette[1] = black (0x0000 RGB565)
-        // RGBA5652: {00000, 000000, 00000, 11} = 0x00003
-        check_val18("BC1 texel_out_0 (black)", texel_out_0, {5'b00000, 6'b000000, 5'b00000, 2'b11});
-        check_val18("BC1 texel_out_1 (black)", texel_out_1, {5'b00000, 6'b000000, 5'b00000, 2'b11});
+        // R5=0, G6=0, B5=0 → R9=0, G9=0, B9=0, A9=9'h100
+        // UQ1.8 texel = {9'h100, 9'h000, 9'h000, 9'h000}
+        check_val36("BC1 texel_out_0 (black)", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h000});
+        check_val36("BC1 texel_out_1 (black)", texel_out_1, {9'h100, 9'h000, 9'h000, 9'h000});
 
         @(posedge clk); #1;
 

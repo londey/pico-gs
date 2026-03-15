@@ -4,8 +4,7 @@
 //
 // BC3 Texture Decoder — FORMAT=2
 //
-// Decodes a 128-bit BC3 compressed block to produce one texel in either
-// RGBA5652 format (CACHE_MODE=0) or UQ1.8 format (CACHE_MODE=1).
+// Decodes a 128-bit BC3 compressed block to produce one texel in UQ1.8 format.
 //
 // BC3 block structure (16 bytes):
 //   Bytes 0-1:  alpha0 (u8), alpha1 (u8)
@@ -21,12 +20,11 @@
 //   /5: (x * 3277) >> 14  (alpha 6-entry mode, exact for x <= 1277)
 //   /7: (x * 2341) >> 14  (alpha 8-entry mode, exact for x <= 1788)
 //
-// CACHE_MODE=0: A8 truncated to A2 via A8[7:6]; color in RGBA5652.
-// CACHE_MODE=1: A8 expanded to UQ1.8; color endpoints expanded to UQ1.8
-//   and interpolated at 9-bit precision. Output {R9, G9, B9, A9}.
+// A8 expanded to UQ1.8; color endpoints expanded to UQ1.8 and interpolated
+// at 9-bit precision. Output {R9, G9, B9, A9}.
 //
 // See: INT-014 (Texture Memory Layout, Format 2), INT-032 (Texture Cache, BC3),
-//      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-037, DD-038, DD-039
+//      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-038, DD-039
 
 module texture_bc3 (
     // Block data: 128 bits (16 bytes, little-endian)
@@ -39,12 +37,7 @@ module texture_bc3 (
     // Texel selection within 4x4 block (0..15, row-major: t = y*4 + x)
     input  wire [3:0]   texel_idx,
 
-    // Cache mode: 0 = RGBA5652 (18-bit), 1 = UQ1.8 (36-bit)
-    input  wire         cache_mode,
-
-    // Decoded output: 36 bits
-    //   CACHE_MODE=0: [35:18]=0, [17:0]=RGBA5652 {R5, G6, B5, A2}
-    //   CACHE_MODE=1: [35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9 (UQ1.8)
+    // Decoded output: 36 bits = {R9, G9, B9, A9} in UQ1.8 per channel.
     output wire [35:0]  texel_out
 );
 
@@ -118,11 +111,7 @@ module texture_bc3 (
 
     wire [7:0] decoded_alpha = alpha_palette[alpha_index];
 
-    // CACHE_MODE=0: Truncate A8 to A2 (top 2 bits)
-    wire [1:0] alpha2 = decoded_alpha[7:6];
-
-    // CACHE_MODE=1: Expand A8 to UQ1.8
-    // UQ1.8 = {1'b0, A8} + A8[7] → 0..256 (0x100 = 1.0)
+    // Expand A8 to UQ1.8: {1'b0, A8} + A8[7] → 0..256 (0x100 = 1.0)
     wire [8:0] alpha9 = {1'b0, decoded_alpha} + {8'b0, decoded_alpha[7]};
 
     // ========================================================================
@@ -144,40 +133,7 @@ module texture_bc3 (
     wire [4:0] c1_b = color1[4:0];
 
     // ========================================================================
-    // CACHE_MODE=0: RGBA5652 Color Interpolation
-    // ========================================================================
-    // Division by 3: (x * 683) >> 11 (DD-039)
-
-    wire [6:0] s21_r = {2'b0, c0_r} + {2'b0, c0_r} + {2'b0, c1_r} + 7'd1;
-    wire [7:0] s21_g = {2'b0, c0_g} + {2'b0, c0_g} + {2'b0, c1_g} + 8'd1;
-    wire [6:0] s21_b = {2'b0, c0_b} + {2'b0, c0_b} + {2'b0, c1_b} + 7'd1;
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire [16:0] p21_r = {10'b0, s21_r} * 17'd683;
-    wire [17:0] p21_g = {10'b0, s21_g} * 18'd683;
-    wire [16:0] p21_b = {10'b0, s21_b} * 17'd683;
-    // verilator lint_on UNUSEDSIGNAL
-
-    wire [4:0] i21_r = p21_r[15:11];
-    wire [5:0] i21_g = p21_g[16:11];
-    wire [4:0] i21_b = p21_b[15:11];
-
-    wire [6:0] s12_r = {2'b0, c0_r} + {2'b0, c1_r} + {2'b0, c1_r} + 7'd1;
-    wire [7:0] s12_g = {2'b0, c0_g} + {2'b0, c1_g} + {2'b0, c1_g} + 8'd1;
-    wire [6:0] s12_b = {2'b0, c0_b} + {2'b0, c1_b} + {2'b0, c1_b} + 7'd1;
-
-    // verilator lint_off UNUSEDSIGNAL
-    wire [16:0] p12_r = {10'b0, s12_r} * 17'd683;
-    wire [17:0] p12_g = {10'b0, s12_g} * 18'd683;
-    wire [16:0] p12_b = {10'b0, s12_b} * 17'd683;
-    // verilator lint_on UNUSEDSIGNAL
-
-    wire [4:0] i12_r = p12_r[15:11];
-    wire [5:0] i12_g = p12_g[16:11];
-    wire [4:0] i12_b = p12_b[15:11];
-
-    // ========================================================================
-    // CACHE_MODE=1: UQ1.8 Color Interpolation (9-bit endpoints)
+    // UQ1.8 Color Interpolation (9-bit endpoints)
     // ========================================================================
 
     wire [8:0] c0_r9 = {1'b0, c0_r, c0_r[4:2]} + {8'b0, c0_r[4]};
@@ -222,19 +178,11 @@ module texture_bc3 (
     reg [35:0] palette [0:3];
 
     always_comb begin
-        if (!cache_mode) begin
-            // CACHE_MODE=0: RGBA5652
-            palette[0] = {18'b0, color0, alpha2};
-            palette[1] = {18'b0, color1, alpha2};
-            palette[2] = {18'b0, i21_r, i21_g, i21_b, alpha2};
-            palette[3] = {18'b0, i12_r, i12_g, i12_b, alpha2};
-        end else begin
-            // CACHE_MODE=1: UQ1.8 {R9, G9, B9, A9}
-            palette[0] = {c0_r9, c0_g9, c0_b9, alpha9};
-            palette[1] = {c1_r9, c1_g9, c1_b9, alpha9};
-            palette[2] = {i21_r9, i21_g9, i21_b9, alpha9};
-            palette[3] = {i12_r9, i12_g9, i12_b9, alpha9};
-        end
+        // UQ1.8 {R9, G9, B9, A9}
+        palette[0] = {c0_r9, c0_g9, c0_b9, alpha9};
+        palette[1] = {c1_r9, c1_g9, c1_b9, alpha9};
+        palette[2] = {i21_r9, i21_g9, i21_b9, alpha9};
+        palette[3] = {i12_r9, i12_g9, i12_b9, alpha9};
     end
 
     // ========================================================================

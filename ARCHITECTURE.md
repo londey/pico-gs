@@ -30,7 +30,7 @@ The signed representation naturally handles the `(A-B)` subtraction in the color
 The 12 fractional bits reduce accumulated quantization error through chained combiner stages and alpha blending, preserving gradient fidelity in dark tones.
 Alpha blending promotes the framebuffer's UNORM value to Q4.12 before blending; the result follows the normal dither-and-write path.
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
-Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in RGBA5652 or UQ1.8 per channel format, selectable per sampler via TEXn_FMT.CACHE_MODE), a Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
+Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel), a Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
 ## Digital Twin (gs-twin)
 
@@ -319,13 +319,11 @@ Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after 
 
 ### EBR Budget
 
-The texture cache supports two per-sampler modes selected by `TEXn_FMT.CACHE_MODE` (INT-010, INT-032): CACHE_MODE=0 uses DP16KD in 1024×18 configuration (16 EBR/sampler); CACHE_MODE=1 uses PDPW16KD in 512×36 configuration (32 EBR/sampler).
-CACHE_MODE=1 for both samplers simultaneously (64 EBR) exceeds the ECP5-25K budget and is not feasible; see REQ-011.02.
+The texture cache uses PDPW16KD in 512×36 configuration exclusively (UQ1.8 format, 16 EBR per sampler, 32 EBR total for 2 samplers).
 
 | Component | EBR | Notes |
 |---|---|---|
-| Texture cache — CACHE_MODE=0 (2 samplers) | 32 | 16 per sampler; DP16KD 1024×18 |
-| Texture cache — CACHE_MODE=1 (2 samplers) | 64 | 32 per sampler; PDPW16KD 512×36; exceeds budget |
+| Texture cache (2 samplers) | 32 | 16 per sampler; PDPW16KD 512×36 (UQ1.8) |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
 | Command FIFO | 2 | 512×72 async CDC |
 | Reciprocal LUT (area) | 1 | DP16KD 36×512, inv_area seed+delta |
@@ -334,7 +332,7 @@ CACHE_MODE=1 for both samplers simultaneously (64 EBR) exceeds the ECP5-25K budg
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | FB write buffer | 1 | Single-tile coalescing buffer |
-| **Total (both samplers CACHE_MODE=0)** | **44–45** | **of 56 available (ECP5-25K)** |
+| **Total** | **44–45** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 

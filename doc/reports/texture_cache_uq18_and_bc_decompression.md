@@ -1,14 +1,19 @@
 # Technical Report: Texture Cache UQ1.8 Storage and BC Decompression Design
 
 Date: 2026-03-14
-Status: Draft
+Status: Superseded (see note below)
 
 ## Background
 
-The texture cache architecture (INT-032) currently specifies RGBA5652 (18-bit) as the cache storage format, with decompressed texels promoted to Q4.12 for the fragment pipeline.
-As the project approaches detailed design and digital twin implementation of the texture sampler caches and BC block decompression, several design refinements were identified that could improve quality, reduce DSP consumption, and enable future optimizations.
+**Superseded Note (2026-03-15):** The switchable 18/36-bit cache mode investigated in this report (DD-040) has been superseded.
+The texture cache now operates exclusively in UQ1.8 (36-bit) mode; the RGBA5652 (18-bit) path was never implemented and the CACHE_MODE register bit is reserved.
+This report is retained for historical context on the investigation that led to the UQ1.8-only decision.
+See DD-040 in `design_decisions.md` for the supersession record.
 
-This report investigates five interrelated design questions before committing them to the gs-twin detailed design:
+The texture cache architecture (INT-032) originally specified RGBA5652 (18-bit) as the cache storage format, with decompressed texels promoted to Q4.12 for the fragment pipeline.
+As the project approached detailed design and digital twin implementation of the texture sampler caches and BC block decompression, several design refinements were identified that could improve quality, reduce DSP consumption, and enable future optimizations.
+
+This report investigated five interrelated design questions before committing them to the gs-twin detailed design:
 1. Storing texels as 36-bit RGBA UQ1.8 instead of 18-bit RGBA5652 in cache EBRs
 2. Four-bank interleaved texel access for single-cycle bilinear sampling
 3. 4x4 block cache line alignment with BC block boundaries
@@ -19,7 +24,7 @@ This report investigates five interrelated design questions before committing th
 
 ### Questions investigated
 
-1. **EBR feasibility of switchable 18/36-bit cache:** Can the texture cache support both 18-bit RGBA5652 (high capacity) and 36-bit UQ1.8 (high quality) storage modes using the same EBR allocation?
+1. **EBR feasibility of switchable 18/36-bit cache:** Can the texture cache support both 18-bit RGBA5652 (high capacity) and 36-bit UQ1.8 (high quality) storage modes using the same EBR allocation? *(Outcome: feasible, but the switchable mode was superseded in favor of UQ1.8-only; see DD-040.)*
 2. **Quality benefit of UQ1.8 cache storage:** What precision improvements does pre-expanded UQ1.8 provide over RGBA5652, per source format?
 3. **Bilinear bank interleaving edge cases:** Does the 4-bank scheme produce correct results when texture mirroring or clamping causes bilinear taps to alias?
 4. **Prefetch feasibility:** Is the rasterizer's traversal pattern predictable enough for effective texture prefetch, and what is the hardware cost?
@@ -320,12 +325,13 @@ PDPW16KD in 512x36 mode with 4 depth-cascaded blocks per bank uses the same 16 E
 The 36-bit mode halves cache capacity (8,192 vs 16,384 texels) but preserves up to 8x more precision per channel.
 The 18-bit packed mode maintains current capacity.
 A per-sampler config bit selects the mode.
+*(Superseded: the cache now operates exclusively in UQ1.8 (36-bit) mode; the switchable mode and CACHE_MODE register bit were not implemented. See DD-040.)*
 
 **Q2: Does UQ1.8 storage improve quality?**
 Yes, significantly for most formats.
 The biggest wins are BC3/BC4 alpha (256 vs 4 levels) and RGBA8888 (256 vs 32 levels per color channel).
 BC1 color interpolation also benefits from performing the blend in 8-bit rather than 5/6/5-bit space.
-Only RGB565 sees no improvement, and should default to 18-bit packed mode.
+RGB565 sees no improvement from UQ1.8 storage, but uses UQ1.8 uniformly since the switchable mode was not implemented.
 
 **Q3: Does mirroring cause bank conflicts?**
 No.
@@ -352,14 +358,18 @@ Explicit shift+add reciprocal-multiply formulas (`÷3 = *171>>9`, `÷5 = *205>>1
 
 ## Recommendations
 
+*Note: Recommendations 1–3 and 6 were acted upon, but the switchable dual-mode aspect was superseded in favor of UQ1.8-only operation (DD-040 superseded 2026-03-15).
+The cache uses PDPW16KD 512x36 exclusively in UQ1.8 mode; no RGBA5652 path was implemented.*
+
 1. **Adopt PDPW16KD 512x36 as the EBR primitive for texture cache banks.**
-   This enables the switchable 18/36-bit mode at zero extra EBR cost and provides the independent read/write ports needed for future prefetch.
+   This provides the independent read/write ports needed for future prefetch.
+   *(Adopted; the cache uses PDPW16KD 512x36 exclusively in UQ1.8 mode.)*
 
-2. **Implement UQ1.8 cache format as the default for BC-compressed and RGBA8888 textures.**
+2. **Implement UQ1.8 cache format for all texture formats.**
    The quality improvements are substantial, especially for alpha channels.
-   RGB565 textures should default to 18-bit packed mode since they gain no quality benefit.
+   *(Adopted; all formats use UQ1.8 unconditionally. The per-format 18-bit packed mode was not implemented.)*
 
-3. **Update BC decoders to produce UQ1.8 output when in 36-bit mode.**
+3. **Update BC decoders to produce UQ1.8 output.**
    BC1/BC2/BC3 color interpolation should expand endpoints to 8-bit first, interpolate at 8-bit precision, then convert to UQ1.8.
    BC3/BC4 alpha interpolation already produces 8-bit results that can be directly stored as UQ1.8.
 
@@ -369,7 +379,5 @@ Explicit shift+add reciprocal-multiply formulas (`÷3 = *171>>9`, `÷5 = *205>>1
 5. **Defer prefetch to post-initial-implementation.**
    The PDPW16KD choice preserves the option; implement after profiling cache miss rates on representative scenes.
 
-6. **Implement the switchable cache in gs-twin first,** following the project's established workflow (CLAUDE.md: "implement in gs-twin first, verify with golden image tests, then implement the RTL to match").
-   This will require implementing BC1–BC4 decompression in `tex_sample.rs` (currently stubbed at lines 508–509) with both RGBA5652 and UQ1.8 output paths.
-
-When ready to proceed with implementation, use this report as context for `/syskit-impact` to identify which specifications need updating (INT-032 cache format, TEXn_CFG register layout, BC decoder output formats).
+6. **Implement the cache in gs-twin first,** following the project's established workflow (CLAUDE.md: "implement in gs-twin first, verify with golden image tests, then implement the RTL to match").
+   *(The UQ1.8-only cache was implemented; the dual RGBA5652/UQ1.8 output paths from the original recommendation were not needed.)*
