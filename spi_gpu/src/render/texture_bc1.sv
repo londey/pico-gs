@@ -1,10 +1,12 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `ab72114247abe0c5` 2026-03-05
+// Spec-ref: unit_006_pixel_pipeline.md `164319138ecccf06` 2026-03-14
 //
 // BC1 (DXT1) Texture Decoder — FORMAT=0
 //
-// Decodes a 64-bit BC1 compressed block to produce one RGBA5652 texel.
+// Decodes a 64-bit BC1 compressed block to produce one texel in either
+// RGBA5652 format (CACHE_MODE=0) or UQ1.8 format (CACHE_MODE=1).
+//
 // BC1 block structure (8 bytes):
 //   Bytes 0-1: color0 (RGB565, little-endian)
 //   Bytes 2-3: color1 (RGB565, little-endian)
@@ -12,17 +14,21 @@
 //
 // Two modes determined by color0 vs color1 comparison:
 //   color0 >  color1: 4-color opaque mode
-//     palette = [C0, C1, lerp(C0,C1,1/3), lerp(C0,C1,2/3)], all A2=11
+//     palette = [C0, C1, lerp(C0,C1,1/3), lerp(C0,C1,2/3)], all A=opaque
 //   color0 <= color1: 3-color + transparent mode
-//     palette = [C0, C1, lerp(C0,C1,1/2), transparent (A2=00)]
+//     palette = [C0, C1, lerp(C0,C1,1/2), transparent]
 //
-// Interpolation uses integer arithmetic per DXT1 specification:
-//   1/3: (2*C0 + C1 + 1) / 3
-//   2/3: (C0 + 2*C1 + 1) / 3
-//   1/2: (C0 + C1 + 1) / 2
+// Interpolation uses shift+add reciprocal-multiply (DD-039, 0 DSP slices):
+//   1/3: (2*C0 + C1 + 1) * 683 >> 11   (exact for operands up to 769)
+//   2/3: (C0 + 2*C1 + 1) * 683 >> 11
+//   1/2: (C0 + C1 + 1) >> 1
 //
-// See: INT-014 (Texture Memory Layout, Format 0), INT-032 (Texture Cache, BC1),
-//      UNIT-006 (Pixel Pipeline), REQ-003.03 (Compressed Textures)
+// CACHE_MODE=0: Output RGBA5652 in bits [17:0], bits [35:18] = 0.
+// CACHE_MODE=1: Endpoints expanded to UQ1.8 (9 bits) before interpolation;
+//   output {R9, G9, B9, A9} in bits [35:0].
+//
+// See: INT-014 (Texture Memory Layout, Format 0), INT-032 (Texture Cache),
+//      UNIT-006 (Pixel Pipeline), REQ-003.03, DD-037, DD-038, DD-039
 
 module texture_bc1 (
     // Block data: 64 bits (8 bytes, little-endian)
@@ -34,8 +40,13 @@ module texture_bc1 (
     // Texel selection within 4x4 block (0..15, row-major: t = y*4 + x)
     input  wire [3:0]   texel_idx,
 
-    // Decoded output in RGBA5652 format: {R5, G6, B5, A2} = 18 bits
-    output wire [17:0]  rgba5652
+    // Cache mode: 0 = RGBA5652 (18-bit), 1 = UQ1.8 (36-bit)
+    input  wire         cache_mode,
+
+    // Decoded output: 36 bits
+    //   CACHE_MODE=0: [35:18]=0, [17:0]=RGBA5652 {R5, G6, B5, A2}
+    //   CACHE_MODE=1: [35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9 (UQ1.8)
+    output wire [35:0]  texel_out
 );
 
     // ========================================================================
@@ -54,11 +65,8 @@ module texture_bc1 (
     wire four_color_mode = (color0 > color1);
 
     // ========================================================================
-    // Per-Channel Interpolation
+    // Endpoint Channel Extraction
     // ========================================================================
-    // R5 channel: color0[15:11], color1[15:11]
-    // G6 channel: color0[10:5],  color1[10:5]
-    // B5 channel: color0[4:0],   color1[4:0]
 
     wire [4:0] c0_r = color0[15:11];
     wire [4:0] c1_r = color1[15:11];
@@ -67,79 +75,149 @@ module texture_bc1 (
     wire [4:0] c0_b = color0[4:0];
     wire [4:0] c1_b = color1[4:0];
 
-    // Interpolation intermediates (wider for arithmetic, only low bits used)
+    // ========================================================================
+    // CACHE_MODE=0: RGBA5652 Interpolation (5/6/5 bit endpoints)
+    // ========================================================================
+    // Division by 3 uses shift+add: (x * 683) >> 11 (DD-039, exact for x <= 769)
+    // Only the quotient bits [N+10:11] of each product are used; lower and
+    // upper bits are intentionally discarded.
+
     // 1/3 point: (2*C0 + C1 + 1) / 3
-    wire [6:0] interp13_r = ({2'b0, c0_r} + {2'b0, c0_r} + {2'b0, c1_r} + 7'd1) / 7'd3;
-    wire [7:0] interp13_g = ({2'b0, c0_g} + {2'b0, c0_g} + {2'b0, c1_g} + 8'd1) / 8'd3;
-    wire [6:0] interp13_b = ({2'b0, c0_b} + {2'b0, c0_b} + {2'b0, c1_b} + 7'd1) / 7'd3;
+    wire [6:0] sum13_r = {2'b0, c0_r} + {2'b0, c0_r} + {2'b0, c1_r} + 7'd1;
+    wire [7:0] sum13_g = {2'b0, c0_g} + {2'b0, c0_g} + {2'b0, c1_g} + 8'd1;
+    wire [6:0] sum13_b = {2'b0, c0_b} + {2'b0, c0_b} + {2'b0, c1_b} + 7'd1;
+
+    // verilator lint_off UNUSEDSIGNAL
+    wire [16:0] prod13_r = {10'b0, sum13_r} * 17'd683;
+    wire [17:0] prod13_g = {10'b0, sum13_g} * 18'd683;
+    wire [16:0] prod13_b = {10'b0, sum13_b} * 17'd683;
+    // verilator lint_on UNUSEDSIGNAL
+
+    wire [4:0] interp13_r = prod13_r[15:11];
+    wire [5:0] interp13_g = prod13_g[16:11];
+    wire [4:0] interp13_b = prod13_b[15:11];
 
     // 2/3 point: (C0 + 2*C1 + 1) / 3
-    wire [6:0] interp23_r = ({2'b0, c0_r} + {2'b0, c1_r} + {2'b0, c1_r} + 7'd1) / 7'd3;
-    wire [7:0] interp23_g = ({2'b0, c0_g} + {2'b0, c1_g} + {2'b0, c1_g} + 8'd1) / 8'd3;
-    wire [6:0] interp23_b = ({2'b0, c0_b} + {2'b0, c1_b} + {2'b0, c1_b} + 7'd1) / 7'd3;
+    wire [6:0] sum23_r = {2'b0, c0_r} + {2'b0, c1_r} + {2'b0, c1_r} + 7'd1;
+    wire [7:0] sum23_g = {2'b0, c0_g} + {2'b0, c1_g} + {2'b0, c1_g} + 8'd1;
+    wire [6:0] sum23_b = {2'b0, c0_b} + {2'b0, c1_b} + {2'b0, c1_b} + 7'd1;
 
-    // 1/2 point: (C0 + C1 + 1) / 2  (rounding addition, standard halving)
-    wire [5:0] interp12_r = ({1'b0, c0_r} + {1'b0, c1_r} + 6'd1) >> 1;
-    wire [6:0] interp12_g = ({1'b0, c0_g} + {1'b0, c1_g} + 7'd1) >> 1;
-    wire [5:0] interp12_b = ({1'b0, c0_b} + {1'b0, c1_b} + 6'd1) >> 1;
+    // verilator lint_off UNUSEDSIGNAL
+    wire [16:0] prod23_r = {10'b0, sum23_r} * 17'd683;
+    wire [17:0] prod23_g = {10'b0, sum23_g} * 18'd683;
+    wire [16:0] prod23_b = {10'b0, sum23_b} * 17'd683;
+    // verilator lint_on UNUSEDSIGNAL
 
-    // High bits of interpolation results are unused (division result fits in low bits)
-    wire [1:0] _unused_interp13_r_hi = interp13_r[6:5];
-    wire [1:0] _unused_interp13_g_hi = interp13_g[7:6];
-    wire [1:0] _unused_interp13_b_hi = interp13_b[6:5];
-    wire [1:0] _unused_interp23_r_hi = interp23_r[6:5];
-    wire [1:0] _unused_interp23_g_hi = interp23_g[7:6];
-    wire [1:0] _unused_interp23_b_hi = interp23_b[6:5];
-    wire       _unused_interp12_r_hi = interp12_r[5];
-    wire       _unused_interp12_g_hi = interp12_g[6];
-    wire       _unused_interp12_b_hi = interp12_b[5];
+    wire [4:0] interp23_r = prod23_r[15:11];
+    wire [5:0] interp23_g = prod23_g[16:11];
+    wire [4:0] interp23_b = prod23_b[15:11];
+
+    // 1/2 point: (C0 + C1 + 1) / 2 — bit-select [N:1] of sum
+    // verilator lint_off UNUSEDSIGNAL
+    wire [5:0] sum12_r = {1'b0, c0_r} + {1'b0, c1_r} + 6'd1;
+    wire [6:0] sum12_g = {1'b0, c0_g} + {1'b0, c1_g} + 7'd1;
+    wire [5:0] sum12_b = {1'b0, c0_b} + {1'b0, c1_b} + 6'd1;
+    // verilator lint_on UNUSEDSIGNAL
+    wire [4:0] interp12_r = sum12_r[5:1];
+    wire [5:0] interp12_g = sum12_g[6:1];
+    wire [4:0] interp12_b = sum12_b[5:1];
+
+    // ========================================================================
+    // CACHE_MODE=1: UQ1.8 Interpolation (9-bit promoted endpoints)
+    // ========================================================================
+    // Expand R5/G6/B5 endpoints to UQ1.8 (9-bit) via bit-replication + correction,
+    // matching gs-twin to_uq18() formulas. Then interpolate at 9-bit precision.
+    //
+    // R5→UQ1.8: {r5, r5[4:2]} + r5[4] = (r5<<3 | r5>>2) + (r5>>4)
+    // G6→UQ1.8: {g6, g6[5:4]} + g6[5] = (g6<<2 | g6>>4) + (g6>>5)
+    // B5→UQ1.8: same as R5
+
+    wire [8:0] c0_r9 = {1'b0, c0_r, c0_r[4:2]} + {8'b0, c0_r[4]};
+    wire [8:0] c1_r9 = {1'b0, c1_r, c1_r[4:2]} + {8'b0, c1_r[4]};
+    wire [8:0] c0_g9 = {1'b0, c0_g, c0_g[5:4]} + {8'b0, c0_g[5]};
+    wire [8:0] c1_g9 = {1'b0, c1_g, c1_g[5:4]} + {8'b0, c1_g[5]};
+    wire [8:0] c0_b9 = {1'b0, c0_b, c0_b[4:2]} + {8'b0, c0_b[4]};
+    wire [8:0] c1_b9 = {1'b0, c1_b, c1_b[4:2]} + {8'b0, c1_b[4]};
+
+    // 1/3 point UQ1.8: (2*C0_9 + C1_9 + 1) / 3 via (x * 683) >> 11
+    wire [10:0] sum13_r9 = {2'b0, c0_r9} + {2'b0, c0_r9} + {2'b0, c1_r9} + 11'd1;
+    wire [10:0] sum13_g9 = {2'b0, c0_g9} + {2'b0, c0_g9} + {2'b0, c1_g9} + 11'd1;
+    wire [10:0] sum13_b9 = {2'b0, c0_b9} + {2'b0, c0_b9} + {2'b0, c1_b9} + 11'd1;
+
+    // verilator lint_off UNUSEDSIGNAL
+    wire [20:0] prod13_r9 = {10'b0, sum13_r9} * 21'd683;
+    wire [20:0] prod13_g9 = {10'b0, sum13_g9} * 21'd683;
+    wire [20:0] prod13_b9 = {10'b0, sum13_b9} * 21'd683;
+    // verilator lint_on UNUSEDSIGNAL
+
+    wire [8:0] interp13_r9 = prod13_r9[19:11];
+    wire [8:0] interp13_g9 = prod13_g9[19:11];
+    wire [8:0] interp13_b9 = prod13_b9[19:11];
+
+    // 2/3 point UQ1.8
+    wire [10:0] sum23_r9 = {2'b0, c0_r9} + {2'b0, c1_r9} + {2'b0, c1_r9} + 11'd1;
+    wire [10:0] sum23_g9 = {2'b0, c0_g9} + {2'b0, c1_g9} + {2'b0, c1_g9} + 11'd1;
+    wire [10:0] sum23_b9 = {2'b0, c0_b9} + {2'b0, c1_b9} + {2'b0, c1_b9} + 11'd1;
+
+    // verilator lint_off UNUSEDSIGNAL
+    wire [20:0] prod23_r9 = {10'b0, sum23_r9} * 21'd683;
+    wire [20:0] prod23_g9 = {10'b0, sum23_g9} * 21'd683;
+    wire [20:0] prod23_b9 = {10'b0, sum23_b9} * 21'd683;
+    // verilator lint_on UNUSEDSIGNAL
+
+    wire [8:0] interp23_r9 = prod23_r9[19:11];
+    wire [8:0] interp23_g9 = prod23_g9[19:11];
+    wire [8:0] interp23_b9 = prod23_b9[19:11];
+
+    // 1/2 point UQ1.8: (C0_9 + C1_9 + 1) / 2 — bit-select [N:1]
+    // verilator lint_off UNUSEDSIGNAL
+    wire [9:0] sum12_r9 = {1'b0, c0_r9} + {1'b0, c1_r9} + 10'd1;
+    wire [9:0] sum12_g9 = {1'b0, c0_g9} + {1'b0, c1_g9} + 10'd1;
+    wire [9:0] sum12_b9 = {1'b0, c0_b9} + {1'b0, c1_b9} + 10'd1;
+    // verilator lint_on UNUSEDSIGNAL
+    wire [8:0] interp12_r9 = sum12_r9[9:1];
+    wire [8:0] interp12_g9 = sum12_g9[9:1];
+    wire [8:0] interp12_b9 = sum12_b9[9:1];
 
     // ========================================================================
     // Palette Generation
     // ========================================================================
 
-    reg [15:0] palette [0:3];
-    reg [1:0]  palette_alpha [0:3];
+    reg [35:0] palette [0:3];
 
     always_comb begin
-        // Entry 0: color0, opaque
-        palette[0] = color0;
-        palette_alpha[0] = 2'b11;
+        if (!cache_mode) begin
+            // ---- CACHE_MODE=0: RGBA5652 (18-bit, upper 18 bits zero) ----
+            palette[0] = {18'b0, color0, 2'b11};
+            palette[1] = {18'b0, color1, 2'b11};
 
-        // Entry 1: color1, opaque
-        palette[1] = color1;
-        palette_alpha[1] = 2'b11;
-
-        if (four_color_mode) begin
-            // 4-color opaque mode
-            // Entry 2: lerp(C0, C1, 1/3)
-            palette[2] = {interp13_r[4:0], interp13_g[5:0], interp13_b[4:0]};
-            palette_alpha[2] = 2'b11;
-
-            // Entry 3: lerp(C0, C1, 2/3)
-            palette[3] = {interp23_r[4:0], interp23_g[5:0], interp23_b[4:0]};
-            palette_alpha[3] = 2'b11;
+            if (four_color_mode) begin
+                palette[2] = {18'b0, interp13_r, interp13_g, interp13_b, 2'b11};
+                palette[3] = {18'b0, interp23_r, interp23_g, interp23_b, 2'b11};
+            end else begin
+                palette[2] = {18'b0, interp12_r, interp12_g, interp12_b, 2'b11};
+                palette[3] = 36'b0;  // transparent black (A2=00)
+            end
         end else begin
-            // 3-color + transparent mode
-            // Entry 2: lerp(C0, C1, 1/2)
-            palette[2] = {interp12_r[4:0], interp12_g[5:0], interp12_b[4:0]};
-            palette_alpha[2] = 2'b11;
+            // ---- CACHE_MODE=1: UQ1.8 {R9, G9, B9, A9} = 36 bits ----
+            palette[0] = {c0_r9, c0_g9, c0_b9, 9'h100};
+            palette[1] = {c1_r9, c1_g9, c1_b9, 9'h100};
 
-            // Entry 3: transparent black
-            palette[3] = 16'h0000;
-            palette_alpha[3] = 2'b00;
+            if (four_color_mode) begin
+                palette[2] = {interp13_r9, interp13_g9, interp13_b9, 9'h100};
+                palette[3] = {interp23_r9, interp23_g9, interp23_b9, 9'h100};
+            end else begin
+                palette[2] = {interp12_r9, interp12_g9, interp12_b9, 9'h100};
+                palette[3] = 36'b0;  // transparent black (A9=0)
+            end
         end
     end
 
     // ========================================================================
     // Output Assembly
     // ========================================================================
-    // Select palette entry by index, assemble RGBA5652
 
-    wire [15:0] selected_color = palette[color_index];
-    wire [1:0]  selected_alpha = palette_alpha[color_index];
-
-    assign rgba5652 = {selected_color, selected_alpha};
+    assign texel_out = palette[color_index];
 
 endmodule
 

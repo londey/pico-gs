@@ -309,7 +309,7 @@ The ECP5-25K has 56 EBR blocks; the 18-bit-mode texture cache consumes 32, leavi
 - `spi_gpu/src/render/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
 - `spi_gpu/src/render/texture_r8.sv`: R8 single-channel decoder
 - `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (REQ-003.08)
-- `spi_gpu/src/render/texel_promote.sv`: RGBA5652→Q4.12 promotion (REQ-004.02)
+- `spi_gpu/src/render/texel_promote.sv`: Dual-mode texel→Q4.12 promotion: RGBA5652 (CACHE_MODE=0) or UQ1.8 (CACHE_MODE=1) (REQ-004.02, DD-038)
 - `spi_gpu/src/render/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
 - `spi_gpu/src/render/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
 - `spi_gpu/src/render/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)

@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `ab72114247abe0c5` 2026-03-05
+// Spec-ref: unit_006_pixel_pipeline.md `164319138ecccf06` 2026-03-14
 //
 // Alpha Blend — Q4.12 Blending Operations
 //

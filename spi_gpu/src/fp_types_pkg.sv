@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `ab72114247abe0c5` 2026-03-05
+// Spec-ref: unit_006_pixel_pipeline.md `164319138ecccf06` 2026-03-14
 //
 // fp_types_pkg — Q4.12 Fixed-Point Type Definitions and Promotion Functions
 //
@@ -85,6 +85,20 @@ package fp_types_pkg;
         endcase
     endfunction
     // verilator lint_on UNUSEDSIGNAL
+
+    // ========================================================================
+    // UQ1.8 -> Q4.12 Promotion Function
+    // ========================================================================
+    // Promotes a 9-bit UQ1.8 channel value to Q4.12 by left-shifting 4 bits.
+    // {3'b000, channel[8:0], 4'b0000} = 3+9+4 = 16 bits
+    // UQ1.8 value 0x100 (1.0) maps to Q4.12 value 0x1000 (1.0).
+    // UQ1.8 LSB resolution 2^-8 maps to Q4.12 resolution 2^-8, so no
+    // precision is lost.
+    //
+    // Used for CACHE_MODE=1 texel promotion (INT-032, UNIT-006 Stage 3).
+    function automatic q4_12_t promote_uq18_to_q412(input logic [8:0] channel);
+        promote_uq18_to_q412 = {3'b000, channel[8:0], 4'b0000};
+    endfunction
 
     // ========================================================================
     // UNORM8 -> Q4.12 Promotion Function
