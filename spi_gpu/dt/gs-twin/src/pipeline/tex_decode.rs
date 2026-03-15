@@ -417,21 +417,137 @@ impl TexelDecoder for Bc2Decoder {
     }
 }
 
-// ── BC3 decoder (stub) ──────────────────────────────────────────────────────
+// ── BC3 decoder ─────────────────────────────────────────────────────────────
 
 /// Decode BC3 texels (8 bpp, compressed with interpolated alpha).
 ///
-/// Not yet implemented — returns default (black transparent) texels.
+/// BC3 block structure (8 u16 words = 16 bytes, little-endian):
+///   - `raw[0]`: alpha0 (low byte), alpha1 (high byte)
+///   - `raw[1..3]`: 48-bit alpha index table (3 bits per texel, texel 0 = bits \[2:0\])
+///   - `raw[4]`: color0 (RGB565)
+///   - `raw[5]`: color1 (RGB565)
+///   - `raw[6..7]`: 32-bit color index word (2 bits per texel, texel 0 = bits \[1:0\])
 ///
-/// See: `texture_bc3.sv`.
+/// Alpha palette generation:
+///   - `alpha0 > alpha1`: 8-entry interpolated palette.
+///     Division by 7: `(sum + 3) * 2341 >> 14` (DD-039).
+///   - `alpha0 <= alpha1`: 6-entry interpolated + palette\[6\]=0, palette\[7\]=255.
+///     Division by 5: `(sum + 2) * 3277 >> 14` (DD-039).
+///
+/// The color block is always decoded in 4-color opaque mode (same as BC2).
+/// Alpha is expanded from u8 to UQ1.8 via `ch8_to_uq18`.
+///
+/// See: `texture_bc3.sv`, INT-014 (Format 2), DD-038, DD-039.
 pub struct Bc3Decoder;
+
+/// Interpolate alpha for 8-entry mode (divide by 7).
+///
+/// Formula: `(w0 * a0 + w1 * a1 + 3) * 2341 >> 14`, extracting bits \[21:14\].
+/// Matches RTL exactly for operands in range.
+fn bc3_alpha_interp_7(a0: u32, a1: u32, w0: u32, w1: u32) -> u8 {
+    let sum = w0 * a0 + w1 * a1 + 3;
+    ((sum * 2341) >> 14) as u8
+}
+
+/// Interpolate alpha for 6-entry mode (divide by 5).
+///
+/// Formula: `(w0 * a0 + w1 * a1 + 2) * 3277 >> 14`, extracting bits \[21:14\].
+/// Matches RTL exactly for operands in range.
+fn bc3_alpha_interp_5(a0: u32, a1: u32, w0: u32, w1: u32) -> u8 {
+    let sum = w0 * a0 + w1 * a1 + 2;
+    ((sum * 3277) >> 14) as u8
+}
 
 impl TexelDecoder for Bc3Decoder {
     const BLOCK_SIZE_WORDS: u32 = 8;
 
-    fn decode_block(_raw: &[u16]) -> [TexelUq18; 16] {
-        // TODO: implement BC3 decoding
-        [TexelUq18::default(); 16]
+    fn decode_block(raw: &[u16]) -> [TexelUq18; 16] {
+        // ── Alpha block (words 0..3) ──
+        let alpha_word0 = raw.first().copied().unwrap_or(0);
+        let alpha0 = (alpha_word0 & 0xFF) as u32;
+        let alpha1 = ((alpha_word0 >> 8) & 0xFF) as u32;
+
+        // 48-bit alpha index table from words 1..3.
+        let alpha_indices: u64 = raw.get(1).copied().unwrap_or(0) as u64
+            | (raw.get(2).copied().unwrap_or(0) as u64) << 16
+            | (raw.get(3).copied().unwrap_or(0) as u64) << 32;
+
+        // Build 8-entry alpha palette.
+        let alpha_palette: [u8; 8] = if alpha0 > alpha1 {
+            // 8-entry interpolated mode (divide by 7).
+            [
+                alpha0 as u8,
+                alpha1 as u8,
+                bc3_alpha_interp_7(alpha0, alpha1, 6, 1),
+                bc3_alpha_interp_7(alpha0, alpha1, 5, 2),
+                bc3_alpha_interp_7(alpha0, alpha1, 4, 3),
+                bc3_alpha_interp_7(alpha0, alpha1, 3, 4),
+                bc3_alpha_interp_7(alpha0, alpha1, 2, 5),
+                bc3_alpha_interp_7(alpha0, alpha1, 1, 6),
+            ]
+        } else {
+            // 6-entry interpolated + 0 and 255 (divide by 5).
+            [
+                alpha0 as u8,
+                alpha1 as u8,
+                bc3_alpha_interp_5(alpha0, alpha1, 4, 1),
+                bc3_alpha_interp_5(alpha0, alpha1, 3, 2),
+                bc3_alpha_interp_5(alpha0, alpha1, 2, 3),
+                bc3_alpha_interp_5(alpha0, alpha1, 1, 4),
+                0,
+                255,
+            ]
+        };
+
+        // ── Color block (words 4..7, BC1 4-color opaque mode forced) ──
+        let color0 = raw.get(4).copied().unwrap_or(0);
+        let color1 = raw.get(5).copied().unwrap_or(0);
+        let color_indices = raw.get(6).copied().unwrap_or(0) as u32
+            | (raw.get(7).copied().unwrap_or(0) as u32) << 16;
+
+        // Expand color endpoints to UQ1.8.
+        let c0_r = ch5_to_uq18((color0 >> 11) & 0x1F);
+        let c0_g = ch6_to_uq18((color0 >> 5) & 0x3F);
+        let c0_b = ch5_to_uq18(color0 & 0x1F);
+        let c1_r = ch5_to_uq18((color1 >> 11) & 0x1F);
+        let c1_g = ch6_to_uq18((color1 >> 5) & 0x3F);
+        let c1_b = ch5_to_uq18(color1 & 0x1F);
+
+        // Build 4-entry color palette (always 4-color opaque mode).
+        let colors: [[UQ<1, 8>; 3]; 4] = [
+            [c0_r, c0_g, c0_b],
+            [c1_r, c1_g, c1_b],
+            [
+                UQ::from_bits(bc1_interp_13(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_13(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_13(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+            ],
+            [
+                UQ::from_bits(bc1_interp_23(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_23(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_23(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+            ],
+        ];
+
+        // ── Decode each texel ──
+        let mut block = [TexelUq18::default(); 16];
+        for (i, texel) in block.iter_mut().enumerate() {
+            // Alpha: 3-bit index into the alpha palette.
+            let ai = ((alpha_indices >> (i * 3)) & 0x7) as usize;
+            let decoded_alpha = alpha_palette[ai];
+
+            // Color: 2-bit index into the color palette.
+            let ci = ((color_indices >> (i * 2)) & 0x3) as usize;
+            let rgb = colors[ci];
+
+            *texel = TexelUq18 {
+                r: rgb[0],
+                g: rgb[1],
+                b: rgb[2],
+                a: ch8_to_uq18(decoded_alpha as u16),
+            };
+        }
+        block
     }
 }
 
