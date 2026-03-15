@@ -20,6 +20,7 @@
 pub mod fragment;
 pub mod rasterize;
 pub mod recip;
+pub mod texel;
 
 // ── Fragment pipeline stages (per-pixel) ─────────────────────────────────────
 
@@ -32,6 +33,11 @@ pub mod dither;
 pub mod early_z;
 pub mod pixel_write;
 pub mod stipple;
+pub mod tex_cache;
+pub mod tex_compressed;
+pub mod tex_decode;
+pub mod tex_fetch;
+pub mod tex_filter;
 pub mod tex_sample;
 
 // ── Display scanout pipeline ─────────────────────────────────────────────────
