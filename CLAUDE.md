@@ -18,41 +18,40 @@
 ```text
 pico-gs/
 ├── crates/
-│   ├── pico-gs-hal/          # Platform abstraction traits (no_std)
-│   ├── pico-gs-core/         # Platform-agnostic GPU driver, rendering, scene (no_std)
-│   │   ├── src/
-│   │   │   ├── gpu/          # GpuDriver<S>, registers, vertex packing
-│   │   │   ├── math/         # Fixed-point math (Q12.4, Q1.15)
-│   │   │   ├── render/       # Commands, mesh rendering, transform, lighting
-│   │   │   └── scene/        # Scene management, demo definitions
-│   │   └── tests/            # Integration tests
-│   ├── pico-gs-rp2350/       # RP2350 firmware (dual-core, USB keyboard, SPI GPIO)
-│   │   ├── src/              # Firmware source (transport, input, core1, main)
-│   │   ├── build.rs          # Asset conversion via asset-build-tool
-│   │   ├── assets/           # Source assets (.obj, .png)
-│   │   └── memory.x          # RP2350 linker script
-│   ├── pico-gs-pc/           # PC debug host (FT232H stub, terminal input)
-│   └── asset-build-tool/     # Asset preparation tool (.obj/.png → GPU format)
-├── registers/                # GPU register interface (single source of truth)
-│   ├── rdl/gpu_regs.rdl      # SystemRDL register definitions
+│   └── qfixed/               # Fixed-point math library
+├── registers/                 # GPU register interface (single source of truth)
+│   ├── rdl/gpu_regs.rdl       # SystemRDL register definitions
 │   ├── src/lib.rs             # Rust crate (gpu-registers, no_std)
 │   └── scripts/generate.sh   # PeakRDL codegen → Rust + SV
-├── spi_gpu/                  # FPGA RTL component (SystemVerilog)
-│   ├── src/                  # RTL sources
-│   │   └── spi/generated/    # PeakRDL-generated SV package + register module
-│   ├── dt/                   # Digital twin (bit-accurate Rust model)
-│   │   ├── gs-twin/          # Library: authoritative pipeline algorithms
-│   │   └── gs-twin-cli/      # CLI: render golden references, diff vs Verilator
-│   ├── tests/                # Testbenches
-│   ├── constraints/          # FPGA constraints
-│   └── Makefile              # FPGA build system
-├── doc/                      # Syskit specifications
-│   ├── requirements/         # REQ-NNN documents
-│   ├── interfaces/           # INT-NNN documents
-│   └── design/               # UNIT-NNN documents
-├── ARCHITECTURE.md           # Authoritative GPU architecture document
-├── build.sh                  # Unified build script
-└── Cargo.toml                # Workspace root
+├── spi_gpu/                   # FPGA RTL component (SystemVerilog)
+│   ├── src/                   # RTL sources
+│   │   ├── core/              # Core pipeline logic
+│   │   ├── display/           # Scan-out / display
+│   │   ├── memory/            # Memory controllers
+│   │   ├── render/            # Pixel pipeline RTL
+│   │   ├── spi/               # SPI transport + generated register file
+│   │   ├── utils/             # Shared RTL utilities
+│   │   ├── gpu_top.sv         # Top-level module
+│   │   └── fp_types_pkg.sv    # Fixed-point type package
+│   ├── dt/                    # Digital twin (bit-accurate Rust model)
+│   │   ├── gs-twin/           # Library: authoritative pipeline algorithms
+│   │   └── gs-twin-cli/       # CLI: render golden references, diff vs Verilator
+│   ├── tests/                 # Testbenches
+│   ├── sim/                   # Simulation support files
+│   ├── scripts/               # Build/test scripts
+│   ├── constraints/           # FPGA constraints
+│   └── Makefile               # FPGA build system
+├── doc/                       # Syskit specifications
+│   ├── requirements/          # REQ-NNN documents
+│   ├── interfaces/            # INT-NNN documents
+│   ├── design/                # UNIT-NNN documents
+│   ├── verification/          # VER-NNN documents
+│   └── reports/               # Technical reports
+├── external/
+│   └── icepi-zero/            # Board documentation (git submodule)
+├── ARCHITECTURE.md            # Authoritative GPU architecture document
+├── build.sh                   # Unified build script
+└── Cargo.toml                 # Workspace root
 ```
 
 ## Digital Twin (gs-twin)
@@ -101,31 +100,22 @@ For detailed architecture, see `spi_gpu/dt/README.md`.
 
 ## Commands
 
-# Build entire project
+# Build entire project (FPGA + digital twin + tests)
 ./build.sh
 
-# Build specific component
-./build.sh --fpga-only
-./build.sh --firmware-only
-./build.sh --pc-only
-./build.sh --assets-only
+# Quick lint check (Verilator lint, cargo fmt/check/clippy)
+./build.sh --check
 
-# Build in release mode
-./build.sh --release
+# Build specific components
+./build.sh --fpga-only
+./build.sh --dt-only
+./build.sh --test-only
 
 # FPGA-specific builds
 cd spi_gpu && make bitstream
 cd spi_gpu && make synth
 
-# Firmware-specific builds (RP2350)
-cargo build -p pico-gs-rp2350 --target thumbv8m.main-none-eabihf
-cargo test -p pico-gs-core
-
-# PC debug host build
-cargo build -p pico-gs-pc
-
 # Digital twin build and test
-./build.sh --dt-only
 cargo test -p gs-twin
 
 ## Rust Code Style
