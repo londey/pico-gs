@@ -84,7 +84,7 @@ All register semantics are identical regardless of command source.
 - **DOT3 bump mapping with interpolated light direction**
 - **Dual vertex colors: diffuse (VER_COLOR0) + specular (VER_COLOR1)**
 - **Trilinear texture filtering for smooth LOD transitions**
-- Seven texture formats: BC1, BC2, BC3, BC4 (block-compressed) and RGB565, RGBA8888, R8 (uncompressed); see INT-014
+- Eight texture formats: BC1, BC2, BC3, BC4, BC5 (block-compressed) and RGB565, RGBA8888, R8 (uncompressed); see INT-014
 - Swizzle patterns for channel reordering
 - **Unified RENDER_MODE register (TRI_MODE + ALPHA_BLEND + Z-modes + dithering)**
 - **Scissor rectangle for pixel clipping**
@@ -453,7 +453,7 @@ Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT
 **Key fields** (see RDL for exact bit positions):
 
 - **ENABLE** — activates the sampler; the hardware routes cache miss fills to the decoder selected by FORMAT.
-- **FORMAT** — selects the texture format (BC1–BC4, RGB565, RGBA8888, R8); see INT-014 for block layouts.
+- **FORMAT** — selects the texture format (BC1–BC5, RGB565, RGBA8888, R8); 4-bit field encoding defined in `registers/rdl/gpu_regs.rdl` (`tex_format_e`); see INT-014 for block layouts.
 - **FILTER** — NEAREST, BILINEAR, or TRILINEAR (trilinear falls back to bilinear when MIP_LEVELS ≤ 1).
 - **WIDTH_LOG2, HEIGHT_LOG2** — log₂ of texture dimensions (valid 3–10, i.e. 8–1024 pixels).
 - **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR (octahedral wrap implements coupled diagonal mirroring).
@@ -463,7 +463,7 @@ Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT
 
 **Behavioral notes:**
 
-- Block-compressed formats (BC1–BC4) require dimensions that are multiples of 4; uncompressed formats require power-of-two dimensions.
+- Block-compressed formats (BC1–BC5) require dimensions that are multiples of 4; uncompressed formats require power-of-two dimensions.
 - The texture cache (INT-032) converts all source formats to UQ1.8 on cache fill; FORMAT determines the burst length and decoder used on cache miss.
 - Textures are sampled independently and passed to the color combiner (CC_MODE, 0x18).
 - Swizzle patterns (SWIZZLE field) apply after texture decode; see INT-014 for channel reordering encodings.
@@ -1170,22 +1170,22 @@ See INT-014 for full BC1 decompression algorithm.
 // Configure texture unit 0: diffuse map (RGB565) at 0x384000, 256x256
 gpu_write(REG_TEX0_BASE, 0x384000);
 gpu_write(REG_TEX0_FMT,
-    (0x0 << 16) |  // Swizzle: RGBA (identity)
-    (8 << 12) |    // HEIGHT_LOG2: 256 (bits [15:12])
-    (8 << 8) |     // WIDTH_LOG2: 256 (bits [11:8])
-    (0x1 << 6) |   // FILTER: BILINEAR (bits [7:6])
-    (0x4 << 2) |   // FORMAT: RGB565 (bits [4:2], value 100 = 4)
+    (0x0 << 17) |  // Swizzle: RGBA (identity)
+    (8 << 13) |    // HEIGHT_LOG2: 256 (bits [16:13])
+    (8 << 9) |     // WIDTH_LOG2: 256 (bits [12:9])
+    (0x1 << 7) |   // FILTER: BILINEAR (bits [8:7])
+    (0x5 << 2) |   // FORMAT: RGB565 (bits [5:2], value 0101 = 5)
     (1 << 0)       // ENABLE: yes
 );
 
 // Configure texture unit 1: lightmap (BC1) at 0x3C4000, 256x256
 gpu_write(REG_TEX1_BASE, 0x3C4000);
 gpu_write(REG_TEX1_FMT,
-    (0x0 << 16) |  // Swizzle: RGBA (identity)
-    (8 << 12) |    // HEIGHT_LOG2: 256 (bits [15:12])
-    (8 << 8) |     // WIDTH_LOG2: 256 (bits [11:8])
-    (0x1 << 6) |   // FILTER: BILINEAR (bits [7:6])
-    (0x0 << 2) |   // FORMAT: BC1 (bits [4:2], value 000 = 0)
+    (0x0 << 17) |  // Swizzle: RGBA (identity)
+    (8 << 13) |    // HEIGHT_LOG2: 256 (bits [16:13])
+    (8 << 9) |     // WIDTH_LOG2: 256 (bits [12:9])
+    (0x1 << 7) |   // FILTER: BILINEAR (bits [8:7])
+    (0x0 << 2) |   // FORMAT: BC1 (bits [5:2], value 0000 = 0)
     (1 << 0)       // ENABLE: yes
 );
 
@@ -1228,11 +1228,11 @@ for (int i = 0; i < 8192 / 8; i++) {
 // Configure texture unit 0 for BC1 compressed format
 gpu_write(REG_TEX0_BASE, 0x404000);
 gpu_write(REG_TEX0_FMT,
-    (0x0 << 16) |  // Swizzle: RGBA (identity)
-    (7 << 12) |    // HEIGHT_LOG2: 128 (bits [15:12])
-    (7 << 8) |     // WIDTH_LOG2: 128 (bits [11:8])
-    (0x2 << 6) |   // FILTER: TRILINEAR (bits [7:6])
-    (0x0 << 2) |   // FORMAT: BC1 (bits [4:2], value 000 = 0)
+    (0x0 << 17) |  // Swizzle: RGBA (identity)
+    (7 << 13) |    // HEIGHT_LOG2: 128 (bits [16:13])
+    (7 << 9) |     // WIDTH_LOG2: 128 (bits [12:9])
+    (0x2 << 7) |   // FILTER: TRILINEAR (bits [8:7])
+    (0x0 << 2) |   // FORMAT: BC1 (bits [5:2], value 0000 = 0)
     (1 << 0)       // ENABLE: yes
 );
 ```
@@ -1315,11 +1315,11 @@ gpu_write(REG_ALPHA_BLEND, 0x00);  // DISABLED
 // Swizzle 0x7: RRR1 (replicate R to RGB, alpha=1)
 gpu_write(REG_TEX0_BASE, 0x384000);
 gpu_write(REG_TEX0_FMT,
-    (0x7 << 16) |  // Swizzle: RRR1 (grayscale to RGB, bits [19:16])
-    (8 << 12) |    // HEIGHT_LOG2: 256 (bits [15:12])
-    (8 << 8) |     // WIDTH_LOG2: 256 (bits [11:8])
-    (0x1 << 6) |   // FILTER: BILINEAR (bits [7:6])
-    (0x6 << 2) |   // FORMAT: R8 (bits [4:2], value 110 = 6)
+    (0x7 << 17) |  // Swizzle: RRR1 (grayscale to RGB, bits [20:17])
+    (8 << 13) |    // HEIGHT_LOG2: 256 (bits [16:13])
+    (8 << 9) |     // WIDTH_LOG2: 256 (bits [12:9])
+    (0x1 << 7) |   // FILTER: BILINEAR (bits [8:7])
+    (0x7 << 2) |   // FORMAT: R8 (bits [5:2], value 0111 = 7)
     (1 << 0)       // ENABLE: yes
 );
 

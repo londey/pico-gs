@@ -44,26 +44,28 @@ echo ""
 RUST_TEMP=$(mktemp -d)
 trap 'rm -rf "${RUST_TEMP}"' EXIT
 
-echo "Generating Rust crate → ${REG_DIR}/src/"
-peakrdl rust "${RDL_FILE}" -o "${RUST_TEMP}/" \
-    --crate-name gpu_registers \
-    --force
+echo "Generating Rust components → ${REG_DIR}/src/"
+peakrdl rust "${RDL_FILE}" -o "${RUST_TEMP}/" --force
 
-GENERATED="${RUST_TEMP}/gpu_registers"
+# Replace only the generated components (lib.rs, encode.rs, etc. are hand-maintained)
+rm -rf "${REG_DIR}/src/components" "${REG_DIR}/src/components.rs"
+cp -r "${RUST_TEMP}/components" "${REG_DIR}/src/components"
+cp "${RUST_TEMP}/components.rs" "${REG_DIR}/src/components.rs"
 
-# Replace src/ with generated code
-rm -rf "${REG_DIR}/src"
-cp -r "${GENERATED}/src" "${REG_DIR}/src"
+# Patch generated code for compatibility with the hand-maintained crate:
+#   - peakrdl_rust:: → crate:: (the crate vendors its own encode module)
+#   - Remove 'type Endian' lines (not in the local Register trait)
+find "${REG_DIR}/src/components" "${REG_DIR}/src/components.rs" -name '*.rs' -exec \
+    sed -i -e 's/peakrdl_rust::/crate::/g' \
+           -e '/type Endian/d' {} +
 
-# Replace tests/ with generated tests
-rm -rf "${REG_DIR}/tests"
-cp -r "${GENERATED}/tests" "${REG_DIR}/tests"
+# Format generated Rust code
+rustfmt "${REG_DIR}/src/components.rs"
+find "${REG_DIR}/src/components" -name '*.rs' -exec rustfmt {} +
 
 echo ""
 echo "Generated Rust files:"
-find "${REG_DIR}/src" -type f | sort
-echo ""
-find "${REG_DIR}/tests" -type f | sort
+find "${REG_DIR}/src/components" -type f | sort
 echo ""
 
 echo "Done. Review changes with: git diff"

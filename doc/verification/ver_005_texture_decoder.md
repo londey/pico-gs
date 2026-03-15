@@ -27,6 +27,7 @@ The testbench drives known input data through each texture format decoder and th
   - `spi_gpu/src/render/texture_bc2.sv`
   - `spi_gpu/src/render/texture_bc3.sv`
   - `spi_gpu/src/render/texture_bc4.sv`
+  - `spi_gpu/src/render/texture_bc5.sv`
   - `spi_gpu/src/render/texel_promote.sv`
   - `spi_gpu/src/render/stipple.sv`
 - Test vector data is embedded directly in the testbench source (no external vector files required).
@@ -85,22 +86,30 @@ The testbench drives known input data through each texture format decoder and th
     Verify the 8-value interpolation table is applied using shift+add formulas (DD-039) for the red channel.
     Verify that the decoded red value is replicated to G and B channels and that A is opaque for all texels.
 
-10. **Format-select mux wiring (integration path).**
-    For each of the seven `tex_format` encodings (0=BC1 through 6=R8, per INT-032), drive the format select input to the decoder mux and verify that the correct decoder module output is propagated to the mux output.
-    Decoder outputs for non-selected formats must not affect the result.
-    The `tex_format` input is 3 bits wide (per INT-032).
+10. **BC5 decoder: verify two-channel RG output.**
+    Provide a known 16-byte BC5 block constructed as two independent BC3-style 8-byte single-channel blocks (first block for red, second for green).
+    Verify that the red channel is decoded from the first block using the BC3 alpha interpolation algorithm and shift+add formulas (DD-039).
+    Verify that the green channel is decoded from the second block independently using the same algorithm.
+    Verify that B = 9'h000 for all 16 texels.
+    Verify that A = 9'h100 (opaque) for all 16 texels.
+    Test with a block where red0 > red1 (8-value interpolation table) and a block where red0 <= red1 (6-value table plus 0x00 and 0xFF).
 
-11. **Cache format bit layout verification.**
+11. **Format-select mux wiring (integration path).**
+    For each of the eight `tex_format` encodings (0=BC1 through 7=R8, per INT-032), drive the format select input to the decoder mux and verify that the correct decoder module output is propagated to the mux output.
+    Decoder outputs for non-selected formats must not affect the result.
+    The `tex_format` input is 4 bits wide (per INT-032, DD-041).
+
+12. **Cache format bit layout verification.**
     Confirm UQ1.8 bit layout matches INT-032: R9 in bits [35:27], G9 in bits [26:18], B9 in bits [17:9], A9 in bits [8:0].
 
 ## Expected Results
 
 - **Pass Criteria:**
-  - All decoded texel values exactly match software-computed reference values for every tested format (RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4) in UQ1.8 output format.
+  - All decoded texel values exactly match software-computed reference values for every tested format (RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5) in UQ1.8 output format.
   - texel_promote output values match the INT-032 specified Q4.12 expansion formula exactly for UQ1.8 promotion (step 4) (no rounding tolerance; promotion is combinational bit manipulation).
   - Stipple discard signal matches expected value for all tested (x, y, pattern, enable) combinations.
   - Cache format bit field positions match INT-032 UQ1.8 format definition.
-  - Format-select mux routes the correct decoder output for all seven `tex_format` encodings.
+  - Format-select mux routes the correct decoder output for all eight `tex_format` encodings.
   - All test assertions pass with zero failures.
 
 - **Fail Criteria:**
@@ -112,18 +121,18 @@ The testbench drives known input data through each texture format decoder and th
 
 ## Test Implementation
 
-- `spi_gpu/tests/render/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, texel_promote, stipple, and format-select mux.
+- `spi_gpu/tests/render/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
   Instantiates each decoder as a separate DUT plus the format-select mux, drives known input block data with specific texel indices, and checks output values (UQ1.8 format) against expected constants.
   Uses embedded test vectors (no external file dependencies).
 
 ## Notes
 
-- See INT-032 (Texture Cache Architecture) for the UQ1.8 format definition, conversion tables from each source format, the Q4.12 promotion formula, and the 3-bit `tex_format` encoding table.
+- See INT-032 (Texture Cache Architecture) for the UQ1.8 format definition, conversion tables from each source format, the Q4.12 promotion formula, and the 4-bit `tex_format` encoding table.
   The `fp_types_pkg.sv` package (`spi_gpu/src/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the INT-032 formula in RTL.
   If Step 4 promotion output differs from the INT-032 formula, verify the `fp_types_pkg.sv` function implementation against INT-032 before updating test vectors.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd spi_gpu && make test-texture-decoder`.
 - REQ-003.01 coverage is jointly satisfied by VER-005 (unit test for the decode path in isolation) and VER-012 (golden image integration test exercising the full texture sampling pipeline including cache, rasterizer, and framebuffer output).
 - The `texture_decoder_tb` testbench exercises only combinational decoder logic and the format-select mux; it does not test the texture cache fill FSM or SDRAM burst protocol (those are covered by VER-012 and future cache-specific VER documents).
-- The `tex_format` field is 3 bits wide, encoding 7 formats (BC1=0, BC2=1, BC3=2, BC4=3, RGB565=4, RGBA8888=5, R8=6) as defined in INT-032.
-  The testbench format-select mux test (step 10) must exercise all valid `tex_format` encodings.
+- The `tex_format` field is 4 bits wide, encoding 8 formats (BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7) as defined in INT-032 (DD-041).
+  The testbench format-select mux test (step 11) must exercise all valid `tex_format` encodings.

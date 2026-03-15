@@ -46,13 +46,14 @@ enum cull_mode_e {
 };
 
 enum tex_format_e {
-    BC1        = 3'd0 { desc = "4 bpp, 64 bits per 4x4 block, opaque or 1-bit alpha"; };
-    BC2        = 3'd1 { desc = "8 bpp, 128 bits per 4x4 block, explicit alpha"; };
-    BC3        = 3'd2 { desc = "8 bpp, 128 bits per 4x4 block, interpolated alpha"; };
-    BC4        = 3'd3 { desc = "4 bpp, 64 bits per 4x4 block, single channel"; };
-    RGB565     = 3'd4 { desc = "16 bpp, 5-6-5 uncompressed, 4x4 tiled"; };
-    RGBA8888   = 3'd5 { desc = "32 bpp, 8-8-8-8 uncompressed, 4x4 tiled"; };
-    R8         = 3'd6 { desc = "8 bpp, single channel, 4x4 tiled"; };
+    BC1        = 4'd0 { desc = "4 bpp, 64 bits per 4x4 block, opaque or 1-bit alpha"; };
+    BC2        = 4'd1 { desc = "8 bpp, 128 bits per 4x4 block, explicit alpha"; };
+    BC3        = 4'd2 { desc = "8 bpp, 128 bits per 4x4 block, interpolated alpha"; };
+    BC4        = 4'd3 { desc = "4 bpp, 64 bits per 4x4 block, single channel"; };
+    BC5        = 4'd4 { desc = "8 bpp, 128 bits per 4x4 block, two-channel RG"; };
+    RGB565     = 4'd5 { desc = "16 bpp, 5-6-5 uncompressed, 4x4 tiled"; };
+    RGBA8888   = 4'd6 { desc = "32 bpp, 8-8-8-8 uncompressed, 4x4 tiled"; };
+    R8         = 4'd7 { desc = "8 bpp, single channel, 4x4 tiled"; };
 };
 
 enum tex_filter_e {
@@ -208,8 +209,7 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
         field {} ENABLE[0:0]                                = 0;
         field {} RSVD_1[1:1]                                = 0;
         field { encode = tex_filter_e; }  FILTER[3:2]       = 0;
-        field { encode = tex_format_e; }  FORMAT[6:4]       = 0;
-        field {} RSVD_7[7:7]                                = 0;
+        field { encode = tex_format_e; }  FORMAT[7:4]       = 0;
         field {} WIDTH_LOG2[11:8]                           = 0;
         field {} HEIGHT_LOG2[15:12]                         = 0;
         field { encode = wrap_mode_e; }   U_WRAP[17:16]     = 0;

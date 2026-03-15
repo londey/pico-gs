@@ -110,12 +110,8 @@ package gpu_regs_pkg;
     } gpu_regs__tex_cfg_reg__FILTER__out_t;
 
     typedef struct {
-        logic [2:0] value;
+        logic [3:0] value;
     } gpu_regs__tex_cfg_reg__FORMAT__out_t;
-
-    typedef struct {
-        logic value;
-    } gpu_regs__tex_cfg_reg__RSVD_7__out_t;
 
     typedef struct {
         logic [3:0] value;
@@ -154,7 +150,6 @@ package gpu_regs_pkg;
         gpu_regs__tex_cfg_reg__RSVD_1__out_t RSVD_1;
         gpu_regs__tex_cfg_reg__FILTER__out_t FILTER;
         gpu_regs__tex_cfg_reg__FORMAT__out_t FORMAT;
-        gpu_regs__tex_cfg_reg__RSVD_7__out_t RSVD_7;
         gpu_regs__tex_cfg_reg__WIDTH_LOG2__out_t WIDTH_LOG2;
         gpu_regs__tex_cfg_reg__HEIGHT_LOG2__out_t HEIGHT_LOG2;
         gpu_regs__tex_cfg_reg__U_WRAP__out_t U_WRAP;
@@ -594,9 +589,10 @@ package gpu_regs_pkg;
         tex_format_e__BC2 = 'h1,
         tex_format_e__BC3 = 'h2,
         tex_format_e__BC4 = 'h3,
-        tex_format_e__RGB565 = 'h4,
-        tex_format_e__RGBA8888 = 'h5,
-        tex_format_e__R8 = 'h6
+        tex_format_e__BC5 = 'h4,
+        tex_format_e__RGB565 = 'h5,
+        tex_format_e__RGBA8888 = 'h6,
+        tex_format_e__R8 = 'h7
     } tex_format_e_e;
 
     typedef enum logic [1:0] {

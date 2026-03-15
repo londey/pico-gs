@@ -11,12 +11,14 @@ pub enum TexFormatE {
     Bc3 = 2,
     /// 4 bpp, 64 bits per 4x4 block, single channel
     Bc4 = 3,
+    /// 8 bpp, 128 bits per 4x4 block, two-channel RG
+    Bc5 = 4,
     /// 16 bpp, 5-6-5 uncompressed, 4x4 tiled
-    Rgb565 = 4,
+    Rgb565 = 5,
     /// 32 bpp, 8-8-8-8 uncompressed, 4x4 tiled
-    Rgba8888 = 5,
+    Rgba8888 = 6,
     /// 8 bpp, single channel, 4x4 tiled
-    R8 = 6,
+    R8 = 7,
 }
 
 impl TexFormatE {
@@ -30,9 +32,10 @@ impl TexFormatE {
             1 => Ok(Self::Bc2),
             2 => Ok(Self::Bc3),
             3 => Ok(Self::Bc4),
-            4 => Ok(Self::Rgb565),
-            5 => Ok(Self::Rgba8888),
-            6 => Ok(Self::R8),
+            4 => Ok(Self::Bc5),
+            5 => Ok(Self::Rgb565),
+            6 => Ok(Self::Rgba8888),
+            7 => Ok(Self::R8),
             bits => Err(crate::encode::UnknownVariant::new(bits)),
         }
     }

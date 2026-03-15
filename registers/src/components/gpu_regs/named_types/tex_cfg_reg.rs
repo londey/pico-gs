@@ -106,8 +106,8 @@ impl TexCfgReg {
     }
 
     pub const FORMAT_OFFSET: usize = 4;
-    pub const FORMAT_WIDTH: usize = 3;
-    pub const FORMAT_MASK: u64 = 0x7;
+    pub const FORMAT_WIDTH: usize = 4;
+    pub const FORMAT_MASK: u64 = 0xF;
 
     /// FORMAT
     #[inline(always)]
@@ -123,27 +123,6 @@ impl TexCfgReg {
         let val = val.bits() as u64;
         self.0 = (self.0 & !(Self::FORMAT_MASK << Self::FORMAT_OFFSET))
             | ((val & Self::FORMAT_MASK) << Self::FORMAT_OFFSET);
-    }
-
-    pub const RSVD_7_OFFSET: usize = 7;
-    pub const RSVD_7_WIDTH: usize = 1;
-    pub const RSVD_7_MASK: u64 = 0x1;
-
-    /// RSVD_7
-    #[inline(always)]
-    #[allow(clippy::missing_panics_doc)]
-    #[must_use]
-    pub fn rsvd_7(&self) -> bool {
-        let val = (self.0 >> Self::RSVD_7_OFFSET) & Self::RSVD_7_MASK;
-        val != 0
-    }
-
-    /// RSVD_7
-    #[inline(always)]
-    pub fn set_rsvd_7(&mut self, val: bool) {
-        let val = val as u64;
-        self.0 = (self.0 & !(Self::RSVD_7_MASK << Self::RSVD_7_OFFSET))
-            | ((val & Self::RSVD_7_MASK) << Self::RSVD_7_OFFSET);
     }
 
     pub const WIDTH_LOG2_OFFSET: usize = 8;
@@ -324,7 +303,6 @@ impl core::fmt::Debug for TexCfgReg {
             .field("rsvd_1", &self.rsvd_1())
             .field("filter", &self.filter())
             .field("format", &self.format())
-            .field("rsvd_7", &self.rsvd_7())
             .field("width_log2", &self.width_log2())
             .field("height_log2", &self.height_log2())
             .field("u_wrap", &self.u_wrap())
@@ -348,7 +326,6 @@ mod tests {
         assert_eq!(reg.rsvd_1(), false);
         assert_eq!(reg.filter(), Ok(filter::TexFilterE::Nearest));
         assert_eq!(reg.format(), Ok(format::TexFormatE::Bc1));
-        assert_eq!(reg.rsvd_7(), false);
         assert_eq!(reg.width_log2(), 0);
         assert_eq!(reg.height_log2(), 0);
         assert_eq!(reg.u_wrap(), u_wrap::WrapModeE::Repeat);

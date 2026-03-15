@@ -35,6 +35,50 @@ When adding a new decision, copy this template:
 
 <!-- Add decisions below, newest first -->
 
+## DD-041: Widen FORMAT Field to 4 Bits and Renumber Texture Format Codes
+
+**Date:** 2026-03-15
+**Status:** Accepted
+
+### Context
+
+The `tex_format_e` enum in `registers/rdl/gpu_regs.rdl` and the `FORMAT` field in `TEXn_CFG` (INT-010) were 3 bits wide, encoding seven formats with codes 0–6 (BC1, BC2, BC3, BC4, RGB565, RGBA8888, R8).
+Adding BC5 as an eighth format would exhaust the 3-bit field entirely, leaving no reserved codes for future expansion.
+
+### Decision
+
+Widen the `FORMAT` field from 3 bits to 4 bits and renumber all format codes.
+The new assignments group the BC family together (codes 0–4) followed by uncompressed formats (codes 5–7), with codes 8–15 reserved:
+
+| Code | Format   |
+| ---- | -------- |
+| 0    | BC1      |
+| 1    | BC2      |
+| 2    | BC3      |
+| 3    | BC4      |
+| 4    | BC5      |
+| 5    | RGB565   |
+| 6    | RGBA8888 |
+| 7    | R8       |
+| 8–15 | Reserved |
+
+No backwards compatibility is required.
+
+### Rationale
+
+Widening to 4 bits retains 8 reserved codes for future formats (e.g., BC6H, BC7, ETC2) without another field-width change.
+Renumbering to group BC formats contiguously simplifies decoder mux address decoding and makes the encoding self-documenting.
+The alternative — assigning BC5 to the last remaining code (7) and keeping a 3-bit field — would exhaust the encoding space and force another incompatible widening at the next addition.
+
+### Consequences
+
+`registers/rdl/gpu_regs.rdl` gains `BC5` and the field widens from `FORMAT[6:4]` to `FORMAT[7:4]`.
+`registers/src/lib.rs` and generated SystemVerilog are updated to match.
+All RTL format comparisons in `pixel_pipeline.sv`, `texture_cache.sv`, and the format-select mux use the new 4-bit codes.
+INT-010, INT-032, and UNIT-006 are updated with the new encoding table.
+VER-012 and VER-014 register-write sequences use `FORMAT=RGB565` code 5 (was 4); golden images require re-approval.
+
+---
 
 ## DD-040: Switchable 18/36-bit Texture Cache Mode Bit in TEXn_CFG
 

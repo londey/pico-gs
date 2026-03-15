@@ -24,7 +24,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`) compile without errors under `verilator --lint-only -Wall`.
-- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the texture cache, format-select mux connecting all six decoders, color combiner, and FB/Z write logic per UNIT-006.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the texture cache, format-select mux connecting all eight decoders, color combiner, and FB/Z write logic per UNIT-006.
 
 ## Procedure
 
@@ -33,7 +33,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 The harness generates a 16x16 RGB565 checker pattern programmatically (no file commit required per `test_strategy.md`):
 
 - **Dimensions:** 16x16 pixels (WIDTH_LOG2=4, HEIGHT_LOG2=4).
-- **Format:** RGB565 (FORMAT=4, uncompressed).
+- **Format:** RGB565 (FORMAT=5, uncompressed).
 - **Pattern:** 4x4 block checker.
   Even blocks (where `(block_x + block_y) % 2 == 0`) are white (`0xFFFF`); odd blocks are black (`0x0000`).
   This yields a visually distinctive pattern that makes UV mapping errors immediately visible.
@@ -65,7 +65,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    - Write `TEX0_BASE` (address `0x10`) with the texture base address (e.g., `0x00040000`, 4K aligned).
    - Write `TEX0_FMT` (address `0x11`) with:
      - `ENABLE = 1` (bit 0)
-     - `FORMAT = RGB565` (4 << 2, bits [4:2]; 3-bit field per INT-010 post-integration)
+     - `FORMAT = RGB565` (5 << 2, bits [5:2]; 4-bit field per INT-010, DD-041)
      - `WIDTH_LOG2 = 4` (4 << 8, bits [11:8])
      - `HEIGHT_LOG2 = 4` (4 << 12, bits [15:12])
      - `SWIZZLE = 0` (identity, bits [19:16])
@@ -148,9 +148,10 @@ The integration harness drives the following register-write sequence into UNIT-0
   For RGB565 format, the burst length is 16 (32 bytes = 16 x 16-bit uncompressed texels in a 4x4 block).
   The fill FSM transitions through IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE.
   Burst lengths for other formats are documented in INT-032: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
-- **tex_format 3-bit field:** After the pixel pipeline integration, the FORMAT field in TEXn_FMT is 3 bits wide (bits [4:2]), supporting all seven texture formats (BC1=0 through R8=6) as defined in INT-032.
-  The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
-  The format-select mux in the integrated pixel pipeline connects all six format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
+- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-032 (DD-041).
+  RGB565 is FORMAT=5.
+  The format-select mux in the integrated pixel pipeline connects all eight format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
+  The golden image must be re-approved after any change to the format-select mux path in UNIT-006, including this field widening.
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.

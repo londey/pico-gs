@@ -26,7 +26,7 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` (UQ4.4) is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `triangle_setup.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `early_z.sv`) compile without errors under `verilator --lint-only -Wall`.
-- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the early Z stage, texture cache, format-select mux connecting all six decoders, MODULATE combiner (UNIT-010), and FB/Z write logic per UNIT-006.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the early Z stage, texture cache, format-select mux connecting all eight decoders, MODULATE combiner (UNIT-010), and FB/Z write logic per UNIT-006.
 - UNIT-010 (Color Combiner) has reached Stable status (WIP flag removed from `doc/design/unit_010_color_combiner.md`).
 - The Z-buffer is initialized to `0xFFFF` via a Z-buffer clear pass before rendering (see Z-Buffer Clear Step below).
 
@@ -37,7 +37,7 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
 The harness generates a 16×16 RGB565 checker pattern programmatically (no file commit required per `test_strategy.md`):
 
 - **Dimensions:** 16×16 pixels (WIDTH_LOG2=4, HEIGHT_LOG2=4).
-- **Format:** RGB565 (FORMAT=4, uncompressed).
+- **Format:** RGB565 (FORMAT=5, uncompressed).
 - **Pattern:** 4×4 block checker.
   Even blocks (where `(block_x + block_y) % 2 == 0`) are white (`0xFFFF`); odd blocks are black (`0x0000`).
   This yields a visually distinctive pattern that makes UV mapping errors and perspective-correct interpolation failures immediately visible.
@@ -99,7 +99,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    - Write `TEX0_BASE` (address `0x10`) with the texture base address (e.g., `0x00040000`, 4K aligned).
    - Write `TEX0_FMT` (address `0x11`) with:
      - `ENABLE = 1` (bit 0)
-     - `FORMAT = RGB565` (4 << 2, bits [4:2]; 3-bit field per INT-010 post-integration)
+     - `FORMAT = RGB565` (5 << 2, bits [5:2]; 4-bit field per INT-010, DD-041)
      - `WIDTH_LOG2 = 4` (4 << 8, bits [11:8])
      - `HEIGHT_LOG2 = 4` (4 << 12, bits [15:12])
      - `SWIZZLE = 0` (identity, bits [19:16])
@@ -198,8 +198,8 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Winding and back-face submission:** Back-face triangles are submitted first in depth order to validate that depth testing correctly discards their fragments when front-face triangles are rendered subsequently.
   The test does not enable hardware back-face culling — occlusion must be achieved entirely through Z-testing.
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for deterministic, reproducible output.
-- **tex_format 3-bit field:** After the pixel pipeline integration, the FORMAT field in TEXn_FMT is 3 bits wide (bits [4:2]), supporting all seven texture formats (BC1=0 through R8=6) as defined in INT-032.
-  The RGB565 encoding (FORMAT=4) is unchanged in value; only the field width changes from 2 bits to 3 bits.
+- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-032 (DD-041).
+  RGB565 is FORMAT=5.
 - **Cache format:** The texture cache operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured-cube`.
 - **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PPM, copy it to `spi_gpu/tests/golden/textured_cube.ppm`, and commit.

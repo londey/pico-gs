@@ -26,11 +26,11 @@ None (top-level area)
 
 ## Verification Method
 
-**Inspection:** Verify that UNIT-006 instantiates texture cache and all format decoders (BC1, BC2, BC3, BC4, RGBA4444, RGB565, RGBA8888, R8) connected via a format-select mux.
+**Inspection:** Verify that UNIT-006 instantiates texture cache and all format decoders (BC1, BC2, BC3, BC4, BC5, RGB565, RGBA8888, R8) connected via a 4-bit format-select mux.
 Child requirements REQ-003.01 through REQ-003.08 carry individual Test-level verification via VER-005 (texture decoder) and VER-012/VER-014 (textured golden image tests).
 
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.
-All seven texture format decoders are wired to the texture cache in UNIT-006 through a 3-bit `tex_format` select (INT-032).
+All eight texture format decoders are wired to the texture cache in UNIT-006 through a 4-bit `tex_format` select (INT-032).
 See INT-014 for texture memory layout and INT-032 for cache architecture and per-format burst lengths.

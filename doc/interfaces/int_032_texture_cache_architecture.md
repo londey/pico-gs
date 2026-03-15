@@ -16,9 +16,9 @@ Each sampler has an 8,192-texel cache using PDPW16KD 512×36 EBR banks.
 
 #### Format Field Width
 
-The `tex_format` signal that selects the decode path is a **3-bit field** (`[4:2]` of TEXn_FMT; see INT-010).
-Seven distinct values (0–6) are defined; value 7 is reserved.
-The 3-bit width is the minimum required to encode all seven formats without aliasing.
+The `tex_format` signal that selects the decode path is a **4-bit field** (`[5:2]` of TEXn_FMT; see INT-010).
+Eight distinct values (0–7) are defined; values 8–15 are reserved.
+The 4-bit width accommodates eight formats with room for future additions.
 
 #### Cache Line Format
 
@@ -81,14 +81,24 @@ This maps UNORM 255 to UQ1.8 0xFF (≈1.0) and UNORM 0 to UQ1.8 0x00.
 - A: `9'h100` (opaque)
 - Stored as `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`, `9'h100`
 
-**From RGB565 (FORMAT=4):**
+**From BC5 (FORMAT=4):**
+
+- Two independent BC3-style single-channel alpha blocks packed sequentially in each 16-byte block: first 8 bytes decode the red channel (R8), next 8 bytes decode the green channel (G8)
+- Each 8-byte sub-block uses the BC3 alpha block encoding: two 8-bit endpoints followed by 6 bytes of 3-bit indices (FR-024-BC5)
+- B: `9'h000` (fixed zero), A: `9'h100` (opaque)
+- Stored as `{1'b0, R8}`, `{1'b0, G8}`, `9'h000`, `9'h100`
+
+**From RGB565 (FORMAT=5):**
+
 - Expand with MSB replication: R8=`{R5,R5[4:2]}`, G8=`{G6,G6[5:3]}`, B8=`{B5,B5[4:2]}`
 - Store as `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`, `9'h100` (opaque)
 
-**From RGBA8888 (FORMAT=5):**
+**From RGBA8888 (FORMAT=6):**
+
 - Store directly as `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`, `{1'b0, A8}`
 
-**From R8 (FORMAT=6):**
+**From R8 (FORMAT=7):**
+
 - Store as `{1'b0, R8}`, replicated to all three channels; A=`9'h100` (opaque)
 
 **Onward Conversion to Q4.12:**
@@ -163,15 +173,16 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
    - **Start address:** Computed block address in SDRAM (from INT-014 layout, 4×4 block-tiled)
    - **Burst length (`burst_len`):** Number of sequential 16-bit words to read
 
-| Format | burst_len | Bytes | Reason |
-|--------|-----------|-------|--------|
-| BC1 | 4 | 8 | 64-bit BC1 block |
-| BC2 | 8 | 16 | 128-bit BC2 block |
-| BC3 | 8 | 16 | 128-bit BC3 block |
-| BC4 | 4 | 8 | 64-bit BC4 block |
-| RGB565 | 16 | 32 | 16 × 16-bit pixels |
-| RGBA8888 | 32 | 64 | 16 × 32-bit pixels |
-| R8 | 8 | 16 | 16 × 8-bit pixels (packed two per 16-bit word) |
+| Format   | FORMAT code | burst_len | Bytes | Reason                                         |
+|----------|-------------|-----------|-------|------------------------------------------------|
+| BC1      | 0           | 4         | 8     | 64-bit BC1 block                               |
+| BC2      | 1           | 8         | 16    | 128-bit BC2 block                              |
+| BC3      | 2           | 8         | 16    | 128-bit BC3 block                              |
+| BC4      | 3           | 4         | 8     | 64-bit BC4 block                               |
+| BC5      | 4           | 8         | 16    | 128-bit BC5 block (two 8-byte sub-blocks)      |
+| RGB565   | 5           | 16        | 32    | 16 × 16-bit pixels                             |
+| RGBA8888 | 6           | 32        | 64    | 16 × 32-bit pixels                             |
+| R8       | 7           | 8         | 16    | 16 × 8-bit pixels (packed two per 16-bit word) |
 
 3. **Decompression/Conversion:** Transform source format to UQ1.8 per channel (see conversion table above)
 4. **Bank Write:** Write 16 decompressed texels to 4 interleaved EBR banks
@@ -180,7 +191,7 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
 
 **Cache Fill Latency (at 100 MHz `clk_core`):**
 - BC1/BC4: ~11 cycles / 110 ns (ACTIVATE + tRCD + READ + CL=3 latency + 4 burst data cycles)
-- BC2/BC3/R8: ~19 cycles / 190 ns (8 burst data cycles)
+- BC2/BC3/BC5/R8: ~19 cycles / 190 ns (8 burst data cycles)
 - RGB565: ~23 cycles / 230 ns (16 burst data cycles)
 - RGBA8888: ~39 cycles / 390 ns (32 burst data cycles)
 
@@ -243,7 +254,7 @@ See REQ-011.02 for the complete resource budget.
 - Cache is write-through (texture writes not supported)
 - Cache is non-coherent (invalidation required on texture change via TEXn_CFG write)
 - RGBA8888 and R8 formats incur the highest fill latency due to larger burst sizes; prefer compressed formats for performance-sensitive textures
-- The format-select mux in the pixel pipeline routes the SDRAM burst data to the appropriate decoder module (one of six standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[2:0]` (INT-010 TEXn_FMT bits [4:2])
+- The format-select mux in the pixel pipeline routes the SDRAM burst data to the appropriate decoder module (one of seven standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_bc5.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[3:0]` (INT-010 TEXn_FMT bits [5:2])
 - BC palette interpolation uses shift+add reciprocal-multiply (not Verilog `/`) for deterministic synthesis; see BC Division note in UQ1.8 format section
 
 ## Notes
@@ -279,6 +290,6 @@ DD-040 (switchable 18/36-bit cache mode) has been superseded; the cache now uses
 ### Verification
 
 - **VER-005** (`texture_decoder_tb`): Unit testbench verifying texture decoders produce correct UQ1.8 output.
-  Tests all seven source formats (BC1–BC4, RGB565, RGBA8888, R8) and confirms correct encoding per the conversion table above.
+  Tests all eight source formats (BC1–BC5, RGB565, RGBA8888, R8) and confirms correct encoding per the conversion table above.
 - **VER-012** (Textured triangle golden image test): Integration test exercising the full cache + decode + sample path.
   The integration simulation harness must model (or stub) the SDRAM miss-handling protocol defined in the Cache Miss Handling Protocol section above, including correct burst lengths per format and the IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE fill FSM.

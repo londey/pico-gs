@@ -144,9 +144,10 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
   - FORMAT=BC2 (1): Burst read 16 bytes (burst_len=8), decompress explicit alpha blocks; color interpolation uses shift+add (DD-039)
   - FORMAT=BC3 (2): Burst read 16 bytes (burst_len=8), decompress interpolated alpha blocks; color and alpha interpolation use shift+add (DD-039)
   - FORMAT=BC4 (3): Burst read 8 bytes (burst_len=4), decompress single-channel; interpolation uses shift+add (DD-039); replicate R→RGB
-  - FORMAT=RGB565 (4): Burst read 32 bytes (burst_len=16); expand to UQ1.8
-  - FORMAT=RGBA8888 (5): Burst read 64 bytes (burst_len=32); expand to UQ1.8 (A8→UQ1.8[8:1])
-  - FORMAT=R8 (6): Burst read 16 bytes (burst_len=8); replicate R to G and B; A=opaque; convert to UQ1.8
+  - FORMAT=BC5 (4): Burst read 16 bytes (burst_len=8), decompress two BC3-style single-channel blocks; R = decoded red, G = decoded green, B = 0, A = opaque
+  - FORMAT=RGB565 (5): Burst read 32 bytes (burst_len=16); expand to UQ1.8
+  - FORMAT=RGBA8888 (6): Burst read 64 bytes (burst_len=32); expand to UQ1.8 (A8→UQ1.8[8:1])
+  - FORMAT=R8 (7): Burst read 16 bytes (burst_len=8); replicate R to G and B; A=opaque; convert to UQ1.8
 - Apply swizzle pattern (REQ-003.04, TEXn_CFG.SWIZZLE)
 - Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels using LOD = `frag_lod[7:4]` + `TEXn_MIP_BIAS`; the fractional blend weight is `frag_lod[3:0]`; requires MIP_LEVELS > 1
 
@@ -229,6 +230,14 @@ All palette interpolation in BC decoders uses shift+add reciprocal-multiply form
 *BC2/BC3 Decoders:*
 - 16-byte blocks; first 8 bytes encode alpha (explicit 4-bit for BC2, interpolated 8-bit for BC3 using shift+add), last 8 bytes encode RGB as BC1 (no punch-through, shift+add interpolation)
 
+*BC5 Decoder:*
+
+- Fetch 16 bytes: two independent BC3-style 8-byte single-channel alpha blocks
+- First 8-byte block decodes the red channel using the BC3 alpha interpolation algorithm (shift+add, DD-039)
+- Second 8-byte block decodes the green channel using the same algorithm
+- Output: R = decoded red, G = decoded green, B = 0, A = opaque (9'h100)
+- Typically used for compressed two-channel normal maps (XY normals; Z is reconstructed by the shader)
+
 **Texture Cache Architecture (REQ-003.08):**
 
 Each of the 2 samplers has an independent 4-way set-associative texture cache with 8192 texels (8K) capacity:
@@ -254,7 +263,7 @@ Cache Fill State Machine (same clock domain as SDRAM controller, no CDC):
   IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
   - FETCH issues a burst SDRAM read request to UNIT-007 with burst_len per format
   - BC1/BC4:       burst_len=4   (8 bytes)
-  - BC2/BC3:       burst_len=8   (16 bytes)
+  - BC2/BC3/BC5:   burst_len=8   (16 bytes)
   - RGB565:        burst_len=16  (32 bytes)
   - R8:            burst_len=8   (16 bytes)
   - RGBA8888:      burst_len=32  (64 bytes)
@@ -274,6 +283,7 @@ The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for ot
 - RGBA8888 decoder: ~50 LUTs, 0 DSPs
 - R8 decoder: ~20 LUTs, 0 DSPs
 - BC2/BC3 decoders: ~250-350 LUTs, 0 DSPs (shift+add replaces division, DD-039)
+- BC5 decoder: ~200-300 LUTs, 0 DSPs (two independent BC3-style alpha blocks, shift+add, DD-039)
 - Texture cache (per sampler): 16 EBR blocks (PDPW16KD 512×36), ~300-500 LUTs (tags, comparators, FSM)
 - Texture cache (both samplers): 32 EBR blocks total, ~600-1000 LUTs
 - Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
@@ -289,6 +299,7 @@ The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for ot
 - `spi_gpu/src/render/texture_bc2.sv`: BC2 decoder
 - `spi_gpu/src/render/texture_bc3.sv`: BC3 decoder
 - `spi_gpu/src/render/texture_bc4.sv`: BC4 (single-channel) decoder
+- `spi_gpu/src/render/texture_bc5.sv`: BC5 (two-channel, RG normal map) decoder
 - `spi_gpu/src/render/texture_rgb565.sv`: RGB565 uncompressed decoder
 - `spi_gpu/src/render/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
 - `spi_gpu/src/render/texture_r8.sv`: R8 single-channel decoder
@@ -345,8 +356,9 @@ Port 3 is shared with `PERF_TIMESTAMP` writes initiated by `gpu_top.sv` on behal
 Timestamp writes are fire-and-forget single-word writes at the lowest priority on port 3; the pixel pipeline's texture burst requests have effective precedence because the arbiter serves port 3 requests in arrival order and texture bursts hold port 3 for up to 32 words.
 See DD-026 for the port 3 sharing rationale and the latch-and-serialize scheme used in `gpu_top.sv`.
 
-**Texture format encoding:** The `tex_format` field in TEX0_CFG and TEX1_CFG is 3 bits wide, encoding 7 formats as defined in INT-010 and INT-032: BC1=0, BC2=1, BC3=2, BC4=3, RGB565=4, RGBA8888=5, R8=6.
-All 7 format decoders are connected to the texture cache via a format-select mux driven by this 3-bit field.
+**Texture format encoding:** The `tex_format` field in TEX0_CFG and TEX1_CFG is 4 bits wide, encoding 8 formats as defined in INT-010 and INT-032: BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7 (DD-041).
+All 8 format decoders are connected to the texture cache via a format-select mux driven by this 4-bit field.
+Codes 8–15 are reserved.
 
 The pipeline operates at 100 MHz in a unified clock domain with the SDRAM controller.
 This eliminates CDC FIFOs and synchronizers for all memory transactions (framebuffer, Z-buffer, texture), simplifying the design and reducing latency.
@@ -356,7 +368,7 @@ UNORM inputs (vertex colors, material constants, texture samples) are promoted t
 The signed representation naturally handles the `(A-B)` subtraction in the color combiner, and the 3-bit integer headroom above 1.0 accommodates additive blending without premature saturation.
 
 The cache fill FSM issues burst SDRAM read requests to UNIT-007, specifying burst_len equal to the number of 16-bit words for the texture block.
-Burst lengths differ by format: 4 (BC1/BC4), 8 (BC2/BC3/R8), 16 (RGB565), 32 (RGBA8888).
+Burst lengths differ by format: 4 (BC1/BC4), 8 (BC2/BC3/BC5/R8), 16 (RGB565), 32 (RGBA8888).
 
 The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
 The tiled address calculation uses only shifts and masks; no multiply hardware is required.

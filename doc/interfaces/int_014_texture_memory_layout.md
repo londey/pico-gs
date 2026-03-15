@@ -31,15 +31,16 @@ left-to-right, top-to-bottom block order.
 
 Supported formats (TEXn_CFG.FORMAT field encoding from INT-010):
 
-| Code | Name     | Bits/texel | Block storage |
-|------|----------|------------|---------------|
-| 0    | BC1      | 4 bpp      | 8 bytes per 4×4 block |
-| 1    | BC2      | 8 bpp      | 16 bytes per 4×4 block |
-| 2    | BC3      | 8 bpp      | 16 bytes per 4×4 block |
-| 3    | BC4      | 4 bpp      | 8 bytes per 4×4 block (single channel) |
-| 4    | RGB565   | 16 bpp     | 32 bytes per 4×4 block |
-| 5    | RGBA8888 | 32 bpp     | 64 bytes per 4×4 block |
-| 6    | R8       | 8 bpp      | 16 bytes per 4×4 block (single channel) |
+| Code | Name     | Bits/texel | Block storage                           |
+|------|----------|------------|-----------------------------------------|
+| 0    | BC1      | 4 bpp      | 8 bytes per 4×4 block                   |
+| 1    | BC2      | 8 bpp      | 16 bytes per 4×4 block                  |
+| 2    | BC3      | 8 bpp      | 16 bytes per 4×4 block                  |
+| 3    | BC4      | 4 bpp      | 8 bytes per 4×4 block (single channel)  |
+| 4    | BC5      | 8 bpp      | 16 bytes per 4×4 block (two channels)   |
+| 5    | RGB565   | 16 bpp     | 32 bytes per 4×4 block                  |
+| 6    | RGBA8888 | 32 bpp     | 64 bytes per 4×4 block                  |
+| 7    | R8       | 8 bpp      | 16 bytes per 4×4 block (single channel) |
 
 All formats share the same block addressing formula; they differ only in bytes-per-block.
 
