@@ -551,21 +551,83 @@ impl TexelDecoder for Bc3Decoder {
     }
 }
 
-// ── BC4 decoder (stub) ──────────────────────────────────────────────────────
+// ── BC4 decoder ─────────────────────────────────────────────────────────────
 
 /// Decode BC4 texels (4 bpp, compressed single channel).
 ///
-/// Not yet implemented — returns default (black transparent) texels.
+/// BC4 block structure (4 u16 words = 8 bytes, little-endian):
+///   - `raw[0]`: red0 (low byte), red1 (high byte)
+///   - `raw[1..3]`: 48-bit red index table (3 bits per texel, texel 0 = bits \[2:0\])
 ///
-/// See: `texture_bc4.sv`.
+/// Uses the same encoding as the BC3 alpha block:
+///   - `red0 > red1`: 8-entry interpolated palette.
+///     Division by 7: `(sum + 3) * 2341 >> 14` (DD-039).
+///   - `red0 <= red1`: 6-entry interpolated + palette\[6\]=0, palette\[7\]=255.
+///     Division by 5: `(sum + 2) * 3277 >> 14` (DD-039).
+///
+/// Output: decoded red channel expanded to UQ1.8 via `ch8_to_uq18`,
+/// replicated to R=G=B, with A=opaque (0x100).
+///
+/// See: `texture_bc4.sv`, INT-014 (Format 3), DD-038, DD-039.
 pub struct Bc4Decoder;
 
 impl TexelDecoder for Bc4Decoder {
     const BLOCK_SIZE_WORDS: u32 = 4;
 
-    fn decode_block(_raw: &[u16]) -> [TexelUq18; 16] {
-        // TODO: implement BC4 decoding
-        [TexelUq18::default(); 16]
+    fn decode_block(raw: &[u16]) -> [TexelUq18; 16] {
+        // ── Red block (same encoding as BC3 alpha block) ──
+        let red_word0 = raw.first().copied().unwrap_or(0);
+        let red0 = (red_word0 & 0xFF) as u32;
+        let red1 = ((red_word0 >> 8) & 0xFF) as u32;
+
+        // 48-bit red index table from words 1..3.
+        let red_indices: u64 = raw.get(1).copied().unwrap_or(0) as u64
+            | (raw.get(2).copied().unwrap_or(0) as u64) << 16
+            | (raw.get(3).copied().unwrap_or(0) as u64) << 32;
+
+        // Build 8-entry red palette (identical to BC3 alpha palette).
+        let red_palette: [u8; 8] = if red0 > red1 {
+            // 8-entry interpolated mode (divide by 7).
+            [
+                red0 as u8,
+                red1 as u8,
+                bc3_alpha_interp_7(red0, red1, 6, 1),
+                bc3_alpha_interp_7(red0, red1, 5, 2),
+                bc3_alpha_interp_7(red0, red1, 4, 3),
+                bc3_alpha_interp_7(red0, red1, 3, 4),
+                bc3_alpha_interp_7(red0, red1, 2, 5),
+                bc3_alpha_interp_7(red0, red1, 1, 6),
+            ]
+        } else {
+            // 6-entry interpolated + 0 and 255 (divide by 5).
+            [
+                red0 as u8,
+                red1 as u8,
+                bc3_alpha_interp_5(red0, red1, 4, 1),
+                bc3_alpha_interp_5(red0, red1, 3, 2),
+                bc3_alpha_interp_5(red0, red1, 2, 3),
+                bc3_alpha_interp_5(red0, red1, 1, 4),
+                0,
+                255,
+            ]
+        };
+
+        let opaque = UQ::<1, 8>::from_bits(0x100);
+
+        // ── Decode each texel ──
+        let mut block = [TexelUq18::default(); 16];
+        for (i, texel) in block.iter_mut().enumerate() {
+            let ri = ((red_indices >> (i * 3)) & 0x7) as usize;
+            let ch = ch8_to_uq18(red_palette[ri] as u16);
+
+            *texel = TexelUq18 {
+                r: ch,
+                g: ch,
+                b: ch,
+                a: opaque,
+            };
+        }
+        block
     }
 }
 
