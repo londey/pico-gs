@@ -327,21 +327,93 @@ impl TexelDecoder for Bc1Decoder {
     }
 }
 
-// ── BC2 decoder (stub) ──────────────────────────────────────────────────────
+// ── BC2 decoder ─────────────────────────────────────────────────────────────
 
 /// Decode BC2 texels (8 bpp, compressed with explicit alpha).
 ///
-/// Not yet implemented — returns default (black transparent) texels.
+/// BC2 block structure (8 u16 words = 16 bytes, little-endian):
+///   - `raw[0..3]`: Explicit 4-bit alpha per texel (4 u16 rows, 4 texels each).
+///     Row bits \[3:0\] = col 0, \[7:4\] = col 1, \[11:8\] = col 2, \[15:12\] = col 3.
+///   - `raw[4]`: color0 (RGB565)
+///   - `raw[5]`: color1 (RGB565)
+///   - `raw[6..7]`: 32-bit index word (2 bits per texel, texel 0 = bits \[1:0\])
 ///
-/// See: `texture_bc2.sv`.
+/// The color block is always decoded in 4-color opaque mode (the `color0 > color1`
+/// comparison from BC1 is forced true for BC2).
+///
+/// Alpha expansion: A4 to UQ1.8 via `{1'b0, a4, a4} + a4[3]`.
+/// Full-scale 15 → 0x100 (exactly 1.0).
+///
+/// Color interpolation uses the same shift+add reciprocal-multiply as BC1 (DD-039).
+///
+/// See: `texture_bc2.sv`, INT-014 (Format 1), DD-038, DD-039.
 pub struct Bc2Decoder;
+
+/// Expand a 4-bit alpha to 9-bit UQ1.8 via bit-replication + correction.
+///
+/// Formula: `(a4 << 4 | a4) + (a4 >> 3)`.
+/// Matches RTL: `{1'b0, a4, a4} + {8'b0, a4[3]}`.
+/// Full-scale 15 → 0x100 (exactly 1.0).
+fn ch4_to_uq18(a4: u16) -> UQ<1, 8> {
+    let val = ((a4 & 0xF) << 4 | (a4 & 0xF)) + ((a4 >> 3) & 1);
+    UQ::from_bits(val as u64)
+}
 
 impl TexelDecoder for Bc2Decoder {
     const BLOCK_SIZE_WORDS: u32 = 8;
 
-    fn decode_block(_raw: &[u16]) -> [TexelUq18; 16] {
-        // TODO: implement BC2 decoding
-        [TexelUq18::default(); 16]
+    fn decode_block(raw: &[u16]) -> [TexelUq18; 16] {
+        // ── Color block (words 4..7, BC1 4-color opaque mode forced) ──
+        let color0 = raw.get(4).copied().unwrap_or(0);
+        let color1 = raw.get(5).copied().unwrap_or(0);
+        let indices = raw.get(6).copied().unwrap_or(0) as u32
+            | (raw.get(7).copied().unwrap_or(0) as u32) << 16;
+
+        // Expand endpoints to UQ1.8.
+        let c0_r = ch5_to_uq18((color0 >> 11) & 0x1F);
+        let c0_g = ch6_to_uq18((color0 >> 5) & 0x3F);
+        let c0_b = ch5_to_uq18(color0 & 0x1F);
+        let c1_r = ch5_to_uq18((color1 >> 11) & 0x1F);
+        let c1_g = ch6_to_uq18((color1 >> 5) & 0x3F);
+        let c1_b = ch5_to_uq18(color1 & 0x1F);
+
+        // Build 4-entry color palette (always 4-color opaque mode).
+        let colors: [[UQ<1, 8>; 3]; 4] = [
+            [c0_r, c0_g, c0_b],
+            [c1_r, c1_g, c1_b],
+            [
+                UQ::from_bits(bc1_interp_13(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_13(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_13(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+            ],
+            [
+                UQ::from_bits(bc1_interp_23(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_23(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                UQ::from_bits(bc1_interp_23(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+            ],
+        ];
+
+        // ── Decode each texel ──
+        let mut block = [TexelUq18::default(); 16];
+        for (i, texel) in block.iter_mut().enumerate() {
+            // Alpha: 4-bit value from the alpha rows (words 0..3).
+            let row = i / 4;
+            let col = i % 4;
+            let alpha_word = raw.get(row).copied().unwrap_or(0);
+            let a4 = (alpha_word >> (col * 4)) & 0xF;
+
+            // Color: 2-bit index into the palette.
+            let ci = ((indices >> (i * 2)) & 0x3) as usize;
+            let rgb = colors[ci];
+
+            *texel = TexelUq18 {
+                r: rgb[0],
+                g: rgb[1],
+                b: rgb[2],
+                a: ch4_to_uq18(a4),
+            };
+        }
+        block
     }
 }
 
