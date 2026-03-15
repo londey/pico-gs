@@ -51,16 +51,20 @@ pub trait TexelDecoder {
 
 /// Expand an 8-bit UNORM channel to 9-bit UQ1.8.
 ///
-/// Replicates the MSB: `{ch8, ch8[7]}`.
-/// Full-scale 0xFF maps to 0x1FF which is clamped to 0x100 (= 1.0).
+/// Formula: `ch8 + (ch8 >> 7)`.
+/// This maps 0x00 → 0, 0xFF → 0x100 (exactly 1.0), with
+/// sub-LSB correction for the 255→256 range stretch.
 ///
 /// # RTL Implementation Notes
 ///
-/// Matches the RTL decoder expansion in `texture_rgba8888.sv`.
+/// RTL equivalent: `{1'b0, ch8} + {8'b0, ch8[7]}`.
+/// The previous RTL expansion `{ch8, ch8[7]}` was a UQ0.9 value
+/// (range [0, 511]) incorrectly fed into a UQ1.8 pipeline, producing
+/// ~2× overbright texels.
+/// See: DD-038, `texture_rgba8888.sv`.
 fn ch8_to_uq18(ch8: u16) -> UQ<1, 8> {
-    let expanded = ((ch8 & 0xFF) << 1) | ((ch8 >> 7) & 1);
-    // Clamp to UQ1.8 max (0x100 = 1.0).
-    UQ::from_bits(expanded.min(0x100) as u64)
+    let val = (ch8 & 0xFF) + ((ch8 >> 7) & 1);
+    UQ::from_bits(val as u64)
 }
 
 /// Expand a 5-bit channel to 9-bit UQ1.8 via MSB-replication + correction.
@@ -206,21 +210,120 @@ fn r8_to_uq18(val: u8) -> TexelUq18 {
     }
 }
 
-// ── BC1 decoder (stub) ──────────────────────────────────────────────────────
+// ── BC1 decoder ─────────────────────────────────────────────────────────────
 
 /// Decode BC1 (DXT1) texels (4 bpp, compressed).
 ///
-/// Not yet implemented — returns default (black transparent) texels.
+/// BC1 block structure (4 u16 words = 8 bytes, little-endian):
+///   - `raw[0]`: color0 (RGB565)
+///   - `raw[1]`: color1 (RGB565)
+///   - `raw[2..3]`: 32-bit index word (2 bits per texel, texel 0 = bits \[1:0\])
 ///
-/// See: `texture_bc1.sv`.
+/// Two modes determined by `color0` vs `color1` comparison:
+///   - `color0 > color1`: 4-color opaque mode.
+///     Palette = \[C0, C1, lerp(C0,C1,1/3), lerp(C0,C1,2/3)\], all A=opaque.
+///   - `color0 <= color1`: 3-color + transparent mode.
+///     Palette = \[C0, C1, lerp(C0,C1,1/2), transparent black\].
+///
+/// Interpolation uses shift+add reciprocal-multiply (DD-039, 0 DSP slices):
+///   - 1/3: `(2*C0 + C1 + 1) * 683 >> 11`
+///   - 2/3: `(C0 + 2*C1 + 1) * 683 >> 11`
+///   - 1/2: `(C0 + C1 + 1) >> 1`
+///
+/// Endpoints expanded to UQ1.8 before interpolation.
+///
+/// See: `texture_bc1.sv`, INT-014 (Format 0), DD-038, DD-039.
 pub struct Bc1Decoder;
+
+/// Interpolate 1/3 point: `(2*a + b + 1) * 683 >> 11`.
+///
+/// Matches RTL `sum13 * 683 >> 11` exactly for UQ1.8 operands.
+fn bc1_interp_13(a: u32, b: u32) -> u16 {
+    let sum = 2 * a + b + 1;
+    ((sum * 683) >> 11) as u16
+}
+
+/// Interpolate 2/3 point: `(a + 2*b + 1) * 683 >> 11`.
+fn bc1_interp_23(a: u32, b: u32) -> u16 {
+    let sum = a + 2 * b + 1;
+    ((sum * 683) >> 11) as u16
+}
+
+/// Interpolate 1/2 point: `(a + b + 1) >> 1`.
+fn bc1_interp_12(a: u32, b: u32) -> u16 {
+    ((a + b + 1) >> 1) as u16
+}
 
 impl TexelDecoder for Bc1Decoder {
     const BLOCK_SIZE_WORDS: u32 = 4;
 
-    fn decode_block(_raw: &[u16]) -> [TexelUq18; 16] {
-        // TODO: implement BC1 decoding
-        [TexelUq18::default(); 16]
+    fn decode_block(raw: &[u16]) -> [TexelUq18; 16] {
+        let color0 = raw.first().copied().unwrap_or(0);
+        let color1 = raw.get(1).copied().unwrap_or(0);
+        let indices = raw.get(2).copied().unwrap_or(0) as u32
+            | (raw.get(3).copied().unwrap_or(0) as u32) << 16;
+
+        let four_color_mode = color0 > color1;
+
+        // Expand endpoints to UQ1.8.
+        let c0_r = ch5_to_uq18((color0 >> 11) & 0x1F);
+        let c0_g = ch6_to_uq18((color0 >> 5) & 0x3F);
+        let c0_b = ch5_to_uq18(color0 & 0x1F);
+        let c1_r = ch5_to_uq18((color1 >> 11) & 0x1F);
+        let c1_g = ch6_to_uq18((color1 >> 5) & 0x3F);
+        let c1_b = ch5_to_uq18(color1 & 0x1F);
+
+        let opaque = UQ::<1, 8>::from_bits(0x100);
+
+        // Build 4-entry palette.
+        let p0 = TexelUq18 {
+            r: c0_r,
+            g: c0_g,
+            b: c0_b,
+            a: opaque,
+        };
+        let p1 = TexelUq18 {
+            r: c1_r,
+            g: c1_g,
+            b: c1_b,
+            a: opaque,
+        };
+
+        let (p2, p3) = if four_color_mode {
+            // 4-color opaque: 1/3 and 2/3 interpolation.
+            let p2 = TexelUq18 {
+                r: UQ::from_bits(bc1_interp_13(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                g: UQ::from_bits(bc1_interp_13(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                b: UQ::from_bits(bc1_interp_13(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+                a: opaque,
+            };
+            let p3 = TexelUq18 {
+                r: UQ::from_bits(bc1_interp_23(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                g: UQ::from_bits(bc1_interp_23(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                b: UQ::from_bits(bc1_interp_23(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+                a: opaque,
+            };
+            (p2, p3)
+        } else {
+            // 3-color + transparent: 1/2 interpolation, palette[3] = transparent black.
+            let p2 = TexelUq18 {
+                r: UQ::from_bits(bc1_interp_12(c0_r.to_bits() as u32, c1_r.to_bits() as u32) as u64),
+                g: UQ::from_bits(bc1_interp_12(c0_g.to_bits() as u32, c1_g.to_bits() as u32) as u64),
+                b: UQ::from_bits(bc1_interp_12(c0_b.to_bits() as u32, c1_b.to_bits() as u32) as u64),
+                a: opaque,
+            };
+            (p2, TexelUq18::default())
+        };
+
+        let palette = [p0, p1, p2, p3];
+
+        // Look up each texel's 2-bit index in the palette.
+        let mut block = [TexelUq18::default(); 16];
+        for (i, texel) in block.iter_mut().enumerate() {
+            let ci = ((indices >> (i * 2)) & 0x3) as usize;
+            *texel = palette[ci];
+        }
+        block
     }
 }
 
@@ -408,7 +511,8 @@ mod tests {
         let raw = [0x8080u16; 8];
         let block = R8Decoder::decode_block(&raw);
         for texel in &block {
-            // 0x80 → ch8_to_uq18 → (0x80 << 1) | 1 = 0x101 → clamped to 0x100
+            // 0x80 → ch8_to_uq18 → 0x80 + 1 = 0x81
+            assert_eq!(texel.r.to_bits(), 0x81, "R should be 0x81");
             assert_eq!(texel.r.to_bits(), texel.g.to_bits());
             assert_eq!(texel.r.to_bits(), texel.b.to_bits());
             assert_eq!(texel.a.to_bits(), 0x100, "A should be opaque");
