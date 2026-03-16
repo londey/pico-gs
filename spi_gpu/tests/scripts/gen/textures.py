@@ -288,6 +288,47 @@ def tile_image_rgba8888(pixels: List[List[int]],
     return words
 
 
+def tile_image_r8(values: List[List[int]],
+                  width: int, height: int) -> List[int]:
+    """Tile an R8 image into 4x4 block order as u16 words.
+
+    Each 4x4 block produces 8 u16 words (2 texels packed per word,
+    little-endian: low texel in [7:0], high texel in [15:8]).
+    Block iteration order: row-major blocks, row-major texels within each.
+
+    Args:
+        values: 2D array [y][x] of u8 grayscale values.
+        width: Image width (must be multiple of 4).
+        height: Image height (must be multiple of 4).
+
+    Returns:
+        List of u16 SDRAM words in block-sequential order.
+    """
+    assert width % 4 == 0 and height % 4 == 0
+    words: List[int] = []
+
+    for by in range(height // 4):
+        for bx in range(width // 4):
+            # Collect 16 texels in row-major order within block
+            texels: List[int] = []
+            for ly in range(4):
+                for lx in range(4):
+                    texels.append(values[by * 4 + ly][bx * 4 + lx] & 0xFF)
+            # Pack pairs into u16 words
+            for i in range(0, 16, 2):
+                words.append(texels[i] | (texels[i + 1] << 8))
+
+    return words
+
+
+def generate_skyline_256x256_r8(base_word: int) -> List[str]:
+    """Skyline texture atlas at native 256x256, R8 grayscale uncompressed."""
+    _, _, values = load_png_grayscale(SKYLINE_PNG)
+    words = tile_image_r8(values, 256, 256)
+    return emit_texture_words(base_word, words,
+                               "skyline_256x256 R8 (256x256, 8bpp)")
+
+
 def generate_skyline_256x256_rgba8888(base_word: int) -> List[str]:
     """Skyline texture atlas at native 256x256, RGBA8888 uncompressed."""
     _, _, pixels = load_png_rgba8888(SKYLINE_PNG)
@@ -325,6 +366,7 @@ TEXTURE_FILES = [
     ("skyline_256x256_bc2.hex", generate_skyline_256x256_bc2),
     ("skyline_256x256_bc3.hex", generate_skyline_256x256_bc3),
     ("skyline_256x256_bc4.hex", generate_skyline_256x256_bc4),
+    ("skyline_256x256_r8.hex", generate_skyline_256x256_r8),
     ("skyline_256x256_rgba8888.hex", generate_skyline_256x256_rgba8888),
     ("alpha_gradient_8x8_bc2.hex", generate_alpha_gradient_8x8_bc2),
     ("alpha_gradient_8x8_bc3.hex", generate_alpha_gradient_8x8_bc3),

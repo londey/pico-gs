@@ -347,3 +347,21 @@ fn ver_021_rgba8888_texture() {
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-021 golden image: {}", png_path.display());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-022: R8 Texture (single-channel grayscale uncompressed)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn ver_022_r8_texture() {
+    let png_path = dt_out_dir().join("ver_022_r8_texture.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let hex_path = scripts_dir().join("ver_022_r8_texture.hex");
+    let script = hex_parser::parse_hex_file(&hex_path).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+    gpu.reg_write_script(&script.all_commands());
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-022 golden image: {}", png_path.display());
+}

@@ -10,14 +10,14 @@ Internal
 
 The texture cache is a per-sampler cache architecture that stores decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel) to enable single-cycle bilinear filtering and reduce SDRAM bandwidth.
 Each of the 2 texture samplers maintains an independent cache to avoid inter-sampler contention.
-Each sampler has an 8,192-texel cache using PDPW16KD 512×36 EBR banks.
+Each sampler has a 4,096-texel cache (64 sets × 4 ways × 16 texels/line) using PDPW16KD 512×36 EBR banks (upper 256 entries unused).
 
 ### Details
 
 #### Format Field Width
 
 The `tex_format` signal that selects the decode path is a **4-bit field** (`[5:2]` of TEXn_FMT; see INT-010).
-Eight distinct values (0–7) are defined; values 8–15 are reserved.
+Seven formats are defined (0–3, 5–7); value 4 (formerly BC5) is reserved along with 8–15.
 The 4-bit width accommodates eight formats with room for future additions.
 
 #### Cache Line Format
@@ -53,53 +53,59 @@ See REQ-011.02 for the complete resource budget.
 **BC Division — shift+add reciprocal multiply:**
 All BC palette interpolation divisions (e.g., `(2*c0 + c1) / 3`, `(c0 + c1) / 2`) are implemented using shift+add reciprocal-multiply rather than Verilog `/` operators.
 This ensures deterministic LUT usage: no synthesizer-generated integer dividers are instantiated.
-The formulas are:
-- Division by 3: `x_div3 = (x * 11'h55) >> 8` (multiply by 85 = 0x55, shift 8; exact for x ≤ 255)
-- Division by 2: `x_div2 = x >> 1`
+The formulas are (see DD-039):
+
+- Division by 2: `x_div2 = (x + 1) >> 1`
+- Division by 3: `x_div3 = (x + 1) * 683 >> 11` (multiply by 0x2AB, shift 11; exact for sums ≤ 769)
+- Division by 5: `x_div5 = (x + 2) * 3277 >> 14` (BC3 6-entry alpha; exact for sums ≤ 1277)
+- Division by 7: `x_div7 = (x + 3) * 2341 >> 14` (BC3 8-entry alpha; exact for sums ≤ 1788)
 
 **Conversion from Source Formats (UQ1.8):**
 
-All source-format channel values are first decoded to 8-bit UNORM (values 0–255), then converted to UQ1.8 by appending a leading zero bit: `uq18 = {1'b0, unorm8}`.
-This maps UNORM 255 to UQ1.8 0xFF (≈1.0) and UNORM 0 to UQ1.8 0x00.
+All source-format channel values are decoded and expanded to 9-bit UQ1.8 using correction terms that map the maximum UNORM value to exactly 0x100 (1.0).
+The naive `{1'b0, unorm8}` mapping is **not used** because it maps 255 to 0xFF (≈0.996), failing to represent 1.0 exactly.
+See DD-038 for rationale.
+
+Channel expansion formulas (gs-twin is authoritative):
+
+- **8-bit → UQ1.8**: `ch8_to_uq18(x) = {1'b0, x[7:0]} + {8'b0, x[7]}` — maps 0→0x000, 255→0x100
+- **5-bit → UQ1.8**: `ch5_to_uq18(x) = {1'b0, x[4:0], x[4:2]} + {8'b0, x[4]}` — maps 0→0x000, 31→0x100
+- **6-bit → UQ1.8**: `ch6_to_uq18(x) = {1'b0, x[5:0], x[5:4]} + {8'b0, x[5]}` — maps 0→0x000, 63→0x100
+- **4-bit → UQ1.8** (BC2 alpha): `ch4_to_uq18(x) = {1'b0, x[3:0], x[3:0]} + {8'b0, x[3]}` — maps 0→0x000, 15→0x100
 
 **From BC1 (FORMAT=0):**
-- Expand each RGB565 endpoint to 8-bit using MSB replication: R8=`{R5,R5[4:2]}`, G8=`{G6,G6[5:3]}`, B8=`{B5,B5[4:2]}`
-- Interpolate palette at 8-bit precision using shift+add formulas
-- Store as UQ1.8: `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`
+
+- Expand each RGB565 endpoint to UQ1.8 using `ch5_to_uq18` (R, B) and `ch6_to_uq18` (G)
+- Interpolate palette at UQ1.8 precision using shift+add reciprocal-multiply (see BC Division above)
 - A: 1-bit punch-through: `0→9'h000` (transparent), `1→9'h100` (opaque)
 
 **From BC2 (FORMAT=1):**
-- RGB: decoded as BC1 color block above (8-bit precision)
-- A: 4-bit explicit alpha expanded to 8-bit: A8=`{A4, A4}`, stored as `{1'b0, A8}`
+
+- RGB: decoded as BC1 color block above
+- A: 4-bit explicit alpha expanded via `ch4_to_uq18`
 
 **From BC3 (FORMAT=2):**
-- RGB: decoded as BC1 color block above (8-bit precision)
-- A: 8-bit interpolated alpha (6 or 8-entry BC3 alpha palette at 8-bit precision), stored as `{1'b0, A8}`
+
+- RGB: decoded as BC1 color block above
+- A: 8-bit interpolated alpha (6 or 8-entry BC3 alpha palette), expanded via `ch8_to_uq18`
 
 **From BC4 (FORMAT=3):**
-- Decoded 8-bit single channel R8, replicated to G8=R8, B8=R8
-- A: `9'h100` (opaque)
-- Stored as `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`, `9'h100`
 
-**From BC5 (FORMAT=4):**
-
-- Two independent BC3-style single-channel alpha blocks packed sequentially in each 16-byte block: first 8 bytes decode the red channel (R8), next 8 bytes decode the green channel (G8)
-- Each 8-byte sub-block uses the BC3 alpha block encoding: two 8-bit endpoints followed by 6 bytes of 3-bit indices (FR-024-BC5)
-- B: `9'h000` (fixed zero), A: `9'h100` (opaque)
-- Stored as `{1'b0, R8}`, `{1'b0, G8}`, `9'h000`, `9'h100`
+- Decoded single channel via BC3 alpha interpolation, expanded via `ch8_to_uq18`
+- Replicated to R=G=B (grayscale); A=`9'h100` (opaque)
 
 **From RGB565 (FORMAT=5):**
 
-- Expand with MSB replication: R8=`{R5,R5[4:2]}`, G8=`{G6,G6[5:3]}`, B8=`{B5,B5[4:2]}`
-- Store as `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`, `9'h100` (opaque)
+- Expand channels via `ch5_to_uq18` (R, B) and `ch6_to_uq18` (G)
+- A=`9'h100` (opaque)
 
 **From RGBA8888 (FORMAT=6):**
 
-- Store directly as `{1'b0, R8}`, `{1'b0, G8}`, `{1'b0, B8}`, `{1'b0, A8}`
+- Each channel expanded via `ch8_to_uq18`
 
 **From R8 (FORMAT=7):**
 
-- Store as `{1'b0, R8}`, replicated to all three channels; A=`9'h100` (opaque)
+- Expanded via `ch8_to_uq18`, replicated to R=G=B; A=`9'h100` (opaque)
 
 **Onward Conversion to Q4.12:**
 
@@ -155,7 +161,7 @@ A sampler's cache is fully invalidated (all valid bits cleared) when texture con
 | `TEX1_CFG` (0x11) | Sampler 1 cache | Texture configuration changed |
 
 **Invalidation Behavior:**
-- Clears all valid bits for the affected sampler (512 cache lines)
+- Clears all valid bits for the affected sampler (256 cache lines)
 - No explicit flush register required (implicit invalidation only)
 - Next texture access after invalidation is guaranteed cache miss
 - Stale data is never served after configuration change
@@ -179,7 +185,6 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
 | BC2      | 1           | 8         | 16    | 128-bit BC2 block                              |
 | BC3      | 2           | 8         | 16    | 128-bit BC3 block                              |
 | BC4      | 3           | 4         | 8     | 64-bit BC4 block                               |
-| BC5      | 4           | 8         | 16    | 128-bit BC5 block (two 8-byte sub-blocks)      |
 | RGB565   | 5           | 16        | 32    | 16 × 16-bit pixels                             |
 | RGBA8888 | 6           | 32        | 64    | 16 × 32-bit pixels                             |
 | R8       | 7           | 8         | 16    | 16 × 8-bit pixels (packed two per 16-bit word) |
@@ -191,7 +196,7 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
 
 **Cache Fill Latency (at 100 MHz `clk_core`):**
 - BC1/BC4: ~11 cycles / 110 ns (ACTIVATE + tRCD + READ + CL=3 latency + 4 burst data cycles)
-- BC2/BC3/BC5/R8: ~19 cycles / 190 ns (8 burst data cycles)
+- BC2/BC3/R8: ~19 cycles / 190 ns (8 burst data cycles)
 - RGB565: ~23 cycles / 230 ns (16 burst data cycles)
 - RGBA8888: ~39 cycles / 390 ns (32 burst data cycles)
 
@@ -201,7 +206,7 @@ When consecutive cache fills target the same SDRAM row (common for spatially adj
 Note: The texture cache and SDRAM controller share the same 100 MHz clock domain, so cache fill SDRAM reads are synchronous single-domain transactions with no CDC overhead.
 
 **Replacement Policy:**
-- Pseudo-LRU per set (128 sets, each with 4 ways)
+- Pseudo-LRU per set (64 sets, each with 4 ways)
 - Avoids thrashing for sequential access patterns (e.g., horizontal scanline sweeps)
 
 #### Set Indexing (XOR Folding)
@@ -211,16 +216,17 @@ Cache set index is computed using XOR-folded addressing to distribute spatially 
 ```
 block_x = pixel_x >> 2
 block_y = pixel_y >> 2
-set = (block_x[7:0] ^ block_y[7:0])  // XOR of low 8 bits → 256 sets
+set = (block_x[5:0] ^ block_y[5:0])  // XOR of low 6 bits → 64 sets
 ```
 
 **Rationale:** XOR indexing distributes adjacent blocks across different sets, avoiding the systematic aliasing that arises from linear indexing when texture rows map to the same set indices.
 
 **Properties:**
+
 - Vertically adjacent blocks map to different cache sets
 - Horizontally adjacent blocks map to different cache sets
 - No systematic aliasing patterns for typical texture access
-- 256 sets covers a 256×256 texel area (128×128 in 4×4 blocks), providing excellent coverage for typical texture sizes
+- 64 sets covers a 64×64 block area (256×256 texels), providing good coverage for typical texture sizes
 
 #### Cache Address Space
 
@@ -229,16 +235,18 @@ Each cache line is identified by:
   - Texture base address: `tex_cfg.BASE_ADDR` (from TEX0_CFG/TEX1_CFG register)
   - Mipmap level: `mip_level[3:0]` (0-15); derived from the rasterizer-supplied `frag_lod` (UQ4.4, 8-bit: integer mip level in bits [7:4], trilinear blend fraction in bits [3:0]) after UNIT-006 applies the TEXn_MIP_BIAS offset; the 4-bit integer portion maps directly to `mip_level[3:0]`
   - Block address: Computed from UV coordinates and mip level
-- **Set:** 8-bit index (0-255) from XOR-folded block coordinates
+- **Set:** 6-bit index (0-63) from XOR-folded block coordinates
 - **Way:** 2-bit index (0-3) for 4-way set associativity
 
 **Total Cache Capacity per Sampler**:
-- 512 cache lines × 16 texels/line = 8,192 texels (~90×90 texture equivalent)
-- 512 lines × 36 bits/texel × 16 texels = 36,864 bytes = 36 KB per sampler (72 KB total)
+
+- 256 cache lines × 16 texels/line = 4,096 texels (~64×64 texture equivalent)
+- 256 lines × 36 bits/texel × 16 texels = 18,432 bytes = 18 KB per sampler (36 KB total)
 
 **EBR Usage per Sampler**:
 
 - PDPW16KD 512×36: 4 bilinear banks × 4 EBR blocks each = 16 EBR blocks per sampler; 32 EBR total for 2 samplers
+- Each 512×36 bank stores 64 sets × 4 ways × 1 texel = 256 entries; the upper 256 entries of each 512-deep primitive are unused.
 
 **EBR Budget Note**: The ECP5-25K provides 56 EBR blocks total.
 The texture cache uses 32 EBR (2 samplers × 16 EBR), consuming 57% of available EBR.
@@ -248,13 +256,13 @@ See REQ-011.02 for the complete resource budget.
 ## Constraints
 
 - Maximum 2 texture samplers (0-1)
-- 8,192 texels per sampler cache
+- 4,096 texels per sampler cache (64 sets × 4 ways × 16 texels/line)
 - Cache line size fixed at 4×4 texels (16 texels)
 - Cache line format (UQ1.8) is internal to cache (not exposed to firmware)
 - Cache is write-through (texture writes not supported)
 - Cache is non-coherent (invalidation required on texture change via TEXn_CFG write)
 - RGBA8888 and R8 formats incur the highest fill latency due to larger burst sizes; prefer compressed formats for performance-sensitive textures
-- The format-select mux in the pixel pipeline routes the SDRAM burst data to the appropriate decoder module (one of seven standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_bc5.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[3:0]` (INT-010 TEXn_FMT bits [5:2])
+- The format-select mux in the pixel pipeline routes the SDRAM burst data to the appropriate decoder module (one of six standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[3:0]` (INT-010 TEXn_FMT bits [5:2])
 - BC palette interpolation uses shift+add reciprocal-multiply (not Verilog `/`) for deterministic synthesis; see BC Division note in UQ1.8 format section
 
 ## Notes
@@ -266,7 +274,7 @@ The 4×4 block-tiled layout in SDRAM (INT-014) remains unchanged.
 
 ### Alpha Precision
 
-Alpha is stored at 9-bit UQ1.8 precision (8-bit UNORM with a leading zero bit), preserving the full decoder output precision for all source formats including BC2 (4-bit explicit alpha expanded to 8-bit) and BC3 (8-bit interpolated alpha).
+Alpha is stored at 9-bit UQ1.8 precision using the same correction-term expansion as color channels (see channel expansion formulas above), preserving the full decoder output precision for all source formats including BC2 (4-bit explicit alpha via `ch4_to_uq18`) and BC3 (8-bit interpolated alpha via `ch8_to_uq18`).
 
 ### Cache Coherency
 
@@ -290,6 +298,6 @@ DD-040 (switchable 18/36-bit cache mode) has been superseded; the cache now uses
 ### Verification
 
 - **VER-005** (`texture_decoder_tb`): Unit testbench verifying texture decoders produce correct UQ1.8 output.
-  Tests all eight source formats (BC1–BC5, RGB565, RGBA8888, R8) and confirms correct encoding per the conversion table above.
+  Tests all seven source formats (BC1–BC4, RGB565, RGBA8888, R8) and confirms correct encoding per the conversion table above.
 - **VER-012** (Textured triangle golden image test): Integration test exercising the full cache + decode + sample path.
   The integration simulation harness must model (or stub) the SDRAM miss-handling protocol defined in the Cache Miss Handling Protocol section above, including correct burst lengths per format and the IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE fill FSM.

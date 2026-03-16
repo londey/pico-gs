@@ -32,6 +32,7 @@ import ver_018
 import ver_019
 import ver_020
 import ver_021
+import ver_022
 
 
 GENERATORS = [
@@ -47,6 +48,7 @@ GENERATORS = [
     ("ver_019_bc3_texture.hex", ver_019),
     ("ver_020_bc4_texture.hex", ver_020),
     ("ver_021_rgba8888_texture.hex", ver_021),
+    ("ver_022_r8_texture.hex", ver_022),
 ]
 
 

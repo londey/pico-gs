@@ -47,6 +47,24 @@ mod scripts {
 
     /// VER-016: Perspective road with checker texture.
     pub const VER_016: &str = include_str!("../../../tests/scripts/ver_016_perspective_road.hex");
+
+    /// VER-017: BC1 compressed texture.
+    pub const VER_017: &str = include_str!("../../../tests/scripts/ver_017_bc1_texture.hex");
+
+    /// VER-018: BC2 compressed texture (explicit alpha).
+    pub const VER_018: &str = include_str!("../../../tests/scripts/ver_018_bc2_texture.hex");
+
+    /// VER-019: BC3 compressed texture (interpolated alpha).
+    pub const VER_019: &str = include_str!("../../../tests/scripts/ver_019_bc3_texture.hex");
+
+    /// VER-020: BC4 compressed texture (single-channel grayscale).
+    pub const VER_020: &str = include_str!("../../../tests/scripts/ver_020_bc4_texture.hex");
+
+    /// VER-021: RGBA8888 uncompressed texture.
+    pub const VER_021: &str = include_str!("../../../tests/scripts/ver_021_rgba8888_texture.hex");
+
+    /// VER-022: R8 uncompressed texture (single-channel grayscale).
+    pub const VER_022: &str = include_str!("../../../tests/scripts/ver_022_r8_texture.hex");
 }
 
 /// Top-level CLI argument parser.
@@ -134,8 +152,19 @@ fn parse_pixel_coord(s: &str) -> std::result::Result<(u16, u16), String> {
 /// # Errors
 ///
 /// Returns an error if the hex script cannot be parsed.
+/// Base directory for resolving `## INCLUDE:` directives in embedded scripts.
+fn scripts_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tests/scripts")
+}
+
 fn render_hex_scene(hex_content: &str, gpu: &mut gs_twin::Gpu) -> Result<()> {
-    let script = hex_parser::parse_hex_str(hex_content)
+    let base = scripts_dir();
+    let script = hex_parser::parse_hex_str_with_base(hex_content, Some(&base))
         .map_err(|e| anyhow::anyhow!("hex parse error: {e}"))?;
 
     // Use framebuffer dimensions from hex file if available
@@ -189,10 +218,26 @@ fn main() -> Result<()> {
                 "ver_016" => {
                     render_hex_scene(scripts::VER_016, &mut gpu)?;
                 }
+                "ver_017" => {
+                    render_hex_scene(scripts::VER_017, &mut gpu)?;
+                }
+                "ver_018" => {
+                    render_hex_scene(scripts::VER_018, &mut gpu)?;
+                }
+                "ver_019" => {
+                    render_hex_scene(scripts::VER_019, &mut gpu)?;
+                }
+                "ver_020" => {
+                    render_hex_scene(scripts::VER_020, &mut gpu)?;
+                }
+                "ver_021" => {
+                    render_hex_scene(scripts::VER_021, &mut gpu)?;
+                }
+                "ver_022" => {
+                    render_hex_scene(scripts::VER_022, &mut gpu)?;
+                }
                 other => {
-                    anyhow::bail!(
-                        "unknown scene: {other}\navailable: ver_010, ver_011, ver_012, ver_013, ver_014, ver_015, ver_016"
-                    )
+                    anyhow::bail!("unknown scene: {other}\navailable: ver_010..ver_022")
                 }
             };
 
