@@ -11,8 +11,6 @@ pub enum TexFormatE {
     Bc3 = 2,
     /// 4 bpp, 64 bits per 4x4 block, single channel
     Bc4 = 3,
-    /// 8 bpp, 128 bits per 4x4 block, two-channel RG
-    Bc5 = 4,
     /// 16 bpp, 5-6-5 uncompressed, 4x4 tiled
     Rgb565 = 5,
     /// 32 bpp, 8-8-8-8 uncompressed, 4x4 tiled
@@ -32,7 +30,6 @@ impl TexFormatE {
             1 => Ok(Self::Bc2),
             2 => Ok(Self::Bc3),
             3 => Ok(Self::Bc4),
-            4 => Ok(Self::Bc5),
             5 => Ok(Self::Rgb565),
             6 => Ok(Self::Rgba8888),
             7 => Ok(Self::R8),

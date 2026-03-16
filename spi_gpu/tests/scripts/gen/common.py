@@ -211,7 +211,7 @@ def pack_tex0_cfg(enable: int, filt: int, fmt: int,
     return (
         (enable & 0x1) |
         ((filt & 0x3) << 2) |
-        ((fmt & 0x7) << 4) |
+        ((fmt & 0xF) << 4) |
         ((width_log2 & 0xF) << 8) |
         ((height_log2 & 0xF) << 12) |
         ((u_wrap & 0x3) << 16) |

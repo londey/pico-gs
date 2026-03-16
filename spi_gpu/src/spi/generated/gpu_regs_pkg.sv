@@ -589,7 +589,6 @@ package gpu_regs_pkg;
         tex_format_e__BC2 = 'h1,
         tex_format_e__BC3 = 'h2,
         tex_format_e__BC4 = 'h3,
-        tex_format_e__BC5 = 'h4,
         tex_format_e__RGB565 = 'h5,
         tex_format_e__RGBA8888 = 'h6,
         tex_format_e__R8 = 'h7

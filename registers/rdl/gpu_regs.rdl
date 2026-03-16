@@ -50,7 +50,6 @@ enum tex_format_e {
     BC2        = 4'd1 { desc = "8 bpp, 128 bits per 4x4 block, explicit alpha"; };
     BC3        = 4'd2 { desc = "8 bpp, 128 bits per 4x4 block, interpolated alpha"; };
     BC4        = 4'd3 { desc = "4 bpp, 64 bits per 4x4 block, single channel"; };
-    BC5        = 4'd4 { desc = "8 bpp, 128 bits per 4x4 block, two-channel RG"; };
     RGB565     = 4'd5 { desc = "16 bpp, 5-6-5 uncompressed, 4x4 tiled"; };
     RGBA8888   = 4'd6 { desc = "32 bpp, 8-8-8-8 uncompressed, 4x4 tiled"; };
     R8         = 4'd7 { desc = "8 bpp, single channel, 4x4 tiled"; };

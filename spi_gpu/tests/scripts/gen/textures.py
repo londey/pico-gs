@@ -258,6 +258,7 @@ def generate_skyline_256x256_bc4(base_word: int) -> List[str]:
                                "skyline_256x256 BC4 (256x256, 4bpp)")
 
 
+
 def tile_image_rgba8888(pixels: List[List[int]],
                        width: int, height: int) -> List[int]:
     """Tile an RGBA8888 image into 4x4 block order as u16 words.
