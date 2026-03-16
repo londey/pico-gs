@@ -35,8 +35,8 @@ def generate() -> list[str]:
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 480),
                        "scissor x=0 y=0 w=512 h=480"))
 
-    # TEX0_CFG: ENABLE=1, NEAREST, BC3 (format 2), 256x256, REPEAT, 0 mips
-    tex_cfg = pack_tex0_cfg(1, 0, 2, 8, 8, 0, 0, 0, TEX_SLOT_0_512)
+    # TEX0_CFG: ENABLE=1, NEAREST, BC3, 256x256, REPEAT, 0 mips
+    tex_cfg = pack_tex0_cfg(1, 0, TEX_FMT_BC3, 8, 8, 0, 0, 0, TEX_SLOT_0_512)
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
                        "ENABLE=1 NEAREST BC3 256x256 REPEAT base=0x%04X"
                        % TEX_SLOT_0_512))

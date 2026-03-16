@@ -143,8 +143,8 @@ def _setup_phase() -> list[str]:
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
 
-    # filt=1 (BILINEAR), fmt=4 (RGB565), width_log2=6, height_log2=6
-    tex_cfg = pack_tex0_cfg(1, 1, 4, TEX_LOG2, TEX_LOG2, 0, 0, 0,
+    # filt=1 (BILINEAR), fmt=RGB565, width_log2=6, height_log2=6
+    tex_cfg = pack_tex0_cfg(1, 1, TEX_FMT_RGB565, TEX_LOG2, TEX_LOG2, 0, 0, 0,
                             TEX0_BASE_ADDR_512)
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
                        f"ENABLE=1 BILINEAR RGB565 {1 << TEX_LOG2}x"

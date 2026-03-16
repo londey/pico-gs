@@ -39,7 +39,7 @@ def generate() -> list[str]:
                        "scissor x=0 y=0 w=512 h=512"))
 
     # TEX0_CFG: ENABLE=1, NEAREST, RGB565, 16x16, REPEAT, 0 mips
-    tex_cfg = pack_tex0_cfg(1, 0, 4, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
+    tex_cfg = pack_tex0_cfg(1, 0, TEX_FMT_RGB565, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
                        "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800"))
 
