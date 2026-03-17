@@ -1,15 +1,8 @@
-//! Compressed texture data cache — DT-only optimization layer.
+//! Compressed texture data cache.
 //!
 //! Caches raw (compressed or uncompressed) SDRAM block data before decoding,
 //! avoiding redundant SDRAM reads when the same compressed block is accessed
 //! by multiple bilinear taps or mip levels.
-//!
-//! # DT-only
-//!
-//! This layer has **no RTL analog** — the RTL reads compressed data directly
-//! from SDRAM during each cache fill.
-//! It exists purely to explore potential future RTL optimizations and to
-//! reduce DT simulation overhead.
 
 /// Provide raw compressed/uncompressed block data from SDRAM, with caching.
 ///

@@ -5,13 +5,14 @@
 - `./build.sh --check` must pass after every change (Verilator lint, cargo fmt, cargo check, cargo clippy).
 - Minimize blast radius: only change code directly related to the current task. If you notice problems in other areas, mention them but don't fix them without approval.
 - `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
-- `spi_gpu/dt/gs-twin/` is the authoritative detailed design for the pixel pipeline; read the corresponding gs-twin module before modifying RTL in `spi_gpu/src/render/`.
+- `spi_gpu/dt/gs-twin/` is the authoritative detailed design for the pico-gpu and is intended as a bit accurate transactional model of the GPU's behaviour to be used as referent when implementing and verifying the RTL.
 - `registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `registers/scripts/generate.sh` is what code must reference for register values and constants.
 - All code follows its respective style guide:
   - SystemVerilog: `.claude/skills/claude-skill-verilog/SKILL.md`
   - Rust: `.claude/skills/claude-skill-rust/SKILL.md`
   - C++: `.claude/skills/claude-skill-cpp/SKILL.md`
 - ICEpi Zero board documentation lives in `external/icepi-zero/`; always consult this directory before searching the web.
+- Keep code comments local: describe what *this* code does and why, not the implementation status of other components. Cross-component relationships and RTL vs DT implementation status belong in specs and architecture docs, not in source comments.
 
 ## Project Structure
 

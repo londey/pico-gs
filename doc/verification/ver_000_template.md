@@ -60,6 +60,8 @@ For automated tests, describe what the test does at a level useful for understan
 - `<test filepath>`: <description of what this test file does>
 
 List all test source files that implement this verification.
+Each test file listed here should contain a `Ver-ref` comment pointing back to this document.
+See `.syskit/ref/ver-ref.md` for the Ver-ref format and workflow.
 
 ## Notes
 
