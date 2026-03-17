@@ -30,6 +30,7 @@ use qfixed::Q;
 
 use super::fragment::{ColorQ412, RasterFragment, TexturedFragment};
 use super::tex_cache::CacheStats;
+use super::tex_compressed::L2CacheStats;
 use super::tex_fetch::{BlockFetcher, ConcreteFetcher};
 use super::tex_filter::{BilinearBlender, SampleGatherer, StandardBlender, StandardGatherer};
 pub use super::texel::TexelUq18;
@@ -115,10 +116,16 @@ impl TextureSampler {
         self.cfg
     }
 
-    /// Return cache statistics for diagnostics.
+    /// Return L1 decoded cache statistics for diagnostics.
     #[must_use]
     pub fn cache_stats(&self) -> &CacheStats {
         self.fetcher.cache_stats()
+    }
+
+    /// Return L2 compressed cache statistics for diagnostics.
+    #[must_use]
+    pub fn l2_cache_stats(&self) -> &L2CacheStats {
+        self.fetcher.l2_stats()
     }
 
     /// Return the current configuration, if any.

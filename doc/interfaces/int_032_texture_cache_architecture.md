@@ -8,9 +8,16 @@ Internal
 
 ### Overview
 
-The texture cache is a per-sampler cache architecture that stores decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel) to enable single-cycle bilinear filtering and reduce SDRAM bandwidth.
-Each of the 2 texture samplers maintains an independent cache to avoid inter-sampler contention.
-Each sampler has a 4,096-texel cache (64 sets × 4 ways × 16 texels/line) using PDPW16KD 512×36 EBR banks (upper 256 entries unused).
+The texture cache is a per-sampler, two-level cache architecture that reduces SDRAM bandwidth and enables single-cycle bilinear filtering.
+Each of the 2 texture samplers maintains an independent two-level cache to avoid inter-sampler contention.
+
+- **L1 (Decoded):** 2,048-texel cache (32 sets × 4 ways × 16 texels/line) storing decompressed 4×4 blocks in UQ1.8 format (36 bits per texel).
+  4 PDPW16KD 512×36 banks per sampler (4 EBR per sampler, all 512 entries utilized).
+- **L2 (Compressed):** 1,024 × 64-bit entry cache storing raw compressed/uncompressed block data.
+  4 DP16KD 1024×16 banks per sampler (4 EBR per sampler).
+  Format-aware packing: 1024 BC1 blocks, 512 BC3, 256 RGB565, or 128 RGBA8888.
+
+Total: 8 EBR per sampler, 16 EBR for 2 samplers.
 
 ### Details
 
@@ -47,7 +54,8 @@ The extra headroom above 1.0 is unused for UNORM source data but reserved for po
 - 36-bit width matches ECP5 PDPW16KD pseudo-dual-port primitive in 512×36 mode
 - Preferred mode for BC-compressed and RGBA8888 textures where decoding produces 8-bit channel values
 
-**EBR note:** PDPW16KD in 512×36 mode uses 4 EBR per bank (4 banks per sampler = 16 EBR per sampler, 32 EBR for 2 samplers).
+**L1 EBR note:** 4 PDPW16KD 512×36 banks per sampler = 4 EBR per sampler (8 EBR for 2 samplers).
+Each bank stores 128 lines × 4 texels = 512 entries, fully utilizing the 512-deep primitive.
 See REQ-011.02 for the complete resource budget.
 
 **BC Division — shift+add reciprocal multiply:**
@@ -161,9 +169,9 @@ A sampler's cache is fully invalidated (all valid bits cleared) when texture con
 | `TEX1_CFG` (0x11) | Sampler 1 cache | Texture configuration changed |
 
 **Invalidation Behavior:**
-- Clears all valid bits for the affected sampler (256 cache lines)
+- Clears all valid bits for the affected sampler's L1 (128 cache lines) and L2 caches
 - No explicit flush register required (implicit invalidation only)
-- Next texture access after invalidation is guaranteed cache miss
+- Next texture access after invalidation is guaranteed L1 + L2 miss
 - Stale data is never served after configuration change
 
 **Cross-Sampler Independence:**
@@ -172,29 +180,50 @@ A sampler's cache is fully invalidated (all valid bits cleared) when texture con
 
 #### Cache Miss Handling Protocol
 
-On cache miss, the pixel pipeline stalls and executes the following cache fill sequence:
+On L1 cache miss, the pipeline checks L2 before falling through to SDRAM:
+
+```text
+Pixel needs texel → L1 lookup
+  → L1 hit: return 4 texels from 4 banks (single cycle bilinear quad)
+  → L1 miss: L2 lookup
+    → L2 hit: decompress 4×4 block → fill L1 → return
+    → L2 miss: SDRAM burst → fill L2 → decompress → fill L1 → return
+```
+
+**L1 Miss / L2 Hit (fast path):**
+
+1. **Stall Pipeline:** No pixel output until fill completes
+2. **L2 Read:** Read compressed block from L2 backing store (format-aware entry count)
+3. **Decompression/Conversion:** Transform source format to UQ1.8 per channel (see conversion table above)
+4. **L1 Bank Write:** Write 16 decompressed texels to 4 interleaved L1 EBR banks
+5. **L1 Replacement:** Select victim way using pseudo-LRU policy (per set)
+6. **Resume Pipeline:** Output requested texels and continue processing
+
+**L1 Miss / L2 Miss (SDRAM path):**
 
 1. **Stall Pipeline:** No pixel output until fill completes
 2. **SDRAM Burst Read Request:** Issue a burst read to UNIT-007 (Memory Arbiter) with:
    - **Start address:** Computed block address in SDRAM (from INT-014 layout, 4×4 block-tiled)
    - **Burst length (`burst_len`):** Number of sequential 16-bit words to read
 
-| Format   | FORMAT code | burst_len | Bytes | Reason                                         |
-|----------|-------------|-----------|-------|------------------------------------------------|
-| BC1      | 0           | 4         | 8     | 64-bit BC1 block                               |
-| BC2      | 1           | 8         | 16    | 128-bit BC2 block                              |
-| BC3      | 2           | 8         | 16    | 128-bit BC3 block                              |
-| BC4      | 3           | 4         | 8     | 64-bit BC4 block                               |
-| RGB565   | 5           | 16        | 32    | 16 × 16-bit pixels                             |
-| RGBA8888 | 6           | 32        | 64    | 16 × 32-bit pixels                             |
-| R8       | 7           | 8         | 16    | 16 × 8-bit pixels (packed two per 16-bit word) |
+| Format   | FORMAT code | burst_len | Bytes | L2 entries | Reason                                        |
+|----------|-------------|-----------|-------|------------|-----------------------------------------------|
+| BC1      | 0           | 4         | 8     | 1          | 64-bit BC1 block                              |
+| BC2      | 1           | 8         | 16    | 2          | 128-bit BC2 block                             |
+| BC3      | 2           | 8         | 16    | 2          | 128-bit BC3 block                             |
+| BC4      | 3           | 4         | 8     | 1          | 64-bit BC4 block                              |
+| RGB565   | 5           | 16        | 32    | 4          | 16 × 16-bit pixels                            |
+| RGBA8888 | 6           | 32        | 64    | 8          | 16 × 32-bit pixels                            |
+| R8       | 7           | 8         | 16    | 2          | 16 × 8-bit pixels (packed two per 16-bit word)|
 
-3. **Decompression/Conversion:** Transform source format to UQ1.8 per channel (see conversion table above)
-4. **Bank Write:** Write 16 decompressed texels to 4 interleaved EBR banks
-5. **Replacement:** Select victim way using pseudo-LRU policy (per set)
-6. **Resume Pipeline:** Output requested texels and continue processing
+3. **L2 Fill:** Pack SDRAM burst data into L2 backing store (4 u16 words per u64 entry, little-endian)
+4. **Decompression/Conversion:** Transform source format to UQ1.8 per channel
+5. **L1 Bank Write:** Write 16 decompressed texels to 4 interleaved L1 EBR banks
+6. **L1 Replacement:** Select victim way using pseudo-LRU policy (per set)
+7. **Resume Pipeline:** Output requested texels and continue processing
 
-**Cache Fill Latency (at 100 MHz `clk_core`):**
+**SDRAM Fill Latency (at 100 MHz `clk_core`):**
+
 - BC1/BC4: ~11 cycles / 110 ns (ACTIVATE + tRCD + READ + CL=3 latency + 4 burst data cycles)
 - BC2/BC3/R8: ~19 cycles / 190 ns (8 burst data cycles)
 - RGB565: ~23 cycles / 230 ns (16 burst data cycles)
@@ -203,20 +232,21 @@ On cache miss, the pixel pipeline stalls and executes the following cache fill s
 **Note on SDRAM burst latency:**
 When consecutive cache fills target the same SDRAM row (common for spatially adjacent texture blocks), the row activation can be skipped, reducing fill latency toward the CAS-only baseline.
 
-Note: The texture cache and SDRAM controller share the same 100 MHz clock domain, so cache fill SDRAM reads are synchronous single-domain transactions with no CDC overhead.
+The texture cache and SDRAM controller share the same 100 MHz clock domain, so cache fill SDRAM reads are synchronous single-domain transactions with no CDC overhead.
 
-**Replacement Policy:**
-- Pseudo-LRU per set (64 sets, each with 4 ways)
+**L1 Replacement Policy:**
+
+- Pseudo-LRU per set (32 sets, each with 4 ways)
 - Avoids thrashing for sequential access patterns (e.g., horizontal scanline sweeps)
 
-#### Set Indexing (XOR Folding)
+#### L1 Set Indexing (XOR Folding)
 
-Cache set index is computed using XOR-folded addressing to distribute spatially adjacent blocks across different cache sets:
+L1 cache set index is computed using XOR-folded addressing to distribute spatially adjacent blocks across different cache sets:
 
 ```
 block_x = pixel_x >> 2
 block_y = pixel_y >> 2
-set = (block_x[5:0] ^ block_y[5:0])  // XOR of low 6 bits → 64 sets
+set = (block_x[4:0] ^ block_y[4:0])  // XOR of low 5 bits → 32 sets
 ```
 
 **Rationale:** XOR indexing distributes adjacent blocks across different sets, avoiding the systematic aliasing that arises from linear indexing when texture rows map to the same set indices.
@@ -226,50 +256,91 @@ set = (block_x[5:0] ^ block_y[5:0])  // XOR of low 6 bits → 64 sets
 - Vertically adjacent blocks map to different cache sets
 - Horizontally adjacent blocks map to different cache sets
 - No systematic aliasing patterns for typical texture access
-- 64 sets covers a 64×64 block area (256×256 texels), providing good coverage for typical texture sizes
+- 32 sets covers a 32×32 block area (128×128 texels); the L2 backstop ensures L1 misses are fast
 
-#### Cache Address Space
+#### L1 Cache Address Space
 
-Each cache line is identified by:
+Each L1 cache line is identified by:
+
 - **Tag:** Unique identifier for the 4×4 block
   - Texture base address: `tex_cfg.BASE_ADDR` (from TEX0_CFG/TEX1_CFG register)
   - Mipmap level: `mip_level[3:0]` (0-15); derived from the rasterizer-supplied `frag_lod` (UQ4.4, 8-bit: integer mip level in bits [7:4], trilinear blend fraction in bits [3:0]) after UNIT-006 applies the TEXn_MIP_BIAS offset; the 4-bit integer portion maps directly to `mip_level[3:0]`
-  - Block address: Computed from UV coordinates and mip level
-- **Set:** 6-bit index (0-63) from XOR-folded block coordinates
+  - Block address: Computed from UV coordinates and mip level (bits above the 5-bit set index)
+- **Set:** 5-bit index (0-31) from XOR-folded block coordinates
 - **Way:** 2-bit index (0-3) for 4-way set associativity
 
-**Total Cache Capacity per Sampler**:
+**L1 Capacity per Sampler**:
 
-- 256 cache lines × 16 texels/line = 4,096 texels (~64×64 texture equivalent)
-- 256 lines × 36 bits/texel × 16 texels = 18,432 bytes = 18 KB per sampler (36 KB total)
+- 128 cache lines × 16 texels/line = 2,048 texels (~45×45 texture equivalent)
+- 128 lines × 36 bits/texel × 16 texels = 9,216 bytes = 9 KB per sampler (18 KB total)
 
-**EBR Usage per Sampler**:
+**L1 EBR Usage per Sampler**:
 
-- PDPW16KD 512×36: 4 bilinear banks × 4 EBR blocks each = 16 EBR blocks per sampler; 32 EBR total for 2 samplers
-- Each 512×36 bank stores 64 sets × 4 ways × 1 texel = 256 entries; the upper 256 entries of each 512-deep primitive are unused.
+- 4 PDPW16KD 512×36 bilinear banks = 4 EBR per sampler; 8 EBR total for 2 samplers
+- Each bank stores 128 lines × 4 texels/bank = 512 entries (fully utilized)
+- Bank address: `{cache_line_index[6:0], texel_within_bank[1:0]}` = 9 bits → 512 entries
 
-**EBR Budget Note**: The ECP5-25K provides 56 EBR blocks total.
-The texture cache uses 32 EBR (2 samplers × 16 EBR), consuming 57% of available EBR.
-Combined with other EBR consumers (1 dither, 1 LUT, 1 scanline FIFO, 2 command FIFO = 5 EBR), the total is 37 EBR out of 56, leaving 19 EBR free.
+#### L2 Compressed Block Cache
+
+The L2 cache stores raw compressed/uncompressed SDRAM block data, avoiding SDRAM round-trips when the same block is needed again after L1 eviction.
+
+**EBR Geometry:** 4 × DP16KD 1024×16 = 1024 × 64-bit entries per sampler (4 EBR per sampler).
+
+**Format-Aware Packing:**
+
+Each texture format occupies a different number of 64-bit entries per 4×4 block.
+Block data is packed as 4 u16 words per u64 entry (little-endian).
+
+| Format   | Entries/block | Capacity (blocks) | Notes                           |
+|----------|---------------|-------------------|---------------------------------|
+| BC1      | 1             | 1024              | 128×128 texture fits entirely   |
+| BC4      | 1             | 1024              | 128×128 texture fits entirely   |
+| BC2      | 2             | 512               | 128×128 at 50%                  |
+| BC3      | 2             | 512               | 128×128 at 50%                  |
+| R8       | 2             | 512               | 128×128 at 50%                  |
+| RGB565   | 4             | 256               | 64×64 texture fits entirely     |
+| RGBA8888 | 8             | 128               | 45×45 texture fits entirely     |
+
+**L2 Addressing:**
+
+Direct-mapped with format-dependent slot count:
+
+```text
+entries_per_block = {BC1: 1, BC4: 1, BC2: 2, BC3: 2, R8: 2, RGB565: 4, RGBA8888: 8}
+num_slots = 1024 / entries_per_block
+slot = (base_words ^ block_index) % num_slots
+data_base = slot * entries_per_block
+```
+
+**L2 Tag:** `(base_words, block_index)` per slot, with a valid bit.
+
+#### EBR Budget
+
+**Total EBR per Sampler:** 4 (L1) + 4 (L2) = 8 EBR.
+**Total for 2 Samplers:** 16 EBR.
+
+**EBR Budget Note:** The ECP5-25K provides 56 EBR blocks total.
+The texture cache uses 16 EBR (2 samplers × 8 EBR), consuming 29% of available EBR.
 See REQ-011.02 for the complete resource budget.
 
 ## Constraints
 
 - Maximum 2 texture samplers (0-1)
-- 4,096 texels per sampler cache (64 sets × 4 ways × 16 texels/line)
+- L1: 2,048 texels per sampler (32 sets × 4 ways × 16 texels/line)
+- L2: 1,024 × 64-bit entries per sampler (format-aware packing)
 - Cache line size fixed at 4×4 texels (16 texels)
-- Cache line format (UQ1.8) is internal to cache (not exposed to firmware)
-- Cache is write-through (texture writes not supported)
-- Cache is non-coherent (invalidation required on texture change via TEXn_CFG write)
-- RGBA8888 and R8 formats incur the highest fill latency due to larger burst sizes; prefer compressed formats for performance-sensitive textures
-- The format-select mux in the pixel pipeline routes the SDRAM burst data to the appropriate decoder module (one of six standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[3:0]` (INT-010 TEXn_FMT bits [5:2])
+- L1 cache line format (UQ1.8) is internal to cache (not exposed to firmware)
+- Both L1 and L2 are write-through (texture writes not supported)
+- Both caches are non-coherent (invalidation required on texture change via TEXn_CFG write)
+- RGBA8888 and R8 formats incur the highest SDRAM fill latency due to larger burst sizes; prefer compressed formats for performance-sensitive textures
+- The format-select mux in the pixel pipeline routes the L2 data to the appropriate decoder module (one of six standalone decoders: `texture_bc2.sv`, `texture_bc3.sv`, `texture_bc4.sv`, `texture_rgb565.sv`, `texture_rgba8888.sv`, `texture_r8.sv`) based on `tex_format[3:0]` (INT-010 TEXn_FMT bits [5:2])
 - BC palette interpolation uses shift+add reciprocal-multiply (not Verilog `/`) for deterministic synthesis; see BC Division note in UQ1.8 format section
 
 ## Notes
 
 ### XOR Set Indexing
 
-XOR set indexing is a hardware-only optimization; no physical texture memory layout change is required in SDRAM.
+XOR set indexing (both L1 and L2) is a hardware-only optimization; no physical texture memory layout change is required in SDRAM.
 The 4×4 block-tiled layout in SDRAM (INT-014) remains unchanged.
 
 ### Alpha Precision

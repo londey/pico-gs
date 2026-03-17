@@ -1,11 +1,16 @@
-//! Texture block cache — 4-way set-associative model matching `texture_cache.sv`.
+//! L1 decoded texture block cache — EBR-mapped 4-way set-associative model.
 //!
-//! Each texture sampler (TEX0, TEX1) has an independent cache that stores
+//! Each texture sampler (TEX0, TEX1) has an independent L1 cache that stores
 //! decompressed 4×4 texel blocks in [`TexelUq18`] format (9 bits per channel,
 //! 36 bits per texel).
 //!
-//! The cache uses XOR-folded set indexing and pseudo-LRU replacement,
-//! replicating the RTL's `texture_cache.sv` behavior exactly.
+//! The cache uses XOR-folded set indexing and pseudo-LRU replacement.
+//!
+//! # EBR Geometry
+//!
+//! 4 banks × 1 PDPW16KD 512×36 each = 4 EBR per sampler.
+//! Address: `{cache_line_index[6:0], texel_within_bank[1:0]}` = 9 bits → 512 entries.
+//! All 512 entries per bank are utilized (128 lines × 4 texels/bank).
 //!
 //! # 4-Bank Bilinear Interleaving
 //!
@@ -23,26 +28,20 @@
 //!
 //! | Parameter | Value | RTL Reference |
 //! |-----------|-------|---------------|
-//! | Sets | 64 | `NUM_SETS = 64` |
+//! | Sets | 32 | 5-bit XOR-folded index |
 //! | Ways | 4 | 4-way set-associative |
-//! | Lines | 256 | `NUM_LINES = 256` |
-//! | Tag width | 24 bits | `{tex_base[23:12], block_y[5:0], block_x[5:0]}` |
-//! | Set index | 6 bits | `block_x[5:0] ^ block_y[5:0]` |
+//! | Lines | 128 | 32 × 4 = 128 (2048 texels) |
+//! | EBR/bank | 512×36 | PDPW16KD, 128 lines × 4 texels/bank = 512 entries |
+//! | Set index | 5 bits | `block_x[4:0] ^ block_y[4:0]` |
 //! | LRU | 3-bit pseudo-LRU | Binary tree for 4 ways |
 //! | Banks | 4 | `{local_y[0], local_x[0]}` interleaving |
-//!
-//! # Note on INT-032 Discrepancy
-//!
-//! INT-032 specifies 256 sets with an 8-bit XOR index, but the RTL
-//! (`texture_cache.sv`) uses 64 sets with a 6-bit XOR index.
-//! This model matches the RTL.
 //!
 //! See: INT-032 (Texture Cache Architecture), UNIT-006 (Pixel Pipeline).
 
 use super::texel::TexelUq18;
 
-/// Number of cache sets (6-bit index).
-const NUM_SETS: usize = 64;
+/// Number of cache sets (5-bit index).
+const NUM_SETS: usize = 32;
 
 /// Number of ways per set.
 const NUM_WAYS: usize = 4;
@@ -55,6 +54,12 @@ const NUM_BANKS: usize = 4;
 
 /// Number of texels per bank per cache line (16 texels / 4 banks).
 const TEXELS_PER_BANK: usize = 4;
+
+/// Entries per PDPW16KD bank (512×36 mode, fully utilized).
+///
+/// 128 cache lines × 4 texels/bank = 512 entries.
+#[allow(dead_code)]
+const L1_ENTRIES_PER_BANK: usize = NUM_LINES * TEXELS_PER_BANK;
 
 // ── DecodedBlockProvider trait ─────────────────────────────────────────────
 
@@ -150,37 +155,37 @@ fn bank_slot(local: u32) -> usize {
 
 // ── Cache tag ───────────────────────────────────────────────────────────────
 
-/// 24-bit cache tag matching the RTL's `{tex_base[23:12], block_y[5:0], block_x[5:0]}`.
+/// Cache tag uniquely identifying a 4×4 texel block within SDRAM.
 ///
-/// The tag uniquely identifies a 4×4 texel block within SDRAM.
+/// With 32 sets (5-bit XOR index), block coordinate bits `[4:0]` are
+/// consumed by the set index, so the tag stores the full base address
+/// and the remaining upper block coordinate bits.
+/// The tag width is `{tex_base[23:12], block_y[6:5], block_x[6:5]}` = 16 bits
+/// (12 + 2 + 2), but we store the full coordinates for clarity and
+/// compare them directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct CacheTag {
     /// Upper 12 bits of the texture base address (`tex_base_addr[23:12]`).
     base_addr_hi: u16,
 
-    /// Block Y coordinate within the texture (`block_y[5:0]`).
+    /// Block Y coordinate (bits above the 5-bit set index).
     block_y: u8,
 
-    /// Block X coordinate within the texture (`block_x[5:0]`).
+    /// Block X coordinate (bits above the 5-bit set index).
     block_x: u8,
 }
 
 impl CacheTag {
     /// Construct a tag from the base word address and block coordinates.
+    ///
+    /// The lower 5 bits of `block_x` and `block_y` are consumed by the
+    /// set index; the tag stores bits `[6:5]` for disambiguation.
     fn new(base_words: u32, block_x: u32, block_y: u32) -> Self {
         Self {
             base_addr_hi: ((base_words >> 12) & 0xFFF) as u16,
-            block_y: (block_y & 0x3F) as u8,
-            block_x: (block_x & 0x3F) as u8,
+            block_y: (block_y & 0x7F) as u8,
+            block_x: (block_x & 0x7F) as u8,
         }
-    }
-
-    /// Pack into a 24-bit value matching the RTL wire layout.
-    #[cfg(test)]
-    fn to_bits(self) -> u32 {
-        ((self.base_addr_hi as u32) << 12)
-            | ((self.block_y as u32 & 0x3F) << 6)
-            | (self.block_x as u32 & 0x3F)
     }
 }
 
@@ -276,12 +281,15 @@ fn update_lru(lru: &mut u8, way: usize) {
 
 // ── Texture block cache ─────────────────────────────────────────────────────
 
-/// 4-way set-associative texture block cache matching `texture_cache.sv`.
+/// L1 decoded texture block cache (4-way set-associative, EBR-mapped).
 ///
 /// Stores decompressed 4×4 texel blocks in [`TexelUq18`] format across
-/// 4 bilinear-interleaved banks.
-/// Uses 64 sets × 4 ways = 256 lines, with XOR-folded set indexing
-/// and 3-bit pseudo-LRU replacement per set.
+/// 4 bilinear-interleaved PDPW16KD banks (512×36 each).
+/// Uses 32 sets × 4 ways = 128 lines (2048 texels), with XOR-folded
+/// set indexing and 3-bit pseudo-LRU replacement per set.
+///
+/// Each bank holds 512 entries (128 lines × 4 texels/bank), fully
+/// utilizing the PDPW16KD 512×36 capacity with zero waste.
 pub struct TextureBlockCache {
     /// Fixed-size cache lines, indexed as `set * 4 + way`.
     lines: Vec<CacheLine>,
@@ -315,11 +323,11 @@ impl TextureBlockCache {
         self.stats = CacheStats::default();
     }
 
-    /// Compute the 6-bit XOR-folded set index.
+    /// Compute the 5-bit XOR-folded set index.
     ///
-    /// Matches RTL: `set_index = block_x[5:0] ^ block_y[5:0]`.
+    /// Matches RTL: `set_index = block_x[4:0] ^ block_y[4:0]`.
     fn set_index(block_x: u32, block_y: u32) -> usize {
-        ((block_x & 0x3F) ^ (block_y & 0x3F)) as usize
+        ((block_x & 0x1F) ^ (block_y & 0x1F)) as usize
     }
 
     /// Find the way containing the given tag in the given set, if valid.
@@ -434,40 +442,34 @@ mod tests {
         assert_eq!(lru, 0b010);
     }
 
-    /// Verify XOR-folded set indexing.
+    /// Verify 5-bit XOR-folded set indexing.
     #[test]
     fn set_index_xor_folding() {
         assert_eq!(TextureBlockCache::set_index(0, 0), 0);
         assert_eq!(TextureBlockCache::set_index(1, 0), 1);
         assert_eq!(TextureBlockCache::set_index(0, 1), 1);
         assert_eq!(TextureBlockCache::set_index(1, 1), 0);
-        assert_eq!(TextureBlockCache::set_index(0x3F, 0x3F), 0);
-        assert_eq!(TextureBlockCache::set_index(0x2A, 0x15), 0x3F);
+        assert_eq!(TextureBlockCache::set_index(0x1F, 0x1F), 0);
+        assert_eq!(TextureBlockCache::set_index(0x15, 0x0A), 0x1F);
         assert_eq!(
-            TextureBlockCache::set_index(0x40, 0),
+            TextureBlockCache::set_index(0x20, 0),
             0,
-            "bit 6 should be masked"
+            "bit 5 should be masked"
         );
     }
 
-    /// Verify tag construction.
+    /// Verify tag construction with 7-bit block coords.
     #[test]
     fn tag_construction() {
         let tag = CacheTag::new(0x1234_000, 5, 10);
         assert_eq!(tag.base_addr_hi, ((0x1234_000u32 >> 12) & 0xFFF) as u16);
         assert_eq!(tag.block_x, 5);
         assert_eq!(tag.block_y, 10);
-    }
 
-    /// Verify tag packs to 24-bit layout.
-    #[test]
-    fn tag_bit_packing() {
-        let tag = CacheTag {
-            base_addr_hi: 0xABC,
-            block_y: 0x15,
-            block_x: 0x2A,
-        };
-        assert_eq!(tag.to_bits(), 0xABC_56A);
+        // Block coords are masked to 7 bits.
+        let tag = CacheTag::new(0, 0xFF, 0xFF);
+        assert_eq!(tag.block_x, 0x7F);
+        assert_eq!(tag.block_y, 0x7F);
     }
 
     /// Verify bank index assignment matches RTL interleaving.

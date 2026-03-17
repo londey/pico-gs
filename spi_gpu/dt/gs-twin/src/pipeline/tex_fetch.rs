@@ -1,27 +1,27 @@
-//! Block fetcher — orchestrates cache lookup, compressed fetch, and decode.
+//! Block fetcher — orchestrates two-level cache lookup, decode, and fill.
 //!
 //! The [`BlockFetcher`] trait provides the interface for obtaining decoded
 //! 4×4 texel blocks.
 //! [`ConcreteFetcher`] is the standard implementation that
-//! owns a [`DecodedBlockProvider`] (decoded cache) and a
-//! [`CompressedBlockProvider`] (compressed data cache), wiring them
+//! owns a [`DecodedBlockProvider`] (L1 decoded cache) and a
+//! [`CompressedBlockProvider`] (L2 compressed block cache), wiring them
 //! together with the format decoders in `tex_decode`.
 //!
 //! # Data flow
 //!
 //! ```text
 //! BlockFetcher::get_block()
-//!   → DecodedBlockProvider::lookup() — hit? return
-//!   → CompressedBlockProvider::fetch_compressed() — get raw SDRAM data
+//!   → L1: DecodedBlockProvider::lookup() — hit? return
+//!   → L2: CompressedBlockProvider::fetch_compressed() — hit L2 or fetch SDRAM
 //!   → tex_decode::TexelDecoder::decode_block() — decompress to UQ1.8
-//!   → DecodedBlockProvider::fill() — store in decoded cache
+//!   → L1: DecodedBlockProvider::fill() — store in decoded cache
 //!   → return decoded block
 //! ```
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 
 use super::tex_cache::{CacheStats, DecodedBlockProvider, TextureBlockCache};
-use super::tex_compressed::{CompressedBlockCache, CompressedBlockProvider};
+use super::tex_compressed::{CompressedBlockCache, CompressedBlockProvider, L2CacheStats};
 use super::tex_decode;
 use super::texel::TexelUq18;
 
@@ -56,24 +56,27 @@ pub trait BlockFetcher {
     /// Invalidate all caches (called on TEXn_CFG write).
     fn invalidate(&mut self);
 
-    /// Return decoded cache statistics.
+    /// Return L1 decoded cache statistics.
     fn cache_stats(&self) -> &CacheStats;
 
-    /// Return the number of valid decoded cache lines.
+    /// Return L2 compressed cache statistics.
+    fn l2_stats(&self) -> &L2CacheStats;
+
+    /// Return the number of valid L1 decoded cache lines.
     fn cached_block_count(&self) -> usize;
 }
 
 // ── ConcreteFetcher ─────────────────────────────────────────────────────────
 
-/// Standard block fetcher owning decoded and compressed caches.
+/// Standard block fetcher owning L1 (decoded) and L2 (compressed) caches.
 ///
-/// Orchestrates the full fetch pipeline:
-/// decoded cache lookup → compressed cache fetch → format decode → fill.
+/// Orchestrates the two-level fetch pipeline:
+/// L1 decoded lookup → L2 compressed lookup/SDRAM fetch → format decode → L1 fill.
 pub struct ConcreteFetcher {
-    /// Decoded texel block cache (4-way set-associative, 64 sets).
+    /// L1 decoded texel block cache (4-way set-associative).
     cache: TextureBlockCache,
 
-    /// Compressed SDRAM data cache (DT-only optimization).
+    /// L2 compressed block cache (1024 × 64-bit, format-aware packing).
     compressed: CompressedBlockCache,
 }
 
@@ -109,11 +112,10 @@ impl BlockFetcher for ConcreteFetcher {
             return block;
         }
 
-        // Miss: fetch compressed data, decode, fill.
-        let bsw = tex_decode::block_size_words(format);
+        // L1 miss: fetch from L2 (hits L2 cache or falls through to SDRAM).
         let raw = self
             .compressed
-            .fetch_compressed(base_words, block_index, bsw, sdram);
+            .fetch_compressed(base_words, block_index, format, sdram);
         let block = tex_decode::decode_block_raw(format, raw);
         self.cache.fill(base_words, block_x, block_y, block);
         block
@@ -126,6 +128,10 @@ impl BlockFetcher for ConcreteFetcher {
 
     fn cache_stats(&self) -> &CacheStats {
         &self.cache.stats
+    }
+
+    fn l2_stats(&self) -> &L2CacheStats {
+        &self.compressed.stats
     }
 
     fn cached_block_count(&self) -> usize {

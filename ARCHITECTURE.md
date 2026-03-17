@@ -319,11 +319,12 @@ Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after 
 
 ### EBR Budget
 
-The texture cache uses PDPW16KD in 512×36 configuration exclusively (UQ1.8 format, 16 EBR per sampler, 32 EBR total for 2 samplers).
+The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16KD 512×36, UQ1.8) and L2 compressed (DP16KD 1024×16, format-aware packing).
 
 | Component | EBR | Notes |
 |---|---|---|
-| Texture cache (2 samplers) | 32 | 16 per sampler; PDPW16KD 512×36 (UQ1.8) |
+| Texture L1 decoded (2 samplers) | 8 | 4 per sampler; PDPW16KD 512×36 (UQ1.8) |
+| Texture L2 compressed (2 samplers) | 8 | 4 per sampler; DP16KD 1024×16 (64-bit entries) |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
 | Command FIFO | 2 | 512×72 async CDC |
 | Reciprocal LUT (area) | 1 | DP16KD 36×512, inv_area seed+delta |
@@ -332,7 +333,7 @@ The texture cache uses PDPW16KD in 512×36 configuration exclusively (UQ1.8 form
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | FB write buffer | 1 | Single-tile coalescing buffer |
-| **Total** | **44–45** | **of 56 available (ECP5-25K)** |
+| **Total** | **28–29** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 
