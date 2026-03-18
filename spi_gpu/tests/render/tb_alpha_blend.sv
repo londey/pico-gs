@@ -96,7 +96,7 @@ module tb_alpha_blend;
     endfunction
 
     initial begin
-        $dumpfile("alpha_blend.vcd");
+        $dumpfile("../build/sim_out/alpha_blend.vcd");
         $dumpvars(0, tb_alpha_blend);
 
         $display("=== Testing alpha_blend Module ===\n");

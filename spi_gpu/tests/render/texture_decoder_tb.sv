@@ -209,7 +209,7 @@ module texture_decoder_tb
     // ========================================================================
 
     initial begin
-        $dumpfile("texture_decoder.vcd");
+        $dumpfile("../build/sim_out/texture_decoder.vcd");
         $dumpvars(0, texture_decoder_tb);
 
         $display("=== Texture Decoder Testbench ===\n");

@@ -648,7 +648,7 @@ int main(int argc, char** argv) {
     if (trace_enabled) {
         trace = std::make_unique<VerilatedFstC>();
         top->trace(trace.get(), 99);
-        trace->open("harness.fst");
+        trace->open("../build/sim_out/harness.fst");
     }
 
     uint64_t sim_time = 0;

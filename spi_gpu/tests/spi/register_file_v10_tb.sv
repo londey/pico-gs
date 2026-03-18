@@ -299,7 +299,7 @@ module register_file_v10_tb;
     /* verilator lint_on UNUSEDSIGNAL */
 
     initial begin
-        $dumpfile("register_file_v10.vcd");
+        $dumpfile("../build/sim_out/register_file_v10.vcd");
         $dumpvars(0, register_file_v10_tb);
 
         // Initialize

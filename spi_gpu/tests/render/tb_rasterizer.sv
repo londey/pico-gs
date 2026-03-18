@@ -273,7 +273,7 @@ module tb_rasterizer;
     // Test sequence
     // ========================================================================
     initial begin
-        $dumpfile("rasterizer.vcd");
+        $dumpfile("../build/sim_out/rasterizer.vcd");
         $dumpvars(0, tb_rasterizer);
 
         // Initialize

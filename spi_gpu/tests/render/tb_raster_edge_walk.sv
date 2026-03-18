@@ -299,7 +299,7 @@ module tb_raster_edge_walk;
     // ========================================================================
 
     initial begin
-        $dumpfile("raster_edge_walk.vcd");
+        $dumpfile("../build/sim_out/raster_edge_walk.vcd");
         $dumpvars(0, tb_raster_edge_walk);
 
         zero_all_inputs;

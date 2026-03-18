@@ -283,7 +283,7 @@ module tb_display_burst;
     // ========================================================================
 
     initial begin
-        $dumpfile("display_burst.vcd");
+        $dumpfile("../build/sim_out/display_burst.vcd");
         $dumpvars(0, tb_display_burst);
 
         do_reset();

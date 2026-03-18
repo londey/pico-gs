@@ -569,7 +569,7 @@ module tb_sram_arbiter;
     // ========================================================================
 
     initial begin
-        $dumpfile("sram_arbiter.vcd");
+        $dumpfile("../build/sim_out/sram_arbiter.vcd");
         $dumpvars(0, tb_sram_arbiter);
 
         do_reset();

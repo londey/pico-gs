@@ -253,7 +253,7 @@ module tb_command_fifo;
     // ========================================================================
 
     initial begin
-        $dumpfile("command_fifo.vcd");
+        $dumpfile("../build/sim_out/command_fifo.vcd");
         $dumpvars(0, tb_command_fifo);
 
         // Initialize

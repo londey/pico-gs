@@ -580,7 +580,7 @@ module tb_sdram_controller;
     integer    total_cycles;
 
     initial begin
-        $dumpfile("sdram_controller.vcd");
+        $dumpfile("../build/sim_out/sdram_controller.vcd");
         $dumpvars(0, tb_sdram_controller);
 
         do_reset();

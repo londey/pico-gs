@@ -189,7 +189,7 @@ module tb_sram_controller;
     integer    cycle_count;
 
     initial begin
-        $dumpfile("sram_controller.vcd");
+        $dumpfile("../build/sim_out/sram_controller.vcd");
         $dumpvars(0, tb_sram_controller);
 
         do_reset();

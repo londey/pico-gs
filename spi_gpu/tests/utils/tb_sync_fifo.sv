@@ -92,7 +92,7 @@ module tb_sync_fifo;
     // ========================================================================
 
     initial begin
-        $dumpfile("sync_fifo.vcd");
+        $dumpfile("../build/sim_out/sync_fifo.vcd");
         $dumpvars(0, tb_sync_fifo);
 
         // Initialize signals

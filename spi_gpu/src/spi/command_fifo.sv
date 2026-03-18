@@ -32,8 +32,16 @@ module command_fifo (
     output wire [9:0]  rd_count
 );
 
-    // Number of pre-populated boot commands (must match boot_commands.hex)
+    // Number of pre-populated boot commands (must match boot_commands.hex).
+    // In simulation the harness drives all commands via SPI; boot commands are
+    // suppressed so they don't interfere with test scripts.
+`ifdef VERILATOR
+    localparam BOOT_COUNT = 0;
+    localparam BOOT_FILE  = "";
+`else
     localparam BOOT_COUNT = 17;
+    localparam BOOT_FILE  = "src/spi/boot_commands.hex";
+`endif
 
     // ========================================================================
     // FIFO Instance
@@ -43,7 +51,7 @@ module command_fifo (
         .WIDTH      (72),
         .DEPTH      (512),
         .BOOT_COUNT (BOOT_COUNT),
-        .INIT_FILE  ("src/spi/boot_commands.hex")
+        .INIT_FILE  (BOOT_FILE)
     ) u_fifo (
         .wr_clk        (wr_clk),
         .wr_rst_n      (wr_rst_n),

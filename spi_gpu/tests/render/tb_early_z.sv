@@ -57,7 +57,7 @@ module tb_early_z;
     /* verilator lint_on UNUSEDSIGNAL */
 
     initial begin
-        $dumpfile("early_z.vcd");
+        $dumpfile("../build/sim_out/early_z.vcd");
         $dumpvars(0, tb_early_z);
 
         // Defaults

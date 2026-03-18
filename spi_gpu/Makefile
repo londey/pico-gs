@@ -50,6 +50,8 @@ RTL_SOURCES = \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
 	$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/texture_l2_cache.sv \
+	$(RTL_DIR)/render/texture_sampler.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/fb_promote.sv \
@@ -81,7 +83,7 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-async-fifo test-command-fifo test-sync-fifo \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
-	test-texture-decoder lint-memory lint harness-scaffold copy-recip-hex clean help \
+	test-texture-decoder lint-memory lint harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
@@ -137,7 +139,7 @@ test-async-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/utils/async_fifo.sv \
 		$(TB_DIR)/utils/tb_async_fifo.sv \
 		--top-module tb_async_fifo -o tb_async_fifo
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_async_fifo)
+	$(OBJ_DIR)/tb_async_fifo
 
 # Command FIFO testbench
 test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -146,7 +148,7 @@ test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/spi/command_fifo.sv \
 		$(TB_DIR)/spi/tb_command_fifo.sv \
 		--top-module tb_command_fifo -o tb_command_fifo
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_command_fifo)
+	$(OBJ_DIR)/tb_command_fifo
 
 # Synchronous FIFO testbench
 test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -154,7 +156,7 @@ test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/utils/sync_fifo.sv \
 		$(TB_DIR)/utils/tb_sync_fifo.sv \
 		--top-module tb_sync_fifo -o tb_sync_fifo
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_sync_fifo)
+	$(OBJ_DIR)/tb_sync_fifo
 
 # SDRAM controller testbench (init sequence, read/write, refresh, burst)
 test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -162,7 +164,7 @@ test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(TB_DIR)/memory/tb_sdram_controller.sv \
 		--top-module tb_sdram_controller -o tb_sdram_controller
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_sdram_controller)
+	$(OBJ_DIR)/tb_sdram_controller
 
 # SRAM arbiter testbench (burst grant, preemption, data routing)
 test-sram-arbiter: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -171,7 +173,7 @@ test-sram-arbiter: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/memory/sram_arbiter.sv \
 		$(TB_DIR)/memory/tb_sram_arbiter.sv \
 		--top-module tb_sram_arbiter -o tb_sram_arbiter
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_sram_arbiter)
+	$(OBJ_DIR)/tb_sram_arbiter
 
 # Display controller burst testbench (scanline prefetch, burst reads)
 test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -180,15 +182,17 @@ test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/display/display_controller.sv \
 		$(TB_DIR)/display/tb_display_burst.sv \
 		--top-module tb_display_burst -o tb_display_burst
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_display_burst)
+	$(OBJ_DIR)/tb_display_burst
 
 # Texture cache burst testbench (cache fill via burst SRAM reads)
 test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/texture_l2_cache.sv \
+	$(RTL_DIR)/render/texture_sampler.sv \
 		$(TB_DIR)/render/tb_texture_cache_burst.sv \
 		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_texture_cache_burst)
+	$(OBJ_DIR)/tb_texture_cache_burst
 
 # Integration testbench: controller + arbiter burst data path
 test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -197,7 +201,7 @@ test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/memory/sram_arbiter.sv \
 		$(TB_DIR)/memory/tb_burst_integration.sv \
 		--top-module tb_burst_integration -o tb_burst_integration
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_burst_integration)
+	$(OBJ_DIR)/tb_burst_integration
 
 # Run all burst-related testbenches
 test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
@@ -208,7 +212,7 @@ test-register-file-v10: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/spi/register_file.sv \
 		$(TB_DIR)/spi/register_file_v10_tb.sv \
 		--top-module register_file_v10_tb -o tb_register_file_v10
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file_v10)
+	$(OBJ_DIR)/tb_register_file_v10
 
 # VER-004: Color combiner unit testbench (deferred: UNIT-010 WIP)
 test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -217,7 +221,7 @@ test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/color_combiner.sv \
 		$(TB_DIR)/render/color_combiner_tb.sv \
 		--top-module color_combiner_tb -o tb_color_combiner
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_color_combiner)
+	$(OBJ_DIR)/tb_color_combiner
 
 # VER-005: Texture decoder unit testbench
 test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -234,7 +238,7 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/stipple.sv \
 		$(TB_DIR)/render/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_texture_decoder)
+	$(OBJ_DIR)/tb_texture_decoder
 
 # UNIT-005.02: Raster derivative precomputation unit testbench
 test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -245,7 +249,7 @@ test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/raster_deriv.sv \
 		$(TB_DIR)/render/tb_raster_deriv.sv \
 		--top-module tb_raster_deriv -o tb_raster_deriv
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_raster_deriv)
+	$(OBJ_DIR)/tb_raster_deriv
 
 # UNIT-005.04: Raster edge walk unit testbench
 test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -253,7 +257,7 @@ test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/raster_edge_walk.sv \
 		$(TB_DIR)/render/tb_raster_edge_walk.sv \
 		--top-module tb_raster_edge_walk -o tb_raster_edge_walk
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_raster_edge_walk)
+	$(OBJ_DIR)/tb_raster_edge_walk
 
 # UNIT-005.02/005.03: Raster attribute accumulator unit testbench
 test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -261,7 +265,7 @@ test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/raster_attr_accum.sv \
 		$(TB_DIR)/render/tb_raster_attr_accum.sv \
 		--top-module tb_raster_attr_accum -o tb_raster_attr_accum
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_raster_attr_accum)
+	$(OBJ_DIR)/tb_raster_attr_accum
 
 # All rasterizer tests: sub-module unit tests + integration test
 test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer
@@ -282,9 +286,7 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/rasterizer.sv \
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
-	cp -f $(RTL_DIR)/render/recip_area_init.hex $(SIM_OUT_DIR)/
-	cp -f $(RTL_DIR)/render/recip_q_init.hex $(SIM_OUT_DIR)/
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_rasterizer)
+	$(OBJ_DIR)/tb_rasterizer
 
 # VER-002: Early Z-test unit testbench
 test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -292,7 +294,7 @@ test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/early_z.sv \
 		$(TB_DIR)/render/tb_early_z.sv \
 		--top-module tb_early_z -o tb_early_z
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_early_z)
+	$(OBJ_DIR)/tb_early_z
 
 # VER-006: Framebuffer promote unit testbench (RGB565 -> Q4.12 conversion)
 test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -300,7 +302,7 @@ test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/fb_promote.sv \
 		$(TB_DIR)/render/tb_fb_promote.sv \
 		--top-module tb_fb_promote -o tb_fb_promote
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_fb_promote)
+	$(OBJ_DIR)/tb_fb_promote
 
 # VER-007: Alpha blend unit testbench (Q4.12 blend modes)
 test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -308,7 +310,7 @@ test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/alpha_blend.sv \
 		$(TB_DIR)/render/tb_alpha_blend.sv \
 		--top-module tb_alpha_blend -o tb_alpha_blend
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_alpha_blend)
+	$(OBJ_DIR)/tb_alpha_blend
 
 # VER-008: Dither unit testbench (ordered dithering matrix)
 test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -316,7 +318,7 @@ test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/render/dither.sv \
 		$(TB_DIR)/render/tb_dither.sv \
 		--top-module tb_dither -o tb_dither
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_dither)
+	$(OBJ_DIR)/tb_dither
 
 # VER-003: Register file unit testbench
 test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -324,33 +326,26 @@ test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RTL_DIR)/spi/register_file.sv \
 		$(TB_DIR)/spi/tb_register_file.sv \
 		--top-module tb_register_file -o tb_register_file
-	cd $(SIM_OUT_DIR) && $(abspath $(OBJ_DIR)/tb_register_file)
-
-# Copy reciprocal LUT hex files to sim_out (needed by raster_recip_area/q $readmemh)
-# Symlink tests/ so the harness can locate hex scripts via relative paths.
-copy-recip-hex: | $(SIM_OUT_DIR)
-	cp -f $(RTL_DIR)/render/recip_area_init.hex $(SIM_OUT_DIR)/
-	cp -f $(RTL_DIR)/render/recip_q_init.hex $(SIM_OUT_DIR)/
-	ln -sfn $(abspath $(TB_DIR)) $(SIM_OUT_DIR)/tests
+	$(OBJ_DIR)/tb_register_file
 
 # Render targets — always generate output images (parallelizable)
-render-gouraud: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
+render-gouraud: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
 
-render-depth-test: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
+render-depth-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
 
-render-textured-cube: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
+render-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
 
-render-textured: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
+render-textured: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
 
-render-color-combined: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
+render-color-combined: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
 
-render-size-grid: $(BUILD_DIR)/harness copy-recip-hex | $(SIM_OUT_DIR)
-	cd $(SIM_OUT_DIR) && $(abspath $(BUILD_DIR)/harness) size_grid $(abspath $(SIM_OUT_DIR))/size_grid.png
+render-size-grid: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness size_grid $(abspath $(SIM_OUT_DIR))/size_grid.png
 
 render-all: render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-size-grid
 
@@ -437,7 +432,8 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/render/early_z.sv \
 	$(RTL_DIR)/render/texture_bc1.sv \
-	$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/texture_l2_cache.sv \
+	$(RTL_DIR)/render/texture_sampler.sv \
 	$(RTL_DIR)/render/texture_rgb565.sv \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
@@ -517,6 +513,8 @@ lint:
 		$(RTL_DIR)/render/texture_rgba8888.sv \
 		$(RTL_DIR)/render/texture_r8.sv \
 		$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/texture_l2_cache.sv \
+	$(RTL_DIR)/render/texture_sampler.sv \
 		$(RTL_DIR)/render/color_combiner.sv \
 		$(RTL_DIR)/render/alpha_blend.sv \
 		$(RTL_DIR)/render/dither.sv \
@@ -574,6 +572,8 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
 	$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/texture_l2_cache.sv \
+	$(RTL_DIR)/render/texture_sampler.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/fb_promote.sv \
@@ -661,6 +661,8 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/render/texture_rgba8888.sv \
 	$(RTL_DIR)/render/texture_r8.sv \
 	$(RTL_DIR)/render/texture_cache.sv \
+	$(RTL_DIR)/render/texture_l2_cache.sv \
+	$(RTL_DIR)/render/texture_sampler.sv \
 	$(RTL_DIR)/render/stipple.sv \
 	$(RTL_DIR)/render/texel_promote.sv \
 	$(RTL_DIR)/render/fb_promote.sv \

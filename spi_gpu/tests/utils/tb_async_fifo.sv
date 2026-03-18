@@ -137,7 +137,7 @@ module tb_async_fifo;
     // ========================================================================
 
     initial begin
-        $dumpfile("async_fifo.vcd");
+        $dumpfile("../build/sim_out/async_fifo.vcd");
         $dumpvars(0, tb_async_fifo);
 
         // Initialize all signals

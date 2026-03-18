@@ -235,7 +235,7 @@ module tb_raster_attr_accum;
     // ========================================================================
 
     initial begin
-        $dumpfile("raster_attr_accum.vcd");
+        $dumpfile("../build/sim_out/raster_attr_accum.vcd");
         $dumpvars(0, tb_raster_attr_accum);
 
         // Initialize controls

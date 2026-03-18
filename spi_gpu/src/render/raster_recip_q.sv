@@ -115,7 +115,7 @@ module raster_recip_q (
     // Yosys infers DP16KD in 18x1024 mode using both ports for the two reads.
 
     reg [17:0] rom [0:1023];                                   // ROM array
-    initial $readmemh("recip_q_init.hex", rom);
+    initial $readmemh("src/render/recip_q_init.hex", rom);
 
     // Pipeline registers for stage 0 → stage 1
     reg  [7:0]  s1_frac;                                       // Interpolation fraction

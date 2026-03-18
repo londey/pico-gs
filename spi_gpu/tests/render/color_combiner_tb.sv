@@ -329,7 +329,7 @@ module color_combiner_tb;
     /* verilator lint_on UNUSEDSIGNAL */
 
     initial begin
-        $dumpfile("color_combiner.vcd");
+        $dumpfile("../build/sim_out/color_combiner.vcd");
         $dumpvars(0, color_combiner_tb);
 
         // Initialize

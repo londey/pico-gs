@@ -38,7 +38,7 @@ module tb_fb_promote;
     /* verilator lint_on UNUSEDSIGNAL */
 
     initial begin
-        $dumpfile("fb_promote.vcd");
+        $dumpfile("../build/sim_out/fb_promote.vcd");
         $dumpvars(0, tb_fb_promote);
 
         $display("=== Testing fb_promote Module ===\n");

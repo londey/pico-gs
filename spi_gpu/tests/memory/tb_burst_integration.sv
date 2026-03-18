@@ -547,7 +547,7 @@ module tb_burst_integration;
     // ========================================================================
 
     initial begin
-        $dumpfile("burst_integration.vcd");
+        $dumpfile("../build/sim_out/burst_integration.vcd");
         $dumpvars(0, tb_burst_integration);
 
         do_reset();

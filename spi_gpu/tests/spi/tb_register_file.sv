@@ -212,7 +212,7 @@ module tb_register_file;
     endtask
 
     initial begin
-        $dumpfile("register_file.vcd");
+        $dumpfile("../build/sim_out/register_file.vcd");
         $dumpvars(0, tb_register_file);
 
         // Initialize

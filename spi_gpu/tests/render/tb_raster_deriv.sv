@@ -271,7 +271,7 @@ module tb_raster_deriv;
     // ========================================================================
 
     initial begin
-        $dumpfile("raster_deriv.vcd");
+        $dumpfile("../build/sim_out/raster_deriv.vcd");
         $dumpvars(0, tb_raster_deriv);
 
         $display("=== Testing raster_deriv Module (Sequential) ===\n");

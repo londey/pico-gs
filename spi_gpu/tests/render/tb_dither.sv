@@ -101,7 +101,7 @@ module tb_dither;
     reg [15:0] in_r, in_g, in_b;
 
     initial begin
-        $dumpfile("dither.vcd");
+        $dumpfile("../build/sim_out/dither.vcd");
         $dumpvars(0, tb_dither);
 
         rst_n = 0;

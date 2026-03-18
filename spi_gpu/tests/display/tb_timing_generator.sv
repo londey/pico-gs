@@ -43,7 +43,7 @@ module tb_timing_generator;
 
     // Test sequence
     initial begin
-        $dumpfile("timing_generator.vcd");
+        $dumpfile("../build/sim_out/timing_generator.vcd");
         $dumpvars(0, tb_timing_generator);
 
         // Reset
