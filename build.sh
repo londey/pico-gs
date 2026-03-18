@@ -158,12 +158,32 @@ if [ "$BUILD_DT" = true ]; then
     cargo test -p gs-twin
     echo -e "${GREEN}Digital twin tests passed${NC}"
 
-    # Generate golden reference images for all passing scenes
+    # Generate golden reference images for all VER-010 through VER-022 scenes.
+    # The gs-twin integration tests (cargo test -p gs-twin) also produce these
+    # images, including Z-buffer variants for VER-014 and VER-016.
     DT_OUT="${OUTPUT_DIR}/dt_out"
     mkdir -p "${DT_OUT}"
-    cargo run -p gs-twin-cli -- render --scene ver_010 --output "${DT_OUT}/ver_010_gouraud_triangle.png" --width 512 --height 480
-    cargo run -p gs-twin-cli -- render --scene ver_011 --output "${DT_OUT}/ver_011_depth_test.png" --width 512 --height 480
-    cargo run -p gs-twin-cli -- render --scene ver_015 --output "${DT_OUT}/ver_015_size_grid.png" --width 512 --height 480
+    for scene in ver_010 ver_011 ver_012 ver_013 ver_014 ver_015 ver_016 \
+                 ver_017 ver_018 ver_019 ver_020 ver_021 ver_022; do
+        # Determine output filename from scene name
+        case "${scene}" in
+            ver_010) name="ver_010_gouraud_triangle" ;;
+            ver_011) name="ver_011_depth_test" ;;
+            ver_012) name="ver_012_textured_triangle" ;;
+            ver_013) name="ver_013_color_combined" ;;
+            ver_014) name="ver_014_textured_cube" ;;
+            ver_015) name="ver_015_size_grid" ;;
+            ver_016) name="ver_016_perspective_road" ;;
+            ver_017) name="ver_017_bc1_texture" ;;
+            ver_018) name="ver_018_bc2_texture" ;;
+            ver_019) name="ver_019_bc3_texture" ;;
+            ver_020) name="ver_020_bc4_texture" ;;
+            ver_021) name="ver_021_rgba8888_texture" ;;
+            ver_022) name="ver_022_r8_texture" ;;
+        esac
+        cargo run -p gs-twin-cli -- render --scene "${scene}" \
+            --output "${DT_OUT}/${name}.png" --width 512 --height 480
+    done
     echo -e "${GREEN}Golden references generated in ${DT_OUT}/${NC}"
     echo ""
 fi

@@ -85,8 +85,12 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
 	test-texture-decoder lint-memory lint harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
-	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-all \
+	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined \
+	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture \
+	render-bc3-texture render-bc4-texture render-rgba8888-texture render-r8-texture render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
+	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
+	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
 	test-fb-promote test-alpha-blend test-dither
 
 # Default target
@@ -330,49 +334,102 @@ test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 # Render targets — always generate output images (parallelizable)
 render-gouraud: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness gouraud $(abspath $(SIM_OUT_DIR))/gouraud_triangle.png
+	$(BUILD_DIR)/harness gouraud $(abspath $(SIM_OUT_DIR))/ver_010_gouraud_triangle.png
 
 render-depth-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness depth_test $(abspath $(SIM_OUT_DIR))/depth_test.png
-
-render-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness textured_cube $(abspath $(SIM_OUT_DIR))/textured_cube.png
+	$(BUILD_DIR)/harness depth_test $(abspath $(SIM_OUT_DIR))/ver_011_depth_test.png
 
 render-textured: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness textured $(abspath $(SIM_OUT_DIR))/textured_triangle.png
+	$(BUILD_DIR)/harness textured $(abspath $(SIM_OUT_DIR))/ver_012_textured_triangle.png
 
 render-color-combined: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness color_combined $(abspath $(SIM_OUT_DIR))/color_combined.png
+	$(BUILD_DIR)/harness color_combined $(abspath $(SIM_OUT_DIR))/ver_013_color_combined.png
+
+render-textured-cube: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness textured_cube $(abspath $(SIM_OUT_DIR))/ver_014_textured_cube.png \
+		--zbuf $(abspath $(SIM_OUT_DIR))/ver_014_textured_cube_z.png
 
 render-size-grid: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness size_grid $(abspath $(SIM_OUT_DIR))/size_grid.png
+	$(BUILD_DIR)/harness size_grid $(abspath $(SIM_OUT_DIR))/ver_015_size_grid.png
 
-render-all: render-gouraud render-depth-test render-textured-cube render-textured render-color-combined render-size-grid
+render-perspective-road: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness perspective_road $(abspath $(SIM_OUT_DIR))/ver_016_perspective_road.png \
+		--zbuf $(abspath $(SIM_OUT_DIR))/ver_016_perspective_road_z.png
+
+render-bc1-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness bc1_texture $(abspath $(SIM_OUT_DIR))/ver_017_bc1_texture.png
+
+render-bc2-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness bc2_texture $(abspath $(SIM_OUT_DIR))/ver_018_bc2_texture.png
+
+render-bc3-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness bc3_texture $(abspath $(SIM_OUT_DIR))/ver_019_bc3_texture.png
+
+render-bc4-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness bc4_texture $(abspath $(SIM_OUT_DIR))/ver_020_bc4_texture.png
+
+render-rgba8888-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness rgba8888_texture $(abspath $(SIM_OUT_DIR))/ver_021_rgba8888_texture.png
+
+render-r8-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness r8_texture $(abspath $(SIM_OUT_DIR))/ver_022_r8_texture.png
+
+render-all: render-gouraud render-depth-test render-textured render-color-combined render-textured-cube \
+	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture render-bc3-texture \
+	render-bc4-texture render-rgba8888-texture render-r8-texture
 
 # Golden image diff targets — compare rendered output against approved golden images
 # VER-010: Gouraud triangle
 test-gouraud: render-gouraud
-	diff -q $(SIM_OUT_DIR)/gouraud_triangle.png $(TB_DIR)/golden/gouraud_triangle.png
+	diff -q $(SIM_OUT_DIR)/ver_010_gouraud_triangle.png $(TB_DIR)/golden/ver_010_gouraud_triangle.png
 
 # VER-011: Depth-tested triangles
 test-depth-test: render-depth-test
-	diff -q $(SIM_OUT_DIR)/depth_test.png $(TB_DIR)/golden/depth_test.png
-
-# VER-014: Textured cube
-test-textured-cube: render-textured-cube
-	diff -q $(SIM_OUT_DIR)/textured_cube.png $(TB_DIR)/golden/textured_cube.png
+	diff -q $(SIM_OUT_DIR)/ver_011_depth_test.png $(TB_DIR)/golden/ver_011_depth_test.png
 
 # VER-012: Textured triangle
 test-textured: render-textured
-	diff -q $(SIM_OUT_DIR)/textured_triangle.png $(TB_DIR)/golden/textured_triangle.png
+	diff -q $(SIM_OUT_DIR)/ver_012_textured_triangle.png $(TB_DIR)/golden/ver_012_textured_triangle.png
 
 # VER-013: Color-combined output
 test-color-combined: render-color-combined
-	diff -q $(SIM_OUT_DIR)/color_combined.png $(TB_DIR)/golden/color_combined.png
+	diff -q $(SIM_OUT_DIR)/ver_013_color_combined.png $(TB_DIR)/golden/ver_013_color_combined.png
+
+# VER-014: Textured cube
+test-textured-cube: render-textured-cube
+	diff -q $(SIM_OUT_DIR)/ver_014_textured_cube.png $(TB_DIR)/golden/ver_014_textured_cube.png
 
 # VER-015: Triangle size grid
 test-size-grid: render-size-grid
-	diff -q $(SIM_OUT_DIR)/size_grid.png $(TB_DIR)/golden/size_grid.png
+	diff -q $(SIM_OUT_DIR)/ver_015_size_grid.png $(TB_DIR)/golden/ver_015_size_grid.png
+
+# VER-016: Perspective road
+test-perspective-road: render-perspective-road
+	diff -q $(SIM_OUT_DIR)/ver_016_perspective_road.png $(TB_DIR)/golden/ver_016_perspective_road.png
+
+# VER-017: BC1 texture
+test-bc1-texture: render-bc1-texture
+	diff -q $(SIM_OUT_DIR)/ver_017_bc1_texture.png $(TB_DIR)/golden/ver_017_bc1_texture.png
+
+# VER-018: BC2 texture
+test-bc2-texture: render-bc2-texture
+	diff -q $(SIM_OUT_DIR)/ver_018_bc2_texture.png $(TB_DIR)/golden/ver_018_bc2_texture.png
+
+# VER-019: BC3 texture
+test-bc3-texture: render-bc3-texture
+	diff -q $(SIM_OUT_DIR)/ver_019_bc3_texture.png $(TB_DIR)/golden/ver_019_bc3_texture.png
+
+# VER-020: BC4 texture
+test-bc4-texture: render-bc4-texture
+	diff -q $(SIM_OUT_DIR)/ver_020_bc4_texture.png $(TB_DIR)/golden/ver_020_bc4_texture.png
+
+# VER-021: RGBA8888 texture
+test-rgba8888-texture: render-rgba8888-texture
+	diff -q $(SIM_OUT_DIR)/ver_021_rgba8888_texture.png $(TB_DIR)/golden/ver_021_rgba8888_texture.png
+
+# VER-022: R8 texture
+test-r8-texture: render-r8-texture
+	diff -q $(SIM_OUT_DIR)/ver_022_r8_texture.png $(TB_DIR)/golden/ver_022_r8_texture.png
 
 # Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
 # Golden image renders run as prerequisites. Diffs run in the recipe so all
@@ -382,24 +439,31 @@ test: lint test-rasterizer-all test-early-z test-register-file test-color-combin
 	@echo "All images rendered to $(SIM_OUT_DIR)/"
 	@failures=0; \
 	for pair in \
-		gouraud_triangle.png:gouraud_triangle.png \
-		depth_test.png:depth_test.png \
-		textured_cube.png:textured_cube.png \
-		textured_triangle.png:textured_triangle.png \
-		color_combined.png:color_combined.png \
-		size_grid.png:size_grid.png \
+		ver_010_gouraud_triangle.png \
+		ver_011_depth_test.png \
+		ver_012_textured_triangle.png \
+		ver_013_color_combined.png \
+		ver_014_textured_cube.png \
+		ver_015_size_grid.png \
+		ver_016_perspective_road.png \
+		ver_017_bc1_texture.png \
+		ver_018_bc2_texture.png \
+		ver_019_bc3_texture.png \
+		ver_020_bc4_texture.png \
+		ver_021_rgba8888_texture.png \
+		ver_022_r8_texture.png \
 	; do \
-		golden="$(TB_DIR)/golden/$${pair%%:*}"; \
-		rendered="$(SIM_OUT_DIR)/$${pair##*:}"; \
+		golden="$(TB_DIR)/golden/$$pair"; \
+		rendered="$(SIM_OUT_DIR)/$$pair"; \
 		if [ -f "$$golden" ]; then \
 			if diff -q "$$rendered" "$$golden" > /dev/null 2>&1; then \
-				echo "  PASS: $${pair%%:*}"; \
+				echo "  PASS: $$pair"; \
 			else \
-				echo "  FAIL: $${pair%%:*}"; \
+				echo "  FAIL: $$pair"; \
 				failures=$$((failures + 1)); \
 			fi; \
 		else \
-			echo "  SKIP: $${pair%%:*} (no golden image)"; \
+			echo "  SKIP: $$pair (no golden image)"; \
 		fi; \
 	done; \
 	if [ $$failures -ne 0 ]; then \
@@ -597,6 +661,8 @@ harness-scaffold: $(BUILD_DIR)
 # sdram_dq (input), sdram_dq__out (output), sdram_dq__en (output enable).
 $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR) $(OBJ_DIR)
 	$(VERILATOR) --cc --exe --build -f verilator.f \
+		+define+SIM_DIRECT_REG \
+		-Wno-UNDRIVEN \
 		--Mdir $(OBJ_DIR) \
 		--pins-inout-enables \
 		$(HARNESS_RTL_SOURCES) \
@@ -737,9 +803,17 @@ help:
 	@echo "  test-texture-decoder - VER-005: Texture decoder unit testbench"
 	@echo "  test-gouraud     - VER-010: Gouraud triangle golden image"
 	@echo "  test-depth-test  - VER-011: Depth-tested triangles golden image"
-	@echo "  test-textured    - VER-012: Textured triangle golden image (blocked)"
-	@echo "  test-color-combined - VER-013: Color-combined golden image (blocked)"
+	@echo "  test-textured    - VER-012: Textured triangle golden image"
+	@echo "  test-color-combined - VER-013: Color-combined golden image"
 	@echo "  test-textured-cube - VER-014: Textured cube golden image"
+	@echo "  test-size-grid   - VER-015: Triangle size grid golden image"
+	@echo "  test-perspective-road - VER-016: Perspective road golden image"
+	@echo "  test-bc1-texture - VER-017: BC1 texture golden image"
+	@echo "  test-bc2-texture - VER-018: BC2 texture golden image"
+	@echo "  test-bc3-texture - VER-019: BC3 texture golden image"
+	@echo "  test-bc4-texture - VER-020: BC4 texture golden image"
+	@echo "  test-rgba8888-texture - VER-021: RGBA8888 texture golden image"
+	@echo "  test-r8-texture  - VER-022: R8 texture golden image"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"

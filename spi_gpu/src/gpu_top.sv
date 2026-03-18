@@ -125,7 +125,11 @@ module gpu_top (
     wire [9:0]  fifo_rd_count;
 
     // Register file signals
+`ifdef SIM_DIRECT_REG
+    wire        reg_cmd_valid;
+`else
     reg         reg_cmd_valid;
+`endif
     wire        reg_cmd_rw;
     wire [6:0]  reg_cmd_addr;
     wire [63:0] reg_cmd_wdata;
@@ -213,7 +217,7 @@ module gpu_top (
     wire [31:0] ts_mem_data;
 
     // Status signals
-    wire gpu_busy;
+    wire gpu_busy /* verilator public */;
     wire vblank;
 
     // SPI Slave instantiation
@@ -264,6 +268,22 @@ module gpu_top (
         .rd_count(fifo_rd_count)
     );
 
+`ifdef SIM_DIRECT_REG
+    // Sim-only: direct register file injection bypasses both SPI and command FIFO.
+    // Signals driven by the Verilator C++ harness (harness.cpp).
+    /* verilator lint_off UNDRIVEN */
+    logic        sim_reg_valid  /* verilator public */;  // Register write strobe
+    logic        sim_reg_rw     /* verilator public */;  // R/W flag (0=write)
+    logic [6:0]  sim_reg_addr   /* verilator public */;  // Register address
+    logic [63:0] sim_reg_wdata  /* verilator public */;  // Write data
+    /* verilator lint_on UNDRIVEN */
+
+    assign reg_cmd_valid = sim_reg_valid;
+    assign reg_cmd_rw    = sim_reg_rw;
+    assign reg_cmd_addr  = sim_reg_addr;
+    assign reg_cmd_wdata = sim_reg_wdata;
+    assign fifo_rd_en    = 1'b0;  // FIFO disabled in direct-reg mode
+`else
     // Unpack FIFO data to register interface (data path is combinational —
     // async_fifo already registers rd_data, so it aligns with the pipelined valid)
     assign reg_cmd_rw = fifo_rd_data[71];
@@ -281,6 +301,7 @@ module gpu_top (
         else
             reg_cmd_valid <= fifo_rd_en;
     end
+`endif
 
     // Register File instantiation (INT-010 v10.0)
     register_file u_register_file (

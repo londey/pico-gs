@@ -105,12 +105,19 @@ static std::vector<uint8_t> generate_checker_texture_wg() {
 /// the Makefile runs from spi_gpu/ so scripts/ is a peer directory.
 static std::string hex_file_for_test(const std::string& test_name) {
     static const std::pair<std::string, std::string> mappings[] = {
-        {"gouraud",        "tests/scripts/ver_010_gouraud.hex"},
-        {"depth_test",     "tests/scripts/ver_011_depth_test.hex"},
-        {"textured",       "tests/scripts/ver_012_textured.hex"},
-        {"color_combined", "tests/scripts/ver_013_color_combined.hex"},
-        {"textured_cube",  "tests/scripts/ver_014_textured_cube.hex"},
-        {"size_grid",      "tests/scripts/ver_015_size_grid.hex"},
+        {"gouraud",           "tests/scripts/ver_010_gouraud.hex"},
+        {"depth_test",        "tests/scripts/ver_011_depth_test.hex"},
+        {"textured",          "tests/scripts/ver_012_textured.hex"},
+        {"color_combined",    "tests/scripts/ver_013_color_combined.hex"},
+        {"textured_cube",     "tests/scripts/ver_014_textured_cube.hex"},
+        {"size_grid",         "tests/scripts/ver_015_size_grid.hex"},
+        {"perspective_road",  "tests/scripts/ver_016_perspective_road.hex"},
+        {"bc1_texture",       "tests/scripts/ver_017_bc1_texture.hex"},
+        {"bc2_texture",       "tests/scripts/ver_018_bc2_texture.hex"},
+        {"bc3_texture",       "tests/scripts/ver_019_bc3_texture.hex"},
+        {"bc4_texture",       "tests/scripts/ver_020_bc4_texture.hex"},
+        {"rgba8888_texture",  "tests/scripts/ver_021_rgba8888_texture.hex"},
+        {"r8_texture",        "tests/scripts/ver_022_r8_texture.hex"},
     };
     for (const auto& [name, path] : mappings) {
         if (name == test_name) {
@@ -426,125 +433,16 @@ static void connect_sdram(Vgpu_top* top, SdramModel& sdram, SdramConnState& stat
 // ---------------------------------------------------------------------------
 
 #ifdef VERILATOR
-/// Number of core clock cycles to advance per SPI half-clock period.
-/// SPI_SCK runs at clk_core / (2 * SPI_HALF_PERIOD_TICKS).
-/// A value of 2 gives an SPI clock that is 1/4 of the core clock, which is
-/// comfortably within the SPI slave's timing budget and ensures clean
-/// CDC synchronization of the transaction_done flag.
-static constexpr int SPI_HALF_PERIOD_TICKS = 2;
-
-/// Number of core clock cycles to wait after CS_n deassertion for the SPI
-/// slave's CDC synchronizer (2-FF + edge detector = 3 sys_clk stages) to
-/// propagate the transaction_done pulse into the core clock domain.
-/// A small margin is added for the command FIFO write path.
-static constexpr int SPI_CDC_SETTLE_TICKS = 6;
-
-/// Drive a single SPI half-clock period: advance the simulation by
-/// SPI_HALF_PERIOD_TICKS core clock cycles, calling connect_sdram() on
-/// each tick to keep the SDRAM model synchronized.
-static void spi_half_period(
-    Vgpu_top* top, VerilatedFstC* trace, uint64_t& sim_time, SdramModel& sdram, SdramConnState& conn
-) {
-    for (int i = 0; i < SPI_HALF_PERIOD_TICKS; i++) {
-        tick(top, trace, sim_time);
-        connect_sdram(top, sdram, conn);
-    }
-}
-
-/// Transmit a single 72-bit SPI write transaction via bit-banged SPI pins.
+/// Drive a sequence of register writes directly into the register file,
+/// bypassing both SPI and the command FIFO (SIM_DIRECT_REG mode).
 ///
-/// The SPI slave (spi_slave.sv) uses Mode 0 (CPOL=0, CPHA=0): data is
-/// sampled on the rising edge of spi_sck, MSB first.  The 72-bit frame
-/// is {rw(1), addr(7), data(64)}.  For a write, rw=0.
+/// Each RegWrite is applied for one clock cycle via the sim_reg_* ports
+/// exposed by gpu_top.sv under `SIM_DIRECT_REG.  The harness respects
+/// gpu_busy (rasterizer backpressure) by spinning until the register file
+/// is ready to accept the next command.
 ///
-/// After the 72 bits are clocked in, spi_cs_n is deasserted and the
-/// function waits for the CDC synchronizer in spi_slave to propagate the
-/// transaction_done pulse into the core clock domain (SPI_CDC_SETTLE_TICKS).
-///
-/// connect_sdram() is called on every tick() throughout the transaction to
-/// keep the SDRAM model synchronized.
-static void spi_write_transaction(
-    Vgpu_top* top,
-    VerilatedFstC* trace,
-    uint64_t& sim_time,
-    SdramModel& sdram,
-    SdramConnState& conn,
-    uint8_t addr,
-    uint64_t data
-) {
-    // Compose the 72-bit SPI frame: rw=0 (write), addr[6:0], data[63:0]
-    // Stored as an array of bits, MSB first.
-    // Bit 71 = rw (0 for write)
-    // Bits 70:64 = addr[6:0]
-    // Bits 63:0 = data[63:0]
-
-    // Ensure CS is deasserted and SCK is low before starting
-    top->spi_cs_n = 1;
-    top->spi_sck = 0;
-    top->spi_mosi = 0;
-    spi_half_period(top, trace, sim_time, sdram, conn);
-
-    // Assert CS (active-low) to start the transaction
-    top->spi_cs_n = 0;
-    spi_half_period(top, trace, sim_time, sdram, conn);
-
-    // Clock out 72 bits MSB-first
-    for (int bit = 71; bit >= 0; bit--) {
-        uint8_t mosi_val = 0;
-
-        if (bit == 71) {
-            // rw bit: 0 for write
-            mosi_val = 0;
-        } else if (bit >= 64) {
-            // addr[6:0]: bits 70..64 of the frame
-            int addr_bit = bit - 64; // 6..0
-            mosi_val = (addr >> addr_bit) & 1;
-        } else {
-            // data[63:0]: bits 63..0 of the frame
-            mosi_val = (data >> bit) & 1;
-        }
-
-        // Set MOSI while SCK is low (setup time)
-        top->spi_mosi = mosi_val;
-        spi_half_period(top, trace, sim_time, sdram, conn);
-
-        // Rising edge of SCK — SPI slave samples MOSI here
-        top->spi_sck = 1;
-        spi_half_period(top, trace, sim_time, sdram, conn);
-
-        // Falling edge of SCK
-        top->spi_sck = 0;
-    }
-
-    // Deassert CS to complete the transaction
-    top->spi_cs_n = 1;
-    top->spi_mosi = 0;
-
-    // Wait for the CDC synchronizer in spi_slave.sv to propagate the
-    // transaction_done flag into the core clock domain.  The synchronizer
-    // is a 2-FF chain plus an edge detector (3 sys_clk stages), and the
-    // command FIFO write takes one additional cycle.
-    for (int i = 0; i < SPI_CDC_SETTLE_TICKS; i++) {
-        tick(top, trace, sim_time);
-        connect_sdram(top, sdram, conn);
-    }
-}
-
-/// Drive a sequence of register writes into the register file via SPI.
-///
-/// Each RegWrite is transmitted as a 72-bit SPI write transaction through
-/// the spi_sck/spi_mosi/spi_cs_n top-level pins, replicating the
-/// register-write sequences that RenderMeshPatch and
-/// ClearFramebuffer commands produce.
-///
-/// The harness respects the command FIFO backpressure signal
-/// (gpio_cmd_full, active-high) to avoid overflowing the register file's
-/// write queue.  When gpio_cmd_full is asserted, the function spins on
-/// tick()/connect_sdram() until the FIFO drains below the almost-full
-/// threshold.
-///
-/// connect_sdram() is called on every tick() throughout execution to keep
-/// the behavioral SDRAM model synchronized with the SDRAM controller.
+/// connect_sdram() is called on every tick() to keep the behavioral SDRAM
+/// model synchronized with the SDRAM controller.
 static void execute_script(
     Vgpu_top* top,
     VerilatedFstC* trace,
@@ -554,14 +452,14 @@ static void execute_script(
     std::span<const RegWrite> script
 ) {
     for (size_t i = 0; i < script.size(); i++) {
-        // Wait for command FIFO backpressure to clear.
-        // gpio_cmd_full is connected to fifo_wr_almost_full in gpu_top.
+        // Wait for gpu_busy to deassert (rasterizer ready for next command).
         uint64_t bp_timeout = 0;
-        while (top->gpio_cmd_full) {
+        while (top->rootp->gpu_top->gpu_busy) {
+            top->rootp->gpu_top->sim_reg_valid = 0;
             tick(top, trace, sim_time);
             connect_sdram(top, sdram, conn);
             bp_timeout++;
-            if (bp_timeout > 100000) {
+            if (bp_timeout > 10'000'000) {
                 std::cerr << std::format(
                     "ERROR: execute_script backpressure timeout at "
                     "entry {} (addr=0x{:02x})\n",
@@ -572,8 +470,18 @@ static void execute_script(
             }
         }
 
-        // Transmit the register write via SPI
-        spi_write_transaction(top, trace, sim_time, sdram, conn, script[i].addr, script[i].data);
+        // Drive register write for one cycle
+        top->rootp->gpu_top->sim_reg_valid = 1;
+        top->rootp->gpu_top->sim_reg_rw    = 0; // 0 = write
+        top->rootp->gpu_top->sim_reg_addr  = script[i].addr;
+        top->rootp->gpu_top->sim_reg_wdata = script[i].data;
+        tick(top, trace, sim_time);
+        connect_sdram(top, sdram, conn);
+
+        // Deassert valid after the write cycle
+        top->rootp->gpu_top->sim_reg_valid = 0;
+        tick(top, trace, sim_time);
+        connect_sdram(top, sdram, conn);
     }
 }
 #endif
@@ -674,12 +582,15 @@ int main(int argc, char** argv) {
 
     std::string test_name;
     std::string output_file;
+    std::string zbuf_file;
 
     // Simple argument parsing: look for --test flag or positional args.
     for (int i = 1; i < argc; i++) {
         std::string_view arg(argv[i]);
         if (arg == "--test" && i + 1 < argc) {
             test_name = argv[++i];
+        } else if (arg == "--zbuf" && i + 1 < argc) {
+            zbuf_file = argv[++i];
         } else if (arg == "--trace") {
             // Already handled above; skip.
         } else if (arg.find(".png") != std::string_view::npos) {
@@ -693,8 +604,10 @@ int main(int argc, char** argv) {
     // Test name is required.
     if (test_name.empty()) {
         std::cerr << std::format(
-            "Usage: {} <test_name> [output.png] [--trace]\n"
-            "  test_name: gouraud, depth_test, textured, color_combined, textured_cube, size_grid\n",
+            "Usage: {} <test_name> [output.png] [--zbuf zbuf.png] [--trace]\n"
+            "  test_name: gouraud, depth_test, textured, color_combined, textured_cube,\n"
+            "             size_grid, perspective_road, bc1_texture, bc2_texture,\n"
+            "             bc3_texture, bc4_texture, rgba8888_texture, r8_texture\n",
             argv[0]
         );
         return 1;
@@ -733,6 +646,10 @@ int main(int argc, char** argv) {
     // 4. Reset the GPU
     // -----------------------------------------------------------------------
     SdramConnState conn;
+
+    // Initialize direct register injection signals to idle
+    top->rootp->gpu_top->sim_reg_valid = 0;
+
     reset(top.get(), trace.get(), sim_time, 100);
 
     // -----------------------------------------------------------------------
@@ -1017,6 +934,38 @@ int main(int argc, char** argv) {
     }
 
     std::cout << std::format("Golden image written to: {}\n", output_file);
+
+    // -----------------------------------------------------------------------
+    // 7c. Z-buffer PNG output (optional)
+    // -----------------------------------------------------------------------
+    if (!zbuf_file.empty()) {
+        // Read the Z-buffer base address from fb_config_reg[31:16].
+        // fb_z_base is the upper bits of the byte address, shifted left by 9
+        // to form the word address (matching INT-011).
+        uint64_t fb_config = static_cast<uint64_t>(
+            top->rootp->gpu_top->u_register_file->fb_config_reg);
+        uint32_t z_base_word = static_cast<uint32_t>(((fb_config >> 16) & 0xFFFF) << 9);
+        auto zbuf = extract_framebuffer(sdram, z_base_word, FB_WIDTH_LOG2, fb_height);
+
+        // Convert 16-bit Z values to grayscale RGB565 for PNG output.
+        // Z is a raw 16-bit depth value; map it directly to a grayscale pixel.
+        std::vector<uint16_t> zbuf_gray(zbuf.size());
+        for (size_t px = 0; px < zbuf.size(); px++) {
+            uint16_t z = zbuf[px];
+            // Map 16-bit Z to 5:6:5 grayscale: R5=G6=B5 from upper bits
+            uint16_t r5 = (z >> 11) & 0x1F;
+            uint16_t g6 = (z >> 10) & 0x3F;
+            uint16_t b5 = (z >> 11) & 0x1F;
+            zbuf_gray[px] = (r5 << 11) | (g6 << 5) | b5;
+        }
+
+        try {
+            png_writer::write_png(zbuf_file.c_str(), fb_width, fb_height, zbuf_gray);
+        } catch (const std::runtime_error& e) {
+            std::cerr << std::format("ERROR: {}: {}\n", e.what(), zbuf_file);
+        }
+        std::cout << std::format("Z-buffer image written to: {}\n", zbuf_file);
+    }
 
     // -----------------------------------------------------------------------
     // 8. Cleanup
