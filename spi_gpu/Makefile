@@ -25,6 +25,7 @@ RTL_SOURCES = \
 	$(RTL_DIR)/spi/command_fifo.sv \
 	$(RTL_DIR)/memory/sdram_controller.sv \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/mem_dma.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/display/dvi_output.sv \
@@ -175,6 +176,7 @@ test-sram-arbiter: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/mem_dma.sv \
 		$(TB_DIR)/memory/tb_sram_arbiter.sv \
 		--top-module tb_sram_arbiter -o tb_sram_arbiter
 	$(OBJ_DIR)/tb_sram_arbiter
@@ -203,6 +205,7 @@ test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RTL_DIR)/memory/sdram_controller.sv \
 		$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/mem_dma.sv \
 		$(TB_DIR)/memory/tb_burst_integration.sv \
 		--top-module tb_burst_integration -o tb_burst_integration
 	$(OBJ_DIR)/tb_burst_integration
@@ -475,7 +478,8 @@ test: lint test-rasterizer-all test-early-z test-register-file test-color-combin
 lint-memory:
 	$(VERILATOR) --lint-only -Wall -Wno-MULTITOP \
 		$(RTL_DIR)/memory/sdram_controller.sv \
-		$(RTL_DIR)/memory/sram_arbiter.sv
+		$(RTL_DIR)/memory/sram_arbiter.sv \
+		$(RTL_DIR)/memory/mem_dma.sv
 
 # All leaf RTL files that can be linted individually (no sub-module instantiations).
 # Excludes gpu_top.sv (instantiates everything), pll_core.sv (vendor EHXPLLL),
@@ -491,6 +495,7 @@ LEAF_LINT_FILES = \
 	$(RTL_DIR)/utils/sync_fifo.sv \
 	$(RTL_DIR)/memory/sdram_controller.sv \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/mem_dma.sv \
 	$(RTL_DIR)/memory/sram_controller.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/tmds_encoder.sv \
@@ -611,6 +616,7 @@ HARNESS_RTL_SOURCES = \
 	$(RTL_DIR)/spi/command_fifo.sv \
 	$(RTL_DIR)/memory/sdram_controller.sv \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/mem_dma.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/tmds_encoder.sv \
 	$(RTL_DIR)/display/dvi_output.sv \
@@ -704,6 +710,7 @@ SIM_RTL_SOURCES = \
 	$(RTL_DIR)/spi/command_fifo.sv \
 	$(RTL_DIR)/memory/sdram_controller.sv \
 	$(RTL_DIR)/memory/sram_arbiter.sv \
+	$(RTL_DIR)/memory/mem_dma.sv \
 	$(RTL_DIR)/display/timing_generator.sv \
 	$(RTL_DIR)/display/display_controller.sv \
 	$(RTL_DIR)/fp_types_pkg.sv \

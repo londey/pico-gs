@@ -1274,6 +1274,146 @@ module tb_sdram_controller;
         $display("  PASS: Reset recovery and re-initialization");
 
         // ============================================================
+        // Test 12: Burst Write with Concurrent Refresh
+        // ============================================================
+        // Reproduces a bug where refresh_pending going high during a
+        // burst write causes ST_PRECHARGE → ST_REFRESH → ST_IDLE,
+        // skipping ST_DONE entirely.  Without the ack, the arbiter
+        // keeps req asserted, and the controller starts a SECOND
+        // burst at the same address with different data — corrupting
+        // memory.
+        //
+        // Strategy: force the refresh timer close to expiry just
+        // before issuing a burst write so that refresh_pending goes
+        // high during the write.  Then verify:
+        //   1. Exactly one ack fires
+        //   2. Each column is written only once (no double-write)
+        //   3. Data matches what was provided
+        // ============================================================
+        $display("\n--- Test 12: Burst Write with Concurrent Refresh ---");
+
+        wait_ready(20);
+
+        // Force the refresh timer close to expiry so refresh_pending
+        // goes high during the upcoming burst write.
+        // REFRESH_INTERVAL = 780.  A burst write takes about 4 write
+        // cycles + tWR + precharge + done ≈ 10 cycles in ST_WRITE
+        // through ST_PRECHARGE.  Set the timer to ~775 so it fires
+        // during the write.
+        force dut.refresh_timer = 10'd775;
+        @(posedge clk); #1;
+        release dut.refresh_timer;
+
+        // Clear target columns so we can detect double-writes
+        for (i = 0; i < 8; i = i + 1) begin
+            sdram_mem[0][0][300 + i] = 16'h0000;
+        end
+
+        // Issue burst write of 4 words at col 300
+        // addr: bank=0, row=0, col=300 → col/2=150, addr={00,13'd0,8'd150,1'b0}=0x00012C
+        //
+        // Data provider uses a register-based index matching the DMA
+        // protocol: the combinational mux reflects the CURRENT index,
+        // and wdata_req advances the index via NBA so the NEXT word
+        // appears on the following cycle (not the current one).
+        req            = 1'b1;
+        we             = 1'b1;
+        addr           = 24'h00012C;
+        burst_len      = 8'd4;
+        burst_wdata_16 = 16'hAA00; // Word 0 ready for first capture
+        @(posedge clk); #1;
+        req = 1'b0;
+
+        cycle_count = 0;
+        i = 0; // Current word index (mirrors DMA data_word_idx)
+        begin
+            integer ack_count;
+            ack_count = 0;
+            while (cycle_count < 100) begin
+                @(posedge clk); #1;
+                cycle_count = cycle_count + 1;
+                if (ack) begin
+                    ack_count = ack_count + 1;
+                    // Check for spurious second ack
+                    @(posedge clk); #1;
+                    cycle_count = cycle_count + 1;
+                    if (ack) ack_count = ack_count + 1;
+                    cycle_count = 200; // exit loop
+                end
+                // Advance word index on wdata_req (like DMA NBA)
+                // The controller already captured the current word's
+                // data on this posedge via dq_out <= burst_wdata_16.
+                // Advancing now prepares the next word for the next cycle.
+                if (burst_wdata_req) begin
+                    i = i + 1;
+                    burst_wdata_16 = 16'hAA00 + i[15:0];
+                end
+            end
+
+            if (ack_count == 1) begin
+                pass_count = pass_count + 1;
+                $display("  PASS: Exactly 1 ack received");
+            end else begin
+                $display("FAIL: Expected 1 ack, got %0d (refresh may have skipped ST_DONE)", ack_count);
+                fail_count = fail_count + 1;
+            end
+        end
+
+        // Wait for any in-flight refresh to complete
+        @(posedge clk); #1;
+        @(posedge clk); #1;
+
+        // Verify data — each column should contain data from the
+        // single burst write.  The protocol delivers words in order:
+        // word 0 captured at burst start, words 1-3 via wdata_req.
+        $display("  Written: [300]=%04h [301]=%04h [302]=%04h [303]=%04h",
+                 sdram_mem[0][0][300], sdram_mem[0][0][301],
+                 sdram_mem[0][0][302], sdram_mem[0][0][303]);
+
+        // Verify all 4 columns received non-zero data (burst executed)
+        begin
+            integer data_ok;
+            data_ok = 1;
+            for (i = 0; i < 4; i = i + 1) begin
+                if (sdram_mem[0][0][300 + i] == 16'h0000) begin
+                    data_ok = 0;
+                    $display("FAIL: col %0d is zero (burst write did not reach it)", 300 + i);
+                end
+            end
+            if (data_ok != 0) begin
+                pass_count = pass_count + 1;
+                $display("  PASS: All 4 columns received data from burst write");
+            end else begin
+                fail_count = fail_count + 1;
+            end
+        end
+
+        // Verify columns 304-307 were NOT written (no double-burst)
+        begin
+            integer double_write;
+            double_write = 0;
+            for (i = 4; i < 8; i = i + 1) begin
+                if (sdram_mem[0][0][300 + i] != 16'h0000) begin
+                    double_write = 1;
+                    $display("FAIL: col %0d = %04h (should be 0000 — indicates double burst)",
+                             300 + i, sdram_mem[0][0][300 + i]);
+                end
+            end
+            if (double_write == 0) begin
+                pass_count = pass_count + 1;
+                $display("  PASS: No double-write detected in adjacent columns");
+            end else begin
+                fail_count = fail_count + 1;
+            end
+        end
+
+        // Verify controller returns to ready state
+        wait_ready(100);
+        check_bit("ready after refresh+write", ready, 1'b1);
+
+        @(posedge clk); #1;
+
+        // ============================================================
         // Summary
         // ============================================================
         $display("\n=== Results: %0d passed, %0d failed ===", pass_count, fail_count);

@@ -209,6 +209,7 @@ module gpu_top (
     wire [63:0] mem_addr_out;
     wire [63:0] mem_data_out;
     wire        mem_data_wr;
+    wire [21:0] mem_data_dword_addr;
     wire        mem_data_rd;
 
     // Timestamp SDRAM write signals (register_file → arbiter port 3)
@@ -389,6 +390,7 @@ module gpu_top (
         .mem_addr_out(mem_addr_out),
         .mem_data_out(mem_data_out),
         .mem_data_wr(mem_data_wr),
+        .mem_data_dword_addr(mem_data_dword_addr),
         .mem_data_rd(mem_data_rd),
         .mem_data_in(64'h0),           // TODO: connect to SDRAM read path
 
@@ -414,7 +416,8 @@ module gpu_top (
     // Stall the command FIFO when the rasterizer cannot accept a new triangle.
     // This prevents VERTEX_KICK pulses from being lost while the rasterizer is
     // busy processing the previous triangle.
-    assign gpu_busy = !rast_ready;
+    wire dma_busy;
+    assign gpu_busy = !rast_ready || dma_busy;
     // vblank is assigned from display timing generator (see display section)
 
     // ========================================================================
@@ -623,10 +626,44 @@ module gpu_top (
     assign arb_port2_burst_len = (pp_zb_write_req || pp_zb_read_req) ? 8'd1 : 8'd0;
     assign arb_port2_burst_wdata = pp_zb_write_data;
 
-    // Port 3: Texture cache fill reads + PERF_TIMESTAMP writes (DD-026)
+    // ========================================================================
+    // Memory DMA Engine (MEM_DATA / MEM_FILL write path)
+    // ========================================================================
+
+    wire        dma_req;
+    wire        dma_we;
+    wire [23:0] dma_addr;
+    wire [7:0]  dma_burst_len;
+    wire [15:0] dma_burst_wdata;
+    wire        dma_ack;
+    wire        dma_burst_wdata_req;
+
+    mem_dma u_mem_dma (
+        .clk              (clk_core),
+        .rst_n            (rst_n_core),
+        .mem_data_wr      (mem_data_wr),
+        .mem_data         (mem_data_out),
+        .mem_dword_addr   (mem_data_dword_addr),
+        .mem_fill_trigger (mem_fill_trigger),
+        .mem_fill_base    (mem_fill_base),
+        .mem_fill_value   (mem_fill_value),
+        .mem_fill_count   (mem_fill_count),
+        .dma_req          (dma_req),
+        .dma_we           (dma_we),
+        .dma_addr         (dma_addr),
+        .dma_burst_len    (dma_burst_len),
+        .dma_burst_wdata  (dma_burst_wdata),
+        .dma_busy         (dma_busy),
+        .dma_ack          (dma_ack),
+        .dma_ready        (arb_port3_ready),
+        .dma_burst_wdata_req (dma_burst_wdata_req)
+    );
+
+    // Port 3: Texture cache fill reads + DMA writes + PERF_TIMESTAMP writes (DD-026)
     //
     // Port 3 is shared between:
     //   - Texture cache fill burst reads from pixel_pipeline (UNIT-006)
+    //   - MEM_DATA/MEM_FILL DMA burst writes from register_file
     //   - PERF_TIMESTAMP single-word SDRAM writes from register_file (UNIT-003)
     //
     // Texture fill requests take priority; timestamp writes are
@@ -653,13 +690,15 @@ module gpu_top (
 
     // Grant tracking registers
     reg         tex_req_granted;
+    reg         dma_req_granted;
     reg         ts_req_granted;
 
-    // Next-state signals for timestamp pending FSM
+    // Next-state signals for port 3 sharing FSM
     logic        next_ts_pending;
     logic [23:0] next_ts_arb_addr;
     logic [31:0] next_ts_arb_wdata;
     logic        next_tex_req_granted;
+    logic        next_dma_req_granted;
     logic        next_ts_req_granted;
 
     always_comb begin
@@ -667,6 +706,7 @@ module gpu_top (
         next_ts_arb_addr      = ts_arb_addr;
         next_ts_arb_wdata     = ts_arb_wdata;
         next_tex_req_granted  = tex_req_granted;
+        next_dma_req_granted  = dma_req_granted;
         next_ts_req_granted   = ts_req_granted;
 
         // Latch new timestamp write request (coalescing: overwrites pending)
@@ -677,10 +717,14 @@ module gpu_top (
         end
 
         // Track which request was granted on port 3
+        // Priority: texture > DMA > timestamp
         if (tex_req && arb_port3_ready) begin
             next_tex_req_granted = 1'b1;
         end
-        if (ts_pending && !tex_req && arb_port3_ready) begin
+        if (dma_req && !tex_req && arb_port3_ready) begin
+            next_dma_req_granted = 1'b1;
+        end
+        if (ts_pending && !tex_req && !dma_req && arb_port3_ready) begin
             next_ts_req_granted = 1'b1;
         end
 
@@ -688,6 +732,9 @@ module gpu_top (
         if (arb_port3_ack) begin
             if (tex_req_granted) begin
                 next_tex_req_granted = 1'b0;
+            end
+            if (dma_req_granted) begin
+                next_dma_req_granted = 1'b0;
             end
             if (ts_req_granted) begin
                 next_ts_req_granted = 1'b0;
@@ -702,27 +749,41 @@ module gpu_top (
             ts_arb_addr      <= 24'd0;
             ts_arb_wdata     <= 32'd0;
             tex_req_granted  <= 1'b0;
+            dma_req_granted  <= 1'b0;
             ts_req_granted   <= 1'b0;
         end else begin
             ts_pending       <= next_ts_pending;
             ts_arb_addr      <= next_ts_arb_addr;
             ts_arb_wdata     <= next_ts_arb_wdata;
             tex_req_granted  <= next_tex_req_granted;
+            dma_req_granted  <= next_dma_req_granted;
             ts_req_granted   <= next_ts_req_granted;
         end
     end
 
-    // Priority mux: texture cache fill requests take priority over timestamp writes
-    assign arb_port3_req       = tex_req || (ts_pending && !tex_req);
-    assign arb_port3_we        = tex_req ? 1'b0      : 1'b1;  // texture=read, timestamp=write
-    assign arb_port3_addr      = tex_req ? tex_addr   : ts_arb_addr;
-    assign arb_port3_wdata     = tex_req ? 32'b0      : ts_arb_wdata;
-    assign arb_port3_burst_len = tex_req ? tex_burst_len : 8'b0;
-    assign arb_port3_burst_wdata = 16'b0;  // no burst writes on port 3
+    // Priority mux: texture reads > DMA writes > timestamp writes
+    assign arb_port3_req       = tex_req
+                                 || (dma_req && !tex_req)
+                                 || (ts_pending && !tex_req && !dma_req);
+    assign arb_port3_we        = tex_req ? 1'b0 : 1'b1;  // texture=read, DMA/timestamp=write
+    assign arb_port3_addr      = tex_req ? tex_addr
+                                 : dma_req ? dma_addr
+                                 : ts_arb_addr;
+    assign arb_port3_wdata     = tex_req ? 32'b0
+                                 : dma_req ? 32'b0
+                                 : ts_arb_wdata;
+    assign arb_port3_burst_len = tex_req ? tex_burst_len
+                                 : dma_req ? dma_burst_len
+                                 : 8'b0;
+    assign arb_port3_burst_wdata = dma_req_granted ? dma_burst_wdata : 16'b0;
 
     // Route burst read data back to texture cache (UNIT-006)
     assign tex_burst_rdata      = arb_port3_burst_rdata;
     assign tex_burst_data_valid = tex_req_granted && arb_port3_burst_data_valid;
+
+    // Route ack and burst_wdata_req back to DMA engine
+    assign dma_ack              = dma_req_granted && arb_port3_ack;
+    assign dma_burst_wdata_req  = dma_req_granted && arb_port3_burst_wdata_req;
     assign tex_ack              = tex_req_granted && arb_port3_ack;
 
     // ========================================================================
@@ -1000,10 +1061,8 @@ module gpu_top (
     wire [1:0]  _unused_dither_pat  = mode_dither_pattern;
     wire        _unused_mode_gouraud = mode_gouraud;
     wire        _unused_rect_valid  = rect_valid;
-    wire [63:0] _unused_mem_addr    = mem_addr_out;
-    wire [63:0] _unused_mem_data    = mem_data_out;
-    wire        _unused_mem_wr      = mem_data_wr;
     wire        _unused_mem_rd      = mem_data_rd;
+    wire [63:0] _unused_mem_addr    = mem_addr_out; // DMA uses mem_data_dword_addr instead
     wire        _unused_tex1_inv    = tex1_cache_inv;
     wire [15:0] _unused_tex0_cfg_upper = tex0_cfg[63:48];
     wire [63:0] _unused_tex1_cfg_full  = tex1_cfg;
@@ -1011,15 +1070,11 @@ module gpu_top (
     wire [9:0]  _unused_scissor_y   = scissor_y;
     wire [9:0]  _unused_scissor_w   = scissor_width;
     wire [9:0]  _unused_scissor_h   = scissor_height;
-    wire        _unused_fill_trigger = mem_fill_trigger;
-    wire [23:0] _unused_fill_base   = mem_fill_base;
-    wire [15:0] _unused_fill_value  = mem_fill_value;
-    wire [19:0] _unused_fill_count  = mem_fill_count;
+    wire        _unused_dma_we      = dma_we; // Always 1, not needed in mux
     wire [15:0] _unused_fb_lut_addr = fb_lut_addr;
     wire        _unused_color_grade = color_grade_enable;
     // Arbiter port 3 single-word read data unused (texture uses burst reads)
     wire [31:0] _unused_p3_rdata       = arb_port3_rdata;
-    wire        _unused_p3_bwdata_req  = arb_port3_burst_wdata_req;
     /* verilator lint_on UNUSEDSIGNAL */
 
     pixel_pipeline u_pixel_pipeline (

@@ -16,7 +16,9 @@
       "Bash(/workspaces/pico-gs/.syskit/scripts/impl-check.sh)",
       "Bash(python3 generate_all.py)",
       "Bash(cargo run:*)",
-      "Bash(python3 spi_gpu/tests/scripts/gen/generate_all.py)"
+      "Bash(python3 spi_gpu/tests/scripts/gen/generate_all.py)",
+      "Bash(find:*)",
+      "Read(//workspaces/**)"
     ]
   }
 }

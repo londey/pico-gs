@@ -90,6 +90,7 @@ module register_file (
     output reg  [63:0]  mem_addr_out,        // MEM_ADDR register value
     output reg  [63:0]  mem_data_out,        // MEM_DATA write value
     output reg          mem_data_wr,         // MEM_DATA write pulse
+    output reg  [21:0]  mem_data_dword_addr, // Pre-increment dword address (valid with mem_data_wr)
     output reg          mem_data_rd,         // MEM_DATA read pulse
     input  wire [63:0]  mem_data_in,         // MEM_DATA prefetched read value
 
@@ -365,6 +366,7 @@ module register_file (
     reg          next_tex0_cache_inv;
     reg          next_tex1_cache_inv;
     reg          next_mem_data_wr;
+    reg [21:0]   next_mem_data_dword_addr;
     reg          next_mem_data_rd;
     reg [63:0]   next_mem_data_out;
     reg          next_ts_mem_wr;
@@ -433,8 +435,9 @@ module register_file (
         next_tex0_cache_inv   = 1'b0;
         next_tex1_cache_inv   = 1'b0;
         next_ts_mem_wr        = 1'b0;
-        next_mem_data_wr      = 1'b0;
-        next_mem_data_rd      = 1'b0;
+        next_mem_data_wr         = 1'b0;
+        next_mem_data_dword_addr = mem_addr_reg[21:0]; // Capture pre-increment addr
+        next_mem_data_rd         = 1'b0;
 
         // ---- Cycle counter: saturating increment, reset on vsync rising edge ----
         next_vblank_prev = vblank;
@@ -749,9 +752,10 @@ module register_file (
             mem_fill_count   <= 20'h0;
             tex0_cache_inv   <= 1'b0;
             tex1_cache_inv   <= 1'b0;
-            mem_data_wr      <= 1'b0;
-            mem_data_rd      <= 1'b0;
-            mem_data_out     <= 64'h0;
+            mem_data_wr         <= 1'b0;
+            mem_data_dword_addr <= 22'h0;
+            mem_data_rd         <= 1'b0;
+            mem_data_out        <= 64'h0;
 
             // Reset cycle counter and timestamp
             cycle_counter <= 32'd0;
@@ -813,9 +817,10 @@ module register_file (
             mem_fill_count   <= next_mem_fill_count;
             tex0_cache_inv   <= next_tex0_cache_inv;
             tex1_cache_inv   <= next_tex1_cache_inv;
-            mem_data_wr      <= next_mem_data_wr;
-            mem_data_rd      <= next_mem_data_rd;
-            mem_data_out     <= next_mem_data_out;
+            mem_data_wr         <= next_mem_data_wr;
+            mem_data_dword_addr <= next_mem_data_dword_addr;
+            mem_data_rd         <= next_mem_data_rd;
+            mem_data_out        <= next_mem_data_out;
             ts_mem_wr        <= next_ts_mem_wr;
             ts_mem_addr      <= next_ts_mem_addr;
             ts_mem_data      <= next_ts_mem_data;

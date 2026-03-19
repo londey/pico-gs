@@ -467,9 +467,9 @@ module pixel_pipeline (
             3'd1:    tex0_mux_texel = bc2_texel_out;
             3'd2:    tex0_mux_texel = bc3_texel_out;
             3'd3:    tex0_mux_texel = bc4_texel_out;
-            3'd4:    tex0_mux_texel = rgb565_texel_out;
-            3'd5:    tex0_mux_texel = rgba8888_texel_out;
-            3'd6:    tex0_mux_texel = r8_texel_out;
+            3'd5:    tex0_mux_texel = rgb565_texel_out;
+            3'd6:    tex0_mux_texel = rgba8888_texel_out;
+            3'd7:    tex0_mux_texel = r8_texel_out;
             default: tex0_mux_texel = 36'b0;
         endcase
     end
@@ -485,9 +485,9 @@ module pixel_pipeline (
             3'd1:    tex1_mux_texel = bc2_texel_out;
             3'd2:    tex1_mux_texel = bc3_texel_out;
             3'd3:    tex1_mux_texel = bc4_texel_out;
-            3'd4:    tex1_mux_texel = rgb565_texel_out;
-            3'd5:    tex1_mux_texel = rgba8888_texel_out;
-            3'd6:    tex1_mux_texel = r8_texel_out;
+            3'd5:    tex1_mux_texel = rgb565_texel_out;
+            3'd6:    tex1_mux_texel = rgba8888_texel_out;
+            3'd7:    tex1_mux_texel = r8_texel_out;
             default: tex1_mux_texel = 36'b0;
         endcase
     end

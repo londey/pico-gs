@@ -200,14 +200,15 @@ module sdram_controller (
                               && (read_pipe_count >= CAS_LATENCY[2:0])
                               && (data_remaining > 8'd0);
 
-    // burst_wdata_req: request next write word during sequential write
-    // Asserted after the first WRITE command has been issued (write_issued > 0),
-    // indicating the controller has consumed the current word and needs the next.
-    // Not asserted on the ACTIVATE->WRITE transition cycle (write_issued still 0)
-    // to avoid the arbiter/port advancing data before the first word is captured.
+    // burst_wdata_req: request next write word during sequential write.
+    // Fires on every ST_WRITE cycle EXCEPT the last (burst_count == 1),
+    // signalling the data provider to advance to the next word.  The
+    // provider's combinational output still reflects the CURRENT word on
+    // this eval, so the SDRAM controller captures the correct data in its
+    // registered dq_out.  The advance takes effect via NBA, making the
+    // NEXT word available on the following cycle.
     assign burst_wdata_req = (state == ST_WRITE) && burst_mode && we_reg
-                             && (burst_count > 8'd0) && !burst_cancel
-                             && (write_issued > 8'd0);
+                             && (burst_count > 8'd1) && !burst_cancel;
 
     // rdata: assembled 32-bit word for single-word reads
     // Valid on ack cycle for single-word reads
@@ -294,11 +295,14 @@ module sdram_controller (
 
             ST_PRECHARGE: begin
                 if (wait_counter == 4'd0) begin
-                    if (precharge_for_refresh) begin
-                        next_state = ST_REFRESH;
-                    end else begin
-                        next_state = ST_DONE;
-                    end
+                    // Always go through ST_DONE to generate the ack pulse.
+                    // If a refresh is pending, it will be handled on the
+                    // subsequent ST_IDLE entry (refresh_pending stays set).
+                    // Going directly to ST_REFRESH would skip the ack,
+                    // leaving the arbiter with grant_active stuck high
+                    // and causing the controller to re-execute the same
+                    // burst on the next ST_IDLE entry.
+                    next_state = ST_DONE;
                 end
             end
 

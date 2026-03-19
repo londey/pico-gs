@@ -236,6 +236,7 @@ module raster_edge_walk (
     reg        [7:0]  persp_lod;          // UQ4.4 LOD
 
     reg [9:0]  latched_x;                // Latched X for emission
+
     reg [9:0]  latched_y;                // Latched Y for emission
     reg [15:0] latched_z;               // Latched Z for emission
     reg [63:0] latched_color0;          // Latched color0 for emission
@@ -250,10 +251,14 @@ module raster_edge_walk (
     // Product: signed 16 × signed 18 = signed 34-bit (Q12.22).
     // Extract Q4.12 from bits [25:10].
 
-    wire signed [33:0] mul_u0 = $signed(s0_acc[31:16]) * $signed(persp_recip);
-    wire signed [33:0] mul_v0 = $signed(t0_acc[31:16]) * $signed(persp_recip);
-    wire signed [33:0] mul_u1 = $signed(s1_acc[31:16]) * $signed(persp_recip);
-    wire signed [33:0] mul_v1 = $signed(t1_acc[31:16]) * $signed(persp_recip);
+    // Use recip_out directly (bypassing persp_recip register) because
+    // raster_recip_q has 2-cycle latency: the output is valid at EW_PERSP_2
+    // (when recip_out has been registered), but persp_recip would lag by
+    // one additional cycle if latched from recip_out in EW_PERSP_1.
+    wire signed [33:0] mul_u0 = $signed(s0_acc[31:16]) * $signed(recip_out);
+    wire signed [33:0] mul_v0 = $signed(t0_acc[31:16]) * $signed(recip_out);
+    wire signed [33:0] mul_u1 = $signed(s1_acc[31:16]) * $signed(recip_out);
+    wire signed [33:0] mul_v1 = $signed(t1_acc[31:16]) * $signed(recip_out);
 
     // Unused bits from multiply products
     wire [9:0]  _unused_mul_u0_lo = mul_u0[9:0];
@@ -499,6 +504,7 @@ module raster_edge_walk (
                     // is calibrated for the 16-bit Q value range.
                     next_recip_operand = {16'd0, q_acc[31:16]};
                     next_recip_valid_in = 1'b1;
+
                 end
             end
 
@@ -513,14 +519,20 @@ module raster_edge_walk (
             end
 
             EW_PERSP_1: begin
-                // BRAM read result available (2-cycle latency from raster_recip_q)
-                // Latch 18-bit UQ7.10 reciprocal
-                next_persp_recip = recip_out;
-                // CLZ to UQ4.4: integer mip level from CLZ, fractional = 0
-                next_persp_lod = {recip_clz_out[4:0], 3'b000};
+                // Wait cycle: raster_recip_q stage 2 output registers
+                // are being captured this cycle.  recip_out will be valid
+                // at the START of the next cycle (EW_PERSP_2).
             end
 
             EW_PERSP_2: begin
+                // recip_out is now valid (2-cycle latency from raster_recip_q
+                // completed at the previous posedge).  The perspective correction
+                // multiplies use recip_out directly (combinational), so their
+                // results are valid here.
+                next_persp_recip = recip_out;
+                // CLZ to UQ4.4: integer mip level from CLZ, fractional = 0
+                next_persp_lod = {recip_clz_out[4:0], 3'b000};
+
                 // Latch multiply results for emission
                 next_frag_valid = 1'b1;
                 next_frag_x = latched_x;
@@ -530,10 +542,11 @@ module raster_edge_walk (
                 next_frag_color1 = latched_color1;
                 next_frag_uv0 = {mul_u0[25:10], mul_v0[25:10]};
                 next_frag_uv1 = {mul_u1[25:10], mul_v1[25:10]};
-                next_frag_lod = persp_lod;
+                next_frag_lod = {recip_clz_out[4:0], 3'b000};
                 next_frag_tile_start = tile_first_emission;
                 next_tile_first_emission = 1'b0;
                 next_tile_has_emission = 1'b1;
+
             end
 
             EW_EMIT: begin

@@ -225,10 +225,10 @@ module texture_cache (
             3'd1:    burst_len_next = BURST_LEN_BC2;       // BC2: 8 words
             3'd2:    burst_len_next = BURST_LEN_BC3;       // BC3: 8 words
             3'd3:    burst_len_next = BURST_LEN_BC4;       // BC4: 4 words
-            3'd4:    burst_len_next = BURST_LEN_RGB565;    // RGB565: 16 words
-            3'd5:    burst_len_next = BURST_LEN_RGBA8888;  // RGBA8888: 32 words
-            3'd6:    burst_len_next = BURST_LEN_R8;        // R8: 8 words
-            default: burst_len_next = 8'd0;                // Reserved
+            3'd5:    burst_len_next = BURST_LEN_RGB565;    // RGB565: 16 words
+            3'd6:    burst_len_next = BURST_LEN_RGBA8888;  // RGBA8888: 32 words
+            3'd7:    burst_len_next = BURST_LEN_R8;        // R8: 8 words
+            default: burst_len_next = 8'd0;                // Reserved (incl. 4)
         endcase
     end
 
@@ -259,9 +259,9 @@ module texture_cache (
             3'd1:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // BC2: * 16 / 2 = * 8
             3'd2:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // BC3: * 16 / 2 = * 8
             3'd3:    block_sram_addr = tex_base_addr + {6'b0, block_index, 2'b00};    // BC4: * 8 / 2 = * 4
-            3'd4:    block_sram_addr = tex_base_addr + {4'b0, block_index, 4'b0000};  // RGB565: * 32 / 2 = * 16
-            3'd5:    block_sram_addr = tex_base_addr + {3'b0, block_index, 5'b00000}; // RGBA8888: * 64 / 2 = * 32
-            3'd6:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // R8: * 16 / 2 = * 8
+            3'd5:    block_sram_addr = tex_base_addr + {4'b0, block_index, 4'b0000};  // RGB565: * 32 / 2 = * 16
+            3'd6:    block_sram_addr = tex_base_addr + {3'b0, block_index, 5'b00000}; // RGBA8888: * 64 / 2 = * 32
+            3'd7:    block_sram_addr = tex_base_addr + {5'b0, block_index, 3'b000};   // R8: * 16 / 2 = * 8
             default: block_sram_addr = tex_base_addr;
         endcase
     end
@@ -459,6 +459,7 @@ module texture_cache (
                         sram_req       <= 1'b1;
                         sram_addr      <= block_sram_addr;
                         sram_burst_len <= burst_len_next;
+
                     end
                 end
 
@@ -489,6 +490,7 @@ module texture_cache (
                     // Decompression is performed combinationally — results
                     // are used by decomp_texels in the combinational block below.
                     // This state takes one cycle for the pipeline register.
+
                 end
 
                 FILL_WRITE: begin
@@ -579,29 +581,29 @@ module texture_cache (
                             decomp_texels[t] = 36'b0;
                         end else begin
                             decomp_texels[t] = {
-                                9'h100, // A9: opaque
-                                {1'b0, b5_to_b8(bc1_palette[bc1_indices[t*2 +: 2]][4:0])},
+                                {1'b0, r5_to_r8(bc1_palette[bc1_indices[t*2 +: 2]][15:11])},
                                 {1'b0, g6_to_g8(bc1_palette[bc1_indices[t*2 +: 2]][10:5])},
-                                {1'b0, r5_to_r8(bc1_palette[bc1_indices[t*2 +: 2]][15:11])}
+                                {1'b0, b5_to_b8(bc1_palette[bc1_indices[t*2 +: 2]][4:0])},
+                                9'h100  // A9: opaque
                             };
                         end
                     end
                 end
 
-                3'd4: begin
-                    // RGB565 → UQ1.8 with MSB replication
+                3'd5: begin
+                    // RGB565 → UQ1.8 {R9, G9, B9, A9} per INT-032
                     for (int t = 0; t < 16; t++) begin
                         decomp_texels[t] = {
-                            9'h100,
-                            {1'b0, b5_to_b8(burst_buf[t][4:0])},
+                            {1'b0, r5_to_r8(burst_buf[t][15:11])},
                             {1'b0, g6_to_g8(burst_buf[t][10:5])},
-                            {1'b0, r5_to_r8(burst_buf[t][15:11])}
+                            {1'b0, b5_to_b8(burst_buf[t][4:0])},
+                            9'h100  // A9: opaque
                         };
                     end
                 end
 
                 default: begin
-                    // Formats BC2(1), BC3(2), BC4(3), RGBA8888(5), R8(6):
+                    // Formats BC2(1), BC3(2), BC4(3), RGBA8888(6), R8(7):
                     // Decompression delegated to standalone decoder modules
                     // in the pixel pipeline. Cache fill stores raw data for
                     // these formats. For now, leave zeros (placeholder for
