@@ -76,7 +76,7 @@ fn vertex_uv(px: u16, py: u16, s0: i16, t0: i16) -> RasterVertex {
         px,
         py,
         z: 0,
-        q: 1, // Q=1 → recip_q(1)=1.0 in UQ4.14, affine pass-through
+        q: 0x8000, // Q=1.0 in UQ1.15 → recip_q(0x8000)=0x0400 (1.0 in UQ7.10), affine pass-through
         color0: Rgba8888(0xFFFF_FFFF),
         color1: Rgba8888(0),
         s0: s0 as u16,

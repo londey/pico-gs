@@ -302,43 +302,50 @@ module texture_cache (
     //  All seven formats use 3-bit tex_format encoding per INT-032.)
 
     // ====================================================================
-    // BC1 → RGB565 Decompression helpers (combinational)
-    // Input: 4 x 16-bit words = 64 bits
-    //   words 0-1: color0 (RGB565), color1 (RGB565)
-    //   words 2-3: 32-bit index word (2 bits per texel, 16 texels)
+    // BC1 → UQ1.8 Decompression helpers (combinational)
+    // Endpoints expanded to UQ1.8 (9-bit) BEFORE interpolation,
+    // matching texture_bc1.sv and gs-twin (tex_decode.rs).
     // ====================================================================
 
-    // BC1 color channel interpolation: (2*a + b + 1) / 3 via reciprocal-multiply
-    // Uses (x * 683) >> 11 (DD-039, 0 DSP slices), exact for operands up to 769.
+    // UQ1.8 channel expansion: R5/B5 → 9-bit
     /* verilator lint_off UNUSEDSIGNAL */
-    function automatic [17:0] bc1_recip3(input [17:0] x);
+    function automatic [8:0] ch5_to_uq18(input [4:0] ch5);
         begin
-            bc1_recip3 = (x * 18'd683) >> 11;
+            ch5_to_uq18 = {1'b0, ch5, ch5[4:2]} + {8'b0, ch5[4]};
+        end
+    endfunction
+
+    // UQ1.8 channel expansion: G6 → 9-bit
+    function automatic [8:0] ch6_to_uq18(input [5:0] ch6);
+        begin
+            ch6_to_uq18 = {1'b0, ch6, ch6[5:4]} + {8'b0, ch6[5]};
         end
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    // BC1 color interpolation: (2*c0 + c1 + 1) / 3 per RGB565 channel
-    function automatic [15:0] bc1_interp_2_1(input [15:0] c0, input [15:0] c1);
+    // UQ1.8 1/3 interpolation: (2*a + b + 1) * 683 >> 11 (DD-039)
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic [8:0] uq18_lerp13(input [8:0] a, input [8:0] b);
+        reg [10:0] sum;
+        reg [20:0] prod;
         begin
-            bc1_interp_2_1 = {
-                5'(bc1_recip3(18'(c0[15:11]) + 18'(c0[15:11]) + 18'(c1[15:11]) + 18'd1)),
-                6'(bc1_recip3(18'(c0[10:5])  + 18'(c0[10:5])  + 18'(c1[10:5])  + 18'd1)),
-                5'(bc1_recip3(18'(c0[4:0])   + 18'(c0[4:0])   + 18'(c1[4:0])   + 18'd1))
-            };
+            sum  = {2'b0, a} + {2'b0, a} + {2'b0, b} + 11'd1;
+            prod = {10'b0, sum} * 21'd683;
+            uq18_lerp13 = prod[19:11];
         end
     endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    // BC1 color interpolation: (c0 + c1) / 2 per RGB565 channel
-    function automatic [15:0] bc1_interp_1_1(input [15:0] c0, input [15:0] c1);
+    // UQ1.8 1/2 interpolation: (a + b + 1) >> 1
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic [8:0] uq18_lerp12(input [8:0] a, input [8:0] b);
+        reg [9:0] sum;
         begin
-            bc1_interp_1_1 = {
-                5'(({1'b0, c0[15:11]} + {1'b0, c1[15:11]}) >> 1),
-                6'(({1'b0, c0[10:5]}  + {1'b0, c1[10:5]})  >> 1),
-                5'(({1'b0, c0[4:0]}   + {1'b0, c1[4:0]})   >> 1)
-            };
+            sum = {1'b0, a} + {1'b0, b} + 10'd1;
+            uq18_lerp12 = sum[9:1];
         end
     endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
     // Decompress Registers
@@ -513,7 +520,9 @@ module texture_cache (
     // BC1 decompression intermediates
     reg [15:0] bc1_color0, bc1_color1;
     reg [31:0] bc1_indices;
-    reg [15:0] bc1_palette [0:3];
+    reg [8:0]  bc1_c0_r9, bc1_c0_g9, bc1_c0_b9;
+    reg [8:0]  bc1_c1_r9, bc1_c1_g9, bc1_c1_b9;
+    reg [35:0] bc1_palette_uq18 [0:3];
 
     // BC1 UQ1.8 helpers: expand RGB565 endpoint to 8-bit with MSB replication.
     // Input bits are wider than used for replication; this is intentional
@@ -547,8 +556,10 @@ module texture_cache (
         bc1_color0  = 16'b0;
         bc1_color1  = 16'b0;
         bc1_indices = 32'b0;
+        bc1_c0_r9 = 9'b0; bc1_c0_g9 = 9'b0; bc1_c0_b9 = 9'b0;
+        bc1_c1_r9 = 9'b0; bc1_c1_g9 = 9'b0; bc1_c1_b9 = 9'b0;
         for (int p = 0; p < 4; p++) begin
-            bc1_palette[p] = 16'b0;
+            bc1_palette_uq18[p] = 36'b0;
         end
 
         if (fill_state == FILL_DECOMPRESS || fill_state == FILL_WRITE) begin
@@ -559,34 +570,47 @@ module texture_cache (
                     bc1_color1  = burst_buf[1];
                     bc1_indices = {burst_buf[3], burst_buf[2]}; // Little-endian 32-bit
 
-                    // Generate palette (RGB565 endpoints, expanded to UQ1.8 below)
-                    bc1_palette[0] = bc1_color0;
-                    bc1_palette[1] = bc1_color1;
+                    // Expand endpoints to UQ1.8 (9-bit) per channel, matching
+                    // texture_bc1.sv and gs-twin ch5_to_uq18()/ch6_to_uq18()
+                    bc1_c0_r9 = ch5_to_uq18(bc1_color0[15:11]);
+                    bc1_c0_g9 = ch6_to_uq18(bc1_color0[10:5]);
+                    bc1_c0_b9 = ch5_to_uq18(bc1_color0[4:0]);
+                    bc1_c1_r9 = ch5_to_uq18(bc1_color1[15:11]);
+                    bc1_c1_g9 = ch6_to_uq18(bc1_color1[10:5]);
+                    bc1_c1_b9 = ch5_to_uq18(bc1_color1[4:0]);
+
+                    // Build 4-entry palette at UQ1.8 precision {R9, G9, B9, A9}
+                    bc1_palette_uq18[0] = {bc1_c0_r9, bc1_c0_g9, bc1_c0_b9, 9'h100};
+                    bc1_palette_uq18[1] = {bc1_c1_r9, bc1_c1_g9, bc1_c1_b9, 9'h100};
 
                     if (bc1_color0 > bc1_color1) begin
-                        // 4-color mode (opaque)
-                        bc1_palette[2] = bc1_interp_2_1(bc1_color0, bc1_color1);
-                        bc1_palette[3] = bc1_interp_2_1(bc1_color1, bc1_color0);
+                        // 4-color opaque: 1/3 and 2/3 interpolation at UQ1.8
+                        bc1_palette_uq18[2] = {
+                            uq18_lerp13(bc1_c0_r9, bc1_c1_r9),
+                            uq18_lerp13(bc1_c0_g9, bc1_c1_g9),
+                            uq18_lerp13(bc1_c0_b9, bc1_c1_b9),
+                            9'h100
+                        };
+                        bc1_palette_uq18[3] = {
+                            uq18_lerp13(bc1_c1_r9, bc1_c0_r9),
+                            uq18_lerp13(bc1_c1_g9, bc1_c0_g9),
+                            uq18_lerp13(bc1_c1_b9, bc1_c0_b9),
+                            9'h100
+                        };
                     end else begin
-                        // 3-color + transparent mode
-                        bc1_palette[2] = bc1_interp_1_1(bc1_color0, bc1_color1);
-                        bc1_palette[3] = 16'h0000; // Transparent black
+                        // 3-color + transparent: 1/2 interpolation at UQ1.8
+                        bc1_palette_uq18[2] = {
+                            uq18_lerp12(bc1_c0_r9, bc1_c1_r9),
+                            uq18_lerp12(bc1_c0_g9, bc1_c1_g9),
+                            uq18_lerp12(bc1_c0_b9, bc1_c1_b9),
+                            9'h100
+                        };
+                        bc1_palette_uq18[3] = 36'b0; // Transparent black
                     end
 
-                    // UQ1.8 RGBA (36 bits)
-                    // Expand endpoints to 8-bit, interpolate at 8-bit precision
+                    // Look up each texel from UQ1.8 palette
                     for (int t = 0; t < 16; t++) begin
-                        if (bc1_color0 <= bc1_color1 && bc1_indices[t*2 +: 2] == 2'b11) begin
-                            // Transparent black
-                            decomp_texels[t] = 36'b0;
-                        end else begin
-                            decomp_texels[t] = {
-                                {1'b0, r5_to_r8(bc1_palette[bc1_indices[t*2 +: 2]][15:11])},
-                                {1'b0, g6_to_g8(bc1_palette[bc1_indices[t*2 +: 2]][10:5])},
-                                {1'b0, b5_to_b8(bc1_palette[bc1_indices[t*2 +: 2]][4:0])},
-                                9'h100  // A9: opaque
-                            };
-                        end
+                        decomp_texels[t] = bc1_palette_uq18[bc1_indices[t*2 +: 2]];
                     end
                 end
 

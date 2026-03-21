@@ -92,7 +92,7 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
 	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
-	test-fb-promote test-alpha-blend test-dither
+	test-fb-promote test-alpha-blend test-dither test-raster-viz
 
 # Default target
 all: bitstream
@@ -294,6 +294,28 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TB_DIR)/render/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
 	$(OBJ_DIR)/tb_rasterizer
+
+# Rasterizer visualization testbench (fragment-order + UV diagnostic PNGs)
+# Verilator equivalent of gs-twin raster_viz.rs tests.
+test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) --cc --exe --build -f verilator.f \
+		--Mdir $(OBJ_DIR)/raster_viz \
+		$(RTL_DIR)/fp_types_pkg.sv \
+		$(RTL_DIR)/render/raster_dsp_mul.sv \
+		$(RTL_DIR)/render/raster_shift_mul_47x11.sv \
+		$(RTL_DIR)/render/raster_shift_mul_32x11.sv \
+		$(RTL_DIR)/render/raster_deriv.sv \
+		$(RTL_DIR)/render/raster_attr_accum.sv \
+		$(RTL_DIR)/render/raster_edge_walk.sv \
+		$(RTL_DIR)/render/raster_recip_area.sv \
+		$(RTL_DIR)/render/raster_recip_q.sv \
+		$(RTL_DIR)/render/raster_setup_fifo.sv \
+		$(RTL_DIR)/render/rasterizer.sv \
+		--top-module rasterizer \
+		$(TB_DIR)/render/tb_raster_viz.cpp \
+		-CFLAGS "-std=c++20 -I$(abspath $(TB_DIR)/harness)" \
+		-o tb_raster_viz
+	$(OBJ_DIR)/raster_viz/tb_raster_viz
 
 # VER-002: Early Z-test unit testbench
 test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
