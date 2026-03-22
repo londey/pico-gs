@@ -1,0 +1,11 @@
+[package]
+name = "gs-spi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "SPI register file component of the pico-gs digital twin"
+
+[dependencies]
+gs-twin-core = { path = "../../../shared/gs-twin-core" }
+gpu-registers = { path = "../../registers/twin", default-features = false }

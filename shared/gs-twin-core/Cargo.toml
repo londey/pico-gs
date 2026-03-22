@@ -1,0 +1,11 @@
+[package]
+name = "gs-twin-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared types and utilities for the pico-gs digital twin component crates"
+
+[dependencies]
+qfixed = { path = "../../crates/qfixed" }
+gpu-registers = { path = "../../components/registers/twin", default-features = false }

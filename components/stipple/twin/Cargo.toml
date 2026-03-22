@@ -1,0 +1,10 @@
+[package]
+name = "gs-stipple"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Stipple test component of the pico-gs digital twin"
+
+[dependencies]
+gs-twin-core = { path = "../../../shared/gs-twin-core" }

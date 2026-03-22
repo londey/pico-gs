@@ -1,0 +1,12 @@
+[package]
+name = "gs-display"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Display scanout component of the pico-gs digital twin"
+
+[dependencies]
+gs-twin-core = { path = "../../../shared/gs-twin-core" }
+gs-memory = { path = "../../memory/twin" }
+image = { version = "0.25", default-features = false, features = ["png"] }

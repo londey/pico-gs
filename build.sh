@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Directories
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPI_GPU="${REPO_ROOT}/spi_gpu"
+INTEGRATION="${REPO_ROOT}/integration"
 MAKEFLAGS="-j$(nproc)"
 OUTPUT_DIR="${REPO_ROOT}/build"
 
@@ -93,7 +93,7 @@ echo ""
 # Clean build artifacts
 if [ "$CLEAN" = true ]; then
     echo -e "${YELLOW}Cleaning previous build artifacts...${NC}"
-    cd "${SPI_GPU}"
+    cd "${INTEGRATION}"
     make clean
     find "${OUTPUT_DIR}" -type f -delete 2>/dev/null || true
     echo -e "${GREEN}Cleaned files in ${OUTPUT_DIR}/${NC}"
@@ -103,14 +103,14 @@ fi
 # Generate shared .hex test scripts from Python generators.
 # These are consumed by both the Verilator harness and the digital twin.
 echo -e "${YELLOW}Generating .hex test scripts...${NC}"
-python3 "${SPI_GPU}/tests/scripts/gen/generate_all.py"
+python3 "${INTEGRATION}/scripts/gen/generate_all.py"
 echo -e "${GREEN}.hex test scripts generated${NC}"
 echo ""
 
 # Quick check mode: lint + cargo check + clippy, then exit
 if [ "$CHECK_ONLY" = true ]; then
     echo -e "${YELLOW}[1/4] Verilator lint...${NC}"
-    cd "${SPI_GPU}"
+    cd "${INTEGRATION}"
     make lint
     echo -e "${GREEN}Verilator lint passed${NC}"
     echo ""
@@ -138,7 +138,7 @@ fi
 # Step 1: Build FPGA bitstream
 if [ "$BUILD_FPGA" = true ]; then
     echo -e "${YELLOW}[1/3] Building FPGA bitstream...${NC}"
-    cd "${SPI_GPU}"
+    cd "${INTEGRATION}"
     make bitstream
     FPGA_BITSTREAM="${REPO_ROOT}/build/fpga/gpu_top.bit"
     echo -e "${GREEN}Bitstream built: ${FPGA_BITSTREAM}${NC}"
@@ -191,7 +191,7 @@ fi
 # Step 3: RTL tests (lint + unit testbenches + golden image tests if approved)
 if [ "$BUILD_TEST" = true ]; then
     echo -e "${YELLOW}[3/3] Running RTL tests (lint + unit testbenches + golden image tests)...${NC}"
-    cd "${SPI_GPU}"
+    cd "${INTEGRATION}"
     make test
     echo -e "${GREEN}RTL tests passed${NC}"
     echo ""
@@ -214,7 +214,7 @@ echo ""
 # Optional: Program FPGA
 if [ "$FLASH_FPGA" = true ]; then
     echo -e "${YELLOW}Programming FPGA...${NC}"
-    cd "${SPI_GPU}"
+    cd "${INTEGRATION}"
     make program
     echo -e "${GREEN}FPGA programmed${NC}"
 fi

@@ -5,8 +5,8 @@
 - `./build.sh --check` must pass after every change (Verilator lint, cargo fmt, cargo check, cargo clippy).
 - Minimize blast radius: only change code directly related to the current task. If you notice problems in other areas, mention them but don't fix them without approval.
 - `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
-- `spi_gpu/dt/gs-twin/` is the authoritative detailed design for the pico-gpu and is intended as a bit accurate transactional model of the GPU's behaviour to be used as referent when implementing and verifying the RTL.
-- `registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `registers/scripts/generate.sh` is what code must reference for register values and constants.
+- The digital twin crates under `components/*/twin/` and `integration/gs-twin/` are the authoritative detailed design for the pico-gpu and are intended as a bit accurate transactional model of the GPU's behaviour to be used as referent when implementing and verifying the RTL.
+- `components/registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `components/registers/scripts/generate.sh` is what code must reference for register values and constants.
 - All code follows its respective style guide:
   - SystemVerilog: `.claude/skills/claude-skill-verilog/SKILL.md`
   - Rust: `.claude/skills/claude-skill-rust/SKILL.md`
@@ -18,30 +18,44 @@
 
 ```text
 pico-gs/
+├── components/                # Component-centric layout (RTL + twin + tests per component)
+│   ├── rasterizer/            # Triangle setup + iteration
+│   │   ├── rtl/               # SystemVerilog RTL (rasterizer.sv, raster_*.sv)
+│   │   ├── twin/              # gs-rasterizer Rust crate
+│   │   └── tests/             # Verilator testbenches
+│   ├── stipple/               # Stipple test
+│   ├── early-z/               # Early depth test
+│   ├── texture/               # Texture sampling + decoding
+│   ├── color-combiner/        # Two-stage color combiner
+│   ├── alpha-blend/           # Alpha blending
+│   ├── dither/                # Ordered dithering
+│   ├── pixel-write/           # Framebuffer write (pixel_pipeline, fb_promote, texel_promote)
+│   ├── memory/                # SDRAM + SRAM controllers
+│   ├── display/               # Scan-out / DVI output
+│   ├── spi/                   # SPI transport + register file
+│   ├── registers/             # GPU register interface (single source of truth)
+│   │   ├── rdl/gpu_regs.rdl   # SystemRDL register definitions
+│   │   ├── twin/              # gpu-registers Rust crate (no_std)
+│   │   ├── generated/         # PeakRDL output (SV package + register file)
+│   │   └── scripts/generate.sh
+│   ├── core/                  # PLL, reset (RTL only, no twin)
+│   └── utils/                 # FIFOs (RTL only, no twin)
+├── shared/
+│   ├── fp_types_pkg.sv        # Shared RTL type package
+│   └── gs-twin-core/          # Shared Rust foundation crate (types, math, hex_parser)
+├── integration/
+│   ├── gpu_top.sv             # Top-level RTL module
+│   ├── Makefile               # Integration build + golden tests
+│   ├── verilator.f            # Shared Verilator flags
+│   ├── harness/               # C++ Verilator test harness
+│   ├── golden/                # Approved golden images
+│   ├── scripts/               # Hex test scripts + Python generators
+│   ├── sim/                   # Interactive simulator
+│   ├── gs-twin/               # Pipeline orchestrator crate (depends on all component twins)
+│   └── gs-twin-cli/           # CLI: render golden references, diff vs Verilator
 ├── crates/
-│   └── qfixed/               # Fixed-point math library
-├── registers/                 # GPU register interface (single source of truth)
-│   ├── rdl/gpu_regs.rdl       # SystemRDL register definitions
-│   ├── src/lib.rs             # Rust crate (gpu-registers, no_std)
-│   └── scripts/generate.sh   # PeakRDL codegen → Rust + SV
-├── spi_gpu/                   # FPGA RTL component (SystemVerilog)
-│   ├── src/                   # RTL sources
-│   │   ├── core/              # Core pipeline logic
-│   │   ├── display/           # Scan-out / display
-│   │   ├── memory/            # Memory controllers
-│   │   ├── render/            # Pixel pipeline RTL
-│   │   ├── spi/               # SPI transport + generated register file
-│   │   ├── utils/             # Shared RTL utilities
-│   │   ├── gpu_top.sv         # Top-level module
-│   │   └── fp_types_pkg.sv    # Fixed-point type package
-│   ├── dt/                    # Digital twin (bit-accurate Rust model)
-│   │   ├── gs-twin/           # Library: authoritative pipeline algorithms
-│   │   └── gs-twin-cli/       # CLI: render golden references, diff vs Verilator
-│   ├── tests/                 # Testbenches
-│   ├── sim/                   # Simulation support files
-│   ├── scripts/               # Build/test scripts
-│   ├── constraints/           # FPGA constraints
-│   └── Makefile               # FPGA build system
+│   └── qfixed/                # Fixed-point math library
+├── constraints/               # FPGA constraints
 ├── doc/                       # Syskit specifications
 │   ├── requirements/          # REQ-NNN documents
 │   ├── interfaces/            # INT-NNN documents
@@ -57,37 +71,38 @@ pico-gs/
 
 ## Digital Twin (gs-twin)
 
-The digital twin (`spi_gpu/dt/gs-twin/`) is the **authoritative detailed design** for the GPU's rasterizer and pixel pipeline.
-Its rustdoc on each type and function IS the design spec for the corresponding RTL module.
+The digital twin crates are the **authoritative detailed design** for the GPU's rasterizer and pixel pipeline.
+Each component's `twin/` crate owns the bit-accurate algorithm for that pipeline stage.
+The orchestrator (`integration/gs-twin/`) chains all stages and hosts the `Gpu` struct.
+Shared types live in `shared/gs-twin-core/`.
 It is a bit-accurate, transaction-level Rust model — not cycle-accurate (Verilator owns that role).
 
 ### When to consult gs-twin
 
-- **Before implementing or modifying pixel pipeline SystemVerilog**, read the corresponding gs-twin module first to understand the expected bit-accurate behavior.
+- **Before implementing or modifying pixel pipeline SystemVerilog**, read the corresponding component's twin crate first to understand the expected bit-accurate behavior.
 - **When debugging RTL mismatches**, gs-twin output is the "expected" result — the RTL must match it exactly at the RGB565 pixel level.
-- **When adding new pipeline features**, implement in gs-twin first, verify with golden image tests, then implement the RTL to match.
+- **When adding new pipeline features**, implement in the component twin crate first, verify with golden image tests, then implement the RTL to match.
 
-### Module mapping (gs-twin → RTL)
+### Module mapping (twin crate → RTL)
 
-| gs-twin module | RTL module(s) | Pipeline stage |
-|----------------|---------------|----------------|
-| `pipeline/rasterize.rs` | `rasterizer.sv`, `raster_recip_area.sv`, `raster_deriv.sv`, `raster_edge_walk.sv` | Triangle setup + iteration |
-| `pipeline/stipple.rs` | `stipple.sv` | Stipple test |
-| `pipeline/early_z.rs` | `early_z.sv` | Early depth test |
-| `pipeline/tex_sample.rs` | `texture_cache.sv`, `texture_*.sv` decoders | Texture sampling |
-| `pipeline/color_combine.rs` | `color_combiner.sv` | Color combiner |
-| `pipeline/alpha_blend.rs` | `alpha_blend.sv` | Alpha blending |
-| `pipeline/dither.rs` | `dither.sv` | Ordered dithering |
-| `pipeline/pixel_write.rs` | `pixel_pipeline.sv` | Framebuffer write |
-| `reg.rs` | `register_file.sv` | Register decode |
-| `mem.rs` | `sram_arbiter.sv` (INT-011 tiled layout) | Memory model |
-| `pipeline/recip.rs` | `raster_recip_lut.sv`, `raster_recip_q.sv` | Reciprocal LUTs |
+| Twin crate / module | RTL module(s) | Pipeline stage |
+|----------------------|---------------|----------------|
+| `gs-rasterizer` (`rasterize.rs`, `recip.rs`) | `rasterizer.sv`, `raster_recip_area.sv`, `raster_deriv.sv`, `raster_edge_walk.sv` | Triangle setup + iteration |
+| `gs-stipple` | `stipple.sv` | Stipple test |
+| `gs-early-z` | `early_z.sv` | Early depth test |
+| `gs-texture` (`tex_sample.rs`, `tex_cache.rs`, etc.) | `texture_cache.sv`, `texture_*.sv` decoders | Texture sampling |
+| `gs-color-combiner` | `color_combiner.sv` | Color combiner |
+| `gs-alpha-blend` | `alpha_blend.sv` | Alpha blending |
+| `gs-dither` | `dither.sv` | Ordered dithering |
+| `gs-pixel-write` | `pixel_pipeline.sv`, `fb_promote.sv`, `texel_promote.sv` | Framebuffer write |
+| `gs-spi` (`reg.rs`) | `register_file.sv` | Register decode |
+| `gs-memory` | `sram_arbiter.sv` (INT-011 tiled layout) | Memory model |
 
 ### Verification workflow
 
 - `cargo test -p gs-twin` — runs golden image tests (exact RGB565 match)
 - `cargo run -p gs-twin-cli -- render` — generates reference PNGs
-- Same `.hex` scripts in `spi_gpu/dt/gs-twin/tests/scripts/` feed both gs-twin and Verilator testbenches
+- Same `.hex` scripts in `integration/scripts/` feed both gs-twin and Verilator testbenches
 - Any pixel mismatch = real bug in RTL (not floating-point divergence)
 - Full workflow: `./build.sh --dt-only`
 
@@ -96,8 +111,6 @@ It is a bit-accurate, transaction-level Rust model — not cycle-accurate (Veril
 - **gs-twin owns:** rasterization algorithms, pixel pipeline math, fixed-point formats, memory addressing
 - **gs-twin does NOT model:** scan-out/display (UNIT-008), cycle-level timing, SPI transport
 - **syskit UNIT docs** for algorithmic pipeline modules are thin pointers to gs-twin source
-
-For detailed architecture, see `spi_gpu/dt/README.md`.
 
 ## Commands
 
@@ -113,8 +126,8 @@ For detailed architecture, see `spi_gpu/dt/README.md`.
 ./build.sh --test-only
 
 # FPGA-specific builds
-cd spi_gpu && make bitstream
-cd spi_gpu && make synth
+cd integration && make bitstream
+cd integration && make synth
 
 # Digital twin build and test
 cargo test -p gs-twin
@@ -140,7 +153,7 @@ After changes: `cargo fmt` → `cargo clippy -- -D warnings` → `cargo test` �
 
 - All `.sv` files MUST follow `.claude/skills/claude-skill-verilog/SKILL.md`.
 - Lint with `verilator --lint-only -Wall`; fix all warnings, do not suppress with pragmas.
-- Before modifying pixel pipeline RTL (`spi_gpu/src/render/`), read the corresponding gs-twin module in `spi_gpu/dt/gs-twin/src/pipeline/` to understand the expected bit-accurate behavior.
+- Before modifying pixel pipeline RTL, read the corresponding component's `twin/` crate to understand the expected bit-accurate behavior.
   The Rust twin is the authoritative algorithm spec; the RTL must produce identical results.
 
 ## C++ Code Style
@@ -196,20 +209,20 @@ All GPIO header balls (gpio[0]–gpio[27]) use LVCMOS33 at 3.3 V.
 
 ## Register Interface
 
-The register interface (`registers/`) is the single source of truth for the GPU register map.
+The register interface (`components/registers/`) is the single source of truth for the GPU register map.
 INT-010 through INT-014 live in `doc/interfaces/` alongside all other interface specs, but are **NOT managed by syskit** — do not use syskit workflows to modify them.
 
-- **SystemRDL source:** `registers/rdl/gpu_regs.rdl` — canonical machine-readable definition
-- **Rust crate:** `registers/src/lib.rs` (`gpu-registers`, `no_std`) — hand-maintained flat constants matching the RDL
-- **Generated SV:** `spi_gpu/src/spi/generated/` — PeakRDL output (package + register file module)
+- **SystemRDL source:** `components/registers/rdl/gpu_regs.rdl` — canonical machine-readable definition
+- **Rust crate:** `components/registers/twin/src/lib.rs` (`gpu-registers`, `no_std`) — hand-maintained flat constants matching the RDL
+- **Generated SV:** `components/registers/generated/` — PeakRDL output (package + register file module)
 - **Specs:** `doc/interfaces/int_010_*` through `int_014_*` — register interface specifications
 
 Change process:
-1. Edit `registers/rdl/gpu_regs.rdl` and update `registers/src/lib.rs` to match
+1. Edit `components/registers/rdl/gpu_regs.rdl` and update `components/registers/twin/src/lib.rs` to match
 2. Update the corresponding markdown spec in `doc/interfaces/`
-3. Run `registers/scripts/generate.sh` to regenerate SV
+3. Run `components/registers/scripts/generate.sh` to regenerate SV
 4. Review the diff in generated files
-5. Update consuming code (`driver.rs`, `register_file.sv`) if register semantics changed
+5. Update consuming code (`register_file.sv`) if register semantics changed
 
 <!-- syskit-start -->
 ## syskit

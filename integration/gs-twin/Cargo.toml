@@ -1,0 +1,32 @@
+[package]
+name = "gs-twin"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bit-accurate transaction-level digital twin of the pico-gs FPGA graphics synthesizer"
+
+[dependencies]
+# Foundation
+gs-twin-core = { path = "../../shared/gs-twin-core" }
+qfixed = { path = "../../crates/qfixed" }
+gpu-registers = { path = "../../components/registers/twin", default-features = false }
+
+# Component crates
+gs-rasterizer = { path = "../../components/rasterizer/twin" }
+gs-stipple = { path = "../../components/stipple/twin" }
+gs-early-z = { path = "../../components/early-z/twin" }
+gs-texture = { path = "../../components/texture/twin" }
+gs-color-combiner = { path = "../../components/color-combiner/twin" }
+gs-alpha-blend = { path = "../../components/alpha-blend/twin" }
+gs-dither = { path = "../../components/dither/twin" }
+gs-pixel-write = { path = "../../components/pixel-write/twin" }
+gs-memory = { path = "../../components/memory/twin" }
+gs-display = { path = "../../components/display/twin" }
+gs-spi = { path = "../../components/spi/twin" }
+
+# Image output for golden reference PNGs
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Debugger breakpoint (triggers only when debugger is attached)
+dbg_breakpoint = { version = "0.1", default-features = false }

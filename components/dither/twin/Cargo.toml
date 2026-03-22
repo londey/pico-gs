@@ -1,0 +1,11 @@
+[package]
+name = "gs-dither"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Dither component of the pico-gs digital twin"
+
+[dependencies]
+gs-twin-core = { path = "../../../shared/gs-twin-core" }
+qfixed = { path = "../../../crates/qfixed" }

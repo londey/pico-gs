@@ -1,9 +1,21 @@
 [workspace]
 members = [
     "crates/qfixed",
-    "registers",
-    "spi_gpu/dt/gs-twin",
-    "spi_gpu/dt/gs-twin-cli"
+    "components/registers/twin",
+    "shared/gs-twin-core",
+    "components/rasterizer/twin",
+    "components/stipple/twin",
+    "components/early-z/twin",
+    "components/texture/twin",
+    "components/color-combiner/twin",
+    "components/alpha-blend/twin",
+    "components/dither/twin",
+    "components/pixel-write/twin",
+    "components/memory/twin",
+    "components/display/twin",
+    "components/spi/twin",
+    "integration/gs-twin",
+    "integration/gs-twin-cli",
 ]
 resolver = "2"
 
@@ -13,4 +25,4 @@ rust-version = "1.93"
 license = "MIT"
 
 [workspace.dependencies]
-gs-twin = { path = "spi_gpu/dt/gs-twin" }
+gs-twin = { path = "integration/gs-twin" }

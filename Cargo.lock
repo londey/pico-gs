@@ -133,11 +133,119 @@ dependencies = [
 ]
 
 [[package]]
+name = "gs-alpha-blend"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-memory",
+ "gs-twin-core",
+]
+
+[[package]]
+name = "gs-color-combiner"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-twin-core",
+ "qfixed",
+]
+
+[[package]]
+name = "gs-display"
+version = "0.1.0"
+dependencies = [
+ "gs-memory",
+ "gs-twin-core",
+ "image",
+]
+
+[[package]]
+name = "gs-dither"
+version = "0.1.0"
+dependencies = [
+ "gs-twin-core",
+ "qfixed",
+]
+
+[[package]]
+name = "gs-early-z"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-memory",
+ "gs-twin-core",
+]
+
+[[package]]
+name = "gs-memory"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-twin-core",
+ "image",
+]
+
+[[package]]
+name = "gs-pixel-write"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-memory",
+ "gs-twin-core",
+]
+
+[[package]]
+name = "gs-rasterizer"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-twin-core",
+ "image",
+ "qfixed",
+]
+
+[[package]]
+name = "gs-spi"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-twin-core",
+]
+
+[[package]]
+name = "gs-stipple"
+version = "0.1.0"
+dependencies = [
+ "gs-twin-core",
+]
+
+[[package]]
+name = "gs-texture"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-twin-core",
+ "qfixed",
+]
+
+[[package]]
 name = "gs-twin"
 version = "0.1.0"
 dependencies = [
  "dbg_breakpoint",
  "gpu-registers",
+ "gs-alpha-blend",
+ "gs-color-combiner",
+ "gs-display",
+ "gs-dither",
+ "gs-early-z",
+ "gs-memory",
+ "gs-pixel-write",
+ "gs-rasterizer",
+ "gs-spi",
+ "gs-stipple",
+ "gs-texture",
+ "gs-twin-core",
  "image",
  "qfixed",
 ]
@@ -150,6 +258,14 @@ dependencies = [
  "clap",
  "gs-twin",
  "image",
+]
+
+[[package]]
+name = "gs-twin-core"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "qfixed",
 ]
 
 [[package]]
