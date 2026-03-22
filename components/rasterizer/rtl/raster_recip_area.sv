@@ -128,7 +128,7 @@ module raster_recip_area #(
     // Yosys infers DP16KD in 36x512 mode from this pattern.
 
     reg [35:0] rom [0:511];                                         // ROM array
-    initial $readmemh("src/render/recip_area_init.hex", rom);
+    initial $readmemh("../components/rasterizer/rtl/recip_area_init.hex", rom);
 
     // Pipeline registers for stage 0 → stage 1
     reg  [8:0]  s1_frac;                                            // Interpolation fraction
