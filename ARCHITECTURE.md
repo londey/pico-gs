@@ -379,7 +379,7 @@ flowchart LR
 | UNIT-001 | SPI Slave Controller | Receives 72-bit SPI transactions and writes to register file |
 | UNIT-002 | Command FIFO | Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries. |
 | UNIT-003 | Register File | Stores GPU state and vertex data |
-| UNIT-005.01 | Triangle Setup | Prepares triangle for rasterization |
+| UNIT-005.01 | Triangle Setup | Validates incoming triangle data, computes the signed triangle area, performs backface culling, and passes vertex positions and attributes to the rasterizer pipeline. |
 | UNIT-005.02 | Edge Setup | Computes edge function coefficients, bounding box, and the internal triangle area reciprocal for a triangle. |
 | UNIT-005.03 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
 | UNIT-005.04 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
