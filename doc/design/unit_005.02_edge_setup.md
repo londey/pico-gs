@@ -1,4 +1,4 @@
-# UNIT-005.01: Edge Setup
+# UNIT-005.02: Edge Setup
 
 ## Purpose
 
@@ -13,9 +13,9 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 ### Internal Interfaces
 
-- Receives triangle vertex positions from UNIT-004 (Triangle Setup) via the parent UNIT-005 input interface
-- Outputs edge coefficients, bounding box, and `inv_area` to the setup-iteration overlap FIFO, which feeds UNIT-005.02 (Derivative Pre-computation)
-- Uses a dedicated triangle setup reciprocal module (`raster_recip_area.sv`) with its own DP16KD; UNIT-005.04 uses a separate dedicated per-pixel reciprocal module (`raster_recip_q.sv`)
+- Receives triangle vertex positions from UNIT-005.01 (Triangle Setup) via the parent UNIT-005 input interface
+- Outputs edge coefficients, bounding box, and `inv_area` to the setup-iteration overlap FIFO, which feeds UNIT-005.03 (Derivative Pre-computation)
+- Uses a dedicated triangle setup reciprocal module (`raster_recip_area.sv`) with its own DP16KD; UNIT-005.05 uses a separate dedicated per-pixel reciprocal module (`raster_recip_q.sv`)
 
 ## Design Description
 
@@ -42,7 +42,7 @@ area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
 5. (Optional, compile-time parameter) Apply one Newton-Raphson refinement iteration using 1 additional MULT18X18D, adding 2-3 extra cycles of latency.
 
 This module is latency-tolerant as it runs once per triangle during setup.
-UNIT-005.04 uses a separate dedicated per-pixel reciprocal module (`raster_recip_q.sv`) for 1/Q computation (see UNIT-005.04).
+UNIT-005.05 uses a separate dedicated per-pixel reciprocal module (`raster_recip_q.sv`) for 1/Q computation (see UNIT-005.05).
 
 ### DSP Usage
 

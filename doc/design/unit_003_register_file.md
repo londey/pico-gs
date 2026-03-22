@@ -26,7 +26,7 @@ None
 
 - Receives commands from UNIT-002 (Command FIFO) via cmd_valid/cmd_rw/cmd_addr/cmd_wdata.
   In Verilator simulation with `SIM_DIRECT_CMD` defined, these signals are driven by the injection path in gpu_top.sv (see UNIT-002), which bypasses UNIT-001 but presents the identical cmd_* bus to UNIT-003 — no change to register_file.sv itself is required.
-- Outputs triangle vertex data to UNIT-004/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses (includes tri_st0, tri_st1, tri_q, tri_color0, tri_color1 per vertex)
+- Outputs triangle vertex data to UNIT-005.01/UNIT-005 (Triangle Setup / Rasterizer) via tri_valid and vertex buses (includes tri_st0, tri_st1, tri_q, tri_color0, tri_color1 per vertex)
 - Outputs render target configuration (fb_config, including `fb_width_log2` and `fb_height_log2`) to UNIT-005 (Rasterizer), UNIT-006 (Pixel Pipeline), and UNIT-007 (Memory Arbiter)
 - Outputs display configuration (fb_display, including `fb_display_width_log2` and `fb_line_double`) to UNIT-008 (Display Controller)
 - Outputs mode flags (mode_gouraud, mode_cull, mode_alpha_blend, mode_dither_en, mode_dither_pattern, mode_stipple_en, mode_alpha_test, mode_alpha_ref, mode_z_test, mode_z_write, mode_z_compare, mode_color_write) to UNIT-005 (Rasterizer) and UNIT-006 (Pixel Pipeline)

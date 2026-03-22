@@ -1,4 +1,4 @@
-# UNIT-005.02: Derivative Pre-computation
+# UNIT-005.03: Derivative Pre-computation
 
 ## Purpose
 
@@ -13,9 +13,9 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 ### Internal Interfaces
 
-- Receives A/B/C edge coefficients and bounding box from UNIT-005.01 (Edge Setup)
-- Receives `inv_area` (UQ4.14) from UNIT-005.01 via the setup-iteration overlap FIFO (internally computed; not from UNIT-004)
-- Outputs derivatives and initial accumulator values to UNIT-005.03 (Attribute Accumulation) and UNIT-005.04 (Iteration FSM)
+- Receives A/B/C edge coefficients and bounding box from UNIT-005.02 (Edge Setup)
+- Receives `inv_area` (UQ4.14) from UNIT-005.02 via the setup-iteration overlap FIFO (internally computed; not from UNIT-005.01)
+- Outputs derivatives and initial accumulator values to UNIT-005.04 (Attribute Accumulation) and UNIT-005.05 (Iteration FSM)
 
 ## Design Description
 
@@ -24,7 +24,7 @@ Sub-unit of UNIT-005 (Rasterizer).
 The derivative precomputation operates in two phases:
 
 **Phase 1 — Edge evaluation (3 cycles, ITER_START → INIT_E1 → INIT_E2):**
-Evaluates the three edge functions at the bounding box origin using 2 MULT18X18D blocks shared with UNIT-005.01 (cold path, once per triangle).
+Evaluates the three edge functions at the bounding box origin using 2 MULT18X18D blocks shared with UNIT-005.02 (cold path, once per triangle).
 Latches the evaluated edge function values into e0/e1/e2 and the row-start registers e0_row/e1_row/e2_row.
 
 **Phase 2 — Sequential derivative computation (8 cycles, `raster_deriv` module):**
@@ -41,13 +41,13 @@ raw_dy = scaled_delta_1 * B01 + scaled_delta_2 * B02   (shift-add in LUTs, 36×1
 ```
 
 The vertex deltas `(f_i - f_0)` are 17-bit signed (fits Q4.12 or promoted UNORM8).
-The `inv_area` (UQ4.14) input from UNIT-005.01 is held constant across all 7 cycles.
+The `inv_area` (UQ4.14) input from UNIT-005.02 is held constant across all 7 cycles.
 Each DSP multiply is performed by a `raster_dsp_mul` helper that computes `|a| * b` as 18×18 unsigned (1 MULT18X18D) then restores the sign in LUTs.
 
 Edge coefficient application (36×11 bit) and initial value computation (32×11 bit) use shift-and-add functions that synthesize to LUT logic only, avoiding DSP inference by Yosys `mul2dsp`.
 
-The 4 MULT18X18D blocks are dedicated to `raster_deriv` (not shared with UNIT-005.01).
-UNIT-005.01 edge evaluation in Phase 1 uses the parent rasterizer's own multiplier resources.
+The 4 MULT18X18D blocks are dedicated to `raster_deriv` (not shared with UNIT-005.02).
+UNIT-005.02 edge evaluation in Phase 1 uses the parent rasterizer's own multiplier resources.
 
 Initializes the accumulated attribute value registers at the bounding box origin after all derivatives are computed.
 
@@ -88,5 +88,5 @@ Covered by UNIT-005 verification (VER-001, VER-010–VER-014).
 Key verification points for this sub-unit:
 
 - For a known triangle, confirm dAttr/dx and dAttr/dy for all 14 attributes match expected values derived from vertex attributes and the internally computed inv_area, within Q4.28 rounding tolerance.
-- Verify that S/T projected coordinates (not U/V) are used as inputs to derivative computation — the perspective correction step in UNIT-005.04 converts these to true U, V per pixel.
+- Verify that S/T projected coordinates (not U/V) are used as inputs to derivative computation — the perspective correction step in UNIT-005.05 converts these to true U, V per pixel.
 - Confirm initial accumulator values at the bounding box origin are correctly seeded from vertex attribute evaluation.

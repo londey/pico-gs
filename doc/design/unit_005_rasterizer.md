@@ -30,7 +30,7 @@ None
 
 ### Internal Interfaces
 
-- Receives triangle setup data from UNIT-004 (Triangle Setup) via setup_valid/downstream_ready handshake, including three vertex positions, two sets of vertex colors (color0, color1), perspective-correct Q/W at each vertex, and S/T projected texture coordinates
+- Receives triangle setup data from UNIT-005.01 (Triangle Setup) via setup_valid/downstream_ready handshake, including three vertex positions, two sets of vertex colors (color0, color1), perspective-correct Q/W at each vertex, and S/T projected texture coordinates
 - Outputs fragment data to UNIT-006 (Pixel Pipeline) via frag_valid/frag_ready handshake
 - All internal interfaces operate in the unified 100 MHz `clk_core` domain (no CDC required)
 
@@ -38,7 +38,7 @@ None
 
 ### Inputs
 
-Triangle vertex data from UNIT-004 (Triangle Setup):
+Triangle vertex data from UNIT-005.01 (Triangle Setup):
 
 - 3× vertex position (X, Y, Z), screen-space integer coordinates
 - 3× primary vertex color (RGBA8888 UNORM8 from COLOR register, used as VER_COLOR0)
@@ -124,23 +124,23 @@ The derivative computation reuses the same 2 MULT18X18D blocks as edge C-coeffic
 
 ## Sub-Units
 
-UNIT-005 decomposes internally into four functional sub-units, each implemented as a separate RTL module instantiated by the parent `rasterizer.sv` (DD-029).
-Each sub-unit is documented in its own design unit file:
+UNIT-005 decomposes internally into five functional sub-units, each documented in its own design unit file:
 
-- [UNIT-005.01: Edge Setup](unit_005.01_edge_setup.md)
-- [UNIT-005.02: Derivative Pre-computation](unit_005.02_derivative_precomputation.md)
-- [UNIT-005.03: Attribute Accumulation](unit_005.03_attribute_accumulation.md)
-- [UNIT-005.04: Iteration FSM](unit_005.04_iteration_fsm.md)
+- [UNIT-005.01: Triangle Setup](unit_005.01_triangle_setup.md) — triangle validation, backface culling, vertex attribute passthrough
+- [UNIT-005.02: Edge Setup](unit_005.02_edge_setup.md) — edge coefficient computation, bounding box, reciprocal area computation; implemented as a separate RTL module instantiated by the parent `rasterizer.sv` (DD-029)
+- [UNIT-005.03: Derivative Pre-computation](unit_005.03_derivative_precomputation.md)
+- [UNIT-005.04: Attribute Accumulation](unit_005.04_attribute_accumulation.md)
+- [UNIT-005.05: Iteration FSM](unit_005.05_iteration_fsm.md)
 
 ## Implementation
 
 - `components/rasterizer/rtl/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
 - `components/rasterizer/rtl/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
 - `components/rasterizer/rtl/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
-- `components/rasterizer/rtl/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.02), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
-- `components/rasterizer/rtl/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.02 latching / UNIT-005.03).
+- `components/rasterizer/rtl/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.03), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
+- `components/rasterizer/rtl/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.03 latching / UNIT-005.04).
 - `components/rasterizer/rtl/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
-- `components/rasterizer/rtl/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline (UNIT-005.04).
+- `components/rasterizer/rtl/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline (UNIT-005.05).
 
 ## Verification
 
@@ -200,7 +200,7 @@ See DD-024 for the rationale behind replacing per-pixel barycentric multiply-acc
 
 Splitting the reciprocal into two dedicated modules allows setup of the next triangle to overlap with iteration of the current triangle via the setup-iteration overlap FIFO (DD-035).
 
-**Setup-iteration overlap FIFO:** A compile-time configurable depth (default 2) register-based FIFO sits between the triangle setup producer (UNIT-005.01/005.02) and the edge-walk iteration consumer (UNIT-005.04).
+**Setup-iteration overlap FIFO:** A compile-time configurable depth (default 2) register-based FIFO sits between the triangle setup producer (UNIT-005.02/005.03) and the edge-walk iteration consumer (UNIT-005.05).
 The FIFO holds complete triangle setup results (~730 bits: edge coefficients A/B/C × 3, bbox min/max, inv_area, vertex attributes including colors, Z, Q, UVs).
 This allows setup of triangle N+1 to proceed in parallel with iteration of triangle N, eliminating setup stalls for sequences of small triangles.
 The rasterizer FSM operates as a producer-consumer pipeline rather than a sequential setup-then-iterate machine.

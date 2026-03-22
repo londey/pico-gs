@@ -13,7 +13,7 @@ The test confirms that the rasterizer correctly handles triangles from sub-tile 
 ## Verified Design Units
 
 - UNIT-003 (Register File — FB_CONFIG, FB_CONTROL, RENDER_MODE, CC_MODE register writes)
-- UNIT-004 (Triangle Setup — edge function setup for triangles of varying size)
+- UNIT-005.01 (Triangle Setup — edge function setup for triangles of varying size)
 - UNIT-005 (Rasterizer — derivative precision with large inv_area for tiny triangles; 4×4 tile traversal for large triangles)
 - UNIT-006 (Pixel Pipeline — color write path)
 
@@ -87,6 +87,6 @@ All triangles use:
   VER-001 procedure step 3 notes that "test cases should include small triangles (e.g., 4×4 pixels or smaller) to verify derivative precision with large inv_area values" — VER-015 provides that coverage at the golden-image integration level.
 - Triangle sizes double geometrically (1, 2, 4, 8, 16, 32, 64, 128) to cover both sub-tile and multi-tile regimes with a small number of primitives.
 - Vertex positions use Q12.4 sub-pixel precision; the smallest triangle (1 px) has vertices offset by 0.5 px from center, exercising sub-pixel vertex placement.
-- The golden image requires re-approval after any change to the rasterizer's derivative precomputation (UNIT-005.02), edge-function evaluation, or 4×4 tile traversal logic (UNIT-005.04).
+- The golden image requires re-approval after any change to the rasterizer's derivative precomputation (UNIT-005.03), edge-function evaluation, or 4×4 tile traversal logic (UNIT-005.05).
 - Dithering is disabled for deterministic output.
 - Z-testing is disabled to isolate rasterizer size-dependent behavior from depth buffer interaction.

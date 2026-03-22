@@ -12,7 +12,7 @@ The test confirms that the near triangle occludes the far triangle at every over
 ## Verified Design Units
 
 - UNIT-003 (Register File)
-- UNIT-004 (Triangle Setup)
+- UNIT-005.01 (Triangle Setup)
 - UNIT-005 (Rasterizer)
 - UNIT-006 (Pixel Pipeline -- early Z-test path)
 
@@ -172,5 +172,5 @@ The integration harness drives the following register-write sequence into UNIT-0
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant).
   The split of the shared reciprocal LUT into dedicated area and per-pixel 1/Q modules (`raster_recip_area.sv`, `raster_recip_q.sv`) and the addition of the setup-iteration overlap FIFO do not affect flat-shaded depth-tested rendering (no perspective correction path exercised for UV), so golden image re-approval is not expected for that change alone.
-  The conversion of derivative precomputation (UNIT-005.02) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing; golden image re-approval is not expected for that change alone unless the derivative computation fix also corrects rendering bugs (e.g., Z interpolation artifacts) that affect depth-tested output.
+  The conversion of derivative precomputation (UNIT-005.03) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing; golden image re-approval is not expected for that change alone unless the derivative computation fix also corrects rendering bugs (e.g., Z interpolation artifacts) that affect depth-tested output.
   See `test_strategy.md` for the re-approval workflow.

@@ -251,7 +251,7 @@ The ECP5-25K provides only 28 MULT18X18D total, so the combinational approach co
 
 ### Decision
 
-Convert `raster_deriv.sv` from purely combinational to sequential time-multiplexed derivative computation using 2 shared MULT18X18D blocks (the same pair used for edge C-coefficient computation in UNIT-005.01 and edge evaluation in UNIT-005.02 Phase 1).
+Convert `raster_deriv.sv` from purely combinational to sequential time-multiplexed derivative computation using 2 shared MULT18X18D blocks (the same pair used for edge C-coefficient computation in UNIT-005.02 and edge evaluation in UNIT-005.03 Phase 1).
 
 The 14 attributes are processed one per clock cycle over 14 cycles (DERIV_0 through DERIV_13).
 Each cycle, a 4-bit attribute index counter selects one attribute's precomputed `raw_dx` and `raw_dy` terms from a combinational mux tree.
@@ -570,9 +570,9 @@ Decompose the rasterizer RTL into a parent module and three sub-modules:
 | File | Lines | Content |
 |------|-------|---------|
 | `rasterizer.sv` | ~1100 | FSM, shared multiplier, vertex latches, edge setup, sub-module instantiation |
-| `raster_deriv.sv` | ~340 | Purely combinational derivative precomputation (UNIT-005.02) |
-| `raster_attr_accum.sv` | ~685 | Attribute accumulators, derivative registers, output promotion (UNIT-005.02/005.03) |
-| `raster_edge_walk.sv` | ~275 | Iteration position, edge functions, fragment emission (UNIT-005.04) |
+| `raster_deriv.sv` | ~340 | Purely combinational derivative precomputation (UNIT-005.03) |
+| `raster_attr_accum.sv` | ~685 | Attribute accumulators, derivative registers, output promotion (UNIT-005.03/005.04) |
+| `raster_edge_walk.sv` | ~275 | Iteration position, edge functions, fragment emission (UNIT-005.05) |
 
 Sub-modules receive decoded control signals (`latch_derivs`, `step_x`, `step_y`, `init_pos_e0`, etc.) rather than the FSM state enum, keeping them decoupled from the FSM encoding.
 The parent module's external port list is unchanged; `gpu_top.sv` requires no modifications.
@@ -594,7 +594,7 @@ The parent module's external port list is unchanged; `gpu_top.sv` requires no mo
 
 ### References
 
-- UNIT-005 (Rasterizer), UNIT-005.01–005.04 (sub-units)
+- UNIT-005 (Rasterizer), UNIT-005.02–005.05 (sub-units)
 
 ---
 
@@ -668,7 +668,7 @@ The rasterizer asserts `frag_valid` when a fragment is ready; it stalls (holds s
 
 ### Rationale
 
-The valid/ready handshake is the standard backpressure mechanism already used between UNIT-003 and UNIT-004 (`tri_valid` / `tri_ready`).
+The valid/ready handshake is the standard backpressure mechanism already used between UNIT-003 and UNIT-005.01 (`tri_valid` / `tri_ready`).
 Using the same pattern keeps the design consistent and allows the pixel pipeline to stall the rasterizer when the texture cache or Z-buffer tile cache is servicing a miss.
 Transferring port 1 and port 2 ownership to UNIT-006 allows it to control all framebuffer and Z-buffer accesses in coordination with texture cache fills, enabling early Z-test (check Z before issuing texture fetch) and correct write-back ordering.
 

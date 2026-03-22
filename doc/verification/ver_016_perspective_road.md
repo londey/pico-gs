@@ -13,7 +13,7 @@ The test confirms that perspective-correct texture mapping, Z interpolation acro
 ## Verified Design Units
 
 - UNIT-003 (Register File — FB_CONFIG, FB_CONTROL, TEX0_CFG, CC_MODE, RENDER_MODE register writes)
-- UNIT-004 (Triangle Setup — edge function setup for perspective-projected triangles)
+- UNIT-005.01 (Triangle Setup — edge function setup for perspective-projected triangles)
 - UNIT-005 (Rasterizer — perspective-correct UV interpolation with large W range; per-pixel 1/Q reciprocal; LOD derivation from CLZ on Q)
 - UNIT-006 (Pixel Pipeline — early Z-test with GEQUAL compare, texture cache lookup, RGB565 decoder, MODULATE combiner, framebuffer and Z-buffer writes)
 
@@ -101,7 +101,7 @@ Rendering configuration:
 ## Notes
 
 - **Relationship to VER-014:** VER-014 tests perspective-correct texturing on a 3D cube with moderate W variation across faces.
-  VER-016 tests a much stronger depth gradient (~12× W ratio) on a road surface, which stresses the per-pixel 1/Q reciprocal module (UNIT-005.04) more aggressively.
+  VER-016 tests a much stronger depth gradient (~12× W ratio) on a road surface, which stresses the per-pixel 1/Q reciprocal module (UNIT-005.05) more aggressively.
 - **Relationship to VER-011:** VER-011 tests depth with flat (constant-Z) overlapping triangles.
   VER-016 tests depth with smoothly varying Z across the triangle surface, confirming correct Z interpolation under perspective projection.
 - **Reverse-Z convention:** The Z-buffer is cleared to `0x0000` (far plane) and Z_COMPARE is set to GEQUAL, following the reverse-Z convention where closer objects have larger Z values.
@@ -110,5 +110,5 @@ Rendering configuration:
   This is a real-world constraint for scenes with strong perspective foreshortening.
 - **S/T vs U/V:** The hex script provides pre-projected S=U/W and T=V/W texture coordinates at each vertex, along with Q=1/W.
   The rasterizer interpolates S, T, and Q linearly in screen space, then performs per-pixel perspective correction: U=S/Q, V=T/Q (UNIT-005.04).
-- The golden image requires re-approval after any change to the perspective correction pipeline (UNIT-005.04), the per-pixel reciprocal module (`raster_recip_q.sv`), the Z interpolation path, or the MODULATE combiner (UNIT-010).
+- The golden image requires re-approval after any change to the perspective correction pipeline (UNIT-005.05), the per-pixel reciprocal module (`raster_recip_q.sv`), the Z interpolation path, or the MODULATE combiner (UNIT-010).
 - Dithering is disabled for deterministic output.

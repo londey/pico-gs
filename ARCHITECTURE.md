@@ -58,7 +58,7 @@ At 62.5 MHz SPI this provides approximately 590 µs of host-side buffering (~170
 When the FIFO approaches capacity, the CMD_FULL GPIO tells the host to pause.
 The CMD_EMPTY GPIO indicates the FIFO is drained and no command is executing, which the host must check before issuing a register read (reads bypass the FIFO and require an idle register file).
 
-Triangle setup (UNIT-004) computes edge coefficients and performs backface culling.
+Triangle setup (UNIT-005.01) computes edge coefficients and performs backface culling.
 The rasterizer (UNIT-005) walks the bounding box in 4×4 tile order — aligned with the surface tiling and Z-cache block size — using incremental derivative-based traversal with 8 MULT18X18D DSP blocks (see UNIT-005 DSP Budget table for breakdown).
 It interpolates Z, Q (1/W), two vertex colors, and two UV coordinate pairs (S×Q, T×Q perspective projections at vertices), then applies perspective correction internally using two dedicated reciprocal modules backed by ECP5 DP16KD block RAMs: one for the triangle-setup inv_area computation (`raster_recip_area.sv`, 36×512 mode, UQ4.14 output) and one for per-pixel 1/Q computation (`raster_recip_q.sv`, 18×1024 mode, UQ4.14 output).
 A compile-time configurable register FIFO (default depth 2, ~730 bits wide) between setup and iteration enables triangle N+1 setup to overlap with triangle N iteration.
@@ -350,12 +350,12 @@ flowchart LR
     UNIT_001["UNIT-001: SPI Slave Controller"]
     UNIT_002["UNIT-002: Command FIFO"]
     UNIT_003["UNIT-003: Register File"]
-    UNIT_004["UNIT-004: Triangle Setup"]
     subgraph UNIT_005["UNIT-005: Rasterizer"]
-        UNIT_005_01["UNIT-005.01: Edge Setup"]
-        UNIT_005_02["UNIT-005.02: Derivative Pre-computation"]
-        UNIT_005_03["UNIT-005.03: Attribute Accumulation"]
-        UNIT_005_04["UNIT-005.04: Iteration FSM"]
+        UNIT_005_01["UNIT-005.01: Triangle Setup"]
+        UNIT_005_02["UNIT-005.02: Edge Setup"]
+        UNIT_005_03["UNIT-005.03: Derivative Pre-computation"]
+        UNIT_005_04["UNIT-005.04: Attribute Accumulation"]
+        UNIT_005_05["UNIT-005.05: Iteration FSM"]
     end
     UNIT_006["UNIT-006: Pixel Pipeline"]
     UNIT_007["UNIT-007: Memory Arbiter"]
@@ -365,7 +365,6 @@ flowchart LR
     UNIT_001 -->|INT-001| UNIT_001
     UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
-    UNIT_003 -->|INT-010| UNIT_004
     UNIT_003 -->|INT-010| UNIT_005
     UNIT_003 -->|INT-010| UNIT_006
     UNIT_003 -->|INT-010| UNIT_008
@@ -380,11 +379,11 @@ flowchart LR
 | UNIT-001 | SPI Slave Controller | Receives 72-bit SPI transactions and writes to register file |
 | UNIT-002 | Command FIFO | Buffers GPU commands with flow control and provides autonomous boot-time command execution via pre-populated FIFO entries. |
 | UNIT-003 | Register File | Stores GPU state and vertex data |
-| UNIT-004 | Triangle Setup | Prepares triangle for rasterization |
-| UNIT-005.01 | Edge Setup | Computes edge function coefficients, bounding box, and the internal triangle area reciprocal for a triangle. |
-| UNIT-005.02 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
-| UNIT-005.03 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
-| UNIT-005.04 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
+| UNIT-005.01 | Triangle Setup | Prepares triangle for rasterization |
+| UNIT-005.02 | Edge Setup | Computes edge function coefficients, bounding box, and the internal triangle area reciprocal for a triangle. |
+| UNIT-005.03 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
+| UNIT-005.04 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
+| UNIT-005.05 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
 | UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
 | UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture sampling, and format promotion to Q4.12 |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |

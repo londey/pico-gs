@@ -18,10 +18,10 @@ The testbench drives known triangle configurations through the triangle setup an
 - Verilator 5.x installed and available on `$PATH`.
 - `components/rasterizer/rtl/rasterizer.sv` compiles without errors under `verilator --lint-only -Wall`.
 - `components/early-z/rtl/early_z.sv` compiles without errors under `verilator --lint-only -Wall` (rasterizer depends on early Z integration signals).
-- Triangle setup module (UNIT-004) is instantiated or stubbed so that the rasterizer receives valid setup data.
+- Triangle setup module (UNIT-005.01) is instantiated or stubbed so that the rasterizer receives valid setup data.
 - The testbench drives `fb_width_log2` and `fb_height_log2` register inputs (from UNIT-003) to configure the active surface dimensions before each test case.
-- The rasterizer computes inv_area internally via a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode) in UNIT-005.01; the testbench does not supply `setup_inv_area` as an external input.
-- Per-pixel 1/Q is computed by a separate dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode) in UNIT-005.04.
+- The rasterizer computes inv_area internally via a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode) in UNIT-005.02; the testbench does not supply `setup_inv_area` as an external input.
+- Per-pixel 1/Q is computed by a separate dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode) in UNIT-005.05.
 - A setup-iteration overlap FIFO (compile-time configurable depth, default 2) allows triangle N+1 setup to proceed concurrently with triangle N iteration.
 
 ## Procedure
@@ -120,9 +120,9 @@ The testbench drives known triangle configurations through the triangle setup an
 - Run this test with: `cd integration && make test-rasterizer`.
 - The testbench exercises the rasterizer in isolation with a stub consumer for the fragment output bus.
   Full pipeline integration (framebuffer writes, Z-buffer interaction) is covered by VER-010 through VER-013 (golden image tests).
-- The rasterizer uses incremental derivative interpolation (per UNIT-005): attribute derivatives (dAttr/dx, dAttr/dy) are precomputed during triangle setup by UNIT-005.02, then stepped per-pixel by the rasterizer.
+- The rasterizer uses incremental derivative interpolation (per UNIT-005): attribute derivatives (dAttr/dx, dAttr/dy) are precomputed during triangle setup by UNIT-005.03, then stepped per-pixel by the rasterizer.
   The testbench reference model must use the same incremental step computation; the previously-used barycentric multiply-accumulate reference is no longer applicable.
-  The testbench must allow sufficient setup cycles for derivative precomputation to complete before expecting the first fragment (see UNIT-005.02 for cycle count).
+  The testbench must allow sufficient setup cycles for derivative precomputation to complete before expecting the first fragment (see UNIT-005.03 for cycle count).
 - The rasterizer does not perform direct SDRAM writes.
   Fragment data (x, y, z, color0, color1, uv0, uv1, lod) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
   UV coordinates (`frag_uv0`, `frag_uv1`) carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
@@ -131,10 +131,10 @@ The testbench drives known triangle configurations through the triangle setup an
   The testbench instantiates a simple ready-signal driver to simulate downstream back-pressure.
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.
   The testbench clock should match this frequency for cycle-accurate fragment throughput verification.
-- Edge function C coefficients are computed using 2 MULT18X18D DSP blocks in the edge setup unit (UNIT-005.01).
-  inv_area is computed by a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode, UQ4.14 output) in UNIT-005.01.
-  Per-pixel 1/Q is computed by a separate dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output) in UNIT-005.04.
-  Perspective correction (S×(1/Q), T×(1/Q)) uses 4 dedicated MULT18X18D in the iteration FSM (UNIT-005.04).
+- Edge function C coefficients are computed using 2 MULT18X18D DSP blocks in the edge setup unit (UNIT-005.02).
+  inv_area is computed by a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode, UQ4.14 output) in UNIT-005.02.
+  Per-pixel 1/Q is computed by a separate dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output) in UNIT-005.05.
+  Perspective correction (S×(1/Q), T×(1/Q)) uses 4 dedicated MULT18X18D in the iteration FSM (UNIT-005.05).
   A setup-iteration overlap FIFO (compile-time configurable depth, default 2) allows triangle N+1 setup to proceed concurrently with triangle N iteration; multi-triangle tests should verify that overlap does not corrupt interpolated values.
   The testbench should allow sufficient cycles for setup completion before checking output values, accounting for derivative precomputation and perspective correction pipeline latency.
   Test cases should include small triangles (e.g., 4×4 pixels or smaller) to verify derivative precision with large inv_area values.

@@ -8,7 +8,7 @@ Internal
 
 - **Provider:** UNIT-003 (Register File)
 - **Consumer:** UNIT-001 (SPI Slave Controller)
-- **Consumer:** UNIT-004 (Triangle Setup)
+- **Consumer:** UNIT-005.01 (Triangle Setup)
 - **Consumer:** UNIT-005 (Rasterizer)
 - **Consumer:** UNIT-006 (Pixel Pipeline)
 - **Consumer:** UNIT-008 (Display Controller)
@@ -681,7 +681,7 @@ Consolidated rendering state register. Combines TRI_MODE, ALPHA_BLEND, Z-buffer 
 - ALPHA_BLEND expanded from 2 bits to 3 bits for future blend modes (e.g., multiply, screen, etc.)
 - Dithering typically enabled for all 3D rendering, disabled for UI
 - Z_WRITE_EN should be 0 for transparent objects (still test depth, don't write it)
-- CULL_MODE: Computed in Triangle Setup (UNIT-004) using signed area
+- CULL_MODE: Computed in Triangle Setup (UNIT-005.01) using signed area
   ```
   signed_area = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y)
   if signed_area > 0: triangle is CW

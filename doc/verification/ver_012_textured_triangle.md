@@ -155,7 +155,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
-- **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.04).
+- **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.05).
   The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
   `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; the pixel pipeline (UNIT-006) uses them directly for texture cache lookup without further division.
   With the checker pattern, any affine warping would be visible as curved checker lines — the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
@@ -169,11 +169,11 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Cache format:** The texture cache operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
 - The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to the format-select mux path in UNIT-006.
   The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations.
-  The conversion of derivative precomputation (UNIT-005.02) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing.
+  The conversion of derivative precomputation (UNIT-005.03) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing.
   However, if the derivative computation fix also corrects rendering bugs (displaced fragments, incorrect UV interpolation) that affect textured output, golden image re-approval is required.
   See `test_strategy.md` for the re-approval workflow.
 - **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
-  Perspective correction (S×(1/Q), T×(1/Q)) is performed inside the rasterizer (UNIT-005.04); the pixel pipeline (UNIT-006) receives fully corrected U,V coordinates directly and no longer performs 1/Q division on the UV bus.
+  Perspective correction (S×(1/Q), T×(1/Q)) is performed inside the rasterizer (UNIT-005.05); the pixel pipeline (UNIT-006) receives fully corrected U,V coordinates directly and no longer performs 1/Q division on the UV bus.
   `frag_q` is not present on the fragment bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q.
   **The golden image requires re-approval after Phase 2 RTL implementation.**
   The rasterizer traversal order changes to 4×4 tile-major order, the UV bus semantics change (true U,V vs. S=U/W projections), and `frag_q` is removed and `frag_lod` added.

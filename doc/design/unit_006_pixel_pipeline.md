@@ -70,7 +70,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 ### Inputs
 
 - Fragment position (x, y) from rasterizer (UNIT-005)
-- Perspective-correct UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0]); these are true U, V values — perspective correction is performed inside the rasterizer (UNIT-005.04) before emission
+- Perspective-correct UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0]); these are true U, V values — perspective correction is performed inside the rasterizer (UNIT-005.05) before emission
 - Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); integer part selects the mip level, fractional part is the trilinear blend weight
 - Interpolated vertex colors (SHADE0, SHADE1) as Q4.12 from rasterizer (UNIT-005)
 - Interpolated Z depth value (16-bit unsigned)
@@ -375,10 +375,10 @@ The tiled address calculation uses only shifts and masks; no multiply hardware i
 Render targets with power-of-two dimensions can be bound directly as texture sources (format RGB565 tiled) with no copy or conversion step.
 
 **Fragment bus UV semantics:** UNIT-006 receives true perspective-correct U, V coordinates in Q4.12 format on the fragment bus.
-Perspective correction (1/Q division and UV reconstruction) is fully handled by UNIT-005.04 before fragment emission.
+Perspective correction (1/Q division and UV reconstruction) is fully handled by UNIT-005.05 before fragment emission.
 UNIT-006 consumes UV directly for texel addressing; no perspective division occurs within the pixel pipeline.
 
-**LOD selection:** The per-pixel `frag_lod` (UQ4.4) value is produced by UNIT-005.04 via CLZ on the interpolated Q (1/W) value.
+**LOD selection:** The per-pixel `frag_lod` (UQ4.4) value is produced by UNIT-005.05 via CLZ on the interpolated Q (1/W) value.
 UNIT-006 adds `TEXn_MIP_BIAS` to `frag_lod[7:4]` (the integer mip-level component) to select the final mip level for each texture unit.
 `frag_lod[3:0]` carries the fractional blend weight used for trilinear filtering.
 

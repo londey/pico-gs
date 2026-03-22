@@ -1,4 +1,4 @@
-# UNIT-005.04: Iteration FSM
+# UNIT-005.05: Iteration FSM
 
 ## Purpose
 
@@ -13,10 +13,10 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 ### Internal Interfaces
 
-- Receives e0/e1/e2 initial values, row-start registers, and A/B edge coefficients from UNIT-005.01 (Edge Setup) and UNIT-005.02 (Derivative Pre-computation)
-- Receives S/T projected attribute values (Q4.12) and Q/W (Q3.12) from UNIT-005.03 (Attribute Accumulation) at each inside pixel
-- Commands UNIT-005.03 to step accumulators on X-step, Y-step, and row-reload events
-- Uses a dedicated per-pixel reciprocal module (`raster_recip_q.sv`) for 1/Q computation; UNIT-005.01 uses a separate dedicated module (`raster_recip_area.sv`)
+- Receives e0/e1/e2 initial values, row-start registers, and A/B edge coefficients from UNIT-005.02 (Edge Setup) and UNIT-005.03 (Derivative Pre-computation)
+- Receives S/T projected attribute values (Q4.12) and Q/W (Q3.12) from UNIT-005.04 (Attribute Accumulation) at each inside pixel
+- Commands UNIT-005.04 to step accumulators on X-step, Y-step, and row-reload events
+- Uses a dedicated per-pixel reciprocal module (`raster_recip_q.sv`) for 1/Q computation; UNIT-005.02 uses a separate dedicated module (`raster_recip_area.sv`)
 - Drives fragment output bus (frag_valid/frag_ready) toward UNIT-006 (Pixel Pipeline)
 
 ## Design Description
@@ -58,7 +58,7 @@ For inside pixels, the FSM executes a 3-cycle perspective correction pipeline:
 
 **Cycle 1 (BRAM_READ):**
 
-- Apply CLZ to the interpolated Q/W value from UNIT-005.03 (unsigned — Q = 1/W is always positive for visible geometry) to determine the normalization shift.
+- Apply CLZ to the interpolated Q/W value from UNIT-005.04 (unsigned — Q = 1/W is always positive for visible geometry) to determine the normalization shift.
 - Index the dedicated per-pixel reciprocal module (`raster_recip_q.sv`) with the 10-bit CLZ-normalized mantissa (from normalized[29:20]); initiate DP16KD BRAM read (18×1024 mode, UQ1.17 entries).
 - Compute frag_lod = CLZ(Q) as a UQ4.4 integer mip-level estimate.
 
@@ -80,8 +80,8 @@ Total DSP usage for perspective correction: 1 MULT18X18D (1/Q interpolation, ded
 After PERSP_2 completes, assert frag_valid and drive the fragment bus with:
 
 - (x, y): current pixel screen coordinates (UQ12.0)
-- z: extracted Z from UNIT-005.03 (16-bit unsigned)
-- color0, color1: clamped UNORM8 RGBA from UNIT-005.03
+- z: extracted Z from UNIT-005.04 (16-bit unsigned)
+- color0, color1: clamped UNORM8 RGBA from UNIT-005.04
 - uv0 = (U0, V0): true perspective-correct texture coordinates (Q4.12 each)
 - uv1 = (U1, V1): true perspective-correct texture coordinates (Q4.12 each)
 - lod: frag_lod (UQ4.4)
@@ -92,8 +92,8 @@ The FSM holds in EMIT (stalls all state) while frag_ready is deasserted by UNIT-
 
 After EMIT (or after a rejected pixel in EDGE_TEST), step to the next pixel:
 
-- Increment px; if px < 4, add A coefficients to e0/e1/e2 and command UNIT-005.03 to step-X.
-- When px wraps to 0, increment py; if py < 4, add B coefficients to e0/e1/e2, reload e0/e1/e2 from row-start, add B to row-start, and command UNIT-005.03 to row-reload.
+- Increment px; if px < 4, add A coefficients to e0/e1/e2 and command UNIT-005.04 to step-X.
+- When px wraps to 0, increment py; if py < 4, add B coefficients to e0/e1/e2, reload e0/e1/e2 from row-start, add B to row-start, and command UNIT-005.04 to row-reload.
 - When both px and py wrap to 0, advance to the next tile: increment tile_col; when tile_col reaches the tile-row boundary, increment tile_row.
 - On bounding box exhaustion, return to IDLE and assert tri_ready.
 

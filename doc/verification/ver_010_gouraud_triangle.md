@@ -11,7 +11,7 @@
 ## Verified Design Units
 
 - UNIT-003 (Register File)
-- UNIT-004 (Triangle Setup)
+- UNIT-005.01 (Triangle Setup)
 - UNIT-005 (Rasterizer)
 - UNIT-006 (Pixel Pipeline)
 
@@ -109,7 +109,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   After Phase 2 RTL implementation is complete, re-run the test, visually inspect the output, and re-commit the golden image before marking this test as passing.
 - The golden image must also be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), since pixel positions in the framebuffer may shift.
   The split of the shared reciprocal LUT into dedicated area and per-pixel 1/Q modules (`raster_recip_area.sv`, `raster_recip_q.sv`) and the addition of the setup-iteration overlap FIFO do not affect Gouraud-only rendering (no perspective correction path exercised), so golden image re-approval is not expected for that change alone.
-  The conversion of derivative precomputation (UNIT-005.02) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing; golden image re-approval is not expected for that change alone unless the derivative computation fix also corrects rendering bugs (displaced fragments, incorrect vertex colors) that affect the Gouraud interpolation output.
+  The conversion of derivative precomputation (UNIT-005.03) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing; golden image re-approval is not expected for that change alone unless the derivative computation fix also corrects rendering bugs (displaced fragments, incorrect vertex colors) that affect the Gouraud interpolation output.
   See `test_strategy.md` for the re-approval workflow.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
   Dithered rendering is tested separately in VER-013.
