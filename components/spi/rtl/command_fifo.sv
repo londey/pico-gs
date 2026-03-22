@@ -40,7 +40,7 @@ module command_fifo (
     localparam BOOT_FILE  = "";
 `else
     localparam BOOT_COUNT = 17;
-    localparam BOOT_FILE  = "src/spi/boot_commands.hex";
+    localparam BOOT_FILE  = "../components/spi/rtl/boot_commands.hex";
 `endif
 
     // ========================================================================

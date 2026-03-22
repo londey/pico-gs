@@ -174,6 +174,11 @@ module texture_l2_cache (
 
     reg [15:0] fill_buf [0:31];
 
+    // Intermediate signals for fill commit
+    reg  [9:0] fill_slot;
+    reg  [3:0] fill_epb;
+    reg  [9:0] fill_entry_base;
+
     // ====================================================================
     // Lookup Logic (combinational)
     // ====================================================================
@@ -360,10 +365,6 @@ module texture_l2_cache (
             end
         end else if (fill_done) begin
             // Commit fill buffer to L2 backing store and update tag
-            automatic logic [9:0] fill_slot;
-            automatic logic [3:0] fill_epb;
-            automatic logic [9:0] fill_entry_base;
-
             fill_slot       = (fill_base_words[9:0] ^ fill_block_index[9:0])
                             & slot_mask(fill_format);
             fill_epb        = entries_per_block(fill_format);
