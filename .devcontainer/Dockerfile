@@ -124,6 +124,9 @@ RUN /opt/oss-cad-suite/bin/tabbypy3 -m pip install \
     && pip3 install --break-system-packages \
         peakrdl peakrdl-regblock peakrdl-rust Pillow
 
+# Install d2 diagramming tool (https://github.com/terrastruct/d2)
+RUN curl -fsSL https://d2lang.com/install.sh | sh -s --
+
 # Create non-root user for development (handle existing UID/GID 1000)
 ARG USERNAME=vscode
 ARG USER_UID=1000

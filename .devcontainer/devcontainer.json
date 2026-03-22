@@ -44,7 +44,8 @@
                 "streetsidesoftware.code-spell-checker",
                 "tamasfe.even-better-toml",
                 "yzhang.markdown-all-in-one",
-                "DavidAnson.vscode-markdownlint"
+                "DavidAnson.vscode-markdownlint",
+                "Terrastruct.d2"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
