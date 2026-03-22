@@ -21,15 +21,15 @@ The testbench drives known input data through each texture format decoder and th
 
 - Verilator 5.x installed and available on `$PATH`.
 - The following RTL source files compile without errors under `verilator --lint-only -Wall`:
-  - `spi_gpu/src/render/texture_rgb565.sv`
-  - `spi_gpu/src/render/texture_rgba8888.sv`
-  - `spi_gpu/src/render/texture_r8.sv`
-  - `spi_gpu/src/render/texture_bc2.sv`
-  - `spi_gpu/src/render/texture_bc3.sv`
-  - `spi_gpu/src/render/texture_bc4.sv`
-  - `spi_gpu/src/render/texture_bc5.sv`
-  - `spi_gpu/src/render/texel_promote.sv`
-  - `spi_gpu/src/render/stipple.sv`
+  - `components/texture/rtl/texture_rgb565.sv`
+  - `components/texture/rtl/texture_rgba8888.sv`
+  - `components/texture/rtl/texture_r8.sv`
+  - `components/texture/rtl/texture_bc2.sv`
+  - `components/texture/rtl/texture_bc3.sv`
+  - `components/texture/rtl/texture_bc4.sv`
+  - `components/texture/rtl/texture_bc5.sv`
+  - `components/pixel-write/rtl/texel_promote.sv`
+  - `components/stipple/rtl/stipple.sv`
 - Test vector data is embedded directly in the testbench source (no external vector files required).
 
 ## Procedure
@@ -121,17 +121,17 @@ The testbench drives known input data through each texture format decoder and th
 
 ## Test Implementation
 
-- `spi_gpu/tests/render/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
+- `components/texture/tests/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
   Instantiates each decoder as a separate DUT plus the format-select mux, drives known input block data with specific texel indices, and checks output values (UQ1.8 format) against expected constants.
   Uses embedded test vectors (no external file dependencies).
 
 ## Notes
 
 - See INT-032 (Texture Cache Architecture) for the UQ1.8 format definition, conversion tables from each source format, the Q4.12 promotion formula, and the 4-bit `tex_format` encoding table.
-  The `fp_types_pkg.sv` package (`spi_gpu/src/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the INT-032 formula in RTL.
+  The `fp_types_pkg.sv` package (`shared/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the INT-032 formula in RTL.
   If Step 4 promotion output differs from the INT-032 formula, verify the `fp_types_pkg.sv` function implementation against INT-032 before updating test vectors.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
-- Run this test with: `cd spi_gpu && make test-texture-decoder`.
+- Run this test with: `cd integration && make test-texture-decoder`.
 - REQ-003.01 coverage is jointly satisfied by VER-005 (unit test for the decode path in isolation) and VER-012 (golden image integration test exercising the full texture sampling pipeline including cache, rasterizer, and framebuffer output).
 - The `texture_decoder_tb` testbench exercises only combinational decoder logic and the format-select mux; it does not test the texture cache fill FSM or SDRAM burst protocol (those are covered by VER-012 and future cache-specific VER documents).
 - The `tex_format` field is 4 bits wide, encoding 8 formats (BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7) as defined in INT-032 (DD-041).

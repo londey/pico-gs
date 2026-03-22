@@ -16,8 +16,8 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 ## Preconditions
 
 - Verilator 5.x installed and available on `$PATH`.
-- `spi_gpu/src/render/early_z.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `spi_gpu/src/render/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (`early_z.sv` is a sub-module of UNIT-006 and shares its port declarations with the pipeline FSM).
+- `components/early-z/rtl/early_z.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `components/pixel-write/rtl/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (`early_z.sv` is a sub-module of UNIT-006 and shares its port declarations with the pipeline FSM).
   This precondition does not require the full pixel pipeline to be instantiated in the testbench; it ensures the interface definitions are consistent before isolating `early_z.sv` for unit testing.
 
 ## Procedure
@@ -77,13 +77,13 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 
 ## Test Implementation
 
-- `spi_gpu/tests/render/tb_early_z.sv`: Verilator unit testbench for the `early_z.sv` module.
+- `components/early-z/tests/tb_early_z.sv`: Verilator unit testbench for the `early_z.sv` module.
   Drives fragment depth and Z-buffer inputs through the depth range clipper and Z comparison logic, checking `range_pass`, `z_test_pass`, and `z_bypass` outputs against expected values for all comparison functions, bypass conditions, and boundary cases.
 
 ## Notes
 
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
-- Run this test with: `cd spi_gpu && make test-early-z`.
+- Run this test with: `cd integration && make test-early-z`.
 - The `early_z.sv` module is combinational logic; the testbench uses `#1` delays between stimulus changes rather than a clock.
 - Z_WRITE control is not part of `early_z.sv` -- it is applied by the enclosing pixel pipeline (UNIT-006) FSM when deciding whether to issue a Z-buffer write to SDRAM via arbiter port 2.
   The pixel pipeline (not the rasterizer) owns arbiter ports 1 (framebuffer write) and 2 (Z-buffer read/write).

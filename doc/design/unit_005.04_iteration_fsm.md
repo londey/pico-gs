@@ -119,8 +119,8 @@ These signals enable downstream consumers to optimize SDRAM burst scheduling and
 
 ## Implementation
 
-- `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
-- `spi_gpu/src/render/raster_recip_q.sv`: Dedicated per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), UQ1.17 entries, 2-cycle latency (BRAM read + MULT18X18D interpolation), UQ4.14 output.
+- `components/rasterizer/rtl/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
+- `components/rasterizer/rtl/raster_recip_q.sv`: Dedicated per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), UQ1.17 entries, 2-cycle latency (BRAM read + MULT18X18D interpolation), UQ4.14 output.
 
 ## Verification
 

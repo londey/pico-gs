@@ -186,7 +186,7 @@ Each lower-priority port is only ready when no higher-priority port is requestin
 
 ## Implementation
 
-- `spi_gpu/src/memory/sram_arbiter.sv`: Main implementation (filename retained for compatibility; arbitrates SDRAM controller)
+- `components/memory/rtl/sram_arbiter.sv`: Main implementation (filename retained for compatibility; arbitrates SDRAM controller)
 
 ## Verification
 

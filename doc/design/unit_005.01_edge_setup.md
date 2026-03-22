@@ -61,9 +61,9 @@ UNIT-005.04 uses a separate dedicated per-pixel reciprocal module (`raster_recip
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Edge setup logic within the parent rasterizer module.
+- `components/rasterizer/rtl/rasterizer.sv`: Edge setup logic within the parent rasterizer module.
   Corresponds to the `always_comb` next-state block covering SETUP/SETUP_2/SETUP_3 states and the associated flat `always_ff` register assignments.
-- `spi_gpu/src/render/raster_recip_area.sv`: Dedicated triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 output, optional Newton-Raphson refinement.
+- `components/rasterizer/rtl/raster_recip_area.sv`: Dedicated triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 output, optional Newton-Raphson refinement.
 
 ## Verification
 

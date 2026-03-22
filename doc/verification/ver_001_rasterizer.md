@@ -16,8 +16,8 @@ The testbench drives known triangle configurations through the triangle setup an
 ## Preconditions
 
 - Verilator 5.x installed and available on `$PATH`.
-- `spi_gpu/src/render/rasterizer.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `spi_gpu/src/render/early_z.sv` compiles without errors under `verilator --lint-only -Wall` (rasterizer depends on early Z integration signals).
+- `components/rasterizer/rtl/rasterizer.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `components/early-z/rtl/early_z.sv` compiles without errors under `verilator --lint-only -Wall` (rasterizer depends on early Z integration signals).
 - Triangle setup module (UNIT-004) is instantiated or stubbed so that the rasterizer receives valid setup data.
 - The testbench drives `fb_width_log2` and `fb_height_log2` register inputs (from UNIT-003) to configure the active surface dimensions before each test case.
 - The rasterizer computes inv_area internally via a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode) in UNIT-005.01; the testbench does not supply `setup_inv_area` as an external input.
@@ -111,13 +111,13 @@ The testbench drives known triangle configurations through the triangle setup an
 
 ## Test Implementation
 
-- `spi_gpu/tests/render/tb_rasterizer.sv`: Verilator unit testbench for the rasterizer module.
+- `components/rasterizer/tests/tb_rasterizer.sv`: Verilator unit testbench for the rasterizer module.
   Drives triangle vertex data, monitors edge function outputs, counts fragment emissions, and checks interpolated values against reference data.
 
 ## Notes
 
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
-- Run this test with: `cd spi_gpu && make test-rasterizer`.
+- Run this test with: `cd integration && make test-rasterizer`.
 - The testbench exercises the rasterizer in isolation with a stub consumer for the fragment output bus.
   Full pipeline integration (framebuffer writes, Z-buffer interaction) is covered by VER-010 through VER-013 (golden image tests).
 - The rasterizer uses incremental derivative interpolation (per UNIT-005): attribute derivatives (dAttr/dx, dAttr/dy) are precomputed during triangle setup by UNIT-005.02, then stepped per-pixel by the rasterizer.

@@ -1,7 +1,7 @@
 # Test Strategy
 
 This document records the cross-cutting verification strategy: frameworks, tools, approaches, and coverage goals that apply across all verification documents.
-The scope of RTL verification is Verilator-based simulation of the `spi_gpu/` SystemVerilog sources.
+The scope of RTL verification is Verilator-based simulation of the SystemVerilog sources under `components/*/rtl/` and `integration/`.
 Rust-side verification (host firmware, asset tools) is out of scope for this document.
 
 ## Test Frameworks and Tools
@@ -12,9 +12,9 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
 - **Language/Platform:** SystemVerilog → C++ simulation (compiled with Verilator)
 - **Usage:** All RTL unit testbenches (VER-001 through VER-005) and pipeline integration tests (VER-010 through VER-014) run under Verilator.
   Testbenches are written in C++ (or SystemVerilog with a DPI-C harness) and linked against the Verilated model.
-- **Configuration:** `spi_gpu/Makefile` drives Verilator invocation.
+- **Configuration:** `integration/Makefile` drives Verilator invocation.
   Lint flags: `--lint-only -Wall` for static checks; simulation builds use `--trace` for VCD output.
-  Verilator version: 5.x (see `spi_gpu/Makefile` for the pinned version).
+  Verilator version: 5.x (see `integration/Makefile` for the pinned version).
 
 ### Verilator Lint (Static Analysis)
 
@@ -22,7 +22,7 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
 - **Language/Platform:** SystemVerilog
 - **Usage:** `verilator --lint-only -Wall` is run on every RTL source file before simulation.
   All warnings are treated as errors; no pragma suppressions are permitted per the project SystemVerilog style rules.
-- **Configuration:** Invoked via `cd spi_gpu && make lint`.
+- **Configuration:** Invoked via `cd integration && make lint`.
 
 ## Design Decisions
 
@@ -49,7 +49,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 ### Unit Testbenches
 
 - **Description:** Each RTL module or subsystem is exercised in isolation with a dedicated C++ or SV testbench that drives inputs and checks outputs cycle-by-cycle.
-  Test vectors are embedded in the testbench source or loaded from CSV files in `spi_gpu/tests/vectors/`.
+  Test vectors are embedded in the testbench source or loaded from CSV files in `integration/scripts/`.
 - **Applicable to:** VER-001 (rasterizer), VER-002 (early Z), VER-003 (register file), VER-004 (color combiner), VER-005 (texture decoder).
 
 ### Golden Image Approval Testing
@@ -61,19 +61,19 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
   To approve a new or updated golden image:
   1. Run the simulation and inspect the rendered `.ppm` visually.
-  2. Copy the `.ppm` to `spi_gpu/tests/golden/<test_name>.ppm`, replacing the previous file.
+  2. Copy the `.ppm` to `integration/golden/<test_name>.ppm`, replacing the previous file.
   3. Commit the updated golden image with a message describing the intentional change.
 
 - **Tool:** Pixel-exact binary diff (`diff -q` or equivalent).
   For cases where hardware rounding differs between RTL revisions, a tolerance of ±1 LSB per channel may be accepted; document any such tolerance in the relevant VER document.
-- **Approved files location:** `spi_gpu/tests/golden/`
+- **Approved files location:** `integration/golden/`
 - **Applicable to:** VER-010 (Gouraud triangle), VER-011 (depth-tested overlapping triangles), VER-012 (textured triangle), VER-013 (color-combined output), VER-014 (textured cube).
 - **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline behavior (UNIT-006), color combiner arithmetic (UNIT-010), or `tex_format` encoding (INT-010) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
   The commit message must describe the change that caused the image to update.
 
 ### Integration Simulation Harness
 
-- **Description:** The golden image tests share a common C++ simulation harness (`spi_gpu/tests/harness/`) that:
+- **Description:** The golden image tests share a common C++ simulation harness (`integration/harness/`) that:
   - Instantiates the full GPU RTL hierarchy under Verilator.
   - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
     A partial or stub SDRAM model that does not implement the cache miss fill FSM is not sufficient for VER-012 through VER-014.
@@ -95,13 +95,13 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 ### RTL Unit Coverage
 
-- **Target:** All RTL modules listed in `spi_gpu/src/` are exercised by at least one VER document (unit or integration).
+- **Target:** All RTL modules under `components/*/rtl/` and `integration/` are exercised by at least one VER document (unit or integration).
 - **Measurement:** Manual traceability table in each VER document (`Verified Design Units` section).
 
 ### Branch Coverage
 
 - **Target:** 90% branch coverage for unit-tested modules (VER-001 through VER-005).
-- **Measurement:** Verilator coverage report (`--coverage` flag); HTML report written to `spi_gpu/sim_build/coverage/`.
+- **Measurement:** Verilator coverage report (`--coverage` flag); HTML report written to `integration/sim_build/coverage/`.
 
 ## Test Environments
 
@@ -109,7 +109,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 - **Description:** Verilator installed on the developer workstation or CI host.
 - **Purpose:** All RTL unit and integration tests.
-- **Setup:** Install Verilator 5.x; run `cd spi_gpu && make test`.
+- **Setup:** Install Verilator 5.x; run `cd integration && make test`.
 
 ### CI (GitHub Actions or equivalent)
 
@@ -122,7 +122,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 ### Running All RTL Tests
 
 ```
-cd spi_gpu && make test
+cd integration && make test
 ```
 
 This target runs Verilator lint, compiles all testbenches, executes them, and compares golden images.
@@ -130,14 +130,14 @@ This target runs Verilator lint, compiles all testbenches, executes them, and co
 ### Running a Single Test
 
 ```
-cd spi_gpu && make test-<ver_name>
+cd integration && make test-<ver_name>
 # e.g.: make test-rasterizer
 ```
 
 ### CI/CD Integration
 
 - **Pipeline:** Runs on push to `master` and on pull requests targeting `master`.
-- **Triggers:** Any change under `spi_gpu/` or `registers/` triggers the RTL test suite.
+- **Triggers:** Any change under `components/`, `integration/`, or `shared/` triggers the RTL test suite.
 - **Reporting:** Test results are reported as CI check statuses; VCD traces are uploaded as artifacts on failure.
 
 ### Manual Testing
@@ -147,7 +147,7 @@ cd spi_gpu && make test-<ver_name>
 
 ## Test Data Management
 
-- **Strategy:** Test vectors for unit tests are checked into `spi_gpu/tests/vectors/` as plain-text CSV files.
-  Golden images are checked into `spi_gpu/tests/golden/` as `.ppm` files.
+- **Strategy:** Test vectors for unit tests are checked into `integration/scripts/` as plain-text CSV files.
+  Golden images are checked into `integration/golden/` as `.ppm` files.
   Large binary assets (textures for VER-012 and VER-014) are generated programmatically by the test harness and are not committed.
-- **Location:** `spi_gpu/tests/`
+- **Location:** `integration/`

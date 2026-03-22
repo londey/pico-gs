@@ -134,13 +134,13 @@ Each sub-unit is documented in its own design unit file:
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
-- `spi_gpu/src/render/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
-- `spi_gpu/src/render/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
-- `spi_gpu/src/render/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.02), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
-- `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.02 latching / UNIT-005.03).
-- `spi_gpu/src/render/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
-- `spi_gpu/src/render/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline (UNIT-005.04).
+- `components/rasterizer/rtl/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
+- `components/rasterizer/rtl/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
+- `components/rasterizer/rtl/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
+- `components/rasterizer/rtl/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.02), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
+- `components/rasterizer/rtl/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.02 latching / UNIT-005.03).
+- `components/rasterizer/rtl/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
+- `components/rasterizer/rtl/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline (UNIT-005.04).
 
 ## Verification
 

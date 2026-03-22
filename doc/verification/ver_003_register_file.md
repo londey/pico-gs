@@ -18,7 +18,7 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 ## Preconditions
 
 - Verilator 5.x installed and available on `$PATH`.
-- `spi_gpu/src/spi/register_file.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `components/spi/rtl/register_file.sv` compiles without errors under `verilator --lint-only -Wall`.
 
 ## Procedure
 
@@ -151,14 +151,14 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 
 ## Test Implementation
 
-- `spi_gpu/tests/spi/tb_register_file.sv`: Primary Verilator unit testbench for the register file module.
+- `components/spi/tests/tb_register_file.sv`: Primary Verilator unit testbench for the register file module.
   Covers register read/write, vertex kick, ID register, and basic functional verification.
-- `spi_gpu/tests/spi/register_file_v10_tb.sv`: Extended testbench covering vertex submission flows, MEM_FILL trigger, RENDER_MODE decode, CC_MODE passthrough, FB_CONFIG, and FB_CONTROL field extraction.
+- `components/spi/tests/register_file_v10_tb.sv`: Extended testbench covering vertex submission flows, MEM_FILL trigger, RENDER_MODE decode, CC_MODE passthrough, FB_CONFIG, and FB_CONTROL field extraction.
 
 ## Notes
 
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
-- Run this test with: `cd spi_gpu && make test-register-file`.
+- Run this test with: `cd integration && make test-register-file`.
 - VER-003 covers the union of test cases from both `tb_register_file.sv` and `register_file_v10_tb.sv`.
 - The register file is clocked at the unified 100 MHz `clk_core` domain.
 - FB_DISPLAY blocking behavior involves interaction with the display controller's vblank signal; the testbench must provide a stimulus model for vblank timing.

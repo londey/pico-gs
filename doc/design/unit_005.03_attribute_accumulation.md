@@ -53,7 +53,7 @@ S/T projected texture coordinates are passed to UNIT-005.04 as Q4.12 values for 
 
 ## Implementation
 
-- `spi_gpu/src/render/raster_attr_accum.sv`: Attribute accumulators, derivative registers, step logic, output extraction and clamping.
+- `components/rasterizer/rtl/raster_attr_accum.sv`: Attribute accumulators, derivative registers, step logic, output extraction and clamping.
 
 ## Verification
 

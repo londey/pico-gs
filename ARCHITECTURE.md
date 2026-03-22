@@ -34,7 +34,7 @@ Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM co
 
 ## Digital Twin (gs-twin)
 
-A bit-accurate, transaction-level Rust model of the GPU pipeline lives at `spi_gpu/dt/gs-twin/`.
+A bit-accurate, transaction-level Rust model of the GPU pipeline lives at `integration/gs-twin/`.
 It models the register-write interface, integer rasterizer, and full pixel pipeline — everything from SPI register decode through framebuffer write — producing golden reference framebuffers that the RTL's output must match exactly at the RGB565 pixel level.
 
 The twin is deliberately *not* cycle-accurate; Verilator testbenches own cycle-level fidelity.
@@ -44,7 +44,7 @@ All fixed-point formats, bit widths, rounding behavior, and overflow conventions
 Both the Rust twin and Verilator testbenches consume the same `.hex` register-write scripts.
 The `gs-twin-cli` binary renders scripts to PNG and compares against Verilator framebuffer dumps — any pixel mismatch is a real bug.
 
-For detailed architecture and the module-to-RTL mapping, see `spi_gpu/dt/README.md`.
+For detailed architecture and the module-to-RTL mapping, see `CLAUDE.md` (module mapping table) and the individual component twin crates under `components/*/twin/`.
 
 ## Component Interactions
 

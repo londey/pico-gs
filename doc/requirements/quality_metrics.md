@@ -93,7 +93,7 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
 
 - **Target:** All public module ports and parameters documented with inline comments
 - **Measurement Method:** Manual review of RTL source files
-- **Scope:** All modules in `spi_gpu/src/`
+- **Scope:** All modules under `components/*/rtl/` and `integration/`
 - **References:** Internal quality goal
 - **Rationale:** Helps with future development and onboarding
 

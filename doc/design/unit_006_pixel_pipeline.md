@@ -293,23 +293,23 @@ The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for ot
 
 ## Implementation
 
-- `spi_gpu/src/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
-- `spi_gpu/src/render/pixel_pipeline.sv`: Main implementation
-- `spi_gpu/src/render/texture_bc1.sv`: BC1 decoder
-- `spi_gpu/src/render/texture_bc2.sv`: BC2 decoder
-- `spi_gpu/src/render/texture_bc3.sv`: BC3 decoder
-- `spi_gpu/src/render/texture_bc4.sv`: BC4 (single-channel) decoder
-- `spi_gpu/src/render/texture_bc5.sv`: BC5 (two-channel, RG normal map) decoder
-- `spi_gpu/src/render/texture_rgb565.sv`: RGB565 uncompressed decoder
-- `spi_gpu/src/render/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
-- `spi_gpu/src/render/texture_r8.sv`: R8 single-channel decoder
-- `spi_gpu/src/render/texture_cache.sv`: Per-sampler texture cache (REQ-003.08)
-- `spi_gpu/src/render/texel_promote.sv`: UQ1.8→Q4.12 texel promotion (REQ-004.02, DD-038)
-- `spi_gpu/src/render/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
-- `spi_gpu/src/render/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
-- `spi_gpu/src/render/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
-- `spi_gpu/src/render/early_z.sv`: Depth range test + early Z-test logic
-- `spi_gpu/src/render/stipple.sv`: Stipple pattern test
+- `shared/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
+- `components/pixel-write/rtl/pixel_pipeline.sv`: Main implementation
+- `components/texture/rtl/texture_bc1.sv`: BC1 decoder
+- `components/texture/rtl/texture_bc2.sv`: BC2 decoder
+- `components/texture/rtl/texture_bc3.sv`: BC3 decoder
+- `components/texture/rtl/texture_bc4.sv`: BC4 (single-channel) decoder
+- `components/texture/rtl/texture_bc5.sv`: BC5 (two-channel, RG normal map) decoder
+- `components/texture/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder
+- `components/texture/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
+- `components/texture/rtl/texture_r8.sv`: R8 single-channel decoder
+- `components/texture/rtl/texture_cache.sv`: Per-sampler texture cache (REQ-003.08)
+- `components/pixel-write/rtl/texel_promote.sv`: UQ1.8→Q4.12 texel promotion (REQ-004.02, DD-038)
+- `components/pixel-write/rtl/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
+- `components/alpha-blend/rtl/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
+- `components/dither/rtl/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
+- `components/early-z/rtl/early_z.sv`: Depth range test + early Z-test logic
+- `components/stipple/rtl/stipple.sv`: Stipple pattern test
 
 ## Verification
 

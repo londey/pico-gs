@@ -1,6 +1,6 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `43b4390c9803abd3` 2026-03-14
-// Spec-ref: unit_005.03_attribute_accumulation.md `e0856631e2688f84` 2026-03-06
+// Spec-ref: unit_005_rasterizer.md `1101f023cdcf3b3b` 2026-03-22
+// Spec-ref: unit_005.03_attribute_accumulation.md `cba9c287fa24b04d` 2026-03-22
 
 // Rasterizer Attribute Accumulator (UNIT-005.02 / UNIT-005.03)
 //

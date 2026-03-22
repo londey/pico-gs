@@ -21,7 +21,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** PLL achieves lock (typically 50-500ms after reset release)
 - **Capabilities:** None - all subsystems held in reset
 - **Restrictions:** No operation possible until PLL locks
-- **Source:** [spi_gpu/src/core/pll_core.sv](../../spi_gpu/src/core/pll_core.sv), [spi_gpu/src/core/reset_sync.sv](../../spi_gpu/src/core/reset_sync.sv)
+- **Source:** [components/core/rtl/pll_core.sv](../../components/core/rtl/pll_core.sv), [components/core/rtl/reset_sync.sv](../../components/core/rtl/reset_sync.sv)
 
 #### State: PLL Locked
 
@@ -30,7 +30,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** PLL loses lock (rare, indicates stability issue)
 - **Capabilities:** Normal system operation with synchronized reset release
 - **Restrictions:** None
-- **Source:** [spi_gpu/src/core/reset_sync.sv:6-34](../../spi_gpu/src/core/reset_sync.sv#L6-L34)
+- **Source:** [components/core/rtl/reset_sync.sv:6-34](../../components/core/rtl/reset_sync.sv#L6-L34)
 
 #### State: Boot Command Processing
 
@@ -53,7 +53,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Chip select (CS) asserted by host
 - **Capabilities:** Ready to receive new 72-bit transaction
 - **Restrictions:** No data transfer occurs
-- **Source:** [spi_gpu/src/spi/spi_slave.sv:30-59](../../spi_gpu/src/spi/spi_slave.sv#L30-L59)
+- **Source:** [components/spi/rtl/spi_slave.sv:30-59](../../components/spi/rtl/spi_slave.sv#L30-L59)
 
 #### State: Shifting In
 
@@ -62,7 +62,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** 72 bits received (bit_count reaches 71)
 - **Capabilities:** Serial-to-parallel conversion at SPI clock rate
 - **Restrictions:** Transaction incomplete until all bits received
-- **Source:** [spi_gpu/src/spi/spi_slave.sv:30-59](../../spi_gpu/src/spi/spi_slave.sv#L30-L59)
+- **Source:** [components/spi/rtl/spi_slave.sv:30-59](../../components/spi/rtl/spi_slave.sv#L30-L59)
 
 #### State: Transaction Complete
 
@@ -71,7 +71,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** CS deasserted or new transaction begins
 - **Capabilities:** transaction_done pulse triggers register write
 - **Restrictions:** Single-cycle pulse; must be captured by register file
-- **Source:** [spi_gpu/src/spi/spi_slave.sv:82-95](../../spi_gpu/src/spi/spi_slave.sv#L82-L95)
+- **Source:** [components/spi/rtl/spi_slave.sv:82-95](../../components/spi/rtl/spi_slave.sv#L82-L95)
 
 ### 3. Register File Vertex Submission States
 
@@ -82,7 +82,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** First ADDR_VERTEX write
 - **Capabilities:** Ready to latch first vertex data
 - **Restrictions:** tri_valid = 0 (no triangle output)
-- **Source:** [spi_gpu/src/spi/register_file.sv:66-164](../../spi_gpu/src/spi/register_file.sv#L66-L164)
+- **Source:** [components/spi/rtl/register_file.sv:66-164](../../components/spi/rtl/register_file.sv#L66-L164)
 
 #### State: Vertex Count 1
 
@@ -91,7 +91,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Second ADDR_VERTEX write
 - **Capabilities:** vertex_x[0], vertex_y[0], vertex_z[0], vertex_colors[0] stored
 - **Restrictions:** Triangle not yet valid
-- **Source:** [spi_gpu/src/spi/register_file.sv:66-164](../../spi_gpu/src/spi/register_file.sv#L66-L164)
+- **Source:** [components/spi/rtl/register_file.sv:66-164](../../components/spi/rtl/register_file.sv#L66-L164)
 
 #### State: Vertex Count 2
 
@@ -100,7 +100,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Third ADDR_VERTEX write (triggers triangle emission)
 - **Capabilities:** Two vertices stored; ready to emit complete triangle
 - **Restrictions:** Triangle not yet valid
-- **Source:** [spi_gpu/src/spi/register_file.sv:66-164](../../spi_gpu/src/spi/register_file.sv#L66-L164)
+- **Source:** [components/spi/rtl/register_file.sv:66-164](../../components/spi/rtl/register_file.sv#L66-L164)
 
 #### State: Triangle Emission
 
@@ -109,7 +109,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Single-cycle pulse complete
 - **Capabilities:** All three vertices + inv_area output on tri_valid pulse
 - **Restrictions:** vertex_count resets to 0 immediately
-- **Source:** [spi_gpu/src/spi/register_file.sv:138-164](../../spi_gpu/src/spi/register_file.sv#L138-L164)
+- **Source:** [components/spi/rtl/register_file.sv:138-164](../../components/spi/rtl/register_file.sv#L138-L164)
 
 ### 4. SDRAM Controller States (8-State FSM)
 
@@ -126,7 +126,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Initialization sequence complete (~20,016 cycles at 100 MHz)
 - **Capabilities:** Executes: 200 us wait, PRECHARGE ALL, 2x AUTO REFRESH, LOAD MODE REGISTER (CL=3, burst length=1)
 - **Restrictions:** No memory access permitted; ready=0 throughout initialization
-- **Source:** [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv)
+- **Source:** [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv)
 
 #### State: IDLE
 
@@ -135,7 +135,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** req asserted (burst_len determines single vs. sequential), or refresh timer expires
 - **Capabilities:** ready=1; latches address, write data, and burst_len; decomposes byte address into bank, row, and column
 - **Restrictions:** No memory access in progress; all banks precharged
-- **Source:** [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv)
+- **Source:** [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv)
 
 #### State: ACTIVATE
 
@@ -184,7 +184,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Always transitions to IDLE
 - **Capabilities:** ack pulsed high to signal completion; for sequential access, burst_done also asserted
 - **Restrictions:** Single-cycle state
-- **Source:** [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv)
+- **Source:** [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv)
 
 ### 5. Display Controller Fetch States (3-State FSM)
 
@@ -195,7 +195,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** FIFO level < 32 words AND fetch_y < 480
 - **Capabilities:** Issues SDRAM request for current scanline
 - **Restrictions:** Prefetch threshold prevents underrun
-- **Source:** [spi_gpu/src/display/display_controller.sv:82-168](../../spi_gpu/src/display/display_controller.sv#L82-L168)
+- **Source:** [components/display/rtl/display_controller.sv:82-168](../../components/display/rtl/display_controller.sv#L82-L168)
 
 #### State: FETCH_WAIT_ACK
 
@@ -204,7 +204,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** sram_ack received
 - **Capabilities:** Prepares to store read data
 - **Restrictions:** Blocked until SDRAM controller responds
-- **Source:** [spi_gpu/src/display/display_controller.sv:82-168](../../spi_gpu/src/display/display_controller.sv#L82-L168)
+- **Source:** [components/display/rtl/display_controller.sv:82-168](../../components/display/rtl/display_controller.sv#L82-L168)
 
 #### State: FETCH_STORE
 
@@ -213,7 +213,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** End of scanline or FIFO full
 - **Capabilities:** fifo_wr_en=1; increments fetch_addr and fetch_y
 - **Restrictions:** FIFO must have space (depth 1024 words ≈ 1.6 scanlines)
-- **Source:** [spi_gpu/src/display/display_controller.sv:171](../../spi_gpu/src/display/display_controller.sv#L171)
+- **Source:** [components/display/rtl/display_controller.sv:171](../../components/display/rtl/display_controller.sv#L171)
 
 ### 6. Rasterizer States (12-State Triangle Processing FSM)
 
@@ -224,7 +224,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** tri_valid=1
 - **Capabilities:** tri_ready=1; latches 3 vertices
 - **Restrictions:** No rasterization in progress
-- **Source:** [spi_gpu/src/render/rasterizer.sv:74-87](../../spi_gpu/src/render/rasterizer.sv#L74-L87)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:74-87](../../components/rasterizer/rtl/rasterizer.sv#L74-L87)
 
 #### State: SETUP
 
@@ -233,7 +233,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Setup complete (1 cycle)
 - **Capabilities:** Computes edge0/edge1/edge2 coefficients, bbox min/max
 - **Restrictions:** Single-cycle state
-- **Source:** [spi_gpu/src/render/rasterizer.sv:216-350](../../spi_gpu/src/render/rasterizer.sv#L216-L350)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
 
 #### State: ITER_START
 
@@ -242,7 +242,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Always transitions to EDGE_TEST
 - **Capabilities:** Sets curr_x/curr_y to bbox minimum, calculates triangle area
 - **Restrictions:** None
-- **Source:** [spi_gpu/src/render/rasterizer.sv:216-350](../../spi_gpu/src/render/rasterizer.sv#L216-L350)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
 
 #### State: EDGE_TEST
 
@@ -251,7 +251,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Always transitions to BARY_CALC
 - **Capabilities:** Computes edge function values for inside/outside test
 - **Restrictions:** None
-- **Source:** [spi_gpu/src/render/rasterizer.sv:216-350](../../spi_gpu/src/render/rasterizer.sv#L216-L350)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
 
 #### State: BARY_CALC
 
@@ -260,7 +260,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Inside → INTERPOLATE; Outside → ITER_NEXT
 - **Capabilities:** Tests all edges ≥ 0; computes barycentric coordinates
 - **Restrictions:** Branching state (inside vs. outside)
-- **Source:** [spi_gpu/src/render/rasterizer.sv:216-350](../../spi_gpu/src/render/rasterizer.sv#L216-L350)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
 
 #### State: INTERPOLATE
 
@@ -269,7 +269,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Always transitions to ZBUF_READ
 - **Capabilities:** Calculates sum_r, sum_g, sum_b, sum_z with saturation
 - **Restrictions:** Only executes for pixels inside triangle
-- **Source:** [spi_gpu/src/render/rasterizer.sv:326-345](../../spi_gpu/src/render/rasterizer.sv#L326-L345)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:326-345](../../components/rasterizer/rtl/rasterizer.sv#L326-L345)
 
 #### States: ZBUF_READ → ZBUF_WAIT → ZBUF_TEST
 
@@ -278,7 +278,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Z-test pass → WRITE_PIXEL; Z-test fail → ITER_NEXT
 - **Capabilities:** Reads Z-buffer value, compares with interpolated Z
 - **Restrictions:** Memory latency; compare function from FB_ZBUFFER register
-- **Source:** [spi_gpu/src/render/rasterizer.sv:347-380](../../spi_gpu/src/render/rasterizer.sv#L347-L380)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:347-380](../../components/rasterizer/rtl/rasterizer.sv#L347-L380)
 
 #### States: WRITE_PIXEL → WRITE_WAIT
 
@@ -287,7 +287,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Write complete
 - **Capabilities:** Simultaneous framebuffer (RGB) and Z-buffer writes
 - **Restrictions:** Memory access latency
-- **Source:** [spi_gpu/src/render/rasterizer.sv:216-350](../../spi_gpu/src/render/rasterizer.sv#L216-L350)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
 
 #### State: ITER_NEXT
 
@@ -296,7 +296,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** End of bbox → IDLE; Otherwise → EDGE_TEST
 - **Capabilities:** Increments curr_x; wraps to next scanline at bbox_max_x
 - **Restrictions:** None
-- **Source:** [spi_gpu/src/render/rasterizer.sv:216-350](../../spi_gpu/src/render/rasterizer.sv#L216-L350)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
 
 ---
 
@@ -705,13 +705,13 @@ Power-on
 ## References
 
 ### GPU RTL Sources
-- [spi_gpu/src/core/reset_sync.sv](../../spi_gpu/src/core/reset_sync.sv) — Reset synchronization
-- [spi_gpu/src/spi/spi_slave.sv](../../spi_gpu/src/spi/spi_slave.sv) — SPI transaction states
-- [spi_gpu/src/spi/register_file.sv](../../spi_gpu/src/spi/register_file.sv) — Vertex submission FSM
-- [spi_gpu/src/utils/async_fifo.sv](../../spi_gpu/src/utils/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
-- [spi_gpu/src/memory/sdram_controller.sv](../../spi_gpu/src/memory/sdram_controller.sv) — SDRAM 8-state FSM
-- [spi_gpu/src/render/rasterizer.sv](../../spi_gpu/src/render/rasterizer.sv) — Rasterizer 12-state FSM
-- [spi_gpu/src/display/display_controller.sv](../../spi_gpu/src/display/display_controller.sv) — Display fetch FSM
+- [components/core/rtl/reset_sync.sv](../../components/core/rtl/reset_sync.sv) — Reset synchronization
+- [components/spi/rtl/spi_slave.sv](../../components/spi/rtl/spi_slave.sv) — SPI transaction states
+- [components/spi/rtl/register_file.sv](../../components/spi/rtl/register_file.sv) — Vertex submission FSM
+- [components/utils/rtl/async_fifo.sv](../../components/utils/rtl/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
+- [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv) — SDRAM 8-state FSM
+- [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv) — Rasterizer 12-state FSM
+- [components/display/rtl/display_controller.sv](../../components/display/rtl/display_controller.sv) — Display fetch FSM
 
 ### Register Definitions
 - INT-010 (GPU Register Map) — authoritative register field definitions and addresses

@@ -1,6 +1,6 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `43b4390c9803abd3` 2026-03-14
-// Spec-ref: unit_005.04_iteration_fsm.md `4f6993d4e752ce6c` 2026-03-06
+// Spec-ref: unit_005_rasterizer.md `1101f023cdcf3b3b` 2026-03-22
+// Spec-ref: unit_005.04_iteration_fsm.md `502d1e23985c7ef9` 2026-03-22
 
 // Rasterizer Edge Walk and Fragment Emission (UNIT-005.04)
 //

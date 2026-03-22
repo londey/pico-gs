@@ -112,8 +112,8 @@ None
 
 ## Implementation
 
-- `spi_gpu/src/display/tmds_encoder.sv`: TMDS 8b/10b encoder (one instance per channel)
-- `spi_gpu/src/display/dvi_output.sv`: Top-level DVI output with 3 encoder instances and serialization
+- `components/display/rtl/tmds_encoder.sv`: TMDS 8b/10b encoder (one instance per channel)
+- `components/display/rtl/dvi_output.sv`: Top-level DVI output with 3 encoder instances and serialization
 
 ## Verification
 

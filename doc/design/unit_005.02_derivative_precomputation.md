@@ -76,9 +76,9 @@ This gives Q4.28 for UV/Q/Z and Q4.28 for colors (with the UNORM8 value promoted
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Derivative precomputation logic within the parent rasterizer module.
+- `components/rasterizer/rtl/rasterizer.sv`: Derivative precomputation logic within the parent rasterizer module.
   Corresponds to the `always_comb` next-state block covering ITER_START/INIT_E1/INIT_E2/DERIV_0–DERIV_13 states and the associated flat `always_ff` register assignments.
-- `spi_gpu/src/render/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation module.
+- `components/rasterizer/rtl/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation module.
   Contains a `raster_dsp_mul` helper (signed 17×unsigned 18 via 1 MULT18X18D), 4 DSP instances for `delta × inv_area`, shift-and-add functions for LUT-only edge and init multiplies, and a 3-bit attribute-pair counter processing 2 attributes per cycle (7 running + 1 finishing = 8 cycles).
 
 ## Verification

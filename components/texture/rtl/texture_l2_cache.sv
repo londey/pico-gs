@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `164319138ecccf06` 2026-03-14
+// Spec-ref: unit_006_pixel_pipeline.md `43e12a367a51f35d` 2026-03-22
 //
 // L2 Compressed Block Cache — Per-Sampler Direct-Mapped Cache
 //
@@ -174,10 +174,10 @@ module texture_l2_cache (
 
     reg [15:0] fill_buf [0:31];
 
-    // Intermediate signals for fill commit
-    reg  [9:0] fill_slot;
-    reg  [3:0] fill_epb;
-    reg  [9:0] fill_entry_base;
+    // Intermediate signals for fill commit (combinational)
+    logic [9:0] fill_slot;
+    logic [3:0] fill_epb;
+    logic [9:0] fill_entry_base;
 
     // ====================================================================
     // Lookup Logic (combinational)
@@ -349,6 +349,17 @@ module texture_l2_cache (
     end
 
     // ====================================================================
+    // Fill Commit Intermediates (combinational)
+    // ====================================================================
+
+    always_comb begin
+        fill_slot       = (fill_base_words[9:0] ^ fill_block_index[9:0])
+                        & slot_mask(fill_format);
+        fill_epb        = entries_per_block(fill_format);
+        fill_entry_base = fill_slot * fill_epb;
+    end
+
+    // ====================================================================
     // Fill Commit + Invalidation (sequential)
     // ====================================================================
 
@@ -364,12 +375,6 @@ module texture_l2_cache (
                 tag_valid[idx] <= 1'b0;
             end
         end else if (fill_done) begin
-            // Commit fill buffer to L2 backing store and update tag
-            fill_slot       = (fill_base_words[9:0] ^ fill_block_index[9:0])
-                            & slot_mask(fill_format);
-            fill_epb        = entries_per_block(fill_format);
-            fill_entry_base = fill_slot * fill_epb;
-
             // Pack u16 words into 64-bit entries (4 words per entry)
             for (int e = 0; e < 8; e++) begin
                 if (e[3:0] < fill_epb) begin

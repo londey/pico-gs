@@ -102,7 +102,7 @@ The combiner evaluates `(A - B) * C + D` independently for RGB and Alpha, twice 
 - ADD: signed addition, saturate at ±Q4.12 max
 - SUBTRACT: signed subtraction, result may be negative (this is intentional for the `A-B` term)
 - All operations per-component (R, G, B, A independently)
-- ONE (1.0 in Q4.12 = 0x1000) and ZERO (0.0 in Q4.12 = 0x0000) are arithmetic constants defined in `fp_types_pkg.sv` (spi_gpu/src/fp_types_pkg.sv); color_combiner.sv imports this package rather than duplicating the literal values.
+- ONE (1.0 in Q4.12 = 0x1000) and ZERO (0.0 in Q4.12 = 0x0000) are arithmetic constants defined in `shared/fp_types_pkg.sv`; color_combiner.sv imports this package rather than duplicating the literal values.
 
 **CONST color promotion:**
 - CONST0 and CONST1 arrive as RGBA8888 UNORM8 from UNIT-003
@@ -126,7 +126,7 @@ UNIT-006 (Pixel Pipeline)          UNIT-010 (Color Combiner)         Fragment Ou
 
 ## Implementation
 
-- `spi_gpu/src/render/color_combiner.sv`: Two-stage programmable color combiner with 4-stage pipeline (2 per combiner cycle: mux+subtract, then multiply+add+saturate)
+- `components/color-combiner/rtl/color_combiner.sv`: Two-stage programmable color combiner with 4-stage pipeline (2 per combiner cycle: mux+subtract, then multiply+add+saturate)
 
 ## Verification
 

@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_008_display_controller.md `11beeabcaf509200` 2026-02-28
+// Spec-ref: unit_008_display_controller.md `7b104e3be5d16f5e` 2026-03-22
 
 // Display Controller - Framebuffer Scanout with Burst Prefetch
 // Fetches pixels from SRAM using burst reads and feeds them to the display

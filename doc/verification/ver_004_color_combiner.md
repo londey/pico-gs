@@ -16,8 +16,8 @@ The testbench drives controlled fragment inputs and combiner mode configurations
 ## Preconditions
 
 - Verilator 5.x installed and available on `$PATH`.
-- `spi_gpu/src/render/color_combiner.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `spi_gpu/src/render/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (color combiner is instantiated inside the pixel pipeline; interface consistency is required before isolating the combiner for unit testing).
+- `components/color-combiner/rtl/color_combiner.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `components/pixel-write/rtl/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (color combiner is instantiated inside the pixel pipeline; interface consistency is required before isolating the combiner for unit testing).
 
 ## Procedure
 
@@ -118,17 +118,17 @@ The testbench drives controlled fragment inputs and combiner mode configurations
 
 ## Test Implementation
 
-- `spi_gpu/tests/render/color_combiner_tb.sv`: Verilator unit testbench for the color combiner module.
+- `components/color-combiner/tests/color_combiner_tb.sv`: Verilator unit testbench for the color combiner module.
   Drives fragment inputs with known Q4.12 RGBA values, configures CC_MODE for various combiner presets, and checks combined output colors against reference values with Q4.12 rounding tolerance.
 
 ## Notes
 
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
-- Run this test with: `cd spi_gpu && make test-color-combiner`.
+- Run this test with: `cd integration && make test-color-combiner`.
 - The color combiner is instantiated inside `pixel_pipeline.sv` (UNIT-006) and receives its `cc_mode` and `const_color` inputs directly from the register file (UNIT-003) outputs.
   VER-004 tests the combiner in isolation; end-to-end combiner behavior through the full pipeline is verified by VER-013 (color-combined output golden image test).
 - The color combiner operates at the unified 100 MHz `clk_core` domain.
   The testbench uses a matching 100 MHz clock for cycle-accurate verification.
 - Q4.12 rounding tolerance of +/-1 LSB per channel accounts for the truncation inherent in `(a * b) >> 12` fixed-point multiplication.
-- The Q4.12 arithmetic constants ONE (0x1000) and ZERO (0x0000) used in the testbench are sourced from `fp_types_pkg.sv` (`spi_gpu/src/fp_types_pkg.sv`), which centralizes all fixed-point type definitions and constants for the render pipeline.
+- The Q4.12 arithmetic constants ONE (0x1000) and ZERO (0x0000) used in the testbench are sourced from `fp_types_pkg.sv` (`shared/fp_types_pkg.sv`), which centralizes all fixed-point type definitions and constants for the render pipeline.
   When configuring pass-through or identity combiner modes (C=ONE, B=ZERO, D=ZERO), the testbench must use the constant values defined in `fp_types_pkg.sv` to remain consistent with the RTL under test.

@@ -134,7 +134,7 @@ The surface dimensions are taken from the `fb_width_log2` and `fb_height_log2` o
 
 ## Implementation
 
-- `spi_gpu/src/render/rasterizer.sv`: Main implementation (SETUP and ITER_START states implement triangle setup; remaining states implement edge walking and pixel output)
+- `components/rasterizer/rtl/rasterizer.sv`: Main implementation (SETUP and ITER_START states implement triangle setup; remaining states implement edge walking and pixel output)
 
 ## Verification
 

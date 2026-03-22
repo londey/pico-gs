@@ -1,4 +1,4 @@
-// Spec-ref: unit_010_color_combiner.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_010_color_combiner.md `e41d77b81dae13c1` 2026-03-22
 //
 // Testbench for color_combiner module (VER-004)
 //

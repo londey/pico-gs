@@ -119,7 +119,7 @@ Channel expansion formulas (gs-twin is authoritative):
 
 After cache read, texels are promoted to Q4.12 signed fixed-point format for pipeline processing (REQ-004.02).
 This document is the authoritative source for the promotion formula.
-The RTL implementation lives in `spi_gpu/src/fp_types_pkg.sv` as named conversion functions; the `texel_promote.sv` module applies them.
+The RTL implementation lives in `shared/fp_types_pkg.sv` as named conversion functions; the `texel_promote.sv` module applies them.
 
 Each 9-bit UQ1.8 channel is promoted to Q4.12 by left-shifting 4 bits: `Q412 = {3'b0, uq18[8:0], 3'b0}`
 (This maps UQ1.8 value 0x100 = 1.0 to Q4.12 value 0x1000 = 1.0; UQ1.8 LSB resolution 2^-8 maps to Q4.12 resolution 2^-12 * 2^4 = 2^-8, so no precision is lost.)
