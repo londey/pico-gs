@@ -102,22 +102,22 @@ static std::vector<uint8_t> generate_checker_texture_wg() {
 
 /// Map test name to the corresponding .hex script file path.
 /// Paths are relative to the harness executable's working directory;
-/// the Makefile runs from spi_gpu/ so scripts/ is a peer directory.
+/// the Makefile runs from integration/ so scripts/ is a peer directory.
 static std::string hex_file_for_test(const std::string& test_name) {
     static const std::pair<std::string, std::string> mappings[] = {
-        {"gouraud",           "tests/scripts/ver_010_gouraud.hex"},
-        {"depth_test",        "tests/scripts/ver_011_depth_test.hex"},
-        {"textured",          "tests/scripts/ver_012_textured.hex"},
-        {"color_combined",    "tests/scripts/ver_013_color_combined.hex"},
-        {"textured_cube",     "tests/scripts/ver_014_textured_cube.hex"},
-        {"size_grid",         "tests/scripts/ver_015_size_grid.hex"},
-        {"perspective_road",  "tests/scripts/ver_016_perspective_road.hex"},
-        {"bc1_texture",       "tests/scripts/ver_017_bc1_texture.hex"},
-        {"bc2_texture",       "tests/scripts/ver_018_bc2_texture.hex"},
-        {"bc3_texture",       "tests/scripts/ver_019_bc3_texture.hex"},
-        {"bc4_texture",       "tests/scripts/ver_020_bc4_texture.hex"},
-        {"rgba8888_texture",  "tests/scripts/ver_021_rgba8888_texture.hex"},
-        {"r8_texture",        "tests/scripts/ver_022_r8_texture.hex"},
+        {"gouraud",           "scripts/ver_010_gouraud.hex"},
+        {"depth_test",        "scripts/ver_011_depth_test.hex"},
+        {"textured",          "scripts/ver_012_textured.hex"},
+        {"color_combined",    "scripts/ver_013_color_combined.hex"},
+        {"textured_cube",     "scripts/ver_014_textured_cube.hex"},
+        {"size_grid",         "scripts/ver_015_size_grid.hex"},
+        {"perspective_road",  "scripts/ver_016_perspective_road.hex"},
+        {"bc1_texture",       "scripts/ver_017_bc1_texture.hex"},
+        {"bc2_texture",       "scripts/ver_018_bc2_texture.hex"},
+        {"bc3_texture",       "scripts/ver_019_bc3_texture.hex"},
+        {"bc4_texture",       "scripts/ver_020_bc4_texture.hex"},
+        {"rgba8888_texture",  "scripts/ver_021_rgba8888_texture.hex"},
+        {"r8_texture",        "scripts/ver_022_r8_texture.hex"},
     };
     for (const auto& [name, path] : mappings) {
         if (name == test_name) {

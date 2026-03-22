@@ -156,6 +156,7 @@ if [ "$BUILD_DT" = true ]; then
     cd "${REPO_ROOT}"
     cargo build -p gs-twin -p gs-twin-cli
     cargo test -p gs-twin
+    cargo test -p gs-rasterizer
     echo -e "${GREEN}Digital twin tests passed${NC}"
 
     # Generate golden reference images for all VER-010 through VER-022 scenes.

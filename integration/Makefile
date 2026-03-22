@@ -292,8 +292,8 @@ test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_raster_attr_accum -o tb_raster_attr_accum
 	$(OBJ_DIR)/tb_raster_attr_accum
 
-# All rasterizer tests: sub-module unit tests + integration test
-test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer
+# All rasterizer tests: sub-module unit tests + integration test + visualization
+test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer test-raster-viz
 
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)

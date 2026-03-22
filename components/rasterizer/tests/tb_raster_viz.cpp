@@ -25,7 +25,7 @@
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../../tests/harness/stb_image_write.h"
+#include "stb_image_write.h"
 
 // ── Triangle vertex definition ─────────────────────────────────────────────
 
