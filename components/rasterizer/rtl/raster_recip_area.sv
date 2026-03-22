@@ -1,6 +1,6 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `1101f023cdcf3b3b` 2026-03-22
-// Spec-ref: unit_005.01_edge_setup.md `d6b8773c149d96f5` 2026-03-22
+// Spec-ref: unit_005_rasterizer.md `34c645d9dafb8706` 2026-03-22
+// Spec-ref: unit_005.02_edge_setup.md `5455ba0dd721cbf0` 2026-03-22
 
 // Module: raster_recip_area
 // Purpose: Triangle setup reciprocal (1/area) using DP16KD BRAM in 36x512 mode.
