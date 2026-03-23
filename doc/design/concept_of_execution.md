@@ -72,7 +72,8 @@ At power-on, the FIFO contains ~18 pre-populated boot commands from the bitstrea
 The register file consumes FIFO entries, latching color/UV/position state.
 Every third VERTEX write emits a `tri_valid` pulse to the rasterizer, which scans the bounding box in 4×4 tile order, performs edge tests, interpolates Z, Q (1/W), vertex colors, and UV projections per fragment, and applies perspective correction internally (1/Q via reciprocal LUT; true U, V reconstructed via DSP multipliers).
 The rasterizer emits per-fragment data (x, y, z, color0, color1, uv0, uv1, lod) via a valid/ready handshake to the pixel pipeline (UNIT-006); `uv0` and `uv1` carry true perspective-correct U, V coordinates ready for texel addressing.
-The pixel pipeline performs early Z testing, texture cache lookup and sampling, color combining, alpha blending, dithering, and writes passing pixels and updated depth values to the framebuffer and Z-buffer in SDRAM via the memory arbiter.
+The pixel pipeline performs early Z testing, then dispatches UV coordinates and frag_lod to the texture sampler (UNIT-011) for cache lookup and texel decoding; UNIT-011 returns decoded Q4.12 RGBA texel data for each active sampler.
+The pixel pipeline then drives the color combiner (UNIT-010) with the Q4.12 texel results, performs alpha blending, dithering, and writes passing pixels and updated depth values to the framebuffer and Z-buffer in SDRAM via the memory arbiter.
 The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at the 25 MHz pixel clock (synchronous 4:1 from the 100 MHz core clock).
 
 ## Event Handling

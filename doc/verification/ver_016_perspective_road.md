@@ -15,7 +15,8 @@ The test confirms that perspective-correct texture mapping, Z interpolation acro
 - UNIT-003 (Register File — FB_CONFIG, FB_CONTROL, TEX0_CFG, CC_MODE, RENDER_MODE register writes)
 - UNIT-005.01 (Triangle Setup — edge function setup for perspective-projected triangles)
 - UNIT-005 (Rasterizer — perspective-correct UV interpolation with large W range; per-pixel 1/Q reciprocal; LOD derivation from CLZ on Q)
-- UNIT-006 (Pixel Pipeline — early Z-test with GEQUAL compare, texture cache lookup, RGB565 decoder, MODULATE combiner, framebuffer and Z-buffer writes)
+- UNIT-006 (Pixel Pipeline — early Z-test with GEQUAL compare, pipeline orchestration, MODULATE combiner, framebuffer and Z-buffer writes)
+- UNIT-011 (Texture Sampler — texture cache lookup, RGB565 decoder)
 
 ## Preconditions
 
@@ -110,5 +111,5 @@ Rendering configuration:
   This is a real-world constraint for scenes with strong perspective foreshortening.
 - **S/T vs U/V:** The hex script provides pre-projected S=U/W and T=V/W texture coordinates at each vertex, along with Q=1/W.
   The rasterizer interpolates S, T, and Q linearly in screen space, then performs per-pixel perspective correction: U=S/Q, V=T/Q (UNIT-005.04).
-- The golden image requires re-approval after any change to the perspective correction pipeline (UNIT-005.05), the per-pixel reciprocal module (`raster_recip_q.sv`), the Z interpolation path, or the MODULATE combiner (UNIT-010).
+- The golden image requires re-approval after any change to the perspective correction pipeline (UNIT-005.05), the per-pixel reciprocal module (`raster_recip_q.sv`), the Z interpolation path, the MODULATE combiner (UNIT-010), or the texture cache and RGB565 decoder path in UNIT-011.
 - Dithering is disabled for deterministic output.

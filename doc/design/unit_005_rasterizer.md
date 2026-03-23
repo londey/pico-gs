@@ -57,10 +57,10 @@ Fragment data to UNIT-006 (Pixel Pipeline):
 - Interpolated primary vertex color (VER_COLOR0) in UNORM8 (4× 8-bit channels: R, G, B, A), clamped from Q4.12 accumulator output
 - Interpolated secondary vertex color (VER_COLOR1) in UNORM8 (4× 8-bit channels: R, G, B, A), clamped from Q4.12 accumulator output
 - Interpolated perspective-correct UV coordinates per enabled texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point — these are true U, V coordinates, not S/T projections
-- Per-pixel LOD estimate (frag_lod) in UQ4.4 unsigned fixed-point, derived from CLZ on the interpolated Q/W value; UNIT-006 adds TEXn_MIP_BIAS to form the final mip level
+- Per-pixel LOD estimate (frag_lod) in UQ4.4 unsigned fixed-point, derived from CLZ on the interpolated Q/W value; UNIT-011 (Texture Sampler) adds TEXn_MIP_BIAS to form the final mip level
 
 **Note**: The rasterizer does not write directly to the framebuffer.
-All fragment output goes through the pixel pipeline (UNIT-006) for texture blending, dithering, and framebuffer conversion.
+All fragment output goes through the pixel pipeline (UNIT-006) for early Z-test, texture dispatch to UNIT-011, color combining, dithering, and framebuffer conversion.
 
 ### Internal State
 
@@ -175,7 +175,7 @@ At one fragment evaluation per clock cycle in the inner edge-walking loop (plus 
 Fragment output to the pixel pipeline (UNIT-006) is synchronous within the same 100 MHz clock domain.
 Effective sustained pixel output rate is approximately 25 Mpixels/sec after SRAM arbitration contention with display scanout, Z-buffer, and texture fetch (see INT-011 bandwidth budget).
 
-**Tile-ordered traversal and burst access:** The 4×4 tile-ordered traversal groups spatially coherent fragments together, improving texture cache hit rate in UNIT-006.
+**Tile-ordered traversal and burst access:** The 4×4 tile-ordered traversal groups spatially coherent fragments together, improving texture cache hit rate in UNIT-011 (Texture Sampler).
 Each 4×4 tile corresponds to a contiguous 4×4 block of screen pixels; fragments are emitted pixel-by-pixel within the tile, then tile-by-tile across the bounding box in row-major tile order.
 The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tiles per row as `1 << (WIDTH_LOG2 - 2)`.
 Hierarchical tile rejection allows the FSM to skip entire tiles in a single step when the tile is provably outside the triangle.
@@ -211,7 +211,7 @@ The 3-cycle perspective correction pipeline converts these to true U, V per pixe
 This removes the UV perspective division from the pixel pipeline (UNIT-006): frag_uv0 and frag_uv1 on the fragment bus carry fully corrected U, V in Q4.12.
 
 **Fragment bus — frag_lod:** CLZ on the interpolated Q/W value provides an unsigned integer mip-level estimate (frag_lod, UQ4.4).
-UNIT-006 adds TEXn_MIP_BIAS to frag_lod to produce the final mip level for texture cache lookup.
+UNIT-011 (Texture Sampler) adds TEXn_MIP_BIAS to frag_lod to produce the final mip level for texture cache lookup.
 frag_q is not present on the fragment bus; perspective correction is complete before fragment emission.
 
 **Dual-texture + color combiner:** The rasterizer interpolates two vertex colors (VER_COLOR0 and VER_COLOR1) per fragment, plus UV0, UV1, Z, and Q/W.

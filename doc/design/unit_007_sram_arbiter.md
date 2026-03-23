@@ -33,7 +33,7 @@ None
 - Port 0 (highest priority): UNIT-008 (Display Controller) display read
 - Port 1: UNIT-006 (Pixel Pipeline) framebuffer write
 - Port 2: UNIT-006 (Pixel Pipeline) Z-buffer read/write
-- Port 3 (lowest priority): UNIT-006 (Pixel Pipeline) texture read (up to 2 samplers)
+- Port 3 (lowest priority): UNIT-011 (Texture Sampler) texture cache fill reads (dispatched via UNIT-006)
 - Downstream: connects to SDRAM controller via req/ack handshake
 
 ## Design Description
@@ -105,7 +105,7 @@ None
 ### Algorithm / Behavior
 
 **Single Clock Domain:**
-The arbiter, all requestor ports (display controller, pixel pipeline framebuffer, pixel pipeline Z-buffer, pixel pipeline texture), and the SDRAM controller all operate in the unified 100 MHz `clk_core` domain.
+The arbiter, all requestor ports (display controller, pixel pipeline framebuffer/Z-buffer, texture sampler), and the SDRAM controller all operate in the unified 100 MHz `clk_core` domain.
 No clock domain crossing (CDC) logic is required between the GPU core and SDRAM controller.
 The only asynchronous CDC boundary in the system is between the SPI slave interface and the GPU core (handled by UNIT-002).
 This single-domain design eliminates synchronizer latency on request/acknowledge paths, enabling back-to-back grants on consecutive clock cycles.
@@ -243,7 +243,7 @@ The model must replicate:
 - **Auto-refresh**: periodic `mem_ready` deassertion (~1 per 781 cycles) to exercise the arbiter's refresh-stall path.
 - **Burst cancel/PRECHARGE**: on `mem_burst_cancel`, complete the current 16-bit word, then assert `mem_ack` after a simulated PRECHARGE delay.
 
-An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazards in the display prefetch FSM (UNIT-008) and texture cache (UNIT-006).
+An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazards in the display prefetch FSM (UNIT-008) and texture cache (UNIT-011).
 
 **Unified clock update:** With the GPU core clock unified to 100 MHz (matching the SDRAM controller clock), the arbiter operates in a single clock domain.
 Previously, if the GPU core ran at a different frequency than the memory, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the memory controller.

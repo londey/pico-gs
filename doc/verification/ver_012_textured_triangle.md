@@ -13,18 +13,19 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 - UNIT-003 (Register File -- TEX0_BASE, TEX0_FMT, ST0_ST1 register writes)
 - UNIT-005 (Rasterizer -- UV interpolation across triangle surface)
-- UNIT-006 (Pixel Pipeline -- texture cache lookup, cache miss fill FSM, texture decoder, cache-format promotion to Q4.12)
+- UNIT-006 (Pixel Pipeline -- pipeline orchestration, fragment dispatch)
+- UNIT-011 (Texture Sampler -- texture cache lookup, cache miss fill FSM, texture decoder, cache-format promotion to Q4.12)
 
 ## Preconditions
 
-- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths).
+- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
 - Golden image `spi_gpu/tests/golden/textured_triangle.ppm` has been approved and committed.
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`) compile without errors under `verilator --lint-only -Wall`.
-- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the texture cache, format-select mux connecting all eight decoders, color combiner, and FB/Z write logic per UNIT-006.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-011 (Texture Sampler) for texture cache lookup and decoding, along with color combiner and FB/Z write logic per UNIT-006.
 
 ## Procedure
 
@@ -139,7 +140,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 ## Test Implementation
 
 - `spi_gpu/tests/harness/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE), drives register-write command sequences, and reads back the framebuffer as PPM files.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PPM files.
 - `spi_gpu/tests/golden/textured_triangle.ppm`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
@@ -150,14 +151,14 @@ The integration harness drives the following register-write sequence into UNIT-0
   Burst lengths for other formats are documented in INT-032: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
 - **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-032 (DD-041).
   RGB565 is FORMAT=5.
-  The format-select mux in the integrated pixel pipeline connects all eight format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
-  The golden image must be re-approved after any change to the format-select mux path in UNIT-006, including this field widening.
+  The format-select mux in UNIT-011 (Block Decompressor, UNIT-011.04) connects all eight format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
+  The golden image must be re-approved after any change to the format-select mux path in UNIT-011.04, including this field widening.
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
 - **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.05).
   The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
-  `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; the pixel pipeline (UNIT-006) uses them directly for texture cache lookup without further division.
+  `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; UNIT-011 uses them directly for texture cache lookup without further division.
   With the checker pattern, any affine warping would be visible as curved checker lines — the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
 - **Vertex color modulation:** All vertex colors are set to white (`0xFFFFFFFF`) so the MODULATE combiner mode produces `texture_color x 1.0 = texture_color`.
   This isolates texture sampling correctness from color blending behavior.
@@ -167,15 +168,15 @@ The integration harness drives the following register-write sequence into UNIT-0
 - The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
   The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
 - **Cache format:** The texture cache operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to the format-select mux path in UNIT-006.
+- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to the format-select mux path in UNIT-011.04 (Block Decompressor).
   The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations.
   The conversion of derivative precomputation (UNIT-005.03) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing.
   However, if the derivative computation fix also corrects rendering bugs (displaced fragments, incorrect UV interpolation) that affect textured output, golden image re-approval is required.
   See `test_strategy.md` for the re-approval workflow.
 - **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
   Perspective correction (S×(1/Q), T×(1/Q)) is performed inside the rasterizer (UNIT-005.05); the pixel pipeline (UNIT-006) receives fully corrected U,V coordinates directly and no longer performs 1/Q division on the UV bus.
-  `frag_q` is not present on the fragment bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q.
+  `frag_q` is not present on the fragment bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q and consumed by UNIT-011.
   **The golden image requires re-approval after Phase 2 RTL implementation.**
   The rasterizer traversal order changes to 4×4 tile-major order, the UV bus semantics change (true U,V vs. S=U/W projections), and `frag_q` is removed and `frag_lod` added.
-  These changes alter the UV coordinates consumed by the texture sampler, changing the checker pattern rendering at pixel level.
+  These changes alter the UV coordinates consumed by UNIT-011, changing the checker pattern rendering at pixel level.
   After Phase 2 RTL implementation is complete, re-run this test, visually inspect the corrected output, and re-approve the golden image before marking this test as passing.

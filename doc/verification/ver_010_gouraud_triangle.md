@@ -115,6 +115,8 @@ The integration harness drives the following register-write sequence into UNIT-0
   Dithered rendering is tested separately in VER-013.
 - Z-testing and Z-writing are disabled to isolate color interpolation correctness from depth buffer behavior.
   Depth-tested rendering is covered by VER-011.
+- This test does not exercise texture hardware; the Gouraud path routes directly from the rasterizer through UNIT-006's color combiner stage without invoking UNIT-011 (Texture Sampler).
+  UNIT-006's scope in this test is limited to vertex color interpolation, dither, and framebuffer write — no texture hardware is exercised.
 - The introduction of `fp_types_pkg.sv` (centralized Q4.12 typedef and constant definitions) is a structural RTL refactoring that does not alter pixel computation for Gouraud-shaded rendering.
   This test does not exercise UV interpolation or texture sampling, so the UV format resolution (Q4.12 on the fragment bus) has no effect on the rendered output.
   Golden image re-approval after the `fp_types_pkg.sv` change is not expected unless synthesis timing or register reset behavior changes.

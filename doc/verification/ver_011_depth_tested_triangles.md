@@ -160,6 +160,8 @@ The integration harness drives the following register-write sequence into UNIT-0
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
 - VER-011 provides full-pipeline confirmation of Z-buffer behavior; VER-002 (`tb_early_z`) provides unit-level confirmation.
   Together they jointly satisfy REQ-005.02 per the requirement document's Verification Method section.
+- This test does not exercise texture hardware; the early Z-test path in UNIT-006 is exercised without invoking UNIT-011 (Texture Sampler).
+  UNIT-006's scope in this test is limited to early Z-test, Z-buffer read/write, and framebuffer write.
 - **The Z-buffer read and write paths are owned by the pixel pipeline (UNIT-006)**, not the rasterizer (UNIT-005), after pixel pipeline integration.
   The rasterizer emits fragments via the valid/ready handshake interface; the pixel pipeline's FSM reads the Z-buffer (arbiter port 2), invokes `early_z.sv`, and conditionally writes back updated Z values and color pixels.
   This test exercises the integrated pipeline including arbiter port 2 ownership by UNIT-006.

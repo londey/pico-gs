@@ -52,8 +52,8 @@ The combiner has access to these color inputs (all in Q4.12):
 | Source | CC Enum | Origin | Description |
 |--------|---------|--------|-------------|
 | COMBINED | CC_COMBINED | Cycle 0 output | Previous combiner stage output (feeds cycle 1) |
-| TEX_COLOR0 | CC_TEX0 | UNIT-006 sampler 0 | Sampled and filtered texture 0 color |
-| TEX_COLOR1 | CC_TEX1 | UNIT-006 sampler 1 | Sampled and filtered texture 1 color |
+| TEX_COLOR0 | CC_TEX0 | UNIT-011 sampler 0 | Sampled and filtered texture 0 color (Q4.12 RGBA from UNIT-011) |
+| TEX_COLOR1 | CC_TEX1 | UNIT-011 sampler 1 | Sampled and filtered texture 1 color (Q4.12 RGBA from UNIT-011) |
 | SHADE0 | CC_SHADE0 | UNIT-005 rasterizer | Primary vertex color (typically diffuse) |
 | SHADE1 | CC_SHADE1 | UNIT-005 rasterizer | Secondary vertex color (typically specular) |
 | CONST0 | CC_CONST0 | UNIT-003 CONST_COLOR[31:0] | Per-draw-call constant color 0 |

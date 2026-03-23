@@ -68,7 +68,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
   For cases where hardware rounding differs between RTL revisions, a tolerance of ±1 LSB per channel may be accepted; document any such tolerance in the relevant VER document.
 - **Approved files location:** `integration/golden/`
 - **Applicable to:** VER-010 (Gouraud triangle), VER-011 (depth-tested overlapping triangles), VER-012 (textured triangle), VER-013 (color-combined output), VER-014 (textured cube).
-- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline behavior (UNIT-006), color combiner arithmetic (UNIT-010), or `tex_format` encoding (INT-010) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
+- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline orchestration (UNIT-006), texture sampling or cache behavior (UNIT-011), color combiner arithmetic (UNIT-010), or `tex_format` encoding (INT-010) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
   The commit message must describe the change that caused the image to update.
 
 ### Integration Simulation Harness
@@ -76,6 +76,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 - **Description:** The golden image tests share a common C++ simulation harness (`integration/harness/`) that:
   - Instantiates the full GPU RTL hierarchy under Verilator.
   - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
+    This FSM is consumed by UNIT-011 (Texture Sampler — specifically UNIT-011.05, L2 Compressed Cache).
     A partial or stub SDRAM model that does not implement the cache miss fill FSM is not sufficient for VER-012 through VER-014.
   - Accepts a command script (encoded as register-write sequences per INT-010 and INT-012) and drives UNIT-003 register-file inputs.
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.

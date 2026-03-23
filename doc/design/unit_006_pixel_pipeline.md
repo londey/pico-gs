@@ -2,19 +2,12 @@
 
 ## Purpose
 
-Stipple test, depth range clipping, early Z-test, texture sampling, and format promotion to Q4.12
+Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination, alpha blending, ordered dithering, and framebuffer write.
+UNIT-006 is a thin pipeline orchestrator: it sequences fragment processing stages and passes UV/LOD/configuration signals to UNIT-011 (Texture Sampler), receiving back Q4.12 texel data for the color combiner.
 
 ## Implements Requirements
 
 - REQ-002.02 (Gouraud Shaded Triangle)
-- REQ-003.01 (Textured Triangle)
-- REQ-003.02 (Multi-Texture Rendering — dual-texture per pass)
-- REQ-003.03 (Compressed Textures)
-- REQ-003.04 (Swizzle Patterns)
-- REQ-003.05 (UV Wrapping Modes)
-- REQ-003.06 (Texture Sampling)
-- REQ-003.07 (Texture Mipmapping) — trilinear filtering between adjacent mip levels
-- REQ-003.08 (Texture Cache)
 - REQ-004.01 (Color Combiner)
 - REQ-004.02 (Extended Precision Fragment Processing)
 - REQ-005.01 (Framebuffer Management)
@@ -25,8 +18,6 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 - REQ-005.07 (Z-Buffer Operations)
 - REQ-005.09 (Double-Buffered Rendering) — writes to off-screen render target via FB_CONFIG
 - REQ-005.10 (Ordered Dithering)
-- REQ-002 (Rasterizer)
-- REQ-003 (Texture Samplers)
 - REQ-004 (Fragment Processor / Color Combiner)
 - REQ-005 (Blend / Frame Buffer Store)
 - REQ-011.01 (Performance Targets)
@@ -36,23 +27,20 @@ Stipple test, depth range clipping, early Z-test, texture sampling, and format p
 
 ### Provides
 
-- INT-032 (Texture Cache Architecture)
+None (texture cache architecture is now provided by UNIT-011).
 
 ### Consumes
 
-- INT-010 (GPU Register Map)
+- INT-010 (GPU Register Map) — non-texture registers (RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, CC_MODE, CONST_COLOR, STIPPLE_PATTERN)
 - INT-011 (SDRAM Memory Layout)
-- INT-014 (Texture Memory Layout)
-- INT-032 (Texture Cache Architecture)
 
 ### Internal Interfaces
 
 - Receives fragment data (position, UV, color, Z) from UNIT-005 (Rasterizer)
-- Reads texture data from SDRAM via UNIT-007 (Memory Arbiter) texture port
+- Forwards UV coordinates, LOD, and TEXn_CFG configuration to UNIT-011 (Texture Sampler); receives Q4.12 RGBA texel results
 - Reads/writes Z-buffer via UNIT-007 (Z-buffer tile cache)
 - Reads framebuffer pixel for alpha blending via UNIT-007
-- Receives texture configuration (TEX0_CFG, TEX1_CFG) from UNIT-003 (Register File)
-- Receives render mode, dither, blend, scissor, and Z-range configuration from UNIT-003
+- Receives render mode, dither, blend, scissor, and Z-range configuration from UNIT-003 (Register File)
 - Receives CC_MODE and CONST_COLOR from UNIT-003 for UNIT-010 (Color Combiner)
 - Outputs final RGB565 pixel + Z value to SDRAM via UNIT-007
 
@@ -74,7 +62,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 - Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); integer part selects the mip level, fractional part is the trilinear blend weight
 - Interpolated vertex colors (SHADE0, SHADE1) as Q4.12 from rasterizer (UNIT-005)
 - Interpolated Z depth value (16-bit unsigned)
-- Register state (TEX0_CFG, TEX1_CFG, CC_MODE, CONST_COLOR, RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, STIPPLE_PATTERN)
+- Register state (CC_MODE, CONST_COLOR, RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, STIPPLE_PATTERN)
 
 ### Outputs
 
@@ -91,19 +79,16 @@ All internal fragment processing uses **Q4.12 signed fixed-point format** (16 bi
 - 3-bit integer headroom above 1.0 accommodates additive blending without premature saturation
 - Matches ECP5 DSP slice width (18×18 multipliers; 16-bit operands occupy the lower 16 bits)
 
+UNIT-011 delivers texel data to UNIT-006 already in Q4.12 format; UNIT-006 passes these values unchanged to UNIT-010.
+
 ### Internal State
 
-- Texture decode pipeline registers
-- Per-sampler texture cache (2 caches; each with 4 EBR banks per sampler: PDPW16KD 512×36-bit, UQ1.8 format)
-- Cache tags, valid bits, and pseudo-LRU replacement state per sampler
-- Cache fill state machine (burst SDRAM read + decompress + bank write)
-- Burst length register driven to UNIT-007 memory arbiter (format-dependent, see cache miss handling)
 - Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, write-back)
 
 ### Algorithm / Behavior
 
 The pixel pipeline processes rasterized fragments through a staged pipeline.
-All texture operations deliver results in UQ1.8 format (36 bits per texel), which is promoted to Q4.12 before the color combiner.
+Texture operations are delegated to UNIT-011, which delivers Q4.12 RGBA texel results back to UNIT-006.
 Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
 
 **Stage 0a: Stipple Test:**
@@ -125,43 +110,16 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
     - RENDER_MODE.Z_COMPARE = ALWAYS (3'd6)
   - Z-buffer write deferred to final stage (ensures only visible fragments update Z)
 
-**Stage 1: Texture Cache Lookup (per enabled texture unit, up to 2, REQ-003.08):**
-- UV coordinates arrive from UNIT-005 in Q4.12 format (16-bit signed: sign at [15], integer [14:12], fractional [11:0]).
-  These are true perspective-correct U, V values; no division is performed in this stage.
-  The fractional part used for texel addressing is bits [11:0] of the Q4.12 value (12 bits, resolution 2⁻¹²).
-- Apply UV wrapping mode (REQ-003.05, TEXn_CFG.U_WRAP / V_WRAP) for TEX0 and TEX1
-- Compute block_x = pixel_x >> 2, block_y = pixel_y >> 2
-- Compute cache set = (block_x[7:0] ^ block_y[7:0]) (XOR set indexing, 8-bit for 256 sets)
-- Compare tags across 4 ways in the sampler's cache
-- **HIT:** Read 4 bilinear texels from interleaved banks (1 cycle)
-- **MISS:** Stall pipeline, execute cache fill (see below), then read texels
+**Stage 1–3: Texture Sampling (delegated to UNIT-011):**
 
-**Stage 2: Texture Sampling (per enabled texture unit, up to 2):**
-
-- On cache hit: read decompressed texels directly from cache banks (UQ1.8 format)
-- On cache miss: fetch 4×4 block from SDRAM via burst read, decompress/convert to UQ1.8 format (DD-037, DD-038), fill cache line:
-  - FORMAT=BC1 (0): Burst read 8 bytes (burst_len=4), decompress 4-color/alpha blocks; palette interpolation uses shift+add reciprocal-multiply (DD-039, no DSP slices)
-  - FORMAT=BC2 (1): Burst read 16 bytes (burst_len=8), decompress explicit alpha blocks; color interpolation uses shift+add (DD-039)
-  - FORMAT=BC3 (2): Burst read 16 bytes (burst_len=8), decompress interpolated alpha blocks; color and alpha interpolation use shift+add (DD-039)
-  - FORMAT=BC4 (3): Burst read 8 bytes (burst_len=4), decompress single-channel; interpolation uses shift+add (DD-039); replicate R→RGB
-  - FORMAT=BC5 (4): Burst read 16 bytes (burst_len=8), decompress two BC3-style single-channel blocks; R = decoded red, G = decoded green, B = 0, A = opaque
-  - FORMAT=RGB565 (5): Burst read 32 bytes (burst_len=16); expand to UQ1.8
-  - FORMAT=RGBA8888 (6): Burst read 64 bytes (burst_len=32); expand to UQ1.8 (A8→UQ1.8[8:1])
-  - FORMAT=R8 (7): Burst read 16 bytes (burst_len=8); replicate R to G and B; A=opaque; convert to UQ1.8
-- Apply swizzle pattern (REQ-003.04, TEXn_CFG.SWIZZLE)
-- Trilinear filtering (FILTER=TRILINEAR): blend between adjacent mip levels using LOD = `frag_lod[7:4]` + `TEXn_MIP_BIAS`; the fractional blend weight is `frag_lod[3:0]`; requires MIP_LEVELS > 1
-
-**Stage 3: Format Promotion (UQ1.8 → Q4.12):**
-
-Promote texture data to Q4.12 via `texel_promote.sv` (combinational):
-
-- Each 9-bit UQ1.8 channel → Q4.12: left-shift by 4 and zero-pad — `{3'b000, channel_9bit, 3'b000}` (15-bit result, aligned to Q4.12 bit 12)
-- Vertex colors (SHADE0, SHADE1) arrive from rasterizer already in Q4.12
-- CONST0 and CONST1 (RGBA8888 UNORM8) are promoted to Q4.12 at combiner input
-- Also compute Z_FACTOR: extract fragment Z high byte [15:8], scale to Q4.12 [0.0, 1.0] for fog
+UNIT-006 forwards the fragment's UV coordinates, `frag_lod`, and register-file configuration (TEX0_CFG, TEX1_CFG) to UNIT-011.
+UNIT-011 performs UV coordinate processing, cache lookup, block decompression, and format promotion, then returns TEX_COLOR0 and TEX_COLOR1 in Q4.12 RGBA format.
+If UNIT-011 encounters a cache miss, it stalls the UNIT-006 pipeline until the fill completes.
+See UNIT-011 for the detailed texture sampling design.
 
 **Output to UNIT-010 (Color Combiner):**
-- TEX_COLOR0, TEX_COLOR1 (Q4.12 RGBA, or Q4.12 white/zero if unit disabled)
+
+- TEX_COLOR0, TEX_COLOR1 (Q4.12 RGBA from UNIT-011, or Q4.12 white/zero if unit disabled)
 - SHADE0, SHADE1 (Q4.12 RGBA passthrough from rasterizer)
 - CONST0, CONST1 (Q4.12 promoted from CONST_COLOR register)
 - Fragment position (x, y) and Z passthrough
@@ -204,171 +162,45 @@ It is never hardcoded; different render passes (e.g. rendering to a 256-wide off
 
 Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes.
 
-### Implementation Notes
-
-**Texture Format Decoders:**
-
-Each decoder converts a compressed or uncompressed 4×4 block to 16 texels in UQ1.8 format (36 bits per texel).
-All palette interpolation in BC decoders uses shift+add reciprocal-multiply formulas instead of Verilog `/` to avoid inferring DSP division hardware (DD-039, 0 DSP slices).
-
-*BC1 Decoder:*
-- Fetch 8 bytes: two 16-bit endpoint colors + 32-bit index word
-- Expand endpoints to 8-bit per channel (bit-replicated: R5→R8 via `{R5, R5[4:3]}`, etc.) before interpolation
-- Generate 4-color palette: C0, C1, lerp(C0,C1,1/3), lerp(C0,C1,2/3) using shift+add; or C0, C1, lerp(C0,C1,1/2), transparent (if C0 ≤ C1)
-- Assign palette entry to each of the 16 texels via 2-bit indices
-- Alpha: 1-bit punch-through; 0 = transparent, 1 = opaque
-
-*RGB565 Decoder:*
-- Fetch 32 bytes (16 × 16-bit pixels); expand each channel to UQ1.8 and store as 36-bit texel with A=opaque
-
-*RGBA8888 Decoder:*
-- Fetch 64 bytes (16 × 32-bit pixels); expand to UQ1.8 (A8 top 8 bits → UQ1.8[8:1])
-
-*R8 Decoder:*
-- Fetch 16 bytes (16 × 8-bit values), replicate R8 to G and B channels, A=opaque; convert to UQ1.8
-
-*BC2/BC3 Decoders:*
-- 16-byte blocks; first 8 bytes encode alpha (explicit 4-bit for BC2, interpolated 8-bit for BC3 using shift+add), last 8 bytes encode RGB as BC1 (no punch-through, shift+add interpolation)
-
-*BC5 Decoder:*
-
-- Fetch 16 bytes: two independent BC3-style 8-byte single-channel alpha blocks
-- First 8-byte block decodes the red channel using the BC3 alpha interpolation algorithm (shift+add, DD-039)
-- Second 8-byte block decodes the green channel using the same algorithm
-- Output: R = decoded red, G = decoded green, B = 0, A = opaque (9'h100)
-- Typically used for compressed two-channel normal maps (XY normals; Z is reconstructed by the shader)
-
-**Texture Cache Architecture (REQ-003.08):**
-
-Each of the 2 samplers has an independent 4-way set-associative texture cache with 8192 texels (8K) capacity:
-
-```
-Per-Sampler Cache (2 samplers total):
-  4 x EBR banks, interleaved by texel parity:
-    Bank 0: (even_x, even_y) texels — 4 per cache line
-    Bank 1: (odd_x, even_y)  texels — 4 per cache line
-    Bank 2: (even_x, odd_y)  texels — 4 per cache line
-    Bank 3: (odd_x, odd_y)   texels — 4 per cache line
-
-  PDPW16KD 512x36-bit per bank; 512 entries/bank
-    512 cache lines = 128 sets x 4 ways
-    Cache line = 4x4 block of UQ1.8 (36 bits/texel)
-
-  Tag = texture_base[31:12] + mip_level[3:0] + block_addr (sufficient bits)
-
-  Set index = block_x[7:0] ^ block_y[7:0]  (XOR-folded, 8-bit for 256 sets)
-  Replacement: pseudo-LRU per set
-
-Cache Fill State Machine (same clock domain as SDRAM controller, no CDC):
-  IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
-  - FETCH issues a burst SDRAM read request to UNIT-007 with burst_len per format
-  - BC1/BC4:       burst_len=4   (8 bytes)
-  - BC2/BC3/BC5:   burst_len=8   (16 bytes)
-  - RGB565:        burst_len=16  (32 bytes)
-  - R8:            burst_len=8   (16 bytes)
-  - RGBA8888:      burst_len=32  (64 bytes)
-
-Invalidation:
-  - TEXn_CFG write → clear all valid bits for sampler N (N=0..1)
-```
-
-**EBR Budget Note:** Each PDPW16KD 512×36-bit bank uses 4 EBR blocks.
-Per sampler: 4 banks × 4 EBR = 16 EBR.
-Two samplers: 32 EBR total for texture cache.
-The ECP5-25K has 56 EBR blocks; the texture cache consumes 32, leaving 24 for other uses.
-
-**Estimated FPGA Resources:**
-- BC1 decoder: ~180-250 LUTs, 0 DSPs (shift+add replaces division, DD-039)
-- RGB565 decoder: ~30 LUTs, 0 DSPs
-- RGBA8888 decoder: ~50 LUTs, 0 DSPs
-- R8 decoder: ~20 LUTs, 0 DSPs
-- BC2/BC3 decoders: ~250-350 LUTs, 0 DSPs (shift+add replaces division, DD-039)
-- BC5 decoder: ~200-300 LUTs, 0 DSPs (two independent BC3-style alpha blocks, shift+add, DD-039)
-- Texture cache (per sampler): 16 EBR blocks (PDPW16KD 512×36), ~300-500 LUTs (tags, comparators, FSM)
-- Texture cache (both samplers): 32 EBR blocks total, ~600-1000 LUTs
-- Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
-- Texel/FB promotion: ~200-400 LUTs (combinational)
-- Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
-- Total pipeline latency: ~13-16 cycles at 100 MHz (130-160 ns), fully pipelined, 1 pixel/cycle throughput (100 Mpixels/sec peak)
-
 ## Implementation
 
 - `shared/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
 - `components/pixel-write/rtl/pixel_pipeline.sv`: Main implementation
-- `components/texture/rtl/texture_bc1.sv`: BC1 decoder
-- `components/texture/rtl/texture_bc2.sv`: BC2 decoder
-- `components/texture/rtl/texture_bc3.sv`: BC3 decoder
-- `components/texture/rtl/texture_bc4.sv`: BC4 (single-channel) decoder
-- `components/texture/rtl/texture_bc5.sv`: BC5 (two-channel, RG normal map) decoder
-- `components/texture/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder
-- `components/texture/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
-- `components/texture/rtl/texture_r8.sv`: R8 single-channel decoder
-- `components/texture/rtl/texture_cache.sv`: Per-sampler texture cache (REQ-003.08)
-- `components/pixel-write/rtl/texel_promote.sv`: UQ1.8→Q4.12 texel promotion (REQ-004.02, DD-038)
 - `components/pixel-write/rtl/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
 - `components/alpha-blend/rtl/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
 - `components/dither/rtl/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
 - `components/early-z/rtl/early_z.sv`: Depth range test + early Z-test logic
 - `components/stipple/rtl/stipple.sv`: Stipple pattern test
 
+Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned by UNIT-011.
+
 ## Verification
 
-Planned formal testbenches (VER documents not yet created; see `doc/verification/README.md` for status):
 - **VER-002** (`tb_early_z` — Verilator unit testbench; covers REQ-005.02 early Z-test path)
-- **VER-005** (`texture_decoder_tb` — Verilator unit testbench; covers REQ-003.01 texture decode/sampling)
-- **VER-010** through **VER-014** (golden image integration tests exercise the full pixel pipeline including texture cache and fragment output)
-
-- Testbench for BC1 decoder: verify 4-color and 1-bit alpha modes
-- Testbench for RGB565 decoder: verify all 16 pixels in a 4×4 block expand to UQ1.8 with A=opaque
-- Testbench for RGBA8888 decoder: verify expansion to UQ1.8 precision
-- Testbench for R8 decoder: verify R channel replicated to RGB, A=opaque
-- Testbench for BC2/BC3 decoders: verify explicit and interpolated alpha modes
-- Integration test with rasterizer: render textured triangles and compare to reference
-- Testbench for texture cache: verify hit/miss behavior, tag matching, and replacement
-- Cache invalidation test: verify TEX0_CFG / TEX1_CFG writes invalidate the corresponding cache
-- Bilinear interleaving test: verify 2x2 quad reads from 4 different banks
-- XOR set indexing test: verify adjacent blocks map to different sets
-- Cache fill test: verify correct burst_len issued for each texture format
-- Early Z-test: verify discard before texture fetch when Z-test fails
-- Early Z-test bypass: verify passthrough when Z_TEST_EN=0 or Z_COMPARE=ALWAYS
-- Depth range test: verify discard when fragment Z outside [Z_RANGE_MIN, Z_RANGE_MAX]
-- Stipple test: verify discard when bit is 0, pass when bit is 1 or STIPPLE_EN=0
-- COLOR_WRITE_EN: verify Z-only prepass (Z writes without color writes)
-- Q4.12 promotion test: verify UQ1.8 → Q4.12 promotion produces values in [0.0, 1.0]
-- Alpha blend BLEND mode: verify Porter-Duff src-over at alpha=0.5 produces correct 50% mix
-- Dithering: verify Q4.12-to-RGB565 dithering reduces banding
-- VER-002 (Early Z-Test Unit Testbench)
-- VER-005 (Texture Decoder Unit Testbench)
-- VER-010 (Gouraud Triangle Golden Image Test)
-- VER-011 (Depth-Tested Overlapping Triangles Golden Image Test)
-- VER-012 (Textured Triangle Golden Image Test)
-- VER-013 (Color-Combined Output Golden Image Test)
-- VER-014 (Textured Cube Golden Image Test) — exercises the full pixel pipeline across cube faces with perspective-correct UV interpolation, early Z-test with Z-buffer comparison across overlapping faces, RGB565 texture cache fills from multiple spatial access patterns, texel promotion to Q4.12, and MODULATE color combiner output
+- **VER-010** (Gouraud Triangle Golden Image Test)
+- **VER-011** (Depth-Tested Overlapping Triangles Golden Image Test)
+- **VER-012** (Textured Triangle Golden Image Test)
+- **VER-013** (Color-Combined Output Golden Image Test)
+- **VER-014** (Textured Cube Golden Image Test)
 
 ## Design Notes
 
 **Arbiter port ownership:** UNIT-006 owns arbiter ports 1, 2, and 3 (UNIT-007):
 - Port 1: framebuffer write (RGB565, tiled 4×4)
 - Port 2: Z-buffer read/write (tile-cache backed, write-back)
-- Port 3: texture cache fill reads (burst, format-dependent burst_len)
+- Port 3: texture cache fill reads (burst, format-dependent burst_len) — issued on behalf of UNIT-011
 
 Port 3 is shared with `PERF_TIMESTAMP` writes initiated by `gpu_top.sv` on behalf of UNIT-003.
 Timestamp writes are fire-and-forget single-word writes at the lowest priority on port 3; the pixel pipeline's texture burst requests have effective precedence because the arbiter serves port 3 requests in arrival order and texture bursts hold port 3 for up to 32 words.
 See DD-026 for the port 3 sharing rationale and the latch-and-serialize scheme used in `gpu_top.sv`.
 
-**Texture format encoding:** The `tex_format` field in TEX0_CFG and TEX1_CFG is 4 bits wide, encoding 8 formats as defined in INT-010 and INT-032: BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7 (DD-041).
-All 8 format decoders are connected to the texture cache via a format-select mux driven by this 4-bit field.
-Codes 8–15 are reserved.
-
 The pipeline operates at 100 MHz in a unified clock domain with the SDRAM controller.
 This eliminates CDC FIFOs and synchronizers for all memory transactions (framebuffer, Z-buffer, texture), simplifying the design and reducing latency.
 
 All color data in the pipeline uses Q4.12 signed fixed-point (16-bit per channel, 64-bit for RGBA).
-UNORM inputs (vertex colors, material constants, texture samples) are promoted to Q4.12 at pipeline entry.
+UNORM inputs (vertex colors, material constants) are promoted to Q4.12 at pipeline entry.
+UNIT-011 promotes texture samples to Q4.12 before delivering them to UNIT-006.
 The signed representation naturally handles the `(A-B)` subtraction in the color combiner, and the 3-bit integer headroom above 1.0 accommodates additive blending without premature saturation.
-
-The cache fill FSM issues burst SDRAM read requests to UNIT-007, specifying burst_len equal to the number of 16-bit words for the texture block.
-Burst lengths differ by format: 4 (BC1/BC4), 8 (BC2/BC3/BC5/R8), 16 (RGB565), 32 (RGBA8888).
 
 The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
 The tiled address calculation uses only shifts and masks; no multiply hardware is required.
@@ -376,17 +208,21 @@ Render targets with power-of-two dimensions can be bound directly as texture sou
 
 **Fragment bus UV semantics:** UNIT-006 receives true perspective-correct U, V coordinates in Q4.12 format on the fragment bus.
 Perspective correction (1/Q division and UV reconstruction) is fully handled by UNIT-005.05 before fragment emission.
-UNIT-006 consumes UV directly for texel addressing; no perspective division occurs within the pixel pipeline.
+UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occurs within the pixel pipeline.
 
-**LOD selection:** The per-pixel `frag_lod` (UQ4.4) value is produced by UNIT-005.05 via CLZ on the interpolated Q (1/W) value.
-UNIT-006 adds `TEXn_MIP_BIAS` to `frag_lod[7:4]` (the integer mip-level component) to select the final mip level for each texture unit.
-`frag_lod[3:0]` carries the fractional blend weight used for trilinear filtering.
+**Architectural separation:** The pixel pipeline is decomposed into peer units:
 
-**Architectural separation:** The pixel pipeline is decomposed into:
-
-1. **UNIT-006 (this unit):** Stipple test, depth range clipping, early Z-test, texture sampling (2 units with cache), format promotion.
-   Outputs TEX_COLOR0, TEX_COLOR1 (plus SHADE0, SHADE1, Z value passthrough) to UNIT-010.
-2. **UNIT-010 (Color Combiner):** Two-stage pipelined programmable color combiner `(A-B)*C+D`.
+1. **UNIT-011 (Texture Sampler):** UV coordinate processing, two-level texture cache (L1 decoded + L2 compressed), block decompression for all eight texture formats, format promotion to Q4.12.
+   Delivers TEX_COLOR0, TEX_COLOR1 in Q4.12 RGBA to UNIT-006.
+2. **UNIT-006 (this unit):** Stipple test, depth range clipping, early Z-test, dispatches fragment UV/LOD to UNIT-011, receives Q4.12 texel results, passes them to UNIT-010.
+3. **UNIT-010 (Color Combiner):** Two-stage pipelined programmable color combiner `(A-B)*C+D`.
    Takes TEX_COLOR0, TEX_COLOR1, SHADE0, SHADE1, CONST0, CONST1, COMBINED as inputs.
    Outputs combined fragment color downstream.
-3. **Fragment Output unit (alpha blend + dither + write):** Alpha blending with framebuffer, frame/Z buffer read/write, ordered dithering, pixel write.
+4. **Fragment Output (alpha blend + dither + write):** Alpha blending with framebuffer, frame/Z buffer read/write, ordered dithering, pixel write (implemented within UNIT-006).
+
+**Estimated FPGA Resources (UNIT-006 only, excluding UNIT-011):**
+
+- Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
+- FB promotion: ~200-400 LUTs (combinational)
+- Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
+- Total pipeline latency: ~13-16 cycles at 100 MHz (130-160 ns), fully pipelined, 1 pixel/cycle throughput (100 Mpixels/sec peak)

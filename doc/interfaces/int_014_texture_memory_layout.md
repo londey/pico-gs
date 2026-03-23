@@ -7,7 +7,7 @@ Internal
 ## Parties
 
 - **Provider:** External (host firmware defines layout)
-- **Consumer:** UNIT-006 (Pixel Pipeline)
+- **Consumer:** UNIT-011 (Texture Sampler — specifically UNIT-011.05 L2 Compressed Cache)
 - **External consumer:** pico-racer (https://github.com/londey/pico-racer) — texture upload sequencing and layout generation.
 
 ## Referenced By
@@ -429,7 +429,7 @@ The GPU clamps LOD selection to [0, MIP_LEVELS−1].
 
 The pixel pipeline calculates the mipmap level address using a cumulative offset table:
 
-**Hardware implementation** (UNIT-006):
+**Hardware implementation** (UNIT-011):
 ```systemverilog
 // Precomputed offset table based on TEXn_CFG fields
 logic [31:0] mip_offsets[0:10];  // Up to 11 levels
@@ -456,8 +456,8 @@ mip_base_addr = texture_base + mip_offsets[selected_mip];
 
 ## Texture Cache Considerations (REQ-003.08)
 
-The pixel pipeline uses an on-chip texture cache (REQ-003.08) with 2 independent per-sampler caches to reduce SDRAM bandwidth.
-Each sampler cache holds 16,384 texels in a 4-way set-associative configuration with 256 sets.
+UNIT-011 (Texture Sampler) uses an on-chip texture cache (REQ-003.08) with 2 independent per-sampler caches to reduce SDRAM bandwidth.
+See UNIT-011.03 (L1 Decompressed Cache) and UNIT-011.05 (L2 Compressed Cache) for cache architecture details.
 The cache uses **XOR-folded set indexing** for efficient distribution of spatially adjacent blocks:
 
 ```

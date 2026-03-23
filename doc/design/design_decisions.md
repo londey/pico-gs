@@ -75,7 +75,7 @@ The alternative — assigning BC5 to the last remaining code (7) and keeping a 3
 `registers/rdl/gpu_regs.rdl` gains `BC5` and the field widens from `FORMAT[6:4]` to `FORMAT[7:4]`.
 `registers/src/lib.rs` and generated SystemVerilog are updated to match.
 All RTL format comparisons in `pixel_pipeline.sv`, `texture_cache.sv`, and the format-select mux use the new 4-bit codes.
-INT-010, INT-032, and UNIT-006 are updated with the new encoding table.
+INT-010, INT-032, and UNIT-011 are updated with the new encoding table.
 VER-012 and VER-014 register-write sequences use `FORMAT=RGB565` code 5 (was 4); golden images require re-approval.
 
 ---
@@ -107,7 +107,7 @@ The invalidation-on-write rule (already required for FORMAT and BASE changes) co
 
 INT-010 (GPU Register Map) gains a CACHE_MODE field in TEXn_FMT.
 INT-032 (Texture Cache Architecture) documents the mode-bit semantics and per-mode EBR layout.
-UNIT-006 (Pixel Pipeline) must route the CACHE_MODE bit from UNIT-003 to the cache bank address and promotion logic.
+UNIT-011 (Texture Sampler) must route the CACHE_MODE bit from UNIT-003 to the cache bank address and promotion logic.
 REQ-003.08 FR-131-5 is updated to reflect mode-selectable rather than fixed cache format.
 
 ### Superseded Note
@@ -153,7 +153,7 @@ The formulas are verifiable by exhaustive simulation over all 8-bit inputs.
 ### Consequences
 
 BC1, BC2, BC3, and BC4 decoder RTL use shift+add formulas instead of `/`.
-UNIT-006 resource estimate for BC1 and BC2/BC3 decoders drops from 2–4 DSP slices to 0 DSP slices per decoder.
+UNIT-011.04 (Block Decompressor) resource estimate for BC1 and BC2/BC3 decoders drops from 2–4 DSP slices to 0 DSP slices per decoder.
 REQ-011.02 FR-051-1 DSP allocation table is updated to reflect 0 DSPs for BC decoders.
 VER-005 step 6–9 test vectors remain valid (the computed values are unchanged).
 
@@ -195,7 +195,7 @@ The UQ1.8 → Q4.12 promotion is a simple left-shift with zero-pad, cheaper than
 ### Consequences
 
 INT-032 gains UQ1.8 format definition, conversion tables from each source format, and UQ1.8 → Q4.12 promotion formula.
-UNIT-006 `texel_promote.sv` gains a mode input selecting RGBA5652 or UQ1.8 promotion path.
+UNIT-011.04 `texel_promote.sv` gains a mode input selecting RGBA5652 or UQ1.8 promotion path.
 VER-005 gains test vectors for UQ1.8 promotion (step 4 extended).
 Golden images (VER-012, VER-014) require re-approval if the cache defaults to CACHE_MODE=1 for RGB565 textures.
 
@@ -234,7 +234,7 @@ The address depth reduction (512 vs 1024 entries per bank) is acceptable in 36-b
 
 INT-032 documents PDPW16KD 512×36 as the EBR primitive for 36-bit mode banks.
 REQ-011.02 EBR budget note must be updated once PDPW16KD EBR consumption is confirmed by synthesis.
-UNIT-006 Internal State note is updated to reflect the mode-dependent bank depth.
+UNIT-011.03 (L1 Decompressed Cache) internal state note is updated to reflect the mode-dependent bank depth.
 The cache fill FSM address counter width narrows from 10-bit to 9-bit in 36-bit mode.
 
 ---
@@ -606,7 +606,7 @@ The parent module's external port list is unchanged; `gpu_top.sv` requires no mo
 
 ### Context
 
-UNIT-007 (Memory Arbiter) port 3 is used for texture cache fill burst reads by UNIT-006 (Pixel Pipeline).
+UNIT-007 (Memory Arbiter) port 3 is used for texture cache fill burst reads by UNIT-011 (Texture Sampler), dispatched via UNIT-006 (Pixel Pipeline).
 UNIT-003 (Register File) also drives `ts_mem_wr` / `ts_mem_addr` / `ts_mem_data` outputs that `gpu_top.sv` must forward to port 3 as single-word SDRAM writes when a `PERF_TIMESTAMP` register write occurs.
 Both sources compete for the same arbiter port, and no sharing mechanism was previously specified.
 
@@ -616,8 +616,8 @@ Manage port 3 contention entirely within `gpu_top.sv` using a latch-and-serializ
 
 1. A pending-write register in `gpu_top.sv` captures `ts_mem_wr` / `ts_mem_addr` / `ts_mem_data` from UNIT-003.
    If a new `ts_mem_wr` pulse arrives while a previous write is still pending, the new data overwrites the pending register (fire-and-forget; back-to-back timestamps may coalesce).
-2. `gpu_top.sv` drives `port3_req` by OR-ing UNIT-006's texture fill request with the pending timestamp write request.
-   UNIT-006's texture request is checked first; the timestamp write is only injected onto port 3 when UNIT-006 is not asserting a texture request.
+2. `gpu_top.sv` drives `port3_req` by OR-ing UNIT-011's texture fill request with the pending timestamp write request.
+   UNIT-011's texture request is checked first; the timestamp write is only injected onto port 3 when UNIT-011 is not asserting a texture request.
 3. No modifications to UNIT-007 (sram_arbiter.sv) are required.
 
 ### Rationale
@@ -642,7 +642,7 @@ The coalescing behavior on back-to-back timestamp writes is acceptable: `PERF_TI
 ### References
 
 - UNIT-003 (Register File — ts_mem_wr / ts_mem_addr / ts_mem_data)
-- UNIT-006 (Pixel Pipeline — texture cache fill, port 3 burst reads)
+- UNIT-011 (Texture Sampler — texture cache fill, port 3 burst reads)
 - UNIT-007 (Memory Arbiter — port 3 fixed-priority, max burst 32 words)
 
 ---
@@ -736,7 +736,7 @@ This frees 13–14 DSP blocks, creating headroom for color combiner (UNIT-010, 4
 ### References
 
 - UNIT-005 (Rasterizer — algorithm and DSP budget)
-- UNIT-006 (Pixel Pipeline — DSP headroom for texture decoders)
+- UNIT-011 (Texture Sampler — DSP headroom for texture decoders)
 - UNIT-010 (Color Combiner — DSP budget)
 - REQ-003.06 (Texture Sampling — perspective-correct UV)
 - REQ-011.02 (Resource Constraints — DSP budget)

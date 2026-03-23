@@ -38,12 +38,12 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
   - Display scanline FIFO: ~32 Kbits (4 KB, 1024 words × 32 bits)
   - SPI receive FIFO: ~8 Kbits (1 KB, EBR)
   - Command FIFO: distributed RAM (~2.3 Kbits, 72 bits × 32 entries, not EBR)
-  - Texture cache (4 samplers × 4 banks): ~288 Kbits (36 KB, 16 EBR blocks) (REQ-003.08)
+  - Texture cache (2 samplers × 16 EBR each): ~288 Kbits (36 KB, 32 EBR blocks total) (REQ-003.08, UNIT-011)
   - **Total EBR allocated:** ~328 Kbits (~41 KB)
   - **Headroom:** ~428 Kbits (~54 KB) for future features
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
-- **References:** REQ-011.02, REQ-003.08, UNIT-006, UNIT-008 (Display Controller)
-- **Rationale:** Texture cache is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches.
+- **References:** REQ-011.02, REQ-003.08, UNIT-011 (Texture Sampler), UNIT-008 (Display Controller)
+- **Rationale:** Texture cache (UNIT-011) is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches.
   The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-001.04).
   Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 
