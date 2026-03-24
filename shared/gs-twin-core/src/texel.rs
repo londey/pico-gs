@@ -6,6 +6,7 @@
 //! This module is the shared leaf dependency for `tex_cache`, `tex_decode`,
 //! `tex_filter`, and `tex_sample`.
 
+use gpu_registers::components::tex_format_e::TexFormatE;
 use qfixed::{Q, UQ};
 
 use crate::fragment::ColorQ412;
@@ -41,6 +42,31 @@ pub struct TexelUq18 {
 
     /// Alpha channel, UQ1.8 UNORM.
     pub a: UQ<1, 8>,
+}
+
+// ── Format-level metadata ────────────────────────────────────────────────────
+
+/// Return the 4×4 block size in u16 words for the given texture format.
+///
+/// This is format-level metadata shared by caches and decoders:
+///
+/// | Format | Block Size (u16 words) |
+/// |----------|------------------------|
+/// | BC1 | 4 |
+/// | BC4 | 4 |
+/// | BC2 | 8 |
+/// | BC3 | 8 |
+/// | R8 | 8 |
+/// | RGB565 | 16 |
+/// | RGBA8888 | 32 |
+#[must_use]
+pub fn block_size_words(format: TexFormatE) -> u32 {
+    match format {
+        TexFormatE::Bc1 | TexFormatE::Bc4 => 4,
+        TexFormatE::Bc2 | TexFormatE::Bc3 | TexFormatE::R8 => 8,
+        TexFormatE::Rgb565 => 16,
+        TexFormatE::Rgba8888 => 32,
+    }
 }
 
 impl TexelUq18 {

@@ -20,10 +20,11 @@
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 
-use crate::tex_cache::{CacheStats, DecodedBlockProvider, TextureBlockCache};
-use crate::tex_compressed::{CompressedBlockCache, CompressedBlockProvider, L2CacheStats};
-use crate::tex_decode;
+use gs_tex_l1_cache::{CacheStats, DecodedBlockProvider, TextureBlockCache};
+use gs_tex_l2_cache::{CompressedBlockCache, CompressedBlockProvider, L2CacheStats};
 use gs_twin_core::texel::TexelUq18;
+
+use crate::tex_decode;
 
 // ── BlockFetcher trait ──────────────────────────────────────────────────────
 

@@ -1,0 +1,11 @@
+[package]
+name = "gs-tex-l1-cache"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "L1 decoded texture block cache for the pico-gs digital twin"
+
+[dependencies]
+gs-twin-core = { path = "../../../../../shared/gs-twin-core" }
+qfixed = { path = "../../../../../crates/qfixed" }

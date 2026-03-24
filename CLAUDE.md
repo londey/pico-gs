@@ -27,13 +27,21 @@ pico-gs/
 │   ├── early-z/               # Early depth test
 │   ├── texture/               # Texture sampling + decoding
 │   │   ├── rtl/               # Assembly module (texture_sampler.sv)
-│   │   ├── detail/            # Subunit implementations
+│   │   ├── detail/            # Subunit implementations (RTL + twin per subunit)
 │   │   │   ├── uv-coord/rtl/          # UNIT-011.01: UV coordinate processing
-│   │   │   ├── bilinear-filter/rtl/   # UNIT-011.02: Bilinear/trilinear filter
-│   │   │   ├── l1-cache/rtl/          # UNIT-011.03: L1 decompressed cache
-│   │   │   ├── block-decoder/rtl/     # UNIT-011.04: Block decompressor + texel promotion
-│   │   │   └── l2-cache/rtl/          # UNIT-011.05: L2 compressed cache
-│   │   ├── twin/              # gs-texture Rust crate
+│   │   │   ├── bilinear-filter/       # UNIT-011.02: Bilinear/trilinear filter
+│   │   │   │   ├── rtl/              # SystemVerilog RTL
+│   │   │   │   └── twin/             # gs-tex-bilinear-filter Rust crate
+│   │   │   ├── l1-cache/             # UNIT-011.03: L1 decompressed cache
+│   │   │   │   ├── rtl/              # SystemVerilog RTL
+│   │   │   │   └── twin/             # gs-tex-l1-cache Rust crate
+│   │   │   ├── block-decoder/        # UNIT-011.04: Block decompressor + fetcher
+│   │   │   │   ├── rtl/              # SystemVerilog RTL
+│   │   │   │   └── twin/             # gs-tex-block-decoder Rust crate
+│   │   │   └── l2-cache/             # UNIT-011.05: L2 compressed cache
+│   │   │       ├── rtl/              # SystemVerilog RTL
+│   │   │       └── twin/             # gs-tex-l2-cache Rust crate
+│   │   ├── twin/              # gs-texture facade crate (tex_sample.rs + re-exports)
 │   │   └── tests/             # Verilator testbenches
 │   ├── color-combiner/        # Two-stage color combiner
 │   ├── alpha-blend/           # Alpha blending
@@ -99,7 +107,11 @@ It is a bit-accurate, transaction-level Rust model — not cycle-accurate (Veril
 | `gs-rasterizer` (`rasterize.rs`, `recip.rs`) | `rasterizer.sv`, `raster_recip_area.sv`, `raster_deriv.sv`, `raster_edge_walk.sv` | Triangle setup + iteration |
 | `gs-stipple` | `stipple.sv` | Stipple test |
 | `gs-early-z` | `early_z.sv` | Early depth test |
-| `gs-texture` (`tex_sample.rs`, `tex_cache.rs`, etc.) | `texture_sampler.sv` (assembly), `detail/` subunit RTL (uv-coord, bilinear-filter, l1-cache, block-decoder, l2-cache) | Texture sampling |
+| `gs-texture` (`tex_sample.rs`) | `texture_sampler.sv` (assembly) | Texture sampling facade |
+| `gs-tex-l1-cache` | `detail/l1-cache/rtl/` | L1 decoded texture cache |
+| `gs-tex-l2-cache` | `detail/l2-cache/rtl/` | L2 compressed texture cache |
+| `gs-tex-block-decoder` (`tex_decode.rs`, `tex_fetch.rs`) | `detail/block-decoder/rtl/` | Block decompressor + fetcher |
+| `gs-tex-bilinear-filter` | `detail/bilinear-filter/rtl/` | Bilinear/trilinear filter |
 | `gs-color-combiner` | `color_combiner.sv` | Color combiner |
 | `gs-alpha-blend` | `alpha_blend.sv` | Alpha blending |
 | `gs-dither` | `dither.sv` | Ordered dithering |

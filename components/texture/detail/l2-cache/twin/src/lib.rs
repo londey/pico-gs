@@ -1,3 +1,11 @@
+#![deny(unsafe_code)]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::all))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::pedantic))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(missing_docs))]
+#![allow(clippy::module_name_repetitions)]
+#![allow(dead_code)]
+#![allow(unused_crate_dependencies)]
+
 //! L2 compressed texture block cache — EBR-mapped model.
 //!
 //! Caches raw (compressed or uncompressed) SDRAM block data before decoding,
@@ -38,7 +46,7 @@
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 
-use crate::tex_decode;
+use gs_twin_core::texel::block_size_words;
 
 // ── EBR geometry constants ───────────────────────────────────────────────────
 
@@ -150,15 +158,15 @@ impl CompressedBlockProvider for DirectSdramProvider {
         format: TexFormatE,
         sdram: &[u16],
     ) -> &[u16] {
-        let block_size_words = tex_decode::block_size_words(format) as usize;
-        let offset = base_words as usize + block_index as usize * block_size_words;
-        let end = (offset + block_size_words).min(sdram.len());
+        let bsw = block_size_words(format) as usize;
+        let offset = base_words as usize + block_index as usize * bsw;
+        let end = (offset + bsw).min(sdram.len());
         self.buf.clear();
         if offset < sdram.len() {
             self.buf.extend_from_slice(&sdram[offset..end]);
         }
         // Pad with zeros if SDRAM is too small.
-        while self.buf.len() < block_size_words {
+        while self.buf.len() < bsw {
             self.buf.push(0);
         }
         &self.buf
@@ -277,9 +285,9 @@ impl CompressedBlockProvider for CompressedBlockCache {
             self.stats.evictions += 1;
         }
 
-        let block_size_words = tex_decode::block_size_words(format) as usize;
-        let offset = base_words as usize + block_index as usize * block_size_words;
-        let end = (offset + block_size_words).min(sdram.len());
+        let bsw = block_size_words(format) as usize;
+        let offset = base_words as usize + block_index as usize * bsw;
+        let end = (offset + bsw).min(sdram.len());
 
         // Read SDRAM words into scratch buffer.
         self.buf.clear();
@@ -287,7 +295,7 @@ impl CompressedBlockProvider for CompressedBlockCache {
             self.buf.extend_from_slice(&sdram[offset..end]);
         }
         // Pad with zeros if SDRAM is too small.
-        while self.buf.len() < block_size_words {
+        while self.buf.len() < bsw {
             self.buf.push(0);
         }
 

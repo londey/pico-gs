@@ -28,10 +28,10 @@
 use gpu_registers::components::gpu_regs::named_types::tex_cfg_reg::TexCfgReg;
 use qfixed::Q;
 
-use crate::tex_cache::CacheStats;
-use crate::tex_compressed::L2CacheStats;
-use crate::tex_fetch::{BlockFetcher, ConcreteFetcher};
-use crate::tex_filter::{BilinearBlender, SampleGatherer, StandardBlender, StandardGatherer};
+use gs_tex_bilinear_filter::{BilinearBlender, SampleGatherer, StandardBlender, StandardGatherer};
+use gs_tex_block_decoder::tex_fetch::{BlockFetcher, ConcreteFetcher};
+use gs_tex_l1_cache::CacheStats;
+use gs_tex_l2_cache::L2CacheStats;
 use gs_twin_core::fragment::{ColorQ412, RasterFragment, TexturedFragment};
 pub use gs_twin_core::texel::TexelUq18;
 

@@ -1,3 +1,11 @@
+#![deny(unsafe_code)]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::all))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::pedantic))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(missing_docs))]
+#![allow(clippy::module_name_repetitions)]
+#![allow(dead_code)]
+#![allow(unused_crate_dependencies)]
+
 //! L1 decoded texture block cache — EBR-mapped 4-way set-associative model.
 //!
 //! Each texture sampler (TEX0, TEX1) has an independent L1 cache that stores

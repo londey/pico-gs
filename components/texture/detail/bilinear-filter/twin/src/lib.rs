@@ -1,3 +1,11 @@
+#![deny(unsafe_code)]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::all))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::pedantic))]
+#![cfg_attr(all(not(debug_assertions), not(test)), deny(missing_docs))]
+#![allow(clippy::module_name_repetitions)]
+#![allow(dead_code)]
+#![allow(unused_crate_dependencies)]
+
 //! Texture filtering — sample gathering, bilinear blending, and wrap modes.
 //!
 //! This module contains the address generation (wrap modes, bilinear tap
@@ -18,7 +26,7 @@ use gpu_registers::components::tex_filter_e::TexFilterE;
 use gpu_registers::components::wrap_mode_e::WrapModeE;
 use qfixed::{Q, UQ};
 
-use crate::tex_fetch::BlockFetcher;
+use gs_tex_block_decoder::tex_fetch::BlockFetcher;
 use gs_twin_core::texel::TexelUq18;
 
 // ── GatheredSample ──────────────────────────────────────────────────────────

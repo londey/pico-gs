@@ -21,7 +21,7 @@
 use gpu_registers::components::tex_format_e::TexFormatE;
 use qfixed::UQ;
 
-use gs_twin_core::texel::TexelUq18;
+use gs_twin_core::texel::{block_size_words, TexelUq18};
 
 // ── TexelDecoder trait ──────────────────────────────────────────────────────
 
@@ -632,20 +632,6 @@ impl TexelDecoder for Bc4Decoder {
 }
 
 // ── Format dispatch ─────────────────────────────────────────────────────────
-
-/// Return the block size in u16 words for the given texture format.
-#[must_use]
-pub fn block_size_words(format: TexFormatE) -> u32 {
-    match format {
-        TexFormatE::Bc1 => Bc1Decoder::BLOCK_SIZE_WORDS,
-        TexFormatE::Bc2 => Bc2Decoder::BLOCK_SIZE_WORDS,
-        TexFormatE::Bc3 => Bc3Decoder::BLOCK_SIZE_WORDS,
-        TexFormatE::Bc4 => Bc4Decoder::BLOCK_SIZE_WORDS,
-        TexFormatE::Rgb565 => Rgb565Decoder::BLOCK_SIZE_WORDS,
-        TexFormatE::Rgba8888 => Rgba8888Decoder::BLOCK_SIZE_WORDS,
-        TexFormatE::R8 => R8Decoder::BLOCK_SIZE_WORDS,
-    }
-}
 
 /// Decode a 4×4 texel block from SDRAM, dispatching to the correct
 /// format decoder.
