@@ -3,7 +3,7 @@
 // Spec-ref: ver_005_texture_decoder.md `0000000000000000` 1970-01-01
 //
 // Testbench for texture format decoders and related pixel pipeline modules:
-//   texture_bc1, texture_bc2, texture_bc3, texture_bc4,
+//   texture_bc1, texture_bc2, texture_bc3, texture_bc4, texture_bc5,
 //   texture_rgb565, texture_rgba8888, texture_r8,
 //   texel_promote, stipple, format-select mux
 
@@ -107,6 +107,20 @@ module texture_decoder_tb
     );
 
     // ========================================================================
+    // texture_bc5 DUT
+    // ========================================================================
+
+    reg  [127:0] bc5_block_data;  // BC5 block data
+    reg  [3:0]   bc5_texel_idx;   // Texel index within 4x4 block
+    wire [35:0]  bc5_texel_out;   // 36-bit UQ1.8 output {R9, G9, B9, A9}
+
+    texture_bc5 uut_bc5 (
+        .block_data(bc5_block_data),
+        .texel_idx(bc5_texel_idx),
+        .texel_out(bc5_texel_out)
+    );
+
+    // ========================================================================
     // texture_rgb565 DUT
     // ========================================================================
 
@@ -185,21 +199,22 @@ module texture_decoder_tb
     );
 
     // ========================================================================
-    // Format-Select Mux (3-bit tex_format, 7 decoder outputs, 36-bit)
+    // Format-Select Mux (4-bit tex_format, 8 decoder outputs, 36-bit)
     // ========================================================================
 
-    reg  [2:0]   mux_tex_format;  // Texture format selector
+    reg  [3:0]   mux_tex_format;  // Texture format selector (matches tex_format_e)
     reg  [35:0]  mux_result;      // Selected 36-bit UQ1.8 texel
 
     always_comb begin
         case (mux_tex_format)
-            3'd0:    mux_result = bc1_texel_out;
-            3'd1:    mux_result = bc2_texel_out;
-            3'd2:    mux_result = bc3_texel_out;
-            3'd3:    mux_result = bc4_texel_out;
-            3'd4:    mux_result = rgb565_texel_out;
-            3'd5:    mux_result = rgba8888_texel_out;
-            3'd6:    mux_result = r8_texel_out;
+            4'd0:    mux_result = bc1_texel_out;      // BC1
+            4'd1:    mux_result = bc2_texel_out;      // BC2
+            4'd2:    mux_result = bc3_texel_out;      // BC3
+            4'd3:    mux_result = bc4_texel_out;      // BC4
+            4'd4:    mux_result = bc5_texel_out;      // BC5
+            4'd5:    mux_result = rgb565_texel_out;   // RGB565
+            4'd6:    mux_result = rgba8888_texel_out; // RGBA8888
+            4'd7:    mux_result = r8_texel_out;       // R8
             default: mux_result = 36'b0;
         endcase
     end
@@ -560,9 +575,124 @@ module texture_decoder_tb
                 bc4_texel_out, {9'h081, 9'h081, 9'h081, 9'h100});
 
         // ============================================================
-        // Test 10: Format-select mux wiring (VER-005 step 10)
+        // Test 10: texture_bc5 — two-channel (VER-005 step 10)
         // ============================================================
-        $display("--- Test 10: Format-select mux (7-format, 3-bit, 36-bit) ---");
+        $display("--- Test 10: texture_bc5 ---");
+
+        // Block A: 8-value interpolation mode for both channels
+        //   Red:   red0=200 (0xC8), red1=100 (0x64)  -> red0 > red1 -> 8-entry
+        //   Green: green0=50 (0x32), green1=10 (0x0A) -> green0 > green1 -> 8-entry
+        //   Red indices:   texel0=0, texel1=2, texel2=4, texel3=6
+        //   Green indices: texel0=1, texel1=3, texel2=5, texel3=7
+        //
+        // Red palette (8-value, /7):
+        //   [0]=200, [1]=100, [2]=186, [3]=171, [4]=157, [5]=143, [6]=129, [7]=114
+        // Green palette (8-value, /7):
+        //   [0]=50,  [1]=10,  [2]=44,  [3]=39,  [4]=33,  [5]=27,  [6]=21,  [7]=16
+        //
+        // UQ1.8 expansion: ch9 = {1'b0, ch8} + ch8[7]
+
+        // Block A layout: [63:0]=red block, [127:64]=green block
+        bc5_block_data = 128'h0;
+        bc5_block_data[7:0]   = 8'hC8;    // red0 = 200
+        bc5_block_data[15:8]  = 8'h64;    // red1 = 100
+        // Red indices (48 bits at [63:16]):
+        //   texel0=0(000), texel1=2(010), texel2=4(100), texel3=6(110), rest=0
+        bc5_block_data[63:16] = 48'h000000000D10;
+        bc5_block_data[71:64] = 8'h32;    // green0 = 50
+        bc5_block_data[79:72] = 8'h0A;    // green1 = 10
+        // Green indices (48 bits at [127:80]):
+        //   texel0=1(001), texel1=3(011), texel2=5(101), texel3=7(111), rest=0
+        bc5_block_data[127:80] = 48'h000000000F59;
+
+        // texel 0: red_pal[0]=200 -> R9=0x0C9, green_pal[1]=10 -> G9=0x00A
+        bc5_texel_idx = 4'd0;
+        #10;
+        check36("bc5 8v texel0 R=200 G=10",
+                bc5_texel_out, {9'h0C9, 9'h00A, 9'h000, 9'h100});
+
+        // texel 1: red_pal[2]=186 -> R9=0x0BB, green_pal[3]=39 -> G9=0x027
+        bc5_texel_idx = 4'd1;
+        #10;
+        check36("bc5 8v texel1 R=186 G=39",
+                bc5_texel_out, {9'h0BB, 9'h027, 9'h000, 9'h100});
+
+        // texel 2: red_pal[4]=157 -> R9=0x09E, green_pal[5]=27 -> G9=0x01B
+        bc5_texel_idx = 4'd2;
+        #10;
+        check36("bc5 8v texel2 R=157 G=27",
+                bc5_texel_out, {9'h09E, 9'h01B, 9'h000, 9'h100});
+
+        // texel 3: red_pal[6]=129 -> R9=0x082, green_pal[7]=16 -> G9=0x010
+        bc5_texel_idx = 4'd3;
+        #10;
+        check36("bc5 8v texel3 R=129 G=16",
+                bc5_texel_out, {9'h082, 9'h010, 9'h000, 9'h100});
+
+        // Block B: 6-value interpolation mode (red0 <= red1)
+        //   Red:   red0=50, red1=200  -> red0 <= red1 -> 6-entry + 0,255
+        //   Green: green0=10, green1=50 -> green0 <= green1 -> 6-entry + 0,255
+        //   Red indices:   texel0=0, texel1=6, texel2=2, texel3=4
+        //   Green indices: texel0=1, texel1=7, texel2=3, texel3=5
+        //
+        // Red palette (6-value, /5):
+        //   [0]=50, [1]=200, [2]=80, [3]=110, [4]=140, [5]=170, [6]=0, [7]=255
+        // Green palette (6-value, /5):
+        //   [0]=10, [1]=50, [2]=18, [3]=26, [4]=34, [5]=42, [6]=0, [7]=255
+
+        bc5_block_data = 128'h0;
+        bc5_block_data[7:0]   = 8'h32;    // red0 = 50
+        bc5_block_data[15:8]  = 8'hC8;    // red1 = 200
+        // Red indices (48 bits at [63:16]):
+        //   texel0=0(000), texel1=6(110), texel2=2(010), texel3=4(100), rest=0
+        bc5_block_data[63:16] = 48'h0000000008B0;
+        bc5_block_data[71:64] = 8'h0A;    // green0 = 10
+        bc5_block_data[79:72] = 8'h32;    // green1 = 50
+        // Green indices (48 bits at [127:80]):
+        //   texel0=1(001), texel1=7(111), texel2=3(011), texel3=5(101), rest=0
+        bc5_block_data[127:80] = 48'h000000000AF9;
+
+        // texel 0: red_pal[0]=50 -> R9=0x032, green_pal[1]=50 -> G9=0x032
+        bc5_texel_idx = 4'd0;
+        #10;
+        check36("bc5 6v texel0 R=50 G=50",
+                bc5_texel_out, {9'h032, 9'h032, 9'h000, 9'h100});
+
+        // texel 1: red_pal[6]=0 -> R9=0x000, green_pal[7]=255 -> G9=0x100
+        bc5_texel_idx = 4'd1;
+        #10;
+        check36("bc5 6v texel1 R=0 G=255",
+                bc5_texel_out, {9'h000, 9'h100, 9'h000, 9'h100});
+
+        // texel 2: red_pal[2]=80 -> R9=0x050, green_pal[3]=26 -> G9=0x01A
+        bc5_texel_idx = 4'd2;
+        #10;
+        check36("bc5 6v texel2 R=80 G=26",
+                bc5_texel_out, {9'h050, 9'h01A, 9'h000, 9'h100});
+
+        // texel 3: red_pal[4]=140 -> R9=0x08D, green_pal[5]=42 -> G9=0x02A
+        bc5_texel_idx = 4'd3;
+        #10;
+        check36("bc5 6v texel3 R=140 G=42",
+                bc5_texel_out, {9'h08D, 9'h02A, 9'h000, 9'h100});
+
+        // Verify B=0 and A=opaque for all BC5 texels (spot check texel 0 Block A)
+        bc5_block_data = 128'h0;
+        bc5_block_data[7:0]   = 8'hC8;
+        bc5_block_data[15:8]  = 8'h64;
+        bc5_block_data[71:64] = 8'h32;
+        bc5_block_data[79:72] = 8'h0A;
+        bc5_texel_idx = 4'd0;
+        #10;
+        check36("bc5 B=0 A=opaque",
+                {27'b0, bc5_texel_out[17:9]}, {27'b0, 9'h000});
+        check36("bc5 A=0x100",
+                {27'b0, bc5_texel_out[8:0]}, {27'b0, 9'h100});
+
+        // ============================================================
+        // Test 11: Format-select mux wiring (VER-005 step 11)
+        // ============================================================
+        $display("--- Test 11: Format-select mux (8-format, 4-bit, 36-bit) ---");
 
         // Set up DISTINCTIVE data for each decoder so all 7 outputs are
         // provably unique.  This ensures the mux test can detect any
@@ -608,18 +738,27 @@ module texture_decoder_tb
         bc4_block_data[15:8] = 8'h00;  // red1 = 0x00
         bc4_texel_idx = 4'd0;
 
-        // --- RGB565 (format 4): pure blue = 0x001F ---
+        // --- BC5 (format 4): red0=0xC0, green0=0x40 ---
+        // red9 = {1'b0, 0xC0} + 1 = 9'h0C1, green9 = {1'b0, 0x40} + 0 = 9'h040
+        bc5_block_data = 128'h0;
+        bc5_block_data[7:0]   = 8'hC0;    // red0 = 0xC0
+        bc5_block_data[15:8]  = 8'h00;    // red1 = 0x00
+        bc5_block_data[71:64] = 8'h40;    // green0 = 0x40
+        bc5_block_data[79:72] = 8'h00;    // green1 = 0x00
+        bc5_texel_idx = 4'd0;
+
+        // --- RGB565 (format 5): pure blue = 0x001F ---
         // R9=0, G9=0, B9=0x100, A9=0x1FF
         rgb565_block_data = 256'h0;
         rgb565_block_data[15:0] = 16'h001F;
         rgb565_texel_idx = 4'd0;
 
-        // --- RGBA8888 (format 5): R=0x80, G=0x40, B=0xC0, A=0xFF ---
+        // --- RGBA8888 (format 6): R=0x80, G=0x40, B=0xC0, A=0xFF ---
         rgba8888_block_data = 512'h0;
         rgba8888_block_data[31:0] = {8'hFF, 8'hC0, 8'h40, 8'h80};
         rgba8888_texel_idx = 4'd0;
 
-        // --- R8 (format 6): R8=0x60 ---
+        // --- R8 (format 7): R8=0x60 ---
         r8_block_data = 128'h0;
         r8_block_data[7:0] = 8'h60;
         r8_texel_idx = 4'd0;
@@ -627,42 +766,46 @@ module texture_decoder_tb
         #10;
 
         // Verify mux routes each decoder's 36-bit output correctly
-        mux_tex_format = 3'd0;
+        mux_tex_format = 4'd0;
         #10;
         check36("mux fmt=0 (BC1) routes decoder", mux_result, bc1_texel_out);
 
-        mux_tex_format = 3'd1;
+        mux_tex_format = 4'd1;
         #10;
         check36("mux fmt=1 (BC2) routes decoder", mux_result, bc2_texel_out);
 
-        mux_tex_format = 3'd2;
+        mux_tex_format = 4'd2;
         #10;
         check36("mux fmt=2 (BC3) routes decoder", mux_result, bc3_texel_out);
 
-        mux_tex_format = 3'd3;
+        mux_tex_format = 4'd3;
         #10;
         check36("mux fmt=3 (BC4) routes decoder", mux_result, bc4_texel_out);
 
-        mux_tex_format = 3'd4;
+        mux_tex_format = 4'd4;
         #10;
-        check36("mux fmt=4 (RGB565) routes decoder", mux_result, rgb565_texel_out);
+        check36("mux fmt=4 (BC5) routes decoder", mux_result, bc5_texel_out);
 
-        mux_tex_format = 3'd5;
+        mux_tex_format = 4'd5;
         #10;
-        check36("mux fmt=5 (RGBA8888) routes decoder", mux_result, rgba8888_texel_out);
+        check36("mux fmt=5 (RGB565) routes decoder", mux_result, rgb565_texel_out);
 
-        mux_tex_format = 3'd6;
+        mux_tex_format = 4'd6;
         #10;
-        check36("mux fmt=6 (R8) routes decoder", mux_result, r8_texel_out);
+        check36("mux fmt=6 (RGBA8888) routes decoder", mux_result, rgba8888_texel_out);
 
-        mux_tex_format = 3'd7;
+        mux_tex_format = 4'd7;
         #10;
-        check36("mux fmt=7 (reserved) -> zero", mux_result, 36'b0);
+        check36("mux fmt=7 (R8) routes decoder", mux_result, r8_texel_out);
+
+        mux_tex_format = 4'd8;
+        #10;
+        check36("mux fmt=8 (reserved) -> zero", mux_result, 36'b0);
 
         // ============================================================
-        // Test 11: UQ1.8 bit layout verification
+        // Test 12: UQ1.8 bit layout verification
         // ============================================================
-        $display("--- Test 11: UQ1.8 bit layout ---");
+        $display("--- Test 12: UQ1.8 bit layout ---");
 
         // Use RGBA8888 decoder with known per-channel values to verify
         // the UQ1.8 bit field positions.

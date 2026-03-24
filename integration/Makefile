@@ -66,6 +66,7 @@ RTL_SOURCES = \
 	$(TEXTURE_RTL)/texture_bc2.sv \
 	$(TEXTURE_RTL)/texture_bc3.sv \
 	$(TEXTURE_RTL)/texture_bc4.sv \
+	$(TEXTURE_RTL)/texture_bc5.sv \
 	$(TEXTURE_RTL)/texture_rgb565.sv \
 	$(TEXTURE_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_RTL)/texture_r8.sv \
@@ -73,7 +74,7 @@ RTL_SOURCES = \
 	$(TEXTURE_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(PXWRITE_RTL)/texel_promote.sv \
+	$(TEXTURE_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
@@ -256,10 +257,11 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_RTL)/texture_bc2.sv \
 		$(TEXTURE_RTL)/texture_bc3.sv \
 		$(TEXTURE_RTL)/texture_bc4.sv \
+		$(TEXTURE_RTL)/texture_bc5.sv \
 		$(TEXTURE_RTL)/texture_rgb565.sv \
 		$(TEXTURE_RTL)/texture_rgba8888.sv \
 		$(TEXTURE_RTL)/texture_r8.sv \
-		$(PXWRITE_RTL)/texel_promote.sv \
+		$(TEXTURE_RTL)/texel_promote.sv \
 		$(STIPPLE_RTL)/stipple.sv \
 		$(COMP_DIR)/texture/tests/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
@@ -541,6 +543,7 @@ LEAF_LINT_FILES = \
 	$(DISPLAY_RTL)/tmds_encoder.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(TEXTURE_RTL)/texture_bc1.sv \
+	$(TEXTURE_RTL)/texture_bc5.sv \
 	$(TEXTURE_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(TEXTURE_RTL)/texture_rgb565.sv \
@@ -593,7 +596,7 @@ lint:
 	echo "Linting texel_promote.sv (with fp_types_pkg)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(SHARED_DIR)/fp_types_pkg.sv \
-		$(PXWRITE_RTL)/texel_promote.sv \
+		$(TEXTURE_RTL)/texel_promote.sv \
 		--top-module texel_promote 2>&1 || fail=1; \
 	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_area, raster_recip_q, raster_setup_fifo)..."; \
 	$(VERILATOR) --lint-only -Wall \
@@ -618,6 +621,7 @@ lint:
 		$(TEXTURE_RTL)/texture_bc2.sv \
 		$(TEXTURE_RTL)/texture_bc3.sv \
 		$(TEXTURE_RTL)/texture_bc4.sv \
+		$(TEXTURE_RTL)/texture_bc5.sv \
 		$(TEXTURE_RTL)/texture_rgb565.sv \
 		$(TEXTURE_RTL)/texture_rgba8888.sv \
 		$(TEXTURE_RTL)/texture_r8.sv \
@@ -627,7 +631,7 @@ lint:
 		$(CC_RTL)/color_combiner.sv \
 		$(ABLEND_RTL)/alpha_blend.sv \
 		$(DITHER_RTL)/dither.sv \
-		$(PXWRITE_RTL)/texel_promote.sv \
+		$(TEXTURE_RTL)/texel_promote.sv \
 		$(PXWRITE_RTL)/fb_promote.sv \
 		$(PXWRITE_RTL)/pixel_pipeline.sv \
 		--top-module pixel_pipeline 2>&1 || fail=1; \
@@ -676,6 +680,7 @@ HARNESS_RTL_SOURCES = \
 	$(TEXTURE_RTL)/texture_bc2.sv \
 	$(TEXTURE_RTL)/texture_bc3.sv \
 	$(TEXTURE_RTL)/texture_bc4.sv \
+	$(TEXTURE_RTL)/texture_bc5.sv \
 	$(TEXTURE_RTL)/texture_rgb565.sv \
 	$(TEXTURE_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_RTL)/texture_r8.sv \
@@ -683,7 +688,7 @@ HARNESS_RTL_SOURCES = \
 	$(TEXTURE_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(PXWRITE_RTL)/texel_promote.sv \
+	$(TEXTURE_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
@@ -765,6 +770,7 @@ SIM_RTL_SOURCES = \
 	$(TEXTURE_RTL)/texture_bc2.sv \
 	$(TEXTURE_RTL)/texture_bc3.sv \
 	$(TEXTURE_RTL)/texture_bc4.sv \
+	$(TEXTURE_RTL)/texture_bc5.sv \
 	$(TEXTURE_RTL)/texture_rgb565.sv \
 	$(TEXTURE_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_RTL)/texture_r8.sv \
@@ -772,7 +778,7 @@ SIM_RTL_SOURCES = \
 	$(TEXTURE_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(PXWRITE_RTL)/texel_promote.sv \
+	$(TEXTURE_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \

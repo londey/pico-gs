@@ -55,4 +55,10 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-008: Display Controller](unit_008_display_controller.md)
 - [UNIT-009: DVI TMDS Encoder](unit_009_dvi_tmds_encoder.md)
 - [UNIT-010: Color Combiner](unit_010_color_combiner.md)
+- [UNIT-011.01: UV Coordinate Processing](unit_011.01_uv_coordinate_processing.md)
+- [UNIT-011.02: Bilinear/Trilinear Filter](unit_011.02_bilinear_trilinear_filter.md)
+- [UNIT-011.03: L1 Decompressed Cache](unit_011.03_l1_decompressed_cache.md)
+- [UNIT-011.04: Block Decompressor](unit_011.04_block_decompressor.md)
+- [UNIT-011.05: L2 Compressed Cache](unit_011.05_l2_compressed_cache.md)
+- [UNIT-011: Texture Sampler](unit_011_texture_sampler.md)
 <!-- TOC-END -->

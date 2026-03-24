@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `43e12a367a51f35d` 2026-03-22
+// Spec-ref: unit_006_pixel_pipeline.md `dc1fc845dfc0615c` 2026-03-23
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
 //
@@ -380,6 +380,7 @@ module pixel_pipeline (
     wire [127:0] stub_bc2_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
     wire [127:0] stub_bc3_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
     wire [63:0]  stub_bc4_data     = 64'hFFFF_FFFF_FFFF_FFFF;
+    wire [127:0] stub_bc5_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
     wire [255:0] stub_rgb565_data  = {16{16'hFFFF}};
     wire [511:0] stub_rgba8888_data = {16{32'hFFFF_FFFF}};
     wire [127:0] stub_r8_data      = {16{8'hFF}};
@@ -425,7 +426,17 @@ module pixel_pipeline (
         .texel_out  (bc4_texel_out)
     );
 
-    // -- RGB565 decoder (FORMAT=4) --
+    // -- BC5 decoder (FORMAT=4) --
+    wire [35:0] bc5_texel_out;
+
+    texture_bc5 u_tex0_bc5 (
+        .block_data (stub_bc5_data),
+        .texel_idx  (stub_texel_idx),
+
+        .texel_out  (bc5_texel_out)
+    );
+
+    // -- RGB565 decoder (FORMAT=5) --
     wire [35:0] rgb565_texel_out;
     wire [35:0] rgba8888_texel_out;
     wire [35:0] r8_texel_out;
@@ -456,7 +467,7 @@ module pixel_pipeline (
     // Format-Select Mux (3-bit tex_format selects decoder output, 36-bit wide)
     // ====================================================================
     // Routes the correct decoder output for the configured texture format.
-    // Seven valid encodings (0-6); encoding 7 is reserved (outputs zero).
+    // Eight valid encodings (0-7); all eight codes are assigned.
     // Full 36 bits carry UQ1.8 RGBA data {R9, G9, B9, A9}.
 
     reg [35:0] tex0_mux_texel;
@@ -467,6 +478,7 @@ module pixel_pipeline (
             3'd1:    tex0_mux_texel = bc2_texel_out;
             3'd2:    tex0_mux_texel = bc3_texel_out;
             3'd3:    tex0_mux_texel = bc4_texel_out;
+            3'd4:    tex0_mux_texel = bc5_texel_out;
             3'd5:    tex0_mux_texel = rgb565_texel_out;
             3'd6:    tex0_mux_texel = rgba8888_texel_out;
             3'd7:    tex0_mux_texel = r8_texel_out;
@@ -485,6 +497,7 @@ module pixel_pipeline (
             3'd1:    tex1_mux_texel = bc2_texel_out;
             3'd2:    tex1_mux_texel = bc3_texel_out;
             3'd3:    tex1_mux_texel = bc4_texel_out;
+            3'd4:    tex1_mux_texel = bc5_texel_out;
             3'd5:    tex1_mux_texel = rgb565_texel_out;
             3'd6:    tex1_mux_texel = rgba8888_texel_out;
             3'd7:    tex1_mux_texel = r8_texel_out;

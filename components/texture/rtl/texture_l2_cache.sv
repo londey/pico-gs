@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `43e12a367a51f35d` 2026-03-22
+// Spec-ref: unit_011.05_l2_compressed_cache.md `8db20cc4828a3e20` 2026-03-23
 //
 // L2 Compressed Block Cache — Per-Sampler Direct-Mapped Cache
 //

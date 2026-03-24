@@ -359,6 +359,10 @@ flowchart LR
         UNIT_005_05["UNIT-005.05: Iteration FSM"]
     end
     UNIT_006["UNIT-006: Pixel Pipeline"]
+    UNIT_007["UNIT-007: Memory Arbiter"]
+    UNIT_008["UNIT-008: Display Controller"]
+    UNIT_009["UNIT-009: DVI TMDS Encoder"]
+    UNIT_010["UNIT-010: Color Combiner"]
     subgraph UNIT_011["UNIT-011: Texture Sampler"]
         UNIT_011_01["UNIT-011.01: UV Coordinate Processing"]
         UNIT_011_02["UNIT-011.02: Bilinear/Trilinear Filter"]
@@ -366,20 +370,19 @@ flowchart LR
         UNIT_011_04["UNIT-011.04: Block Decompressor"]
         UNIT_011_05["UNIT-011.05: L2 Compressed Cache"]
     end
-    UNIT_007["UNIT-007: Memory Arbiter"]
-    UNIT_008["UNIT-008: Display Controller"]
-    UNIT_009["UNIT-009: DVI TMDS Encoder"]
-    UNIT_010["UNIT-010: Color Combiner"]
     UNIT_001 -->|INT-001| UNIT_001
     UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
     UNIT_003 -->|INT-010| UNIT_005
     UNIT_003 -->|INT-010| UNIT_006
-    UNIT_003 -->|INT-010| UNIT_011
     UNIT_003 -->|INT-010| UNIT_008
     UNIT_003 -->|INT-010| UNIT_010
-    UNIT_006 -->|"Q4.12 texel"| UNIT_006
-    UNIT_011 -->|INT-032| UNIT_006
+    UNIT_003 -->|INT-010| UNIT_011_01
+    UNIT_003 -->|INT-010| UNIT_011_02
+    UNIT_003 -->|INT-010| UNIT_011_03
+    UNIT_003 -->|INT-010| UNIT_011_04
+    UNIT_003 -->|INT-010| UNIT_011_05
+    UNIT_003 -->|INT-010| UNIT_011
 ```
 
 ### Software Units
@@ -395,15 +398,15 @@ flowchart LR
 | UNIT-005.04 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
 | UNIT-005.05 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
 | UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
-| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, color combining dispatch to UNIT-010, alpha blending, dithering, and pixel write |
-| UNIT-011 | Texture Sampler | Two-level per-sampler texture cache, UV coordinate processing, bilinear/trilinear filtering, block decompression, and Q4.12 texel output |
-| UNIT-011.01 | UV Coordinate Processing | Wrap, clamp, and mirror UV modes; mip level selection from frag_lod and TEXn_MIP_BIAS |
-| UNIT-011.02 | Bilinear/Trilinear Filter | 2×2 texel quad fetch from interleaved L1 banks; bilinear interpolation; LOD blending |
-| UNIT-011.03 | L1 Decompressed Cache | Per-sampler PDPW16KD 512×36 UQ1.8 banks; XOR set indexing; pseudo-LRU replacement |
-| UNIT-011.04 | Block Decompressor | BC1–BC5, RGB565, RGBA8888, R8 decoders; texel promotion UQ1.8→Q4.12 via texel_promote.sv |
-| UNIT-011.05 | L2 Compressed Cache | Per-sampler DP16KD 1024×16 compressed block store; format-aware packing; SDRAM burst fill |
+| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination, alpha blending, ordered dithering, and framebuffer write. |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
 | UNIT-010 | Color Combiner | Two-stage pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
+| UNIT-011.01 | UV Coordinate Processing | Applies wrap mode, clamp, mirror-repeat, and swizzle pattern to incoming Q4.12 UV coordinates, then selects the final mip level by combining `frag_lod` with `TEXn_MIP_BIAS`. |
+| UNIT-011.02 | Bilinear/Trilinear Filter | Fetches a 2×2 bilinear quad from the four interleaved L1 EBR banks (one texel per bank per cycle), computes bilinear interpolation weights from sub-texel UV fractions, and—when trilinear filtering is enabled—blends two bilinear results from adjacent mip levels using the fractional part of `frag_lod` as the blend weight. |
+| UNIT-011.03 | L1 Decompressed Cache | Per-sampler 4-way set-associative cache storing decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel). |
+| UNIT-011.04 | Block Decompressor | Decodes a compressed or uncompressed 4×4 texel block from its raw SDRAM format into 16 UQ1.8 RGBA texels for storage in UNIT-011.03 (L1 Decompressed Cache), then promotes the UQ1.8 output to Q4.12 via `texel_promote.sv` before passing texels to the color combiner pipeline. |
+| UNIT-011.05 | L2 Compressed Cache | Per-sampler direct-mapped cache storing raw compressed or uncompressed 4×4 block data fetched from SDRAM. |
+| UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing decoded Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline). |
 <!-- syskit-arch-end -->

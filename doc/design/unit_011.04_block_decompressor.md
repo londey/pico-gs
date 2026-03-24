@@ -136,7 +136,7 @@ The UNIT-011 output contract is Q4.12 RGBA texel data.
 - `components/texture/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder
 - `components/texture/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
 - `components/texture/rtl/texture_r8.sv`: R8 single-channel decoder
-- `components/pixel-write/rtl/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
+- `components/texture/rtl/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
 - `shared/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
