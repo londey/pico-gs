@@ -380,7 +380,7 @@ module pixel_pipeline (
     wire [127:0] stub_bc2_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
     wire [127:0] stub_bc3_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
     wire [63:0]  stub_bc4_data     = 64'hFFFF_FFFF_FFFF_FFFF;
-    wire [127:0] stub_bc5_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
+    // FORMAT=4 (BC5) removed — slot reserved
     wire [255:0] stub_rgb565_data  = {16{16'hFFFF}};
     wire [511:0] stub_rgba8888_data = {16{32'hFFFF_FFFF}};
     wire [127:0] stub_r8_data      = {16{8'hFF}};
@@ -426,16 +426,6 @@ module pixel_pipeline (
         .texel_out  (bc4_texel_out)
     );
 
-    // -- BC5 decoder (FORMAT=4) --
-    wire [35:0] bc5_texel_out;
-
-    texture_bc5 u_tex0_bc5 (
-        .block_data (stub_bc5_data),
-        .texel_idx  (stub_texel_idx),
-
-        .texel_out  (bc5_texel_out)
-    );
-
     // -- RGB565 decoder (FORMAT=5) --
     wire [35:0] rgb565_texel_out;
     wire [35:0] rgba8888_texel_out;
@@ -478,7 +468,7 @@ module pixel_pipeline (
             3'd1:    tex0_mux_texel = bc2_texel_out;
             3'd2:    tex0_mux_texel = bc3_texel_out;
             3'd3:    tex0_mux_texel = bc4_texel_out;
-            3'd4:    tex0_mux_texel = bc5_texel_out;
+            3'd4:    tex0_mux_texel = 36'b0; // Reserved (BC5 removed)
             3'd5:    tex0_mux_texel = rgb565_texel_out;
             3'd6:    tex0_mux_texel = rgba8888_texel_out;
             3'd7:    tex0_mux_texel = r8_texel_out;
@@ -497,7 +487,7 @@ module pixel_pipeline (
             3'd1:    tex1_mux_texel = bc2_texel_out;
             3'd2:    tex1_mux_texel = bc3_texel_out;
             3'd3:    tex1_mux_texel = bc4_texel_out;
-            3'd4:    tex1_mux_texel = bc5_texel_out;
+            3'd4:    tex1_mux_texel = 36'b0; // Reserved (BC5 removed)
             3'd5:    tex1_mux_texel = rgb565_texel_out;
             3'd6:    tex1_mux_texel = rgba8888_texel_out;
             3'd7:    tex1_mux_texel = r8_texel_out;

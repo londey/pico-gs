@@ -26,10 +26,19 @@ pico-gs/
 │   ├── stipple/               # Stipple test
 │   ├── early-z/               # Early depth test
 │   ├── texture/               # Texture sampling + decoding
+│   │   ├── rtl/               # Assembly module (texture_sampler.sv)
+│   │   ├── detail/            # Subunit implementations
+│   │   │   ├── uv-coord/rtl/          # UNIT-011.01: UV coordinate processing
+│   │   │   ├── bilinear-filter/rtl/   # UNIT-011.02: Bilinear/trilinear filter
+│   │   │   ├── l1-cache/rtl/          # UNIT-011.03: L1 decompressed cache
+│   │   │   ├── block-decoder/rtl/     # UNIT-011.04: Block decompressor + texel promotion
+│   │   │   └── l2-cache/rtl/          # UNIT-011.05: L2 compressed cache
+│   │   ├── twin/              # gs-texture Rust crate
+│   │   └── tests/             # Verilator testbenches
 │   ├── color-combiner/        # Two-stage color combiner
 │   ├── alpha-blend/           # Alpha blending
 │   ├── dither/                # Ordered dithering
-│   ├── pixel-write/           # Framebuffer write (pixel_pipeline, fb_promote, texel_promote)
+│   ├── pixel-write/           # Framebuffer write (pixel_pipeline, fb_promote)
 │   ├── memory/                # SDRAM + SRAM controllers
 │   ├── display/               # Scan-out / DVI output
 │   ├── spi/                   # SPI transport + register file
@@ -90,11 +99,11 @@ It is a bit-accurate, transaction-level Rust model — not cycle-accurate (Veril
 | `gs-rasterizer` (`rasterize.rs`, `recip.rs`) | `rasterizer.sv`, `raster_recip_area.sv`, `raster_deriv.sv`, `raster_edge_walk.sv` | Triangle setup + iteration |
 | `gs-stipple` | `stipple.sv` | Stipple test |
 | `gs-early-z` | `early_z.sv` | Early depth test |
-| `gs-texture` (`tex_sample.rs`, `tex_cache.rs`, etc.) | `texture_cache.sv`, `texture_*.sv` decoders | Texture sampling |
+| `gs-texture` (`tex_sample.rs`, `tex_cache.rs`, etc.) | `texture_sampler.sv` (assembly), `detail/` subunit RTL (uv-coord, bilinear-filter, l1-cache, block-decoder, l2-cache) | Texture sampling |
 | `gs-color-combiner` | `color_combiner.sv` | Color combiner |
 | `gs-alpha-blend` | `alpha_blend.sv` | Alpha blending |
 | `gs-dither` | `dither.sv` | Ordered dithering |
-| `gs-pixel-write` | `pixel_pipeline.sv`, `fb_promote.sv`, `texel_promote.sv` | Framebuffer write |
+| `gs-pixel-write` | `pixel_pipeline.sv`, `fb_promote.sv` | Framebuffer write |
 | `gs-spi` (`reg.rs`) | `register_file.sv` | Register decode |
 | `gs-memory` | `sram_arbiter.sv` (INT-011 tiled layout) | Memory model |
 

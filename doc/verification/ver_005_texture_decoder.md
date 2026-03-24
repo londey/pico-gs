@@ -21,14 +21,13 @@ The testbench drives known input data through each texture format decoder and th
 
 - Verilator 5.x installed and available on `$PATH`.
 - The following RTL source files compile without errors under `verilator --lint-only -Wall`:
-  - `components/texture/rtl/texture_rgb565.sv`
-  - `components/texture/rtl/texture_rgba8888.sv`
-  - `components/texture/rtl/texture_r8.sv`
-  - `components/texture/rtl/texture_bc2.sv`
-  - `components/texture/rtl/texture_bc3.sv`
-  - `components/texture/rtl/texture_bc4.sv`
-  - `components/texture/rtl/texture_bc5.sv`
-  - `components/texture/rtl/texel_promote.sv`
+  - `components/texture/detail/block-decoder/rtl/texture_rgb565.sv`
+  - `components/texture/detail/block-decoder/rtl/texture_rgba8888.sv`
+  - `components/texture/detail/block-decoder/rtl/texture_r8.sv`
+  - `components/texture/detail/block-decoder/rtl/texture_bc2.sv`
+  - `components/texture/detail/block-decoder/rtl/texture_bc3.sv`
+  - `components/texture/detail/block-decoder/rtl/texture_bc4.sv`
+  - `components/texture/detail/block-decoder/rtl/texel_promote.sv`
   - `components/stipple/rtl/stipple.sv`
 - Test vector data is embedded directly in the testbench source (no external vector files required).
 

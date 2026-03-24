@@ -97,7 +97,7 @@ If either neighbor is not resident, the fill FSM is invoked before the bilinear 
 
 ## Implementation
 
-- `components/texture/rtl/texture_cache.sv`: Bilinear fetch and weight computation are implemented within the texture cache module, in the `bilinear_filter` section
+- `components/texture/detail/bilinear-filter/rtl/texture_bilinear.sv`: Bilinear weight computation and blending
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
 RTL output must be bit-identical to the twin's filtered texel values.

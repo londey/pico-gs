@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_011_texture_sampler.md `abeca51c3f3dd3a6` 2026-03-23
+// Spec-ref: unit_011.03_l1_decompressed_cache.md `0000000000000000` 2026-03-24
 //
 // Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative texture cache for one sampler.

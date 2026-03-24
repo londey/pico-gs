@@ -39,7 +39,7 @@ All eight decoders operate in parallel on the compressed block data; the format-
 | 4'h1 | `texture_bc2.sv` | BC2 (RGB + 4-bit explicit alpha) |
 | 4'h2 | `texture_bc3.sv` | BC3 (RGB + 8-bit interpolated alpha) |
 | 4'h3 | `texture_bc4.sv` | BC4 (single-channel, replicated to RGB) |
-| 4'h4 | `texture_bc5.sv` | BC5 (two-channel RG, B=0) |
+| 4'h4 | — | Reserved (BC5 removed) |
 | 4'h5 | `texture_rgb565.sv` | RGB565 uncompressed |
 | 4'h6 | `texture_rgba8888.sv` | RGBA8888 uncompressed |
 | 4'h7 | `texture_r8.sv` | R8 single-channel |
@@ -94,12 +94,8 @@ Formulas (see DD-039):
 - 8-byte block: single channel decoded via BC3 alpha interpolation algorithm, expanded via `ch8_to_uq18`
 - Replicated to R=G=B (grayscale); A=`9'h100` (opaque)
 
-**BC5 Decoder (FORMAT=4) — `texture_bc5.sv`:**
-- 16-byte block: two independent BC3-style 8-byte single-channel alpha blocks
-- First 8-byte block decodes the red channel using BC3 alpha interpolation (shift+add, DD-039)
-- Second 8-byte block decodes the green channel using the same algorithm
-- Output: R = decoded red, G = decoded green, B=`9'h000`, A=`9'h100` (opaque)
-- Typically used for compressed two-channel normal maps (XY normals; Z is reconstructed downstream)
+**FORMAT=4 (Reserved):**
+- BC5 format code is reserved; the slot is not currently implemented.
 
 **RGB565 Decoder (FORMAT=5) — `texture_rgb565.sv`:**
 - Fetch 32 bytes (16 × 16-bit pixels); expand each channel: R via `ch5_to_uq18`, G via `ch6_to_uq18`, B via `ch5_to_uq18`, A=`9'h100` (opaque)
@@ -128,15 +124,14 @@ The UNIT-011 output contract is Q4.12 RGBA texel data.
 
 ## Implementation
 
-- `components/texture/rtl/texture_bc1.sv`: BC1 decoder
-- `components/texture/rtl/texture_bc2.sv`: BC2 decoder
-- `components/texture/rtl/texture_bc3.sv`: BC3 decoder
-- `components/texture/rtl/texture_bc4.sv`: BC4 single-channel decoder
-- `components/texture/rtl/texture_bc5.sv`: BC5 two-channel decoder
-- `components/texture/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder
-- `components/texture/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
-- `components/texture/rtl/texture_r8.sv`: R8 single-channel decoder
-- `components/texture/rtl/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
+- `components/texture/detail/block-decoder/rtl/texture_bc1.sv`: BC1 decoder
+- `components/texture/detail/block-decoder/rtl/texture_bc2.sv`: BC2 decoder
+- `components/texture/detail/block-decoder/rtl/texture_bc3.sv`: BC3 decoder
+- `components/texture/detail/block-decoder/rtl/texture_bc4.sv`: BC4 single-channel decoder
+- `components/texture/detail/block-decoder/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder
+- `components/texture/detail/block-decoder/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
+- `components/texture/detail/block-decoder/rtl/texture_r8.sv`: R8 single-channel decoder
+- `components/texture/detail/block-decoder/rtl/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
 - `shared/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
