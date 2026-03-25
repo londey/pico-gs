@@ -886,6 +886,38 @@ int main(int argc, char** argv) {
     std::cout << std::format("DIAG: Total sim cycles: {}\n", sim_time / 2);
 
     // -----------------------------------------------------------------------
+    // 6d. Hi-Z tile rejection counter (VER-011 step 11)
+    // -----------------------------------------------------------------------
+    // Read the Hi-Z rejected_tiles counter from raster_hiz_meta via gpu_top.
+    // For the depth_test scene (VER-011), Triangle A writes min_z=0x80 into
+    // Hi-Z metadata; Triangle B at Z=0x4000 (Z[15:8]=0x40) will NOT be
+    // rejected in tiles it covers (0x40 <= 0x80), but tiles within Triangle B's
+    // bounding box covered only by Triangle A are rejected when the rasterizer
+    // evaluates them for Triangle B.  The exact count depends on triangle
+    // overlap geometry.
+    {
+        auto hiz_rejects = static_cast<uint32_t>(
+            top->rootp->gpu_top->hiz_rejected_tiles);
+        std::cout << std::format(
+            "DIAG: Hi-Z rejected tiles: {}\n", hiz_rejects);
+
+        if (test_name == "depth_test") {
+            if (hiz_rejects == 0) {
+                std::cerr << "ERROR: Hi-Z rejection counter is 0 for depth_test "
+                             "scene (VER-011 step 11 requires > 0).\n";
+                top->final();
+                if (trace) {
+                    trace->close();
+                }
+                return 1;
+            }
+            std::cout << std::format(
+                "PASS: Hi-Z rejection counter = {} (> 0, VER-011 step 11)\n",
+                hiz_rejects);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // 7. Diagnostic: count non-zero words in the SDRAM model
     // -----------------------------------------------------------------------
     {

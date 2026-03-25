@@ -21,7 +21,7 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 ## Design Description
 
-**FSM states:** TILE_TEST, EDGE_TEST, BRAM_READ, PERSP_1, PERSP_2, EMIT, ITER_NEXT (inner loop)
+**FSM states:** TILE_TEST, HIZ_TEST, EDGE_TEST, BRAM_READ, PERSP_1, PERSP_2, EMIT, ITER_NEXT (inner loop)
 
 ### 4×4 Tile-Ordered Traversal
 
@@ -44,7 +44,29 @@ When all four corners yield a negative value for the same edge (i.e., the entire
 - Step e0/e1/e2 by 4×A to advance the tile-origin accumulators to the next tile column, or by 4×B to advance to the next tile row.
 - Advance `tile_col` or `tile_row` accordingly and return to TILE_TEST.
 
-Tiles that cannot be rejected by this test proceed to pixel-level EDGE_TEST.
+Tiles that cannot be rejected by this test proceed to HIZ_TEST (when `Z_TEST_EN=1`) or directly to pixel-level EDGE_TEST (when `Z_TEST_EN=0`).
+
+### Hi-Z Tile Rejection (HIZ_TEST)
+
+When `RENDER_MODE.Z_TEST_EN=1`, tiles that survive TILE_TEST enter HIZ_TEST before any pixel-level work begins.
+
+**HIZ_TEST procedure:**
+
+1. Compute the 14-bit tile index: `tile_index = (tile_row << tile_cols_log2) | tile_col`, where `tile_cols_log2 = FB_CONFIG.WIDTH_LOG2 - 2`.
+2. Decode the index into block select `tile_index[13:11]`, word address `tile_index[10:2]`, and slot `tile_index[1:0]`.
+3. Assert a read request to UNIT-005.06 (Hi-Z Block Metadata); the read result is registered one cycle later.
+4. Extract the 9-bit metadata entry: `valid = entry[8]`, `min_z = entry[7:0]`.
+5. **Rejection condition:** If `valid=1` and `fragment_Z[15:8] > min_z`, reject the tile:
+   - Step tile-origin accumulators to the next tile (same advance as TILE_TEST rejection).
+   - Advance `tile_col` / `tile_row` and return to TILE_TEST.
+   - No fragments are emitted; EDGE_TEST is not entered.
+6. If `valid=0` (cleared tile) or the Z comparison does not reject, proceed to EDGE_TEST.
+
+The comparison is conservative: `min_z` stores `floor(tile_minimum_Z / 256)`, so a stored value of `N` represents real tile minimum Z in `[256·N, 256·N+255]`.
+A fragment with `fragment_Z[15:8] > N` is guaranteed to be farther than every pixel currently in the tile, making rejection safe.
+The tile is not rejected when `fragment_Z[15:8] == min_z`, even though some pixels in that bucket may already be closer — this avoids false rejections at bucket boundaries.
+
+**Bypass:** When `Z_TEST_EN=0`, the FSM transitions directly from TILE_TEST acceptance to EDGE_TEST; HIZ_TEST is never entered.
 
 ### Pixel Edge Test (EDGE_TEST)
 
@@ -109,7 +131,7 @@ These signals enable downstream consumers to optimize SDRAM burst scheduling and
 ### DSP Usage
 
 | Usage | MULT18X18D count |
-|---|---|
+| --- | --- |
 | Per-pixel 1/Q reciprocal interpolation (`raster_recip_q.sv`) | 1 |
 | Perspective correction: U0 = S0 × (1/Q) | 1 |
 | Perspective correction: V0 = T0 × (1/Q) | 1 |
@@ -119,8 +141,10 @@ These signals enable downstream consumers to optimize SDRAM burst scheduling and
 
 ## Implementation
 
-- `components/rasterizer/rtl/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
+- `components/rasterizer/rtl/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, Hi-Z metadata lookup (HIZ_TEST state), edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
 - `components/rasterizer/rtl/raster_recip_q.sv`: Dedicated per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), UQ1.17 entries, 2-cycle latency (BRAM read + MULT18X18D interpolation), UQ4.14 output.
+- `components/rasterizer/rtl/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — provides the read/write interface consumed by HIZ_TEST and the Hi-Z metadata update path from the pixel pipeline.
+- `components/rasterizer/twin/src/rasterize.rs`: Digital twin — `HizMetadata` struct and Hi-Z tile rejection logic integrated into the tile traversal loop.
 
 ## Verification
 
@@ -130,6 +154,10 @@ Key verification points for this sub-unit:
 
 - Verify 4×4 tile traversal order: confirm fragment emission order is tile-major (row-major tile order) then pixel-major (row-major within tile); cross-check against expected (x, y) sequence for a known bounding box.
 - Verify hierarchical tile rejection: for a triangle where a tile's four corners all lie outside one edge half-plane, confirm no fragments are emitted from that tile and the FSM advances to the next tile in one step.
+- **Verify HIZ_TEST rejection:** For a tile with `valid=1` and `stored_min_z < fragment_Z[15:8]`, confirm no fragments are emitted and the FSM advances to TILE_TEST for the next tile without entering EDGE_TEST.
+- **Verify HIZ_TEST conservatism:** For a tile where `fragment_Z[15:8] == stored_min_z`, confirm the tile is not rejected and proceeds to EDGE_TEST.
+- **Verify HIZ_TEST bypass:** When `Z_TEST_EN=0`, confirm the FSM transitions directly from TILE_TEST acceptance to EDGE_TEST without a HIZ_TEST cycle.
+- **Verify HIZ_TEST on cleared tile (`valid=0`):** Confirm the tile is not rejected and proceeds to EDGE_TEST (lazy-fill path).
 - Verify perspective correction accuracy: for a known Q/W value and S/T inputs, confirm U, V outputs match the analytic S×(1/Q), T×(1/Q) within Q4.12 rounding tolerance.
 - Verify frag_lod (UQ4.4): confirm CLZ(Q) matches the expected mip-level estimate for Q values at power-of-two boundaries and intermediate values.
 - Verify block framing: confirm frag_tile_start and frag_tile_end assert at the correct fragment positions for tiles with varying numbers of inside pixels.

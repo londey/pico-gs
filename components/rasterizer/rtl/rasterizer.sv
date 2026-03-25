@@ -1,7 +1,8 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `34c645d9dafb8706` 2026-03-22
+// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
 // Spec-ref: unit_005.01_triangle_setup.md `9cab47512acac4b1` 2026-03-22
 // Spec-ref: unit_005.03_derivative_precomputation.md `7181be3ee823f32a` 2026-03-22
+// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and incremental
@@ -92,9 +93,24 @@ module rasterizer (
     output wire         frag_tile_start, // First emitted fragment of 4x4 tile
     output wire         frag_tile_end,  // Last emitted fragment of 4x4 tile
 
+    // Render mode (from RENDER_MODE register via UNIT-003)
+    input  wire         z_test_en,      // Z_TEST_EN from RENDER_MODE[1]
+
     // Framebuffer surface dimensions (from FB_CONFIG register via UNIT-003)
     input  wire [3:0]   fb_width_log2,  // log2(surface width), e.g. 9 for 512 pixels
-    input  wire [3:0]   fb_height_log2  // log2(surface height), e.g. 9 for 512 pixels
+    input  wire [3:0]   fb_height_log2, // log2(surface height), e.g. 9 for 512 pixels
+
+    // Hi-Z metadata write port (from pixel pipeline, UNIT-006)
+    input  wire         hiz_wr_en,          // Write enable for min_z update
+    input  wire [13:0]  hiz_wr_tile_index,  // 14-bit tile index
+    input  wire [7:0]   hiz_wr_new_z_hi,    // new_z[15:8] from Z-write
+
+    // Hi-Z metadata fast-clear port
+    input  wire         hiz_clear_req,      // Pulse to begin fast clear
+    output wire         hiz_clear_busy,     // High during 512-cycle clear sweep
+
+    // Hi-Z diagnostic counter (UNIT-005.06)
+    output wire [31:0]  hiz_rejected_tiles  // Running count of Hi-Z rejected tiles
 );
 
     // ========================================================================
@@ -768,6 +784,34 @@ module rasterizer (
     );
 
     // ========================================================================
+    // Hi-Z Block Metadata (UNIT-005.06)
+    // ========================================================================
+
+    wire        ew_hiz_rd_en;
+    wire [13:0] ew_hiz_rd_tile_index;
+    wire [8:0]  ew_hiz_rd_data;
+    wire        ew_hiz_reject_pulse;
+
+    raster_hiz_meta u_hiz_meta (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        // Read port (from raster_edge_walk HIZ_TEST)
+        .rd_en          (ew_hiz_rd_en),
+        .rd_tile_index  (ew_hiz_rd_tile_index),
+        .rd_data        (ew_hiz_rd_data),
+        // Write port (from pixel pipeline UNIT-006)
+        .wr_en          (hiz_wr_en),
+        .wr_tile_index  (hiz_wr_tile_index),
+        .wr_new_z_hi    (hiz_wr_new_z_hi),
+        // Fast-clear
+        .clear_req      (hiz_clear_req),
+        .clear_busy     (hiz_clear_busy),
+        // Diagnostic rejection counter
+        .reject_pulse   (ew_hiz_reject_pulse),
+        .rejected_tiles (hiz_rejected_tiles)
+    );
+
+    // ========================================================================
     // Edge Walk Sub-module (UNIT-005.04)
     // ========================================================================
 
@@ -780,6 +824,16 @@ module rasterizer (
         .init_e1        (ew_init_e1),
         .init_e2        (ew_init_e2),
         .walk_start     (deriv_done),
+        // Render mode
+        .z_test_en      (z_test_en),
+        // Framebuffer config
+        .fb_width_log2  (fb_width_log2),
+        // Hi-Z metadata read interface
+        .hiz_rd_en          (ew_hiz_rd_en),
+        .hiz_rd_tile_index  (ew_hiz_rd_tile_index),
+        .hiz_rd_data        (ew_hiz_rd_data),
+        // Hi-Z rejection pulse (to diagnostic counter)
+        .hiz_reject_pulse   (ew_hiz_reject_pulse),
         // Shared multiplier products
         .smul_p1        (smul_p1),
         .smul_p2        (smul_p2),

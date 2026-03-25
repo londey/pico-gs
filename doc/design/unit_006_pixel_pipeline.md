@@ -84,6 +84,7 @@ UNIT-011 delivers texel data to UNIT-006 already in Q4.12 format; UNIT-006 passe
 ### Internal State
 
 - Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, write-back)
+- Hi-Z metadata update channel: on every Z-write (when `Z_WRITE_EN=1` and the fragment passes all tests), the pixel pipeline sends the written Z value and tile index to UNIT-005.06 (Hi-Z Block Metadata); if the new Z is less than the stored `min_z` bucket value, the metadata entry is updated to `min_z = new_z[15:8]`
 
 ### Algorithm / Behavior
 
@@ -140,7 +141,7 @@ See UNIT-011 for the detailed texture sampling design.
 - Extract UNORM: R5 = clamp(color.R × 31, 0, 31), G6 = clamp(color.G × 63, 0, 63), B5 = clamp(color.B × 31, 0, 31)
 - Pack into RGB565
 - If RENDER_MODE.COLOR_WRITE_EN=1 and pixel inside scissor: write color to tiled framebuffer at FB_CONFIG address
-- If RENDER_MODE.Z_WRITE_EN=1: write Z value to Z-buffer tile cache (write-back to SDRAM)
+- If RENDER_MODE.Z_WRITE_EN=1: write Z value to Z-buffer tile cache (write-back to SDRAM); additionally, send the written Z and tile index to UNIT-005.06 (Hi-Z Block Metadata) via the Hi-Z update channel — if `new_z[15:8] < stored_min_z` (or `valid=0`), the metadata entry is updated to record the new minimum
 - Alpha channel is discarded (RGB565 has no alpha storage)
 
 ### Tiled Framebuffer Address Calculation

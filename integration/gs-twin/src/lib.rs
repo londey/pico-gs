@@ -11,6 +11,7 @@
 // Until 1.0.0, allow dead code and unused dependency warnings
 #![allow(dead_code)]
 #![allow(unused_crate_dependencies)]
+// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
 
 //! # gs-twin
 //!
@@ -36,6 +37,7 @@ use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
 use gs_texture::tex_sample::TextureSampler;
 use gs_twin_core::fragment::{ColorQ412, ColoredFragment, RasterFragment};
+use gs_twin_core::hiz::HizMetadata;
 use gs_twin_core::math::Rgb565;
 use gs_twin_core::triangle::RasterTriangle;
 use qfixed::Q;
@@ -60,6 +62,9 @@ pub struct Gpu {
 
     /// Texture unit 1 sampler (owns block cache).
     tex1_sampler: TextureSampler,
+
+    /// Hi-Z block metadata store (UNIT-005.06).
+    pub hiz: HizMetadata,
 
     /// Default framebuffer width (used when fb_config hasn't been set).
     pub default_width: u32,
@@ -89,6 +94,7 @@ impl Gpu {
             regs: reg::RegisterFile::default(),
             tex0_sampler: TextureSampler::default(),
             tex1_sampler: TextureSampler::default(),
+            hiz: HizMetadata::new(),
             default_width: width,
             default_height: height,
             debug_pixel: None,
@@ -115,6 +121,14 @@ impl Gpu {
             GpuAction::MemFill { base, value, count } => {
                 let byte_addr = (base as usize) * 2;
                 self.memory.fill(byte_addr, value, count);
+
+                // Invalidate Hi-Z metadata when the Z-buffer is cleared
+                // (UNIT-005.06 fast-clear trigger).
+                let fb_cfg = self.regs.fb_config();
+                let z_base_word = u32::from(fb_cfg.z_base()) * 256;
+                if base == z_base_word {
+                    self.hiz.invalidate_all();
+                }
             }
             GpuAction::Tex0Config(cfg) => {
                 self.tex0_sampler.set_tex_cfg(cfg);
@@ -142,13 +156,38 @@ impl Gpu {
 
     /// Execute a triangle kick: rasterize and process fragments through
     /// the pixel pipeline, writing results to SDRAM.
+    ///
+    /// Rasterization is performed first (collecting all fragments) so
+    /// that the immutable borrow on `self.hiz` from the Hi-Z-enabled
+    /// iterator is released before the pixel pipeline needs `&mut self`.
     fn execute_kick(&mut self, tri: &RasterTriangle) {
         let Some(setup) = rasterize::triangle_setup(tri) else {
             return;
         };
-        let mut iter = rasterize::rasterize_iter_debug(setup, self.debug_pixel);
-        while let Some(frag) = iter.next() {
-            let dbg = iter.take_debug();
+        let rm = self.regs.render_mode();
+        let fb_cfg = self.regs.fb_config();
+
+        // Collect all rasterized fragments with optional debug info.
+        // The iterator borrows `&self.hiz` for Hi-Z tile rejection;
+        // collecting up-front releases that borrow before the mutable
+        // pipeline and pixel-write phases that also touch `self`.
+        let frags: Vec<_> = {
+            let mut iter = rasterize::rasterize_iter_hiz_debug(
+                setup,
+                &self.hiz,
+                rm.z_test_en(),
+                fb_cfg.width_log2() as u32,
+                self.debug_pixel,
+            );
+            let mut out = Vec::new();
+            while let Some(frag) = iter.next() {
+                let dbg = iter.take_debug();
+                out.push((frag, dbg));
+            }
+            out
+        };
+
+        for (frag, dbg) in frags {
             if let Some(ref accum) = dbg {
                 debug_pixel::print_triangle_header(frag.x, frag.y, tri);
                 debug_pixel::print_raster_accum(accum);
@@ -262,6 +301,13 @@ impl Gpu {
         if rm.z_write_en() {
             self.memory
                 .write_tiled(fb_cfg.z_base(), wl2, fx, fy, frag.z);
+
+            // Update Hi-Z metadata (UNIT-005.06)
+            let tile_col = fx >> 2;
+            let tile_row = fy >> 2;
+            let tile_cols_log2 = wl2 as u32 - 2;
+            let tile_index = ((tile_row << tile_cols_log2) | tile_col) as usize;
+            self.hiz.update(tile_index, (frag.z >> 8) as u8);
         }
 
         if rm.color_write_en() {

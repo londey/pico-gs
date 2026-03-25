@@ -135,6 +135,16 @@ fn ver_011_depth_test() {
         "expected blue pixels from Triangle B, got {blue_count}"
     );
 
+    // With GEQUAL (reverse-Z), Triangle B (Z=0x8000, near) is closer than
+    // Triangle A (Z=0x4000, far), so Hi-Z should NOT reject any tiles —
+    // the nearer fragment always passes against the stored minimum.
+    let hiz_rejects = gpu.hiz.rejected_tiles();
+    eprintln!("VER-011 Hi-Z rejected tiles: {hiz_rejects}");
+    assert_eq!(
+        hiz_rejects, 0,
+        "nearer Triangle B should not be rejected by Hi-Z metadata from further Triangle A"
+    );
+
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-011 golden image: {}", png_path.display());
 }

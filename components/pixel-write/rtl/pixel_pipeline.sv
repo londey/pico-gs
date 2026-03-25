@@ -1,6 +1,7 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `dc1fc845dfc0615c` 2026-03-23
+// Spec-ref: unit_006_pixel_pipeline.md `be6865b1593aa24c` 2026-03-25
+// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
 //
@@ -126,6 +127,13 @@ module pixel_pipeline (
     input  wire         tex_sram_burst_data_valid, // Burst data valid
     input  wire         tex_sram_ack,     // Burst complete
     input  wire         tex_sram_ready,   // Arbiter ready for new request
+
+    // ====================================================================
+    // Hi-Z Metadata Update (to UNIT-005.06 raster_hiz_meta via gpu_top)
+    // ====================================================================
+    output wire         hiz_wr_en,        // Hi-Z write enable (on Z-write)
+    output wire [13:0]  hiz_wr_tile_index,// 14-bit tile index for metadata
+    output wire  [7:0]  hiz_wr_new_z_hi,  // written_z[15:8]
 
     // ====================================================================
     // Pipeline Status
@@ -282,11 +290,8 @@ module pixel_pipeline (
     reg  [9:0]   post_cc_y;          // Used: [3:0] for dither; [9:4] reserved for scissor
     reg  [15:0]  post_cc_z;
 
-    // Upper bits of post_cc_x/y reserved for future scissor test
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire [5:0] _unused_post_cc_x_hi = post_cc_x[9:4];
-    wire [5:0] _unused_post_cc_y_hi = post_cc_y[9:4];
-    /* verilator lint_on UNUSEDSIGNAL */
+    // Bits [9:2] used by Hi-Z tile index; [3:0] used by dither.
+    // Bit [1:0] only used by dither (Hi-Z drops them), no unused bits remain.
 
     // ====================================================================
     // Stage 0a: Stipple Test (combinational)
@@ -736,6 +741,16 @@ module pixel_pipeline (
     assign zbuf_write_req  = (state == PP_Z_WRITE);
     assign zbuf_write_addr = zb_addr_reg;
     assign zbuf_write_data = post_cc_z;
+
+    // Hi-Z metadata update — driven on the Z-write cycle so the metadata
+    // store sees the same timing as the Z-buffer write.
+    // Tile index = (frag_y[9:2] << (fb_width_log2 - 2)) | frag_x[9:2]
+    // Each 4×4 tile covers pixels [x&~3 .. x|3], [y&~3 .. y|3].
+    wire [3:0] hiz_tile_cols_log2 = fb_width_log2 - 4'd2;
+    assign hiz_wr_en         = (state == PP_Z_WRITE) && zbuf_ready;
+    assign hiz_wr_tile_index = ({6'b0, post_cc_y[9:2]} << hiz_tile_cols_log2)
+                             | {6'b0, post_cc_x[9:2]};
+    assign hiz_wr_new_z_hi   = post_cc_z[15:8];
 
     // FB write request: asserted when in PP_WRITE with color_write_en
     assign fb_write_req    = (state == PP_WRITE) && color_write_en;

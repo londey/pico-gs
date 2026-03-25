@@ -5,16 +5,20 @@
 //!    per-attribute dx/dy derivatives, and initial values at the bounding box
 //!    origin.
 //! 2. **Per-fragment iteration**: walk 4×4 tiles over the bounding box with
-//!    hierarchical rejection, incrementally accumulate attributes, apply
-//!    perspective correction, and emit fragments.
+//!    hierarchical rejection, Hi-Z tile rejection, incrementally accumulate
+//!    attributes, apply perspective correction, and emit fragments.
 //!
 //! All intermediate values use explicit bit widths matching the RTL.
 //! The digital twin is transaction-level (not cycle-accurate) but bit-accurate
 //! for the math.
 
+// Spec-ref: unit_005.05_iteration_fsm.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
+
 use crate::recip;
 use gs_twin_core::debug_types::RasterAccumulatorDebug;
 use gs_twin_core::fragment::{ColorQ412, RasterFragment};
+pub use gs_twin_core::hiz::HizMetadata;
 use gs_twin_core::triangle::RasterTriangle;
 
 // ── Attribute indices ──────────────────────────────────────────────────────
@@ -292,8 +296,23 @@ pub fn triangle_setup(tri: &RasterTriangle) -> Option<TriangleSetup> {
 ///
 /// Convenience wrapper around [`rasterize_iter`]; prefer the iterator
 /// form when fragments are consumed one-at-a-time.
+///
+/// Hi-Z rejection is disabled (no metadata store, `z_test_en=false`).
 pub fn rasterize_triangle(setup: &TriangleSetup) -> Vec<RasterFragment> {
     rasterize_iter(*setup).collect()
+}
+
+/// Rasterize a triangle with Hi-Z tile rejection, returning fragments
+/// as a collected `Vec`.
+///
+/// Convenience wrapper around [`rasterize_iter_hiz`].
+pub fn rasterize_triangle_hiz(
+    setup: &TriangleSetup,
+    hiz: &HizMetadata,
+    z_test_en: bool,
+    width_log2: u32,
+) -> Vec<RasterFragment> {
+    rasterize_iter_hiz(*setup, hiz, z_test_en, width_log2).collect()
 }
 
 /// Return an iterator that yields [`RasterFragment`]s for a triangle.
@@ -302,8 +321,29 @@ pub fn rasterize_triangle(setup: &TriangleSetup) -> Vec<RasterFragment> {
 /// per-pixel edge testing, incremental attribute accumulation, and
 /// perspective correction — matching `raster_edge_walk.sv` +
 /// `raster_attr_accum.sv`.
-pub fn rasterize_iter(setup: TriangleSetup) -> TriangleIter {
-    TriangleIter::new(setup)
+///
+/// Hi-Z rejection is disabled.  Use [`rasterize_iter_hiz`] to enable it.
+pub fn rasterize_iter(setup: TriangleSetup) -> TriangleIter<'static> {
+    TriangleIter::new(setup, None, false, 0)
+}
+
+/// Return an iterator with Hi-Z tile rejection enabled.
+///
+/// # Arguments
+///
+/// * `setup` - Precomputed triangle setup data.
+/// * `hiz` - Mutable reference to the Hi-Z metadata store.
+/// * `z_test_en` - When `true`, tiles are checked against Hi-Z metadata
+///   before pixel-level edge testing (UNIT-005.05 HIZ_TEST).
+/// * `width_log2` - Log2 of the framebuffer width (e.g. 9 for 512 pixels),
+///   used to compute `tile_cols_log2 = width_log2 - 2`.
+pub fn rasterize_iter_hiz<'h>(
+    setup: TriangleSetup,
+    hiz: &'h HizMetadata,
+    z_test_en: bool,
+    width_log2: u32,
+) -> TriangleIter<'h> {
+    TriangleIter::new(setup, Some(hiz), z_test_en, width_log2)
 }
 
 /// Return a debug-aware iterator that captures accumulator state for a
@@ -313,8 +353,27 @@ pub fn rasterize_iter(setup: TriangleSetup) -> TriangleIter {
 /// accumulator state and perspective correction intermediates for
 /// fragments at that coordinate.  The caller retrieves this via
 /// [`TriangleIter::take_debug`] after each [`Iterator::next`] call.
-pub fn rasterize_iter_debug(setup: TriangleSetup, debug_pixel: Option<(u16, u16)>) -> TriangleIter {
-    let mut iter = TriangleIter::new(setup);
+pub fn rasterize_iter_debug(
+    setup: TriangleSetup,
+    debug_pixel: Option<(u16, u16)>,
+) -> TriangleIter<'static> {
+    let mut iter = TriangleIter::new(setup, None, false, 0);
+    iter.debug_pixel = debug_pixel;
+    iter
+}
+
+/// Return a debug-aware iterator with Hi-Z tile rejection enabled.
+///
+/// Combines the features of [`rasterize_iter_hiz`] and
+/// [`rasterize_iter_debug`].
+pub fn rasterize_iter_hiz_debug<'h>(
+    setup: TriangleSetup,
+    hiz: &'h HizMetadata,
+    z_test_en: bool,
+    width_log2: u32,
+    debug_pixel: Option<(u16, u16)>,
+) -> TriangleIter<'h> {
+    let mut iter = TriangleIter::new(setup, Some(hiz), z_test_en, width_log2);
     iter.debug_pixel = debug_pixel;
     iter
 }
@@ -324,7 +383,11 @@ pub fn rasterize_iter_debug(setup: TriangleSetup, debug_pixel: Option<(u16, u16)
 /// Created by [`rasterize_iter`].  Each call to [`Iterator::next`]
 /// advances the hierarchical 4×4 tile walker to the next inside-triangle
 /// pixel and returns its fully-formed [`RasterFragment`].
-pub struct TriangleIter {
+///
+/// The lifetime `'h` ties the iterator to a borrowed [`HizMetadata`] store
+/// (when Hi-Z rejection is enabled).  When Hi-Z is disabled, `'h` is
+/// `'static` and has no runtime cost.
+pub struct TriangleIter<'h> {
     // ── Copied setup fields ──────────────────────────────────────
     edges: [EdgeCoeffs; 3],
     ccw: bool,
@@ -333,6 +396,7 @@ pub struct TriangleIter {
     dx: [i32; NUM_ATTRS],
     dy: [i32; NUM_ATTRS],
     min_x: u16,
+    min_y: u16,
 
     // ── Precomputed tile-step constants ──────────────────────────
     a4: [i32; 3],
@@ -358,6 +422,16 @@ pub struct TriangleIter {
 
     done: bool,
 
+    // ── Hi-Z metadata ────────────────────────────────────────────
+    /// Reference to the Hi-Z metadata store (`None` when Hi-Z is disabled).
+    hiz: Option<&'h HizMetadata>,
+
+    /// Whether Z testing is enabled (RENDER_MODE.Z_TEST_EN).
+    z_test_en: bool,
+
+    /// Log2 of tile columns: `width_log2 - 2`.
+    tile_cols_log2: u32,
+
     // ── Debug pixel support ─────────────────────────────────────
     /// When set, capture accumulator debug state for fragments at this pixel.
     debug_pixel: Option<(u16, u16)>,
@@ -366,12 +440,18 @@ pub struct TriangleIter {
     last_debug: Option<RasterAccumulatorDebug>,
 }
 
-impl TriangleIter {
-    fn new(setup: TriangleSetup) -> Self {
+impl<'h> TriangleIter<'h> {
+    fn new(
+        setup: TriangleSetup,
+        hiz: Option<&'h HizMetadata>,
+        z_test_en: bool,
+        width_log2: u32,
+    ) -> Self {
         let min_x = setup.bbox_min_x;
         let min_y = setup.bbox_min_y;
         let max_x = setup.bbox_max_x;
         let max_y = setup.bbox_max_y;
+        let tile_cols_log2 = width_log2.saturating_sub(2);
 
         if min_x > max_x || min_y > max_y {
             return Self::empty(&setup);
@@ -416,6 +496,7 @@ impl TriangleIter {
             dx: setup.dx,
             dy: setup.dy,
             min_x,
+            min_y,
             a4,
             b4,
             a3,
@@ -433,12 +514,15 @@ impl TriangleIter {
             py_offset: 0,
             px_offset: 0,
             done: false,
+            hiz,
+            z_test_en,
+            tile_cols_log2,
             debug_pixel: None,
             last_debug: None,
         };
 
-        // Advance past the first tile if it is rejected.
-        if tile_reject(&iter.e_tcol, &a3, &b3, setup.ccw) {
+        // Advance past the first tile if it is rejected (edge or Hi-Z).
+        if tile_reject(&iter.e_tcol, &a3, &b3, setup.ccw) || iter.hiz_reject_current_tile() {
             iter.advance_to_next_tile();
         }
 
@@ -455,6 +539,7 @@ impl TriangleIter {
             dx: setup.dx,
             dy: setup.dy,
             min_x: 0,
+            min_y: 0,
             a4: [0; 3],
             b4: [0; 3],
             a3: [0; 3],
@@ -472,6 +557,9 @@ impl TriangleIter {
             py_offset: 0,
             px_offset: 0,
             done: true,
+            hiz: None,
+            z_test_en: false,
+            tile_cols_log2: 0,
             debug_pixel: None,
             last_debug: None,
         }
@@ -502,13 +590,62 @@ impl TriangleIter {
     /// non-rejected tile.  Returns `true` if one was found.
     fn scan_tile_row(&mut self) -> bool {
         while self.tile_x <= self.max_x {
-            if !tile_reject(&self.e_tcol, &self.a3, &self.b3, self.ccw) {
+            if !tile_reject(&self.e_tcol, &self.a3, &self.b3, self.ccw)
+                && !self.hiz_reject_current_tile()
+            {
                 self.init_tile_pixels();
                 return true;
             }
             self.step_tile_col();
         }
         false
+    }
+
+    /// Perform Hi-Z tile rejection for the current tile.
+    ///
+    /// Returns `true` if the tile should be rejected (all fragments in this
+    /// tile are guaranteed to fail the depth test).
+    ///
+    /// Matches the HIZ_TEST procedure in UNIT-005.05:
+    /// - Bypass (return `false`) when `z_test_en=false` or no metadata store.
+    /// - Return `false` when `valid=0` (cleared tile — lazy fill).
+    /// - Reject when `valid=1` and `fragment_Z[15:8] < stored_min_z`
+    ///   (GEQUAL / reverse-Z: fragment further than every pixel in tile).
+    fn hiz_reject_current_tile(&self) -> bool {
+        if !self.z_test_en {
+            return false;
+        }
+        let hiz = match self.hiz {
+            Some(h) => h,
+            None => return false,
+        };
+
+        // Compute 14-bit tile index using absolute screen coordinates,
+        // matching the pixel writer's update path.
+        let tile_row = self.tile_y / TILE_SIZE;
+        let tile_col = self.tile_x / TILE_SIZE;
+        let tile_index = ((tile_row as usize) << self.tile_cols_log2) | (tile_col as usize);
+
+        let (valid, min_z) = hiz.read(tile_index);
+
+        if !valid {
+            return false;
+        }
+
+        // Use tile-representative Z: the Z accumulator value at the tile origin.
+        // Extract Z[15:8] from the attribute accumulator (same as extract_z but
+        // only the upper byte).
+        let z_top16 = ((self.attr_tcol[ATTR_Z] as u32) >> 16) as u16;
+        let frag_z_hi = (z_top16 >> 8) as u8;
+
+        // GEQUAL (reverse-Z): fragment passes when frag_z >= stored_z.
+        // Conservative reject: frag_z < tile min_z guarantees failure
+        // against every pixel in the tile.
+        let rejected = frag_z_hi < min_z;
+        if rejected {
+            hiz.record_rejection();
+        }
+        rejected
     }
 
     /// Step tile-col accumulators to the next 4×4 column.
@@ -587,7 +724,7 @@ impl TriangleIter {
     }
 }
 
-impl Iterator for TriangleIter {
+impl Iterator for TriangleIter<'_> {
     type Item = RasterFragment;
 
     fn next(&mut self) -> Option<RasterFragment> {
@@ -605,7 +742,7 @@ impl Iterator for TriangleIter {
     }
 }
 
-impl TriangleIter {
+impl TriangleIter<'_> {
     /// Scan remaining pixels in the current pixel-row, returning the
     /// first inside-triangle fragment (if any).  Advances `px_offset`
     /// and steps X accumulators for every pixel visited.
@@ -889,4 +1026,203 @@ fn emit_fragment_debug(
     };
 
     (frag, dbg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gs_twin_core::triangle::{RasterTriangle, RasterVertex, Rgba8888};
+
+    /// Create a simple flat-shaded triangle that covers a single 4x4 tile
+    /// at the origin.  All vertices have the same Z value so the tile-
+    /// representative Z equals that value.
+    fn make_test_triangle(z: u16) -> RasterTriangle {
+        // A large right triangle covering at least the first 4x4 tile (0,0)-(3,3).
+        // Vertices at (0,0), (8,0), (0,8) — well inside a 512×512 surface.
+        RasterTriangle {
+            verts: [
+                RasterVertex {
+                    px: 0,
+                    py: 0,
+                    z,
+                    q: 0x4000,
+                    color0: Rgba8888(0xFF808040),
+                    color1: Rgba8888(0),
+                    s0: 0,
+                    t0: 0,
+                    s1: 0,
+                    t1: 0,
+                },
+                RasterVertex {
+                    px: 8,
+                    py: 0,
+                    z,
+                    q: 0x4000,
+                    color0: Rgba8888(0xFF808040),
+                    color1: Rgba8888(0),
+                    s0: 0,
+                    t0: 0,
+                    s1: 0,
+                    t1: 0,
+                },
+                RasterVertex {
+                    px: 0,
+                    py: 8,
+                    z,
+                    q: 0x4000,
+                    color0: Rgba8888(0xFF808040),
+                    color1: Rgba8888(0),
+                    s0: 0,
+                    t0: 0,
+                    s1: 0,
+                    t1: 0,
+                },
+            ],
+            bbox_min_x: 0,
+            bbox_max_x: 7,
+            bbox_min_y: 0,
+            bbox_max_y: 7,
+            gouraud_en: false,
+        }
+    }
+
+    // ── HizMetadata unit tests ──────────────────────────────────────────────
+
+    #[test]
+    fn hiz_metadata_new_all_invalid() {
+        let hiz = HizMetadata::new();
+        for i in 0..16384 {
+            let (valid, _) = hiz.read(i);
+            assert!(!valid, "entry {i} should be invalid after new()");
+        }
+    }
+
+    #[test]
+    fn hiz_metadata_update_and_read() {
+        let mut hiz = HizMetadata::new();
+
+        // First write initializes entry
+        hiz.update(42, 0x80);
+        let (valid, min_z) = hiz.read(42);
+        assert!(valid);
+        assert_eq!(min_z, 0x80);
+
+        // Write with a smaller value updates
+        hiz.update(42, 0x40);
+        let (valid, min_z) = hiz.read(42);
+        assert!(valid);
+        assert_eq!(min_z, 0x40);
+
+        // Write with a larger value does NOT update
+        hiz.update(42, 0xC0);
+        let (valid, min_z) = hiz.read(42);
+        assert!(valid);
+        assert_eq!(min_z, 0x40);
+    }
+
+    #[test]
+    fn hiz_metadata_invalidate_all() {
+        let mut hiz = HizMetadata::new();
+        hiz.update(100, 0x55);
+        hiz.invalidate_all();
+        let (valid, _) = hiz.read(100);
+        assert!(!valid, "entry should be invalid after invalidate_all()");
+    }
+
+    // ── Hi-Z tile rejection integration tests ───────────────────────────────
+
+    #[test]
+    fn hiz_reject_tile_with_low_z() {
+        // GEQUAL / reverse-Z: low Z = further from camera.
+        // Triangle with Z=0x2000 → fragment_Z[15:8] = 0x20.
+        // Pre-populate tile with valid=1, min_z=0x40.
+        // Since 0x20 < 0x40, the fragment is further → rejected.
+        let tri = make_test_triangle(0x2000);
+        let setup = triangle_setup(&tri).expect("non-degenerate");
+
+        let mut hiz = HizMetadata::new();
+        hiz.update(0, 0x40);
+
+        let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
+        let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
+        assert!(
+            tile0_frags.is_empty(),
+            "expected zero fragments from rejected tile, got {}",
+            tile0_frags.len()
+        );
+    }
+
+    #[test]
+    fn hiz_pass_tile_with_high_z() {
+        // GEQUAL / reverse-Z: high Z = nearer to camera.
+        // Triangle with Z=0x8000 → fragment_Z[15:8] = 0x80.
+        // Pre-populate tile with valid=1, min_z=0x40.
+        // Since 0x80 >= 0x40, the fragment is nearer → NOT rejected.
+        let tri = make_test_triangle(0x8000);
+        let setup = triangle_setup(&tri).expect("non-degenerate");
+
+        let mut hiz = HizMetadata::new();
+        hiz.update(0, 0x40);
+
+        let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
+        let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
+        assert!(
+            !tile0_frags.is_empty(),
+            "expected fragments from non-rejected tile"
+        );
+    }
+
+    #[test]
+    fn hiz_valid_zero_never_rejects() {
+        // Triangle with Z=0x8000 → fragment_Z[15:8] = 0x80.
+        // Tile has valid=0 (cleared) — should never reject regardless of Z.
+        let tri = make_test_triangle(0x8000);
+        let setup = triangle_setup(&tri).expect("non-degenerate");
+
+        let hiz = HizMetadata::new(); // all entries valid=0
+
+        let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
+        let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
+        assert!(
+            !tile0_frags.is_empty(),
+            "expected fragments from cleared tile (valid=0)"
+        );
+    }
+
+    #[test]
+    fn hiz_bypass_when_z_test_disabled() {
+        // Triangle with Z=0x8000, tile with valid=1, min_z=0x40.
+        // But z_test_en=false → Hi-Z should never fire.
+        let tri = make_test_triangle(0x8000);
+        let setup = triangle_setup(&tri).expect("non-degenerate");
+
+        let mut hiz = HizMetadata::new();
+        hiz.update(0, 0x40);
+
+        let frags = rasterize_triangle_hiz(&setup, &hiz, false, 9);
+        let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
+        assert!(
+            !tile0_frags.is_empty(),
+            "expected fragments when z_test_en=false"
+        );
+    }
+
+    #[test]
+    fn hiz_equal_z_not_rejected() {
+        // Triangle with Z where fragment_Z[15:8] == stored_min_z.
+        // Tile with valid=1, min_z=0x40. Fragment Z[15:8] = 0x40.
+        // Equal should NOT reject (conservative: only reject when strictly >).
+        let tri = make_test_triangle(0x4000);
+        let setup = triangle_setup(&tri).expect("non-degenerate");
+
+        let mut hiz = HizMetadata::new();
+        hiz.update(0, 0x40);
+
+        let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
+        let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
+        assert!(
+            !tile0_frags.is_empty(),
+            "expected fragments when fragment_Z[15:8] == stored_min_z"
+        );
+    }
 }

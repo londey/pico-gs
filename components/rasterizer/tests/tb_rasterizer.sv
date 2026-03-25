@@ -59,6 +59,18 @@ module tb_rasterizer;
     reg [3:0]   fb_width_log2;
     reg [3:0]   fb_height_log2;
 
+    // Render mode
+    reg         z_test_en;
+
+    // Hi-Z metadata write port (from pixel pipeline stub)
+    reg         hiz_wr_en;
+    reg  [13:0] hiz_wr_tile_index;
+    reg  [7:0]  hiz_wr_new_z_hi;
+
+    // Hi-Z metadata fast-clear
+    reg         hiz_clear_req;
+    wire        hiz_clear_busy;
+
     // Test result tracking
     integer test_pass_count = 0;
     integer test_fail_count = 0;
@@ -95,8 +107,19 @@ module tb_rasterizer;
         .frag_tile_start(frag_tile_start),
         .frag_tile_end(frag_tile_end),
 
+        .z_test_en(z_test_en),
+
         .fb_width_log2(fb_width_log2),
-        .fb_height_log2(fb_height_log2)
+        .fb_height_log2(fb_height_log2),
+
+        .hiz_wr_en(hiz_wr_en),
+        .hiz_wr_tile_index(hiz_wr_tile_index),
+        .hiz_wr_new_z_hi(hiz_wr_new_z_hi),
+
+        .hiz_clear_req(hiz_clear_req),
+        .hiz_clear_busy(hiz_clear_busy),
+
+        .hiz_rejected_tiles()  // Diagnostic counter — not checked in unit TB
     );
 
     // Clock generation (100 MHz system clock)
@@ -176,6 +199,48 @@ module tb_rasterizer;
             v2_st0 = 32'h00000000;
             v2_st1 = 32'h00000000;
             v2_q = 16'h1000;
+        end
+    endtask
+
+    // ========================================================================
+    // Helper task: write a Hi-Z metadata entry via the write port
+    // ========================================================================
+    // Pre-populates the Hi-Z metadata store by issuing a write to a specific
+    // tile index.  The write port performs a read-modify-write internally
+    // (2 cycles), so we hold wr_en for 1 cycle and wait for completion.
+    task write_hiz_entry(
+        input [13:0] tile_idx,
+        input [7:0]  z_hi
+    );
+        begin
+            // Wait for write FSM to be idle before issuing the next write
+            wait(dut.u_hiz_meta.wr_state == 2'd0);  // WR_IDLE
+            @(posedge clk);
+            hiz_wr_en         = 1;
+            hiz_wr_tile_index = tile_idx;
+            hiz_wr_new_z_hi   = z_hi;
+            @(posedge clk);
+            hiz_wr_en = 0;
+            // Wait for RMW to complete (WR_READ -> WR_WRITE -> WR_IDLE)
+            wait(dut.u_hiz_meta.wr_state == 2'd0);  // WR_IDLE
+            @(posedge clk);
+        end
+    endtask
+
+    // ========================================================================
+    // Helper task: fast-clear Hi-Z metadata and wait for completion
+    // ========================================================================
+    task hiz_fast_clear;
+        begin
+            @(posedge clk);
+            hiz_clear_req = 1;
+            @(posedge clk);
+            hiz_clear_req = 0;
+            // Wait for clear_busy to assert (registered, 1 cycle delay)
+            wait(hiz_clear_busy == 1);
+            // Wait for clear sweep to finish (512 cycles)
+            wait(hiz_clear_busy == 0);
+            repeat(2) @(posedge clk);
         end
     endtask
 
@@ -284,6 +349,13 @@ module tb_rasterizer;
         // Default surface dimensions: 512x512 (VER-001 precondition)
         fb_width_log2  = 4'd9;
         fb_height_log2 = 4'd9;
+
+        // Hi-Z defaults: z_test disabled, write/clear ports idle
+        z_test_en      = 0;
+        hiz_wr_en      = 0;
+        hiz_wr_tile_index = 14'd0;
+        hiz_wr_new_z_hi   = 8'd0;
+        hiz_clear_req  = 0;
 
         // Default attributes
         set_default_attrs;
@@ -1780,6 +1852,187 @@ module tb_rasterizer;
             end else begin
                 $display("  FAIL: One or more small-triangle derivative registers differ from reference");
             end
+        end
+
+        repeat(20) @(posedge clk);
+
+        // ====================================================================
+        // Test 15: Hi-Z tile rejection (VER-001 step 8)
+        // Three sub-cases:
+        //   (a) Rejection when valid=1 and fragment_Z[15:8] > stored min_z
+        //   (b) Pass-through when valid=1 and fragment_Z[15:8] <= stored min_z
+        //   (c) No rejection when valid=0 (cleared tile)
+        // ====================================================================
+        $display("\nTest 15: Hi-Z tile rejection (VER-001 step 8)");
+        fb_width_log2  = 4'd9;
+        fb_height_log2 = 4'd9;
+
+        // Triangle covering pixels ~(4,4)-(12,4)-(8,12) in a 512x512 surface.
+        // Bounding box tiles: col 1..3, row 1..3 (9 tiles).
+        // tile_cols = 512/4 = 128, so tile_index = row*128 + col.
+
+        // ------------------------------------------------------------------
+        // Sub-case (a): Rejection — valid=1, min_z=0x40, triangle Z=0x6000
+        //   fragment_Z[15:8] = 0x60 > 0x40 => all tiles rejected, zero frags
+        //   (Z must be < 0x8000 to avoid signed clamp-to-zero in accumulator)
+        // ------------------------------------------------------------------
+        $display("  15a: Hi-Z rejection (fragment Z > stored min_z)");
+
+        // Fast-clear all Hi-Z metadata to ensure a clean state
+        hiz_fast_clear;
+
+        // Pre-populate Hi-Z entries for tiles in the bounding box
+        // via the write port.  We write min_z=0x40 to each tile.
+        // First write initializes valid=1 since tile was cleared.
+        begin : hiz_15a
+            integer tc, tr;
+            integer tile_idx;
+            integer ref_frag_count_15b;
+
+            for (tr = 1; tr <= 3; tr = tr + 1) begin
+                for (tc = 1; tc <= 3; tc = tc + 1) begin
+                    tile_idx = tr * 128 + tc;
+                    write_hiz_entry(tile_idx[13:0], 8'h40);
+                end
+            end
+
+            // Enable Z test
+            z_test_en = 1;
+            pixel_count = 0;
+            frag_ready = 1;
+
+            // Debug: probe hiz_meta memory to verify writes took effect.
+            // tile_index 129 -> block=0, word=32, slot=1
+            // Triangle with Z=0x6000 (fragment_Z[15:8] = 0x60 > 0x40)
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h6000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h6000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h6000;
+            v2_color0 = 32'h0000FF00;
+
+            submit_triangle_and_wait;
+            $display("    Fragments emitted (expect 0): %0d", pixel_count);
+
+            if (pixel_count == 0) begin
+                $display("  PASS: 15a — Hi-Z rejected all tiles (zero fragments)");
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("  FAIL: 15a — Expected 0 fragments, got %0d", pixel_count);
+                test_fail_count = test_fail_count + 1;
+            end
+
+            repeat(10) @(posedge clk);
+
+            // ------------------------------------------------------------------
+            // Sub-case (b): Pass-through — valid=1, min_z=0x40, Z=0x2000
+            //   fragment_Z[15:8] = 0x20 <= 0x40 => tiles NOT rejected
+            // ------------------------------------------------------------------
+            $display("  15b: Hi-Z pass-through (fragment Z <= stored min_z)");
+
+            // Re-clear and re-populate same tiles (clear resets valid bits)
+            hiz_fast_clear;
+            for (tr = 1; tr <= 3; tr = tr + 1) begin
+                for (tc = 1; tc <= 3; tc = tc + 1) begin
+                    tile_idx = tr * 128 + tc;
+                    write_hiz_entry(tile_idx[13:0], 8'h40);
+                end
+            end
+
+            pixel_count = 0;
+
+            // Same triangle but Z=0x2000 (fragment_Z[15:8] = 0x20 <= 0x40)
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h2000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h2000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h2000;
+            v2_color0 = 32'h0000FF00;
+
+            submit_triangle_and_wait;
+            ref_frag_count_15b = pixel_count;
+            $display("    Fragments emitted (expect >0): %0d", pixel_count);
+
+            if (pixel_count > 0) begin
+                $display("  PASS: 15b — Hi-Z passed, %0d fragments emitted", pixel_count);
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("  FAIL: 15b — Expected >0 fragments, got 0 (false rejection)");
+                test_fail_count = test_fail_count + 1;
+            end
+
+            repeat(10) @(posedge clk);
+
+            // Verify fragment count matches a run with Hi-Z disabled
+            // (same triangle, z_test_en=0)
+            z_test_en = 0;
+            pixel_count = 0;
+
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h2000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h2000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h2000;
+            v2_color0 = 32'h0000FF00;
+
+            submit_triangle_and_wait;
+            $display("    Reference fragments (Hi-Z disabled): %0d", pixel_count);
+
+            if (ref_frag_count_15b == pixel_count) begin
+                $display("  PASS: 15b — Fragment count matches non-Hi-Z reference (%0d)", pixel_count);
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("  FAIL: 15b — Fragment count %0d != reference %0d", ref_frag_count_15b, pixel_count);
+                test_fail_count = test_fail_count + 1;
+            end
+
+            repeat(10) @(posedge clk);
+
+            // ------------------------------------------------------------------
+            // Sub-case (c): valid=0 (cleared tile) — must NOT reject
+            // ------------------------------------------------------------------
+            $display("  15c: Hi-Z cleared tile (valid=0, must not reject)");
+
+            // Ensure z_test_en is off before clearing, then re-enable
+            z_test_en = 0;
+            repeat(4) @(posedge clk);
+
+            // Fast-clear all metadata (sets valid=0 for all tiles)
+            hiz_fast_clear;
+
+            // Allow extra settling time after clear completes
+            repeat(10) @(posedge clk);
+
+            // Do NOT pre-populate — tiles remain cleared (valid=0)
+            z_test_en = 1;
+            pixel_count = 0;
+
+            // Triangle with Z=0x6000 — would be rejected if valid=1, min_z=0x40
+            // but since valid=0, tile must proceed to EDGE_TEST
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h6000;
+            v0_color0 = 32'hFF000000;
+            set_default_attrs;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h6000;
+            v1_color0 = 32'h00FF0000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h6000;
+            v2_color0 = 32'h0000FF00;
+
+            submit_triangle_and_wait;
+            $display("    Fragments emitted (expect >0): %0d", pixel_count);
+
+            if (pixel_count > 0) begin
+                $display("  PASS: 15c — Cleared tiles not rejected, %0d fragments emitted", pixel_count);
+                test_pass_count = test_pass_count + 1;
+            end else begin
+                $display("  FAIL: 15c — Expected >0 fragments, got 0 (spurious rejection on cleared tile)");
+                test_fail_count = test_fail_count + 1;
+            end
+
+            // Restore z_test_en to default
+            z_test_en = 0;
         end
 
         repeat(20) @(posedge clk);

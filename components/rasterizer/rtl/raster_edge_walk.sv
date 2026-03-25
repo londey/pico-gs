@@ -1,12 +1,13 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `34c645d9dafb8706` 2026-03-22
+// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
 // Spec-ref: unit_005.05_iteration_fsm.md `54fa6b938b2cedfc` 2026-03-22
 
 // Rasterizer Edge Walk and Fragment Emission (UNIT-005.04)
 //
 // Tile-ordered (4x4) iteration FSM with hierarchical tile rejection,
-// per-pixel edge testing, 3-cycle perspective correction pipeline
-// (4 MULT18X18D + 1 in raster_recip_q), and fragment output handshake (DD-025) to UNIT-006.
+// Hi-Z tile rejection (UNIT-005.06), per-pixel edge testing, 3-cycle
+// perspective correction pipeline (4 MULT18X18D + 1 in raster_recip_q),
+// and fragment output handshake (DD-025) to UNIT-006.
 //
 // Once started by the parent (init_pos_e0 -> init_e1 -> init_e2 -> walk_start),
 // the module walks all 4x4 tiles within the bounding box autonomously,
@@ -17,7 +18,7 @@
 //   e*_row    — edge values at the start of the current pixel row
 //   e*        — edge values at the current pixel
 //
-// See: UNIT-005.04 (Iteration FSM), DD-024, DD-025, REQ-002.03
+// See: UNIT-005.04 (Iteration FSM), DD-024, DD-025, REQ-002.03, REQ-005.07
 
 module raster_edge_walk (
     input  wire        clk,               // System clock
@@ -29,6 +30,20 @@ module raster_edge_walk (
     input  wire        init_e1,           // INIT_E1: init e1
     input  wire        init_e2,           // INIT_E2: init e2 (edge values only)
     input  wire        walk_start,        // Begin walking (after derivatives ready)
+
+    // Render mode
+    input  wire        z_test_en,         // Z_TEST_EN from RENDER_MODE register
+
+    // Framebuffer config (for Hi-Z tile index computation)
+    input  wire [3:0]  fb_width_log2,     // log2(surface width), e.g. 9 for 512
+
+    // Hi-Z metadata read interface (to raster_hiz_meta, UNIT-005.06)
+    // Read signals are combinational (not registered) so the BRAM read
+    // initiates in the same cycle as TILE_TEST, and the result is available
+    // one cycle later when HIZ_TEST evaluates the rejection condition.
+    output wire        hiz_rd_en,         // Read enable to hiz_meta (combinational)
+    output wire [13:0] hiz_rd_tile_index, // 14-bit tile index to hiz_meta (combinational)
+    input  wire [8:0]  hiz_rd_data,       // {valid, min_z[7:0]} from hiz_meta
 
     // Shared multiplier products (from parent's setup multiplier)
     input  wire signed [21:0] smul_p1,    // Multiplier product 1
@@ -105,7 +120,10 @@ module raster_edge_walk (
     output reg         walk_done,         // 1-cycle pulse when bbox exhausted
 
     // Edge test result (read by parent)
-    output wire        inside_triangle    // All three edge functions >= 0
+    output wire        inside_triangle,   // All three edge functions >= 0
+
+    // Hi-Z rejection pulse (to raster_hiz_meta diagnostic counter)
+    output wire        hiz_reject_pulse   // 1-cycle pulse on Hi-Z tile rejection
 );
 
     // ========================================================================
@@ -127,6 +145,7 @@ module raster_edge_walk (
     typedef enum logic [3:0] {
         EW_IDLE      = 4'd0,
         EW_TILE_TEST = 4'd1,
+        EW_HIZ_TEST  = 4'd8,
         EW_EDGE_TEST = 4'd2,
         EW_BRAM_READ = 4'd3,
         EW_PERSP_1   = 4'd4,
@@ -217,6 +236,29 @@ module raster_edge_walk (
     wire [7:0] bbox_min_y_tile = bbox_min_y[9:2];  // Tile index of min Y
     wire [6:0] tile_col_max = 7'(bbox_max_x_tile - bbox_min_x_tile);
     wire [6:0] tile_row_max = 7'(bbox_max_y_tile - bbox_min_y_tile);
+
+    // ========================================================================
+    // Hi-Z Tile Index Computation
+    // ========================================================================
+    // Absolute tile coordinates (in framebuffer space) for Hi-Z metadata lookup.
+    // tile_cols_log2 = fb_width_log2 - 2 (divide pixel width by 4 to get tile cols).
+    // tile_index = (abs_tile_row << tile_cols_log2) | abs_tile_col
+
+    wire [3:0]  tile_cols_log2 = fb_width_log2 - 4'd2;
+    wire [9:0]  abs_tile_col = {3'b0, tile_col} + {2'b0, bbox_min_x_tile};
+    wire [9:0]  abs_tile_row = {3'b0, tile_row} + {2'b0, bbox_min_y_tile};
+    wire [13:0] hiz_tile_index = 14'(({4'b0, abs_tile_row} << tile_cols_log2) | {4'b0, abs_tile_col});
+
+    // Hi-Z rejection result from metadata read
+    wire        hiz_meta_valid = hiz_rd_data[8];
+    wire [7:0]  hiz_meta_min_z = hiz_rd_data[7:0];
+    // GEQUAL (reverse-Z): reject when fragment is further than tile minimum
+    wire        hiz_rejected = hiz_meta_valid && (out_z[15:8] < hiz_meta_min_z);
+
+    // Diagnostic pulse: high for 1 cycle when a tile is rejected by Hi-Z.
+    // Driven combinationally from the FSM state — the downstream counter
+    // in raster_hiz_meta registers this on the same clock edge.
+    assign hiz_reject_pulse = (ew_state == EW_HIZ_TEST) && hiz_rejected;
 
     // 4*A for tile column stepping
     wire signed [31:0] e0_4A = 32'($signed(edge0_A)) <<< 2;
@@ -319,6 +361,12 @@ module raster_edge_walk (
     logic              next_attr_step_y;
     logic              next_attr_tile_col_step;
     logic              next_attr_tile_row_step;
+    logic              next_hiz_rd_en;
+    logic [13:0]       next_hiz_rd_tile_index;
+
+    // Combinational output: BRAM read starts in same cycle as TILE_TEST
+    assign hiz_rd_en         = next_hiz_rd_en;
+    assign hiz_rd_tile_index = next_hiz_rd_tile_index;
 
     // ========================================================================
     // FSM Next-State Logic
@@ -334,6 +382,16 @@ module raster_edge_walk (
 
             EW_TILE_TEST: begin
                 if (tile_rejected) begin
+                    next_ew_state = EW_ITER_NEXT;
+                end else if (z_test_en) begin
+                    next_ew_state = EW_HIZ_TEST;
+                end else begin
+                    next_ew_state = EW_EDGE_TEST;
+                end
+            end
+
+            EW_HIZ_TEST: begin
+                if (hiz_rejected) begin
                     next_ew_state = EW_ITER_NEXT;
                 end else begin
                     next_ew_state = EW_EDGE_TEST;
@@ -444,6 +502,8 @@ module raster_edge_walk (
         next_attr_step_y = 1'b0;
         next_attr_tile_col_step = 1'b0;
         next_attr_tile_row_step = 1'b0;
+        next_hiz_rd_en = 1'b0;
+        next_hiz_rd_tile_index = 14'd0;
 
         // ----------------------------------------------------------------
         // Parent init signals
@@ -490,6 +550,20 @@ module raster_edge_walk (
             EW_TILE_TEST: begin
                 if (tile_rejected) begin
                     // Force px/py to 3,3 so ITER_NEXT advances tile
+                    next_px = 2'd3;
+                    next_py = 2'd3;
+                end else if (z_test_en) begin
+                    // Launch speculative Hi-Z metadata read; result available
+                    // next cycle in EW_HIZ_TEST.
+                    next_hiz_rd_en = 1'b1;
+                    next_hiz_rd_tile_index = hiz_tile_index;
+                end
+            end
+
+            EW_HIZ_TEST: begin
+                if (hiz_rejected) begin
+                    // Hi-Z rejects tile: skip to next tile (same as TILE_TEST
+                    // rejection — force px/py to 3,3 so ITER_NEXT advances tile).
                     next_px = 2'd3;
                     next_py = 2'd3;
                 end

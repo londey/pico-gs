@@ -22,6 +22,7 @@ pub mod debug_types;
 pub mod depth_range;
 pub mod fragment;
 pub mod hex_parser;
+pub mod hiz;
 pub mod math;
 pub mod reg_ext;
 pub mod texel;

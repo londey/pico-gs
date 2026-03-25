@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `34c645d9dafb8706` 2026-03-22
+// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
 
 // Module: raster_setup_fifo
 // Purpose: Parameterized register-based FIFO for triangle setup data.

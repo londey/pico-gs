@@ -49,6 +49,7 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-005.03: Derivative Pre-computation](unit_005.03_derivative_precomputation.md)
 - [UNIT-005.04: Attribute Accumulation](unit_005.04_attribute_accumulation.md)
 - [UNIT-005.05: Iteration FSM](unit_005.05_iteration_fsm.md)
+- [UNIT-005.06: Hi-Z Block Metadata](unit_005.06_hiz_block_metadata.md)
 - [UNIT-005: Rasterizer](unit_005_rasterizer.md)
 - [UNIT-006: Pixel Pipeline](unit_006_pixel_pipeline.md)
 - [UNIT-007: Memory Arbiter](unit_007_sram_arbiter.md)

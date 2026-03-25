@@ -120,6 +120,15 @@ During the Z-prepass, Port 1 (framebuffer) sees no traffic, effectively giving P
 During the subsequent color pass, Port 2 traffic is reduced (fewer Z writes due to early rejection), improving Port 1 framebuffer write throughput.
 This temporal separation improves overall SDRAM utilization without requiring changes to the arbiter logic.
 
+Hi-Z tile rejection (UNIT-005.06) adds a further reduction in Port 2 traffic: entire 4×4 tiles provably occluded by previously-written geometry are rejected before any fragment reaches UNIT-006, eliminating the corresponding Z-buffer SDRAM reads and writes.
+This is additive with the per-pixel early Z reduction and operates at tile granularity upstream of the pixel pipeline.
+
+**Z-Buffer Clear Bandwidth Note:**
+The Hi-Z fast-clear path (UNIT-005.06) replaces bulk SDRAM MEM_FILL Z-buffer initialization with an EBR invalidation pass that completes in 512 cycles (all 8 DP16KD blocks written in parallel, one word per address step).
+After fast-clear, the Z-buffer SDRAM region is not pre-written; instead, a lazy-fill policy initializes each 4×4 tile's SDRAM data on first write-back (see UNIT-006 Z-cache design notes for the lazy-fill protocol).
+As a result, Z-buffer clear operations no longer generate any Port 2 SDRAM traffic — the bandwidth previously consumed by MEM_FILL (~266,000 write cycles per full 512×512 Z-buffer clear) is eliminated.
+The arbiter logic is unchanged; the bandwidth reduction is purely a consequence of the access pattern change in UNIT-006 and UNIT-005.06.
+
 **Grant State Machine (3 states):**
 
 1. **Idle** (!grant_active && !burst_active): Combinational priority encoder selects the highest-priority port with req asserted.

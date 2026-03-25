@@ -11,7 +11,7 @@ The testbench drives known triangle configurations through the triangle setup an
 
 ## Verified Design Units
 
-- UNIT-005 (Rasterizer)
+- UNIT-005 (Rasterizer — including UNIT-005.05 Hi-Z tile rejection state)
 
 ## Preconditions
 
@@ -85,6 +85,17 @@ The testbench drives known triangle configurations through the triangle setup an
    Submit the same triangle in both clockwise and counter-clockwise winding order.
    Verify that edge function signs are consistent with the expected winding convention and that fragment emission occurs for the correct winding.
 
+8. **Hi-Z tile rejection.**
+   Pre-populate the Hi-Z metadata for a set of 4×4 tiles with a known min_z value (e.g., `0x4000`) and the valid bit set.
+   Submit a triangle whose bounding box covers those tiles, configured with Z_TEST_EN=1 and a per-vertex Z value larger than the stored min_z (e.g., `0x8000`), so the LEQUAL comparison `fragment_z <= min_z` fails for every tile.
+   Verify that the rasterizer emits zero fragments for those tiles — the HIZ_TEST FSM state must skip all covered tiles without entering EDGE_TEST.
+
+   Then submit the same triangle with a per-vertex Z value smaller than the stored min_z (e.g., `0x2000`).
+   Verify that the rasterizer emits the expected fragments for those tiles, passing through EDGE_TEST normally.
+
+   Finally, submit a triangle that overlaps tiles with and without valid Hi-Z metadata (valid bit clear for some tiles).
+   Verify that tiles without valid metadata are not rejected by Hi-Z — they must proceed to EDGE_TEST regardless of the stored min_z field.
+
 ## Expected Results
 
 - **Pass Criteria:**
@@ -98,6 +109,9 @@ The testbench drives known triangle configurations through the triangle setup an
   - Back-pressure on the fragment output bus (`ready = 0`) halts fragment emission without loss or duplication.
   - Degenerate triangles produce the expected fragment count (0 or 1 as specified).
   - Winding order tests produce consistent edge function signs.
+  - Hi-Z rejection: tiles with valid metadata and fragment_z > min_z produce zero fragment emissions; the HIZ_TEST FSM state is entered and exits directly to TILE_NEXT without entering EDGE_TEST.
+  - Hi-Z pass-through: tiles with valid metadata and fragment_z <= min_z proceed normally to EDGE_TEST and emit the expected fragments.
+  - Hi-Z invalid metadata: tiles with the valid bit clear are never rejected by Hi-Z, regardless of the stored min_z value.
 
 - **Fail Criteria:**
   - Any edge function coefficient differs from the reference value.
@@ -108,6 +122,9 @@ The testbench drives known triangle configurations through the triangle setup an
   - `frag_q` is present on the fragment bus (it must not be).
   - Fragment emission continues while `ready = 0`, or any fragment is lost or duplicated around a back-pressure stall.
   - Degenerate triangle produces unexpected fragments.
+  - Hi-Z rejects a tile where fragment_z <= min_z (false rejection).
+  - Hi-Z fails to reject a tile where fragment_z > min_z and the valid bit is set (missed rejection).
+  - Hi-Z rejects a tile where the valid bit is clear (spurious rejection on uninitialized metadata).
 
 ## Test Implementation
 

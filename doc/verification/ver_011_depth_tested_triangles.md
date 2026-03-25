@@ -13,8 +13,8 @@ The test confirms that the near triangle occludes the far triangle at every over
 
 - UNIT-003 (Register File)
 - UNIT-005.01 (Triangle Setup)
-- UNIT-005 (Rasterizer)
-- UNIT-006 (Pixel Pipeline -- early Z-test path)
+- UNIT-005 (Rasterizer — including Hi-Z tile rejection in UNIT-005.05)
+- UNIT-006 (Pixel Pipeline — early Z-test path and Hi-Z metadata update)
 
 ## Preconditions
 
@@ -131,11 +131,19 @@ The integration harness drives the following register-write sequence into UNIT-0
     Outside the overlap region, pixels covered by Triangle A must be red (RGB565), and pixels covered by Triangle B must be blue (RGB565).
     This assertion is implicitly verified by the pixel-exact golden image comparison, since the golden image encodes the correct near-wins occlusion behavior.
 
+11. **Hi-Z functional transparency assertion:**
+    With Hi-Z enabled, the rendered output must be pixel-exactly identical to the approved golden image.
+    Hi-Z tile rejection must not cause false discards: any 4×4 tile that contains fragments from Triangle B (which passes the depth test) must not be entirely rejected.
+    The overlap region, which contains tiles covered by both triangles at different depths, exercises the Hi-Z metadata update path (min_z updated on Triangle A Z-writes) and subsequent Hi-Z comparison on Triangle B fragments.
+    A non-zero Hi-Z tile rejection count is expected for tiles covered only by Triangle A after Triangle B has been rasterized (tiles where Triangle A's Z=`0x8000` exceeds Triangle B's stored min_z=`0x4000`).
+    Log or assert that the Hi-Z rejection counter is greater than zero to confirm the mechanism is active.
+
 ## Expected Results
 
 - **Pass Criteria:** Pixel-exact match between the simulation output (`spi_gpu/tests/sim_out/depth_test.ppm`) and the approved golden image (`spi_gpu/tests/golden/depth_test.ppm`).
   The near triangle (blue, Z=`0x4000`) occludes the far triangle (red, Z=`0x8000`) at every pixel in the overlap region.
   Pixels outside the overlap show only the triangle that covers them (red or blue), and the background is black.
+  Hi-Z tile rejection counter is greater than zero, confirming the mechanism is active and exercised by this scene.
 
 - **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
   Common failure modes include:
@@ -144,6 +152,8 @@ The integration harness drives the following register-write sequence into UNIT-0
   - Z-write not updating the Z-buffer after Triangle A (Triangle B's LEQUAL test has no stored value to compare against).
   - Incorrect Z interpolation across the triangle surface.
   - ALWAYS compare mode not bypassing the depth comparison during the clear pass.
+  - Hi-Z false rejection: a tile containing Triangle B fragments is incorrectly rejected, producing missing blue pixels in the output (golden image mismatch).
+  - Hi-Z rejection counter is zero when the scene geometry guarantees occluded tiles (Hi-Z mechanism not engaged).
 
 ## Test Implementation
 
@@ -158,8 +168,10 @@ The integration harness drives the following register-write sequence into UNIT-0
   If the clear fails, Triangle A will not render because the uninitialized Z-buffer may contain values that cause fragments to be discarded.
 - Run this test with: `cd spi_gpu && make test-depth-test`.
 - Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
-- VER-011 provides full-pipeline confirmation of Z-buffer behavior; VER-002 (`tb_early_z`) provides unit-level confirmation.
+- VER-011 provides full-pipeline confirmation of Z-buffer behavior; VER-002 (`tb_early_z`) provides unit-level confirmation of per-pixel early Z.
   Together they jointly satisfy REQ-005.02 per the requirement document's Verification Method section.
+  Hi-Z tile-level rejection (UNIT-005.05) is verified by the Hi-Z transparency assertion (step 11) and the rejection counter check in this test.
+  Per-pixel early Z (UNIT-006, `early_z.sv`) remains the subject of VER-002; the two mechanisms operate at different granularities and are independently verified.
 - This test does not exercise texture hardware; the early Z-test path in UNIT-006 is exercised without invoking UNIT-011 (Texture Sampler).
   UNIT-006's scope in this test is limited to early Z-test, Z-buffer read/write, and framebuffer write.
 - **The Z-buffer read and write paths are owned by the pixel pipeline (UNIT-006)**, not the rasterizer (UNIT-005), after pixel pipeline integration.

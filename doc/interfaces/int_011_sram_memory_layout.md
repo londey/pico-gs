@@ -224,6 +224,11 @@ Register encoding: `COLOR_BASE = 0x0400` (address >> 9).
 **Note**: Z-buffer accesses are absorbed by the Z-buffer tile cache (4-way, 16 sets, 4×4 tiles) in UNIT-006.
 Only cache misses and dirty-line evictions generate SDRAM traffic via the arbiter.
 
+**Hi-Z fast clear**: When the Z-buffer is cleared via the Hi-Z fast-clear mechanism, the Hi-Z metadata in EBR is bulk-invalidated rather than writing 0xFFFF to every SDRAM location.
+The Z-buffer SDRAM region is initialized lazily: on first access to any 4×4 tile after a clear, the Z-cache fill path writes the tile with 0xFFFF before returning it to the pipeline.
+Until a tile is accessed, its SDRAM contents are uninitialized after a fast clear.
+The 4×4 block-tiled layout serves double duty as the Hi-Z tile granularity: each SDRAM block corresponds directly to one Hi-Z metadata entry.
+
 **4K Alignment**: 0x100000 = 1,048,576 = 256 × 4096, aligned.
 Register encoding: `Z_BASE = 0x0800` (address >> 9).
 
@@ -429,8 +434,9 @@ End-to-end cache fill latency (including decompression/conversion overlap) is do
 ```
 Priority: LOW
 Pattern: Matches 4×4 tile rasterization order
-Bandwidth: Low (tile cache absorbs most traffic)
+Bandwidth: Low (tile cache absorbs most traffic; Hi-Z rejection further reduces Z SDRAM traffic)
 Access: 16-word burst fill on cache miss; 16-word burst evict on dirty eviction
+Clear: Hi-Z fast-clear invalidates metadata in EBR; lazy-fill initializes SDRAM on first tile access
 ```
 
 **Z-Buffer Tile Cache**: A 4-way set-associative Z-buffer tile cache (16 sets, 4×4 tiles) in UNIT-006 absorbs Z read/write traffic.
@@ -439,15 +445,17 @@ Expected hit rate: 85–95% for typical scenes, reducing Z-buffer SDRAM traffic 
 
 **SDRAM Access Sequence** (cache miss):
 1. Dirty line eviction: 16-word burst write to the evicted tile's address (~22 cycles)
-2. New line fill: 16-word burst read from the new tile's address (~23 cycles)
+2. New line fill: 16-word burst read from the new tile's address (~23 cycles); for tiles accessed for the first time after a Hi-Z fast clear, the fill writes 0xFFFF to all 16 words before returning the tile (lazy initialization)
 3. Total cache miss cost: ~45 cycles, amortized over up to 16 subsequent Z hits
 
-**Z-Buffer Access Sequence** (with early Z-test, per pipeline stage):
-1. Stage 0 (Early): Read Z from cache (or trigger miss/fill)
-2. Compare with incoming Z (using RENDER_MODE.Z_COMPARE function)
-3. If test fails: discard fragment immediately
-4. If test passes: proceed through texture/blend pipeline
-5. Stage 6 (Late): If Z_WRITE_EN=1, update cache entry (mark dirty)
+**Z-Buffer Access Sequence** (with early Z-test and Hi-Z, per pipeline stage):
+
+1. Stage −1 (Hi-Z): Rasterizer looks up 4×4 tile metadata in EBR; if the tile's stored min_z exceeds the incoming Z threshold, the entire tile is rejected without SDRAM access (see UNIT-005.05)
+2. Stage 0 (Early): Read Z from cache (or trigger miss/fill)
+3. Compare with incoming Z (using RENDER_MODE.Z_COMPARE function)
+4. If test fails: discard fragment immediately
+5. If test passes: proceed through texture/blend pipeline
+6. Stage 6 (Late): If Z_WRITE_EN=1, update cache entry (mark dirty); also update Hi-Z metadata if the written Z value is less than the stored tile min_z
 
 ---
 
@@ -476,7 +484,7 @@ The 4×4 block-tiled layout ensures most accesses are 16-word bursts within a si
 | Display scanout | ~30 MB/s (max) | 15% | 16-word tile bursts; 512-wide surface at 60 Hz (LINE_DOUBLE=0) |
 | Display scanout | ~7.4 MB/s (min) | 3.7% | 256-wide surface with LINE_DOUBLE=1 at 60 Hz |
 | Framebuffer write | ~40 MB/s | 20% | 16-word tile bursts; coalesced writes |
-| Z-buffer R/W | ~10 MB/s | 5% | Tile cache absorbs 85–95% of Z traffic |
+| Z-buffer R/W | ~10 MB/s | 5% | Tile cache absorbs 85–95% of Z traffic; Hi-Z tile rejection and fast-clear lazy-fill reduce SDRAM traffic further |
 | Texture fetch | ~5–15 MB/s | 2.5–7.5% | Sequential cache fills; >90% hit rate |
 | Auto-refresh | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
 | **Headroom** | ~100–115 MB/s | ~51–57% | Available for fill rate, overdraw (at 512-wide reference) |

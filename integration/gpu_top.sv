@@ -1,4 +1,5 @@
 `default_nettype none
+// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
 
 // ICEpi SPI GPU - Top Level Module
 // Version 3.0 - Pixel Pipeline Integration
@@ -417,7 +418,7 @@ module gpu_top (
     // This prevents VERTEX_KICK pulses from being lost while the rasterizer is
     // busy processing the previous triangle.
     wire dma_busy;
-    assign gpu_busy = !rast_ready || dma_busy;
+    assign gpu_busy = !rast_ready || dma_busy || rast_hiz_clear_busy;
     // vblank is assigned from display timing generator (see display section)
 
     // ========================================================================
@@ -967,9 +968,24 @@ module gpu_top (
         .frag_tile_start(rast_frag_tile_start),
         .frag_tile_end(rast_frag_tile_end),
 
+        // Render mode
+        .z_test_en(mode_z_test),
+
         // Framebuffer surface dimensions (from FB_CONFIG via register file)
         .fb_width_log2(fb_width_log2),
-        .fb_height_log2(fb_height_log2)
+        .fb_height_log2(fb_height_log2),
+
+        // Hi-Z metadata write port (from pixel pipeline, UNIT-006)
+        .hiz_wr_en(pp_hiz_wr_en),
+        .hiz_wr_tile_index(pp_hiz_wr_tile_index),
+        .hiz_wr_new_z_hi(pp_hiz_wr_new_z_hi),
+
+        // Hi-Z metadata fast-clear (UNIT-005.06)
+        .hiz_clear_req(hiz_clear_req),
+        .hiz_clear_busy(rast_hiz_clear_busy),
+
+        // Hi-Z diagnostic counter (UNIT-005.06)
+        .hiz_rejected_tiles(hiz_rejected_tiles)
     );
 
     // ========================================================================
@@ -996,6 +1012,23 @@ module gpu_top (
 
     // Pipeline status
     wire        pp_pipeline_empty;
+
+    // Hi-Z metadata update from pixel pipeline (UNIT-005.06)
+    wire        pp_hiz_wr_en;
+    wire [13:0] pp_hiz_wr_tile_index;
+    wire [7:0]  pp_hiz_wr_new_z_hi;
+
+    // Hi-Z diagnostic counter (UNIT-005.06)
+    wire [31:0] hiz_rejected_tiles /* verilator public */;
+
+    // Hi-Z metadata fast-clear (UNIT-005.06)
+    // Detect Z-buffer MEM_FILL: mem_fill_base matches fb_z_base in word-address
+    // space.  fb_z_base is in x512-byte units; mem_fill_base is a word address
+    // (1 word = 2 bytes), so fb_z_base shifted left by 8 equals the word address.
+    wire        hiz_clear_req;
+    wire        rast_hiz_clear_busy;
+    assign hiz_clear_req = mem_fill_trigger
+                         && (mem_fill_base == {fb_z_base, 8'b0});
 
     // Pixel pipeline SDRAM interface wires
     wire        pp_fb_write_req;
@@ -1152,6 +1185,11 @@ module gpu_top (
         .tex_sram_burst_data_valid(tex_burst_data_valid),
         .tex_sram_ack(tex_ack),
         .tex_sram_ready(arb_port3_ready),
+
+        // Hi-Z metadata update (to rasterizer's raster_hiz_meta, UNIT-005.06)
+        .hiz_wr_en(pp_hiz_wr_en),
+        .hiz_wr_tile_index(pp_hiz_wr_tile_index),
+        .hiz_wr_new_z_hi(pp_hiz_wr_new_z_hi),
 
         // Pipeline status
         .pipeline_empty(pp_pipeline_empty)

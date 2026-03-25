@@ -88,7 +88,7 @@ flowchart TD
     end
 
     subgraph geom["Geometry · per triangle"]
-        SETUP["Triangle Setup +<br/>Backface Cull ✗"] --> RAST["Rasterizer +<br/>Scissor Clamp"]
+        SETUP["Triangle Setup +<br/>Backface Cull ✗"] --> TILE["Tile Walk"] --> HIZ_CULL["Hi-Z Cull ✗"] --> EDGE["Edge Test +<br/>Interpolation"]
     end
 
     subgraph frag["Fragment · per pixel"]
@@ -109,14 +109,17 @@ flowchart TD
     end
 
     REG -- "vertex kick" --> SETUP
-    RAST --> STIP
+    EDGE --> STIP
 
+    HIZ_META["Hi-Z Metadata<br/>(8 DP16KD)"]
     ZCACHE["Z-Buffer Tile Cache<br/>(4-way, 4×4 tiles)"]
     WBUF["Write-Coalescing<br/>Buffer"]
     ZBUF[("Z-Buffer<br/>SDRAM")]
     TEXMEM[("Texture Data<br/>SDRAM")]
     FB[("Framebuffer<br/>SDRAM")]
 
+    HIZ_CULL <-. "tile Z query" .-> HIZ_META
+    PW -. "Z-write update" .-> HIZ_META
     EZ <-. "Z read/write" .-> ZCACHE
     PW -. "Z update" .-> ZCACHE
     ZCACHE -. "fill/evict burst" .-> ZBUF
@@ -300,13 +303,30 @@ Each cache line holds a 4×4 tile of 16-bit Z values (256 bits = 32 bytes), alig
 
 **Behavior:**
 1. **Hit:** Z value read from on-chip EBR in 1 cycle. If the fragment passes, the cached value is updated and the line marked dirty. Zero SDRAM traffic.
-2. **Miss:** Dirty line evicted as a 16-word burst write; new line filled as a 16-word burst read (~44 cycles total, amortized over up to 16 subsequent hits).
+2. **Miss:** Dirty line evicted as a 16-word burst write; new line filled as a 16-word burst read (~44 cycles total, amortized over up to 16 subsequent hits). After a Hi-Z fast clear, the first miss for any tile initializes the fill data to 0xFFFF (lazy initialization) rather than reading from SDRAM.
 3. **Write-back policy:** Dirty lines are written to SDRAM only on eviction or explicit end-of-frame flush (before buffer swap).
 
 Expected hit rate is 85–95% depending on scene complexity and overdraw, reducing Z-buffer SDRAM traffic by 5–7×.
 The cache controller reuses the same set-associative structure, XOR set indexing, and burst fill/evict FSM proven in the texture cache.
 
 **Cost:** 4–5 EBR, ~300–400 LUTs.
+
+### Hierarchical Z (Hi-Z) Block Metadata
+
+A second tier of depth culling operates at 4×4 tile granularity in the rasterizer (UNIT-005.05), upstream of the per-pixel early Z test in UNIT-006.
+Eight DP16KD blocks store per-tile metadata: one valid bit and an 8-bit truncated min_z value per tile, packed four entries per 36-bit word.
+The rasterizer's FSM enters the HIZ_TEST state after TILE_TEST passes; if the tile's stored min_z exceeds the incoming fragment Z under the active comparison function, the entire tile is skipped without entering EDGE_TEST or emitting any fragments.
+
+This enables two optimizations:
+
+- **Hierarchical Z rejection:** Entire 4×4 tiles are discarded before SDRAM or texture traffic is generated, saving all downstream pipeline work for occluded geometry.
+- **Fast Z clear:** The metadata array is bulk-invalidated (all valid bits cleared) instead of writing 0xFFFF to every Z-buffer SDRAM location, reducing Z-clear time by approximately 520× (from ~2.66 ms to ~5.12 µs).
+  The Z-buffer SDRAM region is initialized lazily: the first cache miss after a fast clear writes 0xFFFF to the tile before returning it.
+
+The Hi-Z metadata is updated on every Z-write: if the written Z value is less than the stored min_z for that tile, the metadata min_z is updated.
+Hi-Z is bypassed when Z_TEST_EN=0 or Z_COMPARE=ALWAYS (no rejection possible without a meaningful depth threshold).
+
+**Cost:** 8 EBR (DP16KD, 36-bit wide), ~200–300 LUTs.
 
 ### Burst Coalescing
 
@@ -327,6 +347,7 @@ The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16K
 | Texture L1 decoded (2 samplers) | 8 | 4 per sampler; PDPW16KD 512×36 (UQ1.8) |
 | Texture L2 compressed (2 samplers) | 8 | 4 per sampler; DP16KD 1024×16 (64-bit entries) |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
+| Hi-Z block metadata | 8 | DP16KD 36-bit wide; 1 valid bit + 8-bit min_z per tile, 4 entries per word |
 | Command FIFO | 2 | 512×72 async CDC |
 | Reciprocal LUT (area) | 1 | DP16KD 36×512, inv_area seed+delta |
 | Reciprocal LUT (1/Q) | 1 | DP16KD 18×1024, per-pixel 1/Q |
@@ -334,7 +355,7 @@ The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16K
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | FB write buffer | 1 | Single-tile coalescing buffer |
-| **Total** | **28–29** | **of 56 available (ECP5-25K)** |
+| **Total** | **36–37** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 
@@ -357,6 +378,7 @@ flowchart LR
         UNIT_005_03["UNIT-005.03: Derivative Pre-computation"]
         UNIT_005_04["UNIT-005.04: Attribute Accumulation"]
         UNIT_005_05["UNIT-005.05: Iteration FSM"]
+        UNIT_005_06["UNIT-005.06: Hi-Z Block Metadata"]
     end
     UNIT_006["UNIT-006: Pixel Pipeline"]
     UNIT_007["UNIT-007: Memory Arbiter"]
@@ -397,6 +419,7 @@ flowchart LR
 | UNIT-005.03 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
 | UNIT-005.04 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
 | UNIT-005.05 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
+| UNIT-005.06 | Hi-Z Block Metadata | Per-tile metadata store that enables two Z-buffer optimizations: fast clear (bulk-invalidating metadata in 512 cycles instead of filling SDRAM in ~266,000 cycles) and hierarchical Z (Hi-Z) tile rejection (rejecting entire 4x4 tiles in the rasterizer before any fragments are emitted). |
 | UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
 | UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination, alpha blending, ordered dithering, and framebuffer write. |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
