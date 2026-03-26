@@ -18,31 +18,33 @@
 
 ```text
 pico-gs/
-├── components/                # Component-centric layout (RTL + twin + tests per component)
+├── components/                # Component-centric layout (RTL + twin per component)
 │   ├── rasterizer/            # Triangle setup + iteration
-│   │   ├── rtl/               # SystemVerilog RTL (rasterizer.sv, raster_*.sv)
-│   │   ├── twin/              # gs-rasterizer Rust crate
-│   │   └── tests/             # Verilator testbenches
+│   │   ├── rtl/
+│   │   │   ├── src/           # SystemVerilog RTL (rasterizer.sv, raster_*.sv)
+│   │   │   └── tests/         # Verilator testbenches
+│   │   └── twin/              # gs-rasterizer Rust crate
 │   ├── stipple/               # Stipple test
 │   ├── early-z/               # Early depth test
 │   ├── texture/               # Texture sampling + decoding
-│   │   ├── rtl/               # Assembly module (texture_sampler.sv)
+│   │   ├── rtl/
+│   │   │   ├── src/           # Assembly module (texture_sampler.sv)
+│   │   │   └── tests/         # Verilator testbenches
 │   │   ├── detail/            # Subunit implementations (RTL + twin per subunit)
-│   │   │   ├── uv-coord/rtl/          # UNIT-011.01: UV coordinate processing
+│   │   │   ├── uv-coord/rtl/src/     # UNIT-011.01: UV coordinate processing
 │   │   │   ├── bilinear-filter/       # UNIT-011.02: Bilinear/trilinear filter
-│   │   │   │   ├── rtl/              # SystemVerilog RTL
+│   │   │   │   ├── rtl/src/          # SystemVerilog RTL
 │   │   │   │   └── twin/             # gs-tex-bilinear-filter Rust crate
 │   │   │   ├── l1-cache/             # UNIT-011.03: L1 decompressed cache
-│   │   │   │   ├── rtl/              # SystemVerilog RTL
+│   │   │   │   ├── rtl/src/          # SystemVerilog RTL
 │   │   │   │   └── twin/             # gs-tex-l1-cache Rust crate
 │   │   │   ├── block-decoder/        # UNIT-011.04: Block decompressor + fetcher
-│   │   │   │   ├── rtl/              # SystemVerilog RTL
+│   │   │   │   ├── rtl/src/          # SystemVerilog RTL
 │   │   │   │   └── twin/             # gs-tex-block-decoder Rust crate
 │   │   │   └── l2-cache/             # UNIT-011.05: L2 compressed cache
-│   │   │       ├── rtl/              # SystemVerilog RTL
+│   │   │       ├── rtl/src/          # SystemVerilog RTL
 │   │   │       └── twin/             # gs-tex-l2-cache Rust crate
-│   │   ├── twin/              # gs-texture facade crate (tex_sample.rs + re-exports)
-│   │   └── tests/             # Verilator testbenches
+│   │   └── twin/              # gs-texture facade crate (tex_sample.rs + re-exports)
 │   ├── color-combiner/        # Two-stage color combiner
 │   ├── alpha-blend/           # Alpha blending
 │   ├── dither/                # Ordered dithering

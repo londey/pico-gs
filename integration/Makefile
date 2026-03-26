@@ -18,25 +18,25 @@ GOLDEN_DIR = golden
 SCRIPTS_DIR = scripts
 
 # Component RTL directories
-CORE_RTL = $(COMP_DIR)/core/rtl
-UTILS_RTL = $(COMP_DIR)/utils/rtl
-SPI_RTL = $(COMP_DIR)/spi/rtl
+CORE_RTL = $(COMP_DIR)/core/rtl/src
+UTILS_RTL = $(COMP_DIR)/utils/rtl/src
+SPI_RTL = $(COMP_DIR)/spi/rtl/src
 REG_GEN = $(COMP_DIR)/registers/generated
-MEMORY_RTL = $(COMP_DIR)/memory/rtl
-DISPLAY_RTL = $(COMP_DIR)/display/rtl
-RASTER_RTL = $(COMP_DIR)/rasterizer/rtl
-STIPPLE_RTL = $(COMP_DIR)/stipple/rtl
-EARLYZ_RTL = $(COMP_DIR)/early-z/rtl
-TEXTURE_RTL     = $(COMP_DIR)/texture/rtl
-TEXTURE_UV_RTL  = $(COMP_DIR)/texture/detail/uv-coord/rtl
-TEXTURE_BLN_RTL = $(COMP_DIR)/texture/detail/bilinear-filter/rtl
-TEXTURE_L1_RTL  = $(COMP_DIR)/texture/detail/l1-cache/rtl
-TEXTURE_DEC_RTL = $(COMP_DIR)/texture/detail/block-decoder/rtl
-TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl
-CC_RTL = $(COMP_DIR)/color-combiner/rtl
-ABLEND_RTL = $(COMP_DIR)/alpha-blend/rtl
-DITHER_RTL = $(COMP_DIR)/dither/rtl
-PXWRITE_RTL = $(COMP_DIR)/pixel-write/rtl
+MEMORY_RTL = $(COMP_DIR)/memory/rtl/src
+DISPLAY_RTL = $(COMP_DIR)/display/rtl/src
+RASTER_RTL = $(COMP_DIR)/rasterizer/rtl/src
+STIPPLE_RTL = $(COMP_DIR)/stipple/rtl/src
+EARLYZ_RTL = $(COMP_DIR)/early-z/rtl/src
+TEXTURE_RTL     = $(COMP_DIR)/texture/rtl/src
+TEXTURE_UV_RTL  = $(COMP_DIR)/texture/detail/uv-coord/rtl/src
+TEXTURE_BLN_RTL = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/src
+TEXTURE_L1_RTL  = $(COMP_DIR)/texture/detail/l1-cache/rtl/src
+TEXTURE_DEC_RTL = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
+TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
+CC_RTL = $(COMP_DIR)/color-combiner/rtl/src
+ABLEND_RTL = $(COMP_DIR)/alpha-blend/rtl/src
+DITHER_RTL = $(COMP_DIR)/dither/rtl/src
+PXWRITE_RTL = $(COMP_DIR)/pixel-write/rtl/src
 
 # Source files
 RTL_SOURCES = \
@@ -169,7 +169,7 @@ program: bitstream
 test-async-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/async_fifo.sv \
-		$(COMP_DIR)/utils/tests/tb_async_fifo.sv \
+		$(COMP_DIR)/utils/rtl/tests/tb_async_fifo.sv \
 		--top-module tb_async_fifo -o tb_async_fifo
 	$(OBJ_DIR)/tb_async_fifo
 
@@ -178,7 +178,7 @@ test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/async_fifo.sv \
 		$(SPI_RTL)/command_fifo.sv \
-		$(COMP_DIR)/spi/tests/tb_command_fifo.sv \
+		$(COMP_DIR)/spi/rtl/tests/tb_command_fifo.sv \
 		--top-module tb_command_fifo -o tb_command_fifo
 	$(OBJ_DIR)/tb_command_fifo
 
@@ -186,7 +186,7 @@ test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/sync_fifo.sv \
-		$(COMP_DIR)/utils/tests/tb_sync_fifo.sv \
+		$(COMP_DIR)/utils/rtl/tests/tb_sync_fifo.sv \
 		--top-module tb_sync_fifo -o tb_sync_fifo
 	$(OBJ_DIR)/tb_sync_fifo
 
@@ -194,7 +194,7 @@ test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(MEMORY_RTL)/sdram_controller.sv \
-		$(COMP_DIR)/memory/tests/tb_sdram_controller.sv \
+		$(COMP_DIR)/memory/rtl/tests/tb_sdram_controller.sv \
 		--top-module tb_sdram_controller -o tb_sdram_controller
 	$(OBJ_DIR)/tb_sdram_controller
 
@@ -204,7 +204,7 @@ test-sram-arbiter: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(MEMORY_RTL)/sdram_controller.sv \
 		$(MEMORY_RTL)/sram_arbiter.sv \
 		$(MEMORY_RTL)/mem_dma.sv \
-		$(COMP_DIR)/memory/tests/tb_sram_arbiter.sv \
+		$(COMP_DIR)/memory/rtl/tests/tb_sram_arbiter.sv \
 		--top-module tb_sram_arbiter -o tb_sram_arbiter
 	$(OBJ_DIR)/tb_sram_arbiter
 
@@ -213,7 +213,7 @@ test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/sync_fifo.sv \
 		$(DISPLAY_RTL)/display_controller.sv \
-		$(COMP_DIR)/display/tests/tb_display_burst.sv \
+		$(COMP_DIR)/display/rtl/tests/tb_display_burst.sv \
 		--top-module tb_display_burst -o tb_display_burst
 	$(OBJ_DIR)/tb_display_burst
 
@@ -225,7 +225,7 @@ test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 		$(TEXTURE_RTL)/texture_sampler.sv \
-		$(COMP_DIR)/texture/tests/tb_texture_cache_burst.sv \
+		$(COMP_DIR)/texture/rtl/tests/tb_texture_cache_burst.sv \
 		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
 	$(OBJ_DIR)/tb_texture_cache_burst
 
@@ -235,7 +235,7 @@ test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(MEMORY_RTL)/sdram_controller.sv \
 		$(MEMORY_RTL)/sram_arbiter.sv \
 		$(MEMORY_RTL)/mem_dma.sv \
-		$(COMP_DIR)/memory/tests/tb_burst_integration.sv \
+		$(COMP_DIR)/memory/rtl/tests/tb_burst_integration.sv \
 		--top-module tb_burst_integration -o tb_burst_integration
 	$(OBJ_DIR)/tb_burst_integration
 
@@ -246,7 +246,7 @@ test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-
 test-register-file-v10: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SPI_RTL)/register_file.sv \
-		$(COMP_DIR)/spi/tests/register_file_v10_tb.sv \
+		$(COMP_DIR)/spi/rtl/tests/register_file_v10_tb.sv \
 		--top-module register_file_v10_tb -o tb_register_file_v10
 	$(OBJ_DIR)/tb_register_file_v10
 
@@ -255,7 +255,7 @@ test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SHARED_DIR)/fp_types_pkg.sv \
 		$(CC_RTL)/color_combiner.sv \
-		$(COMP_DIR)/color-combiner/tests/color_combiner_tb.sv \
+		$(COMP_DIR)/color-combiner/rtl/tests/color_combiner_tb.sv \
 		--top-module color_combiner_tb -o tb_color_combiner
 	$(OBJ_DIR)/tb_color_combiner
 
@@ -272,7 +272,7 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		$(STIPPLE_RTL)/stipple.sv \
-		$(COMP_DIR)/texture/tests/texture_decoder_tb.sv \
+		$(COMP_DIR)/texture/rtl/tests/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
 	$(OBJ_DIR)/tb_texture_decoder
 
@@ -283,7 +283,7 @@ test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
 		$(RASTER_RTL)/raster_deriv.sv \
-		$(COMP_DIR)/rasterizer/tests/tb_raster_deriv.sv \
+		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_deriv.sv \
 		--top-module tb_raster_deriv -o tb_raster_deriv
 	$(OBJ_DIR)/tb_raster_deriv
 
@@ -291,7 +291,7 @@ test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RASTER_RTL)/raster_edge_walk.sv \
-		$(COMP_DIR)/rasterizer/tests/tb_raster_edge_walk.sv \
+		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_edge_walk.sv \
 		--top-module tb_raster_edge_walk -o tb_raster_edge_walk
 	$(OBJ_DIR)/tb_raster_edge_walk
 
@@ -299,7 +299,7 @@ test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RASTER_RTL)/raster_attr_accum.sv \
-		$(COMP_DIR)/rasterizer/tests/tb_raster_attr_accum.sv \
+		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_attr_accum.sv \
 		--top-module tb_raster_attr_accum -o tb_raster_attr_accum
 	$(OBJ_DIR)/tb_raster_attr_accum
 
@@ -321,7 +321,7 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_setup_fifo.sv \
 		$(RASTER_RTL)/raster_hiz_meta.sv \
 		$(RASTER_RTL)/rasterizer.sv \
-		$(COMP_DIR)/rasterizer/tests/tb_rasterizer.sv \
+		$(COMP_DIR)/rasterizer/rtl/tests/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
 	$(OBJ_DIR)/tb_rasterizer
 
@@ -343,7 +343,7 @@ test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_hiz_meta.sv \
 		$(RASTER_RTL)/rasterizer.sv \
 		--top-module rasterizer \
-		$(COMP_DIR)/rasterizer/tests/tb_raster_viz.cpp \
+		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_viz.cpp \
 		-CFLAGS "-std=c++20 -I$(abspath $(HARNESS_DIR))" \
 		-o tb_raster_viz
 	$(OBJ_DIR)/raster_viz/tb_raster_viz
@@ -352,7 +352,7 @@ test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(EARLYZ_RTL)/early_z.sv \
-		$(COMP_DIR)/early-z/tests/tb_early_z.sv \
+		$(COMP_DIR)/early-z/rtl/tests/tb_early_z.sv \
 		--top-module tb_early_z -o tb_early_z
 	$(OBJ_DIR)/tb_early_z
 
@@ -360,7 +360,7 @@ test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(PXWRITE_RTL)/fb_promote.sv \
-		$(COMP_DIR)/pixel-write/tests/tb_fb_promote.sv \
+		$(COMP_DIR)/pixel-write/rtl/tests/tb_fb_promote.sv \
 		--top-module tb_fb_promote -o tb_fb_promote
 	$(OBJ_DIR)/tb_fb_promote
 
@@ -368,7 +368,7 @@ test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(ABLEND_RTL)/alpha_blend.sv \
-		$(COMP_DIR)/alpha-blend/tests/tb_alpha_blend.sv \
+		$(COMP_DIR)/alpha-blend/rtl/tests/tb_alpha_blend.sv \
 		--top-module tb_alpha_blend -o tb_alpha_blend
 	$(OBJ_DIR)/tb_alpha_blend
 
@@ -376,7 +376,7 @@ test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(DITHER_RTL)/dither.sv \
-		$(COMP_DIR)/dither/tests/tb_dither.sv \
+		$(COMP_DIR)/dither/rtl/tests/tb_dither.sv \
 		--top-module tb_dither -o tb_dither
 	$(OBJ_DIR)/tb_dither
 
@@ -384,7 +384,7 @@ test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SPI_RTL)/register_file.sv \
-		$(COMP_DIR)/spi/tests/tb_register_file.sv \
+		$(COMP_DIR)/spi/rtl/tests/tb_register_file.sv \
 		--top-module tb_register_file -o tb_register_file
 	$(OBJ_DIR)/tb_register_file
 
