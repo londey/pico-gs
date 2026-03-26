@@ -889,12 +889,10 @@ int main(int argc, char** argv) {
     // 6d. Hi-Z tile rejection counter (VER-011 step 11)
     // -----------------------------------------------------------------------
     // Read the Hi-Z rejected_tiles counter from raster_hiz_meta via gpu_top.
-    // For the depth_test scene (VER-011), Triangle A writes min_z=0x80 into
-    // Hi-Z metadata; Triangle B at Z=0x4000 (Z[15:8]=0x40) will NOT be
-    // rejected in tiles it covers (0x40 <= 0x80), but tiles within Triangle B's
-    // bounding box covered only by Triangle A are rejected when the rasterizer
-    // evaluates them for Triangle B.  The exact count depends on triangle
-    // overlap geometry.
+    // For the depth_test scene (VER-011) with GEQUAL/reverse-Z:
+    // Triangle A (far, Z=0x4000) is drawn first, Triangle B (near, Z=0x8000)
+    // second.  Since Triangle B is nearer, its frag_z[15:8]=0x80 >= min_z=0x40
+    // so Hi-Z never rejects — the counter should be 0.
     {
         auto hiz_rejects = static_cast<uint32_t>(
             top->rootp->gpu_top->hiz_rejected_tiles);
@@ -902,18 +900,20 @@ int main(int argc, char** argv) {
             "DIAG: Hi-Z rejected tiles: {}\n", hiz_rejects);
 
         if (test_name == "depth_test") {
-            if (hiz_rejects == 0) {
-                std::cerr << "ERROR: Hi-Z rejection counter is 0 for depth_test "
-                             "scene (VER-011 step 11 requires > 0).\n";
+            if (hiz_rejects != 0) {
+                std::cerr << std::format(
+                    "ERROR: Hi-Z rejection counter is {} for depth_test "
+                    "scene, expected 0 (nearer Triangle B should not be "
+                    "rejected by further Triangle A metadata).\n",
+                    hiz_rejects);
                 top->final();
                 if (trace) {
                     trace->close();
                 }
                 return 1;
             }
-            std::cout << std::format(
-                "PASS: Hi-Z rejection counter = {} (> 0, VER-011 step 11)\n",
-                hiz_rejects);
+            std::cout << "PASS: Hi-Z rejection counter = 0 (nearer triangle "
+                         "not rejected, VER-011 step 11)\n";
         }
     }
 

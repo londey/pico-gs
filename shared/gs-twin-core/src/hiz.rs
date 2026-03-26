@@ -79,8 +79,14 @@ impl HizMetadata {
 
     /// Update a metadata entry on Z-write.
     ///
-    /// If `valid=0` or `new_z_hi < stored_min_z`, sets `valid=1` and
-    /// `min_z = new_z_hi`.  Otherwise the entry is unchanged.
+    /// On the first write (`valid=0→1`), `min_z` is set to 0 rather
+    /// than the written value because unwritten pixels in the tile
+    /// still hold lazy-fill `z=0x0000`.  Using the written Z would
+    /// over-estimate `min_z` and cause false Hi-Z rejection for
+    /// later triangles targeting those unwritten pixels.
+    ///
+    /// On subsequent writes (`valid=1`), `min_z` is lowered if
+    /// `new_z_hi < stored_min_z`.
     ///
     /// # Arguments
     ///
@@ -88,10 +94,22 @@ impl HizMetadata {
     /// * `new_z_hi` - Upper 8 bits of the written Z value (`z[15:8]`).
     pub fn update(&mut self, tile_index: usize, new_z_hi: u8) {
         let (valid, stored_min_z) = self.read(tile_index);
-        if !valid || new_z_hi < stored_min_z {
-            // Set valid=1, min_z = new_z_hi
+        if !valid {
+            // First write: min_z = 0 to account for lazy-fill zeros.
+            self.entries[tile_index] = 1u16 << 8;
+        } else if new_z_hi < stored_min_z {
             self.entries[tile_index] = (1u16 << 8) | u16::from(new_z_hi);
         }
+    }
+
+    /// Directly set a metadata entry to `valid=1` with the given `min_z`.
+    ///
+    /// Unlike `update()`, this bypasses the lazy-fill-zero logic and sets
+    /// `min_z` to the exact value provided.
+    /// Use this to simulate a fully-written tile in tests, or when
+    /// restoring metadata from a known-good state.
+    pub fn force_valid(&mut self, tile_index: usize, min_z: u8) {
+        self.entries[tile_index] = (1u16 << 8) | u16::from(min_z);
     }
 }
 

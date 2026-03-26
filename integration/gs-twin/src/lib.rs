@@ -31,8 +31,10 @@ pub use gs_twin_core::hex_parser;
 pub use gs_twin_core::math;
 pub use gs_twin_core::triangle;
 
+use gpu_registers::components::z_compare_e::ZCompareE;
 use gs_color_combiner::CcInputs;
 use gs_memory::GpuMemory;
+use gs_pixel_write::zbuf_cache::{ZbufContext, ZbufTileCache};
 use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
 use gs_texture::tex_sample::TextureSampler;
@@ -66,6 +68,9 @@ pub struct Gpu {
     /// Hi-Z block metadata store (UNIT-005.06).
     pub hiz: HizMetadata,
 
+    /// Z-buffer tile cache (4-way set-associative, lazy-fill).
+    zbuf_cache: ZbufTileCache,
+
     /// Default framebuffer width (used when fb_config hasn't been set).
     pub default_width: u32,
 
@@ -95,6 +100,7 @@ impl Gpu {
             tex0_sampler: TextureSampler::default(),
             tex1_sampler: TextureSampler::default(),
             hiz: HizMetadata::new(),
+            zbuf_cache: ZbufTileCache::new(),
             default_width: width,
             default_height: height,
             debug_pixel: None,
@@ -118,17 +124,15 @@ impl Gpu {
             GpuAction::KickTriangle(tri) => {
                 self.execute_kick(&tri);
             }
+            GpuAction::FbConfig => {
+                // Invalidate Hi-Z metadata and Z-buffer cache on any
+                // FB_CONFIG write (UNIT-005.06 fast-clear trigger).
+                self.hiz.invalidate_all();
+                self.zbuf_cache.invalidate();
+            }
             GpuAction::MemFill { base, value, count } => {
                 let byte_addr = (base as usize) * 2;
                 self.memory.fill(byte_addr, value, count);
-
-                // Invalidate Hi-Z metadata when the Z-buffer is cleared
-                // (UNIT-005.06 fast-clear trigger).
-                let fb_cfg = self.regs.fb_config();
-                let z_base_word = u32::from(fb_cfg.z_base()) * 256;
-                if base == z_base_word {
-                    self.hiz.invalidate_all();
-                }
             }
             GpuAction::Tex0Config(cfg) => {
                 self.tex0_sampler.set_tex_cfg(cfg);
@@ -219,9 +223,36 @@ impl Gpu {
         let frag =
             gs_twin_core::depth_range::depth_range_clip(frag, zr.z_range_min(), zr.z_range_max())?;
 
-        // Stage 0c: Early Z test (read-compare only, no write)
-        let frag =
-            gs_early_z::early_z_test(frag, &self.memory, &fb_cfg, rm.z_test_en(), rm.z_compare())?;
+        // Stage 0c: Early Z test (read-compare only, no write).
+        // Z reads go through the tile cache to see uncommitted writes.
+        let frag = if rm.z_test_en() {
+            let mut zctx = ZbufContext {
+                hiz: &self.hiz,
+                memory: &mut self.memory,
+                z_base: fb_cfg.z_base(),
+                wl2: fb_cfg.width_log2(),
+            };
+            let stored = self
+                .zbuf_cache
+                .read(frag.x as u32, frag.y as u32, &mut zctx);
+            let pass = match rm.z_compare() {
+                ZCompareE::Never => false,
+                ZCompareE::Less => frag.z < stored,
+                ZCompareE::Lequal => frag.z <= stored,
+                ZCompareE::Equal => frag.z == stored,
+                ZCompareE::Greater => frag.z > stored,
+                ZCompareE::Gequal => frag.z >= stored,
+                ZCompareE::Notequal => frag.z != stored,
+                ZCompareE::Always => true,
+            };
+            if pass {
+                frag
+            } else {
+                return None;
+            }
+        } else {
+            frag
+        };
 
         // Stage 1-3: Texture sampling (TEX0 + TEX1)
         let frag = gs_texture::tex_sample::tex_sample(
@@ -298,9 +329,16 @@ impl Gpu {
 
         // Z-buffer write: deferred from early_z to here so that
         // alpha-killed fragments do not pollute the Z-buffer.
+        // Writes go through the tile cache; dirty lines are written
+        // back to SDRAM on eviction.
         if rm.z_write_en() {
-            self.memory
-                .write_tiled(fb_cfg.z_base(), wl2, fx, fy, frag.z);
+            let mut zctx = ZbufContext {
+                hiz: &self.hiz,
+                memory: &mut self.memory,
+                z_base: fb_cfg.z_base(),
+                wl2,
+            };
+            self.zbuf_cache.write(fx, fy, frag.z, &mut zctx);
 
             // Update Hi-Z metadata (UNIT-005.06)
             let tile_col = fx >> 2;
@@ -358,10 +396,24 @@ impl Gpu {
     }
 
     /// Export the current Z-buffer as a grayscale PNG image.
-    pub fn zbuffer_to_png(&self, path: &std::path::Path) -> Result<(), image::ImageError> {
+    ///
+    /// Flushes the Z-buffer tile cache first so all dirty lines are
+    /// visible in SDRAM.
+    /// Uses Hi-Z metadata to mask out uninitialized tiles whose SDRAM
+    /// still contains PRNG garbage from `GpuMemory::new()`.
+    pub fn zbuffer_to_png(&mut self, path: &std::path::Path) -> Result<(), image::ImageError> {
         let cfg = self.regs.fb_config();
         let wl2 = cfg.width_log2();
+        self.zbuf_cache.flush(&mut self.memory, cfg.z_base());
         let (_, _, w, h) = self.effective_fb_dims();
-        self.memory.save_zbuffer_png(cfg.z_base(), wl2, w, h, path)
+
+        // Build per-tile validity mask from Hi-Z metadata.
+        let num_tiles = (w >> 2) * (h >> 2);
+        let tile_valid: Vec<bool> = (0..num_tiles as usize)
+            .map(|i| self.hiz.read(i).0)
+            .collect();
+
+        self.memory
+            .save_zbuffer_png(cfg.z_base(), wl2, w, h, Some(&tile_valid), path)
     }
 }

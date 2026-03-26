@@ -111,6 +111,7 @@ module raster_edge_walk (
     output reg  [7:0]  frag_lod,         // UQ4.4 mip-level estimate
     output reg         frag_tile_start,  // First emitted frag of tile
     output reg         frag_tile_end,    // Last emitted frag of tile
+    output reg         frag_hiz_uninit,  // Tile Hi-Z metadata was invalid (lazy-fill)
 
     // Iteration position (read by parent)
     output reg  [9:0]  curr_x /* verilator public */,  // Current pixel X
@@ -327,6 +328,7 @@ module raster_edge_walk (
     logic [7:0]        next_frag_lod;
     logic              next_frag_tile_start;
     logic              next_frag_tile_end;
+    logic              next_frag_hiz_uninit;
     logic [9:0]        next_curr_x;
     logic [9:0]        next_curr_y;
     logic [6:0]        next_tile_col;
@@ -468,6 +470,7 @@ module raster_edge_walk (
         next_frag_lod = frag_lod;
         next_frag_tile_start = 1'b0;
         next_frag_tile_end = 1'b0;
+        next_frag_hiz_uninit = frag_hiz_uninit;
         next_curr_x = curr_x;
         next_curr_y = curr_y;
         next_tile_col = tile_col;
@@ -561,6 +564,9 @@ module raster_edge_walk (
             end
 
             EW_HIZ_TEST: begin
+                // Latch whether this tile's Hi-Z metadata was uninitialized
+                // (valid=0).  Downstream Z-buffer cache uses this for lazy-fill.
+                next_frag_hiz_uninit = !hiz_meta_valid;
                 if (hiz_rejected) begin
                     // Hi-Z rejects tile: skip to next tile (same as TILE_TEST
                     // rejection — force px/py to 3,3 so ITER_NEXT advances tile).
@@ -727,6 +733,7 @@ module raster_edge_walk (
             frag_lod        <= 8'b0;
             frag_tile_start <= 1'b0;
             frag_tile_end   <= 1'b0;
+            frag_hiz_uninit <= 1'b0;
             curr_x          <= 10'b0;
             curr_y          <= 10'b0;
             tile_col        <= 7'b0;
@@ -774,6 +781,7 @@ module raster_edge_walk (
             frag_lod        <= next_frag_lod;
             frag_tile_start <= next_frag_tile_start;
             frag_tile_end   <= next_frag_tile_end;
+            frag_hiz_uninit <= next_frag_hiz_uninit;
             curr_x          <= next_curr_x;
             curr_y          <= next_curr_y;
             tile_col        <= next_tile_col;

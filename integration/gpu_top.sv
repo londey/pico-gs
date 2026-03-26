@@ -183,6 +183,9 @@ module gpu_top (
     wire [9:0]  scissor_width;
     wire [9:0]  scissor_height;
 
+    // Framebuffer config trigger (FB_CONFIG write pulse)
+    wire        fb_config_trigger;
+
     // Memory fill (MEM_FILL)
     wire        mem_fill_trigger;
     wire [23:0] mem_fill_base;
@@ -363,6 +366,9 @@ module gpu_top (
         .scissor_y(scissor_y),
         .scissor_width(scissor_width),
         .scissor_height(scissor_height),
+
+        // Framebuffer config trigger
+        .fb_config_trigger(fb_config_trigger),
 
         // Memory fill
         .mem_fill_trigger(mem_fill_trigger),
@@ -621,11 +627,9 @@ module gpu_top (
     assign arb_port1_burst_len = (pp_fb_write_req || pp_fb_read_req) ? 8'd1 : 8'd0;
     assign arb_port1_burst_wdata = pp_fb_write_data;
 
-    // Port 2: Pixel pipeline Z-buffer (single-word, no burst)
-    // Use burst_len=1 for single-pixel 16-bit Z-buffer writes (same
-    // rationale as port 1 — avoid 32-bit single-word mode clobbering).
-    assign arb_port2_burst_len = (pp_zb_write_req || pp_zb_read_req) ? 8'd1 : 8'd0;
-    assign arb_port2_burst_wdata = pp_zb_write_data;
+    // Port 2: Z-buffer tile cache (single-word per SDRAM request)
+    assign arb_port2_burst_len = (zcache_sdram_wr_req || zcache_sdram_rd_req) ? 8'd1 : 8'd0;
+    assign arb_port2_burst_wdata = zcache_sdram_wr_data;
 
     // ========================================================================
     // Memory DMA Engine (MEM_DATA / MEM_FILL write path)
@@ -915,6 +919,7 @@ module gpu_top (
     wire [7:0]  rast_frag_lod;
     wire        rast_frag_tile_start;
     wire        rast_frag_tile_end;
+    wire        rast_frag_hiz_uninit;
 
     rasterizer u_rasterizer (
         .clk(clk_core),
@@ -967,6 +972,7 @@ module gpu_top (
         .frag_lod(rast_frag_lod),
         .frag_tile_start(rast_frag_tile_start),
         .frag_tile_end(rast_frag_tile_end),
+        .frag_hiz_uninit(rast_frag_hiz_uninit),
 
         // Render mode
         .z_test_en(mode_z_test),
@@ -1022,13 +1028,11 @@ module gpu_top (
     wire [31:0] hiz_rejected_tiles /* verilator public */;
 
     // Hi-Z metadata fast-clear (UNIT-005.06)
-    // Detect Z-buffer MEM_FILL: mem_fill_base matches fb_z_base in word-address
-    // space.  fb_z_base is in x512-byte units; mem_fill_base is a word address
-    // (1 word = 2 bytes), so fb_z_base shifted left by 8 equals the word address.
+    // Triggered by any FB_CONFIG write — invalidates all Hi-Z metadata so the
+    // Z-buffer tile cache can lazy-fill tiles with 0x0000 on first access.
     wire        hiz_clear_req;
     wire        rast_hiz_clear_busy;
-    assign hiz_clear_req = mem_fill_trigger
-                         && (mem_fill_base == {fb_z_base, 8'b0});
+    assign hiz_clear_req = fb_config_trigger;
 
     // Pixel pipeline SDRAM interface wires
     wire        pp_fb_write_req;
@@ -1037,10 +1041,14 @@ module gpu_top (
     wire        pp_fb_read_req;
     wire [23:0] pp_fb_read_addr;
     wire        pp_zb_read_req;
-    wire [23:0] pp_zb_read_addr;
+    wire [13:0] pp_zb_read_tile_idx;
+    wire [3:0]  pp_zb_read_pixel_off;
+    wire        pp_zb_read_hiz_uninit;
     wire        pp_zb_write_req;
-    wire [23:0] pp_zb_write_addr;
+    wire [13:0] pp_zb_write_tile_idx;
+    wire [3:0]  pp_zb_write_pixel_off;
     wire [15:0] pp_zb_write_data;
+    wire        pp_zb_write_hiz_uninit;
 
     // Construct RENDER_MODE register from individual mode flags
     wire [31:0] render_mode_packed = {
@@ -1155,15 +1163,22 @@ module gpu_top (
         .cc_in_frag_y(cc_out_frag_y),
         .cc_in_frag_z(cc_out_frag_z),
 
-        // Z-buffer interface (arbiter port 2)
+        // Hi-Z uninit from rasterizer
+        .frag_hiz_uninit(rast_frag_hiz_uninit),
+
+        // Z-buffer cache interface
         .zbuf_read_req(pp_zb_read_req),
-        .zbuf_read_addr(pp_zb_read_addr),
-        .zbuf_read_data(arb_port2_burst_rdata),
-        .zbuf_read_valid(arb_port2_burst_data_valid),
-        .zbuf_ready(arb_port2_ready),
+        .zbuf_read_tile_idx(pp_zb_read_tile_idx),
+        .zbuf_read_pixel_off(pp_zb_read_pixel_off),
+        .zbuf_read_hiz_uninit(pp_zb_read_hiz_uninit),
+        .zbuf_read_data(zcache_rd_data),
+        .zbuf_read_valid(zcache_rd_valid),
+        .zbuf_ready(zcache_ready),
         .zbuf_write_req(pp_zb_write_req),
-        .zbuf_write_addr(pp_zb_write_addr),
+        .zbuf_write_tile_idx(pp_zb_write_tile_idx),
+        .zbuf_write_pixel_off(pp_zb_write_pixel_off),
         .zbuf_write_data(pp_zb_write_data),
+        .zbuf_write_hiz_uninit(pp_zb_write_hiz_uninit),
 
         // Framebuffer interface (arbiter port 1)
         .fb_write_req(pp_fb_write_req),
@@ -1207,14 +1222,69 @@ module gpu_top (
     assign arb_port1_wdata = {16'b0, pp_fb_write_data};
 
     // ========================================================================
-    // Arbiter Port 2: Z-Buffer (owned by pixel pipeline, UNIT-006)
+    // Z-Buffer Tile Cache (UNIT-006)
     // ========================================================================
-    // Mux between ZB read and ZB write requests.
+    // Sits between pixel_pipeline and arbiter port 2.  Caches 4×4 Z tiles
+    // with lazy-fill from Hi-Z metadata (UNIT-005.06).
 
-    assign arb_port2_req   = pp_zb_read_req | pp_zb_write_req;
-    assign arb_port2_we    = pp_zb_write_req;
-    assign arb_port2_addr  = pp_zb_write_req ? pp_zb_write_addr : pp_zb_read_addr;
-    assign arb_port2_wdata = {16'b0, pp_zb_write_data};
+    wire [15:0] zcache_rd_data;
+    wire        zcache_rd_valid;
+    wire        zcache_ready;
+    wire        zcache_sdram_rd_req;
+    wire [23:0] zcache_sdram_rd_addr;
+    wire        zcache_sdram_wr_req;
+    wire [23:0] zcache_sdram_wr_addr;
+    wire [15:0] zcache_sdram_wr_data;
+
+    zbuf_tile_cache u_zbuf_tile_cache (
+        .clk(clk_core),
+        .rst_n(rst_n_core),
+
+        // Pixel pipeline read interface
+        .rd_req(pp_zb_read_req),
+        .rd_tile_idx(pp_zb_read_tile_idx),
+        .rd_pixel_off(pp_zb_read_pixel_off),
+        .rd_hiz_uninit(pp_zb_read_hiz_uninit),
+        .rd_data(zcache_rd_data),
+        .rd_valid(zcache_rd_valid),
+
+        // Pixel pipeline write interface
+        .wr_req(pp_zb_write_req),
+        .wr_tile_idx(pp_zb_write_tile_idx),
+        .wr_pixel_off(pp_zb_write_pixel_off),
+        .wr_data(pp_zb_write_data),
+        .wr_hiz_uninit(pp_zb_write_hiz_uninit),
+        .wr_ready(),
+
+        // Cache status
+        .cache_ready(zcache_ready),
+
+        // SDRAM arbiter interface (port 2)
+        .sdram_rd_req(zcache_sdram_rd_req),
+        .sdram_rd_addr(zcache_sdram_rd_addr),
+        .sdram_rd_data(arb_port2_burst_rdata),
+        .sdram_rd_valid(arb_port2_burst_data_valid),
+        .sdram_wr_req(zcache_sdram_wr_req),
+        .sdram_wr_addr(zcache_sdram_wr_addr),
+        .sdram_wr_data(zcache_sdram_wr_data),
+        .sdram_ready(arb_port2_ready),
+
+        // Configuration
+        .fb_z_base(fb_z_base),
+        .fb_width_log2(fb_width_log2),
+
+        // Invalidation (on FB_CONFIG write)
+        .invalidate(fb_config_trigger)
+    );
+
+    // ========================================================================
+    // Arbiter Port 2: Z-Buffer (owned by zbuf_tile_cache)
+    // ========================================================================
+
+    assign arb_port2_req   = zcache_sdram_rd_req | zcache_sdram_wr_req;
+    assign arb_port2_we    = zcache_sdram_wr_req;
+    assign arb_port2_addr  = zcache_sdram_wr_req ? zcache_sdram_wr_addr : zcache_sdram_rd_addr;
+    assign arb_port2_wdata = {16'b0, zcache_sdram_wr_data};
 
     // ========================================================================
     // Color Combiner (UNIT-010)

@@ -277,12 +277,20 @@ impl GpuMemory {
     ///   - Far objects appear **dark** (low Z → dim).
     ///   - Background (cleared to 0) appears **black**.
     ///
+    /// When `tile_valid` is provided, pixels in tiles marked `false` are
+    /// treated as background (z=0) regardless of their SDRAM value.
+    /// This masks out PRNG-initialized SDRAM in tiles that were never
+    /// accessed by the rendering pipeline.
+    ///
     /// # Arguments
     ///
     /// * `z_base_reg` - Z_BASE register field.
     /// * `width_log2` - Log2 of surface width.
     /// * `width` - Surface width in pixels.
     /// * `height` - Surface height in pixels.
+    /// * `tile_valid` - Per-tile validity mask from Hi-Z metadata.
+    ///   Index by `(y >> 2) << (width_log2 - 2) | (x >> 2)`.
+    ///   `None` disables masking (legacy behavior).
     /// * `path` - Output file path.
     ///
     /// # Errors
@@ -294,13 +302,30 @@ impl GpuMemory {
         width_log2: u8,
         width: u32,
         height: u32,
+        tile_valid: Option<&[bool]>,
         path: &Path,
     ) -> Result<(), image::ImageError> {
+        let tile_cols_log2 = width_log2 as u32 - 2;
+
+        // Helper: is this pixel in a valid (initialized) tile?
+        let is_valid = |x: u32, y: u32| -> bool {
+            match tile_valid {
+                None => true,
+                Some(mask) => {
+                    let idx = ((y >> 2) << tile_cols_log2) | (x >> 2);
+                    mask.get(idx as usize).copied().unwrap_or(false)
+                }
+            }
+        };
+
         // First pass: find min/max Z among written pixels.
         let mut z_min: u16 = u16::MAX;
         let mut z_max: u16 = 0;
         let pixels = (0..height).flat_map(|y| (0..width).map(move |x| (x, y)));
         for (x, y) in pixels {
+            if !is_valid(x, y) {
+                continue;
+            }
             let z16 = self.read_tiled(z_base_reg, width_log2, x, y);
             if z16 != 0 {
                 z_min = z_min.min(z16);
@@ -315,7 +340,11 @@ impl GpuMemory {
         let mut img = image::GrayImage::new(width, height);
         let pixels = (0..height).flat_map(|y| (0..width).map(move |x| (x, y)));
         for (x, y) in pixels {
-            let z16 = self.read_tiled(z_base_reg, width_log2, x, y);
+            let z16 = if is_valid(x, y) {
+                self.read_tiled(z_base_reg, width_log2, x, y)
+            } else {
+                0
+            };
             let gray = if z16 == 0 {
                 0u8
             } else {

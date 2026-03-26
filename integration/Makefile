@@ -68,6 +68,7 @@ RTL_SOURCES = \
 	$(RASTER_RTL)/raster_setup_fifo.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
+	$(PXWRITE_RTL)/zbuf_tile_cache.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -652,6 +653,7 @@ lint:
 		$(DITHER_RTL)/dither.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		$(PXWRITE_RTL)/fb_promote.sv \
+		$(PXWRITE_RTL)/zbuf_tile_cache.sv \
 		$(PXWRITE_RTL)/pixel_pipeline.sv \
 		--top-module pixel_pipeline 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
@@ -696,6 +698,7 @@ HARNESS_RTL_SOURCES = \
 	$(RASTER_RTL)/raster_setup_fifo.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
+	$(PXWRITE_RTL)/zbuf_tile_cache.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -788,6 +791,7 @@ SIM_RTL_SOURCES = \
 	$(RASTER_RTL)/raster_setup_fifo.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
+	$(PXWRITE_RTL)/zbuf_tile_cache.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc3.sv \

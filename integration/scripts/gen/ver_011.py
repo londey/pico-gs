@@ -2,10 +2,12 @@
 
 Two overlapping flat-colored triangles at different depths.
 Triangle A (far, red, Z=0x4000) rendered first; Triangle B (near, blue,
-Z=0x8000) rendered second.  A Z-buffer clear pass precedes drawing.
+Z=0x8000) rendered second.
 
 Uses reverse-Z convention: near = high Z, far = low Z, clear = 0x0000,
-compare = GEQUAL.
+compare = GEQUAL.  Z-buffer initialization is handled by the tile cache
+lazy-fill (FB_CONFIG write resets Hi-Z metadata; cache fills uninitialized
+tiles with 0x0000 on first access).
 
 Three phases: zclear, tri_a, tri_b.
 """
@@ -25,12 +27,9 @@ def _zclear_phase() -> list[str]:
     lines.extend(emit_fb_clear(0x0000, 9, 9))
     lines.append(emit_blank())
 
-    # Clear Z-buffer to 0x0000 (reverse-Z: far plane = 0)
-    fill_count = 512 * 512  # 1 << 9 * 1 << 9
-    lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(ZBUFFER_BASE_512 * 256, 0x0000, fill_count),
-                       mem_fill_comment(ZBUFFER_BASE_512 * 256, 0x0000, fill_count)))
-
+    # Z-buffer clear is handled by the tile cache lazy-fill:
+    # FB_CONFIG write resets Hi-Z metadata, and on cache miss to an
+    # uninitialized tile the cache fills the line with 0x0000.
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 480),

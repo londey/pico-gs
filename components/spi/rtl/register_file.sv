@@ -63,6 +63,9 @@ module register_file (
     output reg  [9:0]   scissor_width,      // Scissor width
     output reg  [9:0]   scissor_height,     // Scissor height
 
+    // Framebuffer config (FB_CONFIG)
+    output reg          fb_config_trigger,   // One-cycle pulse on FB_CONFIG write
+
     // Memory fill (MEM_FILL)
     output reg          mem_fill_trigger,    // One-cycle pulse
     output reg  [23:0]  mem_fill_base,       // Fill word address (byte_addr = base * 2)
@@ -359,6 +362,7 @@ module register_file (
     reg [2:0][31:0] next_tri_st1;
 
     // Pulse outputs with associated data
+    reg          next_fb_config_trigger;
     reg          next_mem_fill_trigger;
     reg [23:0]   next_mem_fill_base;
     reg [15:0]   next_mem_fill_value;
@@ -431,6 +435,7 @@ module register_file (
         // ---- Pulse outputs: clear each cycle ----
         next_tri_valid        = 1'b0;
         next_rect_valid       = 1'b0;
+        next_fb_config_trigger = 1'b0;
         next_mem_fill_trigger = 1'b0;
         next_tex0_cache_inv   = 1'b0;
         next_tex1_cache_inv   = 1'b0;
@@ -640,6 +645,7 @@ module register_file (
 
                 ADDR_FB_CONFIG: begin
                     next_fb_config = cmd_wdata;
+                    next_fb_config_trigger = 1'b1;
                 end
 
                 ADDR_FB_DISPLAY: begin
@@ -746,6 +752,7 @@ module register_file (
             tri_st1    <= '0;
 
             // Reset pulse outputs
+            fb_config_trigger <= 1'b0;
             mem_fill_trigger <= 1'b0;
             mem_fill_base    <= 24'h0;
             mem_fill_value   <= 16'h0;
@@ -811,6 +818,7 @@ module register_file (
             tri_st1    <= next_tri_st1;
 
             // Pulse outputs with associated data
+            fb_config_trigger <= next_fb_config_trigger;
             mem_fill_trigger <= next_mem_fill_trigger;
             mem_fill_base    <= next_mem_fill_base;
             mem_fill_value   <= next_mem_fill_value;

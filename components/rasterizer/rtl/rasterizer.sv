@@ -92,6 +92,7 @@ module rasterizer (
     output wire [7:0]   frag_lod,       // UQ4.4 mip-level estimate
     output wire         frag_tile_start, // First emitted fragment of 4x4 tile
     output wire         frag_tile_end,  // Last emitted fragment of 4x4 tile
+    output wire         frag_hiz_uninit, // Tile Hi-Z metadata was invalid (lazy-fill)
 
     // Render mode (from RENDER_MODE register via UNIT-003)
     input  wire         z_test_en,      // Z_TEST_EN from RENDER_MODE[1]
@@ -892,6 +893,7 @@ module rasterizer (
         .frag_lod       (frag_lod),
         .frag_tile_start(frag_tile_start),
         .frag_tile_end  (frag_tile_end),
+        .frag_hiz_uninit(frag_hiz_uninit),
         // Iteration position
         .curr_x         (curr_x),
         .curr_y         (curr_y),

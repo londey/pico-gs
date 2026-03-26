@@ -89,17 +89,26 @@ module pixel_pipeline (
     input  wire [15:0]  cc_in_frag_z,     // Fragment Z from CC passthrough
 
     // ====================================================================
-    // Z-Buffer Interface (via UNIT-007 Memory Arbiter, port 2)
+    // Hi-Z Uninit Flag (from UNIT-005 Rasterizer)
+    // ====================================================================
+    input  wire         frag_hiz_uninit,  // Tile Hi-Z metadata was invalid (lazy-fill)
+
+    // ====================================================================
+    // Z-Buffer Cache Interface (via zbuf_tile_cache)
     // ====================================================================
     output wire         zbuf_read_req,    // Z-buffer read request
-    output wire [23:0]  zbuf_read_addr,   // Z-buffer read address
+    output wire [13:0]  zbuf_read_tile_idx, // Tile index for cache lookup
+    output wire [3:0]   zbuf_read_pixel_off, // Pixel offset within tile
+    output wire         zbuf_read_hiz_uninit, // Hi-Z uninit for lazy-fill
     input  wire [15:0]  zbuf_read_data,   // Z-buffer read value
     input  wire         zbuf_read_valid,  // Z-buffer read data valid
-    input  wire         zbuf_ready,       // Z-buffer port ready (from arbiter)
+    input  wire         zbuf_ready,       // Z-buffer cache ready
 
     output wire         zbuf_write_req,   // Z-buffer write request
-    output wire [23:0]  zbuf_write_addr,  // Z-buffer write address
+    output wire [13:0]  zbuf_write_tile_idx, // Tile index for cache write
+    output wire [3:0]   zbuf_write_pixel_off, // Pixel offset within tile
     output wire [15:0]  zbuf_write_data,  // Z-buffer write data
+    output wire         zbuf_write_hiz_uninit, // Hi-Z uninit for lazy-fill
 
     // ====================================================================
     // Framebuffer Interface (via UNIT-007 Memory Arbiter, port 1)
@@ -162,8 +171,6 @@ module pixel_pipeline (
     wire [14:0] fb_color_base = reg_fb_config[14:0];
     wire [3:0]  fb_width_log2 = reg_fb_config[19:16];
 
-    // FB_CONTROL: Z base address
-    wire [14:0] fb_z_base = reg_fb_control[14:0];
 
     // ====================================================================
     // Suppress unused signal warnings for ports not yet connected
@@ -187,7 +194,7 @@ module pixel_pipeline (
     wire [20:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8]};
     wire [12:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15]};
-    wire [16:0] _unused_fb_ctrl_bits = {reg_fb_control[31:16], reg_fb_control[15]};
+    wire [31:0] _unused_fb_ctrl = reg_fb_control;
     wire [5:0]  _unused_cc_in_x_hi = cc_in_frag_x[15:10];
     wire [5:0]  _unused_cc_in_y_hi = cc_in_frag_y[15:10];
     // lat_z_bypass is latched for future use (Z-write-after-bypass path)
@@ -226,7 +233,7 @@ module pixel_pipeline (
     //   block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x
     //   byte_addr = base * 512 + block_idx * 32 + (local_y * 4 + local_x) * 2
     //
-    // base is fb_color_base or fb_z_base, each in units of 512 bytes.
+    // base is fb_color_base in units of 512 bytes (Z-buffer addressing in zbuf_tile_cache).
     // The SDRAM controller expects 24-bit byte addresses; bit 0 is unused
     // (16-bit word alignment). All addresses computed here are byte-aligned.
     //
@@ -243,7 +250,7 @@ module pixel_pipeline (
                                 | {16'b0, tile_block_x};
     // Base address in bytes: base * 512 = base << 9
     wire [23:0] fb_base_addr = {fb_color_base[14:0], 9'b0};
-    wire [23:0] zb_base_addr = {fb_z_base[14:0], 9'b0};
+    // Z-buffer address calculation moved to zbuf_tile_cache module
     // Block offset in bytes: block_idx * 32 = block_idx << 5
     wire [23:0] tile_block_offset = tile_block_idx << 5;
     // Pixel offset within block in bytes: (local_y * 4 + local_x) * 2
@@ -251,12 +258,15 @@ module pixel_pipeline (
 
     wire [23:0] fb_tiled_addr   = fb_base_addr + tile_block_offset
                                 + {19'b0, tile_pixel_off};
-    wire [23:0] zb_tiled_addr   = zb_base_addr + tile_block_offset
-                                + {19'b0, tile_pixel_off};
+    // (zb_tiled_addr removed — Z-buffer addressing is in zbuf_tile_cache)
 
     // Pre-computed addresses for current fragment (registered)
     reg  [23:0] fb_addr_reg;
-    reg  [23:0] zb_addr_reg;
+
+    // Tile cache addressing (registered alongside fb_addr_reg)
+    reg  [13:0] zb_tile_idx_reg;  // tile_block_idx[13:0]
+    reg  [3:0]  zb_pixel_off_reg; // {local_y[1:0], local_x[1:0]}
+    reg         zb_hiz_uninit_reg; // Latched Hi-Z uninit flag
 
     // ====================================================================
     // Fragment Latch Registers (captured from input on accept)
@@ -736,11 +746,15 @@ module pixel_pipeline (
     // A registered copy (fb_write_data_r) would be one cycle late because
     // the non-blocking update happens at the same clock edge the arbiter
     // latches port_wdata — the arbiter would see the previous fragment's data.
-    assign zbuf_read_req   = (state == PP_Z_READ);
-    assign zbuf_read_addr  = zb_addr_reg;
-    assign zbuf_write_req  = (state == PP_Z_WRITE);
-    assign zbuf_write_addr = zb_addr_reg;
-    assign zbuf_write_data = post_cc_z;
+    assign zbuf_read_req       = (state == PP_Z_READ);
+    assign zbuf_read_tile_idx  = zb_tile_idx_reg;
+    assign zbuf_read_pixel_off = zb_pixel_off_reg;
+    assign zbuf_read_hiz_uninit = zb_hiz_uninit_reg;
+    assign zbuf_write_req       = (state == PP_Z_WRITE);
+    assign zbuf_write_tile_idx  = zb_tile_idx_reg;
+    assign zbuf_write_pixel_off = zb_pixel_off_reg;
+    assign zbuf_write_data      = post_cc_z;
+    assign zbuf_write_hiz_uninit = zb_hiz_uninit_reg;
 
     // Hi-Z metadata update — driven on the Z-write cycle so the metadata
     // store sees the same timing as the Z-buffer write.
@@ -943,7 +957,9 @@ module pixel_pipeline (
             zbuf_data_lat  <= 16'b0;
             fb_data_lat    <= 16'b0;
             fb_addr_reg    <= 24'b0;
-            zb_addr_reg    <= 24'b0;
+            zb_tile_idx_reg  <= 14'b0;
+            zb_pixel_off_reg <= 4'b0;
+            zb_hiz_uninit_reg <= 1'b0;
 
             cc_valid       <= 1'b0;
             cc_tex_color0  <= 64'b0;
@@ -978,7 +994,9 @@ module pixel_pipeline (
 
                         // Latch tiled addresses (combinationally computed)
                         fb_addr_reg  <= fb_tiled_addr;
-                        zb_addr_reg  <= zb_tiled_addr;
+                        zb_tile_idx_reg  <= tile_block_idx[13:0];
+                        zb_pixel_off_reg <= {tile_local_y, tile_local_x};
+                        zb_hiz_uninit_reg <= frag_hiz_uninit;
 
                         // Initialize Z data latch to max (for bypass case)
                         zbuf_data_lat <= 16'hFFFF;

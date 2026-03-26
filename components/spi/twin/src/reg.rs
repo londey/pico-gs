@@ -112,6 +112,9 @@ pub enum GpuAction {
         count: usize,
     },
 
+    /// Framebuffer config changed — invalidate Hi-Z metadata and Z-buffer cache.
+    FbConfig,
+
     /// Texture unit 0 config changed — invalidate cache / reconfigure sampler.
     Tex0Config(TexCfgReg),
 
@@ -293,7 +296,7 @@ impl RegisterFile {
 
             ADDR_FB_CONFIG => {
                 self.fb_config = reg_from_raw(data);
-                GpuAction::None
+                GpuAction::FbConfig
             }
 
             ADDR_FB_DISPLAY => {

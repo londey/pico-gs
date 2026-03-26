@@ -1101,23 +1101,23 @@ mod tests {
     fn hiz_metadata_update_and_read() {
         let mut hiz = HizMetadata::new();
 
-        // First write initializes entry
+        // First write: min_z = 0 (lazy-fill zeros in unwritten pixels)
         hiz.update(42, 0x80);
         let (valid, min_z) = hiz.read(42);
         assert!(valid);
-        assert_eq!(min_z, 0x80);
+        assert_eq!(min_z, 0x00);
 
-        // Write with a smaller value updates
+        // Subsequent writes cannot lower below 0
         hiz.update(42, 0x40);
         let (valid, min_z) = hiz.read(42);
         assert!(valid);
-        assert_eq!(min_z, 0x40);
+        assert_eq!(min_z, 0x00);
 
-        // Write with a larger value does NOT update
+        // Larger value also stays at 0
         hiz.update(42, 0xC0);
         let (valid, min_z) = hiz.read(42);
         assert!(valid);
-        assert_eq!(min_z, 0x40);
+        assert_eq!(min_z, 0x00);
     }
 
     #[test]
@@ -1141,7 +1141,7 @@ mod tests {
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.update(0, 0x40);
+        hiz.force_valid(0, 0x40);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
@@ -1162,7 +1162,7 @@ mod tests {
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.update(0, 0x40);
+        hiz.force_valid(0, 0x40);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
@@ -1197,7 +1197,7 @@ mod tests {
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.update(0, 0x40);
+        hiz.force_valid(0, 0x40);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, false, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
@@ -1216,7 +1216,7 @@ mod tests {
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.update(0, 0x40);
+        hiz.force_valid(0, 0x40);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
