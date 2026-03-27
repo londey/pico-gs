@@ -1,11 +1,12 @@
 `default_nettype none
 
-// Testbench for texture_block_decode — top-level format dispatcher
+// Testbench for texture_block_decode — top-level format dispatcher (4-wide)
 //
 // Tests:
 //   - Each format code (0-3, 5-7) routes to correct decoder
 //   - Reserved format 4 returns transparent black (36'd0)
 //   - Block word assembly for BC1, RGB565, RGBA8888
+//   - All 4 output lanes produce correct texels
 //
 // See: UNIT-011.04 (Block Decompressor), INT-014, INT-032
 
@@ -48,15 +49,21 @@ module tb_texture_block_decode
     // ========================================================================
 
     reg [15:0] bw [0:31];  // Block words (convenience array)
-    reg [3:0]  texel_idx;
+    reg [3:0]  texel_idx_0;
+    reg [3:0]  texel_idx_1;
+    reg [3:0]  texel_idx_2;
+    reg [3:0]  texel_idx_3;
     reg [3:0]  tex_format;
-    wire [35:0] texel_out;
+    wire [35:0] texel_out_0;
+    wire [35:0] texel_out_1;
+    wire [35:0] texel_out_2;
+    wire [35:0] texel_out_3;
 
-    // Convenience channel extraction
-    wire [8:0] r9 = texel_out[35:27];
-    wire [8:0] g9 = texel_out[26:18];
-    wire [8:0] b9 = texel_out[17:9];
-    wire [8:0] a9 = texel_out[8:0];
+    // Convenience channel extraction (lane 0)
+    wire [8:0] r9 = texel_out_0[35:27];
+    wire [8:0] g9 = texel_out_0[26:18];
+    wire [8:0] b9 = texel_out_0[17:9];
+    wire [8:0] a9 = texel_out_0[8:0];
 
     // ========================================================================
     // DUT instantiation
@@ -95,9 +102,15 @@ module tb_texture_block_decode
         .block_word_29 (bw[29]),
         .block_word_30 (bw[30]),
         .block_word_31 (bw[31]),
-        .texel_idx     (texel_idx),
+        .texel_idx_0   (texel_idx_0),
+        .texel_idx_1   (texel_idx_1),
+        .texel_idx_2   (texel_idx_2),
+        .texel_idx_3   (texel_idx_3),
         .tex_format    (tex_format),
-        .texel_out     (texel_out)
+        .texel_out_0   (texel_out_0),
+        .texel_out_1   (texel_out_1),
+        .texel_out_2   (texel_out_2),
+        .texel_out_3   (texel_out_3)
     );
 
     // ========================================================================
@@ -122,7 +135,10 @@ module tb_texture_block_decode
         $display("=== Testing texture_block_decode ===\n");
 
         clear_words();
-        texel_idx = 4'd0;
+        texel_idx_0 = 4'd0;
+        texel_idx_1 = 4'd1;
+        texel_idx_2 = 4'd2;
+        texel_idx_3 = 4'd3;
 
         // --------------------------------------------------------------------
         // Test 1: Format 0 (BC1) — white block
@@ -141,6 +157,10 @@ module tb_texture_block_decode
         check9("bc1_white_g9", g9, 9'h100);
         check9("bc1_white_b9", b9, 9'h100);
         check9("bc1_white_a9", a9, 9'h100);
+        // All 4 lanes should be identical (same block, all-zero indices)
+        check36("bc1_white_lane1", texel_out_1, texel_out_0);
+        check36("bc1_white_lane2", texel_out_2, texel_out_0);
+        check36("bc1_white_lane3", texel_out_3, texel_out_0);
 
         // --------------------------------------------------------------------
         // Test 2: Format 4 (reserved) — transparent black
@@ -148,7 +168,10 @@ module tb_texture_block_decode
         tex_format = 4'd4;
         #1;
 
-        check36("reserved_fmt4", texel_out, 36'd0);
+        check36("reserved_fmt4_lane0", texel_out_0, 36'd0);
+        check36("reserved_fmt4_lane1", texel_out_1, 36'd0);
+        check36("reserved_fmt4_lane2", texel_out_2, 36'd0);
+        check36("reserved_fmt4_lane3", texel_out_3, 36'd0);
 
         // --------------------------------------------------------------------
         // Test 3: Format 5 (RGB565) — pure red at texel 0
@@ -158,7 +181,10 @@ module tb_texture_block_decode
         clear_words();
         bw[0] = 16'hF800;
         tex_format = 4'd5;
-        texel_idx = 4'd0;
+        texel_idx_0 = 4'd0;
+        texel_idx_1 = 4'd0;
+        texel_idx_2 = 4'd0;
+        texel_idx_3 = 4'd0;
         #1;
 
         check9("rgb565_red_r9", r9, 9'h100);
@@ -178,7 +204,10 @@ module tb_texture_block_decode
         bw[0] = 16'hFF00;  // texel 0 lo: {G8=0xFF, R8=0x00}
         bw[1] = 16'h8000;  // texel 0 hi: {A8=0x80, B8=0x00}
         tex_format = 4'd6;
-        texel_idx = 4'd0;
+        texel_idx_0 = 4'd0;
+        texel_idx_1 = 4'd0;
+        texel_idx_2 = 4'd0;
+        texel_idx_3 = 4'd0;
         #1;
 
         check9("rgba8888_green_r9", r9, 9'h000);
@@ -195,7 +224,10 @@ module tb_texture_block_decode
         clear_words();
         bw[0] = 16'h0080;  // texel 0 = 128, texel 1 = 0
         tex_format = 4'd7;
-        texel_idx = 4'd0;
+        texel_idx_0 = 4'd0;
+        texel_idx_1 = 4'd0;
+        texel_idx_2 = 4'd0;
+        texel_idx_3 = 4'd0;
         #1;
 
         check9("r8_mid_r9", r9, 9'h081);
@@ -212,7 +244,10 @@ module tb_texture_block_decode
         clear_words();
         bw[0] = 16'h00FF;  // {red1=0x00, red0=0xFF}
         tex_format = 4'd3;
-        texel_idx = 4'd0;
+        texel_idx_0 = 4'd0;
+        texel_idx_1 = 4'd0;
+        texel_idx_2 = 4'd0;
+        texel_idx_3 = 4'd0;
         #1;
 
         check9("bc4_white_r9", r9, 9'h100);
@@ -223,11 +258,42 @@ module tb_texture_block_decode
         // --------------------------------------------------------------------
         tex_format = 4'd8;
         #1;
-        check36("out_of_range_fmt8", texel_out, 36'd0);
+        check36("out_of_range_fmt8", texel_out_0, 36'd0);
 
         tex_format = 4'd15;
         #1;
-        check36("out_of_range_fmt15", texel_out, 36'd0);
+        check36("out_of_range_fmt15", texel_out_0, 36'd0);
+
+        // --------------------------------------------------------------------
+        // Test 8: 4-lane independence — RGB565 with different texel indices
+        // word 0 = 0xF800 (red), word 1 = 0x07E0 (green),
+        // word 2 = 0x001F (blue), word 3 = 0xFFFF (white)
+        // --------------------------------------------------------------------
+        clear_words();
+        bw[0] = 16'hF800;  // texel 0: red
+        bw[1] = 16'h07E0;  // texel 1: green
+        bw[2] = 16'h001F;  // texel 2: blue
+        bw[3] = 16'hFFFF;  // texel 3: white
+        tex_format = 4'd5;
+        texel_idx_0 = 4'd0;  // red
+        texel_idx_1 = 4'd1;  // green
+        texel_idx_2 = 4'd2;  // blue
+        texel_idx_3 = 4'd3;  // white
+        #1;
+
+        // Lane 0: red
+        check9("multi_lane0_r9", texel_out_0[35:27], 9'h100);
+        check9("multi_lane0_g9", texel_out_0[26:18], 9'h000);
+        // Lane 1: green
+        check9("multi_lane1_r9", texel_out_1[35:27], 9'h000);
+        check9("multi_lane1_g9", texel_out_1[26:18], 9'h100);
+        // Lane 2: blue
+        check9("multi_lane2_b9", texel_out_2[17:9], 9'h100);
+        check9("multi_lane2_r9", texel_out_2[35:27], 9'h000);
+        // Lane 3: white
+        check9("multi_lane3_r9", texel_out_3[35:27], 9'h100);
+        check9("multi_lane3_g9", texel_out_3[26:18], 9'h100);
+        check9("multi_lane3_b9", texel_out_3[17:9], 9'h100);
 
         // ====================================================================
         // Summary

@@ -78,6 +78,7 @@ RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
 	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
+	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 	$(TEXTURE_L1_RTL)/texture_cache.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -780,6 +781,7 @@ lint:
 			$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
 		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 		$(TEXTURE_L1_RTL)/texture_cache.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -845,6 +847,7 @@ HARNESS_RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
 	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
+	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 	$(TEXTURE_L1_RTL)/texture_cache.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -940,6 +943,7 @@ SIM_RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
 	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
+	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 	$(TEXTURE_L1_RTL)/texture_cache.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \

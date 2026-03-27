@@ -7,7 +7,7 @@
 // Cache format: UQ1.8 per channel (36 bits/texel), PDPW16KD 512×36 EBR banks.
 // Cache fill uses burst SRAM reads via UNIT-007 arbiter (port 3).
 //
-// Cache Fill FSM: IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE
+// Cache Fill FSM: IDLE → FETCH → WRITE_BANKS → IDLE
 //   - FETCH issues burst read with format-dependent burst_len:
 //       BC1 (format 0):      burst_len=4  (8 bytes, 4 x 16-bit words)
 //       BC2 (format 1):      burst_len=8  (16 bytes, 8 x 16-bit words)
@@ -16,8 +16,8 @@
 //       RGB565 (format 4):   burst_len=16 (32 bytes, 16 x 16-bit words)
 //       RGBA8888 (format 5): burst_len=32 (64 bytes, 32 x 16-bit words)
 //       R8 (format 6):       burst_len=8  (16 bytes, 8 x 16-bit words)
-//   - DECOMPRESS converts raw data to 16 texels in UQ1.8 format
-//   - WRITE_BANKS stores texels to 4 interleaved EBR banks
+//   - WRITE_BANKS decodes each texel via texture_block_decode and stores to
+//     4 interleaved EBR banks (1 texel/cycle, 16 cycles)
 //
 // Writing TEXn_CFG triggers invalidation, ensuring the first access
 // after a config change is a guaranteed miss.
@@ -105,7 +105,6 @@ module texture_cache (
     typedef enum logic [2:0] {
         FILL_IDLE       = 3'b000,
         FILL_FETCH      = 3'b001,
-        FILL_DECOMPRESS = 3'b010,
         FILL_WRITE      = 3'b011,
         FILL_RESUME     = 3'b100   // Re-request remaining words after preemption
     } fill_state_t;
@@ -293,103 +292,23 @@ module texture_cache (
     end
 
     // ====================================================================
-    // Decompressed Texel Buffer (16 texels x 36 bits, UQ1.8 RGBA)
+    // Block Decoder Instance (combinational, 4-wide format-specific decode)
     // ====================================================================
+    //
+    // Decodes 4 texels per evaluation from raw block data in burst_buf.
+    // Each cycle of FILL_WRITE produces one texel per bank (4 texels total).
+    // Output is 36-bit UQ1.8 {R9, G9, B9, A9} per lane.
 
-    reg [35:0] decomp_texels [0:15];
-
-    // (RGBA4444 conversion function removed — format no longer supported.
-    //  All seven formats use 3-bit tex_format encoding per INT-032.)
-
-    // ====================================================================
-    // BC1 → UQ1.8 Decompression helpers (combinational)
-    // Endpoints expanded to UQ1.8 (9-bit) BEFORE interpolation,
-    // matching texture_bc1.sv and gs-twin (tex_decode.rs).
-    // ====================================================================
-
-    // UQ1.8 channel expansion: R5/B5 → 9-bit
-    /* verilator lint_off UNUSEDSIGNAL */
-    function automatic [8:0] ch5_to_uq18(input [4:0] ch5);
-        begin
-            ch5_to_uq18 = {1'b0, ch5, ch5[4:2]} + {8'b0, ch5[4]};
-        end
-    endfunction
-
-    // UQ1.8 channel expansion: G6 → 9-bit
-    function automatic [8:0] ch6_to_uq18(input [5:0] ch6);
-        begin
-            ch6_to_uq18 = {1'b0, ch6, ch6[5:4]} + {8'b0, ch6[5]};
-        end
-    endfunction
-    /* verilator lint_on UNUSEDSIGNAL */
-
-    // UQ1.8 1/3 interpolation: (2*a + b + 1) * 683 >> 11 (DD-039)
-    /* verilator lint_off UNUSEDSIGNAL */
-    function automatic [8:0] uq18_lerp13(input [8:0] a, input [8:0] b);
-        reg [10:0] sum;
-        reg [20:0] prod;
-        begin
-            sum  = {2'b0, a} + {2'b0, a} + {2'b0, b} + 11'd1;
-            prod = {10'b0, sum} * 21'd683;
-            uq18_lerp13 = prod[19:11];
-        end
-    endfunction
-    /* verilator lint_on UNUSEDSIGNAL */
-
-    // UQ1.8 1/2 interpolation: (a + b + 1) >> 1
-    /* verilator lint_off UNUSEDSIGNAL */
-    function automatic [8:0] uq18_lerp12(input [8:0] a, input [8:0] b);
-        reg [9:0] sum;
-        begin
-            sum = {1'b0, a} + {1'b0, b} + 10'd1;
-            uq18_lerp12 = sum[9:1];
-        end
-    endfunction
-    /* verilator lint_on UNUSEDSIGNAL */
-
-    // UQ1.8 channel expansion: 8-bit → 9-bit (RGBA8888, R8, BC3 alpha, BC4 red)
-    function automatic [8:0] ch8_to_uq18(input [7:0] ch8);
-        begin
-            ch8_to_uq18 = {1'b0, ch8} + {8'b0, ch8[7]};
-        end
-    endfunction
-
-    // UQ1.8 channel expansion: 4-bit → 9-bit (BC2 explicit alpha)
-    function automatic [8:0] ch4_to_uq18(input [3:0] ch4);
-        begin
-            ch4_to_uq18 = {1'b0, ch4, ch4} + {8'b0, ch4[3]};
-        end
-    endfunction
-
-    // BC3/BC4 alpha interpolation: divide-by-7 (8-entry mode, DD-039)
-    /* verilator lint_off UNUSEDSIGNAL */
-    function automatic [7:0] alpha_lerp7(input [7:0] e0, input [3:0] w0,
-                                          input [7:0] e1, input [3:0] w1);
-        reg [31:0] wsum, prod;
-        begin
-            wsum = {24'b0, e0} * {28'b0, w0} + {24'b0, e1} * {28'b0, w1} + 32'd3;
-            prod = wsum * 32'd2341;
-            alpha_lerp7 = prod[21:14];
-        end
-    endfunction
-
-    // BC3/BC4 alpha interpolation: divide-by-5 (6-entry mode, DD-039)
-    function automatic [7:0] alpha_lerp5(input [7:0] e0, input [3:0] w0,
-                                          input [7:0] e1, input [3:0] w1);
-        reg [31:0] wsum, prod;
-        begin
-            wsum = {24'b0, e0} * {28'b0, w0} + {24'b0, e1} * {28'b0, w1} + 32'd2;
-            prod = wsum * 32'd3277;
-            alpha_lerp5 = prod[21:14];
-        end
-    endfunction
-    /* verilator lint_on UNUSEDSIGNAL */
+    wire [35:0] decoded_texel_0;  // → bank0 (even_x, even_y)
+    wire [35:0] decoded_texel_1;  // → bank1 (odd_x,  even_y)
+    wire [35:0] decoded_texel_2;  // → bank2 (even_x, odd_y)
+    wire [35:0] decoded_texel_3;  // → bank3 (odd_x,  odd_y)
 
     // ====================================================================
     // Decompress Registers
     // ====================================================================
 
-    reg [3:0]  write_count;     // Bank write counter (0..3)
+    reg [1:0]  write_count;     // Bank write counter (0..3)
     reg [5:0]  fill_set_index;  // Latched set index for fill
     reg [23:0] fill_tag;        // Latched tag for fill
     reg [1:0]  fill_victim_way; // Latched victim way for fill
@@ -425,8 +344,8 @@ module texture_cache (
                 if (sram_ack) begin
                     // Burst complete (natural or preempted)
                     if ({2'b0, burst_word_count} >= burst_len_reg) begin
-                        // All words received — decompress
-                        fill_next_state = FILL_DECOMPRESS;
+                        // All words received — write decoded texels to banks
+                        fill_next_state = FILL_WRITE;
                     end else begin
                         // Preempted — re-request remaining words
                         fill_next_state = FILL_RESUME;
@@ -441,14 +360,9 @@ module texture_cache (
                 end
             end
 
-            FILL_DECOMPRESS: begin
-                // Single-cycle decompression (combinational)
-                fill_next_state = FILL_WRITE;
-            end
-
             FILL_WRITE: begin
-                if (write_count == 4'd15) begin
-                    // All 16 texels written to banks
+                if (write_count == 2'd3) begin
+                    // All 16 texels written to banks (4 texels/cycle × 4 cycles)
                     fill_next_state = FILL_IDLE;
                 end
             end
@@ -474,7 +388,7 @@ module texture_cache (
             burst_len_reg   <= 8'b0;
             fill_format     <= 3'b0;
             fill_addr       <= 24'b0;
-            write_count     <= 4'b0;
+            write_count     <= 2'b0;
             fill_set_index  <= 6'b0;
             fill_tag        <= 24'b0;
             fill_victim_way <= 2'b0;
@@ -488,7 +402,7 @@ module texture_cache (
                 FILL_IDLE: begin
                     sram_req       <= 1'b0;
                     sram_burst_len <= 8'b0;
-                    write_count    <= 4'b0;
+                    write_count    <= 2'b0;
 
                     if (lookup_req && !any_hit) begin
                         // Cache miss — latch parameters and start burst
@@ -531,17 +445,10 @@ module texture_cache (
                     end
                 end
 
-                FILL_DECOMPRESS: begin
-                    // Decompression is performed combinationally — results
-                    // are used by decomp_texels in the combinational block below.
-                    // This state takes one cycle for the pipeline register.
-
-                end
-
                 FILL_WRITE: begin
                     // Write decompressed texels to banks (one texel per bank per cycle,
                     // 4 texels per cycle = 4 cycles for 16 texels)
-                    write_count <= write_count + 4'd1;
+                    write_count <= write_count + 2'd1;
                 end
 
                 default: begin
@@ -551,357 +458,86 @@ module texture_cache (
         end
     end
 
-    // ====================================================================
-    // Decompression Logic (combinational — result used in FILL_WRITE)
-    // ====================================================================
+    // Texel indices for the 4 banks during FILL_WRITE.
+    // write_count (0..3) selects which sub-address within each bank to fill.
+    // Each cycle writes one texel to each of the 4 banks simultaneously.
+    //
+    // Texel index t = ty*4 + tx, where tx = t[1:0], ty = t[3:2].
+    // Bank select = {ty[0], tx[0]}, sub_addr = {ty[1], tx[1]}.
+    //
+    // For write_count = sub_addr:
+    //   bank0 (even_x, even_y): t = {sub_addr[1], 0, sub_addr[0], 0}
+    //   bank1 (odd_x,  even_y): t = {sub_addr[1], 0, sub_addr[0], 1}
+    //   bank2 (even_x, odd_y):  t = {sub_addr[1], 1, sub_addr[0], 0}
+    //   bank3 (odd_x,  odd_y):  t = {sub_addr[1], 1, sub_addr[0], 1}
 
-    // BC1 decompression intermediates
-    reg [15:0] bc1_color0, bc1_color1;
-    reg [31:0] bc1_indices;
-    reg [8:0]  bc1_c0_r9, bc1_c0_g9, bc1_c0_b9;
-    reg [8:0]  bc1_c1_r9, bc1_c1_g9, bc1_c1_b9;
-    reg [35:0] bc1_palette_uq18 [0:3];
+    wire [3:0] fill_tidx_0 = {write_count[1], 1'b0, write_count[0], 1'b0};
+    wire [3:0] fill_tidx_1 = {write_count[1], 1'b0, write_count[0], 1'b1};
+    wire [3:0] fill_tidx_2 = {write_count[1], 1'b1, write_count[0], 1'b0};
+    wire [3:0] fill_tidx_3 = {write_count[1], 1'b1, write_count[0], 1'b1};
 
-    // BC2/BC3 color decompression intermediates (endpoints from burst_buf[4:5])
-    reg [15:0] bcn_color0, bcn_color1;
-    reg [31:0] bcn_indices;
-    reg [8:0]  bcn_c0_r9, bcn_c0_g9, bcn_c0_b9;
-    reg [8:0]  bcn_c1_r9, bcn_c1_g9, bcn_c1_b9;
-    reg [35:0] bcn_palette [0:3];
-
-    // BC3/BC4 alpha/red interpolation intermediates
-    reg [7:0]  ab_ep0, ab_ep1;
-    reg [47:0] ab_idx;
-    reg [7:0]  ab_pal [0:7];
-
-    // Temporary UQ1.8 channel for replicated formats (BC4, R8)
-    reg [8:0]  decomp_ch9;
-
-    // BC1 UQ1.8 helpers: expand RGB565 endpoint to 8-bit with MSB replication.
-    // Input bits are wider than used for replication; this is intentional
-    // (only top bits are replicated into the unused positions).
-    /* verilator lint_off UNUSEDSIGNAL */
-    function automatic [7:0] r5_to_r8(input [4:0] r5);
-        begin
-            r5_to_r8 = {r5, r5[4:2]};
-        end
-    endfunction
-
-    function automatic [7:0] g6_to_g8(input [5:0] g6);
-        begin
-            g6_to_g8 = {g6, g6[5:4]};  // Replicate top 2 bits
-        end
-    endfunction
-
-    function automatic [7:0] b5_to_b8(input [4:0] b5);
-        begin
-            b5_to_b8 = {b5, b5[4:2]};
-        end
-    endfunction
-    /* verilator lint_on UNUSEDSIGNAL */
-
-    always_comb begin
-        // Default: clear decomp texels
-        for (int t = 0; t < 16; t++) begin
-            decomp_texels[t] = 36'b0;
-        end
-
-        bc1_color0  = 16'b0;
-        bc1_color1  = 16'b0;
-        bc1_indices = 32'b0;
-        bc1_c0_r9 = 9'b0; bc1_c0_g9 = 9'b0; bc1_c0_b9 = 9'b0;
-        bc1_c1_r9 = 9'b0; bc1_c1_g9 = 9'b0; bc1_c1_b9 = 9'b0;
-        for (int p = 0; p < 4; p++) begin
-            bc1_palette_uq18[p] = 36'b0;
-        end
-
-        bcn_color0 = 16'b0; bcn_color1 = 16'b0; bcn_indices = 32'b0;
-        bcn_c0_r9 = 9'b0; bcn_c0_g9 = 9'b0; bcn_c0_b9 = 9'b0;
-        bcn_c1_r9 = 9'b0; bcn_c1_g9 = 9'b0; bcn_c1_b9 = 9'b0;
-        for (int p = 0; p < 4; p++) begin
-            bcn_palette[p] = 36'b0;
-        end
-        ab_ep0 = 8'b0; ab_ep1 = 8'b0; ab_idx = 48'b0;
-        for (int p = 0; p < 8; p++) begin
-            ab_pal[p] = 8'b0;
-        end
-        decomp_ch9 = 9'b0;
-
-        if (fill_state == FILL_DECOMPRESS || fill_state == FILL_WRITE) begin
-            case (fill_format)
-                3'd0: begin
-                    // BC1: 4 words → color0, color1, indices[15:0], indices[31:16]
-                    bc1_color0  = burst_buf[0];
-                    bc1_color1  = burst_buf[1];
-                    bc1_indices = {burst_buf[3], burst_buf[2]}; // Little-endian 32-bit
-
-                    // Expand endpoints to UQ1.8 (9-bit) per channel, matching
-                    // texture_bc1.sv and gs-twin ch5_to_uq18()/ch6_to_uq18()
-                    bc1_c0_r9 = ch5_to_uq18(bc1_color0[15:11]);
-                    bc1_c0_g9 = ch6_to_uq18(bc1_color0[10:5]);
-                    bc1_c0_b9 = ch5_to_uq18(bc1_color0[4:0]);
-                    bc1_c1_r9 = ch5_to_uq18(bc1_color1[15:11]);
-                    bc1_c1_g9 = ch6_to_uq18(bc1_color1[10:5]);
-                    bc1_c1_b9 = ch5_to_uq18(bc1_color1[4:0]);
-
-                    // Build 4-entry palette at UQ1.8 precision {R9, G9, B9, A9}
-                    bc1_palette_uq18[0] = {bc1_c0_r9, bc1_c0_g9, bc1_c0_b9, 9'h100};
-                    bc1_palette_uq18[1] = {bc1_c1_r9, bc1_c1_g9, bc1_c1_b9, 9'h100};
-
-                    if (bc1_color0 > bc1_color1) begin
-                        // 4-color opaque: 1/3 and 2/3 interpolation at UQ1.8
-                        bc1_palette_uq18[2] = {
-                            uq18_lerp13(bc1_c0_r9, bc1_c1_r9),
-                            uq18_lerp13(bc1_c0_g9, bc1_c1_g9),
-                            uq18_lerp13(bc1_c0_b9, bc1_c1_b9),
-                            9'h100
-                        };
-                        bc1_palette_uq18[3] = {
-                            uq18_lerp13(bc1_c1_r9, bc1_c0_r9),
-                            uq18_lerp13(bc1_c1_g9, bc1_c0_g9),
-                            uq18_lerp13(bc1_c1_b9, bc1_c0_b9),
-                            9'h100
-                        };
-                    end else begin
-                        // 3-color + transparent: 1/2 interpolation at UQ1.8
-                        bc1_palette_uq18[2] = {
-                            uq18_lerp12(bc1_c0_r9, bc1_c1_r9),
-                            uq18_lerp12(bc1_c0_g9, bc1_c1_g9),
-                            uq18_lerp12(bc1_c0_b9, bc1_c1_b9),
-                            9'h100
-                        };
-                        bc1_palette_uq18[3] = 36'b0; // Transparent black
-                    end
-
-                    // Look up each texel from UQ1.8 palette
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_texels[t] = bc1_palette_uq18[bc1_indices[t*2 +: 2]];
-                    end
-                end
-
-                3'd5: begin
-                    // RGB565 → UQ1.8 {R9, G9, B9, A9} per INT-032
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_texels[t] = {
-                            {1'b0, r5_to_r8(burst_buf[t][15:11])},
-                            {1'b0, g6_to_g8(burst_buf[t][10:5])},
-                            {1'b0, b5_to_b8(burst_buf[t][4:0])},
-                            9'h100  // A9: opaque
-                        };
-                    end
-                end
-
-                3'd1: begin
-                    // BC2: Color block at words 4-7 (forced 4-color BC1)
-                    //      Explicit 4-bit alpha at words 0-3
-                    bcn_color0 = burst_buf[4];
-                    bcn_color1 = burst_buf[5];
-                    bcn_indices = {burst_buf[7], burst_buf[6]};
-
-                    bcn_c0_r9 = ch5_to_uq18(bcn_color0[15:11]);
-                    bcn_c0_g9 = ch6_to_uq18(bcn_color0[10:5]);
-                    bcn_c0_b9 = ch5_to_uq18(bcn_color0[4:0]);
-                    bcn_c1_r9 = ch5_to_uq18(bcn_color1[15:11]);
-                    bcn_c1_g9 = ch6_to_uq18(bcn_color1[10:5]);
-                    bcn_c1_b9 = ch5_to_uq18(bcn_color1[4:0]);
-
-                    bcn_palette[0] = {bcn_c0_r9, bcn_c0_g9, bcn_c0_b9, 9'h100};
-                    bcn_palette[1] = {bcn_c1_r9, bcn_c1_g9, bcn_c1_b9, 9'h100};
-                    bcn_palette[2] = {
-                        uq18_lerp13(bcn_c0_r9, bcn_c1_r9),
-                        uq18_lerp13(bcn_c0_g9, bcn_c1_g9),
-                        uq18_lerp13(bcn_c0_b9, bcn_c1_b9),
-                        9'h100
-                    };
-                    bcn_palette[3] = {
-                        uq18_lerp13(bcn_c1_r9, bcn_c0_r9),
-                        uq18_lerp13(bcn_c1_g9, bcn_c0_g9),
-                        uq18_lerp13(bcn_c1_b9, bcn_c0_b9),
-                        9'h100
-                    };
-
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_texels[t] = {
-                            bcn_palette[bcn_indices[t*2 +: 2]][35:9],
-                            ch4_to_uq18(burst_buf[t >> 2][(t & 3) * 4 +: 4])
-                        };
-                    end
-                end
-
-                3'd2: begin
-                    // BC3: Color block at words 4-7 (forced 4-color BC1)
-                    //      Interpolated alpha block at words 0-3
-                    bcn_color0 = burst_buf[4];
-                    bcn_color1 = burst_buf[5];
-                    bcn_indices = {burst_buf[7], burst_buf[6]};
-
-                    bcn_c0_r9 = ch5_to_uq18(bcn_color0[15:11]);
-                    bcn_c0_g9 = ch6_to_uq18(bcn_color0[10:5]);
-                    bcn_c0_b9 = ch5_to_uq18(bcn_color0[4:0]);
-                    bcn_c1_r9 = ch5_to_uq18(bcn_color1[15:11]);
-                    bcn_c1_g9 = ch6_to_uq18(bcn_color1[10:5]);
-                    bcn_c1_b9 = ch5_to_uq18(bcn_color1[4:0]);
-
-                    bcn_palette[0] = {bcn_c0_r9, bcn_c0_g9, bcn_c0_b9, 9'h100};
-                    bcn_palette[1] = {bcn_c1_r9, bcn_c1_g9, bcn_c1_b9, 9'h100};
-                    bcn_palette[2] = {
-                        uq18_lerp13(bcn_c0_r9, bcn_c1_r9),
-                        uq18_lerp13(bcn_c0_g9, bcn_c1_g9),
-                        uq18_lerp13(bcn_c0_b9, bcn_c1_b9),
-                        9'h100
-                    };
-                    bcn_palette[3] = {
-                        uq18_lerp13(bcn_c1_r9, bcn_c0_r9),
-                        uq18_lerp13(bcn_c1_g9, bcn_c0_g9),
-                        uq18_lerp13(bcn_c1_b9, bcn_c0_b9),
-                        9'h100
-                    };
-
-                    // Alpha palette (BC3: 8-bit endpoints + 48-bit 3-bit index table)
-                    ab_ep0 = burst_buf[0][7:0];
-                    ab_ep1 = burst_buf[0][15:8];
-                    ab_idx = {burst_buf[3], burst_buf[2], burst_buf[1]};
-
-                    ab_pal[0] = ab_ep0;
-                    ab_pal[1] = ab_ep1;
-                    if (ab_ep0 > ab_ep1) begin
-                        // 8-entry mode: divide by 7
-                        ab_pal[2] = alpha_lerp7(ab_ep0, 4'd6, ab_ep1, 4'd1);
-                        ab_pal[3] = alpha_lerp7(ab_ep0, 4'd5, ab_ep1, 4'd2);
-                        ab_pal[4] = alpha_lerp7(ab_ep0, 4'd4, ab_ep1, 4'd3);
-                        ab_pal[5] = alpha_lerp7(ab_ep0, 4'd3, ab_ep1, 4'd4);
-                        ab_pal[6] = alpha_lerp7(ab_ep0, 4'd2, ab_ep1, 4'd5);
-                        ab_pal[7] = alpha_lerp7(ab_ep0, 4'd1, ab_ep1, 4'd6);
-                    end else begin
-                        // 6-entry mode: divide by 5 + 0, 255
-                        ab_pal[2] = alpha_lerp5(ab_ep0, 4'd4, ab_ep1, 4'd1);
-                        ab_pal[3] = alpha_lerp5(ab_ep0, 4'd3, ab_ep1, 4'd2);
-                        ab_pal[4] = alpha_lerp5(ab_ep0, 4'd2, ab_ep1, 4'd3);
-                        ab_pal[5] = alpha_lerp5(ab_ep0, 4'd1, ab_ep1, 4'd4);
-                        ab_pal[6] = 8'd0;
-                        ab_pal[7] = 8'd255;
-                    end
-
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_texels[t] = {
-                            bcn_palette[bcn_indices[t*2 +: 2]][35:9],
-                            ch8_to_uq18(ab_pal[ab_idx[t*3 +: 3]])
-                        };
-                    end
-                end
-
-                3'd3: begin
-                    // BC4: Red block at words 0-3 (same encoding as BC3 alpha)
-                    //      R replicated to G,B; A=opaque
-                    ab_ep0 = burst_buf[0][7:0];
-                    ab_ep1 = burst_buf[0][15:8];
-                    ab_idx = {burst_buf[3], burst_buf[2], burst_buf[1]};
-
-                    ab_pal[0] = ab_ep0;
-                    ab_pal[1] = ab_ep1;
-                    if (ab_ep0 > ab_ep1) begin
-                        ab_pal[2] = alpha_lerp7(ab_ep0, 4'd6, ab_ep1, 4'd1);
-                        ab_pal[3] = alpha_lerp7(ab_ep0, 4'd5, ab_ep1, 4'd2);
-                        ab_pal[4] = alpha_lerp7(ab_ep0, 4'd4, ab_ep1, 4'd3);
-                        ab_pal[5] = alpha_lerp7(ab_ep0, 4'd3, ab_ep1, 4'd4);
-                        ab_pal[6] = alpha_lerp7(ab_ep0, 4'd2, ab_ep1, 4'd5);
-                        ab_pal[7] = alpha_lerp7(ab_ep0, 4'd1, ab_ep1, 4'd6);
-                    end else begin
-                        ab_pal[2] = alpha_lerp5(ab_ep0, 4'd4, ab_ep1, 4'd1);
-                        ab_pal[3] = alpha_lerp5(ab_ep0, 4'd3, ab_ep1, 4'd2);
-                        ab_pal[4] = alpha_lerp5(ab_ep0, 4'd2, ab_ep1, 4'd3);
-                        ab_pal[5] = alpha_lerp5(ab_ep0, 4'd1, ab_ep1, 4'd4);
-                        ab_pal[6] = 8'd0;
-                        ab_pal[7] = 8'd255;
-                    end
-
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_ch9 = ch8_to_uq18(ab_pal[ab_idx[t*3 +: 3]]);
-                        decomp_texels[t] = {decomp_ch9, decomp_ch9, decomp_ch9, 9'h100};
-                    end
-                end
-
-                3'd6: begin
-                    // RGBA8888: 32 words, pairs form 32-bit pixels
-                    // pixel = {burst_buf[2t+1], burst_buf[2t]}
-                    // [7:0]=R, [15:8]=G, [23:16]=B, [31:24]=A
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_texels[t] = {
-                            ch8_to_uq18(burst_buf[2*t][7:0]),
-                            ch8_to_uq18(burst_buf[2*t][15:8]),
-                            ch8_to_uq18(burst_buf[2*t + 1][7:0]),
-                            ch8_to_uq18(burst_buf[2*t + 1][15:8])
-                        };
-                    end
-                end
-
-                3'd7: begin
-                    // R8: 8 words, 2 texels per word, replicate to RGB
-                    for (int t = 0; t < 16; t++) begin
-                        decomp_ch9 = ch8_to_uq18(burst_buf[t >> 1][(t & 1) * 8 +: 8]);
-                        decomp_texels[t] = {decomp_ch9, decomp_ch9, decomp_ch9, 9'h100};
-                    end
-                end
-
-                default: begin end
-            endcase
-        end
-    end
+    texture_block_decode u_block_decode (
+        .block_word_0  (burst_buf[0]),
+        .block_word_1  (burst_buf[1]),
+        .block_word_2  (burst_buf[2]),
+        .block_word_3  (burst_buf[3]),
+        .block_word_4  (burst_buf[4]),
+        .block_word_5  (burst_buf[5]),
+        .block_word_6  (burst_buf[6]),
+        .block_word_7  (burst_buf[7]),
+        .block_word_8  (burst_buf[8]),
+        .block_word_9  (burst_buf[9]),
+        .block_word_10 (burst_buf[10]),
+        .block_word_11 (burst_buf[11]),
+        .block_word_12 (burst_buf[12]),
+        .block_word_13 (burst_buf[13]),
+        .block_word_14 (burst_buf[14]),
+        .block_word_15 (burst_buf[15]),
+        .block_word_16 (burst_buf[16]),
+        .block_word_17 (burst_buf[17]),
+        .block_word_18 (burst_buf[18]),
+        .block_word_19 (burst_buf[19]),
+        .block_word_20 (burst_buf[20]),
+        .block_word_21 (burst_buf[21]),
+        .block_word_22 (burst_buf[22]),
+        .block_word_23 (burst_buf[23]),
+        .block_word_24 (burst_buf[24]),
+        .block_word_25 (burst_buf[25]),
+        .block_word_26 (burst_buf[26]),
+        .block_word_27 (burst_buf[27]),
+        .block_word_28 (burst_buf[28]),
+        .block_word_29 (burst_buf[29]),
+        .block_word_30 (burst_buf[30]),
+        .block_word_31 (burst_buf[31]),
+        .texel_idx_0   (fill_tidx_0),
+        .texel_idx_1   (fill_tidx_1),
+        .texel_idx_2   (fill_tidx_2),
+        .texel_idx_3   (fill_tidx_3),
+        .tex_format    ({1'b0, fill_format}),
+        .texel_out_0   (decoded_texel_0),
+        .texel_out_1   (decoded_texel_1),
+        .texel_out_2   (decoded_texel_2),
+        .texel_out_3   (decoded_texel_3)
+    );
 
     // ====================================================================
     // Bank Write Logic (during FILL_WRITE state)
     // ====================================================================
 
-    // Write address in banks: line_index * 4 + sub_texel
-    // line_index = set_index * 4 + victim_way
-    // Texels map to banks by their (x, y) parity within the 4x4 block:
-    //   texel index within block: t = ty*4 + tx (0..15)
-    //   tx = t[1:0], ty = t[3:2]
-    //   bank = {ty[0], tx[0]}
-    //   sub_addr within bank = ty[1]*2 + tx[1] (0..3)
-    // So 4 texels go to each bank per cache line.
+    // Write 4 decoded texels per cycle (one to each bank), 4 cycles total.
+    // sub_addr = write_count (0..3), bank_addr = fill_bank_base + write_count.
 
     wire [7:0] fill_line_idx = {fill_set_index, fill_victim_way};
-    // 36-bit banks: 512 entries, 9-bit address; use {set[4:0], way[1:0], 2'b00}
+    // 36-bit banks: 512 entries, 9-bit address; base = {set[4:0], way[1:0], 2'b00}
     wire [8:0] fill_bank_base = {fill_set_index[4:0], fill_victim_way, 2'b00};
+    wire [8:0] fill_bank_addr = fill_bank_base + {7'b0, write_count};
 
     always_ff @(posedge clk) begin
         if (fill_state == FILL_WRITE) begin
-            // Write 4 texels per cycle (one to each bank)
-            // write_count ranges 0..15, but we write 4 per cycle by sub-position
-            // For simplicity, write all 16 in 4 cycles:
-            //   cycle 0: sub (0,0),(1,0),(0,1),(1,1) → all banks, sub_addr=0
-            //   cycle 1: sub (2,0),(3,0),(2,1),(3,1) → all banks, sub_addr=1
-            //   cycle 2: sub (0,2),(1,2),(0,3),(1,3) → all banks, sub_addr=2
-            //   cycle 3: sub (2,2),(3,2),(2,3),(3,3) → all banks, sub_addr=3
-            // Write to 36-bit UQ1.8 banks
-            case (write_count[1:0])
-                2'd0: begin
-                    bank0_36[fill_bank_base + 9'd0] <= decomp_texels[0];
-                    bank1_36[fill_bank_base + 9'd0] <= decomp_texels[1];
-                    bank2_36[fill_bank_base + 9'd0] <= decomp_texels[4];
-                    bank3_36[fill_bank_base + 9'd0] <= decomp_texels[5];
-                end
-                2'd1: begin
-                    bank0_36[fill_bank_base + 9'd1] <= decomp_texels[2];
-                    bank1_36[fill_bank_base + 9'd1] <= decomp_texels[3];
-                    bank2_36[fill_bank_base + 9'd1] <= decomp_texels[6];
-                    bank3_36[fill_bank_base + 9'd1] <= decomp_texels[7];
-                end
-                2'd2: begin
-                    bank0_36[fill_bank_base + 9'd2] <= decomp_texels[8];
-                    bank1_36[fill_bank_base + 9'd2] <= decomp_texels[9];
-                    bank2_36[fill_bank_base + 9'd2] <= decomp_texels[12];
-                    bank3_36[fill_bank_base + 9'd2] <= decomp_texels[13];
-                end
-                2'd3: begin
-                    bank0_36[fill_bank_base + 9'd3] <= decomp_texels[10];
-                    bank1_36[fill_bank_base + 9'd3] <= decomp_texels[11];
-                    bank2_36[fill_bank_base + 9'd3] <= decomp_texels[14];
-                    bank3_36[fill_bank_base + 9'd3] <= decomp_texels[15];
-                end
-                default: begin end
-            endcase
+            bank0_36[fill_bank_addr] <= decoded_texel_0;
+            bank1_36[fill_bank_addr] <= decoded_texel_1;
+            bank2_36[fill_bank_addr] <= decoded_texel_2;
+            bank3_36[fill_bank_addr] <= decoded_texel_3;
         end
     end
 
@@ -920,7 +556,7 @@ module texture_cache (
             for (int j = 0; j < NUM_LINES; j++) begin
                 valid_store[j] <= 1'b0;
             end
-        end else if (fill_state == FILL_WRITE && write_count == 4'd3) begin
+        end else if (fill_state == FILL_WRITE && write_count == 2'd3) begin
             // On final bank write cycle, update tag and valid
             tag_store[fill_line_idx]   <= fill_tag;
             valid_store[fill_line_idx] <= 1'b1;
@@ -957,7 +593,7 @@ module texture_cache (
                 end
                 default: begin end
             endcase
-        end else if (fill_state == FILL_WRITE && write_count == 4'd3) begin
+        end else if (fill_state == FILL_WRITE && write_count == 2'd3) begin
             // Update LRU on fill: mark victim_way as most recently used
             case (fill_victim_way)
                 2'b00: begin

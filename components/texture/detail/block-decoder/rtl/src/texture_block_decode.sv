@@ -2,12 +2,14 @@
 
 // Spec-ref: unit_011.04_block_decompressor.md `ae643bc5eafd7b0c` 2026-03-23
 //
-// Texture Block Decode — Top-Level Format Dispatcher
+// Texture Block Decode — Top-Level Format Dispatcher (4-wide)
 //
 // Accepts raw block data from the L2 compressed cache (up to 32 u16 words)
 // and dispatches to the appropriate format-specific decoder based on
-// tex_format[3:0]. All decoders produce a single texel in UQ1.8 format
-// ({R9, G9, B9, A9} = 36 bits).
+// tex_format[3:0].
+// Decodes 4 texels per evaluation to match the L1 cache's 4-bank
+// write bandwidth.
+// Each output is 36 bits in UQ1.8 format ({R9, G9, B9, A9}).
 //
 // Format codes (from gpu_regs_pkg::tex_format_e):
 //   0 = BC1       (4 words,  64 bits)
@@ -57,14 +59,20 @@ module texture_block_decode (
     input  wire [15:0] block_word_30,
     input  wire [15:0] block_word_31,
 
-    // Texel selection within 4x4 block (0..15)
-    input  wire [3:0]  texel_idx,
+    // 4 texel selections within 4x4 block (0..15 each)
+    input  wire [3:0]  texel_idx_0,
+    input  wire [3:0]  texel_idx_1,
+    input  wire [3:0]  texel_idx_2,
+    input  wire [3:0]  texel_idx_3,
 
     // Texture format (TEXn_CFG.FORMAT[3:0])
     input  wire [3:0]  tex_format,
 
-    // Decoded texel: 36 bits = {R9, G9, B9, A9} in UQ1.8 per channel
-    output reg  [35:0] texel_out
+    // 4 decoded texels: 36 bits each = {R9, G9, B9, A9} in UQ1.8 per channel
+    output reg  [35:0] texel_out_0,
+    output reg  [35:0] texel_out_1,
+    output reg  [35:0] texel_out_2,
+    output reg  [35:0] texel_out_3
 );
 
     // ========================================================================
@@ -112,72 +120,130 @@ module texture_block_decode (
                                block_word_1,  block_word_0};
 
     // ========================================================================
-    // Format-Specific Decoders
+    // Texel Index Array (for generate loop)
     // ========================================================================
 
-    wire [35:0] bc1_texel;
-    texture_bc1 u_bc1 (
-        .bc1_data  (block_64),
-        .texel_idx (texel_idx),
-        .texel_out (bc1_texel)
-    );
-
-    wire [35:0] bc2_texel;
-    texture_bc2 u_bc2 (
-        .block_data (block_128),
-        .texel_idx  (texel_idx),
-        .texel_out  (bc2_texel)
-    );
-
-    wire [35:0] bc3_texel;
-    texture_bc3 u_bc3 (
-        .block_data (block_128),
-        .texel_idx  (texel_idx),
-        .texel_out  (bc3_texel)
-    );
-
-    wire [35:0] bc4_texel;
-    texture_bc4 u_bc4 (
-        .block_data (block_64),
-        .texel_idx  (texel_idx),
-        .texel_out  (bc4_texel)
-    );
-
-    wire [35:0] rgb565_texel;
-    texture_rgb565 u_rgb565 (
-        .block_data (block_256),
-        .texel_idx  (texel_idx),
-        .texel_out  (rgb565_texel)
-    );
-
-    wire [35:0] rgba8888_texel;
-    texture_rgba8888 u_rgba8888 (
-        .block_data (block_512),
-        .texel_idx  (texel_idx),
-        .texel_out  (rgba8888_texel)
-    );
-
-    wire [35:0] r8_texel;
-    texture_r8 u_r8 (
-        .block_data (block_128),
-        .texel_idx  (texel_idx),
-        .texel_out  (r8_texel)
-    );
+    wire [3:0] tidx [0:3];
+    assign tidx[0] = texel_idx_0;
+    assign tidx[1] = texel_idx_1;
+    assign tidx[2] = texel_idx_2;
+    assign tidx[3] = texel_idx_3;
 
     // ========================================================================
-    // Format Selection Mux
+    // Format-Specific Decoders (4 instances each)
+    // ========================================================================
+    // Block data is shared; only texel_idx differs per lane.
+    // Synthesis shares the common palette/interpolation logic.
+
+    wire [35:0] bc1_texel [0:3];
+    wire [35:0] bc2_texel [0:3];
+    wire [35:0] bc3_texel [0:3];
+    wire [35:0] bc4_texel [0:3];
+    wire [35:0] rgb565_texel [0:3];
+    wire [35:0] rgba8888_texel [0:3];
+    wire [35:0] r8_texel [0:3];
+
+    genvar gi;
+    generate
+        for (gi = 0; gi < 4; gi = gi + 1) begin : gen_decode
+            texture_bc1 u_bc1 (
+                .bc1_data  (block_64),
+                .texel_idx (tidx[gi]),
+                .texel_out (bc1_texel[gi])
+            );
+
+            texture_bc2 u_bc2 (
+                .block_data (block_128),
+                .texel_idx  (tidx[gi]),
+                .texel_out  (bc2_texel[gi])
+            );
+
+            texture_bc3 u_bc3 (
+                .block_data (block_128),
+                .texel_idx  (tidx[gi]),
+                .texel_out  (bc3_texel[gi])
+            );
+
+            texture_bc4 u_bc4 (
+                .block_data (block_64),
+                .texel_idx  (tidx[gi]),
+                .texel_out  (bc4_texel[gi])
+            );
+
+            texture_rgb565 u_rgb565 (
+                .block_data (block_256),
+                .texel_idx  (tidx[gi]),
+                .texel_out  (rgb565_texel[gi])
+            );
+
+            texture_rgba8888 u_rgba8888 (
+                .block_data (block_512),
+                .texel_idx  (tidx[gi]),
+                .texel_out  (rgba8888_texel[gi])
+            );
+
+            texture_r8 u_r8 (
+                .block_data (block_128),
+                .texel_idx  (tidx[gi]),
+                .texel_out  (r8_texel[gi])
+            );
+        end
+    endgenerate
+
+    // ========================================================================
+    // Format Selection Mux (4 lanes)
     // ========================================================================
 
     always_comb begin
         case (tex_format)
-            4'd0:    texel_out = bc1_texel;      // BC1
-            4'd1:    texel_out = bc2_texel;       // BC2
-            4'd2:    texel_out = bc3_texel;       // BC3
-            4'd3:    texel_out = bc4_texel;       // BC4
-            4'd5:    texel_out = rgb565_texel;    // RGB565
-            4'd6:    texel_out = rgba8888_texel;  // RGBA8888
-            4'd7:    texel_out = r8_texel;        // R8
-            default: texel_out = 36'd0;           // Reserved: transparent black
+            4'd0: begin
+                texel_out_0 = bc1_texel[0];
+                texel_out_1 = bc1_texel[1];
+                texel_out_2 = bc1_texel[2];
+                texel_out_3 = bc1_texel[3];
+            end
+            4'd1: begin
+                texel_out_0 = bc2_texel[0];
+                texel_out_1 = bc2_texel[1];
+                texel_out_2 = bc2_texel[2];
+                texel_out_3 = bc2_texel[3];
+            end
+            4'd2: begin
+                texel_out_0 = bc3_texel[0];
+                texel_out_1 = bc3_texel[1];
+                texel_out_2 = bc3_texel[2];
+                texel_out_3 = bc3_texel[3];
+            end
+            4'd3: begin
+                texel_out_0 = bc4_texel[0];
+                texel_out_1 = bc4_texel[1];
+                texel_out_2 = bc4_texel[2];
+                texel_out_3 = bc4_texel[3];
+            end
+            4'd5: begin
+                texel_out_0 = rgb565_texel[0];
+                texel_out_1 = rgb565_texel[1];
+                texel_out_2 = rgb565_texel[2];
+                texel_out_3 = rgb565_texel[3];
+            end
+            4'd6: begin
+                texel_out_0 = rgba8888_texel[0];
+                texel_out_1 = rgba8888_texel[1];
+                texel_out_2 = rgba8888_texel[2];
+                texel_out_3 = rgba8888_texel[3];
+            end
+            4'd7: begin
+                texel_out_0 = r8_texel[0];
+                texel_out_1 = r8_texel[1];
+                texel_out_2 = r8_texel[2];
+                texel_out_3 = r8_texel[3];
+            end
+            default: begin
+                texel_out_0 = 36'd0;
+                texel_out_1 = 36'd0;
+                texel_out_2 = 36'd0;
+                texel_out_3 = 36'd0;
+            end
         endcase
     end
 
