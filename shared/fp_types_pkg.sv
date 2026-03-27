@@ -39,6 +39,45 @@ package fp_types_pkg;
     // verilator lint_on UNUSEDPARAM
 
     // ========================================================================
+    // Channel Expansion to UQ1.8 (9-bit) Functions
+    // ========================================================================
+    // Expand N-bit UNORM channels to 9-bit UQ1.8 via bit-replication with
+    // correction. Full-scale input maps to exactly 0x100 (1.0 in UQ1.8).
+    //
+    // These match the gs-twin ch*_to_uq18() helpers (tex_decode.rs) and are
+    // used by all block decoders and uncompressed texture decoders.
+    //
+    // See: DD-038 (UQ1.8 Channel Format), UNIT-011.04 (Block Decompressor)
+
+    // verilator lint_off UNUSEDSIGNAL
+
+    // 5-bit -> UQ1.8: R5/B5 channels from RGB565
+    // {1'b0, ch5, ch5[4:2]} + {8'b0, ch5[4]}  =>  31 -> 0x100
+    function automatic [8:0] ch5_to_uq18(input logic [4:0] ch5);
+        ch5_to_uq18 = {1'b0, ch5, ch5[4:2]} + {8'b0, ch5[4]};
+    endfunction
+
+    // 6-bit -> UQ1.8: G6 channel from RGB565
+    // {1'b0, ch6, ch6[5:4]} + {8'b0, ch6[5]}  =>  63 -> 0x100
+    function automatic [8:0] ch6_to_uq18(input logic [5:0] ch6);
+        ch6_to_uq18 = {1'b0, ch6, ch6[5:4]} + {8'b0, ch6[5]};
+    endfunction
+
+    // 8-bit -> UQ1.8: RGBA8888, R8, BC3 alpha, BC4 red
+    // {1'b0, ch8} + {8'b0, ch8[7]}  =>  255 -> 0x100
+    function automatic [8:0] ch8_to_uq18(input logic [7:0] ch8);
+        ch8_to_uq18 = {1'b0, ch8} + {8'b0, ch8[7]};
+    endfunction
+
+    // 4-bit -> UQ1.8: BC2 explicit alpha
+    // {1'b0, ch4, ch4} + {8'b0, ch4[3]}  =>  15 -> 0x100
+    function automatic [8:0] ch4_to_uq18(input logic [3:0] ch4);
+        ch4_to_uq18 = {1'b0, ch4, ch4} + {8'b0, ch4[3]};
+    endfunction
+
+    // verilator lint_on UNUSEDSIGNAL
+
+    // ========================================================================
     // UQ1.8 -> Q4.12 Promotion Function
     // ========================================================================
     // Promotes a 9-bit UQ1.8 channel value to Q4.12 by left-shifting 4 bits.

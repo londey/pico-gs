@@ -69,6 +69,8 @@ RTL_SOURCES = \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
 	$(PXWRITE_RTL)/zbuf_tile_cache.sv \
+	$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+	$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -119,7 +121,10 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
 	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
-	test-fb-promote test-alpha-blend test-dither test-raster-viz
+	test-fb-promote test-alpha-blend test-dither test-raster-viz \
+	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
+	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
+	test-block-decoder-all
 
 # Default target
 all: bitstream
@@ -271,6 +276,8 @@ test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -283,6 +290,116 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(COMP_DIR)/texture/rtl/tests/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
 	$(OBJ_DIR)/tb_texture_decoder
+
+# Block decoder per-module testbenches
+TEXTURE_DEC_TESTS = $(COMP_DIR)/texture/detail/block-decoder/rtl/tests
+
+test-bc-color-block: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_TESTS)/tb_bc_color_block.sv \
+		--top-module tb_bc_color_block -o tb_bc_color_block
+	$(OBJ_DIR)/tb_bc_color_block
+
+test-bc-alpha-block: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_TESTS)/tb_bc_alpha_block.sv \
+		--top-module tb_bc_alpha_block -o tb_bc_alpha_block
+	$(OBJ_DIR)/tb_bc_alpha_block
+
+test-bc1: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_bc1.sv \
+		--top-module tb_texture_bc1 -o tb_texture_bc1
+	$(OBJ_DIR)/tb_texture_bc1
+
+test-bc2: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_bc2.sv \
+		--top-module tb_texture_bc2 -o tb_texture_bc2
+	$(OBJ_DIR)/tb_texture_bc2
+
+test-bc3: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_bc3.sv \
+		--top-module tb_texture_bc3 -o tb_texture_bc3
+	$(OBJ_DIR)/tb_texture_bc3
+
+test-bc4: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_bc4.sv \
+		--top-module tb_texture_bc4 -o tb_texture_bc4
+	$(OBJ_DIR)/tb_texture_bc4
+
+test-r8: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_r8.sv \
+		--top-module tb_texture_r8 -o tb_texture_r8
+	$(OBJ_DIR)/tb_texture_r8
+
+test-rgb565: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_rgb565.sv \
+		--top-module tb_texture_rgb565 -o tb_texture_rgb565
+	$(OBJ_DIR)/tb_texture_rgb565
+
+test-rgba8888: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_rgba8888.sv \
+		--top-module tb_texture_rgba8888 -o tb_texture_rgba8888
+	$(OBJ_DIR)/tb_texture_rgba8888
+
+test-block-decode: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texture_block_decode.sv \
+		--top-module tb_texture_block_decode -o tb_texture_block_decode
+	$(OBJ_DIR)/tb_texture_block_decode
+
+test-texel-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/texel_promote.sv \
+		$(TEXTURE_DEC_TESTS)/tb_texel_promote.sv \
+		--top-module tb_texel_promote -o tb_texel_promote
+	$(OBJ_DIR)/tb_texel_promote
+
+test-block-decoder-all: test-bc-color-block test-bc-alpha-block \
+	test-bc1 test-bc2 test-bc3 test-bc4 \
+	test-r8 test-rgb565 test-rgba8888 \
+	test-block-decode test-texel-promote
+	@echo "All block decoder testbenches passed."
 
 # UNIT-005.02: Raster derivative precomputation unit testbench
 test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -561,13 +678,9 @@ LEAF_LINT_FILES = \
 	$(DISPLAY_RTL)/timing_generator.sv \
 	$(DISPLAY_RTL)/tmds_encoder.sv \
 	$(EARLYZ_RTL)/early_z.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
@@ -618,6 +731,20 @@ lint:
 		$(SHARED_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		--top-module texel_promote 2>&1 || fail=1; \
+	echo "Linting block decoders (with fp_types_pkg, shared modules)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		--top-module texture_block_decode 2>&1 || fail=1; \
 	echo "Linting texture_sampler.sv (with texture_uv_coord, texture_bilinear)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -644,6 +771,8 @@ lint:
 		$(SHARED_DIR)/fp_types_pkg.sv \
 		$(EARLYZ_RTL)/early_z.sv \
 		$(STIPPLE_RTL)/stipple.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -707,6 +836,8 @@ HARNESS_RTL_SOURCES = \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
 	$(PXWRITE_RTL)/zbuf_tile_cache.sv \
+	$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+	$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -800,6 +931,8 @@ SIM_RTL_SOURCES = \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
 	$(PXWRITE_RTL)/zbuf_tile_cache.sv \
+	$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+	$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 	$(TEXTURE_DEC_RTL)/texture_bc3.sv \

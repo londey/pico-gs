@@ -9,7 +9,7 @@
 // Each texel is an 8-bit unsigned value (UNORM8).
 // The R channel is replicated to G and B; alpha is set to opaque.
 //
-// R9=G9=B9={R8, R8[7]}, A9=9'h1FF (opaque) (DD-038).
+// R9=G9=B9=ch8_to_uq18(R8), A9=9'h100 (opaque).
 //
 // The block_data input holds 16 texels x 8 bits = 128 bits.
 // Texels are stored in row-major order within the 4x4 block.
@@ -24,29 +24,24 @@ module texture_r8 (
     // Texel selection within 4x4 block (0..15, row-major: t = y*4 + x)
     input  wire [3:0]   texel_idx,
 
-    // Decoded output: 36 bits = {A9, B9, G9, R9} in UQ1.8 per channel.
+    // Decoded output: 36 bits = {R9, G9, B9, A9} in UQ1.8 per channel.
     output wire [35:0]  texel_out
 );
 
     // ========================================================================
     // Texel Extraction
     // ========================================================================
-    // Extract the selected 8-bit R value from the block.
 
     wire [6:0] bit_offset = {texel_idx, 3'b000};  // texel_idx * 8
     wire [7:0] r8 = block_data[bit_offset +: 8];
 
     // ========================================================================
-    // UQ1.8 Expansion (36-bit)
+    // UQ1.8 Expansion
     // ========================================================================
-    // R8 expanded to 9-bit UQ1.8: {R8[7:0], R8[7]}
-    // Replicated to all three color channels; alpha = opaque (9'h1FF).
-    // R8=0xFF -> 9'h1FF, R8=0x00 -> 9'h000
 
-    wire [8:0] ch9 = {r8, r8[7]};
-    wire [8:0] a9  = 9'h1FF;
+    wire [8:0] ch9 = fp_types_pkg::ch8_to_uq18(r8);
 
-    assign texel_out = {a9, ch9, ch9, ch9};
+    assign texel_out = {ch9, ch9, ch9, 9'h100};
 
 endmodule
 
