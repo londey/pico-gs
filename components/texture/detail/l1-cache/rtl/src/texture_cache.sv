@@ -347,6 +347,44 @@ module texture_cache (
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
+    // UQ1.8 channel expansion: 8-bit → 9-bit (RGBA8888, R8, BC3 alpha, BC4 red)
+    function automatic [8:0] ch8_to_uq18(input [7:0] ch8);
+        begin
+            ch8_to_uq18 = {1'b0, ch8} + {8'b0, ch8[7]};
+        end
+    endfunction
+
+    // UQ1.8 channel expansion: 4-bit → 9-bit (BC2 explicit alpha)
+    function automatic [8:0] ch4_to_uq18(input [3:0] ch4);
+        begin
+            ch4_to_uq18 = {1'b0, ch4, ch4} + {8'b0, ch4[3]};
+        end
+    endfunction
+
+    // BC3/BC4 alpha interpolation: divide-by-7 (8-entry mode, DD-039)
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic [7:0] alpha_lerp7(input [7:0] e0, input [3:0] w0,
+                                          input [7:0] e1, input [3:0] w1);
+        reg [31:0] wsum, prod;
+        begin
+            wsum = {24'b0, e0} * {28'b0, w0} + {24'b0, e1} * {28'b0, w1} + 32'd3;
+            prod = wsum * 32'd2341;
+            alpha_lerp7 = prod[21:14];
+        end
+    endfunction
+
+    // BC3/BC4 alpha interpolation: divide-by-5 (6-entry mode, DD-039)
+    function automatic [7:0] alpha_lerp5(input [7:0] e0, input [3:0] w0,
+                                          input [7:0] e1, input [3:0] w1);
+        reg [31:0] wsum, prod;
+        begin
+            wsum = {24'b0, e0} * {28'b0, w0} + {24'b0, e1} * {28'b0, w1} + 32'd2;
+            prod = wsum * 32'd3277;
+            alpha_lerp5 = prod[21:14];
+        end
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
     // ====================================================================
     // Decompress Registers
     // ====================================================================
@@ -524,6 +562,21 @@ module texture_cache (
     reg [8:0]  bc1_c1_r9, bc1_c1_g9, bc1_c1_b9;
     reg [35:0] bc1_palette_uq18 [0:3];
 
+    // BC2/BC3 color decompression intermediates (endpoints from burst_buf[4:5])
+    reg [15:0] bcn_color0, bcn_color1;
+    reg [31:0] bcn_indices;
+    reg [8:0]  bcn_c0_r9, bcn_c0_g9, bcn_c0_b9;
+    reg [8:0]  bcn_c1_r9, bcn_c1_g9, bcn_c1_b9;
+    reg [35:0] bcn_palette [0:3];
+
+    // BC3/BC4 alpha/red interpolation intermediates
+    reg [7:0]  ab_ep0, ab_ep1;
+    reg [47:0] ab_idx;
+    reg [7:0]  ab_pal [0:7];
+
+    // Temporary UQ1.8 channel for replicated formats (BC4, R8)
+    reg [8:0]  decomp_ch9;
+
     // BC1 UQ1.8 helpers: expand RGB565 endpoint to 8-bit with MSB replication.
     // Input bits are wider than used for replication; this is intentional
     // (only top bits are replicated into the unused positions).
@@ -561,6 +614,18 @@ module texture_cache (
         for (int p = 0; p < 4; p++) begin
             bc1_palette_uq18[p] = 36'b0;
         end
+
+        bcn_color0 = 16'b0; bcn_color1 = 16'b0; bcn_indices = 32'b0;
+        bcn_c0_r9 = 9'b0; bcn_c0_g9 = 9'b0; bcn_c0_b9 = 9'b0;
+        bcn_c1_r9 = 9'b0; bcn_c1_g9 = 9'b0; bcn_c1_b9 = 9'b0;
+        for (int p = 0; p < 4; p++) begin
+            bcn_palette[p] = 36'b0;
+        end
+        ab_ep0 = 8'b0; ab_ep1 = 8'b0; ab_idx = 48'b0;
+        for (int p = 0; p < 8; p++) begin
+            ab_pal[p] = 8'b0;
+        end
+        decomp_ch9 = 9'b0;
 
         if (fill_state == FILL_DECOMPRESS || fill_state == FILL_WRITE) begin
             case (fill_format)
@@ -626,13 +691,159 @@ module texture_cache (
                     end
                 end
 
-                default: begin
-                    // Formats BC2(1), BC3(2), BC4(3), RGBA8888(6), R8(7):
-                    // Decompression delegated to standalone decoder modules
-                    // in the pixel pipeline. Cache fill stores raw data for
-                    // these formats. For now, leave zeros (placeholder for
-                    // integration with per-format decoders).
+                3'd1: begin
+                    // BC2: Color block at words 4-7 (forced 4-color BC1)
+                    //      Explicit 4-bit alpha at words 0-3
+                    bcn_color0 = burst_buf[4];
+                    bcn_color1 = burst_buf[5];
+                    bcn_indices = {burst_buf[7], burst_buf[6]};
+
+                    bcn_c0_r9 = ch5_to_uq18(bcn_color0[15:11]);
+                    bcn_c0_g9 = ch6_to_uq18(bcn_color0[10:5]);
+                    bcn_c0_b9 = ch5_to_uq18(bcn_color0[4:0]);
+                    bcn_c1_r9 = ch5_to_uq18(bcn_color1[15:11]);
+                    bcn_c1_g9 = ch6_to_uq18(bcn_color1[10:5]);
+                    bcn_c1_b9 = ch5_to_uq18(bcn_color1[4:0]);
+
+                    bcn_palette[0] = {bcn_c0_r9, bcn_c0_g9, bcn_c0_b9, 9'h100};
+                    bcn_palette[1] = {bcn_c1_r9, bcn_c1_g9, bcn_c1_b9, 9'h100};
+                    bcn_palette[2] = {
+                        uq18_lerp13(bcn_c0_r9, bcn_c1_r9),
+                        uq18_lerp13(bcn_c0_g9, bcn_c1_g9),
+                        uq18_lerp13(bcn_c0_b9, bcn_c1_b9),
+                        9'h100
+                    };
+                    bcn_palette[3] = {
+                        uq18_lerp13(bcn_c1_r9, bcn_c0_r9),
+                        uq18_lerp13(bcn_c1_g9, bcn_c0_g9),
+                        uq18_lerp13(bcn_c1_b9, bcn_c0_b9),
+                        9'h100
+                    };
+
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_texels[t] = {
+                            bcn_palette[bcn_indices[t*2 +: 2]][35:9],
+                            ch4_to_uq18(burst_buf[t >> 2][(t & 3) * 4 +: 4])
+                        };
+                    end
                 end
+
+                3'd2: begin
+                    // BC3: Color block at words 4-7 (forced 4-color BC1)
+                    //      Interpolated alpha block at words 0-3
+                    bcn_color0 = burst_buf[4];
+                    bcn_color1 = burst_buf[5];
+                    bcn_indices = {burst_buf[7], burst_buf[6]};
+
+                    bcn_c0_r9 = ch5_to_uq18(bcn_color0[15:11]);
+                    bcn_c0_g9 = ch6_to_uq18(bcn_color0[10:5]);
+                    bcn_c0_b9 = ch5_to_uq18(bcn_color0[4:0]);
+                    bcn_c1_r9 = ch5_to_uq18(bcn_color1[15:11]);
+                    bcn_c1_g9 = ch6_to_uq18(bcn_color1[10:5]);
+                    bcn_c1_b9 = ch5_to_uq18(bcn_color1[4:0]);
+
+                    bcn_palette[0] = {bcn_c0_r9, bcn_c0_g9, bcn_c0_b9, 9'h100};
+                    bcn_palette[1] = {bcn_c1_r9, bcn_c1_g9, bcn_c1_b9, 9'h100};
+                    bcn_palette[2] = {
+                        uq18_lerp13(bcn_c0_r9, bcn_c1_r9),
+                        uq18_lerp13(bcn_c0_g9, bcn_c1_g9),
+                        uq18_lerp13(bcn_c0_b9, bcn_c1_b9),
+                        9'h100
+                    };
+                    bcn_palette[3] = {
+                        uq18_lerp13(bcn_c1_r9, bcn_c0_r9),
+                        uq18_lerp13(bcn_c1_g9, bcn_c0_g9),
+                        uq18_lerp13(bcn_c1_b9, bcn_c0_b9),
+                        9'h100
+                    };
+
+                    // Alpha palette (BC3: 8-bit endpoints + 48-bit 3-bit index table)
+                    ab_ep0 = burst_buf[0][7:0];
+                    ab_ep1 = burst_buf[0][15:8];
+                    ab_idx = {burst_buf[3], burst_buf[2], burst_buf[1]};
+
+                    ab_pal[0] = ab_ep0;
+                    ab_pal[1] = ab_ep1;
+                    if (ab_ep0 > ab_ep1) begin
+                        // 8-entry mode: divide by 7
+                        ab_pal[2] = alpha_lerp7(ab_ep0, 4'd6, ab_ep1, 4'd1);
+                        ab_pal[3] = alpha_lerp7(ab_ep0, 4'd5, ab_ep1, 4'd2);
+                        ab_pal[4] = alpha_lerp7(ab_ep0, 4'd4, ab_ep1, 4'd3);
+                        ab_pal[5] = alpha_lerp7(ab_ep0, 4'd3, ab_ep1, 4'd4);
+                        ab_pal[6] = alpha_lerp7(ab_ep0, 4'd2, ab_ep1, 4'd5);
+                        ab_pal[7] = alpha_lerp7(ab_ep0, 4'd1, ab_ep1, 4'd6);
+                    end else begin
+                        // 6-entry mode: divide by 5 + 0, 255
+                        ab_pal[2] = alpha_lerp5(ab_ep0, 4'd4, ab_ep1, 4'd1);
+                        ab_pal[3] = alpha_lerp5(ab_ep0, 4'd3, ab_ep1, 4'd2);
+                        ab_pal[4] = alpha_lerp5(ab_ep0, 4'd2, ab_ep1, 4'd3);
+                        ab_pal[5] = alpha_lerp5(ab_ep0, 4'd1, ab_ep1, 4'd4);
+                        ab_pal[6] = 8'd0;
+                        ab_pal[7] = 8'd255;
+                    end
+
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_texels[t] = {
+                            bcn_palette[bcn_indices[t*2 +: 2]][35:9],
+                            ch8_to_uq18(ab_pal[ab_idx[t*3 +: 3]])
+                        };
+                    end
+                end
+
+                3'd3: begin
+                    // BC4: Red block at words 0-3 (same encoding as BC3 alpha)
+                    //      R replicated to G,B; A=opaque
+                    ab_ep0 = burst_buf[0][7:0];
+                    ab_ep1 = burst_buf[0][15:8];
+                    ab_idx = {burst_buf[3], burst_buf[2], burst_buf[1]};
+
+                    ab_pal[0] = ab_ep0;
+                    ab_pal[1] = ab_ep1;
+                    if (ab_ep0 > ab_ep1) begin
+                        ab_pal[2] = alpha_lerp7(ab_ep0, 4'd6, ab_ep1, 4'd1);
+                        ab_pal[3] = alpha_lerp7(ab_ep0, 4'd5, ab_ep1, 4'd2);
+                        ab_pal[4] = alpha_lerp7(ab_ep0, 4'd4, ab_ep1, 4'd3);
+                        ab_pal[5] = alpha_lerp7(ab_ep0, 4'd3, ab_ep1, 4'd4);
+                        ab_pal[6] = alpha_lerp7(ab_ep0, 4'd2, ab_ep1, 4'd5);
+                        ab_pal[7] = alpha_lerp7(ab_ep0, 4'd1, ab_ep1, 4'd6);
+                    end else begin
+                        ab_pal[2] = alpha_lerp5(ab_ep0, 4'd4, ab_ep1, 4'd1);
+                        ab_pal[3] = alpha_lerp5(ab_ep0, 4'd3, ab_ep1, 4'd2);
+                        ab_pal[4] = alpha_lerp5(ab_ep0, 4'd2, ab_ep1, 4'd3);
+                        ab_pal[5] = alpha_lerp5(ab_ep0, 4'd1, ab_ep1, 4'd4);
+                        ab_pal[6] = 8'd0;
+                        ab_pal[7] = 8'd255;
+                    end
+
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_ch9 = ch8_to_uq18(ab_pal[ab_idx[t*3 +: 3]]);
+                        decomp_texels[t] = {decomp_ch9, decomp_ch9, decomp_ch9, 9'h100};
+                    end
+                end
+
+                3'd6: begin
+                    // RGBA8888: 32 words, pairs form 32-bit pixels
+                    // pixel = {burst_buf[2t+1], burst_buf[2t]}
+                    // [7:0]=R, [15:8]=G, [23:16]=B, [31:24]=A
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_texels[t] = {
+                            ch8_to_uq18(burst_buf[2*t][7:0]),
+                            ch8_to_uq18(burst_buf[2*t][15:8]),
+                            ch8_to_uq18(burst_buf[2*t + 1][7:0]),
+                            ch8_to_uq18(burst_buf[2*t + 1][15:8])
+                        };
+                    end
+                end
+
+                3'd7: begin
+                    // R8: 8 words, 2 texels per word, replicate to RGB
+                    for (int t = 0; t < 16; t++) begin
+                        decomp_ch9 = ch8_to_uq18(burst_buf[t >> 1][(t & 1) * 8 +: 8]);
+                        decomp_texels[t] = {decomp_ch9, decomp_ch9, decomp_ch9, 9'h100};
+                    end
+                end
+
+                default: begin end
             endcase
         end
     end
