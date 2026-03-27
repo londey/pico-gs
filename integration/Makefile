@@ -108,7 +108,7 @@ ECPPACK_FLAGS = --compress
 VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 
 .PHONY: all synth pnr bitstream program sim sim-interactive \
-	test-async-fifo test-command-fifo test-sync-fifo \
+	test-async-fifo test-command-fifo test-sync-fifo test-l2-cache \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
 	test-texture-decoder lint-memory lint harness-scaffold clean help \
@@ -189,6 +189,14 @@ test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(COMP_DIR)/utils/rtl/tests/tb_sync_fifo.sv \
 		--top-module tb_sync_fifo -o tb_sync_fifo
 	$(OBJ_DIR)/tb_sync_fifo
+
+# L2 compressed block cache testbench
+test-l2-cache: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
+		$(COMP_DIR)/texture/detail/l2-cache/rtl/tests/tb_texture_l2_cache.sv \
+		--top-module tb_texture_l2_cache -o tb_texture_l2_cache
+	$(OBJ_DIR)/tb_texture_l2_cache
 
 # SDRAM controller testbench (init sequence, read/write, refresh, burst)
 test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -892,6 +900,7 @@ help:
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"
+	@echo "  test-l2-cache    - Run L2 compressed block cache testbench"
 	@echo "  test-sdram-controller - Run SDRAM controller testbench"
 	@echo "  test-sram-arbiter    - Run SRAM arbiter burst testbench"
 	@echo "  test-display-burst   - Run display controller burst testbench"
