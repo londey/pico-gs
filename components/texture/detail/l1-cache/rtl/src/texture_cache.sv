@@ -13,9 +13,9 @@
 //       BC2 (format 1):      burst_len=8  (16 bytes, 8 x 16-bit words)
 //       BC3 (format 2):      burst_len=8  (16 bytes, 8 x 16-bit words)
 //       BC4 (format 3):      burst_len=4  (8 bytes, 4 x 16-bit words)
-//       RGB565 (format 4):   burst_len=16 (32 bytes, 16 x 16-bit words)
-//       RGBA8888 (format 5): burst_len=32 (64 bytes, 32 x 16-bit words)
-//       R8 (format 6):       burst_len=8  (16 bytes, 8 x 16-bit words)
+//       RGB565 (format 5):   burst_len=16 (32 bytes, 16 x 16-bit words)
+//       RGBA8888 (format 6): burst_len=32 (64 bytes, 32 x 16-bit words)
+//       R8 (format 7):       burst_len=8  (16 bytes, 8 x 16-bit words)
 //   - WRITE_BANKS decodes each texel via texture_block_decode and stores to
 //     4 interleaved EBR banks (1 texel/cycle, 16 cycles)
 //
@@ -43,7 +43,8 @@ module texture_cache (
     // ====================================================================
     // Cache Lookup Result
     // ====================================================================
-    output wire         cache_hit,      // Lookup hit (texels available this cycle)
+    output wire         cache_hit,      // Lookup hit (tag match this cycle)
+    output wire         data_valid,     // BRAM data valid (1 cycle after cache_hit)
     output wire         cache_ready,    // Cache idle, ready for lookup
     output wire         fill_done,      // Cache fill complete (after miss)
     output wire [35:0]  texel_out_0,    // Texel from bank 0 (even_x, even_y); UQ1.8 {R9, G9, B9, A9}
@@ -137,12 +138,13 @@ module texture_cache (
     //
     // 4 banks × 512 entries = 2048 texels per sampler (8,192 total).
     // Each bank stores texels for one (x_parity, y_parity) quadrant.
+    // Reads are synchronous (1-cycle latency); see data_valid output.
     // ====================================================================
 
-    reg [35:0] bank0_36 [0:511];   // (even_x, even_y) texels, UQ1.8 RGBA
-    reg [35:0] bank1_36 [0:511];   // (odd_x, even_y) texels
-    reg [35:0] bank2_36 [0:511];   // (even_x, odd_y) texels
-    reg [35:0] bank3_36 [0:511];   // (odd_x, odd_y) texels
+    wire [35:0] bank_rdata_0;  // (even_x, even_y) texels, UQ1.8 RGBA
+    wire [35:0] bank_rdata_1;  // (odd_x, even_y) texels
+    wire [35:0] bank_rdata_2;  // (even_x, odd_y) texels
+    wire [35:0] bank_rdata_3;  // (odd_x, odd_y) texels
 
     // ====================================================================
     // Block Coordinate Computation (combinational)
@@ -193,7 +195,7 @@ module texture_cache (
     end
 
     // ====================================================================
-    // Cache Hit Data Readout (combinational from banks)
+    // Cache Hit Data Readout (BRAM — 1-cycle read latency)
     // ====================================================================
 
     assign cache_hit = lookup_req && any_hit && (fill_state == FILL_IDLE);
@@ -207,10 +209,21 @@ module texture_cache (
     // 36-bit banks have 512 entries (9-bit addr): {set_index[4:0], way[1:0], quad_y, quad_x}
     wire [8:0] read_bank_addr = {set_index[4:0], hit_way, pixel_y[1], pixel_x[1]};
 
-    assign texel_out_0 = bank0_36[read_bank_addr];
-    assign texel_out_1 = bank1_36[read_bank_addr];
-    assign texel_out_2 = bank2_36[read_bank_addr];
-    assign texel_out_3 = bank3_36[read_bank_addr];
+    // BRAM outputs are registered; data valid 1 cycle after cache_hit
+    assign texel_out_0 = bank_rdata_0;
+    assign texel_out_1 = bank_rdata_1;
+    assign texel_out_2 = bank_rdata_2;
+    assign texel_out_3 = bank_rdata_3;
+
+    // data_valid: pulses 1 cycle after cache_hit, when BRAM read data is stable
+    reg data_valid_r;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            data_valid_r <= 1'b0;
+        else
+            data_valid_r <= cache_hit;
+    end
+    assign data_valid = data_valid_r;
 
     // ====================================================================
     // Burst Length Determination (combinational)
@@ -521,7 +534,7 @@ module texture_cache (
     );
 
     // ====================================================================
-    // Bank Write Logic (during FILL_WRITE state)
+    // Bank BRAM Instances (PDPW16KD 512×36 SDP)
     // ====================================================================
 
     // Write 4 decoded texels per cycle (one to each bank), 4 cycles total.
@@ -532,14 +545,47 @@ module texture_cache (
     wire [8:0] fill_bank_base = {fill_set_index[4:0], fill_victim_way, 2'b00};
     wire [8:0] fill_bank_addr = fill_bank_base + {7'b0, write_count};
 
-    always_ff @(posedge clk) begin
-        if (fill_state == FILL_WRITE) begin
-            bank0_36[fill_bank_addr] <= decoded_texel_0;
-            bank1_36[fill_bank_addr] <= decoded_texel_1;
-            bank2_36[fill_bank_addr] <= decoded_texel_2;
-            bank3_36[fill_bank_addr] <= decoded_texel_3;
-        end
-    end
+    wire bank_we = (fill_state == FILL_WRITE);
+
+    tex_bank_bram u_bank0 (
+        .clk   (clk),
+        .we    (bank_we),
+        .waddr (fill_bank_addr),
+        .wdata (decoded_texel_0),
+        .re    (lookup_req),
+        .raddr (read_bank_addr),
+        .rdata (bank_rdata_0)
+    );
+
+    tex_bank_bram u_bank1 (
+        .clk   (clk),
+        .we    (bank_we),
+        .waddr (fill_bank_addr),
+        .wdata (decoded_texel_1),
+        .re    (lookup_req),
+        .raddr (read_bank_addr),
+        .rdata (bank_rdata_1)
+    );
+
+    tex_bank_bram u_bank2 (
+        .clk   (clk),
+        .we    (bank_we),
+        .waddr (fill_bank_addr),
+        .wdata (decoded_texel_2),
+        .re    (lookup_req),
+        .raddr (read_bank_addr),
+        .rdata (bank_rdata_2)
+    );
+
+    tex_bank_bram u_bank3 (
+        .clk   (clk),
+        .we    (bank_we),
+        .waddr (fill_bank_addr),
+        .wdata (decoded_texel_3),
+        .re    (lookup_req),
+        .raddr (read_bank_addr),
+        .rdata (bank_rdata_3)
+    );
 
     // ====================================================================
     // Tag and Valid Update (during FILL_WRITE final cycle)

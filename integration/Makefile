@@ -79,6 +79,7 @@ RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
 	$(TEXTURE_L1_RTL)/texture_cache.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -144,7 +145,7 @@ $(SIM_OUT_DIR):
 synth: $(BUILD_DIR)
 	@> $(BUILD_DIR)/yosys.log
 	$(YOSYS) $(YOSYS_FLAGS) \
-		-p "read_verilog -sv $(RTL_SOURCES)" \
+		-p "read_verilog -sv -D SYNTHESIS $(RTL_SOURCES)" \
 		-p "script $(SCRIPTS_DIR)/synth_profile.ys" \
 		-p "write_json $(BUILD_DIR)/$(PROJECT).json" \
 		-p "log === STAGE: done ===" & \
@@ -234,6 +235,18 @@ test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 # Texture cache burst testbench (cache fill via burst SRAM reads)
 test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
 		$(TEXTURE_L1_RTL)/texture_cache.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -782,6 +795,7 @@ lint:
 		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
 		$(TEXTURE_L1_RTL)/texture_cache.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -848,6 +862,7 @@ HARNESS_RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
 	$(TEXTURE_L1_RTL)/texture_cache.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -944,6 +959,7 @@ SIM_RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
 	$(TEXTURE_L1_RTL)/texture_cache.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \

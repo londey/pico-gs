@@ -46,6 +46,7 @@ module tb_texture_cache_burst;
     reg  [2:0]  tex_format;      // 3-bit format: 0=BC1, 4=RGB565
     reg  [7:0]  tex_width_log2;
     wire        cache_hit;
+    wire        data_valid;
     wire        cache_ready;
     wire        fill_done;
     wire [35:0] texel_out_0;     // UQ1.8 {A9[35:27], B9[26:18], G9[17:9], R9[8:0]}
@@ -77,6 +78,7 @@ module tb_texture_cache_burst;
         .tex_format(tex_format),
         .tex_width_log2(tex_width_log2),
         .cache_hit(cache_hit),
+        .data_valid(data_valid),
         .cache_ready(cache_ready),
         .fill_done(fill_done),
         .texel_out_0(texel_out_0),
@@ -256,20 +258,24 @@ module tb_texture_cache_burst;
         pixel_x = 10'd0;
         pixel_y = 10'd0;
         @(posedge clk); #1;
-        lookup_req = 1'b0;
 
         // Should be a hit now
         check_bit("BC1 cache hit after fill", cache_hit, 1'b1);
         check_bit("BC1 no sram_req on hit", sram_req, 1'b0);
 
+        // BRAM data and data_valid both ready same cycle as cache_hit
+        check_bit("BC1 data_valid after hit", data_valid, 1'b1);
+
+        lookup_req = 1'b0;
+
         // Verify decompressed data: all texels = color0 = red (0xF800 RGB565)
-        // R5=31 → r5_to_r8 = {11111,111} = 8'hFF → R9 = {0, 8'hFF} = 9'h0FF
-        // G6=0  → g6_to_g8 = {000000,00} = 8'h00 → G9 = 9'h000
-        // B5=0  → b5_to_b8 = {00000,000} = 8'h00 → B9 = 9'h000
+        // R5=31 → ch5_to_uq18(31) = 9'h100
+        // G6=0  → ch6_to_uq18(0)  = 9'h000
+        // B5=0  → ch5_to_uq18(0)  = 9'h000
         // A9 = 9'h100 (opaque)
-        // UQ1.8 texel = {A9, B9, G9, R9} = {9'h100, 9'h000, 9'h000, 9'h0FF}
-        check_val36("BC1 texel_out_0 (red)", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h0FF});
-        check_val36("BC1 texel_out_1 (red)", texel_out_1, {9'h100, 9'h000, 9'h000, 9'h0FF});
+        // UQ1.8 texel = {R9, G9, B9, A9} = {9'h100, 9'h000, 9'h000, 9'h100}
+        check_val36("BC1 texel_out_0 (red)", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h100});
+        check_val36("BC1 texel_out_1 (red)", texel_out_1, {9'h100, 9'h000, 9'h000, 9'h100});
 
         @(posedge clk); #1;
 
@@ -293,7 +299,7 @@ module tb_texture_cache_burst;
 
         // Configure for RGB565 format
         tex_base_addr  = 24'h002000;
-        tex_format     = 3'd4;        // RGB565
+        tex_format     = 3'd5;        // RGB565
         tex_width_log2 = 8'd8;        // 256 pixels
 
         // Lookup pixel (0,0) → block (0,0)
@@ -348,27 +354,29 @@ module tb_texture_cache_burst;
         pixel_x = 10'd0;
         pixel_y = 10'd0;
         @(posedge clk); #1;
-        lookup_req = 1'b0;
 
         check_bit("RGB565 cache hit after fill", cache_hit, 1'b1);
 
+        // BRAM data ready same cycle as cache_hit
         // Verify decompressed texel 0 (pixel 0,0):
         // sram_model[0x2000] = {R5=0, G6=6'b111111, B5=0} = 16'h07E0
-        // R5=0  → r5_to_r8 = 8'h00 → R9 = 9'h000
-        // G6=63 → g6_to_g8 = {111111,11} = 8'hFF → G9 = 9'h0FF
-        // B5=0  → b5_to_b8 = 8'h00 → B9 = 9'h000
+        // R5=0  → ch5_to_uq18(0)  = 9'h000
+        // G6=63 → ch6_to_uq18(63) = 9'h100
+        // B5=0  → ch5_to_uq18(0)  = 9'h000
         // A9 = 9'h100 (opaque)
-        // UQ1.8 texel = {A9, B9, G9, R9} = {9'h100, 9'h000, 9'h0FF, 9'h000}
-        check_val36("RGB565 texel_out_0", texel_out_0, {9'h100, 9'h000, 9'h0FF, 9'h000});
+        // {R9, G9, B9, A9}
+        check_val36("RGB565 texel_out_0", texel_out_0, {9'h000, 9'h100, 9'h000, 9'h100});
 
         // Verify texel 1 (pixel 1,0):
-        // sram_model[0x2001] = {R5=1, G6=6'b111110, B5=1} = {00001,111110,00001}
-        // R5=1  → r5_to_r8 = {00001,000} = 8'h08 → R9 = 9'h008
-        // G6=62 → g6_to_g8 = {111110,11} = 8'hFB → G9 = 9'h0FB
-        // B5=1  → b5_to_b8 = {00001,000} = 8'h08 → B9 = 9'h008
+        // sram_model[0x2001] = {R5=1, G6=6'b111110, B5=1}
+        // R5=1  → ch5_to_uq18(1)  = 9'h008
+        // G6=62 → ch6_to_uq18(62) = 9'h0FC
+        // B5=1  → ch5_to_uq18(1)  = 9'h008
         // A9 = 9'h100
-        // UQ1.8 texel = {9'h100, 9'h008, 9'h0FB, 9'h008}
-        check_val36("RGB565 texel_out_1", texel_out_1, {9'h100, 9'h008, 9'h0FB, 9'h008});
+        // {R9, G9, B9, A9}
+        check_val36("RGB565 texel_out_1", texel_out_1, {9'h008, 9'h0FC, 9'h008, 9'h100});
+
+        lookup_req = 1'b0;
 
         @(posedge clk); #1;
 
@@ -430,7 +438,7 @@ module tb_texture_cache_burst;
         invalidate = 1'b0;
         @(posedge clk); #1;
 
-        tex_format = 3'd4; // RGB565
+        tex_format = 3'd5; // RGB565
         for (i = 0; i < 16; i = i + 1) begin
             sram_model[16'h3000 + i[15:0]] = 16'hFFFF;
         end
@@ -606,13 +614,16 @@ module tb_texture_cache_burst;
         pixel_y = 10'd0;
         lookup_req = 1'b1;
         @(posedge clk); #1;
-        lookup_req = 1'b0;
+
         check_bit("Back-to-back block 1 hit", cache_hit, 1'b1);
 
-        // Verify block 1 data: green (0x07E0) → UQ1.8 {A9, B9, G9, R9}
+        // BRAM data ready same cycle as cache_hit
+        // Verify block 1 data: green (0x07E0) → UQ1.8 {R9, G9, B9, A9}
         // 0x07E0 RGB565: R5=0, G6=63, B5=0
-        // R9 = 9'h000, G9 = 9'h0FF, B9 = 9'h000, A9 = 9'h100
-        check_val36("Block 1 texel_out_0 (green)", texel_out_0, {9'h100, 9'h000, 9'h0FF, 9'h000});
+        // R9 = 9'h000, G9 = ch6_to_uq18(63) = 9'h100, B9 = 9'h000, A9 = 9'h100
+        check_val36("Block 1 texel_out_0 (green)", texel_out_0, {9'h000, 9'h100, 9'h000, 9'h100});
+
+        lookup_req = 1'b0;
 
         @(posedge clk); #1;
 
@@ -627,7 +638,7 @@ module tb_texture_cache_burst;
         @(posedge clk); #1;
 
         // RGB565 with 16 words, but preempt after 8
-        tex_format     = 3'd4; // RGB565
+        tex_format     = 3'd5; // RGB565
         tex_base_addr  = 24'h005000;
         tex_width_log2 = 8'd8;
 
@@ -696,13 +707,16 @@ module tb_texture_cache_burst;
         // Verify hit and data
         lookup_req = 1'b1;
         @(posedge clk); #1;
-        lookup_req = 1'b0;
+
         check_bit("Hit after preempt-resume", cache_hit, 1'b1);
 
+        // BRAM data ready same cycle as cache_hit
         // Verify first texel: 0xF800 = R5=31, G6=0, B5=0
-        // R9 = {1'b0, {11111, 111}} = 9'h0FF
+        // R9 = ch5_to_uq18(31) = 9'h100
         // G9 = 9'h000, B9 = 9'h000, A9 = 9'h100
-        check_val36("Preempt texel_out_0", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h0FF});
+        check_val36("Preempt texel_out_0", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h100});
+
+        lookup_req = 1'b0;
 
         @(posedge clk); #1;
 
@@ -757,14 +771,17 @@ module tb_texture_cache_burst;
 
         lookup_req = 1'b1;
         @(posedge clk); #1;
-        lookup_req = 1'b0;
+
         check_bit("BC1 decompression hit", cache_hit, 1'b1);
 
+        // BRAM data ready same cycle as cache_hit
         // All texels use palette[1] = black (0x0000 RGB565)
         // R5=0, G6=0, B5=0 → R9=0, G9=0, B9=0, A9=9'h100
-        // UQ1.8 texel = {9'h100, 9'h000, 9'h000, 9'h000}
-        check_val36("BC1 texel_out_0 (black)", texel_out_0, {9'h100, 9'h000, 9'h000, 9'h000});
-        check_val36("BC1 texel_out_1 (black)", texel_out_1, {9'h100, 9'h000, 9'h000, 9'h000});
+        // UQ1.8 texel = {R9, G9, B9, A9} = {9'h000, 9'h000, 9'h000, 9'h100}
+        check_val36("BC1 texel_out_0 (black)", texel_out_0, {9'h000, 9'h000, 9'h000, 9'h100});
+        check_val36("BC1 texel_out_1 (black)", texel_out_1, {9'h000, 9'h000, 9'h000, 9'h100});
+
+        lookup_req = 1'b0;
 
         @(posedge clk); #1;
 

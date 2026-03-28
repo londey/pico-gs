@@ -216,7 +216,8 @@ module pixel_pipeline (
         PP_WRITE    = 4'd7,   // Write framebuffer and Z-buffer
         PP_Z_WRITE    = 4'd8,   // Write Z-buffer (after FB write)
         PP_TEX_LOOKUP = 4'd9,   // Issue texture cache lookup
-        PP_TEX_WAIT   = 4'd10   // Wait for texture cache fill (on miss)
+        PP_TEX_WAIT   = 4'd10,  // Wait for texture cache fill (on miss)
+        PP_TEX_READ   = 4'd11   // Wait 1 cycle for BRAM read data
     } pp_state_t;
 
     pp_state_t state /* verilator public */;
@@ -555,6 +556,7 @@ module pixel_pipeline (
     // Lookup request: asserted when FSM is in TEX_LOOKUP
     wire tex_lookup_req = (state == PP_TEX_LOOKUP);
 
+    /* verilator lint_off PINCONNECTEMPTY */
     texture_cache u_tex0_cache (
         .clk                 (clk),
         .rst_n               (rst_n),
@@ -566,6 +568,7 @@ module pixel_pipeline (
         .tex_width_log2      ({4'b0, tex0_width_log2}),
         .invalidate          (tex0_cache_inv),
         .cache_hit           (tc_cache_hit),
+        .data_valid          (),
         .cache_ready         (tc_cache_ready),
         .fill_done           (tc_fill_done),
         .texel_out_0         (tc_texel_out_0),
@@ -582,6 +585,7 @@ module pixel_pipeline (
         .sram_ack            (tex_sram_ack),
         .sram_ready          (tex_sram_ready)
     );
+    /* verilator lint_on PINCONNECTEMPTY */
 
     // Route texture cache SRAM signals to pixel pipeline outputs
     assign tex_sram_req       = tc_sram_req;
@@ -914,13 +918,18 @@ module pixel_pipeline (
 
             PP_TEX_LOOKUP: begin
                 // Texture cache lookup issued combinationally (tex_lookup_req).
-                // On hit: texel data available, proceed to CC emit.
+                // On hit: BRAM read initiated, wait 1 cycle for data.
                 // On miss: cache starts fill, wait for completion.
                 if (tc_cache_hit) begin
-                    next_state = PP_CC_EMIT;
+                    next_state = PP_TEX_READ;
                 end else begin
                     next_state = PP_TEX_WAIT;
                 end
+            end
+
+            PP_TEX_READ: begin
+                // BRAM read data valid this cycle (1 cycle after cache_hit).
+                next_state = PP_CC_EMIT;
             end
 
             PP_TEX_WAIT: begin
@@ -1065,10 +1074,12 @@ module pixel_pipeline (
                 end
 
                 PP_TEX_LOOKUP: begin
-                    // On cache hit, latch the nearest-neighbor texel
-                    if (tc_cache_hit) begin
-                        lat_tex0_texel <= tc_nearest_texel;
-                    end
+                    // Tag check + BRAM read initiated; data arrives next cycle
+                end
+
+                PP_TEX_READ: begin
+                    // BRAM read data valid; latch nearest-neighbor texel
+                    lat_tex0_texel <= tc_nearest_texel;
                 end
 
                 PP_TEX_WAIT: begin

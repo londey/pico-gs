@@ -2,6 +2,7 @@ __pycache__
 .syskit
 *.bk
 *.pyc
+*.vcd
 **/*.local.json
 build/
 obj_dir/
