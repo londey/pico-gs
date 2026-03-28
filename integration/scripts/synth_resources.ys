@@ -1,0 +1,8 @@
+# Per-module resource utilization report.
+# Runs synth_ecp5 with -noflatten so stat prints per-module breakdown.
+# Invoked AFTER read_verilog (file list passed by Makefile).
+
+# -run begin:check skips the internal stat that synth_ecp5 runs
+# during its check stage, avoiding duplicate output.
+synth_ecp5 -noflatten -nowidelut -top gpu_top -run begin:check
+stat

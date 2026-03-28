@@ -24,6 +24,7 @@ FLASH_FPGA=false
 CLEAN=false
 DT_ONLY=false
 CHECK_ONLY=false
+RESOURCES_ONLY=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --check)
             CHECK_ONLY=true
+            shift
+            ;;
+        --resources)
+            RESOURCES_ONLY=true
             shift
             ;;
         --test-only)
@@ -69,6 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --fpga-only         Build only FPGA bitstream (skip DT and RTL tests)"
             echo "  --check             Quick check: Verilator lint, cargo fmt, cargo check, cargo clippy"
+            echo "  --resources         Per-module ECP5 resource utilization report"
             echo "  --dt-only           Build and test digital twin only"
             echo "  --test-only         Run tests only (skip FPGA build)"
             echo "  --no-test           Skip RTL tests (build only)"
@@ -132,6 +138,17 @@ if [ "$CHECK_ONLY" = true ]; then
     echo ""
 
     echo -e "${GREEN}=== Check Complete ===${NC}"
+    exit 0
+fi
+
+# Resource utilization report mode
+if [ "$RESOURCES_ONLY" = true ]; then
+    echo -e "${YELLOW}Generating per-module ECP5 resource utilization report...${NC}"
+    cd "${INTEGRATION}"
+    make resources
+    echo ""
+    echo -e "${GREEN}=== Resource Report Complete ===${NC}"
+    echo "Report saved to ${OUTPUT_DIR}/fpga/resource_report.txt"
     exit 0
 fi
 

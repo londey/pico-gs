@@ -111,7 +111,7 @@ ECPPACK_FLAGS = --compress
 # Simulation flags (shared flags in verilator.f)
 VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 
-.PHONY: all synth pnr bitstream program sim sim-interactive \
+.PHONY: all synth resources pnr bitstream program sim sim-interactive \
 	test-async-fifo test-command-fifo test-sync-fifo test-l2-cache \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
@@ -159,6 +159,15 @@ synth: $(BUILD_DIR)
 		$(BUILD_DIR)/yosys.log $(BUILD_DIR)/rss_profile.csv \
 		$(BUILD_DIR)/synth_summary.txt; \
 	exit $$YOSYS_RC
+
+# Per-module resource utilization (noflatten synthesis)
+resources: $(BUILD_DIR)
+	$(YOSYS) -q -t -l $(BUILD_DIR)/yosys_resources.log \
+		-p "read_verilog -sv -D SYNTHESIS $(RTL_SOURCES)" \
+		-p "script $(SCRIPTS_DIR)/synth_resources.ys"
+	bash $(SCRIPTS_DIR)/resource_report.sh \
+		$(BUILD_DIR)/yosys_resources.log \
+		$(BUILD_DIR)/resource_report.txt
 
 # Place and route with nextpnr
 pnr: synth
@@ -1025,6 +1034,7 @@ help:
 	@echo "Targets:"
 	@echo "  all              - Build complete bitstream (default)"
 	@echo "  synth            - Run synthesis with per-stage memory profiling"
+	@echo "  resources        - Per-module ECP5 resource utilization report"
 	@echo "  pnr              - Run place-and-route only"
 	@echo "  bitstream        - Generate bitstream"
 	@echo "  program          - Program FPGA via JTAG"
