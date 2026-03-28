@@ -5,7 +5,7 @@
 // 4-way set-associative write-back cache for 16-bit Z values stored in 4×4
 // block-tiled layout.  Sits between pixel_pipeline and SDRAM arbiter port 2.
 //
-// Parameterised by NUM_EBR — the number of DP16KD blocks allocated to data.
+// NUM_EBR — the number of DP16KD blocks allocated to data.
 // Each DP16KD holds 1024×16-bit entries (= 64 cache lines at 16 pixels/line).
 // Derived constants:
 //   - NUM_SETS    = NUM_EBR × 16  (sets = blocks × entries-per-block / ways / pixels)
@@ -22,9 +22,7 @@
 //
 // Spec-ref: UNIT-006
 
-module zbuf_tile_cache #(
-    parameter NUM_EBR = 8   // DP16KD blocks for data.  Power-of-two, ≥1.
-) (
+module zbuf_tile_cache (
     input  wire         clk,
     input  wire         rst_n,
 
@@ -79,6 +77,7 @@ module zbuf_tile_cache #(
     // ========================================================================
     // Derived Parameters
     // ========================================================================
+    localparam NUM_EBR        = 8;                 // DP16KD blocks for data.  Power-of-two, ≥1.
     localparam NUM_WAYS       = 4;
     localparam PIXELS_PER_TILE = 16;           // 4×4 tile
     localparam NUM_SETS       = NUM_EBR * 16;  // 1 DP16KD = 1024 entries = 4 ways × 16 sets × 16 px

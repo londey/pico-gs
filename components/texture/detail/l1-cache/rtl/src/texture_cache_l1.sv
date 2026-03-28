@@ -2,22 +2,18 @@
 
 // Spec-ref: unit_011.03_l1_decompressed_cache.md `0000000000000000` 2026-03-24
 //
-// Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
-// Implements 4-way set-associative texture cache for one sampler.
-// Cache format: UQ1.8 per channel (36 bits/texel), PDPW16KD 512×36 EBR banks.
-// Cache fill uses burst SRAM reads via UNIT-007 arbiter (port 3).
+// L1 Decompressed Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
+// Implements 4-way set-associative cache for one sampler, storing decompressed
+// texels in UQ1.8 per channel (36 bits/texel) across PDPW16KD 512×36 EBR banks.
+//
+// On a cache miss the fill FSM fetches raw block data from SRAM via the
+// UNIT-007 arbiter (port 3), passes it to texture_block_decode for
+// format-specific decompression, and writes the resulting UQ1.8 texels
+// into 4 interleaved EBR banks (1 texel/cycle, 16 cycles).
+// This cache operates exclusively on decompressed UQ1.8 texels and is
+// agnostic to the source texture compression format.
 //
 // Cache Fill FSM: IDLE → FETCH → WRITE_BANKS → IDLE
-//   - FETCH issues burst read with format-dependent burst_len:
-//       BC1 (format 0):      burst_len=4  (8 bytes, 4 x 16-bit words)
-//       BC2 (format 1):      burst_len=8  (16 bytes, 8 x 16-bit words)
-//       BC3 (format 2):      burst_len=8  (16 bytes, 8 x 16-bit words)
-//       BC4 (format 3):      burst_len=4  (8 bytes, 4 x 16-bit words)
-//       RGB565 (format 5):   burst_len=16 (32 bytes, 16 x 16-bit words)
-//       RGBA8888 (format 6): burst_len=32 (64 bytes, 32 x 16-bit words)
-//       R8 (format 7):       burst_len=8  (16 bytes, 8 x 16-bit words)
-//   - WRITE_BANKS decodes each texel via texture_block_decode and stores to
-//     4 interleaved EBR banks (1 texel/cycle, 16 cycles)
 //
 // Writing TEXn_CFG triggers invalidation, ensuring the first access
 // after a config change is a guaranteed miss.
@@ -26,7 +22,7 @@
 //      INT-014 (Texture Memory Layout), REQ-003.08 (Texture Cache),
 //      DD-037 (PDPW16KD EBR), DD-038 (UQ1.8 Format)
 
-module texture_cache (
+module texture_cache_l1 (
     input  wire         clk,            // 100 MHz core clock
     input  wire         rst_n,          // Active-low synchronous reset
 

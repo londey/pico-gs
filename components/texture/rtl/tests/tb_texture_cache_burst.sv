@@ -68,7 +68,7 @@ module tb_texture_cache_burst;
     // DUT Instantiation
     // ========================================================================
 
-    texture_cache dut (
+    texture_cache_l1 dut (
         .clk(clk),
         .rst_n(rst_n),
         .lookup_req(lookup_req),

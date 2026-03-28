@@ -80,7 +80,7 @@ RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-	$(TEXTURE_L1_RTL)/texture_cache.sv \
+	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
@@ -256,7 +256,7 @@ test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-		$(TEXTURE_L1_RTL)/texture_cache.sv \
+		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
@@ -805,7 +805,7 @@ lint:
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-		$(TEXTURE_L1_RTL)/texture_cache.sv \
+		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
@@ -872,7 +872,7 @@ HARNESS_RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-	$(TEXTURE_L1_RTL)/texture_cache.sv \
+	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
@@ -969,7 +969,7 @@ SIM_RTL_SOURCES = \
 	$(TEXTURE_DEC_RTL)/texture_r8.sv \
 	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-	$(TEXTURE_L1_RTL)/texture_cache.sv \
+	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \

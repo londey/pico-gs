@@ -557,7 +557,7 @@ module pixel_pipeline (
     wire tex_lookup_req = (state == PP_TEX_LOOKUP);
 
     /* verilator lint_off PINCONNECTEMPTY */
-    texture_cache u_tex0_cache (
+    texture_cache_l1 u_tex0_cache (
         .clk                 (clk),
         .rst_n               (rst_n),
         .lookup_req          (tex_lookup_req),
