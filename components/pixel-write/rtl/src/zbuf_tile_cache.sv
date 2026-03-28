@@ -90,16 +90,57 @@ module zbuf_tile_cache (
     localparam BRAM_ADDR_W    = $clog2(BRAM_ENTRIES);    // {way[1:0], set, pixel_off[3:0]}
 
     // ========================================================================
-    // Tag Storage (distributed RAM — small enough)
+    // Tag Storage — per-way arrays indexed by set
     // ========================================================================
-    // Tag = tile_idx[13 : SET_BITS] (upper bits; lower SET_BITS are the set index)
 
-    reg [TAG_WIDTH-1:0] tag_store  [0:NUM_LINES-1];
-    reg                 valid_store [0:NUM_LINES-1];
-    reg                 dirty_store [0:NUM_LINES-1];
+    reg [TAG_WIDTH-1:0] tag_w0 [0:NUM_SETS-1];
+    reg [TAG_WIDTH-1:0] tag_w1 [0:NUM_SETS-1];
+    reg [TAG_WIDTH-1:0] tag_w2 [0:NUM_SETS-1];
+    reg [TAG_WIDTH-1:0] tag_w3 [0:NUM_SETS-1];
+
+    reg valid_w0 [0:NUM_SETS-1];
+    reg valid_w1 [0:NUM_SETS-1];
+    reg valid_w2 [0:NUM_SETS-1];
+    reg valid_w3 [0:NUM_SETS-1];
+
+    reg dirty_w0 [0:NUM_SETS-1];
+    reg dirty_w1 [0:NUM_SETS-1];
+    reg dirty_w2 [0:NUM_SETS-1];
+    reg dirty_w3 [0:NUM_SETS-1];
 
     // Pseudo-LRU: 3-bit binary tree per set
     reg [2:0] lru_state [0:NUM_SETS-1];
+
+    // Per-way helper functions (4:1 MUX on way, 128:1 on set)
+    function automatic [TAG_WIDTH-1:0] tag_by_way(
+        input [SET_BITS-1:0] s, input [1:0] w);
+        case (w)
+            2'd0: tag_by_way = tag_w0[s];
+            2'd1: tag_by_way = tag_w1[s];
+            2'd2: tag_by_way = tag_w2[s];
+            2'd3: tag_by_way = tag_w3[s];
+        endcase
+    endfunction
+
+    function automatic dirty_by_way(
+        input [SET_BITS-1:0] s, input [1:0] w);
+        case (w)
+            2'd0: dirty_by_way = dirty_w0[s];
+            2'd1: dirty_by_way = dirty_w1[s];
+            2'd2: dirty_by_way = dirty_w2[s];
+            2'd3: dirty_by_way = dirty_w3[s];
+        endcase
+    endfunction
+
+    function automatic valid_by_way(
+        input [SET_BITS-1:0] s, input [1:0] w);
+        case (w)
+            2'd0: valid_by_way = valid_w0[s];
+            2'd1: valid_by_way = valid_w1[s];
+            2'd2: valid_by_way = valid_w2[s];
+            2'd3: valid_by_way = valid_w3[s];
+        endcase
+    endfunction
 
     // ========================================================================
     // Data Storage — DP16KD(s) inferred, dual-port pattern
@@ -186,17 +227,16 @@ module zbuf_tile_cache (
     wire [TAG_WIDTH-1:0] idle_tag       = get_tag(idle_tile_idx);
 
     // ========================================================================
-    // Tag Lookup (combinational from latched request)
+    // Unified Tag Lookup — single set of comparators
     // ========================================================================
-    wire [LINE_IDX_W-1:0] way0_idx = {req_set, 2'b00};
-    wire [LINE_IDX_W-1:0] way1_idx = {req_set, 2'b01};
-    wire [LINE_IDX_W-1:0] way2_idx = {req_set, 2'b10};
-    wire [LINE_IDX_W-1:0] way3_idx = {req_set, 2'b11};
+    // In S_IDLE, use direct inputs; otherwise use latched request.
+    wire [SET_BITS-1:0]  lookup_set = (state == S_IDLE) ? idle_set : req_set;
+    wire [TAG_WIDTH-1:0] lookup_tag = (state == S_IDLE) ? idle_tag : req_tag;
 
-    wire way0_hit = valid_store[way0_idx] && (tag_store[way0_idx] == req_tag);
-    wire way1_hit = valid_store[way1_idx] && (tag_store[way1_idx] == req_tag);
-    wire way2_hit = valid_store[way2_idx] && (tag_store[way2_idx] == req_tag);
-    wire way3_hit = valid_store[way3_idx] && (tag_store[way3_idx] == req_tag);
+    wire way0_hit = valid_w0[lookup_set] && (tag_w0[lookup_set] == lookup_tag);
+    wire way1_hit = valid_w1[lookup_set] && (tag_w1[lookup_set] == lookup_tag);
+    wire way2_hit = valid_w2[lookup_set] && (tag_w2[lookup_set] == lookup_tag);
+    wire way3_hit = valid_w3[lookup_set] && (tag_w3[lookup_set] == lookup_tag);
 
     wire any_hit = way0_hit || way1_hit || way2_hit || way3_hit;
 
@@ -209,53 +249,26 @@ module zbuf_tile_cache (
     end
 
     // ========================================================================
-    // Idle-Time Tag Lookup (from input signals, for S_IDLE decisions)
+    // Pseudo-LRU Victim Selection
     // ========================================================================
-    // The latched req_tile_idx reflects the PREVIOUS request.  For correct
-    // hit/miss detection on the CURRENT request arriving in S_IDLE, we
-    // derive a parallel set of hit signals from the direct input tile_idx.
-
-    wire [LINE_IDX_W-1:0] idle_way0_idx = {idle_set, 2'b00};
-    wire [LINE_IDX_W-1:0] idle_way1_idx = {idle_set, 2'b01};
-    wire [LINE_IDX_W-1:0] idle_way2_idx = {idle_set, 2'b10};
-    wire [LINE_IDX_W-1:0] idle_way3_idx = {idle_set, 2'b11};
-
-    wire idle_way0_hit = valid_store[idle_way0_idx] && (tag_store[idle_way0_idx] == idle_tag);
-    wire idle_way1_hit = valid_store[idle_way1_idx] && (tag_store[idle_way1_idx] == idle_tag);
-    wire idle_way2_hit = valid_store[idle_way2_idx] && (tag_store[idle_way2_idx] == idle_tag);
-    wire idle_way3_hit = valid_store[idle_way3_idx] && (tag_store[idle_way3_idx] == idle_tag);
-
-    wire idle_any_hit = idle_way0_hit || idle_way1_hit || idle_way2_hit || idle_way3_hit;
-
-    reg [1:0] idle_hit_way;
+    reg [1:0] victim_way;
     always_comb begin
-        if      (idle_way0_hit) idle_hit_way = 2'd0;
-        else if (idle_way1_hit) idle_hit_way = 2'd1;
-        else if (idle_way2_hit) idle_hit_way = 2'd2;
-        else                    idle_hit_way = 2'd3;
-    end
-
-    // ========================================================================
-    // Pseudo-LRU Victim Selection (from input set, for S_IDLE)
-    // ========================================================================
-    reg [1:0] idle_victim_way;
-    always_comb begin
-        case (lru_state[idle_set])
-            3'b000:  idle_victim_way = 2'd0;
-            3'b001:  idle_victim_way = 2'd0;
-            3'b010:  idle_victim_way = 2'd1;
-            3'b011:  idle_victim_way = 2'd1;
-            3'b100:  idle_victim_way = 2'd2;
-            3'b101:  idle_victim_way = 2'd3;
-            3'b110:  idle_victim_way = 2'd2;
-            3'b111:  idle_victim_way = 2'd3;
-            default: idle_victim_way = 2'd0;
+        case (lru_state[lookup_set])
+            3'b000:  victim_way = 2'd0;
+            3'b001:  victim_way = 2'd0;
+            3'b010:  victim_way = 2'd1;
+            3'b011:  victim_way = 2'd1;
+            3'b100:  victim_way = 2'd2;
+            3'b101:  victim_way = 2'd3;
+            3'b110:  victim_way = 2'd2;
+            3'b111:  victim_way = 2'd3;
+            default: victim_way = 2'd0;
         endcase
     end
 
-    // Victim dirty/valid check (from input set)
-    wire idle_victim_dirty = dirty_store[{idle_set, idle_victim_way}] &&
-                             valid_store[{idle_set, idle_victim_way}];
+    // Victim dirty/valid check
+    wire victim_dirty = dirty_by_way(lookup_set, victim_way) &&
+                         valid_by_way(lookup_set, victim_way);
 
     // ========================================================================
     // Fill/Evict Counters
@@ -270,7 +283,7 @@ module zbuf_tile_cache (
     // SDRAM Address Computation
     // ========================================================================
     // Eviction: reconstruct tile index from stored tag + set
-    wire [TAG_WIDTH-1:0] evict_tag = tag_store[{fill_set, fill_way}];
+    wire [TAG_WIDTH-1:0] evict_tag = tag_by_way(fill_set, fill_way);
     wire [13:0] evict_tile_idx = {evict_tag, fill_set};
 
     function automatic [23:0] tile_byte_addr(
@@ -304,14 +317,14 @@ module zbuf_tile_cache (
         case (state)
             S_IDLE: begin
                 if (rd_req || wr_req) begin
-                    if (idle_any_hit && rd_req) begin
+                    if (any_hit && rd_req) begin
                         // Hit read — pre-read target pixel for S_RD_HIT
                         porta_re   = 1'b1;
-                        porta_addr = {idle_hit_way, idle_set, idle_pixel_off};
-                    end else if (!idle_any_hit && idle_victim_dirty) begin
+                        porta_addr = {hit_way, idle_set, idle_pixel_off};
+                    end else if (!any_hit && victim_dirty) begin
                         // Miss with dirty victim — pre-read word 0 for eviction
                         porta_re   = 1'b1;
-                        porta_addr = {idle_victim_way, idle_set, 4'd0};
+                        porta_addr = {victim_way, idle_set, 4'd0};
                     end
                 end
             end
@@ -380,14 +393,14 @@ module zbuf_tile_cache (
         case (state)
             S_IDLE: begin
                 if (rd_req || wr_req) begin
-                    if (idle_any_hit) begin
+                    if (any_hit) begin
                         if (rd_req)
                             next_state = S_RD_HIT;
                         else
                             next_state = S_WR_UPDATE;
                     end else begin
                         // Miss — check if victim needs eviction
-                        if (idle_victim_dirty) begin
+                        if (victim_dirty) begin
                             next_state = S_EVICT;
                         end else if (rd_req ? rd_hiz_uninit : wr_hiz_uninit) begin
                             next_state = S_LAZYFILL;
@@ -470,19 +483,32 @@ module zbuf_tile_cache (
             req_wr_data    <= 16'd0;
             req_hiz_uninit <= 1'b0;
 
-            for (j = 0; j < NUM_LINES; j = j + 1) begin
-                valid_store[j] <= 1'b0;
-                dirty_store[j] <= 1'b0;
-                tag_store[j]   <= '0;
-            end
             for (j = 0; j < NUM_SETS; j = j + 1) begin
+                valid_w0[j] <= 1'b0;
+                valid_w1[j] <= 1'b0;
+                valid_w2[j] <= 1'b0;
+                valid_w3[j] <= 1'b0;
+                dirty_w0[j] <= 1'b0;
+                dirty_w1[j] <= 1'b0;
+                dirty_w2[j] <= 1'b0;
+                dirty_w3[j] <= 1'b0;
+                tag_w0[j]   <= '0;
+                tag_w1[j]   <= '0;
+                tag_w2[j]   <= '0;
+                tag_w3[j]   <= '0;
                 lru_state[j] <= 3'b0;
             end
         end else if (invalidate) begin
             // Clear all valid bits — no write-back (stale data)
-            for (j = 0; j < NUM_LINES; j = j + 1) begin
-                valid_store[j] <= 1'b0;
-                dirty_store[j] <= 1'b0;
+            for (j = 0; j < NUM_SETS; j = j + 1) begin
+                valid_w0[j] <= 1'b0;
+                valid_w1[j] <= 1'b0;
+                valid_w2[j] <= 1'b0;
+                valid_w3[j] <= 1'b0;
+                dirty_w0[j] <= 1'b0;
+                dirty_w1[j] <= 1'b0;
+                dirty_w2[j] <= 1'b0;
+                dirty_w3[j] <= 1'b0;
             end
             state <= S_IDLE;
             sdram_rd_req <= 1'b0;
@@ -506,9 +532,9 @@ module zbuf_tile_cache (
                         req_wr_data    <= wr_data;
                         req_hiz_uninit <= rd_req ? rd_hiz_uninit : wr_hiz_uninit;
 
-                        if (idle_any_hit) begin
+                        if (any_hit) begin
                             // Update LRU on hit
-                            case (idle_hit_way)
+                            case (hit_way)
                                 2'd0: begin
                                     lru_state[idle_set][2] <= 1'b1;
                                     lru_state[idle_set][1] <= 1'b1;
@@ -529,7 +555,7 @@ module zbuf_tile_cache (
                             endcase
                         end else begin
                             // Miss — latch victim info
-                            fill_way <= idle_victim_way;
+                            fill_way <= victim_way;
                             fill_set <= idle_set;
                             fill_tag <= idle_tag;
                             fill_hiz_uninit <= rd_req ? rd_hiz_uninit : wr_hiz_uninit;
@@ -585,9 +611,29 @@ module zbuf_tile_cache (
 
                         if (word_count == 4'd15) begin
                             // Fill complete — update tag
-                            tag_store[{fill_set, fill_way}]   <= fill_tag;
-                            valid_store[{fill_set, fill_way}] <= 1'b1;
-                            dirty_store[{fill_set, fill_way}] <= 1'b0;
+                            case (fill_way)
+                                2'd0: begin
+                                    tag_w0[fill_set]   <= fill_tag;
+                                    valid_w0[fill_set] <= 1'b1;
+                                    dirty_w0[fill_set] <= 1'b0;
+                                end
+                                2'd1: begin
+                                    tag_w1[fill_set]   <= fill_tag;
+                                    valid_w1[fill_set] <= 1'b1;
+                                    dirty_w1[fill_set] <= 1'b0;
+                                end
+                                2'd2: begin
+                                    tag_w2[fill_set]   <= fill_tag;
+                                    valid_w2[fill_set] <= 1'b1;
+                                    dirty_w2[fill_set] <= 1'b0;
+                                end
+                                2'd3: begin
+                                    tag_w3[fill_set]   <= fill_tag;
+                                    valid_w3[fill_set] <= 1'b1;
+                                    dirty_w3[fill_set] <= 1'b0;
+                                end
+                                default: begin end
+                            endcase
                             sdram_rd_req <= 1'b0;
 
                             // Update LRU
@@ -611,9 +657,29 @@ module zbuf_tile_cache (
 
                     if (word_count == 4'd15) begin
                         // Lazy-fill complete — update tag
-                        tag_store[{fill_set, fill_way}]   <= fill_tag;
-                        valid_store[{fill_set, fill_way}] <= 1'b1;
-                        dirty_store[{fill_set, fill_way}] <= 1'b0;
+                        case (fill_way)
+                            2'd0: begin
+                                tag_w0[fill_set]   <= fill_tag;
+                                valid_w0[fill_set] <= 1'b1;
+                                dirty_w0[fill_set] <= 1'b0;
+                            end
+                            2'd1: begin
+                                tag_w1[fill_set]   <= fill_tag;
+                                valid_w1[fill_set] <= 1'b1;
+                                dirty_w1[fill_set] <= 1'b0;
+                            end
+                            2'd2: begin
+                                tag_w2[fill_set]   <= fill_tag;
+                                valid_w2[fill_set] <= 1'b1;
+                                dirty_w2[fill_set] <= 1'b0;
+                            end
+                            2'd3: begin
+                                tag_w3[fill_set]   <= fill_tag;
+                                valid_w3[fill_set] <= 1'b1;
+                                dirty_w3[fill_set] <= 1'b0;
+                            end
+                            default: begin end
+                        endcase
 
                         // Update LRU
                         case (fill_way)
@@ -634,7 +700,13 @@ module zbuf_tile_cache (
                 S_WR_UPDATE: begin
                     // Port B write handled by BRAM control always_comb.
                     // Mark cache line dirty.
-                    dirty_store[{req_set, any_hit ? hit_way : fill_way}] <= 1'b1;
+                    case (any_hit ? hit_way : fill_way)
+                        2'd0: dirty_w0[req_set] <= 1'b1;
+                        2'd1: dirty_w1[req_set] <= 1'b1;
+                        2'd2: dirty_w2[req_set] <= 1'b1;
+                        2'd3: dirty_w3[req_set] <= 1'b1;
+                        default: begin end
+                    endcase
                 end
 
                 default: begin
