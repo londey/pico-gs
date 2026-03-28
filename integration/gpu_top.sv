@@ -1236,7 +1236,9 @@ module gpu_top (
     wire [23:0] zcache_sdram_wr_addr;
     wire [15:0] zcache_sdram_wr_data;
 
-    zbuf_tile_cache u_zbuf_tile_cache (
+    zbuf_tile_cache #(
+        .NUM_EBR(8)
+    ) u_zbuf_tile_cache (
         .clk(clk_core),
         .rst_n(rst_n_core),
 
