@@ -77,7 +77,7 @@ module zbuf_tile_cache (
     // ========================================================================
     // Derived Parameters
     // ========================================================================
-    localparam NUM_EBR        = 8;                 // DP16KD blocks for data.  Power-of-two, ≥1.
+    localparam NUM_EBR        = 4;                 // DP16KD blocks for data.  Power-of-two, ≥1.
     localparam NUM_WAYS       = 4;
     localparam PIXELS_PER_TILE = 16;           // 4×4 tile
     localparam NUM_SETS       = NUM_EBR * 16;  // 1 DP16KD = 1024 entries = 4 ways × 16 sets × 16 px
