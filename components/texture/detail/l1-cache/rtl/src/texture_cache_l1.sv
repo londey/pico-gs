@@ -5,6 +5,8 @@
 // L1 Decompressed Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative cache for one sampler, storing decompressed
 // texels in UQ1.8 per channel (36 bits/texel) across PDPW16KD 512×36 EBR banks.
+// Tags are stored in 4 × PDPW16KD EBR blocks (one per way, 64×24), saving
+// ~6k FFs at the cost of 1 extra cycle of hit latency (3-cycle hit total).
 //
 // On a cache miss the fill FSM fetches raw block data from SRAM via the
 // UNIT-007 arbiter (port 3), passes it to texture_block_decode for
@@ -12,6 +14,11 @@
 // into 4 interleaved EBR banks (1 texel/cycle, 16 cycles).
 // This cache operates exclusively on decompressed UQ1.8 texels and is
 // agnostic to the source texture compression format.
+//
+// Hit latency (3 cycles):
+//   Cycle 0: lookup_req → tag EBR read initiated, inputs pipelined
+//   Cycle 1: tag compare → cache_hit → bank EBR read initiated
+//   Cycle 2: data_valid — 4 texels available on texel_out_*
 //
 // Cache Fill FSM: IDLE → FETCH → WRITE_BANKS → IDLE
 //
@@ -83,8 +90,9 @@ module texture_cache_l1 (
     // Constants
     // ====================================================================
 
-    localparam NUM_SETS  = 64;   // 6-bit set index
-    localparam NUM_LINES = 256;  // 64 sets * 4 ways
+    localparam NUM_SETS     = 64;   // 6-bit set index
+    localparam NUM_LINES   = 256;  // 64 sets * 4 ways
+    // 4 tag EBR blocks (1 per way, PDPW16KD 64×24): see u_tag0..u_tag3 below
 
     // Burst lengths per format (number of 16-bit words)
     localparam [7:0] BURST_LEN_BC1      = 8'd4;   // 8 bytes = 4 x 16-bit words
@@ -123,8 +131,9 @@ module texture_cache_l1 (
     // ====================================================================
 
     // Tag: {tex_base[23:12], block_y[5:0], block_x[5:0]} = 24 bits
-    reg [23:0] tag_store [0:NUM_LINES-1];
-    reg        valid_store [0:NUM_LINES-1];
+    // Tags stored in 4 × tex_tag_bram EBR (1 per way), read latency = 1 cycle.
+    wire [23:0] tag_rdata_0, tag_rdata_1, tag_rdata_2, tag_rdata_3;
+    reg         valid_store [0:NUM_LINES-1];
 
     // Pseudo-LRU state: 3 bits per set (binary tree for 4 ways)
     reg [2:0]  lru_state [0:NUM_SETS-1];
@@ -155,24 +164,100 @@ module texture_cache_l1 (
     // Tag for comparison
     wire [23:0] lookup_tag = {tex_base_addr[23:12], block_y[5:0], block_x[5:0]};
 
-    // Bank read address: {set_index, way} = 8 bits → 256 entries,
-    // each bank stores 4 texels per line → need {line_addr, texel_within_bank}
-    // For simplicity in this implementation: bank_addr = {set_index, way[1:0]} * 4 + sub_index
-    // Using line_index directly = set_index * 4 + way
-
     // ====================================================================
-    // Tag Comparison (combinational, 4-way parallel)
+    // Tag EBR Instances (4 × PDPW16KD, one per way, 64×24)
     // ====================================================================
 
-    wire [7:0] way0_idx = {set_index, 2'b00};
-    wire [7:0] way1_idx = {set_index, 2'b01};
-    wire [7:0] way2_idx = {set_index, 2'b10};
-    wire [7:0] way3_idx = {set_index, 2'b11};
+    // Tag read: initiated on lookup_req (cycle 0), data available cycle 1.
+    // Tag write: during fill completion (one way enabled per fill).
+    wire tag_fill_we = (fill_state == FILL_WRITE) && (write_count == 2'd3);
+    wire tag_we_0 = tag_fill_we && (fill_victim_way == 2'b00);
+    wire tag_we_1 = tag_fill_we && (fill_victim_way == 2'b01);
+    wire tag_we_2 = tag_fill_we && (fill_victim_way == 2'b10);
+    wire tag_we_3 = tag_fill_we && (fill_victim_way == 2'b11);
 
-    wire way0_hit = valid_store[way0_idx] && (tag_store[way0_idx] == lookup_tag);
-    wire way1_hit = valid_store[way1_idx] && (tag_store[way1_idx] == lookup_tag);
-    wire way2_hit = valid_store[way2_idx] && (tag_store[way2_idx] == lookup_tag);
-    wire way3_hit = valid_store[way3_idx] && (tag_store[way3_idx] == lookup_tag);
+    tex_tag_bram u_tag0 (
+        .clk   (clk),
+        .we    (tag_we_0),
+        .waddr (fill_set_index),
+        .wdata (fill_tag),
+        .re    (lookup_req),
+        .raddr (set_index),
+        .rdata (tag_rdata_0)
+    );
+
+    tex_tag_bram u_tag1 (
+        .clk   (clk),
+        .we    (tag_we_1),
+        .waddr (fill_set_index),
+        .wdata (fill_tag),
+        .re    (lookup_req),
+        .raddr (set_index),
+        .rdata (tag_rdata_1)
+    );
+
+    tex_tag_bram u_tag2 (
+        .clk   (clk),
+        .we    (tag_we_2),
+        .waddr (fill_set_index),
+        .wdata (fill_tag),
+        .re    (lookup_req),
+        .raddr (set_index),
+        .rdata (tag_rdata_2)
+    );
+
+    tex_tag_bram u_tag3 (
+        .clk   (clk),
+        .we    (tag_we_3),
+        .waddr (fill_set_index),
+        .wdata (fill_tag),
+        .re    (lookup_req),
+        .raddr (set_index),
+        .rdata (tag_rdata_3)
+    );
+
+    // ====================================================================
+    // Lookup Pipeline Stage (cycle 0 → cycle 1)
+    // ====================================================================
+    //
+    // Pipeline lookup inputs so they are available alongside tag EBR
+    // outputs in cycle 1 for comparison and bank address computation.
+
+    reg        lookup_req_r;
+    reg [5:0]  set_index_r;
+    reg [23:0] lookup_tag_r;
+    reg        pixel_x_1_r;
+    reg        pixel_y_1_r;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            lookup_req_r <= 1'b0;
+            set_index_r  <= 6'b0;
+            lookup_tag_r <= 24'b0;
+            pixel_x_1_r  <= 1'b0;
+            pixel_y_1_r  <= 1'b0;
+        end else begin
+            lookup_req_r <= lookup_req && (fill_state == FILL_IDLE);
+            set_index_r  <= set_index;
+            lookup_tag_r <= lookup_tag;
+            pixel_x_1_r  <= pixel_x[1];
+            pixel_y_1_r  <= pixel_y[1];
+        end
+    end
+
+    // ====================================================================
+    // Tag Comparison (cycle 1, after tag EBR read)
+    // ====================================================================
+
+    wire [7:0] way0_idx = {set_index_r, 2'b00};
+    wire [7:0] way1_idx = {set_index_r, 2'b01};
+    wire [7:0] way2_idx = {set_index_r, 2'b10};
+    wire [7:0] way3_idx = {set_index_r, 2'b11};
+
+    wire way0_hit = valid_store[way0_idx] && (tag_rdata_0 == lookup_tag_r);
+    wire way1_hit = valid_store[way1_idx] && (tag_rdata_1 == lookup_tag_r);
+    wire way2_hit = valid_store[way2_idx] && (tag_rdata_2 == lookup_tag_r);
+    wire way3_hit = valid_store[way3_idx] && (tag_rdata_3 == lookup_tag_r);
 
     wire any_hit = way0_hit || way1_hit || way2_hit || way3_hit;
 
@@ -194,16 +279,18 @@ module texture_cache_l1 (
     // Cache Hit Data Readout (BRAM — 1-cycle read latency)
     // ====================================================================
 
-    assign cache_hit = lookup_req && any_hit && (fill_state == FILL_IDLE);
-    assign cache_ready = (fill_state == FILL_IDLE);
+    // cache_hit asserts in cycle 1 (after tag EBR read + comparison)
+    assign cache_hit = lookup_req_r && any_hit && (fill_state == FILL_IDLE);
+    // Block new lookups while a lookup is resolving in the pipeline
+    assign cache_ready = (fill_state == FILL_IDLE) && !lookup_req_r;
     assign fill_done = (fill_state == FILL_WRITE);
 
-    // Read texels from banks at the hit address
+    // Read texels from banks at the hit address (cycle 1, data valid cycle 2)
     // Bank address = {set_index, way, sub_texel} matching fill_bank_base layout
     // Sub-block quad select: pixel_x[1], pixel_y[1] pick which 2×2 quad
     // within the 4×4 block to read (0..3 per bank per cache line).
     // 36-bit banks have 512 entries (9-bit addr): {set_index[4:0], way[1:0], quad_y, quad_x}
-    wire [8:0] read_bank_addr = {set_index[4:0], hit_way, pixel_y[1], pixel_x[1]};
+    wire [8:0] read_bank_addr = {set_index_r[4:0], hit_way, pixel_y_1_r, pixel_x_1_r};
 
     // BRAM outputs are registered; data valid 1 cycle after cache_hit
     assign texel_out_0 = bank_rdata_0;
@@ -287,7 +374,7 @@ module texture_cache_l1 (
     reg [1:0] victim_way;
 
     always_comb begin
-        case ({lru_state[set_index][2], lru_state[set_index][1], lru_state[set_index][0]})
+        case ({lru_state[set_index_r][2], lru_state[set_index_r][1], lru_state[set_index_r][0]})
             3'b000:  victim_way = 2'b00;
             3'b001:  victim_way = 2'b00;
             3'b010:  victim_way = 2'b01;
@@ -343,8 +430,8 @@ module texture_cache_l1 (
 
         case (fill_state)
             FILL_IDLE: begin
-                if (lookup_req && !any_hit) begin
-                    // Cache miss — start fill
+                if (lookup_req_r && !any_hit) begin
+                    // Cache miss (detected in cycle 1 after tag EBR read)
                     fill_next_state = FILL_FETCH;
                 end
             end
@@ -413,13 +500,13 @@ module texture_cache_l1 (
                     sram_burst_len <= 8'b0;
                     write_count    <= 2'b0;
 
-                    if (lookup_req && !any_hit) begin
-                        // Cache miss — latch parameters and start burst
+                    if (lookup_req_r && !any_hit) begin
+                        // Cache miss (cycle 1) — latch pipelined parameters
                         burst_len_reg   <= burst_len_next;
                         fill_format     <= tex_format;
                         fill_addr       <= block_sram_addr;
-                        fill_set_index  <= set_index;
-                        fill_tag        <= lookup_tag;
+                        fill_set_index  <= set_index_r;
+                        fill_tag        <= lookup_tag_r;
                         fill_victim_way <= victim_way;
                         burst_word_count <= 6'b0;
 
@@ -543,12 +630,15 @@ module texture_cache_l1 (
 
     wire bank_we = (fill_state == FILL_WRITE);
 
+    // Bank read enable: read on cache_hit (cycle 1), data valid cycle 2
+    wire bank_re = cache_hit;
+
     tex_bank_bram u_bank0 (
         .clk   (clk),
         .we    (bank_we),
         .waddr (fill_bank_addr),
         .wdata (decoded_texel_0),
-        .re    (lookup_req),
+        .re    (bank_re),
         .raddr (read_bank_addr),
         .rdata (bank_rdata_0)
     );
@@ -558,7 +648,7 @@ module texture_cache_l1 (
         .we    (bank_we),
         .waddr (fill_bank_addr),
         .wdata (decoded_texel_1),
-        .re    (lookup_req),
+        .re    (bank_re),
         .raddr (read_bank_addr),
         .rdata (bank_rdata_1)
     );
@@ -568,7 +658,7 @@ module texture_cache_l1 (
         .we    (bank_we),
         .waddr (fill_bank_addr),
         .wdata (decoded_texel_2),
-        .re    (lookup_req),
+        .re    (bank_re),
         .raddr (read_bank_addr),
         .rdata (bank_rdata_2)
     );
@@ -578,7 +668,7 @@ module texture_cache_l1 (
         .we    (bank_we),
         .waddr (fill_bank_addr),
         .wdata (decoded_texel_3),
-        .re    (lookup_req),
+        .re    (bank_re),
         .raddr (read_bank_addr),
         .rdata (bank_rdata_3)
     );
@@ -587,11 +677,12 @@ module texture_cache_l1 (
     // Tag and Valid Update (during FILL_WRITE final cycle)
     // ====================================================================
 
+    // Tag writes go to tex_tag_bram EBR via tag_we_* signals (above).
+    // Valid bits remain in FFs for fast broadcast invalidation.
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int j = 0; j < NUM_LINES; j++) begin
                 valid_store[j] <= 1'b0;
-                tag_store[j]   <= 24'b0;
             end
         end else if (invalidate) begin
             // Clear all valid bits for this sampler
@@ -599,8 +690,7 @@ module texture_cache_l1 (
                 valid_store[j] <= 1'b0;
             end
         end else if (fill_state == FILL_WRITE && write_count == 2'd3) begin
-            // On final bank write cycle, update tag and valid
-            tag_store[fill_line_idx]   <= fill_tag;
+            // On final bank write cycle, mark line valid
             valid_store[fill_line_idx] <= 1'b1;
         end
     end
@@ -615,23 +705,23 @@ module texture_cache_l1 (
                 lru_state[j] <= 3'b0;
             end
         end else if (cache_hit) begin
-            // Update LRU on hit: mark hit_way as most recently used
+            // Update LRU on hit (cycle 1): mark hit_way as most recently used
             case (hit_way)
                 2'b00: begin
-                    lru_state[set_index][2] <= 1'b1;
-                    lru_state[set_index][1] <= 1'b1;
+                    lru_state[set_index_r][2] <= 1'b1;
+                    lru_state[set_index_r][1] <= 1'b1;
                 end
                 2'b01: begin
-                    lru_state[set_index][2] <= 1'b1;
-                    lru_state[set_index][1] <= 1'b0;
+                    lru_state[set_index_r][2] <= 1'b1;
+                    lru_state[set_index_r][1] <= 1'b0;
                 end
                 2'b10: begin
-                    lru_state[set_index][2] <= 1'b0;
-                    lru_state[set_index][0] <= 1'b1;
+                    lru_state[set_index_r][2] <= 1'b0;
+                    lru_state[set_index_r][0] <= 1'b1;
                 end
                 2'b11: begin
-                    lru_state[set_index][2] <= 1'b0;
-                    lru_state[set_index][0] <= 1'b0;
+                    lru_state[set_index_r][2] <= 1'b0;
+                    lru_state[set_index_r][0] <= 1'b0;
                 end
                 default: begin end
             endcase
