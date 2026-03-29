@@ -33,6 +33,7 @@ module raster_edge_walk (
 
     // Render mode
     input  wire        z_test_en,         // Z_TEST_EN from RENDER_MODE register
+    input  wire        ccw,              // Triangle winding: 1=CCW, 0=CW
 
     // Framebuffer config (for Hi-Z tile index computation)
     input  wire [3:0]  fb_width_log2,     // log2(surface width), e.g. 9 for 512
@@ -196,7 +197,9 @@ module raster_edge_walk (
     // Inside-Triangle Test
     // ========================================================================
 
-    assign inside_triangle = (e0 >= 32'sd0) && (e1 >= 32'sd0) && (e2 >= 32'sd0);
+    assign inside_triangle = ccw
+        ? ((e0 >= 32'sd0) && (e1 >= 32'sd0) && (e2 >= 32'sd0))
+        : ((e0 <= 32'sd0) && (e1 <= 32'sd0) && (e2 <= 32'sd0));
 
     // ========================================================================
     // Hierarchical Tile Rejection
@@ -221,11 +224,18 @@ module raster_edge_walk (
     wire signed [31:0] e2_bl = e2 + e2_3B;
     wire signed [31:0] e2_br = e2 + e2_3A + e2_3B;
 
+    // CCW: reject tile when all 4 corners are negative for any edge
+    // CW:  reject tile when all 4 corners are positive for any edge
     wire e0_all_neg = (e0 < 32'sd0) && (e0_tr < 32'sd0) && (e0_bl < 32'sd0) && (e0_br < 32'sd0);
     wire e1_all_neg = (e1 < 32'sd0) && (e1_tr < 32'sd0) && (e1_bl < 32'sd0) && (e1_br < 32'sd0);
     wire e2_all_neg = (e2 < 32'sd0) && (e2_tr < 32'sd0) && (e2_bl < 32'sd0) && (e2_br < 32'sd0);
+    wire e0_all_pos = (e0 > 32'sd0) && (e0_tr > 32'sd0) && (e0_bl > 32'sd0) && (e0_br > 32'sd0);
+    wire e1_all_pos = (e1 > 32'sd0) && (e1_tr > 32'sd0) && (e1_bl > 32'sd0) && (e1_br > 32'sd0);
+    wire e2_all_pos = (e2 > 32'sd0) && (e2_tr > 32'sd0) && (e2_bl > 32'sd0) && (e2_br > 32'sd0);
 
-    wire tile_rejected = e0_all_neg || e1_all_neg || e2_all_neg;
+    wire tile_rejected = ccw
+        ? (e0_all_neg || e1_all_neg || e2_all_neg)
+        : (e0_all_pos || e1_all_pos || e2_all_pos);
 
     // ========================================================================
     // Tile Geometry

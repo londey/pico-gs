@@ -329,9 +329,15 @@ module pixel_pipeline (
     // Z-buffer data register (latched when zbuf_read_valid)
     reg [15:0] zbuf_data_lat;
 
+    // Use incoming zbuf_read_data directly for the Z comparison in
+    // PP_Z_WAIT (zbuf_data_lat is still the stale PP_IDLE init value
+    // at that point; the registered update arrives one cycle too late).
+    wire [15:0] zbuf_compare_z = (zbuf_read_valid) ? zbuf_read_data
+                                                   : zbuf_data_lat;
+
     early_z u_early_z (
         .fragment_z   (lat_z),
-        .zbuffer_z    (zbuf_data_lat),
+        .zbuffer_z    (zbuf_compare_z),
         .z_range_min  (reg_z_range[15:0]),
         .z_range_max  (reg_z_range[31:16]),
         .z_test_en    (z_test_en),
@@ -933,9 +939,13 @@ module pixel_pipeline (
             end
 
             PP_TEX_WAIT: begin
-                // Wait for texture cache fill to complete (returns to IDLE).
-                // Then retry lookup — will hit since data was just filled.
-                if (tc_cache_ready) begin
+                // The texture cache has 1-cycle tag EBR read latency:
+                // cache_hit arrives here (cycle 1) after PP_TEX_LOOKUP
+                // issued lookup_req (cycle 0).  Check it first.
+                if (tc_cache_hit) begin
+                    next_state = PP_TEX_READ;
+                end else if (tc_cache_ready) begin
+                    // Fill complete — retry lookup (will hit next cycle).
                     next_state = PP_TEX_LOOKUP;
                 end
             end

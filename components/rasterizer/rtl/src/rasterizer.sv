@@ -836,6 +836,7 @@ module rasterizer (
         .walk_start     (deriv_done),
         // Render mode
         .z_test_en      (z_test_en),
+        .ccw            (ccw),
         // Framebuffer config
         .fb_width_log2  (fb_width_log2),
         // Hi-Z metadata read interface
