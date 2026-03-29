@@ -130,10 +130,11 @@ module texture_block_decode (
     assign tidx[3] = texel_idx_3;
 
     // ========================================================================
-    // Format-Specific Decoders (4 instances each)
+    // Shared BC Decoders + Format-Specific Assembly (4 lanes)
     // ========================================================================
-    // Block data is shared; only texel_idx differs per lane.
-    // Synthesis shares the common palette/interpolation logic.
+    // One bc_color_block and one bc_alpha_block per lane, with format-
+    // dependent input muxing.  Uncompressed format decoders are kept as
+    // dedicated instances.
 
     wire [35:0] bc1_texel [0:3];
     wire [35:0] bc2_texel [0:3];
@@ -146,29 +147,101 @@ module texture_block_decode (
     genvar gi;
     generate
         for (gi = 0; gi < 4; gi = gi + 1) begin : gen_decode
-            texture_bc1 u_bc1 (
-                .bc1_data  (block_64),
-                .texel_idx (tidx[gi]),
-                .texel_out (bc1_texel[gi])
+
+            // ----------------------------------------------------------------
+            // Shared color block inputs (muxed by format)
+            // ----------------------------------------------------------------
+            // BC1: endpoints/indices live in block_64.
+            // BC2/BC3: endpoints/indices live in block_128 upper half.
+            // Other formats don't use the color block; default to BC1 inputs.
+
+            wire        bc_fmt_is_bc1 = (tex_format == 4'd0);
+            wire [15:0] lane_color0   = bc_fmt_is_bc1 ? block_64[15:0]
+                                                       : block_128[79:64];
+            wire [15:0] lane_color1   = bc_fmt_is_bc1 ? block_64[31:16]
+                                                       : block_128[95:80];
+            wire [31:0] lane_indices  = bc_fmt_is_bc1 ? block_64[63:32]
+                                                       : block_128[127:96];
+            wire        lane_four_color = bc_fmt_is_bc1
+                                        ? (block_64[15:0] > block_64[31:16])
+                                        : 1'b1;
+
+            // ----------------------------------------------------------------
+            // One bc_color_block per lane
+            // ----------------------------------------------------------------
+
+            wire [8:0] bc_r9;
+            wire [8:0] bc_g9;
+            wire [8:0] bc_b9;
+            wire       bc_transparent;
+
+            bc_color_block u_shared_color (
+                .color0          (lane_color0),
+                .color1          (lane_color1),
+                .indices         (lane_indices),
+                .texel_idx       (tidx[gi]),
+                .four_color_mode (lane_four_color),
+                .r9              (bc_r9),
+                .g9              (bc_g9),
+                .b9              (bc_b9),
+                .transparent     (bc_transparent)
             );
 
-            texture_bc2 u_bc2 (
-                .block_data (block_128),
-                .texel_idx  (tidx[gi]),
-                .texel_out  (bc2_texel[gi])
+            // ----------------------------------------------------------------
+            // Shared alpha block inputs (muxed by format)
+            // ----------------------------------------------------------------
+            // BC4: endpoints/indices live in block_64.
+            // BC3: endpoints/indices live in block_128 lower half.
+            // Other formats don't use the alpha block; default to BC4 inputs.
+
+            wire        bc_fmt_is_bc4  = (tex_format == 4'd3);
+            wire [7:0]  alpha_ep0      = bc_fmt_is_bc4 ? block_64[7:0]
+                                                        : block_128[7:0];
+            wire [7:0]  alpha_ep1      = bc_fmt_is_bc4 ? block_64[15:8]
+                                                        : block_128[15:8];
+            wire [47:0] alpha_idx_data = bc_fmt_is_bc4 ? block_64[63:16]
+                                                        : block_128[63:16];
+
+            // ----------------------------------------------------------------
+            // One bc_alpha_block per lane
+            // ----------------------------------------------------------------
+
+            wire [7:0] alpha_decoded;
+
+            bc_alpha_block u_shared_alpha (
+                .endpoint0     (alpha_ep0),
+                .endpoint1     (alpha_ep1),
+                .index_data    (alpha_idx_data),
+                .texel_idx     (tidx[gi]),
+                .decoded_value (alpha_decoded)
             );
 
-            texture_bc3 u_bc3 (
-                .block_data (block_128),
-                .texel_idx  (tidx[gi]),
-                .texel_out  (bc3_texel[gi])
-            );
+            // ----------------------------------------------------------------
+            // Format-specific output assembly (inline, no wrapper modules)
+            // ----------------------------------------------------------------
 
-            texture_bc4 u_bc4 (
-                .block_data (block_64),
-                .texel_idx  (tidx[gi]),
-                .texel_out  (bc4_texel[gi])
-            );
+            // BC1: color from shared block, alpha from transparency flag
+            wire [8:0] bc1_a9 = bc_transparent ? 9'd0 : 9'h100;
+
+            // BC2: explicit 4-bit alpha per texel from block_128[63:0]
+            wire [6:0] alpha_bit_off = {1'b0, tidx[gi][3:2], tidx[gi][1:0], 2'b00};
+            wire [3:0] bc2_alpha4    = block_128[alpha_bit_off +: 4];
+            wire [8:0] bc2_alpha9    = fp_types_pkg::ch4_to_uq18(bc2_alpha4);
+
+            // BC3: alpha from shared alpha block
+            wire [8:0] bc3_alpha9 = fp_types_pkg::ch8_to_uq18(alpha_decoded);
+
+            // BC4: red from shared alpha block, replicated to RGB
+            wire [8:0] bc4_red9 = fp_types_pkg::ch8_to_uq18(alpha_decoded);
+
+            assign bc1_texel[gi] = {bc_r9, bc_g9, bc_b9, bc1_a9};
+            assign bc2_texel[gi] = {bc_r9, bc_g9, bc_b9, bc2_alpha9};
+            assign bc3_texel[gi] = {bc_r9, bc_g9, bc_b9, bc3_alpha9};
+            assign bc4_texel[gi] = {bc4_red9, bc4_red9, bc4_red9, 9'h100};
+
+            // ----------------------------------------------------------------
+            // Uncompressed format decoders (unchanged)
+            // ----------------------------------------------------------------
 
             texture_rgb565 u_rgb565 (
                 .block_data (block_256),

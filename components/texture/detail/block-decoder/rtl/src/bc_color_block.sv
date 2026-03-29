@@ -71,9 +71,15 @@ module bc_color_block (
     wire [10:0] sum13_b9 = {2'b0, c0_b9} + {2'b0, c0_b9} + {2'b0, c1_b9} + 11'd1;
 
     // verilator lint_off UNUSEDSIGNAL
-    wire [20:0] prod13_r9 = {10'b0, sum13_r9} * 21'd683;
-    wire [20:0] prod13_g9 = {10'b0, sum13_g9} * 21'd683;
-    wire [20:0] prod13_b9 = {10'b0, sum13_b9} * 21'd683;
+    wire [20:0] prod13_r9 = {1'b0, sum13_r9, 9'b0} + {3'b0, sum13_r9, 7'b0}
+                           + {5'b0, sum13_r9, 5'b0} + {7'b0, sum13_r9, 3'b0}
+                           + {9'b0, sum13_r9, 1'b0} + {10'b0, sum13_r9};
+    wire [20:0] prod13_g9 = {1'b0, sum13_g9, 9'b0} + {3'b0, sum13_g9, 7'b0}
+                           + {5'b0, sum13_g9, 5'b0} + {7'b0, sum13_g9, 3'b0}
+                           + {9'b0, sum13_g9, 1'b0} + {10'b0, sum13_g9};
+    wire [20:0] prod13_b9 = {1'b0, sum13_b9, 9'b0} + {3'b0, sum13_b9, 7'b0}
+                           + {5'b0, sum13_b9, 5'b0} + {7'b0, sum13_b9, 3'b0}
+                           + {9'b0, sum13_b9, 1'b0} + {10'b0, sum13_b9};
     // verilator lint_on UNUSEDSIGNAL
 
     wire [8:0] interp13_r9 = prod13_r9[19:11];
@@ -89,9 +95,15 @@ module bc_color_block (
     wire [10:0] sum23_b9 = {2'b0, c0_b9} + {2'b0, c1_b9} + {2'b0, c1_b9} + 11'd1;
 
     // verilator lint_off UNUSEDSIGNAL
-    wire [20:0] prod23_r9 = {10'b0, sum23_r9} * 21'd683;
-    wire [20:0] prod23_g9 = {10'b0, sum23_g9} * 21'd683;
-    wire [20:0] prod23_b9 = {10'b0, sum23_b9} * 21'd683;
+    wire [20:0] prod23_r9 = {1'b0, sum23_r9, 9'b0} + {3'b0, sum23_r9, 7'b0}
+                           + {5'b0, sum23_r9, 5'b0} + {7'b0, sum23_r9, 3'b0}
+                           + {9'b0, sum23_r9, 1'b0} + {10'b0, sum23_r9};
+    wire [20:0] prod23_g9 = {1'b0, sum23_g9, 9'b0} + {3'b0, sum23_g9, 7'b0}
+                           + {5'b0, sum23_g9, 5'b0} + {7'b0, sum23_g9, 3'b0}
+                           + {9'b0, sum23_g9, 1'b0} + {10'b0, sum23_g9};
+    wire [20:0] prod23_b9 = {1'b0, sum23_b9, 9'b0} + {3'b0, sum23_b9, 7'b0}
+                           + {5'b0, sum23_b9, 5'b0} + {7'b0, sum23_b9, 3'b0}
+                           + {9'b0, sum23_b9, 1'b0} + {10'b0, sum23_b9};
     // verilator lint_on UNUSEDSIGNAL
 
     wire [8:0] interp23_r9 = prod23_r9[19:11];
