@@ -1,103 +1,103 @@
 `default_nettype none
 
-// Z-Buffer Tile Cache (UNIT-006)
+// Spec-ref: unit_009.01_zbuf_tile_cache.md `0000000000000000` 2026-03-24
 //
-// 4-way set-associative write-back cache for 16-bit Z values stored in 4×4
-// block-tiled layout.  Sits between pixel_pipeline and SDRAM arbiter port 2.
+// Z-Buffer Tile Cache — 4-way set-associative, write-back, 4×4 tiles
 //
-// NUM_EBR — the number of DP16KD blocks allocated to data.
-// Each DP16KD holds 1024×16-bit entries (= 64 cache lines at 16 pixels/line).
-// Derived constants:
-//   - NUM_SETS    = NUM_EBR × 16  (sets = blocks × entries-per-block / ways / pixels)
-//   - Cache lines = 4 ways × NUM_SETS
-//   - Line size:   16 × 16-bit Z values = 32 bytes (one 4×4 tile)
-//   - Eviction:    pseudo-LRU (3-bit binary tree per set)
+// Stores 16-bit Z values in DP16KD data BRAM (NUM_EBR blocks).
+// Tags stored in 4 × PDPW16KD EBR blocks (one per way), saving ~2k FFs.
+// A single-entry "last-tag" FF cache bypasses the tag EBR latency for
+// consecutive accesses to the same tile (~94% of accesses with 4×4 raster).
 //
-// Default NUM_EBR=8 → 128 sets, 512 cache lines, 8192 BRAM entries.
+// Hit latency:
+//   Fast path (last-tag hit): 2 cycles (S_IDLE → S_RD_HIT)
+//   Slow path (tag EBR read): 3 cycles (S_IDLE → S_TAG_RD → S_RD_HIT)
 //
-// Lazy-fill: on miss to an uninitialized tile (hiz_uninit=1), the cache
-// fills the line with 0x0000 without issuing an SDRAM read.  When the line
-// is later evicted dirty, the full 16-word block (including untouched zero
-// pixels) is written back to SDRAM.
+// Hi-Z min-Z feedback: reports actual tile minimum on eviction writeback
+// and when 16 consecutive writes complete a tile (simple counter).
 //
-// Spec-ref: UNIT-006
+// On a cache miss the FSM evicts a dirty victim (if needed), then fills
+// from SDRAM or lazy-fills with zeros (hiz_uninit).
 
 module zbuf_tile_cache (
     input  wire         clk,
     input  wire         rst_n,
 
     // ====================================================================
-    // Pixel Pipeline Interface
+    // Z Read Port
     // ====================================================================
-
-    // Read request (Z-buffer test)
-    input  wire         rd_req,           // Read request
-    input  wire [13:0]  rd_tile_idx,      // 14-bit tile index
-    input  wire [3:0]   rd_pixel_off,     // {local_y[1:0], local_x[1:0]}
+    input  wire         rd_req,
+    input  wire [13:0]  rd_tile_idx,
+    input  wire [3:0]   rd_pixel_off,
     input  wire         rd_hiz_uninit,    // Tile Hi-Z metadata invalid (lazy-fill)
-    output wire  [15:0] rd_data,          // Z value result
-    output reg          rd_valid,         // Result ready (1-cycle pulse)
+    output reg          rd_valid,
+    output wire [15:0]  rd_data,
 
-    // Write request (Z-buffer update after depth test pass)
-    input  wire         wr_req,           // Write request
-    input  wire [13:0]  wr_tile_idx,      // 14-bit tile index
-    input  wire [3:0]   wr_pixel_off,     // {local_y[1:0], local_x[1:0]}
-    input  wire [15:0]  wr_data,          // Z value to write
+    // ====================================================================
+    // Z Write Port
+    // ====================================================================
+    input  wire         wr_req,
+    input  wire [13:0]  wr_tile_idx,
+    input  wire [3:0]   wr_pixel_off,
+    input  wire [15:0]  wr_data,
     input  wire         wr_hiz_uninit,    // Tile Hi-Z metadata invalid (lazy-fill)
-    output wire         wr_ready,         // Write accepted
-
-    // Cache status
-    output wire         cache_ready,      // Cache idle, can accept requests
+    output wire         wr_ready,
 
     // ====================================================================
-    // SDRAM Arbiter Interface (port 2)
+    // Cache Status
     // ====================================================================
-    output reg          sdram_rd_req,     // SDRAM read request
-    output reg  [23:0]  sdram_rd_addr,    // SDRAM read byte address
-    input  wire [15:0]  sdram_rd_data,    // SDRAM read data
-    input  wire         sdram_rd_valid,   // SDRAM read data valid
-
-    output reg          sdram_wr_req,     // SDRAM write request
-    output reg  [23:0]  sdram_wr_addr,    // SDRAM write byte address
-    output reg  [15:0]  sdram_wr_data,    // SDRAM write data
-    input  wire         sdram_ready,      // SDRAM port ready
+    output wire         cache_ready,
+    input  wire         invalidate,       // Clear all valid+dirty bits
 
     // ====================================================================
-    // Configuration
+    // SDRAM Interface
     // ====================================================================
-    input  wire [15:0]  fb_z_base,        // Z-buffer base (×512-byte units)
-    input  wire [3:0]   fb_width_log2,    // Surface width log2
+    output reg          sdram_rd_req,
+    output reg  [23:0]  sdram_rd_addr,
+    input  wire [15:0]  sdram_rd_data,
+    input  wire         sdram_rd_valid,
+    output reg          sdram_wr_req,
+    output reg  [23:0]  sdram_wr_addr,
+    output reg  [15:0]  sdram_wr_data,
+    input  wire         sdram_ready,
 
     // ====================================================================
-    // Cache Invalidation
+    // Framebuffer Config
     // ====================================================================
-    input  wire         invalidate        // Clear all valid bits (on FB_CONFIG write)
+    input  wire [15:0]  fb_z_base,        // Z-buffer base address (upper bits)
+    input  wire [3:0]   fb_width_log2,    // Framebuffer width as log2
+
+    // ====================================================================
+    // Hi-Z Min-Z Feedback
+    // ====================================================================
+    output reg          hiz_fb_valid,     // Feedback pulse (1 cycle)
+    output reg  [13:0]  hiz_fb_tile_idx,  // Which tile
+    output reg  [7:0]   hiz_fb_min_z_hi   // Upper 8 bits of tile minimum Z
 );
 
-    // ========================================================================
+    // ====================================================================
     // Derived Parameters
-    // ========================================================================
-    localparam NUM_EBR        = 4;                 // DP16KD blocks for data.  Power-of-two, ≥1.
+    // ====================================================================
+    localparam NUM_EBR        = 8;                 // DP16KD blocks for data
     localparam NUM_WAYS       = 4;
-    localparam PIXELS_PER_TILE = 16;           // 4×4 tile
-    localparam NUM_SETS       = NUM_EBR * 16;  // 1 DP16KD = 1024 entries = 4 ways × 16 sets × 16 px
+    localparam PIXELS_PER_TILE = 16;               // 4×4 tile
+    localparam NUM_SETS       = NUM_EBR * 16;      // 128 sets
     localparam NUM_LINES      = NUM_WAYS * NUM_SETS;
 
-    localparam SET_BITS       = $clog2(NUM_SETS);        // Bits for set index
-    localparam TAG_WIDTH      = 14 - SET_BITS;           // Remaining tile_idx bits
+    localparam SET_BITS       = $clog2(NUM_SETS);        // 7
+    localparam TAG_WIDTH      = 14 - SET_BITS;           // 7
     localparam LINE_IDX_W     = SET_BITS + 2;            // {set, way} index width
     localparam BRAM_ENTRIES   = NUM_WAYS * NUM_SETS * PIXELS_PER_TILE;
-    localparam BRAM_ADDR_W    = $clog2(BRAM_ENTRIES);    // {way[1:0], set, pixel_off[3:0]}
+    localparam BRAM_ADDR_W    = $clog2(BRAM_ENTRIES);    // 13
 
-    // ========================================================================
-    // Tag Storage — per-way arrays indexed by set
-    // ========================================================================
+    // ====================================================================
+    // Tag EBR Wire Declarations
+    // ====================================================================
+    wire [TAG_WIDTH-1:0] tag_rdata_0, tag_rdata_1, tag_rdata_2, tag_rdata_3;
 
-    reg [TAG_WIDTH-1:0] tag_w0 [0:NUM_SETS-1];
-    reg [TAG_WIDTH-1:0] tag_w1 [0:NUM_SETS-1];
-    reg [TAG_WIDTH-1:0] tag_w2 [0:NUM_SETS-1];
-    reg [TAG_WIDTH-1:0] tag_w3 [0:NUM_SETS-1];
-
+    // ====================================================================
+    // Valid / Dirty / LRU Storage (FFs — broadcast clear on invalidate)
+    // ====================================================================
     reg valid_w0 [0:NUM_SETS-1];
     reg valid_w1 [0:NUM_SETS-1];
     reg valid_w2 [0:NUM_SETS-1];
@@ -111,76 +111,9 @@ module zbuf_tile_cache (
     // Pseudo-LRU: 3-bit binary tree per set
     reg [2:0] lru_state [0:NUM_SETS-1];
 
-    // Per-way helper functions (4:1 MUX on way, 128:1 on set)
-    function automatic [TAG_WIDTH-1:0] tag_by_way(
-        input [SET_BITS-1:0] s, input [1:0] w);
-        case (w)
-            2'd0: tag_by_way = tag_w0[s];
-            2'd1: tag_by_way = tag_w1[s];
-            2'd2: tag_by_way = tag_w2[s];
-            2'd3: tag_by_way = tag_w3[s];
-        endcase
-    endfunction
-
-    function automatic dirty_by_way(
-        input [SET_BITS-1:0] s, input [1:0] w);
-        case (w)
-            2'd0: dirty_by_way = dirty_w0[s];
-            2'd1: dirty_by_way = dirty_w1[s];
-            2'd2: dirty_by_way = dirty_w2[s];
-            2'd3: dirty_by_way = dirty_w3[s];
-        endcase
-    endfunction
-
-    function automatic valid_by_way(
-        input [SET_BITS-1:0] s, input [1:0] w);
-        case (w)
-            2'd0: valid_by_way = valid_w0[s];
-            2'd1: valid_by_way = valid_w1[s];
-            2'd2: valid_by_way = valid_w2[s];
-            2'd3: valid_by_way = valid_w3[s];
-        endcase
-    endfunction
-
-    // ========================================================================
-    // Data Storage — DP16KD(s) inferred, dual-port pattern
-    // ========================================================================
-    // All 4 ways packed into a single BRAM array.
-    // Address = {way[1:0], set[SET_BITS-1:0], pixel_off[3:0]} = BRAM_ADDR_W bits.
-    // Each entry = 16-bit Z value.
-    //
-    // Port A: read-only  (cache hit reads + eviction reads)
-    // Port B: write-only (fill, lazy-fill, write-update)
-    //
-    // No async reset on memory array — required for DP16KD inference.
-
-    (* ram_style = "block" *)
-    reg [15:0] cache_mem [0:BRAM_ENTRIES-1];
-
-    // Port A — synchronous read with enable (holds output when disabled)
-    logic                   porta_re;       // Read enable
-    logic [BRAM_ADDR_W-1:0] porta_addr;     // {way, set, pixel_off}
-    reg   [15:0]            porta_rdata;    // Registered read output
-
-    always_ff @(posedge clk) begin
-        if (porta_re)
-            porta_rdata <= cache_mem[porta_addr];
-    end
-
-    // Port B — synchronous write
-    logic                   portb_we;       // Write enable
-    logic [BRAM_ADDR_W-1:0] portb_addr;     // {way, set, pixel_off}
-    logic [15:0]            portb_wdata;    // Write data
-
-    always_ff @(posedge clk) begin
-        if (portb_we)
-            cache_mem[portb_addr] <= portb_wdata;
-    end
-
-    // ========================================================================
-    // Set/Tag Extraction
-    // ========================================================================
-
+    // ====================================================================
+    // Helper Functions
+    // ====================================================================
     function automatic [SET_BITS-1:0] get_set(input [13:0] tile_idx);
         get_set = tile_idx[SET_BITS-1:0];
     endfunction
@@ -189,11 +122,75 @@ module zbuf_tile_cache (
         get_tag = tile_idx[13:SET_BITS];
     endfunction
 
-    // ========================================================================
-    // FSM
-    // ========================================================================
+    function automatic valid_by_way(
+        input [SET_BITS-1:0] s,
+        input [1:0]          w
+    );
+        case (w)
+            2'd0: valid_by_way = valid_w0[s];
+            2'd1: valid_by_way = valid_w1[s];
+            2'd2: valid_by_way = valid_w2[s];
+            2'd3: valid_by_way = valid_w3[s];
+            default: valid_by_way = 1'b0;
+        endcase
+    endfunction
+
+    function automatic dirty_by_way(
+        input [SET_BITS-1:0] s,
+        input [1:0]          w
+    );
+        case (w)
+            2'd0: dirty_by_way = dirty_w0[s];
+            2'd1: dirty_by_way = dirty_w1[s];
+            2'd2: dirty_by_way = dirty_w2[s];
+            2'd3: dirty_by_way = dirty_w3[s];
+            default: dirty_by_way = 1'b0;
+        endcase
+    endfunction
+
+    // Read tag from EBR output wires (valid only in S_TAG_RD)
+    function automatic [TAG_WIDTH-1:0] tag_rdata_by_way(input [1:0] w);
+        case (w)
+            2'd0: tag_rdata_by_way = tag_rdata_0;
+            2'd1: tag_rdata_by_way = tag_rdata_1;
+            2'd2: tag_rdata_by_way = tag_rdata_2;
+            2'd3: tag_rdata_by_way = tag_rdata_3;
+            default: tag_rdata_by_way = '0;
+        endcase
+    endfunction
+
+    // ====================================================================
+    // Data BRAM — DP16KD inferred (dual-port, 16-bit Z values)
+    // ====================================================================
+    (* ram_style = "block" *)
+    reg [15:0] cache_mem [0:BRAM_ENTRIES-1];
+
+    // Port A: read (hit pre-read, eviction read, post-fill read)
+    reg  [BRAM_ADDR_W-1:0] porta_addr;
+    reg                     porta_re;
+    reg  [15:0]             porta_rdata;
+
+    always_ff @(posedge clk) begin
+        if (porta_re)
+            porta_rdata <= cache_mem[porta_addr];
+    end
+
+    // Port B: write (fill, lazyfill, write-update)
+    reg  [BRAM_ADDR_W-1:0] portb_addr;
+    reg                     portb_we;
+    logic [15:0]            portb_wdata;
+
+    always_ff @(posedge clk) begin
+        if (portb_we)
+            cache_mem[portb_addr] <= portb_wdata;
+    end
+
+    // ====================================================================
+    // FSM States
+    // ====================================================================
     typedef enum logic [3:0] {
         S_IDLE      = 4'd0,
+        S_TAG_RD    = 4'd8,  // Wait 1 cycle for tag EBR read (slow path)
         S_RD_HIT    = 4'd1,  // BRAM data ready — output rd_data + rd_valid
         S_EVICT     = 4'd2,  // Write back dirty victim line (16 words)
         S_FILL      = 4'd3,  // Read tile from SDRAM (16 words)
@@ -205,9 +202,9 @@ module zbuf_tile_cache (
 
     state_t state, next_state;
 
-    // ========================================================================
+    // ====================================================================
     // Request Latch
-    // ========================================================================
+    // ====================================================================
     reg              req_is_write;
     reg [13:0]       req_tile_idx;
     reg [3:0]        req_pixel_off;
@@ -218,25 +215,97 @@ module zbuf_tile_cache (
     wire [SET_BITS-1:0]  req_set = get_set(req_tile_idx);
     wire [TAG_WIDTH-1:0] req_tag = get_tag(req_tile_idx);
 
-    // ========================================================================
+    // ====================================================================
     // Input-Direct Signals (used in S_IDLE before latch)
-    // ========================================================================
+    // ====================================================================
     wire [13:0]          idle_tile_idx  = rd_req ? rd_tile_idx : wr_tile_idx;
     wire [SET_BITS-1:0]  idle_set       = get_set(idle_tile_idx);
     wire [3:0]           idle_pixel_off = rd_req ? rd_pixel_off : wr_pixel_off;
     wire [TAG_WIDTH-1:0] idle_tag       = get_tag(idle_tile_idx);
 
-    // ========================================================================
-    // Unified Tag Lookup — single set of comparators
-    // ========================================================================
-    // In S_IDLE, use direct inputs; otherwise use latched request.
-    wire [SET_BITS-1:0]  lookup_set = (state == S_IDLE) ? idle_set : req_set;
-    wire [TAG_WIDTH-1:0] lookup_tag = (state == S_IDLE) ? idle_tag : req_tag;
+    // ====================================================================
+    // Last-Tag Cache (single-entry FF cache for fast-path hits)
+    // ====================================================================
+    reg [SET_BITS-1:0]  last_set;
+    reg [TAG_WIDTH-1:0] last_tag;
+    reg [1:0]           last_way;
+    reg                 last_valid;
 
-    wire way0_hit = valid_w0[lookup_set] && (tag_w0[lookup_set] == lookup_tag);
-    wire way1_hit = valid_w1[lookup_set] && (tag_w1[lookup_set] == lookup_tag);
-    wire way2_hit = valid_w2[lookup_set] && (tag_w2[lookup_set] == lookup_tag);
-    wire way3_hit = valid_w3[lookup_set] && (tag_w3[lookup_set] == lookup_tag);
+    wire fast_hit = last_valid &&
+                    (idle_set == last_set) &&
+                    (idle_tag == last_tag) &&
+                    valid_by_way(idle_set, last_way);
+
+    // ====================================================================
+    // Active Way / Evict Tag Latch
+    // ====================================================================
+    reg [1:0]           active_way;     // Way for post-lookup states
+    reg [TAG_WIDTH-1:0] evict_tag_r;    // Eviction tag (latched from EBR in S_TAG_RD)
+
+    // ====================================================================
+    // Tag EBR Instances (4 × PDPW16KD, one per way)
+    // ====================================================================
+
+    // Tag read: initiated in S_IDLE on request, data available in S_TAG_RD
+    wire tag_re = (state == S_IDLE) && (rd_req || wr_req);
+    wire [SET_BITS-1:0] tag_raddr = idle_set;
+
+    // Tag write: on fill completion (S_FILL or S_LAZYFILL, last word)
+    wire fill_complete_fill = (state == S_FILL) && (word_count == 4'd15) && sdram_rd_valid;
+    wire fill_complete_lazy = (state == S_LAZYFILL) && (word_count == 4'd15);
+    wire fill_complete = fill_complete_fill || fill_complete_lazy;
+    wire tag_we_0 = fill_complete && (fill_way == 2'd0);
+    wire tag_we_1 = fill_complete && (fill_way == 2'd1);
+    wire tag_we_2 = fill_complete && (fill_way == 2'd2);
+    wire tag_we_3 = fill_complete && (fill_way == 2'd3);
+
+    zbuf_tag_bram u_tag0 (
+        .clk   (clk),
+        .we    (tag_we_0),
+        .waddr (fill_set),
+        .wdata (fill_tag),
+        .re    (tag_re),
+        .raddr (tag_raddr),
+        .rdata (tag_rdata_0)
+    );
+
+    zbuf_tag_bram u_tag1 (
+        .clk   (clk),
+        .we    (tag_we_1),
+        .waddr (fill_set),
+        .wdata (fill_tag),
+        .re    (tag_re),
+        .raddr (tag_raddr),
+        .rdata (tag_rdata_1)
+    );
+
+    zbuf_tag_bram u_tag2 (
+        .clk   (clk),
+        .we    (tag_we_2),
+        .waddr (fill_set),
+        .wdata (fill_tag),
+        .re    (tag_re),
+        .raddr (tag_raddr),
+        .rdata (tag_rdata_2)
+    );
+
+    zbuf_tag_bram u_tag3 (
+        .clk   (clk),
+        .we    (tag_we_3),
+        .waddr (fill_set),
+        .wdata (fill_tag),
+        .re    (tag_re),
+        .raddr (tag_raddr),
+        .rdata (tag_rdata_3)
+    );
+
+    // ====================================================================
+    // Tag Comparison (valid in S_TAG_RD after EBR read)
+    // ====================================================================
+    wire way0_hit = valid_w0[req_set] && (tag_rdata_0 == req_tag);
+    wire way1_hit = valid_w1[req_set] && (tag_rdata_1 == req_tag);
+    wire way2_hit = valid_w2[req_set] && (tag_rdata_2 == req_tag);
+    wire way3_hit = valid_w3[req_set] && (tag_rdata_3 == req_tag);
 
     wire any_hit = way0_hit || way1_hit || way2_hit || way3_hit;
 
@@ -248,12 +317,12 @@ module zbuf_tile_cache (
         else               hit_way = 2'd3;
     end
 
-    // ========================================================================
-    // Pseudo-LRU Victim Selection
-    // ========================================================================
+    // ====================================================================
+    // Pseudo-LRU Victim Selection (uses req_set for S_TAG_RD context)
+    // ====================================================================
     reg [1:0] victim_way;
     always_comb begin
-        case (lru_state[lookup_set])
+        case (lru_state[req_set])
             3'b000:  victim_way = 2'd0;
             3'b001:  victim_way = 2'd0;
             3'b010:  victim_way = 2'd1;
@@ -266,25 +335,31 @@ module zbuf_tile_cache (
         endcase
     end
 
-    // Victim dirty/valid check
-    wire victim_dirty = dirty_by_way(lookup_set, victim_way) &&
-                         valid_by_way(lookup_set, victim_way);
+    wire victim_dirty = dirty_by_way(req_set, victim_way) &&
+                         valid_by_way(req_set, victim_way);
 
-    // ========================================================================
+    // ====================================================================
     // Fill/Evict Counters
-    // ========================================================================
-    reg [3:0]          word_count;       // 0..15 for 16-word burst
-    reg [1:0]          fill_way;         // Way being filled or evicted
-    reg [SET_BITS-1:0] fill_set;         // Set being filled or evicted
-    reg [TAG_WIDTH-1:0] fill_tag;        // Tag for the fill
-    reg                fill_hiz_uninit;  // Lazy-fill flag
+    // ====================================================================
+    reg [3:0]           word_count;       // 0..15 for 16-word burst
+    reg [1:0]           fill_way;         // Way being filled or evicted
+    reg [SET_BITS-1:0]  fill_set;         // Set being filled or evicted
+    reg [TAG_WIDTH-1:0] fill_tag;         // Tag for the fill
+    reg                 fill_hiz_uninit;  // Lazy-fill flag
 
-    // ========================================================================
+    // ====================================================================
+    // Hi-Z Tracking Registers
+    // ====================================================================
+    reg [15:0] evict_min_z;               // Running min during eviction
+    reg [4:0]  consec_wr_count;           // Consecutive same-tile write counter
+    reg [15:0] consec_wr_min_z;           // Running min of consecutive writes
+    reg [13:0] consec_wr_tile_idx;        // Tile being tracked
+
+    // ====================================================================
     // SDRAM Address Computation
-    // ========================================================================
-    // Eviction: reconstruct tile index from stored tag + set
-    wire [TAG_WIDTH-1:0] evict_tag = tag_by_way(fill_set, fill_way);
-    wire [13:0] evict_tile_idx = {evict_tag, fill_set};
+    // ====================================================================
+    // Eviction tile index uses latched evict_tag_r (from EBR in S_TAG_RD)
+    wire [13:0] evict_tile_idx = {evict_tag_r, fill_set};
 
     function automatic [23:0] tile_byte_addr(
         input [13:0] tile_idx,
@@ -301,12 +376,12 @@ module zbuf_tile_cache (
         tile_byte_addr = base_addr + block_offset + {19'b0, pix_byte_off};
     endfunction
 
-    // ========================================================================
-    // BRAM Port Control (combinational)
-    // ========================================================================
-    // Port A: reads for cache hit + eviction (pre-read pipeline)
-    // Port B: writes for fill, lazyfill, write-update
+    // Suppress unused parameter warning for tile_byte_addr's wl2
+    wire [3:0] _unused_wl2 = fb_width_log2;
 
+    // ====================================================================
+    // BRAM Port Control (combinational)
+    // ====================================================================
     always_comb begin
         porta_re    = 1'b0;
         porta_addr  = '0;
@@ -316,16 +391,26 @@ module zbuf_tile_cache (
 
         case (state)
             S_IDLE: begin
-                if (rd_req || wr_req) begin
-                    if (any_hit && rd_req) begin
-                        // Hit read — pre-read target pixel for S_RD_HIT
+                if ((rd_req || wr_req) && fast_hit) begin
+                    if (rd_req) begin
+                        // Fast-path hit read — pre-read target pixel
                         porta_re   = 1'b1;
-                        porta_addr = {hit_way, idle_set, idle_pixel_off};
-                    end else if (!any_hit && victim_dirty) begin
-                        // Miss with dirty victim — pre-read word 0 for eviction
-                        porta_re   = 1'b1;
-                        porta_addr = {victim_way, idle_set, 4'd0};
+                        porta_addr = {last_way, idle_set, idle_pixel_off};
                     end
+                    // Fast-path hit write: no BRAM activity here (S_WR_UPDATE handles it)
+                end
+                // Slow-path miss with dirty victim: pre-read deferred to S_TAG_RD
+            end
+
+            S_TAG_RD: begin
+                if (any_hit && !req_is_write) begin
+                    // Slow-path hit read — pre-read target pixel
+                    porta_re   = 1'b1;
+                    porta_addr = {hit_way, req_set, req_pixel_off};
+                end else if (!any_hit && victim_dirty) begin
+                    // Miss with dirty victim — pre-read word 0 for eviction
+                    porta_re   = 1'b1;
+                    porta_addr = {victim_way, req_set, 4'd0};
                 end
             end
 
@@ -335,7 +420,6 @@ module zbuf_tile_cache (
                     porta_re   = 1'b1;
                     porta_addr = {fill_way, fill_set, word_count + 4'd1};
                 end
-                // When stalled or on last word, porta_rdata holds current value
             end
 
             S_FILL: begin
@@ -363,7 +447,7 @@ module zbuf_tile_cache (
             S_WR_UPDATE: begin
                 // Port B: write Z value into cache
                 portb_we    = 1'b1;
-                portb_addr  = {any_hit ? hit_way : fill_way, req_set, req_pixel_off};
+                portb_addr  = {active_way, req_set, req_pixel_off};
                 portb_wdata = req_wr_data;
             end
 
@@ -371,43 +455,54 @@ module zbuf_tile_cache (
         endcase
     end
 
-    // ========================================================================
+    // ====================================================================
     // rd_data: combinational from BRAM Port A registered output
-    // ========================================================================
-    // porta_rdata holds its value between reads (conditional enable).
-    // Valid when rd_valid is asserted; consumer must sample on that cycle.
+    // ====================================================================
     assign rd_data = porta_rdata;
 
-    // ========================================================================
+    // ====================================================================
     // Status Signals
-    // ========================================================================
+    // ====================================================================
     assign cache_ready = (state == S_IDLE);
     assign wr_ready    = (state == S_WR_UPDATE) && (next_state != S_WR_UPDATE);
 
-    // ========================================================================
+    // ====================================================================
     // Next-State Logic
-    // ========================================================================
+    // ====================================================================
     always_comb begin
         next_state = state;
 
         case (state)
             S_IDLE: begin
                 if (rd_req || wr_req) begin
-                    if (any_hit) begin
+                    if (fast_hit) begin
+                        // FAST PATH — last-tag cache hit, way known immediately
                         if (rd_req)
                             next_state = S_RD_HIT;
                         else
                             next_state = S_WR_UPDATE;
                     end else begin
-                        // Miss — check if victim needs eviction
-                        if (victim_dirty) begin
-                            next_state = S_EVICT;
-                        end else if (rd_req ? rd_hiz_uninit : wr_hiz_uninit) begin
-                            next_state = S_LAZYFILL;
-                        end else begin
-                            next_state = S_FILL;
-                        end
+                        // SLOW PATH — wait for tag EBR read
+                        next_state = S_TAG_RD;
                     end
+                end
+            end
+
+            S_TAG_RD: begin
+                // Tag EBR outputs available — resolve hit/miss
+                if (any_hit) begin
+                    if (req_is_write)
+                        next_state = S_WR_UPDATE;
+                    else
+                        next_state = S_RD_HIT;  // BRAM read issued this cycle
+                end else begin
+                    // Miss
+                    if (victim_dirty)
+                        next_state = S_EVICT;
+                    else if (req_hiz_uninit)
+                        next_state = S_LAZYFILL;
+                    else
+                        next_state = S_FILL;
                 end
             end
 
@@ -417,7 +512,6 @@ module zbuf_tile_cache (
 
             S_EVICT: begin
                 if (word_count == 4'd15 && sdram_ready) begin
-                    // Eviction complete — now fill
                     if (fill_hiz_uninit)
                         next_state = S_LAZYFILL;
                     else
@@ -427,7 +521,6 @@ module zbuf_tile_cache (
 
             S_FILL: begin
                 if (word_count == 4'd15 && sdram_rd_valid) begin
-                    // Fill complete
                     if (req_is_write)
                         next_state = S_WR_UPDATE;
                     else
@@ -437,7 +530,6 @@ module zbuf_tile_cache (
 
             S_LAZYFILL: begin
                 if (word_count == 4'd15) begin
-                    // Lazy-fill complete
                     if (req_is_write)
                         next_state = S_WR_UPDATE;
                     else
@@ -446,7 +538,6 @@ module zbuf_tile_cache (
             end
 
             S_BRAM_RD: begin
-                // BRAM read issued this cycle; data ready next cycle
                 next_state = S_RD_HIT;
             end
 
@@ -458,30 +549,59 @@ module zbuf_tile_cache (
         endcase
     end
 
-    // ========================================================================
+    // ====================================================================
+    // LRU Update Helper (used in multiple places)
+    // ====================================================================
+    task automatic update_lru(
+        input [SET_BITS-1:0] s,
+        input [1:0]          w
+    );
+        case (w)
+            2'd0: begin lru_state[s][2] <= 1'b1; lru_state[s][1] <= 1'b1; end
+            2'd1: begin lru_state[s][2] <= 1'b1; lru_state[s][1] <= 1'b0; end
+            2'd2: begin lru_state[s][2] <= 1'b0; lru_state[s][0] <= 1'b1; end
+            2'd3: begin lru_state[s][2] <= 1'b0; lru_state[s][0] <= 1'b0; end
+            default: begin end
+        endcase
+    endtask
+
+    // ====================================================================
     // Datapath (Sequential)
-    // ========================================================================
+    // ====================================================================
     integer j;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state          <= S_IDLE;
-            rd_valid       <= 1'b0;
-            sdram_rd_req   <= 1'b0;
-            sdram_rd_addr  <= 24'h0;
-            sdram_wr_req   <= 1'b0;
-            sdram_wr_addr  <= 24'h0;
-            sdram_wr_data  <= 16'h0;
-            word_count     <= 4'd0;
-            fill_way       <= 2'd0;
-            fill_set       <= '0;
-            fill_tag       <= '0;
+            state           <= S_IDLE;
+            rd_valid        <= 1'b0;
+            sdram_rd_req    <= 1'b0;
+            sdram_rd_addr   <= 24'h0;
+            sdram_wr_req    <= 1'b0;
+            sdram_wr_addr   <= 24'h0;
+            sdram_wr_data   <= 16'h0;
+            word_count      <= 4'd0;
+            fill_way        <= 2'd0;
+            fill_set        <= '0;
+            fill_tag        <= '0;
             fill_hiz_uninit <= 1'b0;
-            req_is_write   <= 1'b0;
-            req_tile_idx   <= 14'd0;
-            req_pixel_off  <= 4'd0;
-            req_wr_data    <= 16'd0;
-            req_hiz_uninit <= 1'b0;
+            req_is_write    <= 1'b0;
+            req_tile_idx    <= 14'd0;
+            req_pixel_off   <= 4'd0;
+            req_wr_data     <= 16'd0;
+            req_hiz_uninit  <= 1'b0;
+            active_way      <= 2'd0;
+            evict_tag_r     <= '0;
+            last_set        <= '0;
+            last_tag        <= '0;
+            last_way        <= 2'd0;
+            last_valid      <= 1'b0;
+            hiz_fb_valid    <= 1'b0;
+            hiz_fb_tile_idx <= 14'd0;
+            hiz_fb_min_z_hi <= 8'd0;
+            evict_min_z     <= 16'hFFFF;
+            consec_wr_count <= 5'd0;
+            consec_wr_min_z <= 16'hFFFF;
+            consec_wr_tile_idx <= 14'd0;
 
             for (j = 0; j < NUM_SETS; j = j + 1) begin
                 valid_w0[j] <= 1'b0;
@@ -492,14 +612,9 @@ module zbuf_tile_cache (
                 dirty_w1[j] <= 1'b0;
                 dirty_w2[j] <= 1'b0;
                 dirty_w3[j] <= 1'b0;
-                tag_w0[j]   <= '0;
-                tag_w1[j]   <= '0;
-                tag_w2[j]   <= '0;
-                tag_w3[j]   <= '0;
                 lru_state[j] <= 3'b0;
             end
         end else if (invalidate) begin
-            // Clear all valid bits — no write-back (stale data)
             for (j = 0; j < NUM_SETS; j = j + 1) begin
                 valid_w0[j] <= 1'b0;
                 valid_w1[j] <= 1'b0;
@@ -510,15 +625,21 @@ module zbuf_tile_cache (
                 dirty_w2[j] <= 1'b0;
                 dirty_w3[j] <= 1'b0;
             end
-            state <= S_IDLE;
+            last_valid   <= 1'b0;
+            state        <= S_IDLE;
             sdram_rd_req <= 1'b0;
             sdram_wr_req <= 1'b0;
             rd_valid     <= 1'b0;
+            hiz_fb_valid <= 1'b0;
         end else begin
-            state    <= next_state;
-            rd_valid <= 1'b0;  // Default: deassert
+            state        <= next_state;
+            rd_valid     <= 1'b0;  // Default: deassert
+            hiz_fb_valid <= 1'b0;  // Default: deassert
 
             case (state)
+                // ========================================================
+                // S_IDLE — Accept new request, fast/slow path split
+                // ========================================================
                 S_IDLE: begin
                     sdram_rd_req <= 1'b0;
                     sdram_wr_req <= 1'b0;
@@ -532,72 +653,86 @@ module zbuf_tile_cache (
                         req_wr_data    <= wr_data;
                         req_hiz_uninit <= rd_req ? rd_hiz_uninit : wr_hiz_uninit;
 
-                        if (any_hit) begin
-                            // Update LRU on hit
-                            case (hit_way)
-                                2'd0: begin
-                                    lru_state[idle_set][2] <= 1'b1;
-                                    lru_state[idle_set][1] <= 1'b1;
-                                end
-                                2'd1: begin
-                                    lru_state[idle_set][2] <= 1'b1;
-                                    lru_state[idle_set][1] <= 1'b0;
-                                end
-                                2'd2: begin
-                                    lru_state[idle_set][2] <= 1'b0;
-                                    lru_state[idle_set][0] <= 1'b1;
-                                end
-                                2'd3: begin
-                                    lru_state[idle_set][2] <= 1'b0;
-                                    lru_state[idle_set][0] <= 1'b0;
-                                end
-                                default: begin end
-                            endcase
-                        end else begin
-                            // Miss — latch victim info
-                            fill_way <= victim_way;
-                            fill_set <= idle_set;
-                            fill_tag <= idle_tag;
-                            fill_hiz_uninit <= rd_req ? rd_hiz_uninit : wr_hiz_uninit;
+                        if (fast_hit) begin
+                            // FAST PATH — way known from last-tag cache
+                            active_way <= last_way;
+                            update_lru(idle_set, last_way);
                         end
+                        // SLOW PATH: tag EBR read initiated combinationally;
+                        // resolution happens in S_TAG_RD
                     end
                 end
 
+                // ========================================================
+                // S_TAG_RD — Resolve tag EBR read (slow path)
+                // ========================================================
+                S_TAG_RD: begin
+                    if (any_hit) begin
+                        // Slow-path hit
+                        active_way <= hit_way;
+                        last_set   <= req_set;
+                        last_tag   <= req_tag;
+                        last_way   <= hit_way;
+                        last_valid <= 1'b1;
+                        update_lru(req_set, hit_way);
+                    end else begin
+                        // Miss — latch victim info + evict tag from EBR
+                        fill_way        <= victim_way;
+                        fill_set        <= req_set;
+                        fill_tag        <= req_tag;
+                        fill_hiz_uninit <= req_hiz_uninit;
+                        evict_tag_r     <= tag_rdata_by_way(victim_way);
+                    end
+                end
+
+                // ========================================================
+                // S_RD_HIT — BRAM data ready, output rd_valid
+                // ========================================================
                 S_RD_HIT: begin
-                    // BRAM porta_rdata already holds correct data (from
-                    // pre-read in S_IDLE or BRAM read in S_BRAM_RD).
-                    // rd_data is wired combinationally from porta_rdata.
                     rd_valid <= 1'b1;
                 end
 
+                // ========================================================
+                // S_EVICT — Write back dirty victim (16 words)
+                // ========================================================
                 S_EVICT: begin
-                    // Pipelined eviction: porta_rdata holds word[word_count]
-                    // from the pre-read issued in S_IDLE (word 0) or previous
-                    // S_EVICT cycle (word K+1).  Register it into
-                    // sdram_wr_data for aligned SDRAM transfer.
                     if (sdram_ready) begin
                         sdram_wr_req  <= 1'b1;
                         sdram_wr_addr <= tile_byte_addr(
                             evict_tile_idx, word_count,
                             fb_z_base, fb_width_log2);
                         sdram_wr_data <= porta_rdata;
-                        word_count    <= word_count + 4'd1;
+
+                        // Track running minimum for Hi-Z feedback
+                        if (word_count == 4'd0)
+                            evict_min_z <= porta_rdata;
+                        else if (porta_rdata < evict_min_z)
+                            evict_min_z <= porta_rdata;
+
+                        word_count <= word_count + 4'd1;
 
                         if (word_count == 4'd15) begin
                             word_count <= 4'd0;
-                            // Keep sdram_wr_req=1 so word 15 is accepted;
-                            // next state (S_FILL/S_LAZYFILL) clears it.
+                            // Hi-Z feedback: report actual tile minimum
+                            hiz_fb_valid    <= 1'b1;
+                            hiz_fb_tile_idx <= evict_tile_idx;
+                            // Use min of running min and current word
+                            if (porta_rdata < evict_min_z)
+                                hiz_fb_min_z_hi <= porta_rdata[15:8];
+                            else
+                                hiz_fb_min_z_hi <= evict_min_z[15:8];
                         end
                     end else begin
                         sdram_wr_req <= 1'b0;
                     end
                 end
 
+                // ========================================================
+                // S_FILL — Read tile from SDRAM (16 words)
+                // ========================================================
                 S_FILL: begin
-                    // Clear eviction write-req on entry
                     sdram_wr_req <= 1'b0;
 
-                    // Burst-read tile from SDRAM (16 words)
                     if (!sdram_rd_req && word_count < 4'd15 || sdram_rd_valid) begin
                         sdram_rd_req  <= 1'b1;
                         sdram_rd_addr <= tile_byte_addr(
@@ -606,107 +741,106 @@ module zbuf_tile_cache (
                     end
 
                     if (sdram_rd_valid) begin
-                        // Port B write handled by BRAM control always_comb
                         word_count <= word_count + 4'd1;
 
                         if (word_count == 4'd15) begin
-                            // Fill complete — update tag
+                            // Fill complete — tag EBR write handled by tag_we_* signals
+                            // Update valid/dirty in FFs
                             case (fill_way)
-                                2'd0: begin
-                                    tag_w0[fill_set]   <= fill_tag;
-                                    valid_w0[fill_set] <= 1'b1;
-                                    dirty_w0[fill_set] <= 1'b0;
-                                end
-                                2'd1: begin
-                                    tag_w1[fill_set]   <= fill_tag;
-                                    valid_w1[fill_set] <= 1'b1;
-                                    dirty_w1[fill_set] <= 1'b0;
-                                end
-                                2'd2: begin
-                                    tag_w2[fill_set]   <= fill_tag;
-                                    valid_w2[fill_set] <= 1'b1;
-                                    dirty_w2[fill_set] <= 1'b0;
-                                end
-                                2'd3: begin
-                                    tag_w3[fill_set]   <= fill_tag;
-                                    valid_w3[fill_set] <= 1'b1;
-                                    dirty_w3[fill_set] <= 1'b0;
-                                end
+                                2'd0: begin valid_w0[fill_set] <= 1'b1; dirty_w0[fill_set] <= 1'b0; end
+                                2'd1: begin valid_w1[fill_set] <= 1'b1; dirty_w1[fill_set] <= 1'b0; end
+                                2'd2: begin valid_w2[fill_set] <= 1'b1; dirty_w2[fill_set] <= 1'b0; end
+                                2'd3: begin valid_w3[fill_set] <= 1'b1; dirty_w3[fill_set] <= 1'b0; end
                                 default: begin end
                             endcase
                             sdram_rd_req <= 1'b0;
+                            update_lru(fill_set, fill_way);
 
-                            // Update LRU
-                            case (fill_way)
-                                2'd0: begin lru_state[fill_set][2] <= 1'b1; lru_state[fill_set][1] <= 1'b1; end
-                                2'd1: begin lru_state[fill_set][2] <= 1'b1; lru_state[fill_set][1] <= 1'b0; end
-                                2'd2: begin lru_state[fill_set][2] <= 1'b0; lru_state[fill_set][0] <= 1'b1; end
-                                2'd3: begin lru_state[fill_set][2] <= 1'b0; lru_state[fill_set][0] <= 1'b0; end
-                                default: begin end
-                            endcase
+                            // Update last-tag cache to reflect filled line
+                            last_set   <= fill_set;
+                            last_tag   <= fill_tag;
+                            last_way   <= fill_way;
+                            last_valid <= 1'b1;
+
+                            // Set active_way for subsequent S_WR_UPDATE
+                            if (req_is_write)
+                                active_way <= fill_way;
                         end
                     end
                 end
 
+                // ========================================================
+                // S_LAZYFILL — Fill with zeros (16 cycles, no SDRAM)
+                // ========================================================
                 S_LAZYFILL: begin
-                    // Clear eviction write-req on entry
                     sdram_wr_req <= 1'b0;
-
-                    // Port B write handled by BRAM control always_comb
-                    word_count <= word_count + 4'd1;
+                    word_count   <= word_count + 4'd1;
 
                     if (word_count == 4'd15) begin
-                        // Lazy-fill complete — update tag
+                        // Lazy-fill complete — tag EBR write handled by tag_we_*
                         case (fill_way)
-                            2'd0: begin
-                                tag_w0[fill_set]   <= fill_tag;
-                                valid_w0[fill_set] <= 1'b1;
-                                dirty_w0[fill_set] <= 1'b0;
-                            end
-                            2'd1: begin
-                                tag_w1[fill_set]   <= fill_tag;
-                                valid_w1[fill_set] <= 1'b1;
-                                dirty_w1[fill_set] <= 1'b0;
-                            end
-                            2'd2: begin
-                                tag_w2[fill_set]   <= fill_tag;
-                                valid_w2[fill_set] <= 1'b1;
-                                dirty_w2[fill_set] <= 1'b0;
-                            end
-                            2'd3: begin
-                                tag_w3[fill_set]   <= fill_tag;
-                                valid_w3[fill_set] <= 1'b1;
-                                dirty_w3[fill_set] <= 1'b0;
-                            end
+                            2'd0: begin valid_w0[fill_set] <= 1'b1; dirty_w0[fill_set] <= 1'b0; end
+                            2'd1: begin valid_w1[fill_set] <= 1'b1; dirty_w1[fill_set] <= 1'b0; end
+                            2'd2: begin valid_w2[fill_set] <= 1'b1; dirty_w2[fill_set] <= 1'b0; end
+                            2'd3: begin valid_w3[fill_set] <= 1'b1; dirty_w3[fill_set] <= 1'b0; end
                             default: begin end
                         endcase
+                        update_lru(fill_set, fill_way);
 
-                        // Update LRU
-                        case (fill_way)
-                            2'd0: begin lru_state[fill_set][2] <= 1'b1; lru_state[fill_set][1] <= 1'b1; end
-                            2'd1: begin lru_state[fill_set][2] <= 1'b1; lru_state[fill_set][1] <= 1'b0; end
-                            2'd2: begin lru_state[fill_set][2] <= 1'b0; lru_state[fill_set][0] <= 1'b1; end
-                            2'd3: begin lru_state[fill_set][2] <= 1'b0; lru_state[fill_set][0] <= 1'b0; end
-                            default: begin end
-                        endcase
+                        // Update last-tag cache
+                        last_set   <= fill_set;
+                        last_tag   <= fill_tag;
+                        last_way   <= fill_way;
+                        last_valid <= 1'b1;
+
+                        // Set active_way for subsequent S_WR_UPDATE
+                        if (req_is_write)
+                            active_way <= fill_way;
                     end
                 end
 
+                // ========================================================
+                // S_BRAM_RD — Wait for BRAM read after fill
+                // ========================================================
                 S_BRAM_RD: begin
-                    // BRAM Port A read issued by always_comb this cycle.
-                    // porta_rdata will hold the result next cycle (S_RD_HIT).
+                    // Port A read issued by always_comb; data ready next cycle
                 end
 
+                // ========================================================
+                // S_WR_UPDATE — Write Z value + dirty mark + consec tracking
+                // ========================================================
                 S_WR_UPDATE: begin
-                    // Port B write handled by BRAM control always_comb.
-                    // Mark cache line dirty.
-                    case (any_hit ? hit_way : fill_way)
+                    // Port B write handled by always_comb
+                    // Mark cache line dirty
+                    case (active_way)
                         2'd0: dirty_w0[req_set] <= 1'b1;
                         2'd1: dirty_w1[req_set] <= 1'b1;
                         2'd2: dirty_w2[req_set] <= 1'b1;
                         2'd3: dirty_w3[req_set] <= 1'b1;
                         default: begin end
                     endcase
+
+                    // Consecutive write tracking for Hi-Z feedback
+                    if (req_tile_idx == consec_wr_tile_idx && consec_wr_count < 5'd16) begin
+                        consec_wr_count <= consec_wr_count + 5'd1;
+                        if (req_wr_data < consec_wr_min_z)
+                            consec_wr_min_z <= req_wr_data;
+
+                        // 16th consecutive write — report min-Z
+                        if (consec_wr_count == 5'd15) begin
+                            hiz_fb_valid    <= 1'b1;
+                            hiz_fb_tile_idx <= consec_wr_tile_idx;
+                            if (req_wr_data < consec_wr_min_z)
+                                hiz_fb_min_z_hi <= req_wr_data[15:8];
+                            else
+                                hiz_fb_min_z_hi <= consec_wr_min_z[15:8];
+                        end
+                    end else begin
+                        // Different tile — reset tracker
+                        consec_wr_tile_idx <= req_tile_idx;
+                        consec_wr_count    <= 5'd1;
+                        consec_wr_min_z    <= req_wr_data;
+                    end
                 end
 
                 default: begin

@@ -106,6 +106,11 @@ module rasterizer (
     input  wire [13:0]  hiz_wr_tile_index,  // 14-bit tile index
     input  wire [7:0]   hiz_wr_new_z_hi,    // new_z[15:8] from Z-write
 
+    // Hi-Z authoritative write port (from zbuf_tile_cache via gpu_top)
+    input  wire         hiz_auth_wr_en,         // Authoritative write enable
+    input  wire [13:0]  hiz_auth_wr_tile_index, // Tile index
+    input  wire [7:0]   hiz_auth_wr_min_z,      // Actual tile minimum Z[15:8]
+
     // Hi-Z metadata fast-clear port
     input  wire         hiz_clear_req,      // Pulse to begin fast clear
     output wire         hiz_clear_busy,     // High during 512-cycle clear sweep
@@ -804,6 +809,10 @@ module rasterizer (
         .wr_en          (hiz_wr_en),
         .wr_tile_index  (hiz_wr_tile_index),
         .wr_new_z_hi    (hiz_wr_new_z_hi),
+        // Authoritative write port (from zbuf_tile_cache)
+        .auth_wr_en         (hiz_auth_wr_en),
+        .auth_wr_tile_index (hiz_auth_wr_tile_index),
+        .auth_wr_min_z      (hiz_auth_wr_min_z),
         // Fast-clear
         .clear_req      (hiz_clear_req),
         .clear_busy     (hiz_clear_busy),

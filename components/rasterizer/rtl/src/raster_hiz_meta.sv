@@ -50,6 +50,12 @@ module raster_hiz_meta (
     input  wire  [13:0] wr_tile_index,  // 14-bit tile index
     input  wire   [7:0] wr_new_z_hi,   // new_z[15:8] from Z-write
 
+    // Authoritative write port — unconditional min_z set from Z-cache feedback
+    // Priority over wr_en; uses same RMW pipeline but forces update.
+    input  wire         auth_wr_en,         // Authoritative write enable
+    input  wire  [13:0] auth_wr_tile_index, // 14-bit tile index
+    input  wire   [7:0] auth_wr_min_z,      // Actual tile min_z (unconditional set)
+
     // Fast-clear — pulse clear_req; clear_busy asserted until done (512 cycles)
     input  wire         clear_req,      // Pulse to begin fast clear
     output logic        clear_busy,     // High during 512-cycle clear sweep
@@ -72,14 +78,19 @@ module raster_hiz_meta (
     assign rd_word_addr = rd_tile_index[10:2];
     assign rd_slot      = rd_tile_index[1:0];
 
-    // Write port address fields
+    // Write port address fields (muxed: authoritative has priority over per-pixel)
+    wire        wr_use_auth   = auth_wr_en;
+    wire [13:0] wr_sel_tile   = wr_use_auth ? auth_wr_tile_index : wr_tile_index;
+    wire [7:0]  wr_sel_z_hi   = wr_use_auth ? auth_wr_min_z      : wr_new_z_hi;
+    wire        wr_sel_en     = wr_use_auth ? auth_wr_en          : wr_en;
+
     wire [2:0] wr_block_sel;    // Block select (1 of 8)
     wire [8:0] wr_word_addr;    // Word address within block (0..511)
     wire [1:0] wr_slot;         // Slot select within 36-bit word (0..3)
 
-    assign wr_block_sel = wr_tile_index[13:11];
-    assign wr_word_addr = wr_tile_index[10:2];
-    assign wr_slot      = wr_tile_index[1:0];
+    assign wr_block_sel = wr_sel_tile[13:11];
+    assign wr_word_addr = wr_sel_tile[10:2];
+    assign wr_slot      = wr_sel_tile[1:0];
 
     // ========================================================================
     // Fast-Clear FSM
@@ -161,11 +172,13 @@ module raster_hiz_meta (
     reg  [8:0] wr_s1_word_addr;     // Word address latched in read phase
     reg  [1:0] wr_s1_slot;          // Slot select latched in read phase
     reg  [7:0] wr_s1_new_z_hi;     // New Z value latched in read phase
+    reg        wr_s1_auth;          // Authoritative write (unconditional set)
 
     logic [2:0] wr_s1_block_sel_next;   // Next block select
     logic [8:0] wr_s1_word_addr_next;   // Next word address
     logic [1:0] wr_s1_slot_next;        // Next slot select
     logic [7:0] wr_s1_new_z_hi_next;    // Next new Z value
+    logic       wr_s1_auth_next;        // Next authoritative flag
 
     always_comb begin
         wr_state_next        = wr_state;
@@ -173,15 +186,17 @@ module raster_hiz_meta (
         wr_s1_word_addr_next = wr_s1_word_addr;
         wr_s1_slot_next      = wr_s1_slot;
         wr_s1_new_z_hi_next  = wr_s1_new_z_hi;
+        wr_s1_auth_next      = wr_s1_auth;
 
         case (wr_state)
             WR_IDLE: begin
-                if (!clear_busy && wr_en) begin
+                if (!clear_busy && wr_sel_en) begin
                     wr_state_next        = WR_READ;
                     wr_s1_block_sel_next = wr_block_sel;
                     wr_s1_word_addr_next = wr_word_addr;
                     wr_s1_slot_next      = wr_slot;
-                    wr_s1_new_z_hi_next  = wr_new_z_hi;
+                    wr_s1_new_z_hi_next  = wr_sel_z_hi;
+                    wr_s1_auth_next      = wr_use_auth;
                 end
             end
             WR_READ: begin
@@ -203,12 +218,14 @@ module raster_hiz_meta (
             wr_s1_word_addr <= 9'd0;
             wr_s1_slot      <= 2'd0;
             wr_s1_new_z_hi  <= 8'd0;
+            wr_s1_auth      <= 1'b0;
         end else begin
             wr_state        <= wr_state_next;
             wr_s1_block_sel <= wr_s1_block_sel_next;
             wr_s1_word_addr <= wr_s1_word_addr_next;
             wr_s1_slot      <= wr_s1_slot_next;
             wr_s1_new_z_hi  <= wr_s1_new_z_hi_next;
+            wr_s1_auth      <= wr_s1_auth_next;
         end
     end
 
@@ -283,8 +300,9 @@ module raster_hiz_meta (
         rmw_old_valid = rmw_old_entry[8];
         rmw_old_min_z = rmw_old_entry[7:0];
 
-        // Update condition: new_z_hi < stored min_z, or entry is not valid
-        rmw_should_update = (!rmw_old_valid) || (wr_s1_new_z_hi < rmw_old_min_z);
+        // Update condition: authoritative (unconditional), first write (!valid),
+        // or new_z_hi < stored min_z
+        rmw_should_update = wr_s1_auth || (!rmw_old_valid) || (wr_s1_new_z_hi < rmw_old_min_z);
 
         // Build the modified 36-bit word: replace only the target slot
         rmw_write_word = rmw_read_word;

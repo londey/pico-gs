@@ -986,6 +986,11 @@ module gpu_top (
         .hiz_wr_tile_index(pp_hiz_wr_tile_index),
         .hiz_wr_new_z_hi(pp_hiz_wr_new_z_hi),
 
+        // Hi-Z authoritative write (from zbuf_tile_cache feedback)
+        .hiz_auth_wr_en(zcache_hiz_fb_valid),
+        .hiz_auth_wr_tile_index(zcache_hiz_fb_tile_idx),
+        .hiz_auth_wr_min_z(zcache_hiz_fb_min_z_hi),
+
         // Hi-Z metadata fast-clear (UNIT-005.06)
         .hiz_clear_req(hiz_clear_req),
         .hiz_clear_busy(rast_hiz_clear_busy),
@@ -1236,6 +1241,11 @@ module gpu_top (
     wire [23:0] zcache_sdram_wr_addr;
     wire [15:0] zcache_sdram_wr_data;
 
+    // Hi-Z feedback from Z-cache (eviction + consecutive-write min-Z)
+    wire        zcache_hiz_fb_valid;
+    wire [13:0] zcache_hiz_fb_tile_idx;
+    wire [7:0]  zcache_hiz_fb_min_z_hi;
+
     zbuf_tile_cache u_zbuf_tile_cache (
         .clk(clk_core),
         .rst_n(rst_n_core),
@@ -1274,7 +1284,12 @@ module gpu_top (
         .fb_width_log2(fb_width_log2),
 
         // Invalidation (on FB_CONFIG write)
-        .invalidate(fb_config_trigger)
+        .invalidate(fb_config_trigger),
+
+        // Hi-Z min-Z feedback (to raster_hiz_meta via rasterizer)
+        .hiz_fb_valid(zcache_hiz_fb_valid),
+        .hiz_fb_tile_idx(zcache_hiz_fb_tile_idx),
+        .hiz_fb_min_z_hi(zcache_hiz_fb_min_z_hi)
     );
 
     // ========================================================================
