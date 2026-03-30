@@ -719,17 +719,10 @@ module raster_attr_accum (
     assign out_c1b = out_c1b_q;
     assign out_c1a = out_c1a_q;
 
-    // Z output: extract [31:16], clamp negative to zero
-    logic [15:0] out_z_q;     // Z clamped value
-    always_comb begin
-        if (z_acc[31]) begin
-            out_z_q = 16'h0000;
-        end else begin
-            out_z_q = z_acc[31:16];
-        end
-    end
-
-    assign out_z = out_z_q;
+    // Z output: unsigned extraction of bits [31:16].
+    // No sign clamping — the accumulator is treated as unsigned for z,
+    // matching the DT's `((acc as u32) >> 16) as u16`.
+    assign out_z = z_acc[31:16];
 
     // ========================================================================
     // Raw Accumulator Output Assignments

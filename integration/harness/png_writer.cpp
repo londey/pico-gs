@@ -57,4 +57,17 @@ void write_png(const char* filename, int width, int height, std::span<const uint
     }
 }
 
+void write_png_gray(const char* filename, int width, int height, std::span<const uint8_t> gray) {
+    if (!filename || width <= 0 || height <= 0) {
+        throw std::runtime_error("write_png_gray: invalid parameters");
+    }
+
+    // comp=1 for single-channel grayscale
+    int result = stbi_write_png(filename, width, height, 1, gray.data(), width);
+
+    if (result == 0) {
+        throw std::runtime_error("write_png_gray: failed to write PNG file");
+    }
+}
+
 } // namespace png_writer

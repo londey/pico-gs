@@ -281,6 +281,7 @@ module gpu_top (
     logic        sim_reg_rw     /* verilator public */;  // R/W flag (0=write)
     logic [6:0]  sim_reg_addr   /* verilator public */;  // Register address
     logic [63:0] sim_reg_wdata  /* verilator public */;  // Write data
+    logic        sim_zcache_flush /* verilator public */ = 1'b0; // Z-cache flush trigger (reserved)
     /* verilator lint_on UNDRIVEN */
 
     assign reg_cmd_valid = sim_reg_valid;
@@ -494,6 +495,7 @@ module gpu_top (
 
     // Memory controller signals (burst)
     wire [7:0]  mem_ctrl_burst_len;
+    wire        mem_ctrl_burst_col_step2;
     wire [15:0] mem_ctrl_burst_wdata;
     wire        mem_ctrl_burst_cancel;
     wire        mem_ctrl_burst_data_valid;
@@ -539,6 +541,7 @@ module gpu_top (
         .port2_addr(arb_port2_addr),
         .port2_wdata(arb_port2_wdata),
         .port2_burst_len(arb_port2_burst_len),
+        .port2_burst_col_step2(1'b1), // Z-cache tiles: stride-2 (word-aligned 16-bit values)
         .port2_burst_wdata(arb_port2_burst_wdata),
         .port2_rdata(arb_port2_rdata),
         .port2_burst_rdata(arb_port2_burst_rdata),
@@ -572,6 +575,7 @@ module gpu_top (
 
         // To memory controller — burst
         .mem_burst_len(mem_ctrl_burst_len),
+        .mem_burst_col_step2(mem_ctrl_burst_col_step2),
         .mem_burst_wdata(mem_ctrl_burst_wdata),
         .mem_burst_cancel(mem_ctrl_burst_cancel),
         .mem_burst_data_valid(mem_ctrl_burst_data_valid),
@@ -596,6 +600,7 @@ module gpu_top (
 
         // From arbiter — burst
         .burst_len(mem_ctrl_burst_len),
+        .burst_col_step2(mem_ctrl_burst_col_step2),
         .burst_wdata_16(mem_ctrl_burst_wdata),
         .burst_cancel(mem_ctrl_burst_cancel),
         .burst_data_valid(mem_ctrl_burst_data_valid),
@@ -627,8 +632,8 @@ module gpu_top (
     assign arb_port1_burst_len = (pp_fb_write_req || pp_fb_read_req) ? 8'd1 : 8'd0;
     assign arb_port1_burst_wdata = pp_fb_write_data;
 
-    // Port 2: Z-buffer tile cache (single-word per SDRAM request)
-    assign arb_port2_burst_len = (zcache_sdram_wr_req || zcache_sdram_rd_req) ? 8'd1 : 8'd0;
+    // Port 2: Z-buffer tile cache (burst-16: full 4×4 tile per SDRAM request)
+    assign arb_port2_burst_len = (zcache_sdram_wr_req || zcache_sdram_rd_req) ? 8'd16 : 8'd0;
     assign arb_port2_burst_wdata = zcache_sdram_wr_data;
 
     // ========================================================================
@@ -1246,6 +1251,14 @@ module gpu_top (
     wire [13:0] zcache_hiz_fb_tile_idx;
     wire [7:0]  zcache_hiz_fb_min_z_hi;
 
+    // Flush control (sim-only: write-back all dirty lines before extraction)
+`ifdef SIM_DIRECT_REG
+    wire        zcache_flush      = sim_zcache_flush;
+`else
+    wire        zcache_flush      = 1'b0;
+`endif
+    wire        zcache_flush_done /* verilator public */;
+
     zbuf_tile_cache u_zbuf_tile_cache (
         .clk(clk_core),
         .rst_n(rst_n_core),
@@ -1268,6 +1281,8 @@ module gpu_top (
 
         // Cache status
         .cache_ready(zcache_ready),
+        .flush(zcache_flush),
+        .flush_done(zcache_flush_done),
 
         // SDRAM arbiter interface (port 2)
         .sdram_rd_req(zcache_sdram_rd_req),
@@ -1278,6 +1293,7 @@ module gpu_top (
         .sdram_wr_addr(zcache_sdram_wr_addr),
         .sdram_wr_data(zcache_sdram_wr_data),
         .sdram_ready(arb_port2_ready),
+        .sdram_burst_wdata_req(arb_port2_burst_wdata_req),
 
         // Configuration
         .fb_z_base(fb_z_base),

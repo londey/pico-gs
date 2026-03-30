@@ -56,6 +56,7 @@ module sram_arbiter (
     input  wire [23:0]  port2_addr,
     input  wire [31:0]  port2_wdata,
     input  wire [7:0]   port2_burst_len,
+    input  wire         port2_burst_col_step2, // Z-cache: stride 2 (word-aligned tiles)
     input  wire [15:0]  port2_burst_wdata,
     output reg  [31:0]  port2_rdata,
     output wire [15:0]  port2_burst_rdata,
@@ -95,6 +96,7 @@ module sram_arbiter (
     // Memory Controller Interface — Burst
     // ====================================================================
     output reg  [7:0]   mem_burst_len,
+    output reg          mem_burst_col_step2, // Column stride: 0=+1, 1=+2
     output wire [15:0]  mem_burst_wdata,
     output reg          mem_burst_cancel,
     input  wire         mem_burst_data_valid,
@@ -208,8 +210,9 @@ module sram_arbiter (
             mem_we           <= 1'b0;
             mem_addr         <= 24'b0;
             mem_wdata        <= 32'b0;
-            mem_burst_len    <= 8'b0;
-            mem_burst_cancel <= 1'b0;
+            mem_burst_len       <= 8'b0;
+            mem_burst_col_step2 <= 1'b0;
+            mem_burst_cancel    <= 1'b0;
 
         end else begin
             // Default: deassert cancel after one cycle
@@ -253,8 +256,9 @@ module sram_arbiter (
                         end
                     endcase
 
-                    // Set burst length (burst_wdata is combinational via mux)
-                    mem_burst_len <= init_burst_len;
+                    // Set burst length and column stride
+                    mem_burst_len       <= init_burst_len;
+                    mem_burst_col_step2 <= (next_grant == 2'd2) && port2_burst_col_step2;
 
                     // Determine if this is a burst or single-word
                     if (init_burst_len > 8'd0) begin
@@ -357,7 +361,12 @@ module sram_arbiter (
     // ====================================================================
 
     // Port is ready if no grant is active, memory controller is ready, and this port
-    // has the highest priority among all current requestors
+    // has the highest priority among all current requestors.
+    //
+    // NOTE: grant_active is registered, so port_ready stays high for one
+    // extra cycle after a grant is issued.  Requestors that issue back-to-back
+    // requests (like zbuf_tile_cache S_EVICT) must guard against double-firing
+    // by checking their own req output (e.g., `sdram_ready && !sdram_wr_req`).
     assign port0_ready = !grant_active && mem_ready;
     assign port1_ready = !grant_active && mem_ready && !port0_req;
     assign port2_ready = !grant_active && mem_ready && !port0_req && !port1_req;

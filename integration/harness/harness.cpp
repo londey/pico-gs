@@ -971,6 +971,75 @@ int main(int argc, char** argv) {
     // 7c. Z-buffer PNG output (optional)
     // -----------------------------------------------------------------------
     if (!zbuf_file.empty()) {
+        // Flush the Z-buffer tile cache by directly copying dirty cache lines
+        // into the SDRAM model.  The cache is write-back, so without this step
+        // SDRAM still contains stale zeros for tiles resident in the cache.
+        //
+        // We bypass the RTL flush FSM entirely (it would compete with the
+        // display controller for SDRAM arbiter grants) and instead read the
+        // Verilator-exposed cache BRAM, valid/dirty FF arrays, and tag EBR
+        // memories to perform the writeback in C++.
+        {
+            auto* g = top->rootp->gpu_top;
+
+            // Alias the per-way valid/dirty arrays [0..127] and tag mems [0..127]
+            const auto& valid_w0 = g->__PVT__u_zbuf_tile_cache__DOT__valid_w0;
+            const auto& valid_w1 = g->__PVT__u_zbuf_tile_cache__DOT__valid_w1;
+            const auto& valid_w2 = g->__PVT__u_zbuf_tile_cache__DOT__valid_w2;
+            const auto& valid_w3 = g->__PVT__u_zbuf_tile_cache__DOT__valid_w3;
+            const auto& dirty_w0 = g->__PVT__u_zbuf_tile_cache__DOT__dirty_w0;
+            const auto& dirty_w1 = g->__PVT__u_zbuf_tile_cache__DOT__dirty_w1;
+            const auto& dirty_w2 = g->__PVT__u_zbuf_tile_cache__DOT__dirty_w2;
+            const auto& dirty_w3 = g->__PVT__u_zbuf_tile_cache__DOT__dirty_w3;
+            const auto& tag0_mem = g->__PVT__u_zbuf_tile_cache__DOT__u_tag0__DOT__mem;
+            const auto& tag1_mem = g->__PVT__u_zbuf_tile_cache__DOT__u_tag1__DOT__mem;
+            const auto& tag2_mem = g->__PVT__u_zbuf_tile_cache__DOT__u_tag2__DOT__mem;
+            const auto& tag3_mem = g->__PVT__u_zbuf_tile_cache__DOT__u_tag3__DOT__mem;
+            const auto& cache_mem = g->__PVT__u_zbuf_tile_cache__DOT__cache_mem;
+
+            // Read fb_z_base from the register file
+            uint64_t fb_config = static_cast<uint64_t>(g->u_register_file->fb_config_reg);
+            uint32_t z_base_field = static_cast<uint32_t>((fb_config >> 16) & 0xFFFF);
+            // SDRAM byte address = {z_base[14:0], 9'b0}
+            uint32_t z_base_byte = (z_base_field & 0x7FFF) << 9;
+
+            constexpr int NUM_SETS = 128;
+            constexpr int NUM_WAYS = 4;
+            constexpr int PIXELS_PER_TILE = 16;
+            int flushed = 0;
+
+            for (int set = 0; set < NUM_SETS; set++) {
+                for (int way = 0; way < NUM_WAYS; way++) {
+                    bool valid = false, dirty = false;
+                    uint8_t tag = 0;
+                    switch (way) {
+                        case 0: valid = valid_w0[set]; dirty = dirty_w0[set]; tag = tag0_mem[set]; break;
+                        case 1: valid = valid_w1[set]; dirty = dirty_w1[set]; tag = tag1_mem[set]; break;
+                        case 2: valid = valid_w2[set]; dirty = dirty_w2[set]; tag = tag2_mem[set]; break;
+                        case 3: valid = valid_w3[set]; dirty = dirty_w3[set]; tag = tag3_mem[set]; break;
+                    }
+                    if (!valid) continue;
+
+                    // Reconstruct 14-bit tile_idx = {tag[6:0], set[6:0]}
+                    uint32_t tile_idx = (static_cast<uint32_t>(tag & 0x7F) << 7) | (set & 0x7F);
+
+                    // BRAM address: {way[1:0], set[6:0], pixel_off[3:0]}
+                    int bram_base = (way << 11) | (set << 4);
+
+                    // SDRAM byte address for this tile: base + tile_idx * 32
+                    uint32_t tile_base_byte = z_base_byte + (tile_idx << 5);
+
+                    for (int px = 0; px < PIXELS_PER_TILE; px++) {
+                        uint16_t z_val = cache_mem[bram_base + px];
+                        uint32_t byte_addr = tile_base_byte + (px << 1);
+                        sdram.write_word(byte_addr, z_val);
+                    }
+                    flushed++;
+                }
+            }
+            std::cout << std::format("DIAG: Z-cache flush: {} valid lines written to SDRAM\n", flushed);
+        }
+
         // Read the Z-buffer base address from fb_config_reg[31:16].
         // fb_z_base is the upper bits of the byte address, shifted left by 9
         // to form the word address (matching INT-011).
@@ -979,20 +1048,26 @@ int main(int argc, char** argv) {
         uint32_t z_base_word = static_cast<uint32_t>(((fb_config >> 16) & 0xFFFF) << 9);
         auto zbuf = extract_framebuffer(sdram, z_base_word, FB_WIDTH_LOG2, fb_height);
 
-        // Convert 16-bit Z values to grayscale RGB565 for PNG output.
-        // Z is a raw 16-bit depth value; map it directly to a grayscale pixel.
-        std::vector<uint16_t> zbuf_gray(zbuf.size());
+        // Convert 16-bit Z values to auto-ranged grayscale for PNG.
+        // Matches the DT's approach: find min/max non-zero z, then linearly
+        // map [z_min, z_max] to [1, 255] grayscale.  z=0 (cleared) maps to black.
+        uint16_t z_min = 0xFFFF, z_max = 0;
+        for (uint16_t z : zbuf) {
+            if (z == 0) continue;
+            if (z < z_min) z_min = z;
+            if (z > z_max) z_max = z;
+        }
+        uint32_t range = (z_max > z_min) ? static_cast<uint32_t>(z_max - z_min) : 1;
+
+        std::vector<uint8_t> zbuf_gray(zbuf.size());
         for (size_t px = 0; px < zbuf.size(); px++) {
             uint16_t z = zbuf[px];
-            // Map 16-bit Z to 5:6:5 grayscale: R5=G6=B5 from upper bits
-            uint16_t r5 = (z >> 11) & 0x1F;
-            uint16_t g6 = (z >> 10) & 0x3F;
-            uint16_t b5 = (z >> 11) & 0x1F;
-            zbuf_gray[px] = (r5 << 11) | (g6 << 5) | b5;
+            zbuf_gray[px] = (z == 0) ? 0
+                : static_cast<uint8_t>(static_cast<uint32_t>(z - z_min) * 255 / range);
         }
 
         try {
-            png_writer::write_png(zbuf_file.c_str(), fb_width, fb_height, zbuf_gray);
+            png_writer::write_png_gray(zbuf_file.c_str(), fb_width, fb_height, zbuf_gray);
         } catch (const std::runtime_error& e) {
             std::cerr << std::format("ERROR: {}: {}\n", e.what(), zbuf_file);
         }

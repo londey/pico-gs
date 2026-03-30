@@ -48,6 +48,8 @@ module zbuf_tile_cache (
     // ====================================================================
     output wire         cache_ready,
     input  wire         invalidate,       // Clear all valid+dirty bits
+    input  wire         flush,            // Write-back all dirty lines to SDRAM
+    output reg          flush_done,       // Flush complete pulse (1 cycle)
 
     // ====================================================================
     // SDRAM Interface
@@ -60,6 +62,7 @@ module zbuf_tile_cache (
     output reg  [23:0]  sdram_wr_addr,
     output reg  [15:0]  sdram_wr_data,
     input  wire         sdram_ready,
+    input  wire         sdram_burst_wdata_req, // Next write word requested
 
     // ====================================================================
     // Framebuffer Config
@@ -197,7 +200,10 @@ module zbuf_tile_cache (
         S_LAZYFILL  = 4'd4,  // Fill line with 0x0000 (16 cycles, no SDRAM)
         S_WR_UPDATE = 4'd5,  // Write single Z value via Port B
         S_WR_FILL_WAIT = 4'd6,
-        S_BRAM_RD   = 4'd7   // Wait 1 cycle for BRAM read after fill/lazyfill
+        S_BRAM_RD   = 4'd7,  // Wait 1 cycle for BRAM read after fill/lazyfill
+        S_FLUSH_NEXT = 4'd9, // Scan for next dirty line during flush
+        S_FLUSH_TAG  = 4'd10, // Wait for tag EBR read during flush
+        S_FLUSH_WB   = 4'd11  // Write back dirty line during flush (16 words)
     } state_t;
 
     state_t state, next_state;
@@ -246,9 +252,11 @@ module zbuf_tile_cache (
     // Tag EBR Instances (4 × PDPW16KD, one per way)
     // ====================================================================
 
-    // Tag read: initiated in S_IDLE on request, data available in S_TAG_RD
-    wire tag_re = (state == S_IDLE) && (rd_req || wr_req);
-    wire [SET_BITS-1:0] tag_raddr = idle_set;
+    // Tag read: initiated in S_IDLE on request (data in S_TAG_RD),
+    // or in S_FLUSH_NEXT when a dirty line is found (data in S_FLUSH_TAG).
+    wire flush_need_tag = (state == S_FLUSH_NEXT) && flush_current_dirty;
+    wire tag_re = ((state == S_IDLE) && (rd_req || wr_req)) || flush_need_tag;
+    wire [SET_BITS-1:0] tag_raddr = flush_need_tag ? flush_set_ctr : idle_set;
 
     // Tag write: on fill completion (S_FILL or S_LAZYFILL, last word)
     wire fill_complete_fill = (state == S_FILL) && (word_count == 4'd15) && sdram_rd_valid;
@@ -356,6 +364,20 @@ module zbuf_tile_cache (
     reg [13:0] consec_wr_tile_idx;        // Tile being tracked
 
     // ====================================================================
+    // Flush Counters
+    // ====================================================================
+    reg [SET_BITS-1:0]  flush_set_ctr;    // Current set being scanned
+    reg [1:0]           flush_way_ctr;    // Current way being scanned
+
+    // Combinational: is the current flush position valid+dirty?
+    wire flush_current_dirty = valid_by_way(flush_set_ctr, flush_way_ctr) &&
+                               dirty_by_way(flush_set_ctr, flush_way_ctr);
+
+    // Flush scan complete when at last position and not dirty
+    wire flush_at_last = (flush_set_ctr == NUM_SETS[SET_BITS-1:0] - 1) &&
+                         (flush_way_ctr == 2'd3);
+
+    // ====================================================================
     // SDRAM Address Computation
     // ====================================================================
     // Eviction tile index uses latched evict_tag_r (from EBR in S_TAG_RD)
@@ -415,10 +437,35 @@ module zbuf_tile_cache (
             end
 
             S_EVICT: begin
-                // Pre-read next eviction word (pipelined with SDRAM write)
-                if (sdram_ready && word_count < 4'd15) begin
+                // Burst eviction: BRAM pre-read pipeline.
+                //
+                // Two pipeline stages between BRAM pre-read and controller
+                // consumption: (1) BRAM read latency → porta_rdata, then
+                // (2) sdram_wr_data register.  Pre-reads must therefore
+                // target word_count + 2 on each wdata_req pulse.
+                //
+                // Timeline:
+                //   E0: pre-read word 1.  sdram_wr_data ← word 0.
+                //   W0: controller captures word 0.  wdata_req=1.
+                //       sdram_wr_data ← porta_rdata (= word 1).
+                //       Pre-read word 0+2 = word 2.
+                //   W1: controller captures word 1.  wdata_req=1.
+                //       sdram_wr_data ← porta_rdata (= word 2).
+                //       Pre-read 1+2 = word 3.
+                //   ...
+                //   W14: controller captures word 14.  wdata_req=1.
+                //        sdram_wr_data ← word 15.  No pre-read (14+2>15).
+                //   W15: controller captures word 15.  wdata_req=0.  Done.
+                if (word_count == 4'd0 && !sdram_wr_req) begin
+                    // Initial: pre-read word 1 (word 0 already in porta_rdata
+                    // from S_TAG_RD pre-read)
                     porta_re   = 1'b1;
-                    porta_addr = {fill_way, fill_set, word_count + 4'd1};
+                    porta_addr = {fill_way, fill_set, 4'd1};
+                end else if (sdram_burst_wdata_req && word_count <= 4'd13) begin
+                    // Pre-read word_count + 2 for consumption 2 cycles later.
+                    // Guard: word_count + 2 must fit in 4 bits (max 15).
+                    porta_re   = 1'b1;
+                    porta_addr = {fill_way, fill_set, word_count + 4'd2};
                 end
             end
 
@@ -449,6 +496,23 @@ module zbuf_tile_cache (
                 portb_we    = 1'b1;
                 portb_addr  = {active_way, req_set, req_pixel_off};
                 portb_wdata = req_wr_data;
+            end
+
+            S_FLUSH_TAG: begin
+                // Pre-read BRAM word 0 for writeback
+                porta_re   = 1'b1;
+                porta_addr = {flush_way_ctr, flush_set_ctr, 4'd0};
+            end
+
+            S_FLUSH_WB: begin
+                // Burst writeback: same pipeline as S_EVICT
+                if (word_count == 4'd0 && !sdram_wr_req) begin
+                    porta_re   = 1'b1;
+                    porta_addr = {fill_way, fill_set, 4'd1};
+                end else if (sdram_burst_wdata_req && word_count <= 4'd13) begin
+                    porta_re   = 1'b1;
+                    porta_addr = {fill_way, fill_set, word_count + 4'd2};
+                end
             end
 
             default: begin end
@@ -485,6 +549,8 @@ module zbuf_tile_cache (
                         // SLOW PATH — wait for tag EBR read
                         next_state = S_TAG_RD;
                     end
+                end else if (flush) begin
+                    next_state = S_FLUSH_NEXT;
                 end
             end
 
@@ -511,6 +577,9 @@ module zbuf_tile_cache (
             end
 
             S_EVICT: begin
+                // Burst complete: word_count reached 15 and arbiter ready
+                // (grant finished).  sdram_ready re-asserts after the burst
+                // grant completes.
                 if (word_count == 4'd15 && sdram_ready) begin
                     if (fill_hiz_uninit)
                         next_state = S_LAZYFILL;
@@ -543,6 +612,27 @@ module zbuf_tile_cache (
 
             S_WR_UPDATE: begin
                 next_state = S_IDLE;
+            end
+
+            S_FLUSH_NEXT: begin
+                if (flush_current_dirty)
+                    next_state = S_FLUSH_TAG;
+                else if (flush_at_last)
+                    next_state = S_IDLE;
+                // else: stay in S_FLUSH_NEXT (counter advances in sequential)
+            end
+
+            S_FLUSH_TAG: begin
+                next_state = S_FLUSH_WB;
+            end
+
+            S_FLUSH_WB: begin
+                if (word_count == 4'd15 && sdram_ready) begin
+                    if (flush_at_last)
+                        next_state = S_IDLE;
+                    else
+                        next_state = S_FLUSH_NEXT;
+                end
             end
 
             default: next_state = S_IDLE;
@@ -602,6 +692,9 @@ module zbuf_tile_cache (
             consec_wr_count <= 5'd0;
             consec_wr_min_z <= 16'hFFFF;
             consec_wr_tile_idx <= 14'd0;
+            flush_done      <= 1'b0;
+            flush_set_ctr   <= '0;
+            flush_way_ctr   <= 2'd0;
 
             for (j = 0; j < NUM_SETS; j = j + 1) begin
                 valid_w0[j] <= 1'b0;
@@ -635,6 +728,7 @@ module zbuf_tile_cache (
             state        <= next_state;
             rd_valid     <= 1'b0;  // Default: deassert
             hiz_fb_valid <= 1'b0;  // Default: deassert
+            flush_done   <= 1'b0;  // Default: deassert
 
             case (state)
                 // ========================================================
@@ -660,6 +754,9 @@ module zbuf_tile_cache (
                         end
                         // SLOW PATH: tag EBR read initiated combinationally;
                         // resolution happens in S_TAG_RD
+                    end else if (flush) begin
+                        flush_set_ctr <= '0;
+                        flush_way_ctr <= 2'd0;
                     end
                 end
 
@@ -693,51 +790,79 @@ module zbuf_tile_cache (
                 end
 
                 // ========================================================
-                // S_EVICT — Write back dirty victim (16 words)
+                // S_EVICT — Write back dirty victim (burst-16)
                 // ========================================================
+                // Single SDRAM burst request; controller pulls 16 words.
+                //
+                // Pipelining (porta_rdata has 1-cycle latency):
+                //   S_TAG_RD: pre-read word 0
+                //   E0: sdram_wr_data ← word 0, pre-read word 1
+                //   ACTIVATE (2 cy): porta_rdata = word 1 by W0
+                //   W0: controller captures word 0, wdata_req=1
+                //       sequential: sdram_wr_data ← porta_rdata (= word 1),
+                //       combinational: pre-read word 2
+                //   W1: controller captures word 1, wdata_req=1
+                //       sequential: sdram_wr_data ← porta_rdata (= word 2),
+                //       combinational: pre-read word 3
+                //   ...
+                //   W14: wdata_req=1, sdram_wr_data ← word 14, pre-read word 15
+                //   W15: wdata_req=0, controller captures word 15
                 S_EVICT: begin
-                    if (sdram_ready) begin
+                    if (word_count == 4'd0 && !sdram_wr_req) begin
+                        // Issue burst request: base address for pixel_off=0.
+                        // Assert req for exactly 1 cycle — the arbiter latches
+                        // it and runs the full burst_len=16 burst.
                         sdram_wr_req  <= 1'b1;
                         sdram_wr_addr <= tile_byte_addr(
-                            evict_tile_idx, word_count,
+                            evict_tile_idx, 4'd0,
                             fb_z_base, fb_width_log2);
+                        // Word 0 from S_TAG_RD pre-read
+                        sdram_wr_data <= porta_rdata;
+                        evict_min_z   <= porta_rdata;
+                    end else if (sdram_wr_req) begin
+                        // Deassert req after 1 cycle — burst is in flight
+                        sdram_wr_req <= 1'b0;
+                    end
+
+                    if (sdram_burst_wdata_req) begin
+                        // Controller consumed current word; advance.
+                        // porta_rdata holds word N+1 (from the pre-read
+                        // issued on the previous wdata_req cycle).
+                        word_count    <= word_count + 4'd1;
                         sdram_wr_data <= porta_rdata;
 
                         // Track running minimum for Hi-Z feedback
-                        if (word_count == 4'd0)
+                        if (porta_rdata < evict_min_z)
                             evict_min_z <= porta_rdata;
-                        else if (porta_rdata < evict_min_z)
-                            evict_min_z <= porta_rdata;
+                    end
 
-                        word_count <= word_count + 4'd1;
+                    // Burst complete: word_count reached 15 and grant finished
+                    if (word_count == 4'd15 && sdram_ready) begin
+                        word_count <= 4'd0;
 
-                        if (word_count == 4'd15) begin
-                            word_count <= 4'd0;
-                            // Hi-Z feedback: report actual tile minimum
-                            hiz_fb_valid    <= 1'b1;
-                            hiz_fb_tile_idx <= evict_tile_idx;
-                            // Use min of running min and current word
-                            if (porta_rdata < evict_min_z)
-                                hiz_fb_min_z_hi <= porta_rdata[15:8];
-                            else
-                                hiz_fb_min_z_hi <= evict_min_z[15:8];
-                        end
-                    end else begin
-                        sdram_wr_req <= 1'b0;
+                        // Hi-Z feedback: report tile minimum
+                        hiz_fb_valid    <= 1'b1;
+                        hiz_fb_tile_idx <= evict_tile_idx;
+                        hiz_fb_min_z_hi <= evict_min_z[15:8];
                     end
                 end
 
                 // ========================================================
-                // S_FILL — Read tile from SDRAM (16 words)
+                // S_FILL — Read tile from SDRAM (burst-16)
                 // ========================================================
+                // Single burst read request; controller pushes 16 words
+                // via sdram_rd_valid.
                 S_FILL: begin
                     sdram_wr_req <= 1'b0;
 
-                    if (!sdram_rd_req && word_count < 4'd15 || sdram_rd_valid) begin
+                    // Issue burst read request for 1 cycle, then deassert
+                    if (!sdram_rd_req && word_count == 4'd0) begin
                         sdram_rd_req  <= 1'b1;
                         sdram_rd_addr <= tile_byte_addr(
-                            req_tile_idx, word_count,
+                            req_tile_idx, 4'd0,
                             fb_z_base, fb_width_log2);
+                    end else if (sdram_rd_req) begin
+                        sdram_rd_req <= 1'b0;
                     end
 
                     if (sdram_rd_valid) begin
@@ -840,6 +965,89 @@ module zbuf_tile_cache (
                         consec_wr_tile_idx <= req_tile_idx;
                         consec_wr_count    <= 5'd1;
                         consec_wr_min_z    <= req_wr_data;
+                    end
+                end
+
+                // ========================================================
+                // S_FLUSH_NEXT — Scan for next dirty line
+                // ========================================================
+                S_FLUSH_NEXT: begin
+                    sdram_wr_req <= 1'b0;
+                    if (!flush_current_dirty) begin
+                        // Not dirty — advance to next {way, set}
+                        if (flush_at_last) begin
+                            flush_done <= 1'b1;
+                        end else if (flush_way_ctr == 2'd3) begin
+                            flush_way_ctr <= 2'd0;
+                            flush_set_ctr <= flush_set_ctr + {{(SET_BITS-1){1'b0}}, 1'b1};
+                        end else begin
+                            flush_way_ctr <= flush_way_ctr + 2'd1;
+                        end
+                    end
+                    // Dirty entry: tag EBR read issued combinationally via
+                    // flush_need_tag; resolution happens in S_FLUSH_TAG.
+                end
+
+                // ========================================================
+                // S_FLUSH_TAG — Tag EBR data ready, set up writeback
+                // ========================================================
+                S_FLUSH_TAG: begin
+                    evict_tag_r <= tag_rdata_by_way(flush_way_ctr);
+                    fill_way    <= flush_way_ctr;
+                    fill_set    <= flush_set_ctr;
+                    word_count  <= 4'd0;
+                    evict_min_z <= 16'hFFFF;
+                    // BRAM pre-read of word 0 issued by always_comb
+                end
+
+                // ========================================================
+                // S_FLUSH_WB — Write back dirty line (burst-16)
+                // ========================================================
+                // Same burst protocol as S_EVICT.
+                S_FLUSH_WB: begin
+                    if (word_count == 4'd0 && !sdram_wr_req) begin
+                        sdram_wr_req  <= 1'b1;
+                        sdram_wr_addr <= tile_byte_addr(
+                            evict_tile_idx, 4'd0,
+                            fb_z_base, fb_width_log2);
+                        sdram_wr_data <= porta_rdata;
+                        evict_min_z   <= porta_rdata;
+                    end else if (sdram_wr_req) begin
+                        sdram_wr_req <= 1'b0;
+                    end
+
+                    if (sdram_burst_wdata_req) begin
+                        word_count    <= word_count + 4'd1;
+                        sdram_wr_data <= porta_rdata;
+                        if (porta_rdata < evict_min_z)
+                            evict_min_z <= porta_rdata;
+                    end
+
+                    if (word_count == 4'd15 && sdram_ready) begin
+                        word_count <= 4'd0;
+
+                        hiz_fb_valid    <= 1'b1;
+                        hiz_fb_tile_idx <= evict_tile_idx;
+                        hiz_fb_min_z_hi <= evict_min_z[15:8];
+
+                        // Clear dirty bit (line stays valid in cache)
+                        case (fill_way)
+                            2'd0: dirty_w0[fill_set] <= 1'b0;
+                            2'd1: dirty_w1[fill_set] <= 1'b0;
+                            2'd2: dirty_w2[fill_set] <= 1'b0;
+                            2'd3: dirty_w3[fill_set] <= 1'b0;
+                            default: begin end
+                        endcase
+
+                        // Advance flush counter
+                        if (flush_at_last) begin
+                            flush_done <= 1'b1;
+                        end else if (flush_way_ctr == 2'd3) begin
+                            flush_way_ctr <= 2'd0;
+                            flush_set_ctr <= flush_set_ctr + {{(SET_BITS-1){1'b0}}, 1'b1};
+                        end else begin
+                            flush_way_ctr <= flush_way_ctr + 2'd1;
+                        end
                     end
                 end
 

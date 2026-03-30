@@ -51,4 +51,13 @@ void write_png(const char* filename, int width, int height, std::span<const uint
 /// @return Rgb888 struct with r, g, b channels (0-255 each).
 Rgb888 rgb565_to_rgb888(uint16_t rgb565);
 
+/// Write a grayscale PNG from an array of 8-bit luminance values.
+///
+/// @param filename  Output file path.
+/// @param width     Image width in pixels.
+/// @param height    Image height in pixels.
+/// @param gray      Span of width * height uint8_t values in row-major order.
+/// @throws std::runtime_error on failure.
+void write_png_gray(const char* filename, int width, int height, std::span<const uint8_t> gray);
+
 } // namespace png_writer

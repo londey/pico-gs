@@ -28,6 +28,7 @@ module sdram_controller (
     input  wire [7:0]   burst_len,      // Burst length: 0=single-word, 1-255=sequential (16-bit words)
     input  wire [15:0]  burst_wdata_16, // 16-bit write data for sequential mode
     input  wire         burst_cancel,   // Cancel active burst (from arbiter)
+    input  wire         burst_col_step2, // Column step size: 0=+1, 1=+2 (word-aligned stride)
     output wire         burst_data_valid, // Valid 16-bit read data available (sequential read)
     output wire         burst_wdata_req,  // Request next 16-bit write word (sequential write)
     output wire         burst_done,       // Burst transfer complete
@@ -133,6 +134,7 @@ module sdram_controller (
     reg [7:0]  burst_count;           // Remaining words in sequential transfer
     reg        burst_mode;            // Sequential transfer active flag
     reg        single_phase;          // 0=low half, 1=high half (single-word mode)
+    reg        col_step2;            // Latched burst_col_step2 (stride 1 or 2)
 
     // Read pipeline tracking for CAS latency
     // For pipelined sequential reads, we issue READ commands every cycle
@@ -439,6 +441,7 @@ module sdram_controller (
             rdata_hold        <= 32'b0;
             burst_count       <= 8'b0;
             burst_mode        <= 1'b0;
+            col_step2         <= 1'b0;
             single_phase      <= 1'b0;
             wait_counter      <= 4'b0;
             read_pipe_count   <= 3'b0;
@@ -552,6 +555,7 @@ module sdram_controller (
                         wdata_reg  <= wdata;
                         burst_mode <= (burst_len > 8'd0);
                         burst_count <= burst_len;
+                        col_step2 <= burst_col_step2;
                         single_phase <= 1'b0;
                         read_pipe_count   <= 3'b0;
                         data_remaining    <= 8'b0;
@@ -610,7 +614,7 @@ module sdram_controller (
                             set_cmd(CMD_READ);
                             sdram_ba <= bank_addr;
                             sdram_a  <= {4'b0, seq_col}; // A10=0 (no auto-precharge)
-                            seq_col  <= seq_col + 9'd1;
+                            seq_col  <= seq_col + (col_step2 ? 9'd2 : 9'd1);
                             burst_count <= burst_count - 8'd1;
                             read_pipe_count <= (read_pipe_count < CAS_LATENCY[2:0]) ?
                                                read_pipe_count + 3'd1 : read_pipe_count;
@@ -696,7 +700,7 @@ module sdram_controller (
                             sdram_a  <= {4'b0, seq_col}; // A10=0
                             dq_oe    <= 1'b1;
                             dq_out   <= burst_wdata_16;
-                            seq_col  <= seq_col + 9'd1;
+                            seq_col  <= seq_col + (col_step2 ? 9'd2 : 9'd1);
                             burst_count  <= burst_count - 8'd1;
                             write_issued <= write_issued + 8'd1;
                             wait_counter <= T_WR; // Reset tWR counter after each write
