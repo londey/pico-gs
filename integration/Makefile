@@ -128,7 +128,9 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-fb-promote test-alpha-blend test-dither test-raster-viz \
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
-	test-block-decoder-all
+	test-block-decoder-all \
+	gen-raster-vectors test-recip-area-dt test-recip-q-dt test-dsp-mul-dt \
+	test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-dt-all
 
 # Default target
 all: bitstream
@@ -454,8 +456,73 @@ test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_raster_attr_accum -o tb_raster_attr_accum
 	$(OBJ_DIR)/tb_raster_attr_accum
 
-# All rasterizer tests: sub-module unit tests + integration test + visualization
-test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer test-raster-viz
+# ── DT-verified rasterizer testbenches ────────────────────────────────────
+# Generate test vectors from digital twin, then run RTL against them.
+
+RASTER_VEC_DIR = $(COMP_DIR)/rasterizer/rtl/tests/vectors
+RASTER_TB_DIR  = $(COMP_DIR)/rasterizer/rtl/tests
+
+# Generate hex test vectors from the digital twin
+gen-raster-vectors:
+	cargo run --bin gen_raster_test_vectors -- $(abspath $(RASTER_VEC_DIR))
+
+# DT-verified: raster_recip_area
+test-recip-area-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_recip_area.sv \
+		$(RASTER_TB_DIR)/tb_recip_area_dt.sv \
+		--top-module tb_recip_area_dt -o tb_recip_area_dt
+	$(OBJ_DIR)/tb_recip_area_dt
+
+# DT-verified: raster_recip_q
+test-recip-q-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_recip_q.sv \
+		$(RASTER_TB_DIR)/tb_recip_q_dt.sv \
+		--top-module tb_recip_q_dt -o tb_recip_q_dt
+	$(OBJ_DIR)/tb_recip_q_dt
+
+# DT-verified: raster_dsp_mul
+test-dsp-mul-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_dsp_mul.sv \
+		$(RASTER_TB_DIR)/tb_dsp_mul_dt.sv \
+		--top-module tb_dsp_mul_dt -o tb_dsp_mul_dt
+	$(OBJ_DIR)/tb_dsp_mul_dt
+
+# DT-verified: raster_shift_mul_32x11
+test-shift-mul-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
+		$(RASTER_TB_DIR)/tb_shift_mul_dt.sv \
+		--top-module tb_shift_mul_dt -o tb_shift_mul_dt
+	$(OBJ_DIR)/tb_shift_mul_dt
+
+# DT-verified: raster_deriv
+test-deriv-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_dsp_mul.sv \
+		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
+		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
+		$(RASTER_RTL)/raster_deriv.sv \
+		$(RASTER_TB_DIR)/tb_deriv_dt.sv \
+		--top-module tb_deriv_dt -o tb_deriv_dt
+	$(OBJ_DIR)/tb_deriv_dt
+
+# DT-verified: raster_attr_accum
+test-attr-accum-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_attr_accum.sv \
+		$(RASTER_TB_DIR)/tb_attr_accum_dt.sv \
+		--top-module tb_attr_accum_dt -o tb_attr_accum_dt
+	$(OBJ_DIR)/tb_attr_accum_dt
+
+# All DT-verified rasterizer testbenches
+test-raster-dt-all: test-recip-area-dt test-recip-q-dt test-dsp-mul-dt test-shift-mul-dt test-deriv-dt test-attr-accum-dt
+	@echo "All DT-verified rasterizer testbenches passed."
+
+# All rasterizer tests: sub-module unit tests + DT-verified + integration + visualization
+test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer test-raster-viz test-raster-dt-all
 
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)

@@ -25,6 +25,7 @@ CLEAN=false
 DT_ONLY=false
 CHECK_ONLY=false
 RESOURCES_ONLY=false
+DT_VERIFY=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -46,6 +47,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --resources)
             RESOURCES_ONLY=true
+            shift
+            ;;
+        --dt-verify)
+            DT_VERIFY=true
+            BUILD_FPGA=false
+            BUILD_TEST=false
             shift
             ;;
         --test-only)
@@ -76,6 +83,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --check             Quick check: Verilator lint, cargo fmt, cargo check, cargo clippy"
             echo "  --resources         Per-module ECP5 resource utilization report"
             echo "  --dt-only           Build and test digital twin only"
+            echo "  --dt-verify         Verify RTL modules against digital twin (DT-generated test vectors)"
             echo "  --test-only         Run tests only (skip FPGA build)"
             echo "  --no-test           Skip RTL tests (build only)"
             echo "  --no-dt             Skip digital twin build and tests"
@@ -149,6 +157,25 @@ if [ "$RESOURCES_ONLY" = true ]; then
     echo ""
     echo -e "${GREEN}=== Resource Report Complete ===${NC}"
     echo "Report saved to ${OUTPUT_DIR}/fpga/resource_report.txt"
+    exit 0
+fi
+
+# DT-verify mode: generate test vectors from DT, run RTL against them
+if [ "$DT_VERIFY" = true ]; then
+    echo -e "${YELLOW}[1/2] Building and testing digital twin...${NC}"
+    cd "${REPO_ROOT}"
+    cargo build -p gs-twin -p gs-twin-cli
+    cargo test -p gs-rasterizer
+    echo -e "${GREEN}Digital twin tests passed${NC}"
+    echo ""
+
+    echo -e "${YELLOW}[2/2] Verifying RTL against digital twin...${NC}"
+    cd "${INTEGRATION}"
+    make test-raster-dt-all
+    echo -e "${GREEN}All DT-verified RTL testbenches passed${NC}"
+    echo ""
+
+    echo -e "${GREEN}=== DT Verify Complete ===${NC}"
     exit 0
 fi
 
