@@ -26,26 +26,22 @@ module tb_shift_mul_dt;
     integer num_vectors;
     integer pass_count = 0;
     integer fail_count = 0;
-    integer count_i;
 
     initial begin
         $readmemh("../components/rasterizer/rtl/tests/vectors/shift_mul_stim.hex", stim_mem);
         $readmemh("../components/rasterizer/rtl/tests/vectors/shift_mul_exp.hex", exp_mem);
 
-        num_vectors = 0;
-        for (count_i = 0; count_i < MAX_VECTORS; count_i = count_i + 1) begin
-            if (exp_mem[count_i] !== 32'hxxxxxxxx)
-                num_vectors = count_i + 1;
-        end
+        // First entry is the vector count
+        num_vectors = stim_mem[0][31:0];
 
         for (int i = 0; i < num_vectors; i++) begin
-            a = stim_mem[i][42:11]; // a[31:0] in bits [42:11]
-            b = stim_mem[i][10:0];  // b[10:0] in bits [10:0]
+            a = stim_mem[i + 1][42:11]; // a[31:0] in bits [42:11]
+            b = stim_mem[i + 1][10:0];  // b[10:0] in bits [10:0]
             #1;
 
             begin
                 reg signed [31:0] exp_p;
-                exp_p = exp_mem[i];
+                exp_p = exp_mem[i + 1];
 
                 if (p === exp_p) begin
                     pass_count = pass_count + 1;

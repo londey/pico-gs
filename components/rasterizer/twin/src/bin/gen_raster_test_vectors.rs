@@ -42,21 +42,27 @@ fn gen_recip_area(out: &Path) {
     let mut stim = String::new();
     let mut exp = String::new();
 
+    // 22-bit signed range: [-2^21, 2^21 - 1] = [-2097152, 2097151]
+    let min22: i32 = -(1 << 21);
+    let max22: i32 = (1 << 21) - 1;
+    let clamp = |v: i32| v.clamp(min22, max22);
+
     let mut areas: Vec<i32> = vec![0, 1, -1, 2, -2];
 
-    // Powers of 2
-    for shift in 0..22 {
+    // Powers of 2 (within 22-bit range)
+    for shift in 0..21 {
         areas.push(1 << shift);
         areas.push(-(1 << shift));
     }
+    areas.push(min22); // -2^21 (min 22-bit signed)
 
     // CLZ boundary values (just above and below each power of 2)
     for shift in 1..22 {
         let v = 1i32 << shift;
-        areas.push(v - 1);
-        areas.push(v + 1);
-        areas.push(-(v - 1));
-        areas.push(-(v + 1));
+        areas.push(clamp(v - 1));
+        areas.push(clamp(v + 1));
+        areas.push(clamp(-(v - 1)));
+        areas.push(clamp(-(v + 1)));
     }
 
     // Small values
@@ -66,7 +72,6 @@ fn gen_recip_area(out: &Path) {
     }
 
     // Large values near 22-bit max
-    let max22 = (1i32 << 21) - 1;
     areas.push(max22);
     areas.push(-max22);
     areas.push(max22 - 1);
@@ -88,6 +93,10 @@ fn gen_recip_area(out: &Path) {
     // Dedup
     areas.sort();
     areas.dedup();
+
+    // First line: vector count
+    writeln!(stim, "{:08x}", areas.len()).unwrap();
+    writeln!(exp, "{:08x}", areas.len()).unwrap();
 
     for &area in &areas {
         // Stimulus: 32-bit hex (sign-extended from 22-bit)
@@ -155,6 +164,10 @@ fn gen_recip_q(out: &Path) {
     operands.sort();
     operands.dedup();
 
+    // First line: vector count
+    writeln!(stim, "{:08x}", operands.len()).unwrap();
+    writeln!(exp, "{:08x}", operands.len()).unwrap();
+
     for &op in &operands {
         writeln!(stim, "{:08x}", op).unwrap();
 
@@ -202,6 +215,11 @@ fn gen_dsp_mul(out: &Path) {
         0x20000, // UQ1.17 = 1.0
         0x10000, 0x08000, 0x04000, 0x00001, 100, 1000, 50000, 131072,
     ];
+
+    // First line: vector count
+    let count_total = a_vals.len() * b_vals.len();
+    writeln!(stim, "{:016x}", count_total as u64).unwrap();
+    writeln!(exp, "{:016x}", count_total as u64).unwrap();
 
     for &a in &a_vals {
         for &b in &b_vals {
@@ -253,6 +271,11 @@ fn gen_shift_mul(out: &Path) {
         -0x400, // 11-bit min negative
         2, -2, 5, -5, 100, -100, 0x200, -0x200,
     ];
+
+    // First line: vector count
+    let count_total = a_vals.len() * b_vals.len();
+    writeln!(stim, "{:016x}", count_total as u64).unwrap();
+    writeln!(exp, "{:08x}", count_total as u32).unwrap();
 
     for &a in &a_vals {
         for &b in &b_vals {
@@ -703,8 +726,12 @@ fn gen_attr_accum(out: &Path) {
             None => continue,
         };
 
-        // Command sequence: latch, step_x×3, step_y, step_x×3, tile_col_step,
-        // step_x×3, step_y, tile_row_step
+        // Command sequence matching RTL edge_walk control flow:
+        // Within a tile: latch, step_x×3, step_y, step_x×3
+        // Next tile column: tile_col_step (merges tcol += 4*dx + init row/acc)
+        // Within new tile: step_x×3, step_y
+        // Next tile row: tile_row_step (merges trow += 4*dy + reset tcol + init row/acc)
+        // Within new tile: step_x×3
         let commands = [
             AccumCmd::Latch,
             AccumCmd::StepX,
@@ -715,12 +742,12 @@ fn gen_attr_accum(out: &Path) {
             AccumCmd::StepX,
             AccumCmd::StepX,
             AccumCmd::TileColStep,
-            AccumCmd::Latch, // re-latch after tile_col to reset pixel state
+            AccumCmd::StepX,
             AccumCmd::StepX,
             AccumCmd::StepX,
             AccumCmd::StepY,
             AccumCmd::TileRowStep,
-            AccumCmd::Latch, // re-latch after tile_row
+            AccumCmd::StepX,
             AccumCmd::StepX,
         ];
 
@@ -754,12 +781,15 @@ fn gen_attr_accum(out: &Path) {
                 AccumCmd::StepX => accum.step_x(),
                 AccumCmd::StepY => accum.step_y(),
                 AccumCmd::TileColStep => {
+                    // RTL merges tcol += 4*dx with init_tile_pixels (row=acc=tcol)
                     accum.step_tile_col();
-                    accum.reset_tile_col();
+                    accum.init_tile_pixels();
                 }
                 AccumCmd::TileRowStep => {
+                    // RTL merges trow += 4*dy, tcol = trow, with init_tile_pixels
                     accum.step_tile_row();
                     accum.reset_tile_col();
+                    accum.init_tile_pixels();
                 }
             }
 

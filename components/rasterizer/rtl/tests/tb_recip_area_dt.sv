@@ -39,19 +39,12 @@ module tb_recip_area_dt;
     integer pass_count = 0;
     integer fail_count = 0;
 
-    // Count vectors by scanning for non-X entries
-    integer count_i;
-
     initial begin
         $readmemh("../components/rasterizer/rtl/tests/vectors/recip_area_stim.hex", stim_mem);
         $readmemh("../components/rasterizer/rtl/tests/vectors/recip_area_exp.hex", exp_mem);
 
-        // Count valid entries
-        num_vectors = 0;
-        for (count_i = 0; count_i < MAX_VECTORS; count_i = count_i + 1) begin
-            if (stim_mem[count_i] !== 32'hxxxxxxxx)
-                num_vectors = count_i + 1;
-        end
+        // First entry is the vector count
+        num_vectors = stim_mem[0];
 
         // Reset
         rst_n = 0;
@@ -61,10 +54,10 @@ module tb_recip_area_dt;
         rst_n = 1;
         repeat (2) @(posedge clk);
 
-        // Drive each vector
+        // Drive each vector (index 0 is count, data starts at 1)
         for (int i = 0; i < num_vectors; i++) begin
             @(posedge clk);
-            operand_in = stim_mem[i][21:0];
+            operand_in = stim_mem[i + 1][21:0];
             valid_in = 1;
             @(posedge clk);
             valid_in = 0;
@@ -78,9 +71,9 @@ module tb_recip_area_dt;
                 reg        exp_degen;
                 reg  [4:0] exp_shift;
                 reg [17:0] exp_recip;
-                exp_degen = exp_mem[i][24];
-                exp_shift = exp_mem[i][22:18];
-                exp_recip = exp_mem[i][17:0];
+                exp_degen = exp_mem[i + 1][24];
+                exp_shift = exp_mem[i + 1][22:18];
+                exp_recip = exp_mem[i + 1][17:0];
 
                 if (exp_degen) begin
                     // Degenerate: just check degenerate flag
@@ -88,7 +81,7 @@ module tb_recip_area_dt;
                         pass_count = pass_count + 1;
                     end else begin
                         $display("FAIL [%0d]: area=0x%06x expected degenerate, got recip=0x%05x shift=%0d",
-                                 i, stim_mem[i][21:0], recip_out, area_shift);
+                                 i, stim_mem[i + 1][21:0], recip_out, area_shift);
                         fail_count = fail_count + 1;
                     end
                 end else begin
@@ -96,7 +89,7 @@ module tb_recip_area_dt;
                         pass_count = pass_count + 1;
                     end else begin
                         $display("FAIL [%0d]: area=0x%06x expected recip=0x%05x shift=%0d, got recip=0x%05x shift=%0d degen=%0b",
-                                 i, stim_mem[i][21:0], exp_recip, exp_shift,
+                                 i, stim_mem[i + 1][21:0], exp_recip, exp_shift,
                                  recip_out, area_shift, degenerate);
                         fail_count = fail_count + 1;
                     end

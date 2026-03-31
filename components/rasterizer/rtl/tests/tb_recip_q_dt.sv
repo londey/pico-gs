@@ -36,17 +36,13 @@ module tb_recip_q_dt;
     integer num_vectors;
     integer pass_count = 0;
     integer fail_count = 0;
-    integer count_i;
 
     initial begin
         $readmemh("../components/rasterizer/rtl/tests/vectors/recip_q_stim.hex", stim_mem);
         $readmemh("../components/rasterizer/rtl/tests/vectors/recip_q_exp.hex", exp_mem);
 
-        num_vectors = 0;
-        for (count_i = 0; count_i < MAX_VECTORS; count_i = count_i + 1) begin
-            if (stim_mem[count_i] !== 32'hxxxxxxxx)
-                num_vectors = count_i + 1;
-        end
+        // First entry is the vector count
+        num_vectors = stim_mem[0];
 
         rst_n = 0;
         valid_in = 0;
@@ -57,7 +53,7 @@ module tb_recip_q_dt;
 
         for (int i = 0; i < num_vectors; i++) begin
             @(posedge clk);
-            operand_in = stim_mem[i];
+            operand_in = stim_mem[i + 1];
             valid_in = 1;
             @(posedge clk);
             valid_in = 0;
@@ -69,14 +65,14 @@ module tb_recip_q_dt;
             begin
                 reg  [4:0] exp_clz;
                 reg [17:0] exp_recip;
-                exp_clz   = exp_mem[i][22:18];
-                exp_recip = exp_mem[i][17:0];
+                exp_clz   = exp_mem[i + 1][22:18];
+                exp_recip = exp_mem[i + 1][17:0];
 
                 if (recip_out === exp_recip && clz_out === exp_clz) begin
                     pass_count = pass_count + 1;
                 end else begin
                     $display("FAIL [%0d]: Q=0x%08x expected recip=0x%05x clz=%0d, got recip=0x%05x clz=%0d",
-                             i, stim_mem[i], exp_recip, exp_clz, recip_out, clz_out);
+                             i, stim_mem[i + 1], exp_recip, exp_clz, recip_out, clz_out);
                     fail_count = fail_count + 1;
                 end
             end
