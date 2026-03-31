@@ -6,6 +6,8 @@
 - Minimize blast radius: only change code directly related to the current task. If you notice problems in other areas, mention them but don't fix them without approval.
 - `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
 - The digital twin crates under `components/*/twin/` and `integration/gs-twin/` are the authoritative detailed design for the pico-gpu and are intended as a bit accurate transactional model of the GPU's behaviour to be used as referent when implementing and verifying the RTL.
+- Every pipeline-stage `.sv` module must have a corresponding digital twin `.rs` struct in the component's `twin/` crate, and a Verilator testbench that verifies RTL output matches the twin's output via shared `.hex` stimulus files.
+  Exclusions: `components/core/` (PLL, reset) and `components/utils/` (FIFOs) are physical primitives exempt from this rule.
 - `components/registers/rdl/gpu_regs.rdl` is the authoritative GPU register definition; generated output from `components/registers/scripts/generate.sh` is what code must reference for register values and constants.
 - All code follows its respective style guide:
   - SystemVerilog: `.claude/skills/claude-skill-verilog/SKILL.md`
@@ -57,8 +59,8 @@ pico-gs/
 │   │   ├── twin/              # gpu-registers Rust crate (no_std)
 │   │   ├── generated/         # PeakRDL output (SV package + register file)
 │   │   └── scripts/generate.sh
-│   ├── core/                  # PLL, reset (RTL only, no twin)
-│   └── utils/                 # FIFOs (RTL only, no twin)
+│   ├── core/                  # PLL, reset (RTL only — excluded from twin requirement)
+│   └── utils/                 # FIFOs (RTL only — excluded from twin requirement)
 ├── shared/
 │   ├── fp_types_pkg.sv        # Shared RTL type package
 │   └── gs-twin-core/          # Shared Rust foundation crate (types, math, hex_parser)
@@ -129,10 +131,22 @@ It is a bit-accurate, transaction-level Rust model — not cycle-accurate (Veril
 - Any pixel mismatch = real bug in RTL (not floating-point divergence)
 - Full workflow: `./build.sh --dt-only`
 
+### Component-level verification
+
+Each pipeline component's Verilator testbench must verify RTL output against the digital twin:
+
+1. **Shared stimulus:** Both twin and RTL testbench consume identical `.hex` stimulus files from `components/<name>/rtl/tests/`.
+2. **Expected output:** The twin crate generates expected output (register values, pixel data, or signal traces) from the stimulus.
+3. **RTL comparison:** The Verilator testbench runs the same stimulus through the RTL and compares outputs against the twin's expected results.
+4. **Bit-exact match:** Any divergence between RTL and twin output is a bug — fix the RTL to match the twin (or update the twin if the algorithm specification changed).
+
+This is in addition to the integration-level golden image tests in `integration/`.
+
 ### Scope boundaries
 
 - **gs-twin owns:** rasterization algorithms, pixel pipeline math, fixed-point formats, memory addressing
 - **gs-twin does NOT model:** scan-out/display (UNIT-008), cycle-level timing, SPI transport
+- **Excluded from twin requirement:** `components/core/` (PLL, reset_sync) and `components/utils/` (async_fifo, sync_fifo) — these are physical/synthesis primitives with no algorithmic behavior to model.
 - **syskit UNIT docs** for algorithmic pipeline modules are thin pointers to gs-twin source
 
 ## Commands
