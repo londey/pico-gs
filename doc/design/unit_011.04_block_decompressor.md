@@ -124,14 +124,14 @@ The UNIT-011 output contract is Q4.12 RGBA texel data.
 
 ## Implementation
 
-- `components/texture/detail/block-decoder/rtl/texture_bc1.sv`: BC1 decoder
-- `components/texture/detail/block-decoder/rtl/texture_bc2.sv`: BC2 decoder
-- `components/texture/detail/block-decoder/rtl/texture_bc3.sv`: BC3 decoder
-- `components/texture/detail/block-decoder/rtl/texture_bc4.sv`: BC4 single-channel decoder
-- `components/texture/detail/block-decoder/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder
-- `components/texture/detail/block-decoder/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
-- `components/texture/detail/block-decoder/rtl/texture_r8.sv`: R8 single-channel decoder
-- `components/texture/detail/block-decoder/rtl/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
+- `components/texture/detail/block-decoder/rtl/src/texture_bc1.sv`: BC1 decoder
+- `components/texture/detail/block-decoder/rtl/src/texture_bc2.sv`: BC2 decoder
+- `components/texture/detail/block-decoder/rtl/src/texture_bc3.sv`: BC3 decoder
+- `components/texture/detail/block-decoder/rtl/src/texture_bc4.sv`: BC4 single-channel decoder
+- `components/texture/detail/block-decoder/rtl/src/texture_rgb565.sv`: RGB565 uncompressed decoder
+- `components/texture/detail/block-decoder/rtl/src/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
+- `components/texture/detail/block-decoder/rtl/src/texture_r8.sv`: R8 single-channel decoder
+- `components/texture/detail/block-decoder/rtl/src/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
 - `shared/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).

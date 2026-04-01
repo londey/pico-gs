@@ -112,8 +112,8 @@ None
 
 ## Implementation
 
-- `components/display/rtl/tmds_encoder.sv`: TMDS 8b/10b encoder (one instance per channel)
-- `components/display/rtl/dvi_output.sv`: Top-level DVI output with 3 encoder instances and serialization
+- `components/display/rtl/src/tmds_encoder.sv`: TMDS 8b/10b encoder (one instance per channel)
+- `components/display/rtl/src/dvi_output.sv`: Top-level DVI output with 3 encoder instances and serialization
 
 ## Verification
 

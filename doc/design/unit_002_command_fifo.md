@@ -146,8 +146,8 @@ The boot screen rasterization (two clear triangles + one Gouraud triangle) compl
 
 ## Implementation
 
-- `components/utils/rtl/async_fifo.sv`: Custom soft FIFO with synthesis-time memory initialization (replaces previous Lattice EBR FIFO macro)
-- `components/spi/rtl/command_fifo.sv`: Wrapper/instantiation with boot sequence parameters
+- `components/utils/rtl/src/async_fifo.sv`: Custom soft FIFO with synthesis-time memory initialization (replaces previous Lattice EBR FIFO macro)
+- `components/spi/rtl/src/command_fifo.sv`: Wrapper/instantiation with boot sequence parameters
 
 ## Verification
 

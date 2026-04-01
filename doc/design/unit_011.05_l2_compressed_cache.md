@@ -142,8 +142,8 @@ See REQ-011.02 for the complete EBR budget across the GPU.
 
 ## Implementation
 
-- `components/texture/detail/l1-cache/rtl/texture_cache.sv`: L2 cache arrays, tag storage, format-aware addressing, fill FSM, and SDRAM burst request logic
-- `components/texture/detail/l2-cache/rtl/texture_l2_cache.sv`: L2 compressed block cache (per-sampler direct-mapped cache)
+- `components/texture/detail/l1-cache/rtl/src/texture_cache_l1.sv`: L1 cache arrays, tag storage, format-aware addressing, fill FSM, and SDRAM burst request logic
+- `components/texture/detail/l2-cache/rtl/src/texture_l2_cache.sv`: L2 compressed block cache (per-sampler direct-mapped cache)
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
 The RTL L2 addressing, tag matching, and fill protocol must be bit-identical to the twin.

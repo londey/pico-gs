@@ -160,12 +160,12 @@ Metadata staleness (pixel pipeline writes not yet visible to the rasterizer for 
 
 ## Implementation
 
-- `components/rasterizer/rtl/raster_hiz_meta.sv`: Hi-Z block metadata store — 8 DP16KD instantiations in 36x512 mode, address decode, slot mux, fast-clear FSM (writes sentinel 9'h1FF to all slots), read port (Port A) for rasterizer Hi-Z queries, write port (Port B) for pixel pipeline min_z updates.
+- `components/rasterizer/rtl/src/raster_hiz_meta.sv`: Hi-Z block metadata store — 8 DP16KD instantiations in 36x512 mode, address decode, slot mux, fast-clear FSM (writes sentinel 9'h1FF to all slots), read port (Port A) for rasterizer Hi-Z queries, write port (Port B) for pixel pipeline min_z updates.
 - `shared/gs-twin-core/src/hiz.rs`: Digital twin — `HizMetadata` struct (new/reset_all/read/update) modeling the 16,384-entry metadata store; shared by rasterizer (read) and pixel-write (update).
-- `components/pixel-write/rtl/pixel_pipeline.sv`: RTL — drives Hi-Z metadata write port (hiz_wr_en, hiz_wr_tile_index, hiz_wr_new_z_hi) on Z-buffer write cycles.
+- `components/pixel-write/rtl/src/pixel_pipeline.sv`: RTL — drives Hi-Z metadata write port (hiz_wr_en, hiz_wr_tile_index, hiz_wr_new_z_hi) on Z-buffer write cycles.
 - `components/pixel-write/twin/src/lib.rs`: Digital twin — Hi-Z metadata update on Z-write (write port consumer).
 - `integration/gs-twin/src/lib.rs`: Digital twin orchestrator — wires `HizMetadata` through the rasterizer (Hi-Z rejection) and pixel-write (metadata update) call sites; resets metadata to sentinel on Z-buffer MEM_FILL.
-- `components/rasterizer/rtl/rasterizer.sv`: RTL — instantiates `raster_hiz_meta`, wires read port to `raster_edge_walk` and exposes Hi-Z write/clear ports to `gpu_top`.
+- `components/rasterizer/rtl/src/rasterizer.sv`: RTL — instantiates `raster_hiz_meta`, wires read port to `raster_edge_walk` and exposes Hi-Z write/clear ports to `gpu_top`.
 - `integration/gpu_top.sv`: RTL — routes Hi-Z write signals from `pixel_pipeline` to `rasterizer`; detects Z-buffer MEM_FILL to generate `hiz_clear_req`; stalls command FIFO during `hiz_clear_busy`.
 
 ## Verification

@@ -90,7 +90,7 @@ The fractional blend weight `frag_lod[3:0]` is passed through unchanged to UNIT-
 
 ## Implementation
 
-- `components/texture/detail/uv-coord/rtl/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation
+- `components/texture/detail/uv-coord/rtl/src/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
 RTL behavior must be bit-identical to the twin at the texel coordinate level.

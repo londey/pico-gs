@@ -126,7 +126,7 @@ UNIT-006 (Pixel Pipeline)          UNIT-010 (Color Combiner)         Fragment Ou
 
 ## Implementation
 
-- `components/color-combiner/rtl/color_combiner.sv`: Two-stage programmable color combiner with 4-stage pipeline (2 per combiner cycle: mux+subtract, then multiply+add+saturate)
+- `components/color-combiner/rtl/src/color_combiner.sv`: Two-stage programmable color combiner with 4-stage pipeline (2 per combiner cycle: mux+subtract, then multiply+add+saturate)
 
 ## Verification
 

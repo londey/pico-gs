@@ -40,7 +40,7 @@ The active `TRI_MODE` and `FB_CONFIG` register values are latched at triangle ar
 
 ## Implementation
 
-- `components/rasterizer/rtl/rasterizer.sv`: Triangle Setup logic is contained in the parent rasterizer module.
+- `components/rasterizer/rtl/src/rasterizer.sv`: Triangle Setup logic is contained in the parent rasterizer module.
   Corresponds to the input acceptance logic, area sign check, and attribute latching that occurs before the SETUP FSM state sequence.
 
 ## Verification

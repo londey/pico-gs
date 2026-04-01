@@ -133,19 +133,19 @@ See DD-026 for the port 3 sharing rationale and latch-and-serialize scheme.
 
 ## Implementation
 
-- `components/texture/rtl/texture_sampler.sv`: Texture sampler assembly (wrap modes, bilinear address generation, blending)
-- `components/texture/detail/uv-coord/rtl/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation (UNIT-011.01)
-- `components/texture/detail/bilinear-filter/rtl/texture_bilinear.sv`: Bilinear weight computation and blending (UNIT-011.02)
-- `components/texture/detail/l1-cache/rtl/texture_cache.sv`: L1 decompressed cache + fill FSM, instantiated twice for 2 samplers (UNIT-011.03)
-- `components/texture/detail/l2-cache/rtl/texture_l2_cache.sv`: L2 compressed block cache (UNIT-011.05)
-- `components/texture/detail/block-decoder/rtl/texture_bc1.sv`: BC1 block decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texture_bc2.sv`: BC2 block decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texture_bc3.sv`: BC3 block decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texture_bc4.sv`: BC4 single-channel decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texture_rgb565.sv`: RGB565 uncompressed decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texture_rgba8888.sv`: RGBA8888 uncompressed decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texture_r8.sv`: R8 single-channel decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (UNIT-011.04)
+- `components/texture/rtl/src/texture_sampler.sv`: Texture sampler assembly (wrap modes, bilinear address generation, blending)
+- `components/texture/detail/uv-coord/rtl/src/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation (UNIT-011.01)
+- `components/texture/detail/bilinear-filter/rtl/src/texture_bilinear.sv`: Bilinear weight computation and blending (UNIT-011.02)
+- `components/texture/detail/l1-cache/rtl/src/texture_cache_l1.sv`: L1 decompressed cache + fill FSM, instantiated twice for 2 samplers (UNIT-011.03)
+- `components/texture/detail/l2-cache/rtl/src/texture_l2_cache.sv`: L2 compressed block cache (UNIT-011.05)
+- `components/texture/detail/block-decoder/rtl/src/texture_bc1.sv`: BC1 block decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texture_bc2.sv`: BC2 block decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texture_bc3.sv`: BC3 block decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texture_bc4.sv`: BC4 single-channel decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texture_rgb565.sv`: RGB565 uncompressed decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texture_rgba8888.sv`: RGBA8888 uncompressed decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texture_r8.sv`: R8 single-channel decoder (UNIT-011.04)
+- `components/texture/detail/block-decoder/rtl/src/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (UNIT-011.04)
 - `shared/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions (shared package)
 
 The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
