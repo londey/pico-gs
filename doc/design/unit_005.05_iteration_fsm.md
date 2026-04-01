@@ -55,16 +55,17 @@ When `RENDER_MODE.Z_TEST_EN=1`, tiles that survive TILE_TEST enter HIZ_TEST befo
 1. Compute the 14-bit tile index: `tile_index = (tile_row << tile_cols_log2) | tile_col`, where `tile_cols_log2 = FB_CONFIG.WIDTH_LOG2 - 2`.
 2. Decode the index into block select `tile_index[13:11]`, word address `tile_index[10:2]`, and slot `tile_index[1:0]`.
 3. Assert a read request to UNIT-005.06 (Hi-Z Block Metadata); the read result is registered one cycle later.
-4. Extract the 9-bit metadata entry: `valid = entry[8]`, `min_z = entry[7:0]`.
-5. **Rejection condition:** If `valid=1` and `fragment_Z[15:8] > min_z`, reject the tile:
+4. Extract the 9-bit metadata entry: `min_z = entry[8:0]` (= Z[15:7] of the tile minimum depth).
+5. **Rejection condition:** If `min_z != 9'h1FF` (not the sentinel "unwritten" value) and `fragment_Z[15:7] > min_z`, reject the tile:
    - Step tile-origin accumulators to the next tile (same advance as TILE_TEST rejection).
    - Advance `tile_col` / `tile_row` and return to TILE_TEST.
    - No fragments are emitted; EDGE_TEST is not entered.
-6. If `valid=0` (cleared tile) or the Z comparison does not reject, proceed to EDGE_TEST.
+6. If `min_z == 9'h1FF` (sentinel — no Z-write yet since last clear) or the Z comparison does not reject, proceed to EDGE_TEST.
 
-The comparison is conservative: `min_z` stores `floor(tile_minimum_Z / 256)`, so a stored value of `N` represents real tile minimum Z in `[256·N, 256·N+255]`.
-A fragment with `fragment_Z[15:8] > N` is guaranteed to be farther than every pixel currently in the tile, making rejection safe.
-The tile is not rejected when `fragment_Z[15:8] == min_z`, even though some pixels in that bucket may already be closer — this avoids false rejections at bucket boundaries.
+The comparison is conservative: `min_z` stores `floor(tile_minimum_Z / 128)`, so a stored value of `N` represents real tile minimum Z in `[128·N, 128·N+127]`.
+A fragment with `fragment_Z[15:7] > N` is guaranteed to be farther than every pixel currently in the tile, making rejection safe.
+The tile is not rejected when `fragment_Z[15:7] == min_z`, even though some pixels in that bucket may already be closer — this avoids false rejections at bucket boundaries.
+The sentinel value `9'h1FF` prevents rejection of tiles not yet written since the last clear, regardless of the incoming fragment Z.
 
 **Bypass:** When `Z_TEST_EN=0`, the FSM transitions directly from TILE_TEST acceptance to EDGE_TEST; HIZ_TEST is never entered.
 
@@ -154,10 +155,10 @@ Key verification points for this sub-unit:
 
 - Verify 4×4 tile traversal order: confirm fragment emission order is tile-major (row-major tile order) then pixel-major (row-major within tile); cross-check against expected (x, y) sequence for a known bounding box.
 - Verify hierarchical tile rejection: for a triangle where a tile's four corners all lie outside one edge half-plane, confirm no fragments are emitted from that tile and the FSM advances to the next tile in one step.
-- **Verify HIZ_TEST rejection:** For a tile with `valid=1` and `stored_min_z < fragment_Z[15:8]`, confirm no fragments are emitted and the FSM advances to TILE_TEST for the next tile without entering EDGE_TEST.
-- **Verify HIZ_TEST conservatism:** For a tile where `fragment_Z[15:8] == stored_min_z`, confirm the tile is not rejected and proceeds to EDGE_TEST.
+- **Verify HIZ_TEST rejection:** For a tile with `stored_min_z != 9'h1FF` and `stored_min_z < fragment_Z[15:7]`, confirm no fragments are emitted and the FSM advances to TILE_TEST for the next tile without entering EDGE_TEST.
+- **Verify HIZ_TEST conservatism:** For a tile where `fragment_Z[15:7] == stored_min_z`, confirm the tile is not rejected and proceeds to EDGE_TEST.
 - **Verify HIZ_TEST bypass:** When `Z_TEST_EN=0`, confirm the FSM transitions directly from TILE_TEST acceptance to EDGE_TEST without a HIZ_TEST cycle.
-- **Verify HIZ_TEST on cleared tile (`valid=0`):** Confirm the tile is not rejected and proceeds to EDGE_TEST (lazy-fill path).
+- **Verify HIZ_TEST on cleared tile (sentinel `min_z == 9'h1FF`):** Confirm the tile is not rejected and proceeds to EDGE_TEST.
 - Verify perspective correction accuracy: for a known Q/W value and S/T inputs, confirm U, V outputs match the analytic S×(1/Q), T×(1/Q) within Q4.12 rounding tolerance.
 - Verify frag_lod (UQ4.4): confirm CLZ(Q) matches the expected mip-level estimate for Q values at power-of-two boundaries and intermediate values.
 - Verify block framing: confirm frag_tile_start and frag_tile_end assert at the correct fragment positions for tiles with varying numbers of inside pixels.

@@ -134,9 +134,12 @@ The integration harness drives the following register-write sequence into UNIT-0
 11. **Hi-Z functional transparency assertion:**
     With Hi-Z enabled, the rendered output must be pixel-exactly identical to the approved golden image.
     Hi-Z tile rejection must not cause false discards: any 4×4 tile that contains fragments from Triangle B (which passes the depth test) must not be entirely rejected.
-    The overlap region, which contains tiles covered by both triangles at different depths, exercises the Hi-Z metadata update path (min_z updated on Triangle A Z-writes) and subsequent Hi-Z comparison on Triangle B fragments.
-    A non-zero Hi-Z tile rejection count is expected for tiles covered only by Triangle A after Triangle B has been rasterized (tiles where Triangle A's Z=`0x8000` exceeds Triangle B's stored min_z=`0x4000`).
-    Log or assert that the Hi-Z rejection counter is greater than zero to confirm the mechanism is active.
+    The overlap region, which contains tiles covered by both triangles at different depths, exercises the Hi-Z metadata update path (the 9-bit min_z field, storing Z[15:7], is updated on Z-writes) and subsequent Hi-Z comparison on Triangle B fragments.
+    Before rendering begins, all Hi-Z metadata entries hold the sentinel value 9'h1FF (all-ones, meaning no writes yet); the Z-cache uninitialized flag EBR in UNIT-006 is also set to all-ones so that the first access to any tile supplies 0xFFFF via lazy initialization rather than reading SDRAM.
+    After Triangle A is rendered, tiles covered by Triangle A hold min_z = Z[15:7] of `0x8000`; tiles outside Triangle A retain the sentinel 9'h1FF and are not rejected by Hi-Z.
+    A non-zero Hi-Z tile rejection count is expected: when Triangle A is re-rasterized or any subsequent geometry with Z > the stored min_z hits those tiles, Hi-Z rejection fires.
+    In the standard two-triangle sequence, rejection is observed at tiles within Triangle A's region when rendering Triangle B confirms that min_z (`0x80` from Triangle A Z=`0x8000`) is updated, and any geometry with Z[15:7] > `0x80` on those tiles would be rejected.
+    Log or assert that the Hi-Z rejection counter is greater than zero to confirm the mechanism is active during the test.
 
 ## Expected Results
 

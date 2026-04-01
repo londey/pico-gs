@@ -224,10 +224,14 @@ Register encoding: `COLOR_BASE = 0x0400` (address >> 9).
 **Note**: Z-buffer accesses are absorbed by the Z-buffer tile cache (4-way, 16 sets, 4×4 tiles) in UNIT-006.
 Only cache misses and dirty-line evictions generate SDRAM traffic via the arbiter.
 
-**Hi-Z fast clear**: When the Z-buffer is cleared via the Hi-Z fast-clear mechanism, the Hi-Z metadata in EBR is bulk-invalidated rather than writing 0xFFFF to every SDRAM location.
-The Z-buffer SDRAM region is initialized lazily: on first access to any 4×4 tile after a clear, the Z-cache fill path writes the tile with 0xFFFF before returning it to the pipeline.
-Until a tile is accessed, its SDRAM contents are uninitialized after a fast clear.
+**Hi-Z fast clear**: When the Z-buffer is cleared via the Hi-Z fast-clear mechanism, a two-phase invalidation pass is performed rather than writing 0xFFFF to every SDRAM location.
+Phase 1: The Hi-Z metadata EBR in UNIT-005.06 is swept with a sentinel min_z value of 0x1FF (all-ones, meaning "no writes yet") in approximately 512 cycles.
+Phase 2: The Z-cache uninitialized flag EBR in UNIT-006 is reset to all-ones (all 16,384 flags set) in approximately 512 cycles.
+Both phases run independently and may overlap.
+The Z-buffer SDRAM region is initialized lazily: on first access to any 4×4 tile after a clear, the Z-cache consults its uninitialized flag (UNIT-006); if the flag is set, the fill path supplies 0xFFFF for all 16 Z values and clears the flag, without reading SDRAM.
+Until a tile is first accessed, its SDRAM contents are not read.
 The 4×4 block-tiled layout serves double duty as the Hi-Z tile granularity: each SDRAM block corresponds directly to one Hi-Z metadata entry.
+The uninitialized flag for each 4×4 tile is owned by the Z-cache (UNIT-006), not the Hi-Z metadata (UNIT-005.06).
 
 **4K Alignment**: 0x100000 = 1,048,576 = 256 × 4096, aligned.
 Register encoding: `Z_BASE = 0x0800` (address >> 9).
@@ -445,8 +449,8 @@ Expected hit rate: 85–95% for typical scenes, reducing Z-buffer SDRAM traffic 
 
 **SDRAM Access Sequence** (cache miss):
 1. Dirty line eviction: 16-word burst write to the evicted tile's address (~22 cycles)
-2. New line fill: 16-word burst read from the new tile's address (~23 cycles); for tiles accessed for the first time after a Hi-Z fast clear, the fill writes 0xFFFF to all 16 words before returning the tile (lazy initialization)
-3. Total cache miss cost: ~45 cycles, amortized over up to 16 subsequent Z hits
+2. New line fill: UNIT-006 checks the uninitialized flag for the tile; if set, the fill supplies 0xFFFF for all 16 Z values and clears the flag without reading SDRAM (lazy initialization after a Hi-Z fast clear); if clear, a 16-word burst read from the tile's SDRAM address is issued (~23 cycles)
+3. Total cache miss cost: ~45 cycles for a normal fill, or ~22 cycles for an uninitialized-flag fill (no SDRAM read needed), amortized over up to 16 subsequent Z hits
 
 **Z-Buffer Access Sequence** (with early Z-test and Hi-Z, per pipeline stage):
 

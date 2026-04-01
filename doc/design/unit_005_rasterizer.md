@@ -66,7 +66,7 @@ All fragment output goes through the pixel pipeline (UNIT-006) for early Z-test,
 
 - Triangle setup reciprocal module (`raster_recip_area.sv`): 1 DP16KD in 36×512 mode, 9-bit CLZ index, UQ1.17 seed + UQ0.17 delta linear interpolation, signed input with CLZ on 22-bit magnitude; produces UQ4.14 inv_area (18-bit); optional compile-time Newton-Raphson refinement (1 MULT18X18D, 2-3 extra cycles)
 - Per-pixel 1/Q reciprocal module (`raster_recip_q.sv`): 1 DP16KD in 18×1024 mode, 10-bit CLZ index, UQ1.17 entries, unsigned input only; 2-cycle latency (BRAM read + MULT18X18D interpolation); produces UQ4.14 output (18-bit)
-- **Hi-Z metadata store** (`raster_hiz_meta.sv`): 8 DP16KD blocks in 36×512 mode, storing 16,384 tile metadata entries packed 4 per 36-bit word; each 9-bit entry holds 1 valid bit and 8-bit truncated min_z (Z[15:8] of the minimum Z seen in the tile); the 14-bit tile index is decoded as `tile_index[13:11]` → block select, `tile_index[10:2]` → word address, `tile_index[1:0]` → slot within word; all 8 blocks share the same address bus and clear in 512 cycles (fast-clear path)
+- **Hi-Z metadata store** (`raster_hiz_meta.sv`): 8 DP16KD blocks in 36×512 mode, storing 16,384 tile metadata entries packed 4 per 36-bit word; each 9-bit entry holds `min_z = tile_min_z[15:7]` (9-bit truncated minimum Z); sentinel `9'h1FF` means no Z-write since last clear; the 14-bit tile index is decoded as `tile_index[13:11]` → block select, `tile_index[10:2]` → word address, `tile_index[1:0]` → slot within word; all 8 blocks share the same address bus and reset to sentinel in 512 cycles (fast-clear path)
 - Setup-iteration overlap FIFO: compile-time configurable depth (default 2) register-based FIFO holding complete triangle setup results (~730 bits: edge coefficients A/B/C × 3, bbox min/max, inv_area, vertex attributes); allows setup of triangle N+1 to overlap with iteration of triangle N
 - Edge-walking state machine registers
 - Edge function accumulators (e0, e1, e2) and row-start registers (e0_row, e1_row, e2_row) for incremental stepping
@@ -90,7 +90,7 @@ All fragment output goes through the pixel pipeline (UNIT-006) for early Z-test,
 
 3. **Tile-Ordered Traversal** (inner loop): Walk the bounding box in 4×4 tile order — advance pixel-by-pixel within a 4×4 tile, then advance to the next tile horizontally, then vertically.
    At the start of each 4×4 tile, test edge functions at the four tile corners using the accumulated e0/e1/e2 values; when all four corners are outside the same edge half-plane, reject the entire tile without emitting fragments.
-   When `RENDER_MODE.Z_TEST_EN=1` and the tile is not edge-rejected, perform a Hi-Z metadata lookup (HIZ_TEST state): compute `tile_index = (tile_row << tile_cols_log2) | tile_col`; read the 9-bit metadata entry from the Hi-Z metadata store; if `valid=1` and `fragment_Z[15:8] > stored_min_z`, reject the entire tile without emitting any fragments (tile-level Z pre-rejection).
+   When `RENDER_MODE.Z_TEST_EN=1` and the tile is not edge-rejected, perform a Hi-Z metadata lookup (HIZ_TEST state): compute `tile_index = (tile_row << tile_cols_log2) | tile_col`; read the 9-bit metadata entry from the Hi-Z metadata store; if `min_z != 9'h1FF` (not the sentinel) and `fragment_Z[15:7] > stored_min_z`, reject the entire tile without emitting any fragments (tile-level Z pre-rejection).
 
 4. **Pixel Test** (EDGE_TEST, per pixel within accepted tiles): Check e0/e1/e2 ≥ 0 (inside triangle); no multiply required.
 
@@ -133,14 +133,14 @@ UNIT-005 decomposes internally into six functional sub-units, each documented in
 - [UNIT-005.03: Derivative Pre-computation](unit_005.03_derivative_precomputation.md)
 - [UNIT-005.04: Attribute Accumulation](unit_005.04_attribute_accumulation.md)
 - [UNIT-005.05: Iteration FSM](unit_005.05_iteration_fsm.md)
-- [UNIT-005.06: Hi-Z Block Metadata](unit_005.06_hiz_block_metadata.md) — 8-DP16KD metadata store, fast-clear, lazy-fill protocol, and Hi-Z tile rejection interface
+- [UNIT-005.06: Hi-Z Block Metadata](unit_005.06_hiz_block_metadata.md) — 8-DP16KD metadata store, fast-clear (sentinel sweep), and Hi-Z tile rejection interface; lazy-fill is owned by UNIT-006
 
 ## Implementation
 
 - `components/rasterizer/rtl/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
 - `components/rasterizer/rtl/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
 - `components/rasterizer/rtl/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
-- `components/rasterizer/rtl/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — 8 DP16KD (36×512), 16,384-entry packed metadata (1 valid + 8-bit min_z per tile), fast-clear (512-cycle invalidation), lazy-fill protocol, Hi-Z tile rejection read/write interface.
+- `components/rasterizer/rtl/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — 8 DP16KD (36×512), 16,384-entry packed metadata (9-bit min_z per tile, sentinel `9'h1FF` for unwritten tiles), fast-clear (512-cycle sentinel-write sweep), Hi-Z tile rejection read/write interface.
 - `components/rasterizer/rtl/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.03), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
 - `components/rasterizer/rtl/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.03 latching / UNIT-005.04).
 - `components/rasterizer/rtl/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
@@ -166,11 +166,11 @@ Key verification points:
 - Verify 4×4 tile traversal order: confirm fragment emission order follows tile-major then pixel-minor order; verify hierarchical tile rejection suppresses entire tiles when all four corners lie outside a single edge half-plane
 - Verify the fragment output bus carries correct (x, y, z, color0, color1, uv0, uv1, lod) values and valid/ready handshake operates correctly
 - Test degenerate triangles (zero area, single-pixel, off-screen)
-- **Hi-Z metadata correctness:** For a tile whose stored `valid=1` and `min_z` is greater than `fragment_Z[15:8]`, confirm no fragments are emitted from that tile and the FSM advances directly to the next tile (HIZ_TEST rejection path).
+- **Hi-Z metadata correctness:** For a tile whose `min_z != 9'h1FF` and `min_z` is less than `fragment_Z[15:7]`, confirm no fragments are emitted from that tile and the FSM advances directly to the next tile (HIZ_TEST rejection path).
 - **Hi-Z conservatism (no false rejections):** For a tile where the incoming fragment Z equals or exceeds the stored `min_z` bucket boundary, confirm the tile is not rejected (truncation ensures the stored min_z is always ≤ the true tile minimum).
 - **Hi-Z bypass when Z_TEST_EN=0:** Confirm HIZ_TEST state is not entered and all tiles proceed to edge testing regardless of metadata content.
-- **Hi-Z metadata update:** After a Z-write to a tile reduces the tile minimum, confirm the metadata `min_z` is updated to `new_z[15:8]` on the next update cycle.
-- **Fast-clear:** After the 512-cycle metadata invalidation pass, confirm all `valid` bits read as 0 and subsequent tile accesses trigger lazy-fill rather than SDRAM reads.
+- **Hi-Z metadata update:** After a Z-write to a tile reduces the tile minimum, confirm the metadata `min_z` is updated to `new_z[15:7]` on the next update cycle.
+- **Fast-clear:** After the 512-cycle sentinel-write pass, confirm all entries read as `9'h1FF` and subsequent tile accesses via UNIT-006 trigger lazy-fill rather than SDRAM reads.
 - **Rejection statistics:** For a scene with a provably occluded tile (e.g., two overlapping triangles with the back triangle at greater Z), confirm the Hi-Z rejection count is non-zero.
 - VER-014 (Textured Cube Golden Image Test)
 - VER-010 (Gouraud Triangle Golden Image Test)
@@ -190,15 +190,16 @@ Each 4×4 tile corresponds to a contiguous 4×4 block of screen pixels; fragment
 The tile stride depends on `FB_CONFIG.WIDTH_LOG2`, which sets the number of tiles per row as `1 << (WIDTH_LOG2 - 2)`.
 Hierarchical tile rejection allows the FSM to skip entire tiles in a single step when the tile is provably outside the triangle.
 
-**Hi-Z block metadata (UNIT-005.06):** The rasterizer maintains a per-tile metadata array in 8 DP16KD blocks that records whether each 4×4 Z-buffer tile has been written (`valid`) and the minimum Z seen in that tile (8-bit truncated `min_z = tile_min_z[15:8]`).
+**Hi-Z block metadata (UNIT-005.06):** The rasterizer maintains a per-tile metadata array in 8 DP16KD blocks that records the minimum Z seen in each 4×4 Z-buffer tile (9-bit truncated `min_z = tile_min_z[15:7]`).
+A sentinel value of `9'h1FF` (all-ones) indicates no Z-write has reached the tile since the last clear.
 This enables two optimizations operating at tile granularity, complementary to the per-pixel early Z-test in UNIT-006:
 
 1. **Hi-Z tile rejection (HIZ_TEST state):** When `Z_TEST_EN=1`, after a tile passes the edge half-plane test, the FSM checks the Hi-Z metadata before entering pixel-level EDGE_TEST.
-   If the tile metadata is valid and the incoming triangle Z (at tile granularity) is greater than the stored `min_z` bucket, the entire tile is rejected without emitting any fragments.
-   The comparison uses `fragment_Z[15:8] > stored_min_z`, which is conservative: because `min_z` is the truncated (floor) minimum, the stored value never exceeds the true minimum, so no visible fragment is incorrectly rejected.
+   If the tile's `min_z` is not the sentinel and the incoming triangle Z (at tile granularity) is greater than the stored `min_z` bucket, the entire tile is rejected without emitting any fragments.
+   The comparison uses `fragment_Z[15:7] > stored_min_z`, which is conservative: because `min_z` is the truncated (floor) minimum, the stored value never exceeds the true minimum, so no visible fragment is incorrectly rejected.
 
-2. **Fast clear:** Clearing the Hi-Z metadata (setting `valid=0` for all 16,384 tiles) requires only 512 write cycles — one word per DP16KD address, all 8 blocks in parallel — versus ~266,000 cycles for a full SDRAM MEM_FILL clear.
-   On first access to a cleared tile, the Z-cache performs a lazy fill from the stored clear value rather than reading SDRAM (see UNIT-006 Z-cache design notes).
+2. **Fast clear:** Resetting the Hi-Z metadata (writing sentinel `9'h1FF` to all 16,384 tile entries) requires only 512 write cycles — one word per DP16KD address, all 8 blocks in parallel — versus ~266,000 cycles for a full SDRAM MEM_FILL clear.
+   Uninitialized-tile tracking and lazy-fill are handled by UNIT-006's dedicated uninitialized flag EBR; UNIT-005.06 only tracks `min_z`.
 
 The 8-DP16KD budget (each in 36×512 mode) covers all 128×128 = 16,384 tiles in a 512×512 surface at 4 entries per 36-bit word.
 See `doc/reports/zbuffer_dp16k_block_metadata.md` for the full sizing and addressing analysis.

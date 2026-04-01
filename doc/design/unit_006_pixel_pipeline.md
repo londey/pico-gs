@@ -84,7 +84,12 @@ UNIT-011 delivers texel data to UNIT-006 already in Q4.12 format; UNIT-006 passe
 ### Internal State
 
 - Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, write-back)
-- Hi-Z metadata update channel: on every Z-write (when `Z_WRITE_EN=1` and the fragment passes all tests), the pixel pipeline sends the written Z value and tile index to UNIT-005.06 (Hi-Z Block Metadata); if the new Z is less than the stored `min_z` bucket value, the metadata entry is updated to `min_z = new_z[15:8]`
+- **Uninitialized flag EBR:** a 128×128 1-bit array (one flag per 4×4 tile, matching the Hi-Z metadata tile grid) stored in one additional DP16KD in 32×512 mode (32-bit wide, 512 addresses × 32 bits = 16,384 bits).
+  A set flag (1) means the tile has not been written since the last Z-buffer clear; a cleared flag (0) means the tile has been written at least once.
+  On Z-buffer MEM_FILL clear, a 512-cycle sweep sets all flags to 1.
+  On first Z-write to a tile (flag is 1), the Z-cache supplies 0xFFFF (far plane) as the effective stored Z instead of reading SDRAM (lazy-fill), then clears the flag to 0.
+  Subsequent accesses to the same tile read and write SDRAM normally.
+- Hi-Z metadata update channel: on every Z-write (when `Z_WRITE_EN=1` and the fragment passes all tests), the pixel pipeline sends the written Z value and tile index to UNIT-005.06 (Hi-Z Block Metadata); if the new Z is less than the stored `min_z` bucket value (`new_z[15:7] < stored_min_z`), the metadata entry is updated to `min_z = new_z[15:7]`
 
 ### Algorithm / Behavior
 
@@ -103,7 +108,7 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
   - No SDRAM access required (register comparison only)
   - When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF: all fragments pass (effectively disabled)
 - **Early Z-Test** (REQ-005.07, RENDER_MODE.Z_COMPARE):
-  - Read Z-buffer tile cache; issue SDRAM burst on miss
+  - Read Z-buffer tile cache; on cache miss, check the uninitialized flag EBR for the tile: if the flag is set (tile not yet written since last clear), supply 0xFFFF as the effective stored Z (lazy-fill) without reading SDRAM, then clear the flag; otherwise issue an SDRAM burst fill
   - Compare fragment Z against Z-buffer using Z_COMPARE function
   - If test fails: discard fragment, skip all subsequent stages
   - **Bypass conditions**: Early Z-test is skipped (fragment always passes) when:
@@ -141,7 +146,7 @@ See UNIT-011 for the detailed texture sampling design.
 - Extract UNORM: R5 = clamp(color.R × 31, 0, 31), G6 = clamp(color.G × 63, 0, 63), B5 = clamp(color.B × 31, 0, 31)
 - Pack into RGB565
 - If RENDER_MODE.COLOR_WRITE_EN=1 and pixel inside scissor: write color to tiled framebuffer at FB_CONFIG address
-- If RENDER_MODE.Z_WRITE_EN=1: write Z value to Z-buffer tile cache (write-back to SDRAM); additionally, send the written Z and tile index to UNIT-005.06 (Hi-Z Block Metadata) via the Hi-Z update channel — if `new_z[15:8] < stored_min_z` (or `valid=0`), the metadata entry is updated to record the new minimum
+- If RENDER_MODE.Z_WRITE_EN=1: write Z value to Z-buffer tile cache (write-back to SDRAM); if the tile's uninitialized flag is still set, clear it now (the tile has been written for the first time since the last clear); additionally, send the written Z and tile index to UNIT-005.06 (Hi-Z Block Metadata) via the Hi-Z update channel — if `new_z[15:7] < stored_min_z`, the metadata entry is updated to record the new minimum
 - Alpha channel is discarded (RGB565 has no alpha storage)
 
 ### Tiled Framebuffer Address Calculation
@@ -226,4 +231,5 @@ UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occur
 - Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
 - FB promotion: ~200-400 LUTs (combinational)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
+- Uninitialized flag EBR: 1 DP16KD in 32×512 mode (16,384 1-bit flags for 128×128 tile grid)
 - Total pipeline latency: ~13-16 cycles at 100 MHz (130-160 ns), fully pipelined, 1 pixel/cycle throughput (100 Mpixels/sec peak)

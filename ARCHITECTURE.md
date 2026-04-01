@@ -314,19 +314,24 @@ The cache controller reuses the same set-associative structure, XOR set indexing
 ### Hierarchical Z (Hi-Z) Block Metadata
 
 A second tier of depth culling operates at 4×4 tile granularity in the rasterizer (UNIT-005.05), upstream of the per-pixel early Z test in UNIT-006.
-Eight DP16KD blocks store per-tile metadata: one valid bit and an 8-bit truncated min_z value per tile, packed four entries per 36-bit word.
-The rasterizer's FSM enters the HIZ_TEST state after TILE_TEST passes; if the tile's stored min_z exceeds the incoming fragment Z under the active comparison function, the entire tile is skipped without entering EDGE_TEST or emitting any fragments.
+Eight DP16KD blocks store per-tile metadata: a 9-bit min_z value (Z[15:7] of the minimum Z written to the tile) per entry, packed four entries per 36-bit word.
+A sentinel value of 9'h1FF (all-ones) means no Z-writes have occurred to that tile since the last clear.
+The rasterizer's FSM enters the HIZ_TEST state after TILE_TEST passes; if the tile's stored min_z is not the sentinel and exceeds the incoming fragment Z[15:7] under the active comparison function, the entire tile is skipped without entering EDGE_TEST or emitting any fragments.
+
+The Z-cache (UNIT-006) holds a companion 128×128 1-bit uninitialized flag array in a separate DP16KD (32-bit wide, 512 addresses, 16,384 flags).
+This flag tracks whether each 4×4 tile has been written since the last clear; its ownership in UNIT-006 keeps it co-located with the Z-cache logic that consumes it for lazy initialization.
 
 This enables two optimizations:
 
 - **Hierarchical Z rejection:** Entire 4×4 tiles are discarded before SDRAM or texture traffic is generated, saving all downstream pipeline work for occluded geometry.
-- **Fast Z clear:** The metadata array is bulk-invalidated (all valid bits cleared) instead of writing 0xFFFF to every Z-buffer SDRAM location, reducing Z-clear time by approximately 520× (from ~2.66 ms to ~5.12 µs).
-  The Z-buffer SDRAM region is initialized lazily: the first cache miss after a fast clear writes 0xFFFF to the tile before returning it.
+- **Fast Z clear:** A two-phase EBR invalidation replaces bulk SDRAM writes: UNIT-005.06 sweeps the Hi-Z metadata with the sentinel value 9'h1FF (~512 cycles), and UNIT-006 resets the uninitialized flag EBR to all-ones (~512 cycles, concurrently).
+  The Z-buffer SDRAM region is initialized lazily: the first cache miss after a fast clear checks the uninitialized flag; if set, the Z-cache supplies 0xFFFF for the tile without reading SDRAM and clears the flag.
+  Z-clear time is reduced by approximately 520× (from ~2.66 ms to ~5.12 µs).
 
-The Hi-Z metadata is updated on every Z-write: if the written Z value is less than the stored min_z for that tile, the metadata min_z is updated.
+The Hi-Z metadata is updated on every Z-write: if the written Z[15:7] is less than the stored min_z for that tile, the metadata min_z is updated.
 Hi-Z is bypassed when Z_TEST_EN=0 or Z_COMPARE=ALWAYS (no rejection possible without a meaningful depth threshold).
 
-**Cost:** 8 EBR (DP16KD, 36-bit wide), ~200–300 LUTs.
+**Cost:** 8 EBR (DP16KD, 36-bit wide) for Hi-Z metadata + 1 EBR (DP16KD, 32-bit wide) for Z-cache uninitialized flags, ~200–300 LUTs.
 
 ### Burst Coalescing
 
@@ -347,7 +352,8 @@ The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16K
 | Texture L1 decoded (2 samplers) | 8 | 4 per sampler; PDPW16KD 512×36 (UQ1.8) |
 | Texture L2 compressed (2 samplers) | 8 | 4 per sampler; DP16KD 1024×16 (64-bit entries) |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
-| Hi-Z block metadata | 8 | DP16KD 36-bit wide; 1 valid bit + 8-bit min_z per tile, 4 entries per word |
+| Z-cache uninitialized flags | 1 | DP16KD 32-bit wide; 16,384 1-bit flags as 512 words (UNIT-006) |
+| Hi-Z block metadata | 8 | DP16KD 36-bit wide; 9-bit min_z per tile (Z[15:7], sentinel 0x1FF), 4 entries per word |
 | Command FIFO | 2 | 512×72 async CDC |
 | Reciprocal LUT (area) | 1 | DP16KD 36×512, inv_area seed+delta |
 | Reciprocal LUT (1/Q) | 1 | DP16KD 18×1024, per-pixel 1/Q |
@@ -355,7 +361,7 @@ The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16K
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | FB write buffer | 1 | Single-tile coalescing buffer |
-| **Total** | **36–37** | **of 56 available (ECP5-25K)** |
+| **Total** | **37–38** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 

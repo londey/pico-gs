@@ -124,8 +124,11 @@ Hi-Z tile rejection (UNIT-005.06) adds a further reduction in Port 2 traffic: en
 This is additive with the per-pixel early Z reduction and operates at tile granularity upstream of the pixel pipeline.
 
 **Z-Buffer Clear Bandwidth Note:**
-The Hi-Z fast-clear path (UNIT-005.06) replaces bulk SDRAM MEM_FILL Z-buffer initialization with an EBR invalidation pass that completes in 512 cycles (all 8 DP16KD blocks written in parallel, one word per address step).
-After fast-clear, the Z-buffer SDRAM region is not pre-written; instead, a lazy-fill policy initializes each 4×4 tile's SDRAM data on first write-back (see UNIT-006 Z-cache design notes for the lazy-fill protocol).
+The Hi-Z fast-clear path replaces bulk SDRAM MEM_FILL Z-buffer initialization with a two-phase EBR invalidation.
+Phase 1: UNIT-005.06 sweeps its Hi-Z metadata EBR with a sentinel min_z value (0x1FF = all-ones, meaning "no writes yet") in approximately 512 cycles (all 8 DP16KD blocks in parallel, one word per address step).
+Phase 2: UNIT-006 resets its 128×128 uninitialized flag EBR to all-ones (all 16,384 flags set) in approximately 512 cycles (32-bit wide, 512 addresses).
+Both phases may run concurrently.
+After fast-clear, the Z-buffer SDRAM region is not pre-written; instead, a lazy-fill policy in UNIT-006 initializes each 4×4 tile on first access by consulting the uninitialized flag EBR and supplying 0xFFFF without reading SDRAM (see UNIT-006 Z-cache design notes for the lazy-fill protocol).
 As a result, Z-buffer clear operations no longer generate any Port 2 SDRAM traffic — the bandwidth previously consumed by MEM_FILL (~266,000 write cycles per full 512×512 Z-buffer clear) is eliminated.
 The arbiter logic is unchanged; the bandwidth reduction is purely a consequence of the access pattern change in UNIT-006 and UNIT-005.06.
 
