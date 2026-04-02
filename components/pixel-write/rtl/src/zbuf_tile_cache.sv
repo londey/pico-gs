@@ -354,6 +354,7 @@ module zbuf_tile_cache (
     reg [SET_BITS-1:0]  fill_set;         // Set being filled or evicted
     reg [TAG_WIDTH-1:0] fill_tag;         // Tag for the fill
     reg                 fill_hiz_uninit;  // Lazy-fill flag
+    reg                 evict_req_sent;   // Burst write request already sent
 
     // ====================================================================
     // Hi-Z Tracking Registers
@@ -456,9 +457,12 @@ module zbuf_tile_cache (
                 //   W14: controller captures word 14.  wdata_req=1.
                 //        sdram_wr_data ← word 15.  No pre-read (14+2>15).
                 //   W15: controller captures word 15.  wdata_req=0.  Done.
-                if (word_count == 4'd0 && !sdram_wr_req) begin
+                if (word_count == 4'd0 && !evict_req_sent) begin
                     // Initial: pre-read word 1 (word 0 already in porta_rdata
-                    // from S_TAG_RD pre-read)
+                    // from S_TAG_RD pre-read).  Use evict_req_sent (not
+                    // sdram_wr_req) to ensure this fires only once — after
+                    // sdram_wr_req is deasserted, porta_rdata has already
+                    // advanced to word 1 and must not overwrite sdram_wr_data.
                     porta_re   = 1'b1;
                     porta_addr = {fill_way, fill_set, 4'd1};
                 end else if (sdram_burst_wdata_req && word_count <= 4'd13) begin
@@ -506,7 +510,7 @@ module zbuf_tile_cache (
 
             S_FLUSH_WB: begin
                 // Burst writeback: same pipeline as S_EVICT
-                if (word_count == 4'd0 && !sdram_wr_req) begin
+                if (word_count == 4'd0 && !evict_req_sent) begin
                     porta_re   = 1'b1;
                     porta_addr = {fill_way, fill_set, 4'd1};
                 end else if (sdram_burst_wdata_req && word_count <= 4'd13) begin
@@ -674,6 +678,7 @@ module zbuf_tile_cache (
             fill_set        <= '0;
             fill_tag        <= '0;
             fill_hiz_uninit <= 1'b0;
+            evict_req_sent  <= 1'b0;
             req_is_write    <= 1'b0;
             req_tile_idx    <= 14'd0;
             req_pixel_off   <= 4'd0;
@@ -735,9 +740,10 @@ module zbuf_tile_cache (
                 // S_IDLE — Accept new request, fast/slow path split
                 // ========================================================
                 S_IDLE: begin
-                    sdram_rd_req <= 1'b0;
-                    sdram_wr_req <= 1'b0;
-                    word_count   <= 4'd0;
+                    sdram_rd_req   <= 1'b0;
+                    sdram_wr_req   <= 1'b0;
+                    word_count     <= 4'd0;
+                    evict_req_sent <= 1'b0;
 
                     if (rd_req || wr_req) begin
                         // Latch request
@@ -808,19 +814,25 @@ module zbuf_tile_cache (
                 //   W14: wdata_req=1, sdram_wr_data ← word 14, pre-read word 15
                 //   W15: wdata_req=0, controller captures word 15
                 S_EVICT: begin
-                    if (word_count == 4'd0 && !sdram_wr_req) begin
-                        // Issue burst request: base address for pixel_off=0.
-                        // Assert req for exactly 1 cycle — the arbiter latches
-                        // it and runs the full burst_len=16 burst.
-                        sdram_wr_req  <= 1'b1;
-                        sdram_wr_addr <= tile_byte_addr(
+                    if (word_count == 4'd0 && !evict_req_sent) begin
+                        // First entry: capture word 0 data from the S_TAG_RD
+                        // pre-read and issue burst request.  evict_req_sent
+                        // prevents sdram_wr_data from being re-latched on
+                        // subsequent cycles — by then, porta_rdata has
+                        // advanced to word 1 from the combinational pre-read.
+                        sdram_wr_req   <= 1'b1;
+                        sdram_wr_addr  <= tile_byte_addr(
                             evict_tile_idx, 4'd0,
                             fb_z_base, fb_width_log2);
-                        // Word 0 from S_TAG_RD pre-read
-                        sdram_wr_data <= porta_rdata;
-                        evict_min_z   <= porta_rdata;
+                        sdram_wr_data  <= porta_rdata;
+                        evict_min_z    <= porta_rdata;
+                        evict_req_sent <= 1'b1;
+                    end else if (evict_req_sent && !sdram_ready && word_count == 4'd0) begin
+                        // Arbiter busy — keep req asserted until granted.
+                        // Do NOT re-latch sdram_wr_data.
+                        sdram_wr_req <= 1'b1;
                     end else if (sdram_wr_req) begin
-                        // Deassert req after 1 cycle — burst is in flight
+                        // Arbiter granted — deassert req, burst is in flight
                         sdram_wr_req <= 1'b0;
                     end
 
@@ -992,11 +1004,12 @@ module zbuf_tile_cache (
                 // S_FLUSH_TAG — Tag EBR data ready, set up writeback
                 // ========================================================
                 S_FLUSH_TAG: begin
-                    evict_tag_r <= tag_rdata_by_way(flush_way_ctr);
-                    fill_way    <= flush_way_ctr;
-                    fill_set    <= flush_set_ctr;
-                    word_count  <= 4'd0;
-                    evict_min_z <= 16'hFFFF;
+                    evict_tag_r    <= tag_rdata_by_way(flush_way_ctr);
+                    fill_way       <= flush_way_ctr;
+                    fill_set       <= flush_set_ctr;
+                    word_count     <= 4'd0;
+                    evict_min_z    <= 16'hFFFF;
+                    evict_req_sent <= 1'b0;
                     // BRAM pre-read of word 0 issued by always_comb
                 end
 
@@ -1005,13 +1018,16 @@ module zbuf_tile_cache (
                 // ========================================================
                 // Same burst protocol as S_EVICT.
                 S_FLUSH_WB: begin
-                    if (word_count == 4'd0 && !sdram_wr_req) begin
-                        sdram_wr_req  <= 1'b1;
-                        sdram_wr_addr <= tile_byte_addr(
+                    if (word_count == 4'd0 && !evict_req_sent) begin
+                        sdram_wr_req   <= 1'b1;
+                        sdram_wr_addr  <= tile_byte_addr(
                             evict_tile_idx, 4'd0,
                             fb_z_base, fb_width_log2);
-                        sdram_wr_data <= porta_rdata;
-                        evict_min_z   <= porta_rdata;
+                        sdram_wr_data  <= porta_rdata;
+                        evict_min_z    <= porta_rdata;
+                        evict_req_sent <= 1'b1;
+                    end else if (evict_req_sent && !sdram_ready && word_count == 4'd0) begin
+                        sdram_wr_req <= 1'b1;
                     end else if (sdram_wr_req) begin
                         sdram_wr_req <= 1'b0;
                     end

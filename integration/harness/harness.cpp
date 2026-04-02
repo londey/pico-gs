@@ -1038,6 +1038,7 @@ int main(int argc, char** argv) {
                 }
             }
             std::cout << std::format("DIAG: Z-cache flush: {} valid lines written to SDRAM\n", flushed);
+
         }
 
         // Read the Z-buffer base address from fb_config_reg[31:16].

@@ -425,7 +425,7 @@ flowchart LR
 | UNIT-005.03 | Derivative Pre-computation | Evaluates initial edge functions and computes per-attribute derivatives at the bounding box origin. |
 | UNIT-005.04 | Attribute Accumulation | Maintains per-attribute accumulators and produces interpolated fragment values via incremental addition. |
 | UNIT-005.05 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
-| UNIT-005.06 | Hi-Z Block Metadata | Per-tile metadata store that enables two Z-buffer optimizations: fast clear (bulk-invalidating metadata in 512 cycles instead of filling SDRAM in ~266,000 cycles) and hierarchical Z (Hi-Z) tile rejection (rejecting entire 4x4 tiles in the rasterizer before any fragments are emitted). |
+| UNIT-005.06 | Hi-Z Block Metadata | Per-tile metadata store that enables two Z-buffer optimizations: fast clear (bulk-writing sentinel values to metadata in 512 cycles instead of filling SDRAM in ~266,000 cycles) and hierarchical Z (Hi-Z) tile rejection (rejecting entire 4x4 tiles in the rasterizer before any fragments are emitted). |
 | UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
 | UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination, alpha blending, ordered dithering, and framebuffer write. |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
