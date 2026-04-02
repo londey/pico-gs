@@ -364,6 +364,7 @@ module pixel_pipeline (
     // pixel pipeline from consuming a stale CC output that was left in the
     // CC output register from a previous fragment (the CC holds its output
     // when pipeline_enable=0, so a stale out_frag_valid=1 can persist).
+    //
     reg          cc_result_pending;
 
     // ====================================================================
@@ -833,7 +834,12 @@ module pixel_pipeline (
     assign zbuf_read_req       = (state == PP_Z_READ);
     assign zbuf_read_tile_idx  = zb_tile_idx_reg;
     assign zbuf_read_pixel_off = zb_pixel_off_reg;
-    assign zbuf_read_hiz_uninit = zb_hiz_uninit_reg;
+    // Use the EBR output directly (combinational in PP_Z_READ, valid
+    // 1 cycle after the PP_IDLE read initiation) instead of the
+    // registered zb_hiz_uninit_reg — the register's non-blocking update
+    // doesn't take effect until the next cycle, so the cache would see
+    // the PREVIOUS fragment's uninit flag if we used the register here.
+    assign zbuf_read_hiz_uninit = uninit_flag;
     assign zbuf_write_req       = (state == PP_Z_WRITE);
     assign zbuf_write_tile_idx  = zb_tile_idx_reg;
     assign zbuf_write_pixel_off = zb_pixel_off_reg;
@@ -945,9 +951,6 @@ module pixel_pipeline (
             PP_CC_WAIT: begin
                 if (cc_in_valid && cc_result_pending) begin
                     // CC result received for the current fragment.
-                    // The cc_result_pending guard prevents consuming a stale
-                    // CC output that was held in the output register from a
-                    // previous fragment (the CC stalls when pipeline_enable=0).
                     if (alpha_blend_mode != 3'b000) begin
                         // Alpha blending enabled: need FB read
                         next_state = PP_FB_READ;
