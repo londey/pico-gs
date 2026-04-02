@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
+// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
 // Spec-ref: unit_005.05_iteration_fsm.md `54fa6b938b2cedfc` 2026-03-22
 
 // Rasterizer Edge Walk and Fragment Emission (UNIT-005.04)
@@ -44,7 +44,7 @@ module raster_edge_walk (
     // one cycle later when HIZ_TEST evaluates the rejection condition.
     output wire        hiz_rd_en,         // Read enable to hiz_meta (combinational)
     output wire [13:0] hiz_rd_tile_index, // 14-bit tile index to hiz_meta (combinational)
-    input  wire [8:0]  hiz_rd_data,       // {valid, min_z[7:0]} from hiz_meta
+    input  wire [8:0]  hiz_rd_data,       // min_z[8:0] from hiz_meta (sentinel 9'h1FF = cleared)
 
     // Shared multiplier products (from parent's setup multiplier)
     input  wire signed [21:0] smul_p1,    // Multiplier product 1
@@ -261,10 +261,12 @@ module raster_edge_walk (
     wire [13:0] hiz_tile_index = 14'(({4'b0, abs_tile_row} << tile_cols_log2) | {4'b0, abs_tile_col});
 
     // Hi-Z rejection result from metadata read
-    wire        hiz_meta_valid = hiz_rd_data[8];
-    wire [7:0]  hiz_meta_min_z = hiz_rd_data[7:0];
-    // GEQUAL (reverse-Z): reject when fragment is further than tile minimum
-    wire        hiz_rejected = hiz_meta_valid && (out_z[15:8] < hiz_meta_min_z);
+    // 9-bit min_z: Z[15:7] of the minimum Z written to this tile.
+    // Sentinel 9'h1FF = cleared / no Z-write yet — never rejects.
+    wire [8:0]  hiz_meta_min_z = hiz_rd_data[8:0];
+    // GEQUAL (reverse-Z): reject when fragment is further than tile minimum.
+    // frag_z[15:7] < min_z guarantees failure against every pixel in the tile.
+    wire        hiz_rejected = (hiz_meta_min_z != 9'h1FF) && (out_z[15:7] < hiz_meta_min_z);
 
     // Diagnostic pulse: high for 1 cycle when a tile is rejected by Hi-Z.
     // Driven combinationally from the FSM state — the downstream counter
@@ -574,9 +576,10 @@ module raster_edge_walk (
             end
 
             EW_HIZ_TEST: begin
-                // Latch whether this tile's Hi-Z metadata was uninitialized
-                // (valid=0).  Downstream Z-buffer cache uses this for lazy-fill.
-                next_frag_hiz_uninit = !hiz_meta_valid;
+                // Hi-Z metadata no longer has a valid bit; the pixel pipeline
+                // owns the per-tile uninitialized flag EBR (UNIT-006).
+                // frag_hiz_uninit is deprecated and always driven low.
+                next_frag_hiz_uninit = 1'b0;
                 if (hiz_rejected) begin
                     // Hi-Z rejects tile: skip to next tile (same as TILE_TEST
                     // rejection — force px/py to 3,3 so ITER_NEXT advances tile).

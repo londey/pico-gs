@@ -336,9 +336,10 @@ impl<'h> TriangleIter<'h> {
     ///
     /// Matches the HIZ_TEST procedure in UNIT-005.05:
     /// - Bypass (return `false`) when `z_test_en=false` or no metadata store.
-    /// - Return `false` when `valid=0` (cleared tile — lazy fill).
-    /// - Reject when `valid=1` and `fragment_Z[15:8] < stored_min_z`
-    ///   (GEQUAL / reverse-Z: fragment further than every pixel in tile).
+    /// - Return `false` when `min_z == 0x1FF` (sentinel — tile has no
+    ///   Z-writes since last clear, cannot reject).
+    /// - Reject when `frag_z_9bit > min_z_9bit` (GEQUAL / reverse-Z:
+    ///   fragment further than every pixel in tile).
     fn hiz_reject_current_tile(&self) -> bool {
         if !self.z_test_en {
             return false;
@@ -354,22 +355,23 @@ impl<'h> TriangleIter<'h> {
         let tile_col = self.tile_x / TILE_SIZE;
         let tile_index = ((tile_row as usize) << self.tile_cols_log2) | (tile_col as usize);
 
-        let (valid, min_z) = hiz.read(tile_index);
+        let min_z_9bit = hiz.read(tile_index);
 
-        if !valid {
+        // Sentinel 0x1FF means no Z-write since last clear — cannot reject.
+        if min_z_9bit == HizMetadata::sentinel() {
             return false;
         }
 
         // Use tile-representative Z: the Z accumulator value at the tile origin.
-        // Extract Z[15:8] from the attribute accumulator (same as extract_z but
-        // only the upper byte).
+        // Extract Z[15:7] from the attribute accumulator (9-bit, matching
+        // the Hi-Z metadata store's resolution).
         let z_top16 = ((self.accum.attr_tcol[ATTR_Z] as u32) >> 16) as u16;
-        let frag_z_hi = (z_top16 >> 8) as u8;
+        let frag_z_9bit = z_top16 >> 7;
 
         // GEQUAL (reverse-Z): fragment passes when frag_z >= stored_z.
         // Conservative reject: frag_z < tile min_z guarantees failure
         // against every pixel in the tile.
-        let rejected = frag_z_hi < min_z;
+        let rejected = frag_z_9bit < min_z_9bit;
         if rejected {
             hiz.record_rejection();
         }
@@ -744,11 +746,15 @@ mod tests {
     // ── HizMetadata unit tests ──────────────────────────────────────────────
 
     #[test]
-    fn hiz_metadata_new_all_invalid() {
+    fn hiz_metadata_new_all_sentinel() {
         let hiz = HizMetadata::new();
         for i in 0..16384 {
-            let (valid, _) = hiz.read(i);
-            assert!(!valid, "entry {i} should be invalid after new()");
+            let min_z = hiz.read(i);
+            assert_eq!(
+                min_z,
+                HizMetadata::sentinel(),
+                "entry {i} should be sentinel after new()"
+            );
         }
     }
 
@@ -756,43 +762,48 @@ mod tests {
     fn hiz_metadata_update_and_read() {
         let mut hiz = HizMetadata::new();
 
-        // First write: min_z = 0 (lazy-fill zeros in unwritten pixels)
-        hiz.update(42, 0x80);
-        let (valid, min_z) = hiz.read(42);
-        assert!(valid);
-        assert_eq!(min_z, 0x00);
+        // First write: sentinel → 0 (lazy-fill invariant: unwritten pixels
+        // are Z=0x0000, so tile min must be 0).
+        hiz.update(42, 0x4000);
+        let min_z = hiz.read(42);
+        assert_eq!(min_z, 0, "first write must store 0 for lazy-fill invariant");
 
-        // Subsequent writes cannot lower below 0
-        hiz.update(42, 0x40);
-        let (valid, min_z) = hiz.read(42);
-        assert!(valid);
-        assert_eq!(min_z, 0x00);
+        // Subsequent write with smaller Z cannot go below 0
+        hiz.update(42, 0x2000);
+        let min_z = hiz.read(42);
+        assert_eq!(min_z, 0);
 
-        // Larger value also stays at 0
-        hiz.update(42, 0xC0);
-        let (valid, min_z) = hiz.read(42);
-        assert!(valid);
-        assert_eq!(min_z, 0x00);
+        // Larger value does not change min_z
+        hiz.update(42, 0x6000);
+        let min_z = hiz.read(42);
+        assert_eq!(min_z, 0);
     }
 
     #[test]
-    fn hiz_metadata_invalidate_all() {
+    fn hiz_metadata_reset_all() {
         let mut hiz = HizMetadata::new();
-        hiz.update(100, 0x55);
-        hiz.invalidate_all();
-        let (valid, _) = hiz.read(100);
-        assert!(!valid, "entry should be invalid after invalidate_all()");
+        hiz.update(100, 0x5500);
+        hiz.reset_all();
+        let min_z = hiz.read(100);
+        assert_eq!(
+            min_z,
+            HizMetadata::sentinel(),
+            "entry should be sentinel after reset_all()"
+        );
     }
 
     // ── Hi-Z tile rejection integration tests ───────────────────────────────
 
     #[test]
     fn hiz_reject_tile_with_low_z() {
+        // Triangle Z=0x2000 → frag_z_9bit = 0x2000 >> 7 = 0x40.
+        // Tile min_z_9bit = 0x80 > 0x40 → rejected (fragment further
+        // than all pixels in tile under reverse-Z GEQUAL).
         let tri = make_test_triangle(0x2000);
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.force_valid(0, 0x40);
+        hiz.force_entry(0, 0x80);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
@@ -805,11 +816,14 @@ mod tests {
 
     #[test]
     fn hiz_pass_tile_with_high_z() {
+        // Triangle Z=0x8000 → frag_z_9bit = 0x8000 >> 7 = 0x100.
+        // Tile min_z_9bit = 0x40 < 0x100 → not rejected (fragment
+        // closer than tile minimum).
         let tri = make_test_triangle(0x8000);
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.force_valid(0, 0x40);
+        hiz.force_entry(0, 0x40);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
@@ -820,17 +834,17 @@ mod tests {
     }
 
     #[test]
-    fn hiz_valid_zero_never_rejects() {
+    fn hiz_sentinel_never_rejects() {
         let tri = make_test_triangle(0x8000);
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
-        let hiz = HizMetadata::new(); // all entries valid=0
+        let hiz = HizMetadata::new(); // all entries = sentinel (0x1FF)
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
         assert!(
             !tile0_frags.is_empty(),
-            "expected fragments from cleared tile (valid=0)"
+            "expected fragments from sentinel tile (no Z-writes)"
         );
     }
 
@@ -840,7 +854,7 @@ mod tests {
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.force_valid(0, 0x40);
+        hiz.force_entry(0, 0x40);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, false, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
@@ -851,12 +865,33 @@ mod tests {
     }
 
     #[test]
+    fn hiz_sentinel_passthrough_any_z() {
+        // Even a far-plane triangle (Z=0xFFFF → frag_z_9bit = 0x1FF)
+        // should pass through a sentinel tile (0x1FF) — sentinel never
+        // rejects, regardless of fragment Z.
+        let tri = make_test_triangle(0xFFFF);
+        let setup = triangle_setup(&tri).expect("non-degenerate");
+
+        let hiz = HizMetadata::new(); // all entries = sentinel (0x1FF)
+
+        let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
+        let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();
+        assert!(
+            !tile0_frags.is_empty(),
+            "expected fragments from sentinel tile even with far-plane Z"
+        );
+    }
+
+    #[test]
     fn hiz_equal_z_not_rejected() {
+        // Triangle Z=0x4000 → frag_z_9bit = 0x4000 >> 7 = 0x80.
+        // Tile min_z_9bit = 0x80 == frag_z_9bit → not rejected
+        // (equal Z passes GEQUAL).
         let tri = make_test_triangle(0x4000);
         let setup = triangle_setup(&tri).expect("non-degenerate");
 
         let mut hiz = HizMetadata::new();
-        hiz.force_valid(0, 0x40);
+        hiz.force_entry(0, 0x80);
 
         let frags = rasterize_triangle_hiz(&setup, &hiz, true, 9);
         let tile0_frags: Vec<_> = frags.iter().filter(|f| f.x < 4 && f.y < 4).collect();

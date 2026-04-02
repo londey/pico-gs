@@ -1,8 +1,8 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
+// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
 // Spec-ref: unit_005.01_triangle_setup.md `9cab47512acac4b1` 2026-03-22
 // Spec-ref: unit_005.03_derivative_precomputation.md `7181be3ee823f32a` 2026-03-22
-// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and incremental
@@ -104,12 +104,12 @@ module rasterizer (
     // Hi-Z metadata write port (from pixel pipeline, UNIT-006)
     input  wire         hiz_wr_en,          // Write enable for min_z update
     input  wire [13:0]  hiz_wr_tile_index,  // 14-bit tile index
-    input  wire [7:0]   hiz_wr_new_z_hi,    // new_z[15:8] from Z-write
+    input  wire [8:0]   hiz_wr_new_z,       // new_z[15:7] from Z-write
 
     // Hi-Z authoritative write port (from zbuf_tile_cache via gpu_top)
     input  wire         hiz_auth_wr_en,         // Authoritative write enable
     input  wire [13:0]  hiz_auth_wr_tile_index, // Tile index
-    input  wire [7:0]   hiz_auth_wr_min_z,      // Actual tile minimum Z[15:8]
+    input  wire [8:0]   hiz_auth_wr_min_z,      // Actual tile min_z[8:0]
 
     // Hi-Z metadata fast-clear port
     input  wire         hiz_clear_req,      // Pulse to begin fast clear
@@ -808,7 +808,7 @@ module rasterizer (
         // Write port (from pixel pipeline UNIT-006)
         .wr_en          (hiz_wr_en),
         .wr_tile_index  (hiz_wr_tile_index),
-        .wr_new_z_hi    (hiz_wr_new_z_hi),
+        .wr_new_z       (hiz_wr_new_z),
         // Authoritative write port (from zbuf_tile_cache)
         .auth_wr_en         (hiz_auth_wr_en),
         .auth_wr_tile_index (hiz_auth_wr_tile_index),

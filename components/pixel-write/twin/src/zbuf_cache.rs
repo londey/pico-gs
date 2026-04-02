@@ -3,16 +3,17 @@
 //! Matches the RTL `zbuf_tile_cache.sv` module.  Each cache line holds
 //! one 4x4 tile of 16-bit Z values (16 words = 32 bytes).
 //!
-//! On a cache miss the fill source depends on the Hi-Z metadata:
-//! - **Uninitialized tile** (`valid=0`): lazy-fill with `0x0000` (no SDRAM read).
-//! - **Initialized tile** (`valid=1`): read 16 words from SDRAM.
+//! On a cache miss the fill source depends on the per-tile uninitialized
+//! flag (`UninittedFlagArray`):
+//! - **Uninitialized tile** (flag set): lazy-fill with `0x0000` (no SDRAM read).
+//! - **Initialized tile** (flag clear): read 16 words from SDRAM.
 //!
 //! Dirty lines are written back to SDRAM on eviction.
 //! Invalidation clears all valid bits without write-back (used on
 //! `FB_CONFIG` writes when the Z-buffer is reconfigured).
 
+use crate::uninit_flags::UninittedFlagArray;
 use gs_memory::GpuMemory;
-use gs_twin_core::hiz::HizMetadata;
 
 /// Number of ways per set.
 const NUM_WAYS: usize = 4;
@@ -25,8 +26,8 @@ const LINE_WORDS: usize = 16;
 
 /// Backing-store context passed to cache read/write operations.
 pub struct ZbufContext<'a> {
-    /// Hi-Z metadata store (checked on miss for lazy-fill decision).
-    pub hiz: &'a HizMetadata,
+    /// Per-tile uninitialized flags (checked on miss for lazy-fill decision).
+    pub uninit_flags: &'a UninittedFlagArray,
 
     /// SDRAM backing store.
     pub memory: &'a mut GpuMemory,
@@ -165,20 +166,18 @@ impl ZbufTileCache {
             write_back_line(&self.lines[set][way], ctx.memory, ctx.z_base);
         }
 
-        // Fill: check Hi-Z for lazy-fill.
-        // tile_idx encodes the tile position; the Hi-Z index is the same value.
-        let (hiz_valid, _) = ctx.hiz.read(tile_idx as usize);
-
-        if hiz_valid {
+        // Fill: check uninitialized flag for lazy-fill decision.
+        // tile_idx encodes the tile position; the flag index is the same value.
+        if ctx.uninit_flags.is_set(tile_idx as usize) {
+            // Lazy-fill: tile is uninitialized, fill with zeros (no SDRAM read).
+            self.lines[set][way].data = [0u16; LINE_WORDS];
+        } else {
             // Read 16 words from SDRAM.
             let base_word = (ctx.z_base as usize) << 8;
             let tile_base = base_word + (tile_idx as usize) * LINE_WORDS;
             for i in 0..LINE_WORDS {
                 self.lines[set][way].data[i] = ctx.memory.sdram[tile_base + i];
             }
-        } else {
-            // Lazy-fill: tile is uninitialized, fill with zeros.
-            self.lines[set][way].data = [0u16; LINE_WORDS];
         }
 
         self.lines[set][way].tag = tile_idx;

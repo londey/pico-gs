@@ -65,7 +65,7 @@ module tb_rasterizer;
     // Hi-Z metadata write port (from pixel pipeline stub)
     reg         hiz_wr_en;
     reg  [13:0] hiz_wr_tile_index;
-    reg  [7:0]  hiz_wr_new_z_hi;
+    reg  [8:0]  hiz_wr_new_z;
 
     // Hi-Z metadata fast-clear
     reg         hiz_clear_req;
@@ -114,7 +114,7 @@ module tb_rasterizer;
 
         .hiz_wr_en(hiz_wr_en),
         .hiz_wr_tile_index(hiz_wr_tile_index),
-        .hiz_wr_new_z_hi(hiz_wr_new_z_hi),
+        .hiz_wr_new_z(hiz_wr_new_z),
 
         .hiz_clear_req(hiz_clear_req),
         .hiz_clear_busy(hiz_clear_busy),
@@ -210,7 +210,7 @@ module tb_rasterizer;
     // (2 cycles), so we hold wr_en for 1 cycle and wait for completion.
     task write_hiz_entry(
         input [13:0] tile_idx,
-        input [7:0]  z_hi
+        input [8:0]  z_hi
     );
         begin
             // Wait for write FSM to be idle before issuing the next write
@@ -218,7 +218,7 @@ module tb_rasterizer;
             @(posedge clk);
             hiz_wr_en         = 1;
             hiz_wr_tile_index = tile_idx;
-            hiz_wr_new_z_hi   = z_hi;
+            hiz_wr_new_z      = z_hi;
             @(posedge clk);
             hiz_wr_en = 0;
             // Wait for RMW to complete (WR_READ -> WR_WRITE -> WR_IDLE)
@@ -354,7 +354,7 @@ module tb_rasterizer;
         z_test_en      = 0;
         hiz_wr_en      = 0;
         hiz_wr_tile_index = 14'd0;
-        hiz_wr_new_z_hi   = 8'd0;
+        hiz_wr_new_z      = 9'd0;
         hiz_clear_req  = 0;
 
         // Default attributes
@@ -1859,9 +1859,9 @@ module tb_rasterizer;
         // ====================================================================
         // Test 15: Hi-Z tile rejection (VER-001 step 8)
         // Three sub-cases:
-        //   (a) Rejection when valid=1 and fragment_Z[15:8] > stored min_z
-        //   (b) Pass-through when valid=1 and fragment_Z[15:8] <= stored min_z
-        //   (c) No rejection when valid=0 (cleared tile)
+        //   (a) Rejection when non-sentinel min_z and fragment_Z[15:7] > stored min_z
+        //   (b) Pass-through when non-sentinel min_z and fragment_Z[15:7] <= stored min_z
+        //   (c) No rejection when tile has sentinel `9'h1FF` (uninitialized)
         // ====================================================================
         $display("\nTest 15: Hi-Z tile rejection (VER-001 step 8)");
         fb_width_log2  = 4'd9;
@@ -1872,18 +1872,19 @@ module tb_rasterizer;
         // tile_cols = 512/4 = 128, so tile_index = row*128 + col.
 
         // ------------------------------------------------------------------
-        // Sub-case (a): Rejection — valid=1, min_z=0x40, triangle Z=0x6000
-        //   fragment_Z[15:8] = 0x60 > 0x40 => all tiles rejected, zero frags
-        //   (Z must be < 0x8000 to avoid signed clamp-to-zero in accumulator)
+        // Sub-case (a): Rejection — non-sentinel min_z=9'h0C0, triangle Z=0x2000
+        //   fragment_Z[15:7] = 9'h040 < 9'h0C0 => all tiles rejected, zero frags
+        //   Hi-Z uses GEQUAL (reverse-Z) rejection: reject when
+        //   fragment_Z[15:7] < stored min_z (fragment is farther).
         // ------------------------------------------------------------------
-        $display("  15a: Hi-Z rejection (fragment Z > stored min_z)");
+        $display("  15a: Hi-Z rejection (fragment_Z[15:7] < stored min_z)");
 
         // Fast-clear all Hi-Z metadata to ensure a clean state
         hiz_fast_clear;
 
         // Pre-populate Hi-Z entries for tiles in the bounding box
-        // via the write port.  We write min_z=0x40 to each tile.
-        // First write initializes valid=1 since tile was cleared.
+        // via the write port.  We write min_z=9'h0C0 to each tile.
+        // First write replaces sentinel 9'h1FF since 9'h0C0 < 9'h1FF.
         begin : hiz_15a
             integer tc, tr;
             integer tile_idx;
@@ -1892,7 +1893,7 @@ module tb_rasterizer;
             for (tr = 1; tr <= 3; tr = tr + 1) begin
                 for (tc = 1; tc <= 3; tc = tc + 1) begin
                     tile_idx = tr * 128 + tc;
-                    write_hiz_entry(tile_idx[13:0], 8'h40);
+                    write_hiz_entry(tile_idx[13:0], 9'h0C0);
                 end
             end
 
@@ -1903,13 +1904,13 @@ module tb_rasterizer;
 
             // Debug: probe hiz_meta memory to verify writes took effect.
             // tile_index 129 -> block=0, word=32, slot=1
-            // Triangle with Z=0x6000 (fragment_Z[15:8] = 0x60 > 0x40)
-            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h6000;
+            // Triangle with Z=0x2000 (fragment_Z[15:7] = 9'h040 < 9'h0C0)
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h2000;
             v0_color0 = 32'hFF000000;
             set_default_attrs;
-            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h6000;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h2000;
             v1_color0 = 32'h00FF0000;
-            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h6000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h2000;
             v2_color0 = 32'h0000FF00;
 
             submit_triangle_and_wait;
@@ -1926,29 +1927,30 @@ module tb_rasterizer;
             repeat(10) @(posedge clk);
 
             // ------------------------------------------------------------------
-            // Sub-case (b): Pass-through — valid=1, min_z=0x40, Z=0x2000
-            //   fragment_Z[15:8] = 0x20 <= 0x40 => tiles NOT rejected
+            // Sub-case (b): Pass-through — non-sentinel min_z=9'h0C0, Z=0x6000
+            //   fragment_Z[15:7] = 9'h0C0 >= 9'h0C0 => tiles NOT rejected
+            //   (fragment is nearer or equal, so Hi-Z cannot reject)
             // ------------------------------------------------------------------
-            $display("  15b: Hi-Z pass-through (fragment Z <= stored min_z)");
+            $display("  15b: Hi-Z pass-through (fragment_Z[15:7] >= stored min_z)");
 
-            // Re-clear and re-populate same tiles (clear resets valid bits)
+            // Re-clear and re-populate same tiles (clear writes sentinel 9'h1FF)
             hiz_fast_clear;
             for (tr = 1; tr <= 3; tr = tr + 1) begin
                 for (tc = 1; tc <= 3; tc = tc + 1) begin
                     tile_idx = tr * 128 + tc;
-                    write_hiz_entry(tile_idx[13:0], 8'h40);
+                    write_hiz_entry(tile_idx[13:0], 9'h0C0);
                 end
             end
 
             pixel_count = 0;
 
-            // Same triangle but Z=0x2000 (fragment_Z[15:8] = 0x20 <= 0x40)
-            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h2000;
+            // Triangle with Z=0x6000 (fragment_Z[15:7] = 9'h0C0 >= 9'h0C0)
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h6000;
             v0_color0 = 32'hFF000000;
             set_default_attrs;
-            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h2000;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h6000;
             v1_color0 = 32'h00FF0000;
-            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h2000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h6000;
             v2_color0 = 32'h0000FF00;
 
             submit_triangle_and_wait;
@@ -1970,12 +1972,12 @@ module tb_rasterizer;
             z_test_en = 0;
             pixel_count = 0;
 
-            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h2000;
+            v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h6000;
             v0_color0 = 32'hFF000000;
             set_default_attrs;
-            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h2000;
+            v1_x = 16'd192;  v1_y = 16'd64;   v1_z = 16'h6000;
             v1_color0 = 32'h00FF0000;
-            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h2000;
+            v2_x = 16'd128;  v2_y = 16'd192;  v2_z = 16'h6000;
             v2_color0 = 32'h0000FF00;
 
             submit_triangle_and_wait;
@@ -1992,26 +1994,27 @@ module tb_rasterizer;
             repeat(10) @(posedge clk);
 
             // ------------------------------------------------------------------
-            // Sub-case (c): valid=0 (cleared tile) — must NOT reject
+            // Sub-case (c): sentinel 9'h1FF (uninitialized) — must NOT reject
             // ------------------------------------------------------------------
-            $display("  15c: Hi-Z cleared tile (valid=0, must not reject)");
+            $display("  15c: Hi-Z sentinel tile (9'h1FF, must not reject)");
 
             // Ensure z_test_en is off before clearing, then re-enable
             z_test_en = 0;
             repeat(4) @(posedge clk);
 
-            // Fast-clear all metadata (sets valid=0 for all tiles)
+            // Fast-clear all metadata (writes sentinel 9'h1FF to all tiles)
             hiz_fast_clear;
 
             // Allow extra settling time after clear completes
             repeat(10) @(posedge clk);
 
-            // Do NOT pre-populate — tiles remain cleared (valid=0)
+            // Do NOT pre-populate — tiles retain sentinel 9'h1FF
             z_test_en = 1;
             pixel_count = 0;
 
-            // Triangle with Z=0x6000 — would be rejected if valid=1, min_z=0x40
-            // but since valid=0, tile must proceed to EDGE_TEST
+            // Triangle with Z=0x6000 — would be rejected if min_z=9'h040,
+            // but since metadata contains sentinel 9'h1FF, tile must proceed
+            // to EDGE_TEST unconditionally
             v0_x = 16'd64;   v0_y = 16'd64;   v0_z = 16'h6000;
             v0_color0 = 32'hFF000000;
             set_default_attrs;
@@ -2024,10 +2027,10 @@ module tb_rasterizer;
             $display("    Fragments emitted (expect >0): %0d", pixel_count);
 
             if (pixel_count > 0) begin
-                $display("  PASS: 15c — Cleared tiles not rejected, %0d fragments emitted", pixel_count);
+                $display("  PASS: 15c — Sentinel tiles not rejected, %0d fragments emitted", pixel_count);
                 test_pass_count = test_pass_count + 1;
             end else begin
-                $display("  FAIL: 15c — Expected >0 fragments, got 0 (spurious rejection on cleared tile)");
+                $display("  FAIL: 15c — Expected >0 fragments, got 0 (spurious rejection on sentinel 9'h1FF tile)");
                 test_fail_count = test_fail_count + 1;
             end
 

@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `be6865b1593aa24c` 2026-03-25
+// Spec-ref: unit_006_pixel_pipeline.md `79a0ff3645976d58` 2026-04-01
 //
 // Ordered Dithering — EBR-based 16x16 Blue Noise Dither Matrix
 //

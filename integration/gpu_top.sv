@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
 
 // ICEpi SPI GPU - Top Level Module
 // Version 3.0 - Pixel Pipeline Integration
@@ -989,12 +989,12 @@ module gpu_top (
         // Hi-Z metadata write port (from pixel pipeline, UNIT-006)
         .hiz_wr_en(pp_hiz_wr_en),
         .hiz_wr_tile_index(pp_hiz_wr_tile_index),
-        .hiz_wr_new_z_hi(pp_hiz_wr_new_z_hi),
+        .hiz_wr_new_z(pp_hiz_wr_new_z),
 
         // Hi-Z authoritative write (from zbuf_tile_cache feedback)
         .hiz_auth_wr_en(zcache_hiz_fb_valid),
         .hiz_auth_wr_tile_index(zcache_hiz_fb_tile_idx),
-        .hiz_auth_wr_min_z(zcache_hiz_fb_min_z_hi),
+        .hiz_auth_wr_min_z({zcache_hiz_fb_min_z_hi, 1'b0}),
 
         // Hi-Z metadata fast-clear (UNIT-005.06)
         .hiz_clear_req(hiz_clear_req),
@@ -1032,7 +1032,7 @@ module gpu_top (
     // Hi-Z metadata update from pixel pipeline (UNIT-005.06)
     wire        pp_hiz_wr_en;
     wire [13:0] pp_hiz_wr_tile_index;
-    wire [7:0]  pp_hiz_wr_new_z_hi;
+    wire [8:0]  pp_hiz_wr_new_z;
 
     // Hi-Z diagnostic counter (UNIT-005.06)
     wire [31:0] hiz_rejected_tiles /* verilator public */;
@@ -1105,6 +1105,7 @@ module gpu_top (
     // frag_lod now connected to pixel_pipeline
     wire        _unused_frag_tile_start = rast_frag_tile_start;
     wire        _unused_frag_tile_end   = rast_frag_tile_end;
+    wire        _unused_frag_hiz_uninit = rast_frag_hiz_uninit;
     wire [3:0]  _unused_fb_h_log2   = fb_height_log2;
     wire [1:0]  _unused_mode_cull   = mode_cull;
     wire [7:0]  _unused_alpha_ref   = mode_alpha_ref;
@@ -1173,9 +1174,6 @@ module gpu_top (
         .cc_in_frag_y(cc_out_frag_y),
         .cc_in_frag_z(cc_out_frag_z),
 
-        // Hi-Z uninit from rasterizer
-        .frag_hiz_uninit(rast_frag_hiz_uninit),
-
         // Z-buffer cache interface
         .zbuf_read_req(pp_zb_read_req),
         .zbuf_read_tile_idx(pp_zb_read_tile_idx),
@@ -1214,7 +1212,10 @@ module gpu_top (
         // Hi-Z metadata update (to rasterizer's raster_hiz_meta, UNIT-005.06)
         .hiz_wr_en(pp_hiz_wr_en),
         .hiz_wr_tile_index(pp_hiz_wr_tile_index),
-        .hiz_wr_new_z_hi(pp_hiz_wr_new_z_hi),
+        .hiz_wr_new_z(pp_hiz_wr_new_z),
+
+        // Uninit flag clear (same trigger as Hi-Z fast-clear)
+        .uninit_clear_req(hiz_clear_req),
 
         // Pipeline status
         .pipeline_empty(pp_pipeline_empty)

@@ -4,7 +4,7 @@
 // Rasterizer Derivative Precomputation (UNIT-005.02 sequential, Option A)
 // ============================================================================
 
-// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
+// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
 // Spec-ref: unit_005.03_derivative_precomputation.md `7181be3ee823f32a` 2026-03-22
 
 // Sequential time-multiplexed derivative computation module.

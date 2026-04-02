@@ -11,7 +11,7 @@
 // Until 1.0.0, allow dead code and unused dependency warnings
 #![allow(dead_code)]
 #![allow(unused_crate_dependencies)]
-// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
 
 //! # gs-twin
 //!
@@ -35,6 +35,7 @@ use gpu_registers::components::z_compare_e::ZCompareE;
 use gs_color_combiner::CcInputs;
 use gs_memory::GpuMemory;
 use gs_pixel_write::zbuf_cache::{ZbufContext, ZbufTileCache};
+use gs_pixel_write::UninittedFlagArray;
 use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
 use gs_texture::tex_sample::TextureSampler;
@@ -68,6 +69,9 @@ pub struct Gpu {
     /// Hi-Z block metadata store (UNIT-005.06).
     pub hiz: HizMetadata,
 
+    /// Per-tile uninitialized flags (UNIT-006 lazy-fill tracking).
+    uninit_flags: UninittedFlagArray,
+
     /// Z-buffer tile cache (4-way set-associative, lazy-fill).
     zbuf_cache: ZbufTileCache,
 
@@ -100,6 +104,7 @@ impl Gpu {
             tex0_sampler: TextureSampler::default(),
             tex1_sampler: TextureSampler::default(),
             hiz: HizMetadata::new(),
+            uninit_flags: UninittedFlagArray::new(),
             zbuf_cache: ZbufTileCache::new(),
             default_width: width,
             default_height: height,
@@ -125,14 +130,27 @@ impl Gpu {
                 self.execute_kick(&tri);
             }
             GpuAction::FbConfig => {
-                // Invalidate Hi-Z metadata and Z-buffer cache on any
-                // FB_CONFIG write (UNIT-005.06 fast-clear trigger).
-                self.hiz.invalidate_all();
+                // Reset Hi-Z metadata, uninit flags, and Z-buffer cache
+                // on any FB_CONFIG write (UNIT-005.06 fast-clear trigger).
+                self.hiz.reset_all();
+                self.uninit_flags.reset_all();
                 self.zbuf_cache.invalidate();
             }
             GpuAction::MemFill { base, value, count } => {
                 let byte_addr = (base as usize) * 2;
                 self.memory.fill(byte_addr, value, count);
+
+                // Detect Z-buffer MEM_FILL (fill of Z-buffer region with
+                // value 0xFFFF) and reset Hi-Z metadata + uninit flags.
+                // This models the two concurrent 512-cycle EBR sweeps as
+                // instantaneous in the transaction-level model (REQ-005.08).
+                let fb_cfg = self.regs.fb_config();
+                let z_base_word = (fb_cfg.z_base() as u32) << 8;
+                if value == 0xFFFF && base == z_base_word {
+                    self.hiz.reset_all();
+                    self.uninit_flags.reset_all();
+                    self.zbuf_cache.invalidate();
+                }
             }
             GpuAction::Tex0Config(cfg) => {
                 self.tex0_sampler.set_tex_cfg(cfg);
@@ -227,7 +245,7 @@ impl Gpu {
         // Z reads go through the tile cache to see uncommitted writes.
         let frag = if rm.z_test_en() {
             let mut zctx = ZbufContext {
-                hiz: &self.hiz,
+                uninit_flags: &self.uninit_flags,
                 memory: &mut self.memory,
                 z_base: fb_cfg.z_base(),
                 wl2: fb_cfg.width_log2(),
@@ -333,19 +351,20 @@ impl Gpu {
         // back to SDRAM on eviction.
         if rm.z_write_en() {
             let mut zctx = ZbufContext {
-                hiz: &self.hiz,
+                uninit_flags: &self.uninit_flags,
                 memory: &mut self.memory,
                 z_base: fb_cfg.z_base(),
                 wl2,
             };
             self.zbuf_cache.write(fx, fy, frag.z, &mut zctx);
 
-            // Update Hi-Z metadata (UNIT-005.06)
+            // Update Hi-Z metadata (UNIT-005.06) and clear uninit flag
             let tile_col = fx >> 2;
             let tile_row = fy >> 2;
             let tile_cols_log2 = wl2 as u32 - 2;
             let tile_index = ((tile_row << tile_cols_log2) | tile_col) as usize;
-            self.hiz.update(tile_index, (frag.z >> 8) as u8);
+            self.hiz.update(tile_index, frag.z);
+            self.uninit_flags.clear(tile_index);
         }
 
         if rm.color_write_en() {
@@ -407,10 +426,11 @@ impl Gpu {
         self.zbuf_cache.flush(&mut self.memory, cfg.z_base());
         let (_, _, w, h) = self.effective_fb_dims();
 
-        // Build per-tile validity mask from Hi-Z metadata.
+        // Build per-tile validity mask from uninit flags.
+        // A tile is valid (has real data) when its uninit flag is cleared (0).
         let num_tiles = (w >> 2) * (h >> 2);
         let tile_valid: Vec<bool> = (0..num_tiles as usize)
-            .map(|i| self.hiz.read(i).0)
+            .map(|i| !self.uninit_flags.is_set(i))
             .collect();
 
         self.memory

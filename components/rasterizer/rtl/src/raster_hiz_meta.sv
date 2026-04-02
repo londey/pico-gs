@@ -1,6 +1,6 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `1d03e1ceef0e3187` 2026-03-25
-// Spec-ref: unit_005.06_hiz_block_metadata.md `79607c44a2effb4f` 2026-03-25
+// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
 
 // Module: raster_hiz_meta
 // Purpose: Hi-Z block metadata store for fast clear and hierarchical Z
@@ -10,21 +10,22 @@
 // 16,384 tile entries packed 4 per 36-bit word.
 //
 // Provides:
-//   - 1-cycle read port (tile_index -> {valid, min_z}) for HIZ_TEST
+//   - 1-cycle read port (tile_index -> min_z[8:0]) for HIZ_TEST
 //     in raster_edge_walk.sv (UNIT-005.05).
-//   - Write port ({tile_index, new_z_hi}) for Hi-Z metadata update
+//   - Write port ({tile_index, new_z[8:0]}) for Hi-Z metadata update
 //     from pixel_pipeline.sv (UNIT-006).
-//   - Fast-clear port that invalidates all entries in 512 cycles.
+//   - Fast-clear port that writes sentinel (9'h1FF) to all entries
+//     in 512 cycles.
 //
 // Each 9-bit metadata entry:
-//   Bit 8:    valid  -- 1 = tile has been written; 0 = cleared (invalid)
-//   Bits 7:0: min_z  -- Z[15:8] of the minimum Z written to this tile
+//   Bits 8:0: min_z  -- Z[15:7] of the minimum Z written to this tile
+//                       Sentinel 9'h1FF = cleared / no Z-write yet
 //
 // 36-bit word packing (4 entries per word):
-//   Bits 35:27  ->  entry 3: { valid, min_z[7:0] }
-//   Bits 26:18  ->  entry 2: { valid, min_z[7:0] }
-//   Bits 17:9   ->  entry 1: { valid, min_z[7:0] }
-//   Bits  8:0   ->  entry 0: { valid, min_z[7:0] }
+//   Bits 35:27  ->  entry 3: { min_z[8:0] }
+//   Bits 26:18  ->  entry 2: { min_z[8:0] }
+//   Bits 17:9   ->  entry 1: { min_z[8:0] }
+//   Bits  8:0   ->  entry 0: { min_z[8:0] }
 //
 // Addressing (14-bit tile_index):
 //   tile_index[13:11]  ->  3 bits: block select (1 of 8 DP16KDs)
@@ -41,20 +42,20 @@ module raster_hiz_meta (
     // Assert rd_en with rd_tile_index; rd_data valid next cycle.
     input  wire         rd_en,          // Read enable
     input  wire  [13:0] rd_tile_index,  // 14-bit tile index
-    output logic  [8:0] rd_data,        // [8]=valid, [7:0]=min_z
+    output logic  [8:0] rd_data,        // [8:0]=min_z (sentinel 9'h1FF = cleared)
 
     // Write port (Port B) — Z-write update from pixel pipeline (UNIT-006)
-    // Read-modify-write: updates the target 9-bit slot if new_z_hi < min_z
-    // or valid=0.  Takes 2 cycles per update.
+    // Read-modify-write: updates the target 9-bit slot if new_z < stored min_z.
+    // Takes 2 cycles per update.
     input  wire         wr_en,          // Write enable
     input  wire  [13:0] wr_tile_index,  // 14-bit tile index
-    input  wire   [7:0] wr_new_z_hi,   // new_z[15:8] from Z-write
+    input  wire   [8:0] wr_new_z,      // new_z[15:7] from Z-write
 
     // Authoritative write port — unconditional min_z set from Z-cache feedback
     // Priority over wr_en; uses same RMW pipeline but forces update.
     input  wire         auth_wr_en,         // Authoritative write enable
     input  wire  [13:0] auth_wr_tile_index, // 14-bit tile index
-    input  wire   [7:0] auth_wr_min_z,      // Actual tile min_z (unconditional set)
+    input  wire   [8:0] auth_wr_min_z,      // Actual tile min_z[8:0] (unconditional set)
 
     // Fast-clear — pulse clear_req; clear_busy asserted until done (512 cycles)
     input  wire         clear_req,      // Pulse to begin fast clear
@@ -81,7 +82,7 @@ module raster_hiz_meta (
     // Write port address fields (muxed: authoritative has priority over per-pixel)
     wire        wr_use_auth   = auth_wr_en;
     wire [13:0] wr_sel_tile   = wr_use_auth ? auth_wr_tile_index : wr_tile_index;
-    wire [7:0]  wr_sel_z_hi   = wr_use_auth ? auth_wr_min_z      : wr_new_z_hi;
+    wire [8:0]  wr_sel_z      = wr_use_auth ? auth_wr_min_z      : wr_new_z;
     wire        wr_sel_en     = wr_use_auth ? auth_wr_en          : wr_en;
 
     wire [2:0] wr_block_sel;    // Block select (1 of 8)
@@ -156,7 +157,7 @@ module raster_hiz_meta (
     // Cycle N:   Issue BRAM read on Port B for target word.
     // Cycle N+1: Extract target slot, conditionally update, write back.
     //
-    // During fast clear, Port B writes 36'h0 directly (no read phase).
+    // During fast clear, Port B writes 36'hFFFFFFFFF (sentinel) directly (no read phase).
 
     typedef enum logic [1:0] {
         WR_IDLE,    // Waiting for wr_en or clear
@@ -171,13 +172,13 @@ module raster_hiz_meta (
     reg  [2:0] wr_s1_block_sel;     // Block select latched in read phase
     reg  [8:0] wr_s1_word_addr;     // Word address latched in read phase
     reg  [1:0] wr_s1_slot;          // Slot select latched in read phase
-    reg  [7:0] wr_s1_new_z_hi;     // New Z value latched in read phase
+    reg  [8:0] wr_s1_new_z;        // New Z[15:7] latched in read phase
     reg        wr_s1_auth;          // Authoritative write (unconditional set)
 
     logic [2:0] wr_s1_block_sel_next;   // Next block select
     logic [8:0] wr_s1_word_addr_next;   // Next word address
     logic [1:0] wr_s1_slot_next;        // Next slot select
-    logic [7:0] wr_s1_new_z_hi_next;    // Next new Z value
+    logic [8:0] wr_s1_new_z_next;       // Next new Z value
     logic       wr_s1_auth_next;        // Next authoritative flag
 
     always_comb begin
@@ -185,7 +186,7 @@ module raster_hiz_meta (
         wr_s1_block_sel_next = wr_s1_block_sel;
         wr_s1_word_addr_next = wr_s1_word_addr;
         wr_s1_slot_next      = wr_s1_slot;
-        wr_s1_new_z_hi_next  = wr_s1_new_z_hi;
+        wr_s1_new_z_next     = wr_s1_new_z;
         wr_s1_auth_next      = wr_s1_auth;
 
         case (wr_state)
@@ -195,7 +196,7 @@ module raster_hiz_meta (
                     wr_s1_block_sel_next = wr_block_sel;
                     wr_s1_word_addr_next = wr_word_addr;
                     wr_s1_slot_next      = wr_slot;
-                    wr_s1_new_z_hi_next  = wr_sel_z_hi;
+                    wr_s1_new_z_next     = wr_sel_z;
                     wr_s1_auth_next      = wr_use_auth;
                 end
             end
@@ -217,14 +218,14 @@ module raster_hiz_meta (
             wr_s1_block_sel <= 3'd0;
             wr_s1_word_addr <= 9'd0;
             wr_s1_slot      <= 2'd0;
-            wr_s1_new_z_hi  <= 8'd0;
+            wr_s1_new_z     <= 9'd0;
             wr_s1_auth      <= 1'b0;
         end else begin
             wr_state        <= wr_state_next;
             wr_s1_block_sel <= wr_s1_block_sel_next;
             wr_s1_word_addr <= wr_s1_word_addr_next;
             wr_s1_slot      <= wr_s1_slot_next;
-            wr_s1_new_z_hi  <= wr_s1_new_z_hi_next;
+            wr_s1_new_z     <= wr_s1_new_z_next;
             wr_s1_auth      <= wr_s1_auth_next;
         end
     end
@@ -265,12 +266,14 @@ module raster_hiz_meta (
     logic [35:0] rmw_read_word;     // 36-bit word read during RMW
 
     // Slot extraction from RMW read word
-    logic [8:0]  rmw_old_entry;     // Existing 9-bit entry at target slot
-    logic        rmw_old_valid;     // Existing valid bit
-    logic [7:0]  rmw_old_min_z;    // Existing min_z[7:0]
+    logic [8:0]  rmw_old_entry;     // Existing 9-bit min_z at target slot
 
-    // Condition: update if new_z < stored min_z or !valid
+    // Condition: update if new_z < stored min_z (sentinel 9'h1FF is largest)
     logic        rmw_should_update; // True if slot needs update
+
+    // Value to write into the target slot (may differ from wr_s1_new_z on
+    // first write to a sentinel tile — see lazy-fill invariant comment below).
+    logic [8:0]  rmw_write_val;     // 9-bit value for target slot
 
     // Modified word for write-back
     logic [35:0] rmw_write_word;    // 36-bit word with updated slot
@@ -297,28 +300,39 @@ module raster_hiz_meta (
             end
         endcase
 
-        rmw_old_valid = rmw_old_entry[8];
-        rmw_old_min_z = rmw_old_entry[7:0];
+        // Update condition: authoritative (unconditional) or new_z < stored min_z.
+        // Sentinel 9'h1FF is the largest 9-bit value, so any real new_z < 9'h1FF
+        // automatically satisfies the comparison on first write (no valid-bit needed).
+        rmw_should_update = wr_s1_auth || (wr_s1_new_z < rmw_old_entry);
 
-        // Update condition: authoritative (unconditional), first write (!valid),
-        // or new_z_hi < stored min_z
-        rmw_should_update = wr_s1_auth || (!rmw_old_valid) || (wr_s1_new_z_hi < rmw_old_min_z);
+        // Value to write: on first write (sentinel → real), store 0 instead of
+        // new_z to preserve the lazy-fill invariant — unwritten pixels in the
+        // tile are Z=0x0000, so min_z must be 0 until all pixels are written.
+        // Authoritative writes bypass this (they come from the Z-cache with a
+        // known full-tile minimum).
+        if (wr_s1_auth) begin
+            rmw_write_val = wr_s1_new_z;
+        end else if (rmw_old_entry == 9'h1FF) begin
+            rmw_write_val = 9'd0;
+        end else begin
+            rmw_write_val = wr_s1_new_z;
+        end
 
         // Build the modified 36-bit word: replace only the target slot
         rmw_write_word = rmw_read_word;
         if (rmw_should_update) begin
             case (wr_s1_slot)
                 2'd0: begin
-                    rmw_write_word[8:0]   = {1'b1, wr_s1_new_z_hi};
+                    rmw_write_word[8:0]   = rmw_write_val;
                 end
                 2'd1: begin
-                    rmw_write_word[17:9]  = {1'b1, wr_s1_new_z_hi};
+                    rmw_write_word[17:9]  = rmw_write_val;
                 end
                 2'd2: begin
-                    rmw_write_word[26:18] = {1'b1, wr_s1_new_z_hi};
+                    rmw_write_word[26:18] = rmw_write_val;
                 end
                 2'd3: begin
-                    rmw_write_word[35:27] = {1'b1, wr_s1_new_z_hi};
+                    rmw_write_word[35:27] = rmw_write_val;
                 end
                 default: begin
                     // No modification
@@ -335,10 +349,10 @@ module raster_hiz_meta (
         portb_block_re = 8'd0;
 
         if (clr_wr_en) begin
-            // Fast-clear: write 36'h0 to all 8 blocks at current sweep address
+            // Fast-clear: write sentinel (9'h1FF in all 4 slots) to all 8 blocks
             portb_addr     = clr_addr;
             portb_block_we = 8'hFF;
-            portb_wdata    = 36'd0;
+            portb_wdata    = 36'hFFFFFFFFF;
         end else begin
             case (wr_state)
                 WR_READ: begin

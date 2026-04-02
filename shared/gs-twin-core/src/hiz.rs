@@ -1,4 +1,4 @@
-// Spec-ref: unit_005.06_hiz_block_metadata.md `0000000000000000` 1970-01-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
 
 //! Hi-Z block metadata store for hierarchical Z rejection.
 //!
@@ -92,8 +92,10 @@ impl HizMetadata {
     /// Update a metadata entry on Z-write.
     ///
     /// Computes `new_z_9bit = new_z >> 7` (i.e., Z\[15:7\]).
-    /// If the stored entry is the sentinel (`0x1FF`, first write) or
-    /// `new_z_9bit < stored`, the entry is replaced with `new_z_9bit`.
+    /// - **First write** (stored == sentinel): sets `min_z = 0` because
+    ///   unwritten pixels are lazy-filled with `Z=0x0000` and the Hi-Z
+    ///   invariant requires `min_z ≤ actual minimum Z in the tile`.
+    /// - **Subsequent writes**: replaces the entry when `new_z_9bit < stored`.
     ///
     /// # Arguments
     ///
@@ -102,7 +104,13 @@ impl HizMetadata {
     pub fn update(&mut self, tile_index: usize, new_z: u16) {
         let new_z_9bit = new_z >> 7;
         let stored = self.entries[tile_index];
-        if stored == SENTINEL || new_z_9bit < stored {
+        if stored == SENTINEL {
+            // First write to this tile.  Unwritten pixels are lazy-filled
+            // with Z=0x0000, so the true tile minimum is 0 — not the
+            // value we are writing now.  Store 0 to keep the Hi-Z
+            // invariant (min_z ≤ actual minimum Z in the tile).
+            self.entries[tile_index] = 0;
+        } else if new_z_9bit < stored {
             self.entries[tile_index] = new_z_9bit;
         }
     }

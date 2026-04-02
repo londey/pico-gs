@@ -125,7 +125,7 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
 	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
-	test-fb-promote test-alpha-blend test-dither test-raster-viz \
+	test-fb-promote test-pixel-pipeline-uninit test-alpha-blend test-dither test-raster-viz \
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
 	test-block-decoder-all \
@@ -582,6 +582,34 @@ test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_fb_promote -o tb_fb_promote
 	$(OBJ_DIR)/tb_fb_promote
 
+# Uninit flag EBR testbench (UNIT-006: lazy-fill flag tracking)
+test-pixel-pipeline-uninit: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(STIPPLE_RTL)/stipple.sv \
+		$(EARLYZ_RTL)/early_z.sv \
+		$(PXWRITE_RTL)/fb_promote.sv \
+		$(ABLEND_RTL)/alpha_blend.sv \
+		$(DITHER_RTL)/dither.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_DEC_RTL)/texel_promote.sv \
+		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
+		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
+		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
+		$(PXWRITE_RTL)/pixel_pipeline.sv \
+		$(COMP_DIR)/pixel-write/rtl/tests/tb_pixel_pipeline_uninit_flags.sv \
+		--top-module tb_pixel_pipeline_uninit_flags -o tb_pixel_pipeline_uninit_flags
+	$(OBJ_DIR)/tb_pixel_pipeline_uninit_flags
+
 # VER-007: Alpha blend unit testbench (Q4.12 blend modes)
 test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
@@ -708,7 +736,7 @@ test-r8-texture: render-r8-texture
 # Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
 # Golden image renders run as prerequisites. Diffs run in the recipe so all
 # comparisons execute even if some fail.
-test: lint test-rasterizer-all test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-alpha-blend test-dither render-all
+test: lint test-rasterizer-all test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-pixel-pipeline-uninit test-alpha-blend test-dither render-all
 	@echo "Unit testbenches passed."
 	@echo "All images rendered to $(SIM_OUT_DIR)/"
 	@failures=0; \

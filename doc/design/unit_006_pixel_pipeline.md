@@ -171,12 +171,16 @@ Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes
 ## Implementation
 
 - `shared/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
+- `components/pixel-write/twin/src/lib.rs`: Digital twin pixel-write stage (framebuffer + Z-buffer output, Hi-Z update, uninit flag tracking)
+- `components/pixel-write/twin/src/uninit_flags.rs`: Per-tile uninitialized flag array (`UninittedFlagArray`) for lazy-fill tracking
+- `components/pixel-write/twin/src/zbuf_cache.rs`: Digital twin Z-buffer tile cache (4-way set-associative, lazy-fill on miss)
 - `components/pixel-write/rtl/src/pixel_pipeline.sv`: Main implementation
 - `components/pixel-write/rtl/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
 - `components/alpha-blend/rtl/src/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
 - `components/dither/rtl/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
 - `components/early-z/rtl/src/early_z.sv`: Depth range test + early Z-test logic
 - `components/stipple/rtl/src/stipple.sv`: Stipple pattern test
+- `components/pixel-write/rtl/tests/tb_pixel_pipeline_uninit_flags.sv`: Verilator testbench for per-tile uninit flag EBR (lazy-fill tracking)
 
 Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned by UNIT-011.
 
