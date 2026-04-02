@@ -44,22 +44,32 @@ module texture_bilinear (
     // ====================================================================
     // Weights are UQ1.8: w00 = (256-fu)*(256-fv) >> 8, etc.
     // Sum of all 4 weights = 0x100 (1.0).
+    // Products are computed with explicit 18-bit operands to avoid
+    // 9-bit truncation during self-determined width evaluation.
 
     wire [8:0] ifu = 9'd256 - {1'b0, frac_u};  // 1 - fu
     wire [8:0] ifv = 9'd256 - {1'b0, frac_v};  // 1 - fv
     wire [8:0] fu9 = {1'b0, frac_u};
     wire [8:0] fv9 = {1'b0, frac_v};
 
-    wire [8:0] w00 = 9'((ifu * ifv) >> 8);  // (1-fu)(1-fv)
-    wire [8:0] w10 = 9'((fu9 * ifv) >> 8);  // fu*(1-fv)
-    wire [8:0] w01 = 9'((ifu * fv9) >> 8);  // (1-fu)*fv
-    wire [8:0] w11 = 9'((fu9 * fv9) >> 8);  // fu*fv
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [17:0] w00_full = {9'b0, ifu} * {9'b0, ifv};  // (1-fu)(1-fv)
+    wire [17:0] w10_full = {9'b0, fu9} * {9'b0, ifv};  // fu*(1-fv)
+    wire [17:0] w01_full = {9'b0, ifu} * {9'b0, fv9};  // (1-fu)*fv
+    wire [17:0] w11_full = {9'b0, fu9} * {9'b0, fv9};  // fu*fv
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    wire [8:0] w00 = w00_full[16:8];
+    wire [8:0] w10 = w10_full[16:8];
+    wire [8:0] w01 = w01_full[16:8];
+    wire [8:0] w11 = w11_full[16:8];
 
     // ====================================================================
     // Bilinear Blend (combinational)
     // ====================================================================
     // Per channel: result = Σ(texel[i] × weight[i]) >> 8
-    // Each multiply: 9-bit × 9-bit = 18-bit, accumulate 4 → 20-bit max
+    // Each multiply: 9-bit × 9-bit = 18-bit, accumulate 4 → 18-bit max
+    // (max value: 0x1FF × 0x100 = 0x1FF00, fits in 17 bits)
 
     // Extract channels from 36-bit texel: {A9[35:27], B9[26:18], G9[17:9], R9[8:0]}
     wire [8:0] t0_r = texel_tap0[8:0];
@@ -83,14 +93,19 @@ module texture_bilinear (
     wire [8:0] t3_a = texel_tap3[35:27];
 
     // Bilinear blend per channel: result = (Σ ti*wi) >> 8
+    // Explicit 18-bit products avoid width truncation in simulation.
     /* verilator lint_off UNUSEDSIGNAL */
     function automatic [8:0] blend_channel(
         input [8:0] c0, input [8:0] c1, input [8:0] c2, input [8:0] c3,
         input [8:0] wt0, input [8:0] wt1, input [8:0] wt2, input [8:0] wt3
     );
-        reg [17:0] acc;
+        reg [17:0] p0, p1, p2, p3, acc;
         begin
-            acc = (c0 * wt0) + (c1 * wt1) + (c2 * wt2) + (c3 * wt3);
+            p0  = {9'b0, c0} * {9'b0, wt0};
+            p1  = {9'b0, c1} * {9'b0, wt1};
+            p2  = {9'b0, c2} * {9'b0, wt2};
+            p3  = {9'b0, c3} * {9'b0, wt3};
+            acc = p0 + p1 + p2 + p3;
             blend_channel = acc[16:8]; // >> 8, 9-bit result
         end
     endfunction

@@ -29,7 +29,9 @@ STIPPLE_RTL = $(COMP_DIR)/stipple/rtl/src
 EARLYZ_RTL = $(COMP_DIR)/early-z/rtl/src
 TEXTURE_RTL     = $(COMP_DIR)/texture/rtl/src
 TEXTURE_UV_RTL  = $(COMP_DIR)/texture/detail/uv-coord/rtl/src
-TEXTURE_BLN_RTL = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/src
+TEXTURE_BLN_RTL    = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/src
+TEXTURE_BLN_TB_DIR = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/tests
+TEXTURE_BLN_VEC_DIR = $(TEXTURE_BLN_TB_DIR)/vectors
 TEXTURE_L1_RTL  = $(COMP_DIR)/texture/detail/l1-cache/rtl/src
 TEXTURE_DEC_RTL = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
 TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
@@ -130,7 +132,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
 	test-block-decoder-all \
 	gen-raster-vectors test-recip-area-dt test-recip-q-dt test-dsp-mul-dt \
-	test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-dt-all
+	test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-dt-all \
+	gen-bilinear-vectors test-bilinear-dt test-texture-dt-all
 
 # Default target
 all: bitstream
@@ -523,6 +526,26 @@ test-raster-dt-all: test-recip-area-dt test-recip-q-dt test-dsp-mul-dt test-shif
 
 # All rasterizer tests: sub-module unit tests + DT-verified + integration + visualization
 test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-walk test-rasterizer test-raster-viz test-raster-dt-all
+
+# ===========================================================================
+# DT-verified texture testbenches
+# ===========================================================================
+
+# Generate bilinear filter test vectors from digital twin
+gen-bilinear-vectors:
+	cargo run --bin gen_bilinear_test_vectors -- $(abspath $(TEXTURE_BLN_VEC_DIR))
+
+# DT-verified: texture_bilinear
+test-bilinear-dt: gen-bilinear-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
+		$(TEXTURE_BLN_TB_DIR)/tb_texture_bilinear_dt.sv \
+		--top-module tb_texture_bilinear_dt -o tb_texture_bilinear_dt
+	$(OBJ_DIR)/tb_texture_bilinear_dt
+
+# All DT-verified texture testbenches
+test-texture-dt-all: test-bilinear-dt
+	@echo "All DT-verified texture testbenches passed."
 
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)

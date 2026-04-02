@@ -172,6 +172,7 @@ if [ "$DT_VERIFY" = true ]; then
     echo -e "${YELLOW}[2/2] Verifying RTL against digital twin...${NC}"
     cd "${INTEGRATION}"
     make test-raster-dt-all
+    make test-texture-dt-all
     echo -e "${GREEN}All DT-verified RTL testbenches passed${NC}"
     echo ""
 
