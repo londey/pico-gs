@@ -1,11 +1,11 @@
 `default_nettype none
 
-// Texture Cache Tag BRAM — 64×24 SDP using PDPW16KD
+// Texture Cache Tag BRAM — 32×24 SDP using PDPW16KD
 //
 // Single write port (24-bit) and single read port (24-bit) wrapping one
 // ECP5 PDPW16KD EBR in 512×36 pseudo dual-port wide mode.
-// Only 64 entries (6-bit address) are used for tag storage; the remaining
-// 448 entries are unused.  Tag data occupies bits [23:0]; bits [35:24]
+// Only 32 entries (5-bit address) are used for tag storage; the remaining
+// 480 entries are unused.  Tag data occupies bits [23:0]; bits [35:24]
 // are tied low on writes and ignored on reads.
 //
 // See: DD-037 (PDPW16KD EBR), UNIT-011.03 (L1 Decompressed Cache)
@@ -14,11 +14,11 @@ module tex_tag_bram (
     input  wire        clk,
     // Write port
     input  wire        we,
-    input  wire [5:0]  waddr,   // 64 entries (6-bit set index)
+    input  wire [4:0]  waddr,   // 32 entries (5-bit set index)
     input  wire [23:0] wdata,   // 24-bit tag
     // Read port (1-cycle latency, output holds when re=0)
     input  wire        re,
-    input  wire [5:0]  raddr,
+    input  wire [4:0]  raddr,
     output wire [23:0] rdata
 );
 
@@ -49,11 +49,11 @@ module tex_tag_bram (
         .BE2   (1'b1),
         .BE1   (1'b1),
         .BE0   (1'b1),
-        // Write address: 6-bit set index in ADW[5:0], upper 3 bits tied low
+        // Write address: 5-bit set index in ADW[4:0], upper 4 bits tied low
         .ADW8  (1'b0),
         .ADW7  (1'b0),
         .ADW6  (1'b0),
-        .ADW5  (waddr[5]),
+        .ADW5  (1'b0),
         .ADW4  (waddr[4]),
         .ADW3  (waddr[3]),
         .ADW2  (waddr[2]),
@@ -104,11 +104,11 @@ module tex_tag_bram (
         .CSR0  (1'b0),
         .CSR1  (1'b0),
         .CSR2  (1'b0),
-        // Read address: 6-bit set index via ADR[10:5], upper 3 and lower 5 tied low
+        // Read address: 5-bit set index via ADR[9:5], upper 4 and lower 5 tied low
         .ADR13 (1'b0),
         .ADR12 (1'b0),
         .ADR11 (1'b0),
-        .ADR10 (raddr[5]),
+        .ADR10 (1'b0),
         .ADR9  (raddr[4]),
         .ADR8  (raddr[3]),
         .ADR7  (raddr[2]),
@@ -166,7 +166,7 @@ module tex_tag_bram (
 `else
 
     // Behavioral model for Verilator simulation
-    logic [23:0] mem [0:63];
+    logic [23:0] mem [0:31];
     logic [23:0] rdata_r;
 
     always_ff @(posedge clk)

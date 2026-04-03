@@ -5,7 +5,7 @@
 // L1 Decompressed Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative cache for one sampler, storing decompressed
 // texels in UQ1.8 per channel (36 bits/texel) across PDPW16KD 512×36 EBR banks.
-// Tags are stored in 4 × PDPW16KD EBR blocks (one per way, 64×24), saving
+// Tags are stored in 4 × PDPW16KD EBR blocks (one per way, 32×24), saving
 // ~6k FFs at the cost of 1 extra cycle of hit latency (3-cycle hit total).
 //
 // On a cache miss the fill FSM fetches raw block data from SRAM via the
@@ -90,8 +90,8 @@ module texture_cache_l1 (
     // Constants
     // ====================================================================
 
-    localparam NUM_SETS     = 64;   // 6-bit set index
-    localparam NUM_LINES   = 256;  // 64 sets * 4 ways
+    localparam NUM_SETS     = 32;   // 5-bit set index
+    localparam NUM_LINES   = 128;  // 32 sets * 4 ways
     // 4 tag EBR blocks (1 per way, PDPW16KD 64×24): see u_tag0..u_tag3 below
 
     // Burst lengths per format (number of 16-bit words)
@@ -127,7 +127,7 @@ module texture_cache_l1 (
     reg [23:0] fill_addr;         // Latched SRAM start address for current fill
 
     // ====================================================================
-    // Cache Tag Storage (64 sets x 4 ways)
+    // Cache Tag Storage (32 sets x 4 ways)
     // ====================================================================
 
     // Tag: {tex_base[23:12], block_y[5:0], block_x[5:0]} = 24 bits
@@ -141,8 +141,9 @@ module texture_cache_l1 (
     // ====================================================================
     // Cache Data Banks — PDPW16KD 512×36-bit (UQ1.8 RGBA)
     //
-    // 4 banks × 512 entries = 2048 texels per sampler (8,192 total).
+    // 4 banks × 512 entries = 2048 texels per sampler.
     // Each bank stores texels for one (x_parity, y_parity) quadrant.
+    // Address = {set_index[4:0], way[1:0], quad_y, quad_x} = 9 bits.
     // Reads are synchronous (1-cycle latency); see data_valid output.
     // ====================================================================
 
@@ -158,14 +159,15 @@ module texture_cache_l1 (
     wire [7:0] block_x = pixel_x[9:2];   // pixel_x / 4
     wire [7:0] block_y = pixel_y[9:2];   // pixel_y / 4
 
-    // XOR-folded set index (6 bits)
-    wire [5:0] set_index = block_x[5:0] ^ block_y[5:0];
+    // XOR-folded set index (5 bits)
+    wire [4:0] set_index = block_x[4:0] ^ block_y[4:0];
 
-    // Tag for comparison
+    // Tag for comparison: includes the full block coordinates so that
+    // blocks aliased into the same set are distinguished.
     wire [23:0] lookup_tag = {tex_base_addr[23:12], block_y[5:0], block_x[5:0]};
 
     // ====================================================================
-    // Tag EBR Instances (4 × PDPW16KD, one per way, 64×24)
+    // Tag EBR Instances (4 × PDPW16KD, one per way, 32×24)
     // ====================================================================
 
     // Tag read: initiated on lookup_req (cycle 0), data available cycle 1.
@@ -224,7 +226,7 @@ module texture_cache_l1 (
     // outputs in cycle 1 for comparison and bank address computation.
 
     reg        lookup_req_r;
-    reg [5:0]  set_index_r;
+    reg [4:0]  set_index_r;
     reg [23:0] lookup_tag_r;
     reg        pixel_x_1_r;
     reg        pixel_y_1_r;
@@ -232,7 +234,7 @@ module texture_cache_l1 (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             lookup_req_r <= 1'b0;
-            set_index_r  <= 6'b0;
+            set_index_r  <= 5'b0;
             lookup_tag_r <= 24'b0;
             pixel_x_1_r  <= 1'b0;
             pixel_y_1_r  <= 1'b0;
@@ -249,10 +251,10 @@ module texture_cache_l1 (
     // Tag Comparison (cycle 1, after tag EBR read)
     // ====================================================================
 
-    wire [7:0] way0_idx = {set_index_r, 2'b00};
-    wire [7:0] way1_idx = {set_index_r, 2'b01};
-    wire [7:0] way2_idx = {set_index_r, 2'b10};
-    wire [7:0] way3_idx = {set_index_r, 2'b11};
+    wire [6:0] way0_idx = {set_index_r, 2'b00};
+    wire [6:0] way1_idx = {set_index_r, 2'b01};
+    wire [6:0] way2_idx = {set_index_r, 2'b10};
+    wire [6:0] way3_idx = {set_index_r, 2'b11};
 
     wire way0_hit = valid_store[way0_idx] && (tag_rdata_0 == lookup_tag_r);
     wire way1_hit = valid_store[way1_idx] && (tag_rdata_1 == lookup_tag_r);
@@ -290,7 +292,7 @@ module texture_cache_l1 (
     // Sub-block quad select: pixel_x[1], pixel_y[1] pick which 2×2 quad
     // within the 4×4 block to read (0..3 per bank per cache line).
     // 36-bit banks have 512 entries (9-bit addr): {set_index[4:0], way[1:0], quad_y, quad_x}
-    wire [8:0] read_bank_addr = {set_index_r[4:0], hit_way, pixel_y_1_r, pixel_x_1_r};
+    wire [8:0] read_bank_addr = {set_index_r, hit_way, pixel_y_1_r, pixel_x_1_r};
 
     // BRAM outputs are registered; data valid 1 cycle after cache_hit
     assign texel_out_0 = bank_rdata_0;
@@ -405,7 +407,7 @@ module texture_cache_l1 (
     // ====================================================================
 
     reg [1:0]  write_count;     // Bank write counter (0..3)
-    reg [5:0]  fill_set_index;  // Latched set index for fill
+    reg [4:0]  fill_set_index;  // Latched set index for fill
     reg [23:0] fill_tag;        // Latched tag for fill
     reg [1:0]  fill_victim_way; // Latched victim way for fill
 
@@ -485,7 +487,7 @@ module texture_cache_l1 (
             fill_format     <= 3'b0;
             fill_addr       <= 24'b0;
             write_count     <= 2'b0;
-            fill_set_index  <= 6'b0;
+            fill_set_index  <= 5'b0;
             fill_tag        <= 24'b0;
             fill_victim_way <= 2'b0;
 
@@ -623,9 +625,9 @@ module texture_cache_l1 (
     // Write 4 decoded texels per cycle (one to each bank), 4 cycles total.
     // sub_addr = write_count (0..3), bank_addr = fill_bank_base + write_count.
 
-    wire [7:0] fill_line_idx = {fill_set_index, fill_victim_way};
+    wire [6:0] fill_line_idx = {fill_set_index, fill_victim_way};
     // 36-bit banks: 512 entries, 9-bit address; base = {set[4:0], way[1:0], 2'b00}
-    wire [8:0] fill_bank_base = {fill_set_index[4:0], fill_victim_way, 2'b00};
+    wire [8:0] fill_bank_base = {fill_set_index, fill_victim_way, 2'b00};
     wire [8:0] fill_bank_addr = fill_bank_base + {7'b0, write_count};
 
     wire bank_we = (fill_state == FILL_WRITE);
