@@ -12,3 +12,7 @@ gpu-registers = { path = "../../../../registers/twin", default-features = false 
 qfixed = { path = "../../../../../crates/qfixed" }
 gs-tex-l1-cache = { path = "../../l1-cache/twin" }
 gs-tex-l2-cache = { path = "../../l2-cache/twin" }
+
+[[bin]]
+name = "gen_block_decode_vectors"
+path = "src/bin/gen_block_decode_vectors.rs"

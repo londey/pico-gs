@@ -35,7 +35,8 @@ TEXTURE_BLN_VEC_DIR = $(TEXTURE_BLN_TB_DIR)/vectors
 TEXTURE_L1_RTL     = $(COMP_DIR)/texture/detail/l1-cache/rtl/src
 TEXTURE_L1_TB_DIR  = $(COMP_DIR)/texture/detail/l1-cache/rtl/tests
 TEXTURE_L1_VEC_DIR = $(TEXTURE_L1_TB_DIR)/vectors
-TEXTURE_DEC_RTL = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
+TEXTURE_DEC_RTL     = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
+TEXTURE_DEC_VEC_DIR = $(TEXTURE_DEC_TESTS)/vectors
 TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
 CC_RTL = $(COMP_DIR)/color-combiner/rtl/src
 ABLEND_RTL = $(COMP_DIR)/alpha-blend/rtl/src
@@ -137,7 +138,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-dt-all \
 	gen-bilinear-vectors test-bilinear-dt \
 	gen-l1-wrap-vectors gen-l1-mirror-vectors \
-	test-l1-wrap-dt test-l1-mirror-dt test-texture-dt-all
+	test-l1-wrap-dt test-l1-mirror-dt \
+	gen-block-decode-vectors test-block-decode-dt test-texture-dt-all
 
 # Default target
 all: bitstream
@@ -597,8 +599,26 @@ test-l1-mirror-dt: gen-l1-mirror-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_l1_cache_mirror_dt -o tb_l1_cache_mirror_dt
 	$(OBJ_DIR)/tb_l1_cache_mirror_dt
 
+# Generate block decoder test vectors from digital twin
+gen-block-decode-vectors:
+	cargo run --bin gen_block_decode_vectors -- $(abspath $(TEXTURE_DEC_VEC_DIR))
+
+# DT-verified: block decoder (all formats)
+test-block-decode-dt: gen-block-decode-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_DEC_TESTS)/tb_block_decode_dt.sv \
+		--top-module tb_block_decode_dt -o tb_block_decode_dt
+	$(OBJ_DIR)/tb_block_decode_dt
+
 # All DT-verified texture testbenches
-test-texture-dt-all: test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt
+test-texture-dt-all: test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
 	@echo "All DT-verified texture testbenches passed."
 
 # VER-001: Rasterizer unit testbench
