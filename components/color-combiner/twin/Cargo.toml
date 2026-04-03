@@ -10,3 +10,7 @@ description = "Color combiner component of the pico-gs digital twin"
 gs-twin-core = { path = "../../../shared/gs-twin-core" }
 qfixed = { path = "../../../crates/qfixed" }
 gpu-registers = { path = "../../registers/twin", default-features = false }
+
+[[bin]]
+name = "gen_cc_dt_vectors"
+path = "src/bin/gen_cc_dt_vectors.rs"

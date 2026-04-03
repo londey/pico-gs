@@ -173,6 +173,7 @@ if [ "$DT_VERIFY" = true ]; then
     cd "${INTEGRATION}"
     make test-raster-dt-all
     make test-texture-dt-all
+    make test-cc-dt-all
     echo -e "${GREEN}All DT-verified RTL testbenches passed${NC}"
     echo ""
 

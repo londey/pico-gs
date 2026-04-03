@@ -212,7 +212,7 @@ module tb_l1_cache_wrap_dt;
     reg [35:0] exp_t3;
 
     initial begin
-        $dumpfile("tb_l1_cache_wrap_dt.fst");
+        $dumpfile("../build/sim_out/l1_cache_wrap_dt.fst");
         $dumpvars(0, tb_l1_cache_wrap_dt);
 
         // Load hex files

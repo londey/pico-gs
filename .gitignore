@@ -1,6 +1,7 @@
 __pycache__
 .syskit
 *.bk
+*.fst
 *.pyc
 *.vcd
 **/*.local.json

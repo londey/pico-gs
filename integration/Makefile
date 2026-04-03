@@ -41,6 +41,8 @@ TEXTURE_DEC_RTL     = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
 TEXTURE_DEC_VEC_DIR = $(TEXTURE_DEC_TESTS)/vectors
 TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
 CC_RTL = $(COMP_DIR)/color-combiner/rtl/src
+CC_TB_DIR = $(COMP_DIR)/color-combiner/rtl/tests
+CC_VEC_DIR = $(CC_TB_DIR)/vectors
 ABLEND_RTL = $(COMP_DIR)/alpha-blend/rtl/src
 DITHER_RTL = $(COMP_DIR)/dither/rtl/src
 PXWRITE_RTL = $(COMP_DIR)/pixel-write/rtl/src
@@ -141,7 +143,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	gen-bilinear-vectors test-bilinear-dt \
 	gen-l1-wrap-vectors gen-l1-mirror-vectors \
 	test-l1-wrap-dt test-l1-mirror-dt \
-	gen-block-decode-vectors test-block-decode-dt test-texture-dt-all
+	gen-block-decode-vectors test-block-decode-dt test-texture-dt-all \
+	gen-cc-vectors test-cc-dt test-cc-dt-all
 
 # Default target
 all: bitstream
@@ -634,6 +637,27 @@ test-block-decode-dt: gen-block-decode-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 # All DT-verified texture testbenches
 test-texture-dt-all: test-uv-coord-dt test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
 	@echo "All DT-verified texture testbenches passed."
+
+# ===========================================================================
+# DT-verified color combiner testbenches
+# ===========================================================================
+
+# Generate color combiner test vectors from digital twin
+gen-cc-vectors:
+	cargo run --bin gen_cc_dt_vectors -- $(abspath $(CC_VEC_DIR))
+
+# DT-verified color combiner testbench
+test-cc-dt: gen-cc-vectors | $(OBJ_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(CC_RTL)/color_combiner.sv \
+		$(CC_TB_DIR)/tb_cc_dt.sv \
+		--top-module tb_cc_dt -o tb_cc_dt
+	$(OBJ_DIR)/tb_cc_dt
+
+# All DT-verified color combiner testbenches
+test-cc-dt-all: test-cc-dt
+	@echo "All DT-verified color combiner testbenches passed."
 
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)

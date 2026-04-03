@@ -168,7 +168,7 @@ module tb_texture_cache_burst;
     integer i;
 
     initial begin
-        $dumpfile("texture_cache_burst.vcd");
+        $dumpfile("../build/sim_out/texture_cache_burst.vcd");
         $dumpvars(0, tb_texture_cache_burst);
 
         do_reset();
