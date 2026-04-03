@@ -161,6 +161,39 @@ The build script can build and flash both targets in one go:
 ./build.sh --release --flash-fpga --flash-firmware
 ```
 
+## Digital Twin Verification
+
+Each pipeline component has a Rust digital twin (`twin/`) that defines the bit-accurate expected behaviour.
+The `/dt-verify-team` Claude Code command spawns an agent team to create DT-verified test benches for any component.
+
+### Usage
+
+```bash
+/dt-verify-team components/texture/detail/l1-cache
+```
+
+The command accepts any component path under `components/` that has both `rtl/` and `twin/` directories.
+
+### What it does
+
+1. **Pre-flight** — reads the twin crate, RTL sources, and UNIT spec to understand the component
+2. **dt-vectors** agent — proposes a test plan (waits for your approval), then generates Rust binaries that produce `$readmemh`-compatible hex stimulus and expected-output files
+3. **rtl-testbench** agent — implements SystemVerilog testbenches that load those hex files and verify RTL output binary-matches the twin
+4. **Integration** — wires the new test benches into `./build.sh --dt-verify`
+
+Run all DT-verified test benches with:
+
+```bash
+./build.sh --dt-verify
+```
+
+### File naming conventions
+
+| Type             | Pattern                              | Location                   |
+|------------------|--------------------------------------|----------------------------|
+| Vector generator | `gen_<module>_<scenario>_vectors.rs` | `<component>/twin/src/bin/` |
+| RTL testbench    | `tb_<module>_<scenario>_dt.sv`       | `<component>/rtl/tests/`   |
+
 ## Development
 
 See [CLAUDE.md](CLAUDE.md) for development guidelines and project conventions.
