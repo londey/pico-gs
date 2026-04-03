@@ -9,3 +9,11 @@ description = "L1 decoded texture block cache for the pico-gs digital twin"
 [dependencies]
 gs-twin-core = { path = "../../../../../shared/gs-twin-core" }
 qfixed = { path = "../../../../../crates/qfixed" }
+
+[[bin]]
+name = "gen_l1_cache_mirror_vectors"
+path = "src/bin/gen_l1_cache_mirror_vectors.rs"
+
+[[bin]]
+name = "gen_l1_cache_wrap_vectors"
+path = "src/bin/gen_l1_cache_wrap_vectors.rs"

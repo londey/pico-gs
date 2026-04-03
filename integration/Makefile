@@ -32,7 +32,9 @@ TEXTURE_UV_RTL  = $(COMP_DIR)/texture/detail/uv-coord/rtl/src
 TEXTURE_BLN_RTL    = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/src
 TEXTURE_BLN_TB_DIR = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/tests
 TEXTURE_BLN_VEC_DIR = $(TEXTURE_BLN_TB_DIR)/vectors
-TEXTURE_L1_RTL  = $(COMP_DIR)/texture/detail/l1-cache/rtl/src
+TEXTURE_L1_RTL     = $(COMP_DIR)/texture/detail/l1-cache/rtl/src
+TEXTURE_L1_TB_DIR  = $(COMP_DIR)/texture/detail/l1-cache/rtl/tests
+TEXTURE_L1_VEC_DIR = $(TEXTURE_L1_TB_DIR)/vectors
 TEXTURE_DEC_RTL = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
 TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
 CC_RTL = $(COMP_DIR)/color-combiner/rtl/src
@@ -133,7 +135,9 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-block-decoder-all \
 	gen-raster-vectors test-recip-area-dt test-recip-q-dt test-dsp-mul-dt \
 	test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-dt-all \
-	gen-bilinear-vectors test-bilinear-dt test-texture-dt-all
+	gen-bilinear-vectors test-bilinear-dt \
+	gen-l1-wrap-vectors gen-l1-mirror-vectors \
+	test-l1-wrap-dt test-l1-mirror-dt test-texture-dt-all
 
 # Default target
 all: bitstream
@@ -543,8 +547,58 @@ test-bilinear-dt: gen-bilinear-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_texture_bilinear_dt -o tb_texture_bilinear_dt
 	$(OBJ_DIR)/tb_texture_bilinear_dt
 
+# Generate L1 cache wrap test vectors from digital twin
+gen-l1-wrap-vectors:
+	cargo run --bin gen_l1_cache_wrap_vectors -- $(abspath $(TEXTURE_L1_VEC_DIR))
+
+# Generate L1 cache mirror test vectors from digital twin
+gen-l1-mirror-vectors:
+	cargo run --bin gen_l1_cache_mirror_vectors -- $(abspath $(TEXTURE_L1_VEC_DIR))
+
+# DT-verified: L1 cache wrap mode
+test-l1-wrap-dt: gen-l1-wrap-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
+		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
+		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
+		$(TEXTURE_L1_TB_DIR)/tb_l1_cache_wrap_dt.sv \
+		--top-module tb_l1_cache_wrap_dt -o tb_l1_cache_wrap_dt
+	$(OBJ_DIR)/tb_l1_cache_wrap_dt
+
+# DT-verified: L1 cache mirror mode
+test-l1-mirror-dt: gen-l1-mirror-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
+		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
+		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
+		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
+		$(TEXTURE_DEC_RTL)/texture_r8.sv \
+		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
+		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
+		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
+		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
+		$(TEXTURE_L1_TB_DIR)/tb_l1_cache_mirror_dt.sv \
+		--top-module tb_l1_cache_mirror_dt -o tb_l1_cache_mirror_dt
+	$(OBJ_DIR)/tb_l1_cache_mirror_dt
+
 # All DT-verified texture testbenches
-test-texture-dt-all: test-bilinear-dt
+test-texture-dt-all: test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt
 	@echo "All DT-verified texture testbenches passed."
 
 # VER-001: Rasterizer unit testbench
