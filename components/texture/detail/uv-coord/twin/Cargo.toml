@@ -1,0 +1,15 @@
+[package]
+name = "gs-tex-uv-coord"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Texture UV coordinate processing for the pico-gs digital twin"
+
+[dependencies]
+gpu-registers = { path = "../../../../registers/twin", default-features = false }
+qfixed = { path = "../../../../../crates/qfixed" }
+
+[[bin]]
+name = "gen_uv_coord_vectors"
+path = "src/bin/gen_uv_coord_vectors.rs"

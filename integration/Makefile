@@ -28,7 +28,9 @@ RASTER_RTL = $(COMP_DIR)/rasterizer/rtl/src
 STIPPLE_RTL = $(COMP_DIR)/stipple/rtl/src
 EARLYZ_RTL = $(COMP_DIR)/early-z/rtl/src
 TEXTURE_RTL     = $(COMP_DIR)/texture/rtl/src
-TEXTURE_UV_RTL  = $(COMP_DIR)/texture/detail/uv-coord/rtl/src
+TEXTURE_UV_RTL     = $(COMP_DIR)/texture/detail/uv-coord/rtl/src
+TEXTURE_UV_TB_DIR  = $(COMP_DIR)/texture/detail/uv-coord/rtl/tests
+TEXTURE_UV_VEC_DIR = $(TEXTURE_UV_TB_DIR)/vectors
 TEXTURE_BLN_RTL    = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/src
 TEXTURE_BLN_TB_DIR = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/tests
 TEXTURE_BLN_VEC_DIR = $(TEXTURE_BLN_TB_DIR)/vectors
@@ -549,6 +551,18 @@ test-bilinear-dt: gen-bilinear-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_texture_bilinear_dt -o tb_texture_bilinear_dt
 	$(OBJ_DIR)/tb_texture_bilinear_dt
 
+# Generate UV coordinate test vectors from digital twin
+gen-uv-coord-vectors:
+	cargo run --bin gen_uv_coord_vectors -- $(abspath $(TEXTURE_UV_VEC_DIR))
+
+# DT-verified: texture_uv_coord
+test-uv-coord-dt: gen-uv-coord-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
+		$(TEXTURE_UV_TB_DIR)/tb_uv_coord_dt.sv \
+		--top-module tb_uv_coord_dt -o tb_uv_coord_dt
+	$(OBJ_DIR)/tb_uv_coord_dt
+
 # Generate L1 cache wrap test vectors from digital twin
 gen-l1-wrap-vectors:
 	cargo run --bin gen_l1_cache_wrap_vectors -- $(abspath $(TEXTURE_L1_VEC_DIR))
@@ -618,7 +632,7 @@ test-block-decode-dt: gen-block-decode-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(OBJ_DIR)/tb_block_decode_dt
 
 # All DT-verified texture testbenches
-test-texture-dt-all: test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
+test-texture-dt-all: test-uv-coord-dt test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
 	@echo "All DT-verified texture testbenches passed."
 
 # VER-001: Rasterizer unit testbench

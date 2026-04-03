@@ -67,26 +67,28 @@ module texture_uv_coord (
     // Result has 8 fractional bits: texel = integer part, frac = sub-texel.
 
     // Use signed arithmetic to handle negative UVs correctly.
-    wire signed [15:0] u_signed = $signed(u_q412);
-    wire signed [15:0] v_signed = $signed(v_q412);
+    // Sign-extend to 24 bits BEFORE shifting so that left shifts for large
+    // textures (dim_log2 > 4) do not overflow the 16-bit input.
+    wire signed [23:0] u_ext = {{8{u_q412[15]}}, $signed(u_q412)};
+    wire signed [23:0] v_ext = {{8{v_q412[15]}}, $signed(v_q412)};
 
     // Shift to get texel-space with 8 fractional bits
-    // u_texel_fixed = u_signed << (width_log2 - 4)  [when width_log2 > 4]
-    //               = u_signed >> (4 - width_log2)   [when width_log2 <= 4]
+    // u_texel_fixed = u_ext << (width_log2 - 4)  [when width_log2 > 4]
+    //               = u_ext >> (4 - width_log2)   [when width_log2 <= 4]
     // This gives a signed value with 8 fractional bits.
     reg signed [23:0] u_fixed, v_fixed;
 
     always_comb begin
         if (width_log2 <= 4'd4) begin
-            u_fixed = 24'($signed(u_signed) >>> (4'd4 - width_log2));
+            u_fixed = u_ext >>> (4'd4 - width_log2);
         end else begin
-            u_fixed = 24'($signed(u_signed) <<< (width_log2 - 4'd4));
+            u_fixed = u_ext <<< (width_log2 - 4'd4);
         end
 
         if (height_log2 <= 4'd4) begin
-            v_fixed = 24'($signed(v_signed) >>> (4'd4 - height_log2));
+            v_fixed = v_ext >>> (4'd4 - height_log2);
         end else begin
-            v_fixed = 24'($signed(v_signed) <<< (height_log2 - 4'd4));
+            v_fixed = v_ext <<< (height_log2 - 4'd4);
         end
     end
 
@@ -116,23 +118,23 @@ module texture_uv_coord (
     // Apply wrap mode independently to each axis.
     // Dimensions are power-of-2, so modulo = mask.
 
-    // Dimension masks
-    wire [9:0] u_dim    = 10'd1 << width_log2;
-    wire [9:0] u_mask   = u_dim - 10'd1;
-    wire [9:0] v_dim    = 10'd1 << height_log2;
-    wire [9:0] v_mask   = v_dim - 10'd1;
+    // Dimension values (11 bits to hold 1024 = 1 << 10)
+    wire [10:0] u_dim    = 11'd1 << width_log2;
+    wire [9:0]  u_mask   = u_dim[9:0] - 10'd1;
+    wire [10:0] v_dim    = 11'd1 << height_log2;
+    wire [9:0]  v_mask   = v_dim[9:0] - 10'd1;
 
     // Wrap function for a single axis
     /* verilator lint_off UNUSEDSIGNAL */
     function automatic [9:0] wrap_coord(
         input signed [15:0] coord_raw,
-        input [9:0]         dim,
+        input [10:0]        dim,
         input [9:0]         mask,
         input [1:0]         wrap_mode
     );
         reg [9:0] wrapped;
-        reg [10:0] mirror_period;
-        reg [10:0] t_mod;
+        reg [11:0] mirror_period;
+        reg [11:0] t_mod;
         begin
             case (wrap_mode)
                 2'd0: begin // Repeat
@@ -142,8 +144,8 @@ module texture_uv_coord (
                 2'd1: begin // ClampToEdge
                     if (coord_raw < 0) begin
                         wrapped = 10'd0;
-                    end else if (coord_raw[9:0] >= dim) begin
-                        wrapped = dim - 10'd1;
+                    end else if ({5'b0, coord_raw[9:0]} >= {5'b0, dim[9:0]}) begin
+                        wrapped = dim[9:0] - 10'd1;
                     end else begin
                         wrapped = coord_raw[9:0];
                     end
@@ -151,11 +153,11 @@ module texture_uv_coord (
                 2'd2: begin // Mirror
                     mirror_period = {1'b0, dim} << 1; // 2 * dim
                     // Euclidean modulo: t = coord_raw mod (2*dim)
-                    t_mod = coord_raw[10:0] & (mirror_period - 11'd1);
-                    if (t_mod[10:0] < {1'b0, dim}) begin
+                    t_mod = {1'b0, coord_raw[10:0]} & (mirror_period - 12'd1);
+                    if (t_mod < {1'b0, dim}) begin
                         wrapped = t_mod[9:0];
                     end else begin
-                        wrapped = 10'(mirror_period - 11'd1 - t_mod);
+                        wrapped = 10'(mirror_period - 12'd1 - t_mod);
                     end
                 end
                 default: begin // Octahedral = Repeat

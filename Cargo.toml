@@ -10,6 +10,7 @@ members = [
     "components/texture/detail/l1-cache/twin",
     "components/texture/detail/l2-cache/twin",
     "components/texture/detail/block-decoder/twin",
+    "components/texture/detail/uv-coord/twin",
     "components/texture/detail/bilinear-filter/twin",
     "components/color-combiner/twin",
     "components/alpha-blend/twin",

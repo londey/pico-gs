@@ -11,6 +11,7 @@ gs-twin-core = { path = "../../../../../shared/gs-twin-core" }
 gpu-registers = { path = "../../../../registers/twin", default-features = false }
 qfixed = { path = "../../../../../crates/qfixed" }
 gs-tex-block-decoder = { path = "../../block-decoder/twin" }
+gs-tex-uv-coord = { path = "../../uv-coord/twin" }
 
 [[bin]]
 name = "gen_bilinear_test_vectors"

@@ -225,6 +225,7 @@ version = "0.1.0"
 dependencies = [
  "gpu-registers",
  "gs-tex-block-decoder",
+ "gs-tex-uv-coord",
  "gs-twin-core",
  "qfixed",
 ]
@@ -254,6 +255,14 @@ version = "0.1.0"
 dependencies = [
  "gpu-registers",
  "gs-twin-core",
+]
+
+[[package]]
+name = "gs-tex-uv-coord"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "qfixed",
 ]
 
 [[package]]
