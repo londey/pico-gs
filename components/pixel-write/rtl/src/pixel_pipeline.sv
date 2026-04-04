@@ -94,7 +94,6 @@ module pixel_pipeline (
     output wire         zbuf_read_req,    // Z-buffer read request
     output wire [13:0]  zbuf_read_tile_idx, // Tile index for cache lookup
     output wire [3:0]   zbuf_read_pixel_off, // Pixel offset within tile
-    output wire         zbuf_read_hiz_uninit, // Hi-Z uninit for lazy-fill
     input  wire [15:0]  zbuf_read_data,   // Z-buffer read value
     input  wire         zbuf_read_valid,  // Z-buffer read data valid
     input  wire         zbuf_ready,       // Z-buffer cache ready
@@ -103,7 +102,6 @@ module pixel_pipeline (
     output wire [13:0]  zbuf_write_tile_idx, // Tile index for cache write
     output wire [3:0]   zbuf_write_pixel_off, // Pixel offset within tile
     output wire [15:0]  zbuf_write_data,  // Z-buffer write data
-    output wire         zbuf_write_hiz_uninit, // Hi-Z uninit for lazy-fill
 
     // ====================================================================
     // Framebuffer Interface (via UNIT-007 Memory Arbiter, port 1)
@@ -140,11 +138,6 @@ module pixel_pipeline (
     output wire  [8:0]  hiz_wr_new_z,     // written_z[15:7] (9-bit min_z bucket)
 
     // ====================================================================
-    // Uninit Flag Clear (same trigger as Hi-Z fast-clear)
-    // ====================================================================
-    input  wire         uninit_clear_req, // Pulse to begin 512-cycle flag sweep
-
-    // ====================================================================
     // Pipeline Status
     // ====================================================================
     output wire         pipeline_empty    // No fragments in flight
@@ -170,34 +163,6 @@ module pixel_pipeline (
     // address space: max base * 512 = 32767 * 512 = 16,776,704 < 2^24).
     wire [14:0] fb_color_base = reg_fb_config[14:0];
     wire [3:0]  fb_width_log2 = reg_fb_config[19:16];
-
-    // ====================================================================
-    // Uninitialized Flag EBR (UNIT-006: per-tile lazy-fill tracking)
-    // ====================================================================
-    // One DP16KD in 32x512 mode: 512 words x 32 bits = 16,384 1-bit flags.
-    // Flag = 1: tile not yet written since last Z-buffer clear (lazy-fill).
-    // Flag = 0: tile has been written at least once.
-    //
-    // Addressing: tile_index[13:5] = word address (9 bits)
-    //             tile_index[4:0]  = bit position within word (5 bits)
-    //
-    // Read: 1-cycle latency; initiated in PP_IDLE, result in PP_Z_READ.
-    // Write: bit-clear via read-modify-write on Z-write.
-    // Clear sweep: 512 cycles writing 32'hFFFFFFFF, triggered by uninit_clear_req.
-
-    (* ram_style = "block" *)
-    reg [31:0] uninit_flags_mem [0:511];
-
-    // Clear sweep FSM
-    reg         uninit_clear_busy;
-    reg  [8:0]  uninit_clear_addr;
-
-    // Read port registers
-    reg  [31:0] uninit_rd_word;
-    reg  [4:0]  uninit_rd_bit_sel;
-
-    // Uninit flag result (extracted from read word after 1-cycle BRAM latency)
-    wire        uninit_flag = uninit_rd_word[uninit_rd_bit_sel];
 
     // ====================================================================
     // Suppress unused signal warnings for ports not yet connected
@@ -227,53 +192,6 @@ module pixel_pipeline (
     // lat_z_bypass is latched for future use (Z-write-after-bypass path)
     // but not yet read in the current FSM.
     /* verilator lint_on UNUSEDSIGNAL */
-
-    // ====================================================================
-    // Uninit Flag EBR — Read Port (1-cycle BRAM latency)
-    // ====================================================================
-    // Read address driven combinationally from tile_block_idx on fragment
-    // accept (PP_IDLE); data captured one cycle later (PP_Z_READ).
-
-    wire [8:0]  uninit_tile_word_addr = tile_block_idx[13:5];
-    wire [4:0]  uninit_tile_bit_sel   = tile_block_idx[4:0];
-
-    always_ff @(posedge clk) begin
-        uninit_rd_word    <= uninit_flags_mem[uninit_tile_word_addr];
-        uninit_rd_bit_sel <= uninit_tile_bit_sel;
-    end
-
-    // ====================================================================
-    // Uninit Flag EBR — Write Port + Clear Sweep
-    // ====================================================================
-    // Write port handles two operations:
-    //   1. Bit-clear: on Z-write (PP_Z_WRITE + zbuf_ready), clear the flag
-    //      for the written tile via read-modify-write.
-    //   2. Clear sweep: on uninit_clear_req, write 32'hFFFFFFFF to all 512
-    //      words in 512 cycles (all tiles marked uninitialized).
-    // Clear sweep has priority over bit-clear writes.
-
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            uninit_clear_busy <= 1'b1;  // Start clear on reset
-            uninit_clear_addr <= 9'd0;
-        end else if (uninit_clear_req) begin
-            uninit_clear_busy <= 1'b1;
-            uninit_clear_addr <= 9'd0;
-        end else if (uninit_clear_busy) begin
-            // Sweep: write all-ones (all tiles uninit)
-            uninit_flags_mem[uninit_clear_addr] <= 32'hFFFF_FFFF;
-            if (uninit_clear_addr == 9'd511) begin
-                uninit_clear_busy <= 1'b0;
-            end else begin
-                uninit_clear_addr <= uninit_clear_addr + 9'd1;
-            end
-        end else if (state == PP_Z_WRITE && zbuf_ready) begin
-            // Bit-clear: mark tile as initialized (written)
-            uninit_flags_mem[zb_tile_idx_reg[13:5]]
-                <= uninit_flags_mem[zb_tile_idx_reg[13:5]]
-                 & ~(32'd1 << zb_tile_idx_reg[4:0]);
-        end
-    end
 
     // ====================================================================
     // Pipeline FSM
@@ -341,7 +259,6 @@ module pixel_pipeline (
     // Tile cache addressing (registered alongside fb_addr_reg)
     reg  [13:0] zb_tile_idx_reg;  // tile_block_idx[13:0]
     reg  [3:0]  zb_pixel_off_reg; // {local_y[1:0], local_x[1:0]}
-    reg         zb_hiz_uninit_reg; // Latched Hi-Z uninit flag
 
     // ====================================================================
     // Fragment Latch Registers (captured from input on accept)
@@ -834,17 +751,10 @@ module pixel_pipeline (
     assign zbuf_read_req       = (state == PP_Z_READ);
     assign zbuf_read_tile_idx  = zb_tile_idx_reg;
     assign zbuf_read_pixel_off = zb_pixel_off_reg;
-    // Use the EBR output directly (combinational in PP_Z_READ, valid
-    // 1 cycle after the PP_IDLE read initiation) instead of the
-    // registered zb_hiz_uninit_reg — the register's non-blocking update
-    // doesn't take effect until the next cycle, so the cache would see
-    // the PREVIOUS fragment's uninit flag if we used the register here.
-    assign zbuf_read_hiz_uninit = uninit_flag;
     assign zbuf_write_req       = (state == PP_Z_WRITE);
     assign zbuf_write_tile_idx  = zb_tile_idx_reg;
     assign zbuf_write_pixel_off = zb_pixel_off_reg;
     assign zbuf_write_data      = post_cc_z;
-    assign zbuf_write_hiz_uninit = zb_hiz_uninit_reg;
 
     // Hi-Z metadata update — driven on the Z-write cycle so the metadata
     // store sees the same timing as the Z-buffer write.
@@ -1055,7 +965,6 @@ module pixel_pipeline (
             fb_addr_reg    <= 24'b0;
             zb_tile_idx_reg  <= 14'b0;
             zb_pixel_off_reg <= 4'b0;
-            zb_hiz_uninit_reg <= 1'b0;
 
             cc_valid       <= 1'b0;
             cc_tex_color0  <= 64'b0;
@@ -1092,8 +1001,6 @@ module pixel_pipeline (
                         fb_addr_reg  <= fb_tiled_addr;
                         zb_tile_idx_reg  <= tile_block_idx[13:0];
                         zb_pixel_off_reg <= {tile_local_y, tile_local_x};
-                        // Uninit flag will be read from local EBR;
-                        // zb_hiz_uninit_reg updated in PP_Z_READ when EBR data valid.
 
                         // Initialize Z data latch to max (for bypass case)
                         zbuf_data_lat <= 16'hFFFF;
@@ -1103,10 +1010,8 @@ module pixel_pipeline (
                 end
 
                 PP_Z_READ: begin
-                    // Uninit flag EBR data is now valid (1-cycle latency from
-                    // PP_IDLE read initiation). Latch into zb_hiz_uninit_reg
-                    // for the zbuf_tile_cache lazy-fill decision.
-                    zb_hiz_uninit_reg <= uninit_flag;
+                    // Z-buffer read request issued combinationally;
+                    // no datapath action needed here.
                 end
 
                 PP_Z_WAIT: begin

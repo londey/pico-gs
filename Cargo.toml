@@ -16,6 +16,7 @@ members = [
     "components/alpha-blend/twin",
     "components/dither/twin",
     "components/pixel-write/twin",
+    "components/zbuf/twin",
     "components/memory/twin",
     "components/display/twin",
     "components/spi/twin",

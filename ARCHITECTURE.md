@@ -30,7 +30,7 @@ The signed representation naturally handles the `(A-B)` subtraction in the color
 The 12 fractional bits reduce accumulated quantization error through chained combiner stages and alpha blending, preserving gradient fidelity in dark tones.
 Alpha blending promotes the framebuffer's UNORM value to Q4.12 before blending; the result follows the normal dither-and-write path.
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
-Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
+Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
 ## Digital Twin (gs-twin)
 
@@ -71,7 +71,8 @@ The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per c
 Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add in a single pass; for simple single-equation rendering, stage 1 is configured as a pass-through.
 After optional alpha blending and ordered dithering, fragments are written to the double-buffered framebuffer in SDRAM.
 
-A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: display scanout (highest), framebuffer writes, Z-buffer access, and texture cache fills (lowest).
+The Z-buffer tile cache (UNIT-012) is an independent component that sits between the pixel pipeline and the SDRAM arbiter: it caches 4×4 tiles of 16-bit Z values in DP16KD BRAM (4-way, 16 sets, write-back), owns the per-tile uninitialized flag array (16,384 1-bit flags in DP16KD) for lazy-fill tracking, and supplies Z-read results and accepts Z-write requests from UNIT-006 while managing fill/evict bursts to SDRAM independently via arbiter port 2.
+A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: display scanout (highest), framebuffer writes, Z-buffer tile cache access, and texture cache fills (lowest).
 The display controller (UNIT-008) reads from the block-tiled framebuffer surface, applies an optional color-grade LUT, stretches the image to 640×480 using nearest-neighbor horizontal scaling, and drives the DVI/TMDS encoder (UNIT-009).
 The render framebuffer may be smaller than the display resolution (typically 512×480 or 256×240); the display controller stretches horizontally and optionally line-doubles to fill the 640×480 output.
 Frame presentation is double-buffered — the host writes to one framebuffer while the display controller scans out the other, swapping atomically at VSYNC.

@@ -7,7 +7,8 @@ Internal
 ## Parties
 
 - **Provider:** External (W9825G6KH-6 SDRAM)
-- **Consumer:** UNIT-006 (Pixel Pipeline)
+- **Consumer:** UNIT-006 (Pixel Pipeline) — framebuffer read/write addressing
+- **Consumer:** UNIT-012 (Z-Buffer Tile Cache) — Z-buffer tiled addressing and SDRAM access
 - **Consumer:** UNIT-007 (Memory Arbiter)
 - **Consumer:** UNIT-008 (Display Controller)
 - **External consumer:** pico-racer (https://github.com/londey/pico-racer) — host memory upload and layout configuration.
@@ -221,17 +222,17 @@ Register encoding: `COLOR_BASE = 0x0400` (address >> 9).
 
 **Address Calculation**: Identical formula to the color buffer, using `Z_BASE` in place of `COLOR_BASE`.
 
-**Note**: Z-buffer accesses are absorbed by the Z-buffer tile cache (4-way, 16 sets, 4×4 tiles) in UNIT-006.
-Only cache misses and dirty-line evictions generate SDRAM traffic via the arbiter.
+**Note**: Z-buffer accesses are absorbed by the Z-buffer tile cache (4-way, 16 sets, 4×4 tiles) in UNIT-012.
+Only cache misses and dirty-line evictions generate SDRAM traffic via the arbiter (UNIT-007).
 
 **Hi-Z fast clear**: When the Z-buffer is cleared via the Hi-Z fast-clear mechanism, a two-phase invalidation pass is performed rather than writing 0xFFFF to every SDRAM location.
 Phase 1: The Hi-Z metadata EBR in UNIT-005.06 is swept with a sentinel min_z value of 0x1FF (all-ones, meaning "no writes yet") in approximately 512 cycles.
-Phase 2: The Z-cache uninitialized flag EBR in UNIT-006 is reset to all-ones (all 16,384 flags set) in approximately 512 cycles.
+Phase 2: The Z-cache uninitialized flag EBR in UNIT-012 is reset to all-ones (all 16,384 flags set) in approximately 512 cycles.
 Both phases run independently and may overlap.
-The Z-buffer SDRAM region is initialized lazily: on first access to any 4×4 tile after a clear, the Z-cache consults its uninitialized flag (UNIT-006); if the flag is set, the fill path supplies 0xFFFF for all 16 Z values and clears the flag, without reading SDRAM.
+The Z-buffer SDRAM region is initialized lazily: on first access to any 4×4 tile after a clear, the Z-cache consults its uninitialized flag (UNIT-012); if the flag is set, the fill path supplies 0xFFFF for all 16 Z values and clears the flag, without reading SDRAM.
 Until a tile is first accessed, its SDRAM contents are not read.
 The 4×4 block-tiled layout serves double duty as the Hi-Z tile granularity: each SDRAM block corresponds directly to one Hi-Z metadata entry.
-The uninitialized flag for each 4×4 tile is owned by the Z-cache (UNIT-006), not the Hi-Z metadata (UNIT-005.06).
+The uninitialized flag for each 4×4 tile is owned by the Z-cache (UNIT-012), not the Hi-Z metadata (UNIT-005.06).
 
 **4K Alignment**: 0x100000 = 1,048,576 = 256 × 4096, aligned.
 Register encoding: `Z_BASE = 0x0800` (address >> 9).

@@ -34,8 +34,6 @@ pub use gs_twin_core::triangle;
 use gpu_registers::components::z_compare_e::ZCompareE;
 use gs_color_combiner::CcInputs;
 use gs_memory::GpuMemory;
-use gs_pixel_write::zbuf_cache::{ZbufContext, ZbufTileCache};
-use gs_pixel_write::UninittedFlagArray;
 use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
 use gs_texture::tex_sample::TextureSampler;
@@ -43,6 +41,8 @@ use gs_twin_core::fragment::{ColorQ412, ColoredFragment, RasterFragment};
 use gs_twin_core::hiz::HizMetadata;
 use gs_twin_core::math::Rgb565;
 use gs_twin_core::triangle::RasterTriangle;
+use gs_zbuf::zbuf_cache::{ZbufContext, ZbufTileCache};
+use gs_zbuf::UninittedFlagArray;
 use qfixed::Q;
 
 /// Top-level GPU model.

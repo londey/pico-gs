@@ -85,7 +85,7 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd integration && make test-early-z`.
 - The `early_z.sv` module is combinational logic; the testbench uses `#1` delays between stimulus changes rather than a clock.
-- Z_WRITE control is not part of `early_z.sv` -- it is applied by the enclosing pixel pipeline (UNIT-006) FSM when deciding whether to issue a Z-buffer write to SDRAM via arbiter port 2.
-  The pixel pipeline (not the rasterizer) owns arbiter ports 1 (framebuffer write) and 2 (Z-buffer read/write).
-  The Z_WRITE=0 (read-only depth mask) and Z_WRITE=1 (normal depth write) behaviors are validated at the pipeline integration level by VER-011 (golden image depth test).
+- Z_WRITE control is not part of `early_z.sv` -- it is applied by the enclosing pixel pipeline (UNIT-006) FSM when deciding whether to issue a Z-buffer write request to the Z-buffer tile cache (UNIT-012).
+  The pixel pipeline (not the rasterizer) owns arbiter port 1 (framebuffer write); the Z-buffer tile cache (UNIT-012) owns arbiter port 2 (Z-buffer read/write).
+  The Z_WRITE=0 (read-only depth mask) and Z_WRITE=1 (normal depth write) behaviors are validated at the pipeline integration level by VER-011 (golden image integration test covering end-to-end depth-tested rendering).
 - REQ-005.02 coverage is jointly satisfied by VER-002 (this unit test covering Z comparison logic) and VER-011 (golden image integration test covering end-to-end depth-tested rendering).

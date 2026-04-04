@@ -4,25 +4,19 @@
 //! optionally updates the Z-buffer, controlled by per-draw-call
 //! write-enable flags.
 //! When Z-writes are enabled, the Hi-Z metadata store (UNIT-005.06)
-//! is also updated with the written Z value, and the per-tile
-//! uninitialized flag is cleared on the first write to each tile.
+//! is also updated with the written Z value.
 //!
-//! # RTL Implementation Notes
-//!
-//! Color writes go through a write-coalescing buffer before reaching
-//! the SDRAM arbiter; Z updates go through the Z-buffer tile cache.
+//! The Z-buffer tile cache and per-tile uninit flags live in the
+//! `gs-zbuf` crate (RTL: `zbuf_tile_cache.sv`).
 //! See UNIT-006, pixel_write stage.
 
 // Spec-ref: unit_006_pixel_pipeline.md `79a0ff3645976d58` 2026-04-01
-
-pub mod uninit_flags;
-pub mod zbuf_cache;
 
 use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 use gs_memory::GpuMemory;
 use gs_twin_core::fragment::PixelOut;
 use gs_twin_core::hiz::HizMetadata;
-pub use uninit_flags::UninittedFlagArray;
+use gs_zbuf::UninittedFlagArray;
 
 /// Write a fragment to the framebuffer and Z-buffer in SDRAM.
 ///

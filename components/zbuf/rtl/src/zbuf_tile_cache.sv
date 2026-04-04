@@ -16,8 +16,14 @@
 // Hi-Z min-Z feedback: reports actual tile minimum on eviction writeback
 // and when 16 consecutive writes complete a tile (simple counter).
 //
+// Owns the per-tile uninitialized flag array (16,384 1-bit flags in one
+// DP16KD, 32×512 mode).  On cache miss, checks the flag internally to
+// decide between SDRAM fill and lazy-fill (zeros).  Bit-clear on Z-write
+// and clear-sweep on invalidate/uninit_clear_req are mutually exclusive
+// (pipeline flushed before clear), giving a clean 2-port BRAM pattern.
+//
 // On a cache miss the FSM evicts a dirty victim (if needed), then fills
-// from SDRAM or lazy-fills with zeros (hiz_uninit).
+// from SDRAM or lazy-fills with zeros (uninit flag set).
 
 module zbuf_tile_cache (
     input  wire         clk,
@@ -29,7 +35,6 @@ module zbuf_tile_cache (
     input  wire         rd_req,
     input  wire [13:0]  rd_tile_idx,
     input  wire [3:0]   rd_pixel_off,
-    input  wire         rd_hiz_uninit,    // Tile Hi-Z metadata invalid (lazy-fill)
     output reg          rd_valid,
     output wire [15:0]  rd_data,
 
@@ -40,14 +45,14 @@ module zbuf_tile_cache (
     input  wire [13:0]  wr_tile_idx,
     input  wire [3:0]   wr_pixel_off,
     input  wire [15:0]  wr_data,
-    input  wire         wr_hiz_uninit,    // Tile Hi-Z metadata invalid (lazy-fill)
     output wire         wr_ready,
 
     // ====================================================================
     // Cache Status
     // ====================================================================
     output wire         cache_ready,
-    input  wire         invalidate,       // Clear all valid+dirty bits
+    input  wire         invalidate,       // Clear all valid+dirty bits + uninit sweep
+    input  wire         uninit_clear_req, // Trigger 512-cycle uninit flag sweep
     input  wire         flush,            // Write-back all dirty lines to SDRAM
     output reg          flush_done,       // Flush complete pulse (1 cycle)
 
@@ -92,6 +97,32 @@ module zbuf_tile_cache (
     localparam LINE_IDX_W     = SET_BITS + 2;            // {set, way} index width
     localparam BRAM_ENTRIES   = NUM_WAYS * NUM_SETS * PIXELS_PER_TILE;
     localparam BRAM_ADDR_W    = $clog2(BRAM_ENTRIES);    // 13
+
+    // ====================================================================
+    // Uninit Flag EBR — DP16KD in 1×16384 mode (true dual-port)
+    // ====================================================================
+    // 16,384 entries × 1 bit, one per 4×4 tile.
+    // Flag = 1: tile not yet written since last Z-clear (lazy-fill).
+    // Flag = 0: tile has been written at least once.
+    //
+    // 1-bit width avoids read-modify-write: clearing a flag is a simple
+    // write of 1'b0 to uninit_flags_mem[tile_idx].
+    //
+    // Port A (read): addressed by idle_tile_idx in S_IDLE; result valid
+    //   in S_TAG_RD (1-cycle BRAM latency).
+    // Port B (write): clear-sweep (all-1s, 16384 cycles) OR bit-clear
+    //   (on S_WR_UPDATE). Mutually exclusive because clear commands
+    //   flush the pipeline before firing.
+
+    (* ram_style = "block" *)
+    reg uninit_flags_mem [0:16383];  // Per-tile uninitialized flags (1-bit)
+
+    reg         uninit_clear_busy;   // Clear sweep in progress
+    reg [13:0]  uninit_clear_addr;   // Current sweep address (0–16383)
+    reg         uninit_rd_flag;      // Registered read data from Port A
+
+    // Extracted flag (valid 1 cycle after read address driven)
+    wire        uninit_flag = uninit_rd_flag;
 
     // ====================================================================
     // Tag EBR Wire Declarations
@@ -189,6 +220,70 @@ module zbuf_tile_cache (
     end
 
     // ====================================================================
+    // Uninit Flag EBR — Read Port (memory inference pattern)
+    // ====================================================================
+    // Initiated in S_IDLE when a new request arrives; output valid in
+    // S_TAG_RD (1-cycle BRAM latency).  Not needed on fast-path hits
+    // (last-tag cache hit never triggers fill/lazyfill decision).
+
+    always_ff @(posedge clk) begin
+        if ((state == S_IDLE) && (rd_req || wr_req)) begin
+            uninit_rd_flag <= uninit_flags_mem[idle_tile_idx];
+        end
+    end
+
+    // ====================================================================
+    // Uninit Sweep Control — Next-State Logic (combinational)
+    // ====================================================================
+
+    logic        uninit_clear_busy_next;  // Next clear-busy state
+    logic [13:0] uninit_clear_addr_next;  // Next clear address
+
+    always_comb begin
+        uninit_clear_busy_next = uninit_clear_busy;
+        uninit_clear_addr_next = uninit_clear_addr;
+
+        if (invalidate || uninit_clear_req) begin
+            uninit_clear_busy_next = 1'b1;
+            uninit_clear_addr_next = 14'd0;
+        end else if (uninit_clear_busy) begin
+            uninit_clear_addr_next = uninit_clear_addr + 14'd1;
+            uninit_clear_busy_next = (uninit_clear_addr != 14'd16383);
+        end
+    end
+
+    // ====================================================================
+    // Uninit Sweep Control — Registers (sequential, async reset)
+    // ====================================================================
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            uninit_clear_busy <= 1'b1;
+            uninit_clear_addr <= 14'd0;
+        end else begin
+            uninit_clear_busy <= uninit_clear_busy_next;
+            uninit_clear_addr <= uninit_clear_addr_next;
+        end
+    end
+
+    // ====================================================================
+    // Uninit Flag EBR — Write Port (memory inference pattern)
+    // ====================================================================
+    // Single write port: clear-sweep OR bit-clear, mutually exclusive.
+    // 1-bit-wide memory avoids read-modify-write: clearing a single tile
+    // flag is a direct write of 1'b0.
+    // Memory inference exception to always_ff simple-assignment rule.
+
+    always_ff @(posedge clk) begin
+        if (uninit_clear_busy) begin
+            uninit_flags_mem[uninit_clear_addr] <= 1'b1;
+        end else if (state == S_WR_UPDATE) begin
+            // Mark tile as initialized (flag = 0)
+            uninit_flags_mem[req_tile_idx] <= 1'b0;
+        end
+    end
+
+    // ====================================================================
     // FSM States
     // ====================================================================
     typedef enum logic [3:0] {
@@ -215,7 +310,6 @@ module zbuf_tile_cache (
     reg [13:0]       req_tile_idx;
     reg [3:0]        req_pixel_off;
     reg [15:0]       req_wr_data;
-    reg              req_hiz_uninit;
 
     // Derived from latched request (used in post-S_IDLE states)
     wire [SET_BITS-1:0]  req_set = get_set(req_tile_idx);
@@ -531,7 +625,7 @@ module zbuf_tile_cache (
     // ====================================================================
     // Status Signals
     // ====================================================================
-    assign cache_ready = (state == S_IDLE);
+    assign cache_ready = (state == S_IDLE) && !uninit_clear_busy;
     assign wr_ready    = (state == S_WR_UPDATE) && (next_state != S_WR_UPDATE);
 
     // ====================================================================
@@ -569,7 +663,7 @@ module zbuf_tile_cache (
                     // Miss
                     if (victim_dirty)
                         next_state = S_EVICT;
-                    else if (req_hiz_uninit)
+                    else if (uninit_flag)
                         next_state = S_LAZYFILL;
                     else
                         next_state = S_FILL;
@@ -683,7 +777,6 @@ module zbuf_tile_cache (
             req_tile_idx    <= 14'd0;
             req_pixel_off   <= 4'd0;
             req_wr_data     <= 16'd0;
-            req_hiz_uninit  <= 1'b0;
             active_way      <= 2'd0;
             evict_tag_r     <= '0;
             last_set        <= '0;
@@ -751,7 +844,6 @@ module zbuf_tile_cache (
                         req_tile_idx   <= idle_tile_idx;
                         req_pixel_off  <= idle_pixel_off;
                         req_wr_data    <= wr_data;
-                        req_hiz_uninit <= rd_req ? rd_hiz_uninit : wr_hiz_uninit;
 
                         if (fast_hit) begin
                             // FAST PATH — way known from last-tag cache
@@ -783,7 +875,7 @@ module zbuf_tile_cache (
                         fill_way        <= victim_way;
                         fill_set        <= req_set;
                         fill_tag        <= req_tag;
-                        fill_hiz_uninit <= req_hiz_uninit;
+                        fill_hiz_uninit <= uninit_flag;
                         evict_tag_r     <= tag_rdata_by_way(victim_way);
                     end
                 end

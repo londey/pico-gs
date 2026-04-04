@@ -32,7 +32,7 @@ None
 
 - Port 0 (highest priority): UNIT-008 (Display Controller) display read
 - Port 1: UNIT-006 (Pixel Pipeline) framebuffer write
-- Port 2: UNIT-006 (Pixel Pipeline) Z-buffer read/write
+- Port 2: UNIT-012 (Z-Buffer Tile Cache) Z-buffer read/write
 - Port 3 (lowest priority): UNIT-011 (Texture Sampler) texture cache fill reads (dispatched via UNIT-006)
 - Downstream: connects to SDRAM controller via req/ack handshake
 
@@ -118,6 +118,7 @@ This ensures display refresh never stalls.
 With early Z-test support (UNIT-006), a Z-prepass can be performed where only Z-buffer writes occur (color_write disabled).
 During the Z-prepass, Port 1 (framebuffer) sees no traffic, effectively giving Port 2 (Z-buffer) higher throughput since it only competes with Port 0 (display).
 During the subsequent color pass, Port 2 traffic is reduced (fewer Z writes due to early rejection), improving Port 1 framebuffer write throughput.
+The Z-buffer tile cache (UNIT-012) owns Port 2; it arbitrates between Z-read and Z-write requests issued by UNIT-006 and forwards them through Port 2 as fill/evict bursts.
 This temporal separation improves overall SDRAM utilization without requiring changes to the arbiter logic.
 
 Hi-Z tile rejection (UNIT-005.06) adds a further reduction in Port 2 traffic: entire 4×4 tiles provably occluded by previously-written geometry are rejected before any fragment reaches UNIT-006, eliminating the corresponding Z-buffer SDRAM reads and writes.
@@ -126,11 +127,11 @@ This is additive with the per-pixel early Z reduction and operates at tile granu
 **Z-Buffer Clear Bandwidth Note:**
 The Hi-Z fast-clear path replaces bulk SDRAM MEM_FILL Z-buffer initialization with a two-phase EBR invalidation.
 Phase 1: UNIT-005.06 sweeps its Hi-Z metadata EBR with a sentinel min_z value (0x1FF = all-ones, meaning "no writes yet") in approximately 512 cycles (all 8 DP16KD blocks in parallel, one word per address step).
-Phase 2: UNIT-006 resets its 128×128 uninitialized flag EBR to all-ones (all 16,384 flags set) in approximately 512 cycles (32-bit wide, 512 addresses).
+Phase 2: UNIT-012 resets its 128×128 uninitialized flag EBR to all-ones (all 16,384 flags set) in approximately 512 cycles (32-bit wide, 512 addresses).
 Both phases may run concurrently.
-After fast-clear, the Z-buffer SDRAM region is not pre-written; instead, a lazy-fill policy in UNIT-006 initializes each 4×4 tile on first access by consulting the uninitialized flag EBR and supplying 0xFFFF without reading SDRAM (see UNIT-006 Z-cache design notes for the lazy-fill protocol).
+After fast-clear, the Z-buffer SDRAM region is not pre-written; instead, a lazy-fill policy in UNIT-012 initializes each 4×4 tile on first access by consulting the uninitialized flag EBR and supplying 0xFFFF without reading SDRAM (see UNIT-012 Z-cache design notes for the lazy-fill protocol).
 As a result, Z-buffer clear operations no longer generate any Port 2 SDRAM traffic — the bandwidth previously consumed by MEM_FILL (~266,000 write cycles per full 512×512 Z-buffer clear) is eliminated.
-The arbiter logic is unchanged; the bandwidth reduction is purely a consequence of the access pattern change in UNIT-006 and UNIT-005.06.
+The arbiter logic is unchanged; the bandwidth reduction is purely a consequence of the access pattern change in UNIT-012 and UNIT-005.06.
 
 **Grant State Machine (3 states):**
 
@@ -260,7 +261,7 @@ An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazard
 **Unified clock update:** With the GPU core clock unified to 100 MHz (matching the SDRAM controller clock), the arbiter operates in a single clock domain.
 Previously, if the GPU core ran at a different frequency than the memory, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the memory controller.
 The unified 100 MHz clock eliminates this requirement entirely, reducing latency and simplifying timing analysis.
-All four requestor ports (UNIT-008 display read, UNIT-006 framebuffer write, UNIT-006 Z-buffer read/write, UNIT-006 texture read for up to 2 samplers) are now synchronous to the same `clk_core` that drives the SDRAM controller.
+All four requestor ports (UNIT-008 display read, UNIT-006 framebuffer write, UNIT-012 Z-buffer read/write, UNIT-006 texture read for up to 2 samplers) are now synchronous to the same `clk_core` that drives the SDRAM controller.
 
 **Display scanout burst length:** The display controller (UNIT-008) issues burst reads of `source_width / 4` bursts × 16 words per burst for each source scanline, where `source_width = 1 << FB_DISPLAY.FB_WIDTH_LOG2`.
 For a 512-wide source (WIDTH_LOG2=9): 128 tile bursts × 16 words = 2,048 SDRAM reads per scanline.

@@ -21,6 +21,7 @@ gs-color-combiner = { path = "../../components/color-combiner/twin" }
 gs-alpha-blend = { path = "../../components/alpha-blend/twin" }
 gs-dither = { path = "../../components/dither/twin" }
 gs-pixel-write = { path = "../../components/pixel-write/twin" }
+gs-zbuf = { path = "../../components/zbuf/twin" }
 gs-memory = { path = "../../components/memory/twin" }
 gs-display = { path = "../../components/display/twin" }
 gs-spi = { path = "../../components/spi/twin" }

@@ -7,7 +7,7 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 The store uses 8 DP16KD blocks in 36x512 mode, holding 16,384 metadata entries (one per 4x4 tile in a 512x512 surface).
 Each 9-bit entry contains a 9-bit truncated minimum Z (`min_z = tile_min_Z[15:7]`), with no valid bit.
-A sentinel value of `9'h1FF` (all-ones) indicates that no Z-write has reached the tile since the last clear; the uninitialized/cleared state is tracked separately by the Z-buffer tile cache (UNIT-006).
+A sentinel value of `9'h1FF` (all-ones) indicates that no Z-write has reached the tile since the last clear; the uninitialized/cleared state is tracked separately by the Z-buffer tile cache (UNIT-012).
 Entries are packed 4 per 36-bit word.
 
 ## Implements Requirements
@@ -32,7 +32,7 @@ None
   The rasterizer supplies a 14-bit tile index; the store returns the 9-bit metadata entry (`min_z[8:0]`) with 1-cycle read latency.
   The read is launched speculatively during TILE_TEST so the result is available with zero additional latency on the critical path.
 - **Write port (Port B):** Consumed by UNIT-006 (Pixel Pipeline, Z-write side-effect).
-  On each Z-buffer write where `Z_WRITE_EN=1` and the fragment passes the depth test, the pixel pipeline issues an update: if `new_z[15:7]` is less than the stored `min_z`, the entry is updated with `min_z = new_z[15:7]`.
+  On each Z-buffer write where `Z_WRITE_EN=1` and the fragment passes the depth test, UNIT-006 issues an update via its Hi-Z update channel: if `new_z[15:7]` is less than the stored `min_z`, the entry is updated with `min_z = new_z[15:7]`.
   Port B is also used for the fast-clear sweep.
 - **Fast-clear trigger:** Initiated when a Z-buffer MEM_FILL command is detected (REQ-005.08).
   The clear signal stalls the rendering pipeline while the 512-cycle sweep runs.
@@ -61,7 +61,7 @@ This packing uses all 36 bits available in DATA_WIDTH=36 mode (32 data + 4 parit
 
 The sentinel value `9'h1FF` is chosen because `min_z` can only decrease over a tile's lifetime (it tracks the running minimum of Z-writes, which start large and move toward 0 as geometry is written).
 An all-ones value is the natural "unwritten" state and cannot be produced by a real Z-write except for the degenerate Z=0xFFFF far-plane case, which is handled conservatively (a fragment at the far plane still passes Hi-Z on a sentinel tile).
-The uninitialized/cleared tile state consumed by the lazy-fill protocol is tracked by UNIT-006 independently; UNIT-005.06 only tracks `min_z`.
+The uninitialized/cleared tile state consumed by the lazy-fill protocol is tracked by UNIT-012 independently; UNIT-005.06 only tracks `min_z`.
 
 ### Addressing
 
@@ -100,7 +100,7 @@ When a Z-buffer clear is issued (MEM_FILL with fill value 0xFFFF targeting the Z
 4. The rendering pipeline is stalled during the clear sweep.
 
 This replaces the ~266,000-cycle SDRAM MEM_FILL for the Z-buffer, a ~520x improvement (REQ-005.08).
-Concurrently with the Hi-Z fast-clear, UNIT-006 performs its own 512-cycle sweep to reset the Z-cache uninitialized flag array (see UNIT-006).
+Concurrently with the Hi-Z fast-clear, UNIT-012 performs its own 512-cycle sweep to reset the Z-cache uninitialized flag array (see UNIT-012).
 
 ### Cleared-Tile Behavior
 
@@ -110,7 +110,7 @@ After a fast clear, tiles with `min_z = 9'h1FF` (sentinel) are treated as follow
   This is correct because no Z-write has yet established a meaningful minimum; the tile may contain valid geometry once written.
 - The sentinel passes Hi-Z conservatively: even if a fragment at the far plane (Z=0xFFFF) arrives, the tile is not falsely rejected.
 
-Lazy-fill (supplying 0xFFFF on first access to a cleared tile) is handled entirely by UNIT-006 using its own uninitialized flag EBR.
+Lazy-fill (supplying 0xFFFF on first access to a cleared tile) is handled entirely by UNIT-012 using its own uninitialized flag EBR.
 UNIT-005.06 does not carry cleared-tile state to downstream consumers; it only provides `min_z` for Hi-Z rejection decisions.
 
 On the first Z-write to a cleared tile (`Z_WRITE_EN=1`, fragment passes depth test), UNIT-006 issues a metadata update with `new_z[15:7]`.
@@ -151,7 +151,7 @@ During fast clear, Port B writes full 36-bit all-ones words (`9'h1FF` sentinel i
 | Port | User | Mode | When |
 |------|------|------|------|
 | Port A | Rasterizer (UNIT-005.05) | Read-only | Normal operation (Hi-Z queries) |
-| Port B | Pixel pipeline (UNIT-006) | Read-modify-write | Normal operation (min_z updates) |
+| Port B | Pixel pipeline (UNIT-006, Hi-Z update channel) | Read-modify-write | Normal operation (min_z updates) |
 | Port B | Clear FSM | Write-only | Fast-clear sweep (512 cycles) |
 
 DP16KD is true dual-port: Port A and Port B can independently access the same block.

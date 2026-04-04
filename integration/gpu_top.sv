@@ -1053,12 +1053,10 @@ module gpu_top (
     wire        pp_zb_read_req;
     wire [13:0] pp_zb_read_tile_idx;
     wire [3:0]  pp_zb_read_pixel_off;
-    wire        pp_zb_read_hiz_uninit;
     wire        pp_zb_write_req;
     wire [13:0] pp_zb_write_tile_idx;
     wire [3:0]  pp_zb_write_pixel_off;
     wire [15:0] pp_zb_write_data;
-    wire        pp_zb_write_hiz_uninit;
 
     // Construct RENDER_MODE register from individual mode flags
     wire [31:0] render_mode_packed = {
@@ -1178,7 +1176,6 @@ module gpu_top (
         .zbuf_read_req(pp_zb_read_req),
         .zbuf_read_tile_idx(pp_zb_read_tile_idx),
         .zbuf_read_pixel_off(pp_zb_read_pixel_off),
-        .zbuf_read_hiz_uninit(pp_zb_read_hiz_uninit),
         .zbuf_read_data(zcache_rd_data),
         .zbuf_read_valid(zcache_rd_valid),
         .zbuf_ready(zcache_ready),
@@ -1186,7 +1183,6 @@ module gpu_top (
         .zbuf_write_tile_idx(pp_zb_write_tile_idx),
         .zbuf_write_pixel_off(pp_zb_write_pixel_off),
         .zbuf_write_data(pp_zb_write_data),
-        .zbuf_write_hiz_uninit(pp_zb_write_hiz_uninit),
 
         // Framebuffer interface (arbiter port 1)
         .fb_write_req(pp_fb_write_req),
@@ -1213,9 +1209,6 @@ module gpu_top (
         .hiz_wr_en(pp_hiz_wr_en),
         .hiz_wr_tile_index(pp_hiz_wr_tile_index),
         .hiz_wr_new_z(pp_hiz_wr_new_z),
-
-        // Uninit flag clear (same trigger as Hi-Z fast-clear)
-        .uninit_clear_req(hiz_clear_req),
 
         // Pipeline status
         .pipeline_empty(pp_pipeline_empty)
@@ -1268,7 +1261,6 @@ module gpu_top (
         .rd_req(pp_zb_read_req),
         .rd_tile_idx(pp_zb_read_tile_idx),
         .rd_pixel_off(pp_zb_read_pixel_off),
-        .rd_hiz_uninit(pp_zb_read_hiz_uninit),
         .rd_data(zcache_rd_data),
         .rd_valid(zcache_rd_valid),
 
@@ -1277,7 +1269,6 @@ module gpu_top (
         .wr_tile_idx(pp_zb_write_tile_idx),
         .wr_pixel_off(pp_zb_write_pixel_off),
         .wr_data(pp_zb_write_data),
-        .wr_hiz_uninit(pp_zb_write_hiz_uninit),
         .wr_ready(),
 
         // Cache status
@@ -1300,8 +1291,9 @@ module gpu_top (
         .fb_z_base(fb_z_base),
         .fb_width_log2(fb_width_log2),
 
-        // Invalidation (on FB_CONFIG write)
+        // Invalidation + uninit flag sweep (on FB_CONFIG write)
         .invalidate(fb_config_trigger),
+        .uninit_clear_req(hiz_clear_req),
 
         // Hi-Z min-Z feedback (to raster_hiz_meta via rasterizer)
         .hiz_fb_valid(zcache_hiz_fb_valid),

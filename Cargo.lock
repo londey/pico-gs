@@ -192,6 +192,7 @@ dependencies = [
  "gpu-registers",
  "gs-memory",
  "gs-twin-core",
+ "gs-zbuf",
 ]
 
 [[package]]
@@ -296,6 +297,7 @@ dependencies = [
  "gs-stipple",
  "gs-texture",
  "gs-twin-core",
+ "gs-zbuf",
  "image",
  "qfixed",
 ]
@@ -316,6 +318,14 @@ version = "0.1.0"
 dependencies = [
  "gpu-registers",
  "qfixed",
+]
+
+[[package]]
+name = "gs-zbuf"
+version = "0.1.0"
+dependencies = [
+ "gs-memory",
+ "gs-twin-core",
 ]
 
 [[package]]

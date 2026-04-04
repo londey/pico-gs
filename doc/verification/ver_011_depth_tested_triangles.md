@@ -14,7 +14,8 @@ The test confirms that the near triangle occludes the far triangle at every over
 - UNIT-003 (Register File)
 - UNIT-005.01 (Triangle Setup)
 - UNIT-005 (Rasterizer — including Hi-Z tile rejection in UNIT-005.05)
-- UNIT-006 (Pixel Pipeline — early Z-test path and Hi-Z metadata update)
+- UNIT-006 (Pixel Pipeline — early Z-test path)
+- UNIT-012 (Z-Buffer Tile Cache — Z-buffer read/write, uninitialized flag lazy-fill, Hi-Z metadata update)
 
 ## Preconditions
 
@@ -135,7 +136,7 @@ The integration harness drives the following register-write sequence into UNIT-0
     With Hi-Z enabled, the rendered output must be pixel-exactly identical to the approved golden image.
     Hi-Z tile rejection must not cause false discards: any 4×4 tile that contains fragments from Triangle B (which passes the depth test) must not be entirely rejected.
     The overlap region, which contains tiles covered by both triangles at different depths, exercises the Hi-Z metadata update path (the 9-bit min_z field, storing Z[15:7], is updated on Z-writes) and subsequent Hi-Z comparison on Triangle B fragments.
-    Before rendering begins, all Hi-Z metadata entries hold the sentinel value 9'h1FF (all-ones, meaning no writes yet); the Z-cache uninitialized flag EBR in UNIT-006 is also set to all-ones so that the first access to any tile supplies 0xFFFF via lazy initialization rather than reading SDRAM.
+    Before rendering begins, all Hi-Z metadata entries hold the sentinel value 9'h1FF (all-ones, meaning no writes yet); the Z-cache uninitialized flag EBR in UNIT-012 is also set to all-ones so that the first access to any tile supplies 0xFFFF via lazy initialization rather than reading SDRAM.
     After Triangle A is rendered, tiles covered by Triangle A hold min_z = Z[15:7] of `0x8000`; tiles outside Triangle A retain the sentinel 9'h1FF and are not rejected by Hi-Z.
     A non-zero Hi-Z tile rejection count is expected: when Triangle A is re-rasterized or any subsequent geometry with Z > the stored min_z hits those tiles, Hi-Z rejection fires.
     In the standard two-triangle sequence, rejection is observed at tiles within Triangle A's region when rendering Triangle B confirms that min_z (`0x80` from Triangle A Z=`0x8000`) is updated, and any geometry with Z[15:7] > `0x80` on those tiles would be rejected.
@@ -176,10 +177,10 @@ The integration harness drives the following register-write sequence into UNIT-0
   Hi-Z tile-level rejection (UNIT-005.05) is verified by the Hi-Z transparency assertion (step 11) and the rejection counter check in this test.
   Per-pixel early Z (UNIT-006, `early_z.sv`) remains the subject of VER-002; the two mechanisms operate at different granularities and are independently verified.
 - This test does not exercise texture hardware; the early Z-test path in UNIT-006 is exercised without invoking UNIT-011 (Texture Sampler).
-  UNIT-006's scope in this test is limited to early Z-test, Z-buffer read/write, and framebuffer write.
-- **The Z-buffer read and write paths are owned by the pixel pipeline (UNIT-006)**, not the rasterizer (UNIT-005), after pixel pipeline integration.
-  The rasterizer emits fragments via the valid/ready handshake interface; the pixel pipeline's FSM reads the Z-buffer (arbiter port 2), invokes `early_z.sv`, and conditionally writes back updated Z values and color pixels.
-  This test exercises the integrated pipeline including arbiter port 2 ownership by UNIT-006.
+  UNIT-006's scope in this test is limited to early Z-test and framebuffer write; Z-buffer read/write is exercised through UNIT-012.
+- **The Z-buffer read and write paths are owned by the Z-buffer tile cache (UNIT-012)**, which arbitrates between UNIT-006 requests and the SDRAM arbiter port 2.
+  The rasterizer emits fragments via the valid/ready handshake interface; the pixel pipeline's FSM (UNIT-006) issues Z-read and Z-write requests to UNIT-012, which services them from its 4-way set-associative tile cache and evicts dirty tiles to SDRAM via arbiter port 2.
+  This test exercises the integrated pipeline including arbiter port 2 ownership by UNIT-012.
 - **The golden image requires re-approval after Phase 2 RTL implementation.**
   The rasterizer traversal order changes from scanline order to 4×4 tile-major order (REQ-002.03).
   Traversal order affects Z-buffer write sequencing for overlapping triangles, which determines which fragment writes the depth value first and therefore which color wins in the overlap region at pixel level.

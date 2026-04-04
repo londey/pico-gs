@@ -15,7 +15,7 @@ UNIT-006 is a thin pipeline orchestrator: it sequences fragment processing stage
 - REQ-005.03 (Alpha Blending)
 - REQ-005.04 (Enhanced Z-Buffer)
 - REQ-005.06 (Framebuffer Format)
-- REQ-005.07 (Z-Buffer Operations)
+- REQ-005.07 (Z-Buffer Operations) — early Z-test execution and Hi-Z metadata write path only; Z-cache and uninit flags owned by UNIT-012
 - REQ-005.09 (Double-Buffered Rendering) — writes to off-screen render target via FB_CONFIG
 - REQ-005.10 (Ordered Dithering)
 - REQ-004 (Fragment Processor / Color Combiner)
@@ -38,7 +38,7 @@ None (texture cache architecture is now provided by UNIT-011).
 
 - Receives fragment data (position, UV, color, Z) from UNIT-005 (Rasterizer)
 - Forwards UV coordinates, LOD, and TEXn_CFG configuration to UNIT-011 (Texture Sampler); receives Q4.12 RGBA texel results
-- Reads/writes Z-buffer via UNIT-007 (Z-buffer tile cache)
+- Reads/writes Z-buffer via UNIT-012 (Z-buffer tile cache); UNIT-012 arbitrates SDRAM access through UNIT-007
 - Reads framebuffer pixel for alpha blending via UNIT-007
 - Receives render mode, dither, blend, scissor, and Z-range configuration from UNIT-003 (Register File)
 - Receives CC_MODE and CONST_COLOR from UNIT-003 for UNIT-010 (Color Combiner)
@@ -83,13 +83,10 @@ UNIT-011 delivers texel data to UNIT-006 already in Q4.12 format; UNIT-006 passe
 
 ### Internal State
 
-- Z-buffer tile cache (4-way, 16 sets, 4×4 tiles, write-back)
-- **Uninitialized flag EBR:** a 128×128 1-bit array (one flag per 4×4 tile, matching the Hi-Z metadata tile grid) stored in one additional DP16KD in 32×512 mode (32-bit wide, 512 addresses × 32 bits = 16,384 bits).
-  A set flag (1) means the tile has not been written since the last Z-buffer clear; a cleared flag (0) means the tile has been written at least once.
-  On Z-buffer MEM_FILL clear, a 512-cycle sweep sets all flags to 1.
-  On first Z-write to a tile (flag is 1), the Z-cache supplies 0xFFFF (far plane) as the effective stored Z instead of reading SDRAM (lazy-fill), then clears the flag to 0.
-  Subsequent accesses to the same tile read and write SDRAM normally.
 - Hi-Z metadata update channel: on every Z-write (when `Z_WRITE_EN=1` and the fragment passes all tests), the pixel pipeline sends the written Z value and tile index to UNIT-005.06 (Hi-Z Block Metadata); if the new Z is less than the stored `min_z` bucket value (`new_z[15:7] < stored_min_z`), the metadata entry is updated to `min_z = new_z[15:7]`
+
+The Z-buffer tile cache, uninit flag EBR, and lazy-fill logic are owned by UNIT-012 (Z-Buffer Tile Cache).
+UNIT-006 issues Z-read and Z-write requests to UNIT-012 and receives responses; it does not hold Z-buffer state internally.
 
 ### Algorithm / Behavior
 
@@ -108,7 +105,7 @@ Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
   - No SDRAM access required (register comparison only)
   - When Z_RANGE_MIN=0x0000 and Z_RANGE_MAX=0xFFFF: all fragments pass (effectively disabled)
 - **Early Z-Test** (REQ-005.07, RENDER_MODE.Z_COMPARE):
-  - Read Z-buffer tile cache; on cache miss, check the uninitialized flag EBR for the tile: if the flag is set (tile not yet written since last clear), supply 0xFFFF as the effective stored Z (lazy-fill) without reading SDRAM, then clear the flag; otherwise issue an SDRAM burst fill
+  - Issue a Z-read request to UNIT-012; UNIT-012 handles cache lookup, lazy-fill (uninit flag and 0xFFFF supply), and SDRAM burst fill on miss; returns the effective stored Z to UNIT-006
   - Compare fragment Z against Z-buffer using Z_COMPARE function
   - If test fails: discard fragment, skip all subsequent stages
   - **Bypass conditions**: Early Z-test is skipped (fragment always passes) when:
@@ -146,7 +143,7 @@ See UNIT-011 for the detailed texture sampling design.
 - Extract UNORM: R5 = clamp(color.R × 31, 0, 31), G6 = clamp(color.G × 63, 0, 63), B5 = clamp(color.B × 31, 0, 31)
 - Pack into RGB565
 - If RENDER_MODE.COLOR_WRITE_EN=1 and pixel inside scissor: write color to tiled framebuffer at FB_CONFIG address
-- If RENDER_MODE.Z_WRITE_EN=1: write Z value to Z-buffer tile cache (write-back to SDRAM); if the tile's uninitialized flag is still set, clear it now (the tile has been written for the first time since the last clear); additionally, send the written Z and tile index to UNIT-005.06 (Hi-Z Block Metadata) via the Hi-Z update channel — if `new_z[15:7] < stored_min_z`, the metadata entry is updated to record the new minimum
+- If RENDER_MODE.Z_WRITE_EN=1: issue a Z-write request to UNIT-012 (write-back to SDRAM); additionally, send the written Z and tile index to UNIT-005.06 (Hi-Z Block Metadata) via the Hi-Z update channel — if `new_z[15:7] < stored_min_z`, the metadata entry is updated to record the new minimum
 - Alpha channel is discarded (RGB565 has no alpha storage)
 
 ### Tiled Framebuffer Address Calculation
@@ -171,17 +168,13 @@ Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes
 ## Implementation
 
 - `shared/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
-- `components/pixel-write/twin/src/lib.rs`: Digital twin pixel-write stage (framebuffer + Z-buffer output, Hi-Z update, uninit flag tracking)
-- `components/pixel-write/twin/src/uninit_flags.rs`: Per-tile uninitialized flag array (`UninittedFlagArray`) for lazy-fill tracking
-- `components/pixel-write/twin/src/zbuf_cache.rs`: Digital twin Z-buffer tile cache (4-way set-associative, lazy-fill on miss)
+- `components/pixel-write/twin/src/lib.rs`: Digital twin pixel-write stage (framebuffer write, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`)
 - `components/pixel-write/rtl/src/pixel_pipeline.sv`: Main implementation
 - `components/pixel-write/rtl/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
 - `components/alpha-blend/rtl/src/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
 - `components/dither/rtl/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
 - `components/early-z/rtl/src/early_z.sv`: Depth range test + early Z-test logic
 - `components/stipple/rtl/src/stipple.sv`: Stipple pattern test
-- `components/pixel-write/rtl/tests/tb_pixel_pipeline_uninit_flags.sv`: Verilator testbench for per-tile uninit flag EBR (lazy-fill tracking)
-
 Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned by UNIT-011.
 
 ## Verification
@@ -195,9 +188,9 @@ Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned
 
 ## Design Notes
 
-**Arbiter port ownership:** UNIT-006 owns arbiter ports 1, 2, and 3 (UNIT-007):
+**Arbiter port ownership:** UNIT-006 owns arbiter ports 1 and 3 (UNIT-007); UNIT-012 owns port 2:
 - Port 1: framebuffer write (RGB565, tiled 4×4)
-- Port 2: Z-buffer read/write (tile-cache backed, write-back)
+- Port 2: Z-buffer read/write — owned by UNIT-012 (Z-buffer tile cache)
 - Port 3: texture cache fill reads (burst, format-dependent burst_len) — issued on behalf of UNIT-011
 
 Port 3 is shared with `PERF_TIMESTAMP` writes initiated by `gpu_top.sv` on behalf of UNIT-003.
@@ -235,5 +228,4 @@ UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occur
 - Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
 - FB promotion: ~200-400 LUTs (combinational)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
-- Uninitialized flag EBR: 1 DP16KD in 32×512 mode (16,384 1-bit flags for 128×128 tile grid)
 - Total pipeline latency: ~13-16 cycles at 100 MHz (130-160 ns), fully pipelined, 1 pixel/cycle throughput (100 Mpixels/sec peak)
