@@ -282,3 +282,160 @@ fn uv_viz_large_triangle() {
     );
     assert!(n > 0, "expected at least one fragment");
 }
+
+// ── VER-016 perspective road regression tests ───────────────────────────────
+//
+// These tests replicate the exact triangle geometry from the VER-016
+// perspective road test.  The RTL and DT rasterizers must produce
+// identical UV coordinates at every fragment.  Mismatches here indicate
+// an interpolation precision divergence between the two implementations.
+//
+// Known mismatched pixels (DT u0/v0 vs RTL u0/v0):
+//   (121,496): DT u0=0x0522 v0=0xC038  RTL u0=0x0526 v0=0xBFFE
+//   (241,222): DT u0=0x0320 v0=0x2B30  RTL u0=0x0340 v0=0x2CE6
+
+/// Build a [`RasterVertex`] with all perspective-textured fields.
+fn vertex_persp(px: u16, py: u16, z: u16, q: u16, color: u32, s0: u16, t0: u16) -> RasterVertex {
+    RasterVertex {
+        px,
+        py,
+        z,
+        q,
+        color0: Rgba8888(color),
+        color1: Rgba8888(0),
+        s0,
+        t0,
+        s1: 0,
+        t1: 0,
+    }
+}
+
+/// Build the VER-016 red triangle (near-left, near-right, far-right).
+///
+/// Vertex data decoded from `ver_016_perspective_road.hex` lines 69–77.
+fn ver016_red_triangle() -> RasterTriangle {
+    let v0 = vertex_persp(53, 502, 0x389B, 0x1D4D, 0xFF0000FF, 0x0000, 0xF15A);
+    let v1 = vertex_persp(459, 502, 0x389B, 0x1D4D, 0xFF0000FF, 0x0753, 0xF15A);
+    let v2 = vertex_persp(273, 221, 0x0265, 0x0277, 0xFF0000FF, 0x009D, 0x00EC);
+
+    RasterTriangle {
+        verts: [v0, v1, v2],
+        bbox_min_x: 0,
+        bbox_max_x: 511,
+        bbox_min_y: 0,
+        bbox_max_y: 511,
+        gouraud_en: true,
+    }
+}
+
+/// Build the VER-016 green triangle (near-left, far-right, far-left).
+///
+/// Vertex data decoded from `ver_016_perspective_road.hex` lines 80–88.
+fn ver016_green_triangle() -> RasterTriangle {
+    let v0 = vertex_persp(53, 502, 0x389B, 0x1D4D, 0x00FF00FF, 0x0000, 0xF15A);
+    let v1 = vertex_persp(273, 221, 0x0265, 0x0277, 0x00FF00FF, 0x009D, 0x00EC);
+    let v2 = vertex_persp(238, 221, 0x0265, 0x0277, 0x00FF00FF, 0x0000, 0x00EC);
+
+    RasterTriangle {
+        verts: [v0, v1, v2],
+        bbox_min_x: 0,
+        bbox_max_x: 511,
+        bbox_min_y: 0,
+        bbox_max_y: 511,
+        gouraud_en: true,
+    }
+}
+
+/// Find the fragment at a specific pixel position.
+fn find_fragment(
+    frags: &[gs_twin_core::fragment::RasterFragment],
+    x: u16,
+    y: u16,
+) -> Option<&gs_twin_core::fragment::RasterFragment> {
+    frags.iter().find(|f| f.x == x && f.y == y)
+}
+
+#[test]
+fn ver016_red_uv_at_121_496() {
+    let tri = ver016_red_triangle();
+    let setup = rasterize::triangle_setup(&tri).expect("degenerate triangle");
+    let frags = rasterize::rasterize_triangle(&setup);
+
+    let frag = find_fragment(&frags, 121, 496)
+        .expect("fragment (121,496) not emitted — outside red triangle?");
+
+    let u0 = frag.u0.to_bits() as u16;
+    let v0 = frag.v0.to_bits() as u16;
+
+    // DT expected values (recorded from gs-twin run of ver_016).
+    // RTL currently produces u0=0x0526 v0=0xBFFE — the delta is the
+    // rasterizer interpolation precision bug to fix.
+    assert_eq!(
+        (u0, v0),
+        (0x0522, 0xC038),
+        "UV mismatch at (121,496): got u0=0x{u0:04X} v0=0x{v0:04X}, \
+         expected u0=0x0522 v0=0xC038"
+    );
+}
+
+#[test]
+fn ver016_green_uv_at_241_222() {
+    let tri = ver016_green_triangle();
+    let setup = rasterize::triangle_setup(&tri).expect("degenerate triangle");
+    let frags = rasterize::rasterize_triangle(&setup);
+
+    let frag = find_fragment(&frags, 241, 222)
+        .expect("fragment (241,222) not emitted — outside green triangle?");
+
+    let u0 = frag.u0.to_bits() as u16;
+    let v0 = frag.v0.to_bits() as u16;
+
+    // DT expected values (recorded from gs-twin run of ver_016).
+    // RTL currently produces u0=0x0340 v0=0x2CE6.
+    assert_eq!(
+        (u0, v0),
+        (0x0320, 0x2B30),
+        "UV mismatch at (241,222): got u0=0x{u0:04X} v0=0x{v0:04X}, \
+         expected u0=0x0320 v0=0x2B30"
+    );
+}
+
+/// Bulk UV regression: every fragment in the red triangle must match the
+/// DT baseline.  This test is a smoke-test that prints a summary of
+/// mismatches rather than asserting each pixel.
+#[test]
+fn ver016_red_uv_bulk_summary() {
+    let tri = ver016_red_triangle();
+    let setup = rasterize::triangle_setup(&tri).expect("degenerate triangle");
+    let frags = rasterize::rasterize_triangle(&setup);
+
+    assert!(
+        frags.len() > 1000,
+        "expected >1000 fragments for the red triangle, got {}",
+        frags.len()
+    );
+    eprintln!("ver016 red triangle: {} fragments emitted", frags.len());
+
+    // Spot-check a few interior pixels that are well inside a single
+    // checker square (should be unambiguous black or white).
+    // These pixel positions were selected from the ver_016 image where
+    // the DT and RTL outputs clearly disagree.
+    let check_pixels: &[(u16, u16)] = &[
+        (121, 496), // near bottom-left, DT=black RTL=red
+        (121, 466), // bilinear boundary region
+        (121, 498), // another divergent pixel
+        (121, 502), // near vertex edge
+    ];
+
+    for &(px, py) in check_pixels {
+        if let Some(frag) = find_fragment(&frags, px, py) {
+            eprintln!(
+                "  ({px},{py}): u0=0x{:04X} v0=0x{:04X}",
+                frag.u0.to_bits() as u16,
+                frag.v0.to_bits() as u16,
+            );
+        } else {
+            eprintln!("  ({px},{py}): not in triangle");
+        }
+    }
+}
