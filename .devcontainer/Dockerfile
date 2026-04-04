@@ -120,9 +120,9 @@ RUN mkdir -p /opt \
 # PeakRDL: register interface code generation (SystemRDL → SV + Rust)
 # Pillow: PNG loading for texture compression test tooling
 RUN /opt/oss-cad-suite/bin/tabbypy3 -m pip install \
-        peakrdl peakrdl-regblock peakrdl-rust Pillow \
+        peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml \
     && pip3 install --break-system-packages \
-        peakrdl peakrdl-regblock peakrdl-rust Pillow
+        peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml
 
 # Install d2 diagramming tool (https://github.com/terrastruct/d2)
 RUN curl -fsSL https://d2lang.com/install.sh | sh -s --
