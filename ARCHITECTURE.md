@@ -399,6 +399,7 @@ flowchart LR
         UNIT_011_04["UNIT-011.04: Block Decompressor"]
         UNIT_011_05["UNIT-011.05: L2 Compressed Cache"]
     end
+    UNIT_012["UNIT-012: Z-Buffer Tile Cache"]
     UNIT_001 -->|INT-001| UNIT_001
     UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
@@ -439,4 +440,5 @@ flowchart LR
 | UNIT-011.04 | Block Decompressor | Decodes a compressed or uncompressed 4×4 texel block from its raw SDRAM format into 16 UQ1.8 RGBA texels for storage in UNIT-011.03 (L1 Decompressed Cache), then promotes the UQ1.8 output to Q4.12 via `texel_promote.sv` before passing texels to the color combiner pipeline. |
 | UNIT-011.05 | L2 Compressed Cache | Per-sampler direct-mapped cache storing raw compressed or uncompressed 4×4 block data fetched from SDRAM. |
 | UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing decoded Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline). |
+| UNIT-012 | Z-Buffer Tile Cache | 4-way set-associative write-back Z-buffer tile cache with per-tile uninitialized flag tracking. |
 <!-- syskit-arch-end -->

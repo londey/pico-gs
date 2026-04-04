@@ -62,4 +62,5 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-011.04: Block Decompressor](unit_011.04_block_decompressor.md)
 - [UNIT-011.05: L2 Compressed Cache](unit_011.05_l2_compressed_cache.md)
 - [UNIT-011: Texture Sampler](unit_011_texture_sampler.md)
+- [UNIT-012: Z-Buffer Tile Cache](unit_012_zbuf_tile_cache.md)
 <!-- TOC-END -->

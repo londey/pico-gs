@@ -152,6 +152,7 @@ module raster_edge_walk (
         EW_BRAM_READ = 4'd3,
         EW_PERSP_1   = 4'd4,
         EW_PERSP_2   = 4'd5,
+        EW_PERSP_3   = 4'd9,
         EW_EMIT      = 4'd6,
         EW_ITER_NEXT = 4'd7
     } ew_state_t;
@@ -307,9 +308,10 @@ module raster_edge_walk (
     // Extract Q4.12 from bits [25:10].
 
     // Use recip_out directly (bypassing persp_recip register) because
-    // raster_recip_q has 2-cycle latency: the output is valid at EW_PERSP_2
-    // (when recip_out has been registered), but persp_recip would lag by
-    // one additional cycle if latched from recip_out in EW_PERSP_1.
+    // raster_recip_q has 2-cycle latency: the output is valid at EW_PERSP_3
+    // (recip submission moved to EW_BRAM_READ to read post-step accumulators).
+    // The live s0_acc[31:16] is stable from EW_BRAM_READ through EW_PERSP_3
+    // because no attr_step signals fire during the perspective pipeline.
     wire signed [33:0] mul_u0 = $signed(s0_acc[31:16]) * $signed(recip_out);
     wire signed [33:0] mul_v0 = $signed(t0_acc[31:16]) * $signed(recip_out);
     wire signed [33:0] mul_u1 = $signed(s1_acc[31:16]) * $signed(recip_out);
@@ -429,6 +431,10 @@ module raster_edge_walk (
             end
 
             EW_PERSP_2: begin
+                next_ew_state = EW_PERSP_3;
+            end
+
+            EW_PERSP_3: begin
                 next_ew_state = EW_EMIT;
             end
 
@@ -590,20 +596,22 @@ module raster_edge_walk (
 
             EW_EDGE_TEST: begin
                 if (inside_triangle) begin
-                    // Issue 1/Q lookup to raster_recip_q.
-                    // Pass only the top 16 bits (the UQ1.15 Q value) zero-extended
-                    // to 32.  The bottom 16 bits are sub-pixel accumulation fraction
-                    // and must NOT be included — raster_recip_q's denormalization
-                    // is calibrated for the 16-bit Q value range.
-                    next_recip_operand = {16'd0, q_acc[31:16]};
-                    next_recip_valid_in = 1'b1;
-
+                    // Recip operand and S/T latch are deferred to EW_BRAM_READ
+                    // so that a concurrent step_y (from the previous pixel's
+                    // EW_ITER_NEXT) has been applied to the accumulators.
                 end
             end
 
             EW_BRAM_READ: begin
-                // BRAM read cycle — raster_recip_q stage 1 in progress.
-                // Latch pixel coordinates and attribute values while waiting.
+                // The accumulators are now stable: any step_y registered
+                // concurrently with EW_EDGE_TEST has been applied at the
+                // posedge that entered this state.
+                //
+                // Issue 1/Q lookup to raster_recip_q using the post-step Q.
+                next_recip_operand = {16'd0, q_acc[31:16]};
+                next_recip_valid_in = 1'b1;
+
+                // Latch pixel coordinates and promoted attribute values.
                 next_latched_x = curr_x;
                 next_latched_y = curr_y;
                 next_latched_z = out_z;
@@ -612,12 +620,17 @@ module raster_edge_walk (
             end
 
             EW_PERSP_1: begin
-                // Wait cycle: raster_recip_q stage 2 output registers
-                // are being captured this cycle.  recip_out will be valid
-                // at the START of the next cycle (EW_PERSP_2).
+                // recip_q stage 0 (CLZ + ROM address) computed this cycle.
+                // Stage 1 BRAM read captured at the next posedge.
             end
 
             EW_PERSP_2: begin
+                // recip_q stage 1 registers captured.  Stage 2 (interpolation
+                // + denormalization) is combinational; recip_out will be
+                // registered at the next posedge (entering EW_PERSP_3).
+            end
+
+            EW_PERSP_3: begin
                 // recip_out is now valid (2-cycle latency from raster_recip_q
                 // completed at the previous posedge).  The perspective correction
                 // multiplies use recip_out directly (combinational), so their

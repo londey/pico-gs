@@ -9,6 +9,7 @@
 use gs_rasterizer::attr_accum::{self, AttrAccum};
 use gs_rasterizer::deriv::{self, NUM_ATTRS};
 use gs_rasterizer::dsp_mul;
+use gs_rasterizer::rasterize;
 use gs_rasterizer::recip;
 use gs_rasterizer::setup::{self, EdgeCoeffs};
 use gs_twin_core::triangle::{RasterTriangle, RasterVertex, Rgba8888};
@@ -32,6 +33,7 @@ fn main() {
     gen_shift_mul(out);
     gen_deriv(out);
     gen_attr_accum(out);
+    gen_frag_uv(out);
 
     eprintln!("Test vectors written to {}", out.display());
 }
@@ -830,4 +832,213 @@ fn gen_attr_accum(out: &Path) {
     fs::write(out.join("attr_accum_stim.hex"), stim).unwrap();
     fs::write(out.join("attr_accum_exp.hex"), exp).unwrap();
     eprintln!("  attr_accum: {} sequences", seq_count);
+}
+
+// ── frag_uv — end-to-end per-fragment UV comparison ──────────────────────
+
+/// Generate per-fragment UV test vectors from the VER-016 perspective road
+/// triangles.
+///
+/// Stimulus file (`frag_uv_stim.hex`): one triangle per block.
+/// Each triangle is encoded as 16-bit hex words:
+///   3 vertices × 10 words each = 30 words per triangle.
+///   Per vertex: x_q4, y_q4, z, q, color0_hi, color0_lo, st0_hi, st0_lo, st1_hi, st1_lo
+/// A header word gives the fb_width_log2 and gouraud_en.
+///
+/// Expected file (`frag_uv_exp.hex`): fragments in rasterization order.
+/// Per fragment: 3 × 16-bit words: x, y, uv0 (packed {u0[15:0], v0[15:0]} as two words).
+/// Each triangle's fragment list is terminated by 0xFFFF.
+fn gen_frag_uv(out: &Path) {
+    let triangles = make_frag_uv_test_cases();
+    let mut stim = String::new();
+    let mut exp = String::new();
+    let mut tri_count = 0u32;
+    let mut total_frags = 0u32;
+
+    for tc in &triangles {
+        let tri = &tc.tri;
+
+        // Stimulus: header + 3 vertices
+        // Header: {4'b0, fb_width_log2[3:0], 7'b0, gouraud_en}
+        let header = ((tc.fb_width_log2 as u16) << 8) | (tri.gouraud_en as u16);
+        writeln!(stim, "{header:04x}").unwrap();
+
+        for v in &tri.verts {
+            // Pack vertex as Q12.4 coordinates (matching RTL v0_x/v0_y inputs)
+            let x_q4 = v.px << 4; // integer → Q12.4
+            let y_q4 = v.py << 4;
+            let color0 = v.color0.0;
+            let st0_hi = v.s0;
+            let st0_lo = v.t0;
+            writeln!(stim, "{x_q4:04x}").unwrap();
+            writeln!(stim, "{y_q4:04x}").unwrap();
+            writeln!(stim, "{:04x}", v.z).unwrap();
+            writeln!(stim, "{:04x}", v.q).unwrap();
+            writeln!(stim, "{:04x}", (color0 >> 16) as u16).unwrap();
+            writeln!(stim, "{:04x}", color0 as u16).unwrap();
+            writeln!(stim, "{st0_hi:04x}").unwrap();
+            writeln!(stim, "{st0_lo:04x}").unwrap();
+            writeln!(stim, "{:04x}", v.s1).unwrap();
+            writeln!(stim, "{:04x}", v.t1).unwrap();
+        }
+
+        // Run DT rasterizer to get expected fragments
+        let setup = match rasterize::triangle_setup(tri) {
+            Some(s) => s,
+            None => {
+                eprintln!("  frag_uv: skipping degenerate '{}'", tc.name);
+                // Write terminator for this triangle
+                writeln!(exp, "ffff").unwrap();
+                continue;
+            }
+        };
+        let frags = rasterize::rasterize_triangle(&setup);
+
+        for frag in &frags {
+            writeln!(exp, "{:04x}", frag.x).unwrap();
+            writeln!(exp, "{:04x}", frag.y).unwrap();
+            writeln!(exp, "{:04x}", frag.u0.to_bits() as u16).unwrap();
+            writeln!(exp, "{:04x}", frag.v0.to_bits() as u16).unwrap();
+        }
+        // Terminator
+        writeln!(exp, "ffff").unwrap();
+
+        total_frags += frags.len() as u32;
+        tri_count += 1;
+    }
+
+    // End-of-stimulus sentinel
+    writeln!(stim, "dead").unwrap();
+
+    fs::write(out.join("frag_uv_stim.hex"), stim).unwrap();
+    fs::write(out.join("frag_uv_exp.hex"), exp).unwrap();
+    eprintln!(
+        "  frag_uv: {} triangles, {} fragments",
+        tri_count, total_frags
+    );
+}
+
+/// Test case for fragment UV comparison.
+struct FragUvTestCase {
+    name: &'static str,
+    tri: RasterTriangle,
+    fb_width_log2: u8,
+}
+
+/// Build small test triangles with perspective-varying Q and texture
+/// coordinates, sized to complete quickly under Verilator simulation.
+///
+/// Vertex attributes (Q, S, T) are taken from the VER-016 perspective road
+/// but the triangle geometry is shrunk to ~30×30 pixels so that the RTL
+/// simulation finishes in seconds rather than minutes.
+fn make_frag_uv_test_cases() -> Vec<FragUvTestCase> {
+    // Small perspective triangle (~30×30 px): two near vertices share a
+    // high Q (near camera), the far vertex has a low Q (far camera).
+    // This reproduces the perspective interpolation precision path that
+    // diverges between DT and RTL on the full VER-016 triangles.
+    let persp_small = RasterTriangle {
+        verts: [
+            RasterVertex {
+                px: 20,
+                py: 50,
+                z: 0x389B,
+                q: 0x1D4D,
+                color0: Rgba8888(0xFF00_00FF),
+                color1: Rgba8888(0),
+                s0: 0x0000,
+                t0: 0xF15A,
+                s1: 0,
+                t1: 0,
+            },
+            RasterVertex {
+                px: 50,
+                py: 50,
+                z: 0x389B,
+                q: 0x1D4D,
+                color0: Rgba8888(0xFF00_00FF),
+                color1: Rgba8888(0),
+                s0: 0x0753,
+                t0: 0xF15A,
+                s1: 0,
+                t1: 0,
+            },
+            RasterVertex {
+                px: 35,
+                py: 20,
+                z: 0x0265,
+                q: 0x0277,
+                color0: Rgba8888(0xFF00_00FF),
+                color1: Rgba8888(0),
+                s0: 0x009D,
+                t0: 0x00EC,
+                s1: 0,
+                t1: 0,
+            },
+        ],
+        bbox_min_x: 0,
+        bbox_max_x: 63,
+        bbox_min_y: 0,
+        bbox_max_y: 63,
+        gouraud_en: true,
+    };
+
+    // Second small triangle (green vertex colors, different winding)
+    let persp_small2 = RasterTriangle {
+        verts: [
+            RasterVertex {
+                px: 10,
+                py: 40,
+                z: 0x389B,
+                q: 0x1D4D,
+                color0: Rgba8888(0x00FF_00FF),
+                color1: Rgba8888(0),
+                s0: 0x0000,
+                t0: 0xF15A,
+                s1: 0,
+                t1: 0,
+            },
+            RasterVertex {
+                px: 35,
+                py: 20,
+                z: 0x0265,
+                q: 0x0277,
+                color0: Rgba8888(0x00FF_00FF),
+                color1: Rgba8888(0),
+                s0: 0x009D,
+                t0: 0x00EC,
+                s1: 0,
+                t1: 0,
+            },
+            RasterVertex {
+                px: 25,
+                py: 20,
+                z: 0x0265,
+                q: 0x0277,
+                color0: Rgba8888(0x00FF_00FF),
+                color1: Rgba8888(0),
+                s0: 0x0000,
+                t0: 0x00EC,
+                s1: 0,
+                t1: 0,
+            },
+        ],
+        bbox_min_x: 0,
+        bbox_max_x: 63,
+        bbox_min_y: 0,
+        bbox_max_y: 63,
+        gouraud_en: true,
+    };
+
+    vec![
+        FragUvTestCase {
+            name: "persp_small",
+            tri: persp_small,
+            fb_width_log2: 6,
+        },
+        FragUvTestCase {
+            name: "persp_small2",
+            tri: persp_small2,
+            fb_width_log2: 6,
+        },
+    ]
 }

@@ -15,5 +15,13 @@ gpu-registers = { path = "../../registers/twin", default-features = false }
 name = "gen_raster_test_vectors"
 path = "src/bin/gen_raster_test_vectors.rs"
 
+[[bin]]
+name = "gen_hiz_meta_test_vectors"
+path = "src/bin/gen_hiz_meta_test_vectors.rs"
+
+[[bin]]
+name = "gen_edge_walk_test_vectors"
+path = "src/bin/gen_edge_walk_test_vectors.rs"
+
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

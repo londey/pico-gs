@@ -139,8 +139,10 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
 	test-block-decoder-all \
-	gen-raster-vectors test-recip-area-dt test-recip-q-dt test-dsp-mul-dt \
-	test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-dt-all \
+	gen-raster-vectors gen-edge-walk-vectors gen-hiz-meta-vectors \
+	test-recip-area-dt test-recip-q-dt test-dsp-mul-dt \
+	test-shift-mul-dt test-deriv-dt test-attr-accum-dt \
+	test-raster-edge-walk-dt test-hiz-meta-dt test-raster-dt-all \
 	gen-bilinear-vectors test-bilinear-dt \
 	gen-l1-wrap-vectors gen-l1-mirror-vectors \
 	test-l1-wrap-dt test-l1-mirror-dt \
@@ -532,8 +534,64 @@ test-attr-accum-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_attr_accum_dt -o tb_attr_accum_dt
 	$(OBJ_DIR)/tb_attr_accum_dt
 
+# DT-verified: end-to-end per-fragment UV comparison (VER-016 triangles)
+# Uses --no-trace to avoid instrumentation overhead on the full rasterizer.
+VERILATOR_NOTRACE_FLAGS = --binary -Wall -Wno-fatal --assert --timing -j 0 --Mdir $(OBJ_DIR)
+test-raster-frag-uv-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_NOTRACE_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(RASTER_RTL)/raster_dsp_mul.sv \
+		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
+		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
+		$(RASTER_RTL)/raster_deriv.sv \
+		$(RASTER_RTL)/raster_attr_accum.sv \
+		$(RASTER_RTL)/raster_edge_walk.sv \
+		$(RASTER_RTL)/raster_recip_area.sv \
+		$(RASTER_RTL)/raster_recip_q.sv \
+		$(RASTER_RTL)/raster_setup_fifo.sv \
+		$(RASTER_RTL)/raster_hiz_meta.sv \
+		$(RASTER_RTL)/rasterizer.sv \
+		$(RASTER_TB_DIR)/tb_raster_frag_uv_dt.sv \
+		--top-module tb_raster_frag_uv_dt -o tb_raster_frag_uv_dt
+	$(OBJ_DIR)/tb_raster_frag_uv_dt
+
+# Generate edge walk test vectors from the digital twin
+gen-edge-walk-vectors:
+	cargo run --bin gen_edge_walk_test_vectors -- $(abspath $(RASTER_VEC_DIR))
+
+# DT-verified: edge walk fragment comparison (tile traversal, Hi-Z rejection)
+test-raster-edge-walk-dt: gen-edge-walk-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_NOTRACE_FLAGS) \
+		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(RASTER_RTL)/raster_dsp_mul.sv \
+		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
+		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
+		$(RASTER_RTL)/raster_deriv.sv \
+		$(RASTER_RTL)/raster_attr_accum.sv \
+		$(RASTER_RTL)/raster_edge_walk.sv \
+		$(RASTER_RTL)/raster_recip_area.sv \
+		$(RASTER_RTL)/raster_recip_q.sv \
+		$(RASTER_RTL)/raster_setup_fifo.sv \
+		$(RASTER_RTL)/raster_hiz_meta.sv \
+		$(RASTER_RTL)/rasterizer.sv \
+		$(RASTER_TB_DIR)/tb_edge_walk_dt.sv \
+		--top-module tb_edge_walk_dt -o tb_edge_walk_dt
+	$(OBJ_DIR)/tb_edge_walk_dt
+
+# Generate hiz meta test vectors from the digital twin
+gen-hiz-meta-vectors:
+	cargo run --bin gen_hiz_meta_test_vectors -- $(abspath $(RASTER_VEC_DIR))
+
+# DT-verified: raster_hiz_meta (BRAM metadata store, RMW, fast-clear, lazy-fill)
+test-hiz-meta-dt: gen-hiz-meta-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(RASTER_RTL)/raster_hiz_meta.sv \
+		$(RASTER_TB_DIR)/tb_hiz_meta_dt.sv \
+		--top-module tb_hiz_meta_dt -o tb_hiz_meta_dt
+	$(OBJ_DIR)/tb_hiz_meta_dt
+
 # All DT-verified rasterizer testbenches
-test-raster-dt-all: test-recip-area-dt test-recip-q-dt test-dsp-mul-dt test-shift-mul-dt test-deriv-dt test-attr-accum-dt
+test-raster-dt-all: test-recip-area-dt test-recip-q-dt test-dsp-mul-dt test-shift-mul-dt test-deriv-dt test-attr-accum-dt test-raster-frag-uv-dt test-raster-edge-walk-dt test-hiz-meta-dt
 	@echo "All DT-verified rasterizer testbenches passed."
 
 # All rasterizer tests: sub-module unit tests + DT-verified + integration + visualization
