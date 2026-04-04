@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `79a0ff3645976d58` 2026-04-01
+// Spec-ref: unit_006_pixel_pipeline.md `4dffd877eb8ab47b` 2026-04-04
 //
 // fp_types_pkg — Q4.12 Fixed-Point Type Definitions and Promotion Functions
 //

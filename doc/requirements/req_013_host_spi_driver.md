@@ -19,6 +19,12 @@ This is the software counterpart to REQ-001 (GPU SPI Hardware), covering the Rus
 
 None (top-level area)
 
+## Sub-Requirements
+
+- REQ-013.01 (GPU Communication Protocol)
+- REQ-013.02 (Upload Texture)
+- REQ-013.03 (VSync Synchronization)
+
 ## Notes
 
 This is one of the top-level requirement areas organizing the specification hierarchy.

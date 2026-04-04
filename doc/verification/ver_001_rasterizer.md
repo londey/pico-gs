@@ -128,7 +128,7 @@ The testbench drives known triangle configurations through the triangle setup an
 
 ## Test Implementation
 
-- `components/rasterizer/tests/tb_rasterizer.sv`: Verilator unit testbench for the rasterizer module.
+- `components/rasterizer/rtl/tests/tb_rasterizer.sv`: Verilator unit testbench for the rasterizer module.
   Drives triangle vertex data, monitors edge function outputs, counts fragment emissions, and checks interpolated values against reference data.
 
 ## Notes

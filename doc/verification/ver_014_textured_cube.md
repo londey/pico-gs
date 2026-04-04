@@ -20,10 +20,10 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
 
 ## Preconditions
 
-- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - A known test texture (16×16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets are generated programmatically by the test harness and are not committed.
-- Golden image `spi_gpu/tests/golden/textured_cube.ppm` has been approved and committed.
+- Golden image `integration/golden/ver_014_textured_cube.png` has been approved and committed.
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` (UQ4.4) is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `triangle_setup.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `early_z.sv`) compile without errors under `verilator --lint-only -Wall`.
@@ -139,12 +139,12 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 8. **Read back framebuffer:**
    The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4×4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 5.
-   The pixel data is serialized as a PPM file at `spi_gpu/tests/sim_out/textured_cube.ppm`.
+   The pixel data is serialized as a PNG file at `integration/sim_out/ver_014_textured_cube.png`.
 
 9. **Pixel-exact comparison:**
    Compare the simulation output against the approved golden image:
    ```
-   diff -q spi_gpu/tests/sim_out/textured_cube.ppm spi_gpu/tests/golden/textured_cube.ppm
+   diff -q integration/sim_out/ver_014_textured_cube.png integration/golden/ver_014_textured_cube.png
    ```
 
 10. **SDRAM burst length assertion:**
@@ -153,7 +153,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Expected Results
 
-- **Pass Criteria:** Pixel-exact match between the simulation output (`spi_gpu/tests/sim_out/textured_cube.ppm`) and the approved golden image (`spi_gpu/tests/golden/textured_cube.ppm`).
+- **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_014_textured_cube.png`) and the approved golden image (`integration/golden/ver_014_textured_cube.png`).
   The rendered image shows the three visible faces of the perspective-projected cube, each displaying the 16×16 checker pattern with visible perspective foreshortening — checker squares appear smaller toward the vanishing point and larger toward the viewer.
   Back faces of the cube are not visible (occluded by Z-testing or outside the viewing frustum).
   SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching INT-032.
@@ -171,9 +171,9 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE) as consumed by UNIT-011, drives register-write command sequences for all twelve cube triangles, and reads back the framebuffer as a PPM file.
-- `spi_gpu/tests/golden/textured_cube.ppm`: Approved golden image (created after the initial simulation run is visually inspected and approved).
+- `integration/harness/`: Integration simulation harness.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE) as consumed by UNIT-011, drives register-write command sequences for all twelve cube triangles, and reads back the framebuffer as a PNG file.
+- `integration/golden/ver_014_textured_cube.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
 
@@ -202,8 +202,8 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-032 (DD-041).
   RGB565 is FORMAT=5.
 - **Cache format:** The texture cache operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
-- **Makefile target:** Run this test with: `cd spi_gpu && make test-textured-cube`.
-- **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PPM, copy it to `spi_gpu/tests/golden/textured_cube.ppm`, and commit.
+- **Makefile target:** Run this test with: `cd integration && make test-textured-cube`.
+- **Golden image approval:** Per `test_strategy.md`, run the simulation, visually inspect the output PNG, copy it to `integration/golden/ver_014_textured_cube.png`, and commit.
   The golden image must be regenerated and re-approved whenever: the rasterizer tiled address stride changes; the perspective-correct interpolation logic in UNIT-005 is modified (including the reciprocal module split replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs); the derivative precomputation module `raster_deriv.sv` is converted from combinational to sequential time-multiplexed computation (UNIT-005.03); the format-select mux path in UNIT-011.04 (Block Decompressor) changes; the COMBINE_MODE=MODULATE pipeline behavior in UNIT-010 changes; or the rasterizer traversal order changes.
   The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations; perspective foreshortening on cube faces is particularly sensitive to this.
   The sequential derivative computation shares 1-2 MULT18X18D blocks across all 28 derivative multiplications; any rounding difference in the shared multiplier path compared to the previous combinational multiplies may shift interpolated UV and color values, and perspective foreshortening on cube faces amplifies these differences.

@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_006_pixel_pipeline.md `79a0ff3645976d58` 2026-04-01
+// Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
 //
 // Testbench: pixel_pipeline uninit flag EBR behavior
 //

@@ -11,7 +11,9 @@
 // Internal uninit_flags_mem is probed via hierarchical references into
 // the DUT (zbuf_tile_cache).
 //
-// See: UNIT-009.01, VER-011
+// Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
+//
+// See: UNIT-012, VER-011
 
 `timescale 1ns/1ps
 

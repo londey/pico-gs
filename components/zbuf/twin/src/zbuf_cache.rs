@@ -12,6 +12,8 @@
 //! Invalidation clears all valid bits without write-back (used on
 //! `FB_CONFIG` writes when the Z-buffer is reconfigured).
 
+// Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
+
 use crate::uninit_flags::UninittedFlagArray;
 use gs_memory::GpuMemory;
 

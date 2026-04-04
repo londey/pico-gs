@@ -9,7 +9,7 @@
 //!
 //! See UNIT-006 and REQ-005.07.
 
-// Spec-ref: unit_006_pixel_pipeline.md `79a0ff3645976d58` 2026-04-01
+// Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
 
 /// Number of tiles tracked (128x128 = 16,384).
 const NUM_TILES: usize = 16384;

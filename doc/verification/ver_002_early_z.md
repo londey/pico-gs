@@ -77,7 +77,7 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 
 ## Test Implementation
 
-- `components/early-z/tests/tb_early_z.sv`: Verilator unit testbench for the `early_z.sv` module.
+- `components/early-z/rtl/tests/tb_early_z.sv`: Verilator unit testbench for the `early_z.sv` module.
   Drives fragment depth and Z-buffer inputs through the depth range clipper and Z comparison logic, checking `range_pass`, `z_test_pass`, and `z_bypass` outputs against expected values for all comparison functions, bypass conditions, and boundary cases.
 
 ## Notes

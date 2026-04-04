@@ -1,5 +1,7 @@
 `default_nettype none
 
+// Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
+//
 // Z-Buffer Cache Tag BRAM — 128×7 SDP using PDPW16KD
 //
 // Single write port (7-bit) and single read port (7-bit) wrapping one
@@ -8,7 +10,7 @@
 // 384 entries are unused.  Tag data occupies bits [6:0]; bits [35:7]
 // are tied low on writes and ignored on reads.
 //
-// See: DD-037 (PDPW16KD EBR), UNIT-011.03 (L1 Decompressed Cache)
+// See: DD-037 (PDPW16KD EBR), UNIT-012 (Z-Buffer Tile Cache), UNIT-011.03 (L1 Decompressed Cache)
 
 module zbuf_tag_bram (
     input  wire       clk,

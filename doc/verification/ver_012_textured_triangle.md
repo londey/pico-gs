@@ -18,10 +18,10 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 ## Preconditions
 
-- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
-- Golden image `spi_gpu/tests/golden/textured_triangle.ppm` has been approved and committed.
+- Golden image `integration/golden/ver_012_textured_triangle.png` has been approved and committed.
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` is added.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`) compile without errors under `verilator --lint-only -Wall`.
@@ -109,12 +109,12 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 9. **Read back framebuffer:**
    The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4x4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 4.
-   The pixel data is serialized as a PPM file at `spi_gpu/tests/sim_out/textured_triangle.ppm`.
+   The pixel data is serialized as a PNG file at `integration/sim_out/ver_012_textured_triangle.png`.
 
 10. **Pixel-exact comparison:**
     Compare the simulation output against the approved golden image:
     ```
-    diff -q spi_gpu/tests/sim_out/textured_triangle.ppm spi_gpu/tests/golden/textured_triangle.ppm
+    diff -q integration/sim_out/ver_012_textured_triangle.png integration/golden/ver_012_textured_triangle.png
     ```
 
 11. **SDRAM burst length assertion:**
@@ -123,7 +123,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Expected Results
 
-- **Pass Criteria:** Pixel-exact match between the simulation output (`spi_gpu/tests/sim_out/textured_triangle.ppm`) and the approved golden image (`spi_gpu/tests/golden/textured_triangle.ppm`).
+- **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_012_textured_triangle.png`) and the approved golden image (`integration/golden/ver_012_textured_triangle.png`).
   The rendered image shows a triangle with the 16x16 checker pattern mapped onto its surface via perspective-correct UV interpolation.
   The checker pattern should appear uniform and undistorted -- no affine warping artifacts should be visible (straight checker lines remain straight across the triangle).
   SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching INT-032.
@@ -139,9 +139,9 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/textured_triangle.ppm`: Approved golden image (created after the initial simulation run is visually inspected and approved).
+- `integration/harness/`: Integration simulation harness.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PNG files.
+- `integration/golden/ver_012_textured_triangle.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
 
@@ -155,7 +155,7 @@ The integration harness drives the following register-write sequence into UNIT-0
   The golden image must be re-approved after any change to the format-select mux path in UNIT-011.04, including this field widening.
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
-- **Makefile target:** Run this test with: `cd spi_gpu && make test-textured`.
+- **Makefile target:** Run this test with: `cd integration && make test-textured`.
 - **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.05).
   The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
   `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; UNIT-011 uses them directly for texture cache lookup without further division.

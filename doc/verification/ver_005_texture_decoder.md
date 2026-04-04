@@ -120,7 +120,7 @@ The testbench drives known input data through each texture format decoder and th
 
 ## Test Implementation
 
-- `components/texture/tests/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
+- `components/texture/rtl/tests/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
   Instantiates each decoder as a separate DUT plus the format-select mux, drives known input block data with specific texel indices, and checks output values (UQ1.8 format) against expected constants.
   Uses embedded test vectors (no external file dependencies).
 

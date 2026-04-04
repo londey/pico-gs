@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_009.01_zbuf_tile_cache.md `0000000000000000` 2026-03-24
+// Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
 //
 // Z-Buffer Tile Cache — 4-way set-associative, write-back, 4×4 tiles
 //

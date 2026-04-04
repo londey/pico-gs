@@ -20,8 +20,8 @@ The test confirms that the color combiner correctly evaluates the MODULATE equat
 
 - UNIT-010 (Color Combiner) has reached Stable status: the WIP flag has been removed from `doc/design/unit_010_color_combiner.md`, indicating that combiner equation pipeline timing and register decoding are finalized.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-010 (Color Combiner) with live connections to `cc_mode` and `const_color` from the register file, along with UNIT-011 (Texture Sampler) providing Q4.12 texel data, and FB/Z write logic per UNIT-006.
-- Integration simulation harness (`spi_gpu/tests/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
-- Golden image `spi_gpu/tests/golden/color_combined.ppm` has been approved and committed.
+- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Golden image `integration/golden/ver_013_color_combined.png` has been approved and committed.
   This image is created after the pixel pipeline integration and UNIT-010 stabilization; the simulation output must be visually inspected and approved before the first commit of the golden file.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `color_combiner.sv`) compile without errors under `verilator --lint-only -Wall`.
@@ -143,17 +143,17 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 10. **Read back framebuffer:**
     The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4x4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 5.
-    The pixel data is serialized as a PPM file at `spi_gpu/tests/sim_out/color_combined.ppm`.
+    The pixel data is serialized as a PNG file at `integration/sim_out/ver_013_color_combined.png`.
 
 11. **Pixel-exact comparison:**
     Compare the simulation output against the approved golden image:
     ```
-    diff -q spi_gpu/tests/sim_out/color_combined.ppm spi_gpu/tests/golden/color_combined.ppm
+    diff -q integration/sim_out/ver_013_color_combined.png integration/golden/ver_013_color_combined.png
     ```
 
 ## Expected Results
 
-- **Pass Criteria:** Pixel-exact match between the simulation output (`spi_gpu/tests/sim_out/color_combined.ppm`) and the approved golden image (`spi_gpu/tests/golden/color_combined.ppm`).
+- **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_013_color_combined.png`) and the approved golden image (`integration/golden/ver_013_color_combined.png`).
   The rendered image shows a triangle with a checker pattern modulated by the Gouraud vertex color gradient.
   Output color at each pixel equals `texture_color * vertex_color` (per-component MODULATE), producing a color-tinted checker pattern: the red-green-blue vertex gradient is visible across both white and mid-gray checker regions, with the mid-gray regions at approximately half intensity.
   The color combiner correctly evaluates `(TEX0 - ZERO) * SHADE0 + ZERO` in cycle 0 and passes the result through cycle 1 unchanged.
@@ -169,16 +169,16 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `spi_gpu/tests/harness/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PPM files.
-- `spi_gpu/tests/golden/color_combined.ppm`: Approved golden image (created after the initial simulation run following UNIT-010 stabilization and pixel pipeline integration; visually inspected and approved before commit).
+- `integration/harness/`: Integration simulation harness.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PNG files.
+- `integration/golden/ver_013_color_combined.png`: Approved golden image (created after the initial simulation run following UNIT-010 stabilization and pixel pipeline integration; visually inspected and approved before commit).
 
 ## Notes
 
 - **CC_MODE bit encoding:** The exact CC_MODE encoding for the two-cycle MODULATE + pass-through configuration is determined by the finalized UNIT-010 register decode logic.
   Verify the encoding value `0x0000000000720020` against the UNIT-010 implementation before approving the golden image.
-- See `doc/verification/test_strategy.md` (Golden Image Approval Testing section) for the approval workflow: run the simulation, visually inspect the output PPM, copy to the `golden/` directory, and commit.
-- **Makefile target:** Run this test with: `cd spi_gpu && make test-color-combined`.
+- See `doc/verification/test_strategy.md` (Golden Image Approval Testing section) for the approval workflow: run the simulation, visually inspect the output PNG, copy to the `golden/` directory, and commit.
+- **Makefile target:** Run this test with: `cd integration && make test-color-combined`.
 - **Relationship to VER-012:** VER-012 tests texture sampling in isolation (vertex colors are white, so MODULATE produces `texture * 1.0 = texture`).
   VER-013 exercises the same texture path but with non-trivial vertex colors, confirming that the color combiner correctly multiplies the two input sources.
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.

@@ -151,9 +151,9 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 
 ## Test Implementation
 
-- `components/spi/tests/tb_register_file.sv`: Primary Verilator unit testbench for the register file module.
+- `components/spi/rtl/tests/tb_register_file.sv`: Primary Verilator unit testbench for the register file module.
   Covers register read/write, vertex kick, ID register, and basic functional verification.
-- `components/spi/tests/register_file_v10_tb.sv`: Extended testbench covering vertex submission flows, MEM_FILL trigger, RENDER_MODE decode, CC_MODE passthrough, FB_CONFIG, and FB_CONTROL field extraction.
+- `components/spi/rtl/tests/register_file_v10_tb.sv`: Extended testbench covering vertex submission flows, MEM_FILL trigger, RENDER_MODE decode, CC_MODE passthrough, FB_CONFIG, and FB_CONTROL field extraction.
 
 ## Notes
 

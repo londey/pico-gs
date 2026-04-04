@@ -118,7 +118,7 @@ The testbench drives controlled fragment inputs and combiner mode configurations
 
 ## Test Implementation
 
-- `components/color-combiner/tests/color_combiner_tb.sv`: Verilator unit testbench for the color combiner module.
+- `components/color-combiner/rtl/tests/color_combiner_tb.sv`: Verilator unit testbench for the color combiner module.
   Drives fragment inputs with known Q4.12 RGBA values, configures CC_MODE for various combiner presets, and checks combined output colors against reference values with Q4.12 rounding tolerance.
 
 ## Notes

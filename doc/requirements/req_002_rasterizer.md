@@ -18,6 +18,12 @@ The rasterizer area groups all requirements related to converting triangle primi
 
 None (top-level area)
 
+## Sub-Requirements
+
+- REQ-002.01 (Flat Shaded Triangle — withdrawn)
+- REQ-002.02 (Gouraud Shaded Triangle)
+- REQ-002.03 (Rasterization Algorithm)
+
 ## Interfaces
 
 - INT-010 (GPU Register Map)

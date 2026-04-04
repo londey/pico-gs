@@ -69,7 +69,7 @@ pub struct Gpu {
     /// Hi-Z block metadata store (UNIT-005.06).
     pub hiz: HizMetadata,
 
-    /// Per-tile uninitialized flags (UNIT-006 lazy-fill tracking).
+    /// Per-tile uninitialized flags (UNIT-012 lazy-fill tracking).
     uninit_flags: UninittedFlagArray,
 
     /// Z-buffer tile cache (4-way set-associative, lazy-fill).
