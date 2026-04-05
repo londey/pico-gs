@@ -26,6 +26,7 @@ DT_ONLY=false
 CHECK_ONLY=false
 RESOURCES_ONLY=false
 DT_VERIFY=false
+PIPELINE_ONLY=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -43,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --check)
             CHECK_ONLY=true
+            shift
+            ;;
+        --pipeline)
+            PIPELINE_ONLY=true
             shift
             ;;
         --resources)
@@ -81,6 +86,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --fpga-only         Build only FPGA bitstream (skip DT and RTL tests)"
             echo "  --check             Quick check: Verilator lint, cargo fmt, cargo check, cargo clippy"
+            echo "  --pipeline          Validate pipeline model and generate D2 diagrams"
             echo "  --resources         Per-module ECP5 resource utilization report"
             echo "  --dt-only           Build and test digital twin only"
             echo "  --dt-verify         Verify RTL modules against digital twin (DT-generated test vectors)"
@@ -123,26 +129,31 @@ echo ""
 
 # Quick check mode: lint + cargo check + clippy, then exit
 if [ "$CHECK_ONLY" = true ]; then
-    echo -e "${YELLOW}[1/4] Verilator lint...${NC}"
+    echo -e "${YELLOW}[1/5] Verilator lint...${NC}"
     cd "${INTEGRATION}"
     make lint
     echo -e "${GREEN}Verilator lint passed${NC}"
     echo ""
 
-    echo -e "${YELLOW}[2/4] cargo fmt --check...${NC}"
+    echo -e "${YELLOW}[2/5] cargo fmt --check...${NC}"
     cd "${REPO_ROOT}"
     cargo fmt --check
     echo -e "${GREEN}cargo fmt passed${NC}"
     echo ""
 
-    echo -e "${YELLOW}[3/4] cargo check...${NC}"
+    echo -e "${YELLOW}[3/5] cargo check...${NC}"
     cargo check
     echo -e "${GREEN}cargo check passed${NC}"
     echo ""
 
-    echo -e "${YELLOW}[4/4] cargo clippy...${NC}"
+    echo -e "${YELLOW}[4/5] cargo clippy...${NC}"
     cargo clippy -- -D warnings
     echo -e "${GREEN}cargo clippy passed${NC}"
+    echo ""
+
+    echo -e "${YELLOW}[5/5] Pipeline validation...${NC}"
+    python3 "${REPO_ROOT}/pipeline/validate.py"
+    echo -e "${GREEN}Pipeline validation passed${NC}"
     echo ""
 
     echo -e "${GREEN}=== Check Complete ===${NC}"
@@ -157,6 +168,20 @@ if [ "$RESOURCES_ONLY" = true ]; then
     echo ""
     echo -e "${GREEN}=== Resource Report Complete ===${NC}"
     echo "Report saved to ${OUTPUT_DIR}/fpga/resource_report.txt"
+    exit 0
+fi
+
+# Pipeline model validation + diagram generation
+if [ "$PIPELINE_ONLY" = true ]; then
+    echo -e "${YELLOW}Validating pipeline model...${NC}"
+    python3 "${REPO_ROOT}/pipeline/validate.py"
+    echo ""
+
+    echo -e "${YELLOW}Generating pipeline diagrams...${NC}"
+    python3 "${REPO_ROOT}/pipeline/gen_diagrams.py" --output-dir "${OUTPUT_DIR}/pipeline"
+    echo ""
+
+    echo -e "${GREEN}=== Pipeline Complete ===${NC}"
     exit 0
 fi
 

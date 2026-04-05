@@ -1,0 +1,489 @@
+# pipeline.yaml — GPU pipeline microarchitecture
+# Single source of truth for units, resources, schedules, and status.
+
+device:
+  name: ECP5-25K
+  dsp: 28
+  ebr: 56
+  lut4: 24000
+  sdram_ports: 3
+
+budget:
+  dsp: 16
+  ebr: 39
+
+# -- Hardware Units ----------------------------------------------------------
+
+units:
+
+  # -- Geometry --------------------------------------------------------------
+
+  triangle_setup:
+    name: Triangle Setup
+    pipeline: geometry
+    dsp: 2
+    ebr: 2        # recip LUTs
+    lut4: 1500
+    status: verified
+    rtl: [rasterizer.sv, raster_recip_area.sv, raster_deriv.sv]
+    twin: gs-rasterizer
+    stages:
+      - id: edge_setup
+        latency: 3
+      - id: deriv_compute
+        latency: 14      # 14 attributes sequential
+      - id: recip
+        latency: 2
+    notes: "Multi-cycle per triangle. DD-036 time-shared DSPs."
+
+  block_rasterize:
+    name: Block Rasterize (4x4)
+    pipeline: geometry
+    dsp: 0
+    ebr: 0
+    lut4: 500
+    status: verified
+    rtl: [raster_edge_walk.sv]
+    twin: gs-rasterizer
+    stages:
+      - id: block_walk
+        latency: 1
+
+  hiz_test:
+    name: Hi-Z Block Reject
+    pipeline: geometry
+    dsp: 0
+    ebr: 8          # Hi-Z metadata DP16KD
+    lut4: 200
+    status: verified
+    rtl: [raster_edge_walk.sv]
+    twin: gs-rasterizer
+    stages:
+      - id: hiz_fetch
+        latency: 1
+      - id: hiz_compare
+        latency: 1    # combinational, pipelined with fetch
+
+  fragment_rasterize:
+    name: Fragment Rasterize
+    pipeline: geometry
+    dsp: 6          # 4 persp correct + 2 edge eval
+    ebr: 0
+    lut4: 1000
+    status: verified
+    rtl: [raster_edge_walk.sv]
+    twin: gs-rasterizer
+    stages:
+      - id: edge_eval
+        latency: 1
+      - id: persp_correct
+        latency: 2
+
+  # -- Pixel Pipeline --------------------------------------------------------
+
+  stipple:
+    name: Stipple Test
+    pipeline: pixel
+    dsp: 0
+    ebr: 0
+    lut4: 40
+    status: verified
+    rtl: [stipple.sv]
+    twin: gs-stipple
+    stages:
+      - id: stipple_test
+        latency: 0      # combinational
+    can_kill: true
+
+  z_cache:
+    name: Z-Buffer Cache
+    pipeline: pixel
+    dsp: 0
+    ebr: 1            # uninit flag array
+    lut4: 300
+    status: implemented
+    rtl: [pixel_pipeline.sv]
+    twin: gs-zbuf
+    stages:
+      - id: zcache_tag_fetch
+        latency: 1
+      - id: zcache_uninit_fetch
+        latency: 1
+      - id: zcache_value_fetch
+        latency: 1
+        stall: sdram_port_2    # cache miss -> SDRAM load
+      - id: z_test
+        latency: 0             # combinational compare
+    can_kill: true
+
+  tex_sampler:
+    name: Texture Sampler
+    pipeline: pixel
+    dsp: 0              # nearest-only for now; bilinear adds 12 (deferred)
+    ebr: 16             # L1/L2 cache per sampler instance
+    lut4: 2000
+    status: in_progress
+    rtl: [texture_sampler.sv, texture_uv_coord.sv]
+    twin: gs-texture
+    stages:
+      - id: uv_wrap
+        latency: 1
+      - id: l1_tag_fetch
+        latency: 1
+      - id: l2_tag_fetch
+        latency: 1
+        conditional: l1_miss
+      - id: l2_sdram_load
+        latency: { best: 8, worst: 40 }
+        stall: sdram_port_1
+        conditional: l2_miss
+      - id: l2_to_l1_decode
+        latency: 1
+        conditional: l2_miss
+      - id: l1_sample
+        latency: 1
+      - id: filter
+        latency: 0       # nearest=combinational; bilinear=deferred
+    notes: >
+      One physical unit, time-multiplexed for TEX0 and TEX1.
+      16 EBR per sampler instance (4 banks x 4 EBR each).
+      Bilinear filter deferred -- see doc/reports/bilinear_filter_dsp_analysis.md
+
+  color_combiner:
+    name: Color Combiner
+    pipeline: pixel
+    dsp: 6              # (A-B)*C for RGB+A, shared across both uses
+    ebr: 0
+    lut4: 400
+    status: implemented
+    rtl: [color_combiner.sv]
+    twin: gs-color-combiner
+    stages:
+      - id: cc_op
+        latency: 1       # (A-B)*C+D
+    notes: "One physical unit, used twice (CC stage 0 then CC stage 1)."
+
+  alpha_test:
+    name: Alpha Test
+    pipeline: pixel
+    dsp: 0
+    ebr: 0
+    lut4: 20
+    status: verified
+    rtl: [pixel_pipeline.sv]
+    twin: gs-twin-core
+    stages:
+      - id: alpha_compare
+        latency: 0
+    can_kill: true
+
+  alpha_blend:
+    name: Alpha Blend
+    pipeline: pixel
+    dsp: 0              # TBD -- may use DSP or LUT shift-and-add
+    ebr: 0
+    lut4: 300
+    status: planned
+    rtl: [alpha_blend.sv]
+    twin: gs-alpha-blend
+    stages:
+      - id: fb_fetch
+        latency: 1
+        stall: sdram_port_0    # framebuffer read
+      - id: blend_op
+        latency: 1
+    notes: "Skipped entirely when blend mode = NONE."
+
+  dither:
+    name: Ordered Dither
+    pipeline: pixel
+    dsp: 0
+    ebr: 1            # blue noise matrix
+    lut4: 100
+    status: implemented
+    rtl: [dither.sv]
+    twin: gs-dither
+    stages:
+      - id: dither_lookup
+        latency: 1
+
+  pixel_output:
+    name: Pixel Output
+    pipeline: pixel
+    dsp: 0
+    ebr: 0
+    lut4: 100
+    status: implemented
+    rtl: [pixel_pipeline.sv]
+    twin: gs-pixel-write
+    stages:
+      - id: z_write
+        latency: 1
+        stall: sdram_port_2
+      - id: color_write
+        latency: 1
+        stall: sdram_port_0
+
+  # -- Display ---------------------------------------------------------------
+
+  scanout:
+    name: Scanout Controller
+    pipeline: display
+    dsp: 0
+    ebr: 1           # scanline FIFO
+    lut4: 500
+    status: implemented
+    rtl: [display_controller.sv]
+    twin: gs-display
+    stages:
+      - id: scanout_read
+        latency: 1
+        stall: sdram_port_0
+
+  color_grade:
+    name: Color Grading LUT
+    pipeline: display
+    dsp: 0
+    ebr: 2           # double-buffered LUT
+    lut4: 100
+    status: planned
+    rtl: []
+    stages:
+      - id: cgrade_read
+        latency: 1
+      - id: cgrade_lookup
+        latency: 1
+      - id: cgrade_sum
+        latency: 0
+
+  dvi_output:
+    name: DVI TMDS Output
+    pipeline: display
+    dsp: 0
+    ebr: 0
+    lut4: 200
+    serdes: 4
+    status: implemented
+    rtl: [dvi_output.sv]
+    stages:
+      - id: tmds_encode
+        latency: 1
+
+  # -- Infrastructure (no pipeline stages) -----------------------------------
+
+  spi_transport:
+    name: SPI + Command FIFO
+    pipeline: infrastructure
+    dsp: 0
+    ebr: 1
+    lut4: 300
+    status: verified
+    rtl: [spi_slave.sv, command_fifo.sv]
+    twin: gs-spi
+
+  pll_reset:
+    name: PLL + Reset
+    pipeline: infrastructure
+    dsp: 0
+    ebr: 0
+    lut4: 50
+    status: verified
+    rtl: [pll_wrapper.sv, reset_sync.sv]
+
+# -- Schedules ---------------------------------------------------------------
+# Each schedule shows one pixel's journey through the pipeline.
+# Cycle numbers are best-case (all cache hits, no SDRAM stalls).
+#
+# Structure:
+#   lead_in   — arrows before the first pipeline cycle (fragment arrival)
+#   lead_out  — arrows after the last pipeline cycle (writeback)
+#   groups    — named phases; each contains arrows from cycle.span to cycle.span
+#               with a label (shown on the arrow) and unit (for validation)
+
+schedules:
+
+  single_tex:
+    name: "Single Texture (4 cyc/pixel target)"
+    cycles_per_pixel: 4
+    lead_in:
+      - from: -1
+        to: 0
+        span: fragment_ready
+        label: "Fragment Created"
+    groups:
+      - name: "Early Fragment Test"
+        arrows:
+          - from: { cycle: 0, span: fragment_ready }
+            to: { cycle: 1, span: early_test_complete }
+            label: "Stipple Test"
+            unit: stipple
+          - from: { cycle: 0, span: fragment_ready }
+            to: { cycle: 1, span: early_test_complete }
+            label: "Z-Buffer Cache"
+            unit: z_cache
+      - name: "Texture Sampler [tex0]"
+        arrows:
+          - from: { cycle: 1, span: early_test_complete }
+            to: { cycle: 2, span: textures_sampled }
+            label: "Sample Texture"
+            unit: tex_sampler
+      - name: "Color Combiners"
+        arrows:
+          - from: { cycle: 2, span: textures_sampled }
+            to: { cycle: 3, span: cc_stage0_complete }
+            label: cc_stage0
+            unit: color_combiner
+          - from: { cycle: 3, span: cc_stage0_complete }
+            to: { cycle: 4, span: cc_stage1_complete }
+            label: cc_stage1
+            unit: color_combiner
+      - name: "Late Fragment Test"
+        arrows:
+          - from: { cycle: 4, span: cc_stage1_complete }
+            to: { cycle: 5, span: final_fragment_value }
+            label: "Alpha Test"
+            unit: alpha_test
+          - from: { cycle: 4, span: cc_stage1_complete }
+            to: { cycle: 5, span: final_fragment_value }
+            label: "Color Dither"
+            unit: dither
+      - name: "Fragment Output"
+        arrows:
+          - from: { cycle: 5, span: final_fragment_value }
+            to: { cycle: 6, span: fragment_done }
+            label: "Coalesced Color Write"
+            unit: pixel_output
+          - from: { cycle: 5, span: final_fragment_value }
+            to: { cycle: 6, span: fragment_done }
+            label: "Z-Cache Write"
+            unit: pixel_output
+    notes: >
+      Assumes z-cache hit (no SDRAM stall), L1 cache hit (no L2/SDRAM),
+      no alpha blend (blend mode = NONE), combinational dither + write overlap.
+
+  dual_tex:
+    name: "Dual Texture (8 cyc/pixel target)"
+    cycles_per_pixel: 8
+    lead_in:
+      - from: -1
+        to: 0
+        span: fragment_ready
+        label: "Fragment Created"
+    groups:
+      - name: "Early Fragment Test"
+        arrows:
+          - from: { cycle: 0, span: fragment_ready }
+            to: { cycle: 1, span: early_test_complete }
+            label: "Stipple Test"
+            unit: stipple
+          - from: { cycle: 0, span: fragment_ready }
+            to: { cycle: 1, span: early_test_complete }
+            label: "Z-Buffer Cache"
+            unit: z_cache
+      - name: "Texture Sampler [tex0]"
+        arrows:
+          - from: { cycle: 1, span: early_test_complete }
+            to: { cycle: 4, span: tex0_complete }
+            label: "Sample Texture 0"
+            unit: tex_sampler
+      - name: "Texture Sampler [tex1]"
+        arrows:
+          - from: { cycle: 4, span: tex0_complete }
+            to: { cycle: 7, span: textures_sampled }
+            label: "Sample Texture 1"
+            unit: tex_sampler
+      - name: "Color Combiners"
+        arrows:
+          - from: { cycle: 7, span: textures_sampled }
+            to: { cycle: 8, span: cc_stage0_complete }
+            label: cc_stage0
+            unit: color_combiner
+          - from: { cycle: 8, span: cc_stage0_complete }
+            to: { cycle: 9, span: cc_stage1_complete }
+            label: cc_stage1
+            unit: color_combiner
+      - name: "Late Fragment Test"
+        arrows:
+          - from: { cycle: 9, span: cc_stage1_complete }
+            to: { cycle: 10, span: final_fragment_value }
+            label: "Alpha Test"
+            unit: alpha_test
+          - from: { cycle: 9, span: cc_stage1_complete }
+            to: { cycle: 10, span: final_fragment_value }
+            label: "Color Dither"
+            unit: dither
+      - name: "Fragment Output"
+        arrows:
+          - from: { cycle: 10, span: final_fragment_value }
+            to: { cycle: 11, span: fragment_done }
+            label: "Coalesced Color Write"
+            unit: pixel_output
+          - from: { cycle: 10, span: final_fragment_value }
+            to: { cycle: 11, span: fragment_done }
+            label: "Z-Cache Write"
+            unit: pixel_output
+    notes: >
+      Texture sampler time-multiplexed: TEX0 then TEX1.
+      CC overlaps with late TEX1 stages if possible.
+
+  single_tex_blend:
+    name: "Single Texture + Alpha Blend"
+    cycles_per_pixel: 6
+    lead_in:
+      - from: -1
+        to: 0
+        span: fragment_ready
+        label: "Fragment Created"
+    groups:
+      - name: "Early Fragment Test"
+        arrows:
+          - from: { cycle: 0, span: fragment_ready }
+            to: { cycle: 1, span: early_test_complete }
+            label: "Stipple Test"
+            unit: stipple
+          - from: { cycle: 0, span: fragment_ready }
+            to: { cycle: 1, span: early_test_complete }
+            label: "Z-Buffer Cache"
+            unit: z_cache
+      - name: "Texture Sampler [tex0]"
+        arrows:
+          - from: { cycle: 1, span: early_test_complete }
+            to: { cycle: 2, span: textures_sampled }
+            label: "Sample Texture"
+            unit: tex_sampler
+      - name: "Color Combiners"
+        arrows:
+          - from: { cycle: 2, span: textures_sampled }
+            to: { cycle: 3, span: cc_stage0_complete }
+            label: cc_stage0
+            unit: color_combiner
+          - from: { cycle: 3, span: cc_stage0_complete }
+            to: { cycle: 4, span: cc_stage1_complete }
+            label: cc_stage1
+            unit: color_combiner
+      - name: "Late Fragment Test"
+        arrows:
+          - from: { cycle: 4, span: cc_stage1_complete }
+            to: { cycle: 5, span: late_test_complete }
+            label: "Alpha Test"
+            unit: alpha_test
+      - name: "Alpha Blend"
+        arrows:
+          - from: { cycle: 5, span: late_test_complete }
+            to: { cycle: 6, span: blended }
+            label: "FB Fetch + Blend"
+            unit: alpha_blend
+      - name: "Fragment Output"
+        arrows:
+          - from: { cycle: 6, span: blended }
+            to: { cycle: 7, span: final_fragment_value }
+            label: "Color Dither"
+            unit: dither
+          - from: { cycle: 7, span: final_fragment_value }
+            to: { cycle: 8, span: fragment_done }
+            label: "Coalesced Color Write"
+            unit: pixel_output
+          - from: { cycle: 7, span: final_fragment_value }
+            to: { cycle: 8, span: fragment_done }
+            label: "Z-Cache Write"
+            unit: pixel_output

@@ -125,6 +125,16 @@ RUN /opt/oss-cad-suite/bin/tabbypy3 -m pip install \
         peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml
 
 # Install d2 diagramming tool (https://github.com/terrastruct/d2)
+# Playwright browser deps needed for d2 PNG export (rasterizes SVG via Chromium)
+RUN apt-get update && apt-get install -y \
+    libatk1.0-0t64 \
+    libatk-bridge2.0-0t64 \
+    libcups2t64 \
+    libatspi2.0-0t64 \
+    libxcomposite1 \
+    libxdamage1 \
+    libpango-1.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://d2lang.com/install.sh | sh -s --
 
 # Create non-root user for development (handle existing UID/GID 1000)

@@ -18,6 +18,7 @@ pico-gs/
 │   ├── pico-gs-pc/       # PC debug host (FT232H stub)
 │   └── asset-build-tool/ # OBJ/PNG → GPU format converter
 ├── registers/            # GPU register interface (SystemRDL source of truth)
+├── pipeline/             # Pipeline microarchitecture (YAML model + validation + diagrams)
 ├── doc/                  # Syskit specifications (REQ/INT/UNIT)
 ├── ARCHITECTURE.md       # GPU architecture document
 ├── build.sh              # Unified build script
@@ -32,6 +33,18 @@ Specifications live in `doc/`:
 - **Requirements** (`doc/requirements/`): What the system must do (REQ-NNN)
 - **Interfaces** (`doc/interfaces/`): Contracts between components (INT-NNN)
 - **Design** (`doc/design/`): Implementation approach and decisions (UNIT-NNN)
+
+## Pipeline Model
+
+`pipeline/pipeline.yaml` defines the GPU's pipeline microarchitecture — hardware units, FPGA resource budgets (DSP/EBR/LUT4), and cycle-level schedules for each pipeline mode.
+Python scripts validate resource budgets and generate D2 sequence diagrams showing how units are scheduled across clock cycles.
+
+```bash
+./build.sh --pipeline   # Validate budgets + generate diagrams (SVG + PNG)
+```
+
+Output: `build/pipeline/` (dataflow diagram + per-schedule cycle maps).
+Pipeline validation also runs as part of `./build.sh --check`.
 
 ## Building
 

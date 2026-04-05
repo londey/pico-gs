@@ -5,6 +5,8 @@
 - `./build.sh --check` must pass after every change (Verilator lint, cargo fmt, cargo check, cargo clippy).
 - Minimize blast radius: only change code directly related to the current task. If you notice problems in other areas, mention them but don't fix them without approval.
 - `ARCHITECTURE.md` is the authoritative high-level GPU architecture document.
+- `pipeline/pipeline.yaml` is the authoritative pipeline microarchitecture — hardware units, FPGA resource budgets, and cycle schedules.
+  When adding or modifying pipeline units, update `pipeline.yaml` first; resource budgets must pass `python3 pipeline/validate.py` before synthesis.
 - The digital twin crates under `components/*/twin/` and `integration/gs-twin/` are the authoritative detailed design for the pico-gpu and are intended as a bit accurate transactional model of the GPU's behaviour to be used as referent when implementing and verifying the RTL.
 - Every pipeline-stage `.sv` module must have a corresponding digital twin `.rs` struct in the component's `twin/` crate, and a Verilator testbench that verifies RTL output matches the twin's output via shared `.hex` stimulus files.
   Exclusions: `components/core/` (PLL, reset) and `components/utils/` (FIFOs) are physical primitives exempt from this rule.
@@ -85,6 +87,10 @@ pico-gs/
 │   └── reports/               # Technical reports
 ├── external/
 │   └── icepi-zero/            # Board documentation (git submodule)
+├── pipeline/
+│   ├── pipeline.yaml          # Authoritative pipeline microarchitecture (units, resources, schedules)
+│   ├── validate.py            # Resource budget + connectivity validation
+│   └── gen_diagrams.py        # D2 diagram + summary generation
 ├── ARCHITECTURE.md            # Authoritative GPU architecture document
 ├── build.sh                   # Unified build script
 └── Cargo.toml                 # Workspace root
@@ -149,6 +155,44 @@ This is in addition to the integration-level golden image tests in `integration/
 - **Excluded from twin requirement:** `components/core/` (PLL, reset_sync) and `components/utils/` (async_fifo, sync_fifo) — these are physical/synthesis primitives with no algorithmic behavior to model.
 - **syskit UNIT docs** for algorithmic pipeline modules are thin pointers to gs-twin source
 
+## Pipeline Model
+
+`pipeline/pipeline.yaml` is the **authoritative pipeline microarchitecture** definition.
+It captures what the digital twin and ARCHITECTURE.md do not: hardware unit boundaries, FPGA resource costs (DSP/EBR/LUT4), and cycle-level scheduling.
+
+### What it defines
+
+- **Units** — every physical hardware block with its pipeline assignment, resource costs, internal stages, implementation status, and RTL/twin cross-references.
+- **Schedules** — how units are invoked across clock cycles for each pipeline mode (single texture, dual texture, alpha blend).
+  Shows time-multiplexing (e.g., one texture sampler used twice for dual-tex) and resource sharing (e.g., one color combiner used for both CC stages).
+- **Resource budgets** — device limits (ECP5-25K) and project budgets for DSP and EBR.
+
+### Authoritative scope
+
+| Aspect                                 | Authoritative source                    |
+| -------------------------------------- | --------------------------------------- |
+| High-level architecture, block diagram | `ARCHITECTURE.md`                       |
+| Pipeline units, resources, schedules   | `pipeline/pipeline.yaml`                |
+| Bit-accurate algorithms per stage      | Digital twin (`components/*/twin/`)     |
+| Register map                           | `components/registers/rdl/gpu_regs.rdl` |
+
+### When to update pipeline.yaml
+
+- **Adding a new pipeline unit** — add the unit definition before implementing RTL.
+- **Changing resource allocation** — update DSP/EBR/LUT4 estimates and verify budgets pass.
+- **Adding a new pipeline mode** — add a schedule with groups and cycle arrows.
+- **After synthesis** — reconcile estimated resources against actual synthesis reports.
+
+### Pipeline commands
+
+```bash
+./build.sh --pipeline          # Validate + generate diagrams (D2 → SVG + PNG)
+python3 pipeline/validate.py   # Budget validation only
+python3 pipeline/gen_diagrams.py --no-render  # Generate .d2 files without rendering
+```
+
+Output goes to `build/pipeline/` (dataflow diagram + per-schedule cycle maps).
+
 ## Commands
 
 # Build entire project (FPGA + digital twin + tests)
@@ -161,6 +205,7 @@ This is in addition to the integration-level golden image tests in `integration/
 ./build.sh --fpga-only
 ./build.sh --dt-only
 ./build.sh --test-only
+./build.sh --pipeline
 
 # FPGA-specific builds
 cd integration && make bitstream
