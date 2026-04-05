@@ -8,18 +8,46 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the GPU pipeline architecture, block 
 
 ## Repository Structure
 
-```
+```text
 pico-gs/
-├── spi_gpu/              # FPGA RTL (SystemVerilog)
+├── components/           # Component-centric layout (RTL + digital twin per component)
+│   ├── rasterizer/       # Triangle setup + iteration
+│   ├── stipple/          # Stipple test
+│   ├── early-z/          # Early depth test
+│   ├── texture/          # Texture sampling + decoding (with detail sub-crates)
+│   ├── color-combiner/   # Two-stage color combiner
+│   ├── alpha-blend/      # Alpha blending
+│   ├── dither/           # Ordered dithering
+│   ├── pixel-write/      # Framebuffer write
+│   ├── zbuf/             # Z-buffer tile cache
+│   ├── memory/           # SDRAM + SRAM controllers
+│   ├── display/          # Scan-out / DVI output
+│   ├── spi/              # SPI transport + register file
+│   ├── registers/        # GPU register interface (SystemRDL source of truth)
+│   ├── core/             # PLL, reset (RTL only)
+│   └── utils/            # FIFOs (RTL only)
+├── shared/
+│   ├── fp_types_pkg.sv   # Shared RTL type package
+│   └── gs-twin-core/     # Shared Rust foundation crate (types, math)
+├── integration/
+│   ├── gpu_top.sv        # Top-level RTL module
+│   ├── gs-twin/          # Pipeline orchestrator crate
+│   ├── gs-twin-cli/      # CLI: render golden references
+│   ├── harness/          # C++ Verilator test harness
+│   ├── sim/              # Interactive simulator
+│   ├── golden/           # Approved golden images
+│   └── scripts/          # Hex test scripts + Python generators
 ├── crates/
-│   ├── pico-gs-hal/      # Platform abstraction traits (no_std)
-│   ├── pico-gs-core/     # GPU driver, rendering, scene (no_std)
-│   ├── pico-gs-rp2350/   # RP2350 firmware (dual-core, USB keyboard)
-│   ├── pico-gs-pc/       # PC debug host (FT232H stub)
-│   └── asset-build-tool/ # OBJ/PNG → GPU format converter
-├── registers/            # GPU register interface (SystemRDL source of truth)
+│   ├── qfixed/           # Fixed-point math library
+│   ├── bits/             # Compile-time width-checked bit vector type
+│   ├── ecp5-model/       # Cycle-accurate ECP5 primitive models (DP16KD, MULT18X18D)
+│   ├── sdram-model/      # Cycle-accurate SDRAM chip model (W9825G6KH)
+│   └── pico-gs-emulator/ # Cycle-accurate GPU emulator
 ├── pipeline/             # Pipeline microarchitecture (YAML model + validation + diagrams)
-├── doc/                  # Syskit specifications (REQ/INT/UNIT)
+├── constraints/          # FPGA constraints
+├── doc/                  # Syskit specifications (REQ/INT/UNIT/VER)
+├── external/
+│   └── icepi-zero/       # Board documentation (git submodule)
 ├── ARCHITECTURE.md       # GPU architecture document
 ├── build.sh              # Unified build script
 └── Cargo.toml            # Workspace root

@@ -1,0 +1,9 @@
+[package]
+name = "sdram-model"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Cycle-accurate model of the W9825G6KH SDRAM chip and controller interface"
+
+[dependencies]

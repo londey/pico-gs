@@ -1,0 +1,9 @@
+[package]
+name = "ecp5-model"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Cycle-accurate models of ECP5 FPGA primitives (DP16KD, PDPW16KD, MULT18X18D, EHXPLLL)"
+
+[dependencies]

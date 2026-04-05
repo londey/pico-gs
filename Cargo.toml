@@ -1,6 +1,10 @@
 [workspace]
 members = [
     "crates/qfixed",
+    "crates/bits",
+    "crates/ecp5-model",
+    "crates/sdram-model",
+    "crates/pico-gs-emulator",
     "components/registers/twin",
     "shared/gs-twin-core",
     "components/rasterizer/twin",

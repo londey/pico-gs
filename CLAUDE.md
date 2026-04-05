@@ -77,7 +77,11 @@ pico-gs/
 │   ├── gs-twin/               # Pipeline orchestrator crate (depends on all component twins)
 │   └── gs-twin-cli/           # CLI: render golden references, diff vs Verilator
 ├── crates/
-│   └── qfixed/                # Fixed-point math library
+│   ├── qfixed/                # Fixed-point math library
+│   ├── bits/                  # Compile-time width-checked bit vector type
+│   ├── ecp5-model/            # Cycle-accurate ECP5 primitive models (DP16KD, MULT18X18D)
+│   ├── sdram-model/           # Cycle-accurate SDRAM chip model (W9825G6KH)
+│   └── pico-gs-emulator/      # Cycle-accurate GPU emulator
 ├── constraints/               # FPGA constraints
 ├── doc/                       # Syskit specifications
 │   ├── requirements/          # REQ-NNN documents
