@@ -32,19 +32,34 @@ Alpha blending promotes the framebuffer's UNORM value to Q4.12 before blending; 
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
 Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
-## Digital Twin (gs-twin)
+## Verification Strategy
+
+The project uses a two-tier verification model with clearly separated responsibilities.
+
+### Tier 1: Digital Twin (gs-twin) — Algorithmic Oracle
 
 A bit-accurate, transaction-level Rust model of the GPU pipeline lives at `integration/gs-twin/`.
 It models the register-write interface, integer rasterizer, and full pixel pipeline — everything from SPI register decode through framebuffer write — producing golden reference framebuffers that the RTL's output must match exactly at the RGB565 pixel level.
 
-The twin is deliberately *not* cycle-accurate; Verilator testbenches own cycle-level fidelity.
+The twin answers: **"what should the output be?"**
+
 Its role is algorithmic correctness: the rustdoc on each type and function is the authoritative design specification for the corresponding RTL module.
 All fixed-point formats, bit widths, rounding behavior, and overflow conventions match the RTL exactly.
 
+The twin is deliberately *not* cycle-accurate and does not model pipeline timing, valid/ready handshaking, stall propagation, cache miss penalties, or SDRAM arbitration contention.
+These are hardware implementation concerns owned by the RTL and verified by Verilator.
+
+For the module-to-RTL mapping, see `CLAUDE.md` (module mapping table) and the individual component twin crates under `components/*/twin/`.
+
+### Tier 2: Verilator — Cycle-Accurate Verification
+
+Verilator testbenches own all cycle-level concerns: pipeline stall propagation, backpressure handshaking, cache miss/evict timing, SDRAM arbitration, and clock-domain crossings.
+
+Verilator answers: **"does the hardware produce the right answer with correct timing?"**
+
 Both the Rust twin and Verilator testbenches consume the same `.hex` register-write scripts.
 The `gs-twin-cli` binary renders scripts to PNG and compares against Verilator framebuffer dumps — any pixel mismatch is a real bug.
-
-For detailed architecture and the module-to-RTL mapping, see `CLAUDE.md` (module mapping table) and the individual component twin crates under `components/*/twin/`.
+Component-level Verilator testbenches additionally verify RTL output against DT-generated test vectors for per-module correctness.
 
 ## Component Interactions
 

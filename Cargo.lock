@@ -111,10 +111,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ecp5-model"
-version = "0.1.0"
-
-[[package]]
 name = "fdeflate"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -391,14 +387,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pico-gs-emulator"
-version = "0.1.0"
-dependencies = [
- "ecp5-model",
- "sdram-model",
-]
-
-[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -441,10 +429,6 @@ checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "sdram-model"
-version = "0.1.0"
 
 [[package]]
 name = "serde"

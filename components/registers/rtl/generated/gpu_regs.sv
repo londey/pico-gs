@@ -89,6 +89,7 @@ module gpu_regs (
     } decoded_reg_strb_t;
     decoded_reg_strb_t decoded_reg_strb;
     logic decoded_err;
+    logic [9:0] decoded_addr;
     logic decoded_req;
     logic decoded_req_is_wr;
     logic [63:0] decoded_wr_data;
@@ -96,9 +97,9 @@ module gpu_regs (
 
     always_comb begin
         automatic logic is_valid_addr;
-        automatic logic is_invalid_rw;
-        is_valid_addr = '1; // No error checking on valid address access
-        is_invalid_rw = '0;
+        automatic logic is_valid_rw;
+        is_valid_addr = '1; // No valid address check
+        is_valid_rw = '1; // No valid RW check
         decoded_reg_strb.COLOR = cpuif_req_masked & (cpuif_addr == 10'h0);
         decoded_reg_strb.ST0_ST1 = cpuif_req_masked & (cpuif_addr == 10'h8);
         decoded_reg_strb.VERTEX_NOKICK = cpuif_req_masked & (cpuif_addr == 10'h30);
@@ -120,10 +121,11 @@ module gpu_regs (
         decoded_reg_strb.MEM_ADDR = cpuif_req_masked & (cpuif_addr == 10'h380);
         decoded_reg_strb.MEM_DATA = cpuif_req_masked & (cpuif_addr == 10'h388);
         decoded_reg_strb.ID = cpuif_req_masked & (cpuif_addr == 10'h3f8) & !cpuif_req_is_wr;
-        decoded_err = (~is_valid_addr | is_invalid_rw) & decoded_req;
+        decoded_err = '0;
     end
 
     // Pass down signals to next stage
+    assign decoded_addr = cpuif_addr;
     assign decoded_req = cpuif_req_masked;
     assign decoded_req_is_wr = cpuif_req_is_wr;
     assign decoded_wr_data = cpuif_wr_data;
@@ -3835,144 +3837,183 @@ module gpu_regs (
     // Readback
     //--------------------------------------------------------------------------
 
+    logic [9:0] rd_mux_addr;
+    assign rd_mux_addr = decoded_addr;
+
     logic readback_err;
     logic readback_done;
     logic [63:0] readback_data;
-
-    // Assign readback values to a flattened array
-    logic [63:0] readback_array[21];
-    assign readback_array[0][7:0] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_R.value : '0;
-    assign readback_array[0][15:8] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_G.value : '0;
-    assign readback_array[0][23:16] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_B.value : '0;
-    assign readback_array[0][31:24] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR0_A.value : '0;
-    assign readback_array[0][39:32] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_R.value : '0;
-    assign readback_array[0][47:40] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_G.value : '0;
-    assign readback_array[0][55:48] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_B.value : '0;
-    assign readback_array[0][63:56] = (decoded_reg_strb.COLOR && !decoded_req_is_wr) ? field_storage.COLOR.COLOR1_A.value : '0;
-    assign readback_array[1][15:0] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.S0.value : '0;
-    assign readback_array[1][31:16] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.T0.value : '0;
-    assign readback_array[1][47:32] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.S1.value : '0;
-    assign readback_array[1][63:48] = (decoded_reg_strb.ST0_ST1 && !decoded_req_is_wr) ? field_storage.ST0_ST1.T1.value : '0;
-    assign readback_array[2][15:0] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.X.value : '0;
-    assign readback_array[2][31:16] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Y.value : '0;
-    assign readback_array[2][47:32] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Z.value : '0;
-    assign readback_array[2][63:48] = (decoded_reg_strb.VERTEX_NOKICK && !decoded_req_is_wr) ? field_storage.VERTEX_NOKICK.Q.value : '0;
-    assign readback_array[3][15:0] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.X.value : '0;
-    assign readback_array[3][31:16] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Y.value : '0;
-    assign readback_array[3][47:32] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Z.value : '0;
-    assign readback_array[3][63:48] = (decoded_reg_strb.VERTEX_KICK_012 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_012.Q.value : '0;
-    assign readback_array[4][15:0] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.X.value : '0;
-    assign readback_array[4][31:16] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Y.value : '0;
-    assign readback_array[4][47:32] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Z.value : '0;
-    assign readback_array[4][63:48] = (decoded_reg_strb.VERTEX_KICK_021 && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_021.Q.value : '0;
-    assign readback_array[5][15:0] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.X.value : '0;
-    assign readback_array[5][31:16] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.Y.value : '0;
-    assign readback_array[5][47:32] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.Z.value : '0;
-    assign readback_array[5][63:48] = (decoded_reg_strb.VERTEX_KICK_RECT && !decoded_req_is_wr) ? field_storage.VERTEX_KICK_RECT.Q.value : '0;
-    assign readback_array[6][0:0] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.ENABLE.value : '0;
-    assign readback_array[6][1:1] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_1.value : '0;
-    assign readback_array[6][3:2] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.FILTER.value : '0;
-    assign readback_array[6][7:4] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.FORMAT.value : '0;
-    assign readback_array[6][11:8] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.WIDTH_LOG2.value : '0;
-    assign readback_array[6][15:12] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.HEIGHT_LOG2.value : '0;
-    assign readback_array[6][17:16] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.U_WRAP.value : '0;
-    assign readback_array[6][19:18] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.V_WRAP.value : '0;
-    assign readback_array[6][23:20] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.MIP_LEVELS.value : '0;
-    assign readback_array[6][31:24] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_MID.value : '0;
-    assign readback_array[6][47:32] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.BASE_ADDR.value : '0;
-    assign readback_array[6][63:48] = (decoded_reg_strb.TEX0_CFG && !decoded_req_is_wr) ? field_storage.TEX0_CFG.RSVD_HI.value : '0;
-    assign readback_array[7][0:0] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.ENABLE.value : '0;
-    assign readback_array[7][1:1] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_1.value : '0;
-    assign readback_array[7][3:2] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.FILTER.value : '0;
-    assign readback_array[7][7:4] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.FORMAT.value : '0;
-    assign readback_array[7][11:8] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.WIDTH_LOG2.value : '0;
-    assign readback_array[7][15:12] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.HEIGHT_LOG2.value : '0;
-    assign readback_array[7][17:16] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.U_WRAP.value : '0;
-    assign readback_array[7][19:18] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.V_WRAP.value : '0;
-    assign readback_array[7][23:20] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.MIP_LEVELS.value : '0;
-    assign readback_array[7][31:24] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_MID.value : '0;
-    assign readback_array[7][47:32] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.BASE_ADDR.value : '0;
-    assign readback_array[7][63:48] = (decoded_reg_strb.TEX1_CFG && !decoded_req_is_wr) ? field_storage.TEX1_CFG.RSVD_HI.value : '0;
-    assign readback_array[8][3:0] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_RGB_A.value : '0;
-    assign readback_array[8][7:4] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_RGB_B.value : '0;
-    assign readback_array[8][11:8] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_RGB_C.value : '0;
-    assign readback_array[8][15:12] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_RGB_D.value : '0;
-    assign readback_array[8][19:16] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_ALPHA_A.value : '0;
-    assign readback_array[8][23:20] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_ALPHA_B.value : '0;
-    assign readback_array[8][27:24] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_ALPHA_C.value : '0;
-    assign readback_array[8][31:28] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C0_ALPHA_D.value : '0;
-    assign readback_array[8][35:32] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_RGB_A.value : '0;
-    assign readback_array[8][39:36] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_RGB_B.value : '0;
-    assign readback_array[8][43:40] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_RGB_C.value : '0;
-    assign readback_array[8][47:44] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_RGB_D.value : '0;
-    assign readback_array[8][51:48] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_ALPHA_A.value : '0;
-    assign readback_array[8][55:52] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_ALPHA_B.value : '0;
-    assign readback_array[8][59:56] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_ALPHA_C.value : '0;
-    assign readback_array[8][63:60] = (decoded_reg_strb.CC_MODE && !decoded_req_is_wr) ? field_storage.CC_MODE.C1_ALPHA_D.value : '0;
-    assign readback_array[9][7:0] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST0_R.value : '0;
-    assign readback_array[9][15:8] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST0_G.value : '0;
-    assign readback_array[9][23:16] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST0_B.value : '0;
-    assign readback_array[9][31:24] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST0_A.value : '0;
-    assign readback_array[9][39:32] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST1_R.value : '0;
-    assign readback_array[9][47:40] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST1_G.value : '0;
-    assign readback_array[9][55:48] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST1_B.value : '0;
-    assign readback_array[9][63:56] = (decoded_reg_strb.CONST_COLOR && !decoded_req_is_wr) ? field_storage.CONST_COLOR.CONST1_A.value : '0;
-    assign readback_array[10][0:0] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.GOURAUD.value : '0;
-    assign readback_array[10][1:1] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.RSVD_1.value : '0;
-    assign readback_array[10][2:2] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_TEST_EN.value : '0;
-    assign readback_array[10][3:3] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_WRITE_EN.value : '0;
-    assign readback_array[10][4:4] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.COLOR_WRITE_EN.value : '0;
-    assign readback_array[10][6:5] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.CULL_MODE.value : '0;
-    assign readback_array[10][9:7] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.ALPHA_BLEND.value : '0;
-    assign readback_array[10][10:10] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.DITHER_EN.value : '0;
-    assign readback_array[10][12:11] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.DITHER_PATTERN.value : '0;
-    assign readback_array[10][15:13] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.Z_COMPARE.value : '0;
-    assign readback_array[10][16:16] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.STIPPLE_EN.value : '0;
-    assign readback_array[10][18:17] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.ALPHA_TEST_FUNC.value : '0;
-    assign readback_array[10][26:19] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.ALPHA_REF.value : '0;
-    assign readback_array[10][63:27] = (decoded_reg_strb.RENDER_MODE && !decoded_req_is_wr) ? field_storage.RENDER_MODE.RSVD_HI.value : '0;
-    assign readback_array[11][15:0] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.Z_RANGE_MIN.value : '0;
-    assign readback_array[11][31:16] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.Z_RANGE_MAX.value : '0;
-    assign readback_array[11][63:32] = (decoded_reg_strb.Z_RANGE && !decoded_req_is_wr) ? field_storage.Z_RANGE.RSVD.value : '0;
-    assign readback_array[12][63:0] = (decoded_reg_strb.STIPPLE_PATTERN && !decoded_req_is_wr) ? field_storage.STIPPLE_PATTERN.PATTERN.value : '0;
-    assign readback_array[13][15:0] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.COLOR_BASE.value : '0;
-    assign readback_array[13][31:16] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.Z_BASE.value : '0;
-    assign readback_array[13][35:32] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.WIDTH_LOG2.value : '0;
-    assign readback_array[13][39:36] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.HEIGHT_LOG2.value : '0;
-    assign readback_array[13][63:40] = (decoded_reg_strb.FB_CONFIG && !decoded_req_is_wr) ? field_storage.FB_CONFIG.RSVD.value : '0;
-    assign readback_array[14][0:0] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value : '0;
-    assign readback_array[14][1:1] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.LINE_DOUBLE.value : '0;
-    assign readback_array[14][15:2] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_LO.value : '0;
-    assign readback_array[14][31:16] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.LUT_ADDR.value : '0;
-    assign readback_array[14][47:32] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.FB_ADDR.value : '0;
-    assign readback_array[14][51:48] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value : '0;
-    assign readback_array[14][63:52] = (decoded_reg_strb.FB_DISPLAY && !decoded_req_is_wr) ? field_storage.FB_DISPLAY.RSVD_HI.value : '0;
-    assign readback_array[15][9:0] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_X.value : '0;
-    assign readback_array[15][19:10] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_Y.value : '0;
-    assign readback_array[15][29:20] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_WIDTH.value : '0;
-    assign readback_array[15][39:30] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.SCISSOR_HEIGHT.value : '0;
-    assign readback_array[15][63:40] = (decoded_reg_strb.FB_CONTROL && !decoded_req_is_wr) ? field_storage.FB_CONTROL.RSVD_HI.value : '0;
-    assign readback_array[16][23:0] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_BASE.value : '0;
-    assign readback_array[16][39:24] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_VALUE.value : '0;
-    assign readback_array[16][59:40] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.FILL_COUNT.value : '0;
-    assign readback_array[16][63:60] = (decoded_reg_strb.MEM_FILL && !decoded_req_is_wr) ? field_storage.MEM_FILL.RSVD.value : '0;
-    assign readback_array[17][22:0] = (decoded_reg_strb.PERF_TIMESTAMP && !decoded_req_is_wr) ? field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value : '0;
-    assign readback_array[17][63:23] = (decoded_reg_strb.PERF_TIMESTAMP && !decoded_req_is_wr) ? field_storage.PERF_TIMESTAMP.RSVD.value : '0;
-    assign readback_array[18][21:0] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.ADDR.value : '0;
-    assign readback_array[18][63:22] = (decoded_reg_strb.MEM_ADDR && !decoded_req_is_wr) ? field_storage.MEM_ADDR.RSVD.value : '0;
-    assign readback_array[19][63:0] = (decoded_reg_strb.MEM_DATA && !decoded_req_is_wr) ? field_storage.MEM_DATA.DATA.value : '0;
-    assign readback_array[20][15:0] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'h6702 : '0;
-    assign readback_array[20][31:16] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 16'ha00 : '0;
-    assign readback_array[20][63:32] = (decoded_reg_strb.ID && !decoded_req_is_wr) ? 32'h0 : '0;
-
-    // Reduce the array
     always_comb begin
         automatic logic [63:0] readback_data_var;
+        readback_data_var = '0;
+        if(rd_mux_addr == 10'h0) begin
+            readback_data_var[7:0] = field_storage.COLOR.COLOR0_R.value;
+            readback_data_var[15:8] = field_storage.COLOR.COLOR0_G.value;
+            readback_data_var[23:16] = field_storage.COLOR.COLOR0_B.value;
+            readback_data_var[31:24] = field_storage.COLOR.COLOR0_A.value;
+            readback_data_var[39:32] = field_storage.COLOR.COLOR1_R.value;
+            readback_data_var[47:40] = field_storage.COLOR.COLOR1_G.value;
+            readback_data_var[55:48] = field_storage.COLOR.COLOR1_B.value;
+            readback_data_var[63:56] = field_storage.COLOR.COLOR1_A.value;
+        end
+        if(rd_mux_addr == 10'h8) begin
+            readback_data_var[15:0] = field_storage.ST0_ST1.S0.value;
+            readback_data_var[31:16] = field_storage.ST0_ST1.T0.value;
+            readback_data_var[47:32] = field_storage.ST0_ST1.S1.value;
+            readback_data_var[63:48] = field_storage.ST0_ST1.T1.value;
+        end
+        if(rd_mux_addr == 10'h30) begin
+            readback_data_var[15:0] = field_storage.VERTEX_NOKICK.X.value;
+            readback_data_var[31:16] = field_storage.VERTEX_NOKICK.Y.value;
+            readback_data_var[47:32] = field_storage.VERTEX_NOKICK.Z.value;
+            readback_data_var[63:48] = field_storage.VERTEX_NOKICK.Q.value;
+        end
+        if(rd_mux_addr == 10'h38) begin
+            readback_data_var[15:0] = field_storage.VERTEX_KICK_012.X.value;
+            readback_data_var[31:16] = field_storage.VERTEX_KICK_012.Y.value;
+            readback_data_var[47:32] = field_storage.VERTEX_KICK_012.Z.value;
+            readback_data_var[63:48] = field_storage.VERTEX_KICK_012.Q.value;
+        end
+        if(rd_mux_addr == 10'h40) begin
+            readback_data_var[15:0] = field_storage.VERTEX_KICK_021.X.value;
+            readback_data_var[31:16] = field_storage.VERTEX_KICK_021.Y.value;
+            readback_data_var[47:32] = field_storage.VERTEX_KICK_021.Z.value;
+            readback_data_var[63:48] = field_storage.VERTEX_KICK_021.Q.value;
+        end
+        if(rd_mux_addr == 10'h48) begin
+            readback_data_var[15:0] = field_storage.VERTEX_KICK_RECT.X.value;
+            readback_data_var[31:16] = field_storage.VERTEX_KICK_RECT.Y.value;
+            readback_data_var[47:32] = field_storage.VERTEX_KICK_RECT.Z.value;
+            readback_data_var[63:48] = field_storage.VERTEX_KICK_RECT.Q.value;
+        end
+        if(rd_mux_addr == 10'h80) begin
+            readback_data_var[0] = field_storage.TEX0_CFG.ENABLE.value;
+            readback_data_var[1] = field_storage.TEX0_CFG.RSVD_1.value;
+            readback_data_var[3:2] = field_storage.TEX0_CFG.FILTER.value;
+            readback_data_var[7:4] = field_storage.TEX0_CFG.FORMAT.value;
+            readback_data_var[11:8] = field_storage.TEX0_CFG.WIDTH_LOG2.value;
+            readback_data_var[15:12] = field_storage.TEX0_CFG.HEIGHT_LOG2.value;
+            readback_data_var[17:16] = field_storage.TEX0_CFG.U_WRAP.value;
+            readback_data_var[19:18] = field_storage.TEX0_CFG.V_WRAP.value;
+            readback_data_var[23:20] = field_storage.TEX0_CFG.MIP_LEVELS.value;
+            readback_data_var[31:24] = field_storage.TEX0_CFG.RSVD_MID.value;
+            readback_data_var[47:32] = field_storage.TEX0_CFG.BASE_ADDR.value;
+            readback_data_var[63:48] = field_storage.TEX0_CFG.RSVD_HI.value;
+        end
+        if(rd_mux_addr == 10'h88) begin
+            readback_data_var[0] = field_storage.TEX1_CFG.ENABLE.value;
+            readback_data_var[1] = field_storage.TEX1_CFG.RSVD_1.value;
+            readback_data_var[3:2] = field_storage.TEX1_CFG.FILTER.value;
+            readback_data_var[7:4] = field_storage.TEX1_CFG.FORMAT.value;
+            readback_data_var[11:8] = field_storage.TEX1_CFG.WIDTH_LOG2.value;
+            readback_data_var[15:12] = field_storage.TEX1_CFG.HEIGHT_LOG2.value;
+            readback_data_var[17:16] = field_storage.TEX1_CFG.U_WRAP.value;
+            readback_data_var[19:18] = field_storage.TEX1_CFG.V_WRAP.value;
+            readback_data_var[23:20] = field_storage.TEX1_CFG.MIP_LEVELS.value;
+            readback_data_var[31:24] = field_storage.TEX1_CFG.RSVD_MID.value;
+            readback_data_var[47:32] = field_storage.TEX1_CFG.BASE_ADDR.value;
+            readback_data_var[63:48] = field_storage.TEX1_CFG.RSVD_HI.value;
+        end
+        if(rd_mux_addr == 10'hc0) begin
+            readback_data_var[3:0] = field_storage.CC_MODE.C0_RGB_A.value;
+            readback_data_var[7:4] = field_storage.CC_MODE.C0_RGB_B.value;
+            readback_data_var[11:8] = field_storage.CC_MODE.C0_RGB_C.value;
+            readback_data_var[15:12] = field_storage.CC_MODE.C0_RGB_D.value;
+            readback_data_var[19:16] = field_storage.CC_MODE.C0_ALPHA_A.value;
+            readback_data_var[23:20] = field_storage.CC_MODE.C0_ALPHA_B.value;
+            readback_data_var[27:24] = field_storage.CC_MODE.C0_ALPHA_C.value;
+            readback_data_var[31:28] = field_storage.CC_MODE.C0_ALPHA_D.value;
+            readback_data_var[35:32] = field_storage.CC_MODE.C1_RGB_A.value;
+            readback_data_var[39:36] = field_storage.CC_MODE.C1_RGB_B.value;
+            readback_data_var[43:40] = field_storage.CC_MODE.C1_RGB_C.value;
+            readback_data_var[47:44] = field_storage.CC_MODE.C1_RGB_D.value;
+            readback_data_var[51:48] = field_storage.CC_MODE.C1_ALPHA_A.value;
+            readback_data_var[55:52] = field_storage.CC_MODE.C1_ALPHA_B.value;
+            readback_data_var[59:56] = field_storage.CC_MODE.C1_ALPHA_C.value;
+            readback_data_var[63:60] = field_storage.CC_MODE.C1_ALPHA_D.value;
+        end
+        if(rd_mux_addr == 10'hc8) begin
+            readback_data_var[7:0] = field_storage.CONST_COLOR.CONST0_R.value;
+            readback_data_var[15:8] = field_storage.CONST_COLOR.CONST0_G.value;
+            readback_data_var[23:16] = field_storage.CONST_COLOR.CONST0_B.value;
+            readback_data_var[31:24] = field_storage.CONST_COLOR.CONST0_A.value;
+            readback_data_var[39:32] = field_storage.CONST_COLOR.CONST1_R.value;
+            readback_data_var[47:40] = field_storage.CONST_COLOR.CONST1_G.value;
+            readback_data_var[55:48] = field_storage.CONST_COLOR.CONST1_B.value;
+            readback_data_var[63:56] = field_storage.CONST_COLOR.CONST1_A.value;
+        end
+        if(rd_mux_addr == 10'h180) begin
+            readback_data_var[0] = field_storage.RENDER_MODE.GOURAUD.value;
+            readback_data_var[1] = field_storage.RENDER_MODE.RSVD_1.value;
+            readback_data_var[2] = field_storage.RENDER_MODE.Z_TEST_EN.value;
+            readback_data_var[3] = field_storage.RENDER_MODE.Z_WRITE_EN.value;
+            readback_data_var[4] = field_storage.RENDER_MODE.COLOR_WRITE_EN.value;
+            readback_data_var[6:5] = field_storage.RENDER_MODE.CULL_MODE.value;
+            readback_data_var[9:7] = field_storage.RENDER_MODE.ALPHA_BLEND.value;
+            readback_data_var[10] = field_storage.RENDER_MODE.DITHER_EN.value;
+            readback_data_var[12:11] = field_storage.RENDER_MODE.DITHER_PATTERN.value;
+            readback_data_var[15:13] = field_storage.RENDER_MODE.Z_COMPARE.value;
+            readback_data_var[16] = field_storage.RENDER_MODE.STIPPLE_EN.value;
+            readback_data_var[18:17] = field_storage.RENDER_MODE.ALPHA_TEST_FUNC.value;
+            readback_data_var[26:19] = field_storage.RENDER_MODE.ALPHA_REF.value;
+            readback_data_var[63:27] = field_storage.RENDER_MODE.RSVD_HI.value;
+        end
+        if(rd_mux_addr == 10'h188) begin
+            readback_data_var[15:0] = field_storage.Z_RANGE.Z_RANGE_MIN.value;
+            readback_data_var[31:16] = field_storage.Z_RANGE.Z_RANGE_MAX.value;
+            readback_data_var[63:32] = field_storage.Z_RANGE.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h190) begin
+            readback_data_var[63:0] = field_storage.STIPPLE_PATTERN.PATTERN.value;
+        end
+        if(rd_mux_addr == 10'h200) begin
+            readback_data_var[15:0] = field_storage.FB_CONFIG.COLOR_BASE.value;
+            readback_data_var[31:16] = field_storage.FB_CONFIG.Z_BASE.value;
+            readback_data_var[35:32] = field_storage.FB_CONFIG.WIDTH_LOG2.value;
+            readback_data_var[39:36] = field_storage.FB_CONFIG.HEIGHT_LOG2.value;
+            readback_data_var[63:40] = field_storage.FB_CONFIG.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h208) begin
+            readback_data_var[0] = field_storage.FB_DISPLAY.COLOR_GRADE_ENABLE.value;
+            readback_data_var[1] = field_storage.FB_DISPLAY.LINE_DOUBLE.value;
+            readback_data_var[15:2] = field_storage.FB_DISPLAY.RSVD_LO.value;
+            readback_data_var[31:16] = field_storage.FB_DISPLAY.LUT_ADDR.value;
+            readback_data_var[47:32] = field_storage.FB_DISPLAY.FB_ADDR.value;
+            readback_data_var[51:48] = field_storage.FB_DISPLAY.FB_WIDTH_LOG2.value;
+            readback_data_var[63:52] = field_storage.FB_DISPLAY.RSVD_HI.value;
+        end
+        if(rd_mux_addr == 10'h218) begin
+            readback_data_var[9:0] = field_storage.FB_CONTROL.SCISSOR_X.value;
+            readback_data_var[19:10] = field_storage.FB_CONTROL.SCISSOR_Y.value;
+            readback_data_var[29:20] = field_storage.FB_CONTROL.SCISSOR_WIDTH.value;
+            readback_data_var[39:30] = field_storage.FB_CONTROL.SCISSOR_HEIGHT.value;
+            readback_data_var[63:40] = field_storage.FB_CONTROL.RSVD_HI.value;
+        end
+        if(rd_mux_addr == 10'h220) begin
+            readback_data_var[23:0] = field_storage.MEM_FILL.FILL_BASE.value;
+            readback_data_var[39:24] = field_storage.MEM_FILL.FILL_VALUE.value;
+            readback_data_var[59:40] = field_storage.MEM_FILL.FILL_COUNT.value;
+            readback_data_var[63:60] = field_storage.MEM_FILL.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h280) begin
+            readback_data_var[22:0] = field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value;
+            readback_data_var[63:23] = field_storage.PERF_TIMESTAMP.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h380) begin
+            readback_data_var[21:0] = field_storage.MEM_ADDR.ADDR.value;
+            readback_data_var[63:22] = field_storage.MEM_ADDR.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h388) begin
+            readback_data_var[63:0] = field_storage.MEM_DATA.DATA.value;
+        end
+        if(rd_mux_addr == 10'h3f8) begin
+            readback_data_var[15:0] = 16'h6702;
+            readback_data_var[31:16] = 16'ha00;
+            readback_data_var[63:32] = 32'h0;
+        end
+        readback_data = readback_data_var;
         readback_done = decoded_req & ~decoded_req_is_wr;
         readback_err = '0;
-        readback_data_var = '0;
-        for(int i=0; i<21; i++) readback_data_var |= readback_array[i];
-        readback_data = readback_data_var;
     end
 
     assign cpuif_rd_ack = readback_done;

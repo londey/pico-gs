@@ -7,7 +7,7 @@ license.workspace = true
 description = "Texture UV coordinate processing for the pico-gs digital twin"
 
 [dependencies]
-gpu-registers = { path = "../../../../registers/twin", default-features = false }
+gpu-registers.workspace = true
 qfixed = { path = "../../../../../crates/qfixed" }
 
 [[bin]]

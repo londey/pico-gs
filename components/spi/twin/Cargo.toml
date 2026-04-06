@@ -8,4 +8,4 @@ description = "SPI register file component of the pico-gs digital twin"
 
 [dependencies]
 gs-twin-core = { path = "../../../shared/gs-twin-core" }
-gpu-registers = { path = "../../registers/twin", default-features = false }
+gpu-registers.workspace = true

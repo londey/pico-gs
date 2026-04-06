@@ -468,7 +468,7 @@ A single authoritative source prevents divergence between hardware and software 
 ### Decision
 
 `registers/rdl/gpu_regs.rdl` (SystemRDL) is the single source of truth for the GPU register map.
-PeakRDL generates the SystemVerilog package and register module into `components/registers/generated/`.
+PeakRDL generates the SystemVerilog package and register module into `components/registers/rtl/generated/`.
 `registers/src/lib.rs` provides the hand-maintained Rust constants crate (`gpu-registers`, `no_std`), matching the RDL.
 Register specifications (INT-010 through INT-014) live in `doc/interfaces/` alongside other interface specs, but are not managed by syskit.
 

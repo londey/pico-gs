@@ -9,7 +9,7 @@ description = "Texture sampling component of the pico-gs digital twin"
 [dependencies]
 gs-twin-core = { path = "../../../shared/gs-twin-core" }
 qfixed = { path = "../../../crates/qfixed" }
-gpu-registers = { path = "../../registers/twin", default-features = false }
+gpu-registers.workspace = true
 gs-tex-l1-cache = { path = "../detail/l1-cache/twin" }
 gs-tex-l2-cache = { path = "../detail/l2-cache/twin" }
 gs-tex-block-decoder = { path = "../detail/block-decoder/twin" }

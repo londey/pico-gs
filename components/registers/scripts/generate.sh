@@ -13,7 +13,7 @@ REG_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(cd "$REG_DIR/../.." && pwd)"
 
 RDL_FILE="${REG_DIR}/rdl/gpu_regs.rdl"
-SV_OUT_DIR="${REG_DIR}/generated"
+SV_OUT_DIR="${REG_DIR}/rtl/generated"
 
 echo "=== GPU Register Code Generation ==="
 echo "Source: ${RDL_FILE}"

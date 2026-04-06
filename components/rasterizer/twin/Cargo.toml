@@ -9,7 +9,7 @@ description = "Rasterizer component of the pico-gs digital twin"
 [dependencies]
 gs-twin-core = { path = "../../../shared/gs-twin-core" }
 qfixed = { path = "../../../crates/qfixed" }
-gpu-registers = { path = "../../registers/twin", default-features = false }
+gpu-registers.workspace = true
 
 [[bin]]
 name = "gen_raster_test_vectors"

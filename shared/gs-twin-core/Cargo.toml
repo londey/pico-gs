@@ -8,4 +8,4 @@ description = "Shared types and utilities for the pico-gs digital twin component
 
 [dependencies]
 qfixed = { path = "../../crates/qfixed" }
-gpu-registers = { path = "../../components/registers/twin", default-features = false }
+gpu-registers.workspace = true

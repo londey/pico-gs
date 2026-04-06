@@ -8,5 +8,5 @@ description = "Memory model component of the pico-gs digital twin"
 
 [dependencies]
 gs-twin-core = { path = "../../../shared/gs-twin-core" }
-gpu-registers = { path = "../../registers/twin", default-features = false }
+gpu-registers.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }

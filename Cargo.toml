@@ -2,9 +2,6 @@
 members = [
     "crates/qfixed",
     "crates/bits",
-    "crates/ecp5-model",
-    "crates/sdram-model",
-    "crates/pico-gs-emulator",
     "components/registers/twin",
     "shared/gs-twin-core",
     "components/rasterizer/twin",
@@ -35,4 +32,5 @@ rust-version = "1.93"
 license = "MIT"
 
 [workspace.dependencies]
+gpu-registers = { path = "components/registers/twin", default-features = false }
 gs-twin = { path = "integration/gs-twin" }

@@ -59,7 +59,7 @@ pico-gs/
 │   ├── registers/             # GPU register interface (single source of truth)
 │   │   ├── rdl/gpu_regs.rdl   # SystemRDL register definitions
 │   │   ├── twin/              # gpu-registers Rust crate (no_std)
-│   │   ├── generated/         # PeakRDL output (SV package + register file)
+│   │   ├── rtl/generated/     # PeakRDL output (SV package + register file)
 │   │   └── scripts/generate.sh
 │   ├── core/                  # PLL, reset (RTL only — excluded from twin requirement)
 │   └── utils/                 # FIFOs (RTL only — excluded from twin requirement)
@@ -78,10 +78,7 @@ pico-gs/
 │   └── gs-twin-cli/           # CLI: render golden references, diff vs Verilator
 ├── crates/
 │   ├── qfixed/                # Fixed-point math library
-│   ├── bits/                  # Compile-time width-checked bit vector type
-│   ├── ecp5-model/            # Cycle-accurate ECP5 primitive models (DP16KD, MULT18X18D)
-│   ├── sdram-model/           # Cycle-accurate SDRAM chip model (W9825G6KH)
-│   └── pico-gs-emulator/      # Cycle-accurate GPU emulator
+│   └── bits/                  # Compile-time width-checked bit vector type
 ├── constraints/               # FPGA constraints
 ├── doc/                       # Syskit specifications
 │   ├── requirements/          # REQ-NNN documents
@@ -300,7 +297,7 @@ INT-010 through INT-014 live in `doc/interfaces/` alongside all other interface 
 
 - **SystemRDL source:** `components/registers/rdl/gpu_regs.rdl` — canonical machine-readable definition
 - **Rust crate:** `components/registers/twin/src/lib.rs` (`gpu-registers`, `no_std`) — hand-maintained flat constants matching the RDL
-- **Generated SV:** `components/registers/generated/` — PeakRDL output (package + register file module)
+- **Generated SV:** `components/registers/rtl/generated/` — PeakRDL output (package + register file module)
 - **Specs:** `doc/interfaces/int_010_*` through `int_014_*` — register interface specifications
 
 Change process:

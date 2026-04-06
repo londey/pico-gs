@@ -10,7 +10,7 @@ description = "Bit-accurate transaction-level digital twin of the pico-gs FPGA g
 # Foundation
 gs-twin-core = { path = "../../shared/gs-twin-core" }
 qfixed = { path = "../../crates/qfixed" }
-gpu-registers = { path = "../../components/registers/twin", default-features = false }
+gpu-registers.workspace = true
 
 # Component crates
 gs-rasterizer = { path = "../../components/rasterizer/twin" }

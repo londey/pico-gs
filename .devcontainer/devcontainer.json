@@ -31,10 +31,7 @@
         "vscode": {
             "extensions": [
                 "Anthropic.claude-code",
-                "bierner.markdown-mermaid",
-                "EditorConfig.EditorConfig",
                 "eirikpre.systemverilog",
-                "MermaidChart.vscode-mermaid-chart",
                 "ms-vscode.cpptools-extension-pack",
                 "ms-vscode.makefile-tools",
                 "mshr-h.VerilogHDL",
@@ -44,8 +41,7 @@
                 "streetsidesoftware.code-spell-checker",
                 "tamasfe.even-better-toml",
                 "yzhang.markdown-all-in-one",
-                "DavidAnson.vscode-markdownlint",
-                "Terrastruct.d2"
+                "DavidAnson.vscode-markdownlint"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",

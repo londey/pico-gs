@@ -10,4 +10,4 @@ description = "Pixel write component of the pico-gs digital twin"
 gs-twin-core = { path = "../../../shared/gs-twin-core" }
 gs-memory = { path = "../../memory/twin" }
 gs-zbuf = { path = "../../zbuf/twin" }
-gpu-registers = { path = "../../registers/twin", default-features = false }
+gpu-registers.workspace = true
