@@ -10,3 +10,4 @@ default = []
 
 [dependencies]
 num-traits = { version = "0.2.19", default-features = false }
+peakrdl-rust = { version = "0.2", default-features = false }

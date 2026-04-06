@@ -29,9 +29,12 @@ impl core::default::Default for TexCfgReg {
     }
 }
 
-impl crate::reg::Register for TexCfgReg {
+impl peakrdl_rust::reg::Register for TexCfgReg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::RW;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)
@@ -92,7 +95,7 @@ impl TexCfgReg {
     /// FILTER
     #[inline(always)]
     #[allow(clippy::missing_errors_doc)]
-    pub fn filter(&self) -> Result<filter::TexFilterE, crate::encode::UnknownVariant<u8>> {
+    pub fn filter(&self) -> Result<filter::TexFilterE, peakrdl_rust::encode::UnknownVariant<u8>> {
         let val = (self.0 >> Self::FILTER_OFFSET) & Self::FILTER_MASK;
         filter::TexFilterE::from_bits(val as u8)
     }
@@ -112,7 +115,7 @@ impl TexCfgReg {
     /// FORMAT
     #[inline(always)]
     #[allow(clippy::missing_errors_doc)]
-    pub fn format(&self) -> Result<format::TexFormatE, crate::encode::UnknownVariant<u8>> {
+    pub fn format(&self) -> Result<format::TexFormatE, peakrdl_rust::encode::UnknownVariant<u8>> {
         let val = (self.0 >> Self::FORMAT_OFFSET) & Self::FORMAT_MASK;
         format::TexFormatE::from_bits(val as u8)
     }

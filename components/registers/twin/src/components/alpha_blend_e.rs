@@ -18,13 +18,13 @@ impl AlphaBlendE {
     ///
     /// # Errors
     /// Returns an error if the bit pattern does not match any encoded variants.
-    pub const fn from_bits(bits: u8) -> Result<Self, crate::encode::UnknownVariant<u8>> {
+    pub const fn from_bits(bits: u8) -> Result<Self, peakrdl_rust::encode::UnknownVariant<u8>> {
         match bits {
             0 => Ok(Self::Disabled),
             1 => Ok(Self::Add),
             2 => Ok(Self::Subtract),
             3 => Ok(Self::Blend),
-            bits => Err(crate::encode::UnknownVariant::new(bits)),
+            bits => Err(peakrdl_rust::encode::UnknownVariant::new(bits)),
         }
     }
 

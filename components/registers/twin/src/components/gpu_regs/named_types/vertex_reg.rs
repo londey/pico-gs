@@ -24,9 +24,12 @@ impl core::default::Default for VertexReg {
     }
 }
 
-impl crate::reg::Register for VertexReg {
+impl peakrdl_rust::reg::Register for VertexReg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::RW;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)

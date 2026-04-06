@@ -17,9 +17,12 @@ impl core::default::Default for St0St1Reg {
     }
 }
 
-impl crate::reg::Register for St0St1Reg {
+impl peakrdl_rust::reg::Register for St0St1Reg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::RW;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)

@@ -24,7 +24,7 @@ impl TexFormatE {
     ///
     /// # Errors
     /// Returns an error if the bit pattern does not match any encoded variants.
-    pub const fn from_bits(bits: u8) -> Result<Self, crate::encode::UnknownVariant<u8>> {
+    pub const fn from_bits(bits: u8) -> Result<Self, peakrdl_rust::encode::UnknownVariant<u8>> {
         match bits {
             0 => Ok(Self::Bc1),
             1 => Ok(Self::Bc2),
@@ -33,7 +33,7 @@ impl TexFormatE {
             5 => Ok(Self::Rgb565),
             6 => Ok(Self::Rgba8888),
             7 => Ok(Self::R8),
-            bits => Err(crate::encode::UnknownVariant::new(bits)),
+            bits => Err(peakrdl_rust::encode::UnknownVariant::new(bits)),
         }
     }
 

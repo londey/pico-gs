@@ -11,12 +11,8 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::unnecessary_cast)]
 
-pub mod access;
 #[cfg(not(doctest))]
 pub mod components;
-pub mod encode;
-pub mod mem;
-pub mod reg;
 
 #[cfg(not(doctest))]
 pub use crate::components::gpu_regs::GpuRegs;

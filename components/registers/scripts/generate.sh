@@ -52,13 +52,6 @@ rm -rf "${REG_DIR}/twin/src/components" "${REG_DIR}/twin/src/components.rs"
 cp -r "${RUST_TEMP}/components" "${REG_DIR}/twin/src/components"
 cp "${RUST_TEMP}/components.rs" "${REG_DIR}/twin/src/components.rs"
 
-# Patch generated code for compatibility with the hand-maintained crate:
-#   - peakrdl_rust:: → crate:: (the crate vendors its own encode module)
-#   - Remove 'type Endian' lines (not in the local Register trait)
-find "${REG_DIR}/twin/src/components" "${REG_DIR}/twin/src/components.rs" -name '*.rs' -exec \
-    sed -i -e 's/peakrdl_rust::/crate::/g' \
-           -e '/type Endian/d' {} +
-
 # Format generated Rust code
 rustfmt "${REG_DIR}/twin/src/components.rs"
 find "${REG_DIR}/twin/src/components" -name '*.rs' -exec rustfmt {} +

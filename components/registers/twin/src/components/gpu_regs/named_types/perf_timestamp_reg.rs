@@ -25,9 +25,12 @@ impl core::default::Default for PerfTimestampReg {
     }
 }
 
-impl crate::reg::Register for PerfTimestampReg {
+impl peakrdl_rust::reg::Register for PerfTimestampReg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::RW;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)

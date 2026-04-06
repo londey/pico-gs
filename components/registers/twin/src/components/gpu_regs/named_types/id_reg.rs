@@ -16,9 +16,12 @@ impl core::default::Default for IdReg {
     }
 }
 
-impl crate::reg::Register for IdReg {
+impl peakrdl_rust::reg::Register for IdReg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::R;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)

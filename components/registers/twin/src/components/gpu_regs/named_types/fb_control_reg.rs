@@ -16,9 +16,12 @@ impl core::default::Default for FbControlReg {
     }
 }
 
-impl crate::reg::Register for FbControlReg {
+impl peakrdl_rust::reg::Register for FbControlReg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::RW;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)

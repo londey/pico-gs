@@ -23,9 +23,12 @@ impl core::default::Default for RenderModeReg {
     }
 }
 
-impl crate::reg::Register for RenderModeReg {
+impl peakrdl_rust::reg::Register for RenderModeReg {
     type Regwidth = u64;
     type Accesswidth = u64;
+    type Access = peakrdl_rust::access::RW;
+    type ByteEndian = peakrdl_rust::endian::LittleEndian;
+    type WordEndian = peakrdl_rust::endian::LittleEndian;
 
     unsafe fn from_raw(val: Self::Regwidth) -> Self {
         Self(val)
@@ -153,7 +156,9 @@ impl RenderModeReg {
     /// CULL_MODE
     #[inline(always)]
     #[allow(clippy::missing_errors_doc)]
-    pub fn cull_mode(&self) -> Result<cull_mode::CullModeE, crate::encode::UnknownVariant<u8>> {
+    pub fn cull_mode(
+        &self,
+    ) -> Result<cull_mode::CullModeE, peakrdl_rust::encode::UnknownVariant<u8>> {
         let val = (self.0 >> Self::CULL_MODE_OFFSET) & Self::CULL_MODE_MASK;
         cull_mode::CullModeE::from_bits(val as u8)
     }
@@ -175,7 +180,7 @@ impl RenderModeReg {
     #[allow(clippy::missing_errors_doc)]
     pub fn alpha_blend(
         &self,
-    ) -> Result<alpha_blend::AlphaBlendE, crate::encode::UnknownVariant<u8>> {
+    ) -> Result<alpha_blend::AlphaBlendE, peakrdl_rust::encode::UnknownVariant<u8>> {
         let val = (self.0 >> Self::ALPHA_BLEND_OFFSET) & Self::ALPHA_BLEND_MASK;
         alpha_blend::AlphaBlendE::from_bits(val as u8)
     }
@@ -218,7 +223,7 @@ impl RenderModeReg {
     #[allow(clippy::missing_errors_doc)]
     pub fn dither_pattern(
         &self,
-    ) -> Result<dither_pattern::DitherPatternE, crate::encode::UnknownVariant<u8>> {
+    ) -> Result<dither_pattern::DitherPatternE, peakrdl_rust::encode::UnknownVariant<u8>> {
         let val = (self.0 >> Self::DITHER_PATTERN_OFFSET) & Self::DITHER_PATTERN_MASK;
         dither_pattern::DitherPatternE::from_bits(val as u8)
     }

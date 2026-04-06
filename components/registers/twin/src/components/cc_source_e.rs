@@ -42,7 +42,7 @@ impl CcSourceE {
     ///
     /// # Errors
     /// Returns an error if the bit pattern does not match any encoded variants.
-    pub const fn from_bits(bits: u8) -> Result<Self, crate::encode::UnknownVariant<u8>> {
+    pub const fn from_bits(bits: u8) -> Result<Self, peakrdl_rust::encode::UnknownVariant<u8>> {
         match bits {
             0 => Ok(Self::CcCombined),
             1 => Ok(Self::CcTex0),
@@ -60,7 +60,7 @@ impl CcSourceE {
             13 => Ok(Self::CcRsvd13),
             14 => Ok(Self::CcRsvd14),
             15 => Ok(Self::CcRsvd15),
-            bits => Err(crate::encode::UnknownVariant::new(bits)),
+            bits => Err(peakrdl_rust::encode::UnknownVariant::new(bits)),
         }
     }
 

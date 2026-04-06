@@ -47,18 +47,28 @@ pub use crate::components::gpu_regs::named_types::z_range_reg as z_range;
 /// GPU Register Map
 ///
 /// ICEpi SPI GPU register map v11.0
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub struct GpuRegs {
+#[derive(Eq, PartialEq)]
+pub struct GpuRegs<'io, IO = peakrdl_rust::io::PtrIO> {
     ptr: *mut u8,
+    io: &'io IO,
 }
 
-unsafe impl Send for GpuRegs {}
-unsafe impl Sync for GpuRegs {}
+unsafe impl<IO: Sync> Send for GpuRegs<'_, IO> {}
+unsafe impl<IO: Sync> Sync for GpuRegs<'_, IO> {}
 
-impl GpuRegs {
-    /// Size in bytes of the underlying memory
-    pub const SIZE: usize = 0x400;
+// manually implement Copy to ease generic bounds
+// (IO does not need to be Copy)
+impl<IO> Copy for GpuRegs<'_, IO> {}
 
+// manually implement Clone to ease generic bounds
+// (IO does not need to be Clone)
+impl<IO> Clone for GpuRegs<'_, IO> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl GpuRegs<'static> {
     /// # Safety
     ///
     /// The caller must guarantee that the provided address points to a
@@ -68,6 +78,25 @@ impl GpuRegs {
     pub const unsafe fn from_ptr(ptr: *mut ()) -> Self {
         Self {
             ptr: ptr.cast::<u8>(),
+            io: &peakrdl_rust::io::PtrIO,
+        }
+    }
+}
+
+impl<'io, IO> GpuRegs<'io, IO> {
+    /// Size in bytes of the underlying memory
+    pub const SIZE: usize = 0x400;
+
+    /// # Safety
+    ///
+    /// The caller must guarantee that the provided address points to a
+    /// hardware register block implementing this interface.
+    #[inline(always)]
+    #[must_use]
+    pub const unsafe fn from_ptr_with(ptr: *mut (), io: &'io IO) -> Self {
+        Self {
+            ptr: ptr.cast::<u8>(),
+            io,
         }
     }
 
@@ -76,14 +105,18 @@ impl GpuRegs {
     pub const fn as_ptr(&self) -> *mut () {
         self.ptr.cast::<()>()
     }
+}
 
+impl<'io, IO: peakrdl_rust::io::RegisterIO> GpuRegs<'io, IO> {
     /// COLOR
     ///
     /// COLOR0[31:0] + COLOR1[63:32] vertex colors (RGBA8888 UNORM8 each)
     #[inline(always)]
     #[must_use]
-    pub const fn color(&self) -> crate::reg::Reg<color::ColorReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x0).cast()) }
+    pub const fn color(&self) -> peakrdl_rust::reg::Reg<'io, color::ColorReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x0).cast(), self.io)
+        }
     }
 
     /// ST0_ST1
@@ -92,8 +125,10 @@ impl GpuRegs {
     /// GPU interpolates S, T, Q linearly, then computes true U=S/Q, V=T/Q per pixel.
     #[inline(always)]
     #[must_use]
-    pub const fn st0_st1(&self) -> crate::reg::Reg<st0_st1::St0St1Reg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x8).cast()) }
+    pub const fn st0_st1(&self) -> peakrdl_rust::reg::Reg<'io, st0_st1::St0St1Reg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x8).cast(), self.io)
+        }
     }
 
     /// VERTEX
@@ -109,10 +144,10 @@ impl GpuRegs {
     /// vertex as opposite corners of an axis-aligned rectangle.
     #[inline(always)]
     #[must_use]
-    pub const fn vertex_nokick(
-        &self,
-    ) -> crate::reg::Reg<vertex_nokick::VertexReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x30).cast()) }
+    pub const fn vertex_nokick(&self) -> peakrdl_rust::reg::Reg<'io, vertex_nokick::VertexReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x30).cast(), self.io)
+        }
     }
 
     /// VERTEX
@@ -130,8 +165,10 @@ impl GpuRegs {
     #[must_use]
     pub const fn vertex_kick_012(
         &self,
-    ) -> crate::reg::Reg<vertex_kick_012::VertexReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x38).cast()) }
+    ) -> peakrdl_rust::reg::Reg<'io, vertex_kick_012::VertexReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x38).cast(), self.io)
+        }
     }
 
     /// VERTEX
@@ -149,8 +186,10 @@ impl GpuRegs {
     #[must_use]
     pub const fn vertex_kick_021(
         &self,
-    ) -> crate::reg::Reg<vertex_kick_021::VertexReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x40).cast()) }
+    ) -> peakrdl_rust::reg::Reg<'io, vertex_kick_021::VertexReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x40).cast(), self.io)
+        }
     }
 
     /// VERTEX
@@ -168,8 +207,10 @@ impl GpuRegs {
     #[must_use]
     pub const fn vertex_kick_rect(
         &self,
-    ) -> crate::reg::Reg<vertex_kick_rect::VertexReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x48).cast()) }
+    ) -> peakrdl_rust::reg::Reg<'io, vertex_kick_rect::VertexReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x48).cast(), self.io)
+        }
     }
 
     /// TEXn_CFG
@@ -184,8 +225,10 @@ impl GpuRegs {
     /// for the corresponding texture unit.
     #[inline(always)]
     #[must_use]
-    pub const fn tex0_cfg(&self) -> crate::reg::Reg<tex0_cfg::TexCfgReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x80).cast()) }
+    pub const fn tex0_cfg(&self) -> peakrdl_rust::reg::Reg<'io, tex0_cfg::TexCfgReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x80).cast(), self.io)
+        }
     }
 
     /// TEXn_CFG
@@ -200,8 +243,10 @@ impl GpuRegs {
     /// for the corresponding texture unit.
     #[inline(always)]
     #[must_use]
-    pub const fn tex1_cfg(&self) -> crate::reg::Reg<tex1_cfg::TexCfgReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x88).cast()) }
+    pub const fn tex1_cfg(&self) -> peakrdl_rust::reg::Reg<'io, tex1_cfg::TexCfgReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x88).cast(), self.io)
+        }
     }
 
     /// CC_MODE
@@ -216,8 +261,10 @@ impl GpuRegs {
     /// All other slots use cc_source_e.
     #[inline(always)]
     #[must_use]
-    pub const fn cc_mode(&self) -> crate::reg::Reg<cc_mode::CcModeReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0xC0).cast()) }
+    pub const fn cc_mode(&self) -> peakrdl_rust::reg::Reg<'io, cc_mode::CcModeReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0xC0).cast(), self.io)
+        }
     }
 
     /// CONST_COLOR
@@ -226,10 +273,10 @@ impl GpuRegs {
     /// CONST1 (bits [63:32]) doubles as the fog color.
     #[inline(always)]
     #[must_use]
-    pub const fn const_color(
-        &self,
-    ) -> crate::reg::Reg<const_color::ConstColorReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0xC8).cast()) }
+    pub const fn const_color(&self) -> peakrdl_rust::reg::Reg<'io, const_color::ConstColorReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0xC8).cast(), self.io)
+        }
     }
 
     /// RENDER_MODE
@@ -237,10 +284,10 @@ impl GpuRegs {
     /// Unified rendering state (Gouraud, Z, alpha, culling, dithering, stipple)
     #[inline(always)]
     #[must_use]
-    pub const fn render_mode(
-        &self,
-    ) -> crate::reg::Reg<render_mode::RenderModeReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x180).cast()) }
+    pub const fn render_mode(&self) -> peakrdl_rust::reg::Reg<'io, render_mode::RenderModeReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x180).cast(), self.io)
+        }
     }
 
     /// Z_RANGE
@@ -248,8 +295,10 @@ impl GpuRegs {
     /// Depth range clipping (Z scissor) min/max
     #[inline(always)]
     #[must_use]
-    pub const fn z_range(&self) -> crate::reg::Reg<z_range::ZRangeReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x188).cast()) }
+    pub const fn z_range(&self) -> peakrdl_rust::reg::Reg<'io, z_range::ZRangeReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x188).cast(), self.io)
+        }
     }
 
     /// STIPPLE_PATTERN
@@ -263,8 +312,10 @@ impl GpuRegs {
     #[must_use]
     pub const fn stipple_pattern(
         &self,
-    ) -> crate::reg::Reg<stipple_pattern::StipplePatternReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x190).cast()) }
+    ) -> peakrdl_rust::reg::Reg<'io, stipple_pattern::StipplePatternReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x190).cast(), self.io)
+        }
     }
 
     /// FB_CONFIG
@@ -284,8 +335,10 @@ impl GpuRegs {
     /// calculation (shift-only, no multiply).
     #[inline(always)]
     #[must_use]
-    pub const fn fb_config(&self) -> crate::reg::Reg<fb_config::FbConfigReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x200).cast()) }
+    pub const fn fb_config(&self) -> peakrdl_rust::reg::Reg<'io, fb_config::FbConfigReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x200).cast(), self.io)
+        }
     }
 
     /// FB_DISPLAY
@@ -316,8 +369,10 @@ impl GpuRegs {
     /// addressable), matching the texture BASE_ADDR encoding.
     #[inline(always)]
     #[must_use]
-    pub const fn fb_display(&self) -> crate::reg::Reg<fb_display::FbDisplayReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x208).cast()) }
+    pub const fn fb_display(&self) -> peakrdl_rust::reg::Reg<'io, fb_display::FbDisplayReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x208).cast(), self.io)
+        }
     }
 
     /// FB_CONTROL
@@ -325,8 +380,10 @@ impl GpuRegs {
     /// Scissor rectangle
     #[inline(always)]
     #[must_use]
-    pub const fn fb_control(&self) -> crate::reg::Reg<fb_control::FbControlReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x218).cast()) }
+    pub const fn fb_control(&self) -> peakrdl_rust::reg::Reg<'io, fb_control::FbControlReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x218).cast(), self.io)
+        }
     }
 
     /// MEM_FILL
@@ -340,8 +397,10 @@ impl GpuRegs {
     /// the SPI command FIFO continues accepting commands.
     #[inline(always)]
     #[must_use]
-    pub const fn mem_fill(&self) -> crate::reg::Reg<mem_fill::MemFillReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x220).cast()) }
+    pub const fn mem_fill(&self) -> peakrdl_rust::reg::Reg<'io, mem_fill::MemFillReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x220).cast(), self.io)
+        }
     }
 
     /// PERF_TIMESTAMP
@@ -360,8 +419,10 @@ impl GpuRegs {
     #[must_use]
     pub const fn perf_timestamp(
         &self,
-    ) -> crate::reg::Reg<perf_timestamp::PerfTimestampReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x280).cast()) }
+    ) -> peakrdl_rust::reg::Reg<'io, perf_timestamp::PerfTimestampReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x280).cast(), self.io)
+        }
     }
 
     /// MEM_ADDR
@@ -372,8 +433,10 @@ impl GpuRegs {
     /// MEM_DATA can return data immediately.
     #[inline(always)]
     #[must_use]
-    pub const fn mem_addr(&self) -> crate::reg::Reg<mem_addr::MemAddrReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x380).cast()) }
+    pub const fn mem_addr(&self) -> peakrdl_rust::reg::Reg<'io, mem_addr::MemAddrReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x380).cast(), self.io)
+        }
     }
 
     /// MEM_DATA
@@ -383,8 +446,10 @@ impl GpuRegs {
     /// Read: returns prefetched 64-bit SDRAM dword and triggers next prefetch.
     #[inline(always)]
     #[must_use]
-    pub const fn mem_data(&self) -> crate::reg::Reg<mem_data::MemDataReg, crate::access::RW> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x388).cast()) }
+    pub const fn mem_data(&self) -> peakrdl_rust::reg::Reg<'io, mem_data::MemDataReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x388).cast(), self.io)
+        }
     }
 
     /// ID
@@ -392,7 +457,9 @@ impl GpuRegs {
     /// GPU identification (read-only)
     #[inline(always)]
     #[must_use]
-    pub const fn id(&self) -> crate::reg::Reg<id::IdReg, crate::access::R> {
-        unsafe { crate::reg::Reg::from_ptr(self.ptr.wrapping_byte_add(0x3F8).cast()) }
+    pub const fn id(&self) -> peakrdl_rust::reg::Reg<'io, id::IdReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x3F8).cast(), self.io)
+        }
     }
 }

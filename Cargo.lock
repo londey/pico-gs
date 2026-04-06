@@ -134,6 +134,7 @@ name = "gpu-registers"
 version = "0.1.0"
 dependencies = [
  "num-traits",
+ "peakrdl-rust",
 ]
 
 [[package]]
@@ -384,6 +385,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "peakrdl-rust"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1457722d2675208afcd3c306e859f26e9d3b2c6d58e8c7f8260ca5af738f4dc"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
