@@ -131,11 +131,13 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test test-rasterizer test-early-z test-register-file \
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined \
 	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture \
-	render-bc3-texture render-bc4-texture render-rgba8888-texture render-r8-texture render-all \
+	render-bc3-texture render-bc4-texture render-rgba8888-texture render-r8-texture \
+	render-stipple-test render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
+	test-stipple-test \
 	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
 	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
-	test-fb-promote test-zbuf-uninit test-alpha-blend test-dither test-raster-viz \
+	test-fb-promote test-zbuf-uninit test-alpha-blend test-dither test-stipple test-raster-viz \
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
 	test-block-decoder-all \
@@ -802,6 +804,14 @@ test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_dither -o tb_dither
 	$(OBJ_DIR)/tb_dither
 
+# VER-009: Stipple pattern test unit testbench (8x8 bitmask)
+test-stipple: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(STIPPLE_RTL)/stipple.sv \
+		$(COMP_DIR)/stipple/rtl/tests/tb_stipple.sv \
+		--top-module tb_stipple -o tb_stipple
+	$(OBJ_DIR)/tb_stipple
+
 # VER-003: Register file unit testbench
 test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
@@ -852,9 +862,12 @@ render-rgba8888-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 render-r8-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness r8_texture $(abspath $(SIM_OUT_DIR))/ver_022_r8_texture.png
 
+render-stipple-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness stipple_test $(abspath $(SIM_OUT_DIR))/ver_023_stipple_test.png
+
 render-all: render-gouraud render-depth-test render-textured render-color-combined render-textured-cube \
 	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture render-bc3-texture \
-	render-bc4-texture render-rgba8888-texture render-r8-texture
+	render-bc4-texture render-rgba8888-texture render-r8-texture render-stipple-test
 
 # Golden image diff targets — compare rendered output against approved golden images
 # VER-010: Gouraud triangle
@@ -909,10 +922,14 @@ test-rgba8888-texture: render-rgba8888-texture
 test-r8-texture: render-r8-texture
 	diff -q $(SIM_OUT_DIR)/ver_022_r8_texture.png $(GOLDEN_DIR)/ver_022_r8_texture.png
 
+# VER-023: Stipple pattern test
+test-stipple-test: render-stipple-test
+	diff -q $(SIM_OUT_DIR)/ver_023_stipple_test.png $(GOLDEN_DIR)/ver_023_stipple_test.png
+
 # Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
 # Golden image renders run as prerequisites. Diffs run in the recipe so all
 # comparisons execute even if some fail.
-test: lint test-rasterizer-all test-early-z test-register-file test-color-combiner test-texture-decoder test-fb-promote test-zbuf-uninit test-alpha-blend test-dither render-all
+test: lint test-rasterizer-all test-early-z test-stipple test-register-file test-color-combiner test-texture-decoder test-fb-promote test-zbuf-uninit test-alpha-blend test-dither render-all
 	@echo "Unit testbenches passed."
 	@echo "All images rendered to $(SIM_OUT_DIR)/"
 	@failures=0; \
@@ -930,6 +947,7 @@ test: lint test-rasterizer-all test-early-z test-register-file test-color-combin
 		ver_020_bc4_texture.png \
 		ver_021_rgba8888_texture.png \
 		ver_022_r8_texture.png \
+		ver_023_stipple_test.png \
 	; do \
 		golden="$(GOLDEN_DIR)/$$pair"; \
 		rendered="$(SIM_OUT_DIR)/$$pair"; \
@@ -1324,6 +1342,7 @@ help:
 	@echo "  test             - Run all RTL tests (lint + unit testbenches)"
 	@echo "  test-rasterizer  - VER-001: Rasterizer unit testbench"
 	@echo "  test-early-z     - VER-002: Early Z-test unit testbench"
+	@echo "  test-stipple     - VER-009: Stipple pattern test unit testbench"
 	@echo "  test-register-file - VER-003: Register file unit testbench"
 	@echo "  test-color-combiner - VER-004: Color combiner unit testbench"
 	@echo "  test-texture-decoder - VER-005: Texture decoder unit testbench"
@@ -1340,6 +1359,7 @@ help:
 	@echo "  test-bc4-texture - VER-020: BC4 texture golden image"
 	@echo "  test-rgba8888-texture - VER-021: RGBA8888 texture golden image"
 	@echo "  test-r8-texture  - VER-022: R8 texture golden image"
+	@echo "  test-stipple-test - VER-023: Stipple pattern golden image"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"
 	@echo "  test-sync-fifo   - Run synchronous FIFO testbench"

@@ -25,6 +25,7 @@ ADDR_RENDER_MODE = 0x30
 ADDR_FB_CONFIG = 0x40
 ADDR_FB_CONTROL = 0x43
 ADDR_MEM_FILL = 0x44
+ADDR_STIPPLE_PATTERN = 0x32
 ADDR_MEM_ADDR = 0x70
 ADDR_MEM_DATA = 0x71
 
@@ -41,6 +42,7 @@ REG_NAMES = {
     0x40: "FB_CONFIG",
     0x43: "FB_CONTROL",
     0x44: "MEM_FILL",
+    0x32: "STIPPLE_PATTERN",
     0x70: "MEM_ADDR",
     0x71: "MEM_DATA",
 }
@@ -66,6 +68,7 @@ GOURAUD_EN = 1 << 0
 Z_TEST_EN = 1 << 2
 Z_WRITE_EN = 1 << 3
 COLOR_WRITE_EN = 1 << 4
+STIPPLE_EN = 1 << 16
 
 # Z compare function codes (3-bit, shifted to bits [15:13])
 Z_COMPARE_LESS = 0 << 13
@@ -289,6 +292,8 @@ def render_mode_comment(mode: int) -> str:
         flags.append("Z_WRITE_EN")
     if mode & COLOR_WRITE_EN:
         flags.append("COLOR_WRITE_EN")
+    if mode & STIPPLE_EN:
+        flags.append("STIPPLE_EN")
     z_cmp = (mode >> 13) & 0x7
     cmp_names = ["LESS", "LEQUAL", "EQUAL", "GEQUAL",
                  "GREATER", "NOTEQUAL", "ALWAYS", "NEVER"]

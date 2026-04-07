@@ -371,3 +371,65 @@ fn ver_022_r8_texture() {
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-022 golden image: {}", png_path.display());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-023: Stipple Pattern Test
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VER_023_HEX: &str = include_str!("../../scripts/ver_023_stipple_test.hex");
+
+#[test]
+fn ver_023_stipple_test() {
+    let png_path = dt_out_dir().join("ver_023_stipple_test.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let script = hex_parser::parse_hex_str(VER_023_HEX).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+
+    // Execute each phase separately (matching Verilator harness pipeline drain)
+    for phase in &script.phases {
+        gpu.reg_write_script(&phase.commands);
+    }
+
+    let green = Rgb565::from_rgb8(0, 0xFF, 0).0;
+    let red = Rgb565::from_rgb8(0xFF, 0, 0).0;
+    let blue = Rgb565::from_rgb8(0, 0, 0xFF).0;
+    let pixels = gpu.extract_framebuffer_rgb565();
+
+    let green_count = pixels.iter().filter(|&&p| p == green).count();
+    let red_count = pixels.iter().filter(|&&p| p == red).count();
+    let blue_count = pixels.iter().filter(|&&p| p == blue).count();
+
+    // Triangle A (green, no stipple) should have many pixels
+    assert!(
+        green_count > 1000,
+        "expected green pixels from solid Triangle A, got {green_count}"
+    );
+
+    // Triangle B (red, checkerboard stipple) should have pixels (~50% pass)
+    assert!(
+        red_count > 1000,
+        "expected red pixels from checkerboard-stippled Triangle B, got {red_count}"
+    );
+
+    // Triangle C (blue, diamond stipple) should have pixels (~53% pass)
+    assert!(
+        blue_count > 1000,
+        "expected blue pixels from diamond-stippled Triangle C, got {blue_count}"
+    );
+
+    // Verify stipple is discarding pixels: both stippled triangles should
+    // have fewer pixels than the solid green triangle (which also receives
+    // pixels through stipple holes in the overlap regions).
+    assert!(
+        red_count < green_count,
+        "checkerboard stipple should discard ~half of red: red={red_count} green={green_count}"
+    );
+    assert!(
+        blue_count < green_count,
+        "diamond stipple should discard pixels: blue={blue_count} green={green_count}"
+    );
+
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-023 golden image: {}", png_path.display());
+}

@@ -1,0 +1,55 @@
+# VER-023: Stipple Pattern Test
+# 
+# Phase 'clear': black framebuffer
+# Phase 'tri_solid': green triangle (no stipple)
+# Phase 'tri_checker': red triangle (checkerboard stipple)
+# Phase 'tri_diamond': blue triangle (diamond stipple)
+
+## FRAMEBUFFER: 512 480
+
+## PHASE: clear
+
+# Clear color buffer: base_word=0x000000 value=0x0000 count=262144
+44 0400_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=262144
+
+40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
+43 0000_0078_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=480
+18 7670_7670_7673_7673  # CC_MODE: SHADE_PASSTHROUGH: cycle0=SHADE0*ONE cycle1=COMBINED*ONE
+
+## PHASE: tri_solid
+
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+
+00 00FF_00FF_0000_00FF  # COLOR: diffuse=green specular=black
+06 0000_0000_03C0_03C0  # VERTEX_NOKICK: x=60 y=60 z=0x0000
+00 00FF_00FF_0000_00FF  # COLOR: diffuse=green specular=black
+06 0000_0000_03C0_12C0  # VERTEX_NOKICK: x=300 y=60 z=0x0000
+00 00FF_00FF_0000_00FF  # COLOR: diffuse=green specular=black
+07 0000_0000_1900_0B40  # VERTEX_KICK_012: x=180 y=400 z=0x0000
+
+
+## PHASE: tri_checker
+
+32 AA55_AA55_AA55_AA55  # STIPPLE_PATTERN: checkerboard 8x8 pattern=0xAA55AA55AA55AA55
+30 0000_0000_0001_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN | STIPPLE_EN
+
+00 FF00_00FF_0000_00FF  # COLOR: diffuse=red specular=black
+06 0000_0000_03C0_0C80  # VERTEX_NOKICK: x=200 y=60 z=0x0000
+00 FF00_00FF_0000_00FF  # COLOR: diffuse=red specular=black
+06 0000_0000_03C0_1B80  # VERTEX_NOKICK: x=440 y=60 z=0x0000
+00 FF00_00FF_0000_00FF  # COLOR: diffuse=red specular=black
+07 0000_0000_1900_1400  # VERTEX_KICK_012: x=320 y=400 z=0x0000
+
+
+## PHASE: tri_diamond
+
+32 0018_3C7E_FF7E_3C18  # STIPPLE_PATTERN: diamond 8x8 pattern=0x00183C7EFF7E3C18
+30 0000_0000_0001_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN | STIPPLE_EN
+
+00 0000_FFFF_0000_00FF  # COLOR: diffuse=blue specular=black
+06 0000_0000_0C80_0280  # VERTEX_NOKICK: x=40 y=200 z=0x0000
+00 0000_FFFF_0000_00FF  # COLOR: diffuse=blue specular=black
+06 0000_0000_0C80_1D60  # VERTEX_NOKICK: x=470 y=200 z=0x0000
+00 0000_FFFF_0000_00FF  # COLOR: diffuse=blue specular=black
+07 0000_0000_1C20_0FF0  # VERTEX_KICK_012: x=255 y=450 z=0x0000
+

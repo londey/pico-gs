@@ -118,6 +118,7 @@ static std::string hex_file_for_test(const std::string& test_name) {
         {"bc4_texture",       "scripts/ver_020_bc4_texture.hex"},
         {"rgba8888_texture",  "scripts/ver_021_rgba8888_texture.hex"},
         {"r8_texture",        "scripts/ver_022_r8_texture.hex"},
+        {"stipple_test",      "scripts/ver_023_stipple_test.hex"},
     };
     for (const auto& [name, path] : mappings) {
         if (name == test_name) {

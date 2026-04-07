@@ -207,11 +207,7 @@ impl<const N: u32> Bits<N> {
         assert!(HI < N, "slice: HI must be < N");
         assert!(M == HI - LO + 1, "slice: M must equal HI - LO + 1");
         Bits::<M>::check();
-        let mask = if M >= 64 {
-            u64::MAX
-        } else {
-            (1u64 << M) - 1
-        };
+        let mask = if M >= 64 { u64::MAX } else { (1u64 << M) - 1 };
         Bits::<M>::new((self.0 >> LO) & mask)
     }
 
