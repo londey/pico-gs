@@ -1,3 +1,0 @@
-# Simulation output artifacts (should land in ../build/sim_out/)
-*.vcd
-*.fst
