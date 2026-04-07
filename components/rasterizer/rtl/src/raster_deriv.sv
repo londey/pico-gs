@@ -1,7 +1,7 @@
 `default_nettype none
 
 // ============================================================================
-// Rasterizer Derivative Precomputation (UNIT-005.02 sequential, Option A)
+// Rasterizer Derivative Precomputation (UNIT-005.02, area-optimized)
 // ============================================================================
 
 // Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
@@ -9,14 +9,13 @@
 
 // Sequential time-multiplexed derivative computation module.
 // Computes per-attribute dx/dy derivatives for all 14 interpolated attributes
-// over 7 clock cycles (2 attributes per cycle) using 4 MULT18X18D blocks,
-// then computes initial accumulator values at the bounding box origin.
+// and initial accumulator values at the bounding box origin.
 //
-// Architecture (restructured computation order for minimal DSP usage):
-//   1. Delta mux selects 2 attributes' vertex deltas (d10, d20) per cycle
-//   2. 4 MULT18X18D: delta * inv_area (17x18 each, via raster_dsp_mul helper)
-//   3. 8 LUT multiplies: scaled_delta * edge_coeff (shift-add, no $mul cells)
-//   4. Init values computed in parallel during finishing cycle (shift-add)
+// Area-optimized architecture (reduced from 8 LUT multipliers to 1):
+//   1. Delta mux selects 1 attribute's vertex deltas (d10, d20) per attribute
+//   2. 2 MULT18X18D: delta * inv_area (17x18, via raster_dsp_mul helper)
+//   3. 1 shared shift-add LUT multiply (47x11): time-multiplexed for
+//      edge-coefficient application (4 cycles) and init computation (2 cycles)
 //
 // Computation reordering (mathematically equivalent):
 //   Original:  deriv = (delta * edge_coeff) * inv_area >>> shift
@@ -26,13 +25,20 @@
 // DSP control: LUT-intended multiplies use explicit shift-and-add functions
 // (no $mul cells) to prevent Yosys mul2dsp from mapping them to DSP blocks.
 //
-// Timing (8 cycles from enable to deriv_done):
-//   Cycle 0:   enable sampled, running=1, pair_idx=0
-//   Cycle 0-6: pair_idx advances, 2 derivatives latched per posedge
-//   Cycle 7:   finishing -- all 14 derivatives stable, init values computed
-//   Posedge 8: init values latched, deriv_done asserted
+// Per-attribute phase schedule (1 attribute at a time):
+//   Attr 0:  [DSP] [edge x4]                         =  5 cycles
+//   Attr 1:  [DSP] [init_attr0 x2] [edge x4]         =  7 cycles
+//   Attr 2-13: same as attr 1                         =  7 cycles each
+//   Finish:  [init_attr13 x2]                         =  2 cycles
+//   Total:   5 + 13*7 + 2 = 98 cycles
 //
-// DSP budget: 4 MULT18X18D (1 per raster_dsp_mul instance)
+// Init computation reuses the 47x11 multiplier for 32x11 init multiplies:
+//   init = f0 + dx*bbox_sx + dy*bbox_sy
+//   The 32-bit derivative is sign-extended to 47 bits for the shared
+//   multiplier; low 32 bits of the 47-bit product give the correct
+//   truncated result (identical to the standalone 32x11 shift-add).
+//
+// DSP budget: 2 MULT18X18D (1 per raster_dsp_mul instance)
 //
 // See: UNIT-005.02 (Derivative Pre-computation), DD-036, REQ-011.02
 
@@ -163,58 +169,136 @@ module raster_deriv (
 );
 
     // ========================================================================
-    // Pair counter and control (3-bit, 0-6 for 7 pairs of 2 attributes)
+    // FSM state: attr_idx (0-13) + phase within each attribute
     // ========================================================================
     //
-    // Attribute pair assignment:
-    //   pair 0: c0_r (attr 0), c0_g (attr 1)
-    //   pair 1: c0_b (attr 2), c0_a (attr 3)
-    //   pair 2: c1_r (attr 4), c1_g (attr 5)
-    //   pair 3: c1_b (attr 6), c1_a (attr 7)
-    //   pair 4: z    (attr 8), s0 (attr 9)
-    //   pair 5: t0   (attr 10), q    (attr 11)
-    //   pair 6: s1   (attr 12), t1 (attr 13)
+    // Phase encoding per attribute:
+    //   PH_DSP    (0): Register DSP outputs (d10*inv_area, d20*inv_area)
+    //   PH_INIT_X (1): Init prev attr: dx*bbox_sx via 47x11 (skipped for attr 0)
+    //   PH_INIT_Y (2): Init prev attr: dy*bbox_sy via 47x11 (skipped for attr 0)
+    //   PH_EDGE_0 (3): Edge: d10_inv * edge1_A via 47x11
+    //   PH_EDGE_1 (4): Edge: d20_inv * edge2_A via 47x11 -> latch dx
+    //   PH_EDGE_2 (5): Edge: d10_inv * edge1_B via 47x11
+    //   PH_EDGE_3 (6): Edge: d20_inv * edge2_B via 47x11 -> latch dy
+    //
+    // Finishing state: compute init for last attribute (attr 13)
+    //   FIN_INIT_X (0): dx*bbox_sx
+    //   FIN_INIT_Y (1): dy*bbox_sy -> latch init, assert deriv_done
 
-    reg  [2:0] pair_idx;
-    reg        running;
-    reg        finishing;
+    localparam [2:0] PH_DSP    = 3'd0;
+    localparam [2:0] PH_INIT_X = 3'd1;
+    localparam [2:0] PH_INIT_Y = 3'd2;
+    localparam [2:0] PH_EDGE_0 = 3'd3;
+    localparam [2:0] PH_EDGE_1 = 3'd4;
+    localparam [2:0] PH_EDGE_2 = 3'd5;
+    localparam [2:0] PH_EDGE_3 = 3'd6;
 
-    reg  [2:0] next_pair_idx;
+    reg  [3:0] attr_idx;        // Current attribute index (0-13)
+    reg  [2:0] phase;           // Phase within current attribute
+    reg        running;         // Active computation in progress
+    reg        finishing;       // Computing init for last attribute (attr 13)
+
+    reg  [3:0] next_attr_idx;
+    reg  [2:0] next_phase;
     reg        next_running;
     reg        next_finishing;
     reg        next_deriv_done;
 
     always_comb begin
-        next_pair_idx   = pair_idx;
+        next_attr_idx   = attr_idx;
+        next_phase      = phase;
         next_running    = running;
+        next_finishing  = finishing;
         next_deriv_done = 1'b0;
-        next_finishing  = 1'b0;
 
         if (enable && !running && !finishing) begin
-            next_pair_idx = 3'd0;
+            // Start new computation
+            next_attr_idx = 4'd0;
+            next_phase    = PH_DSP;
             next_running  = 1'b1;
         end else if (running) begin
-            if (pair_idx == 3'd6) begin
-                next_running   = 1'b0;
-                next_finishing = 1'b1;
+            if (attr_idx == 4'd0) begin
+                // Attr 0: skip init phases (no previous attribute)
+                case (phase)
+                    PH_DSP: begin
+                        next_phase = PH_EDGE_0;
+                    end
+                    PH_EDGE_0: begin
+                        next_phase = PH_EDGE_1;
+                    end
+                    PH_EDGE_1: begin
+                        next_phase = PH_EDGE_2;
+                    end
+                    PH_EDGE_2: begin
+                        next_phase = PH_EDGE_3;
+                    end
+                    PH_EDGE_3: begin
+                        // Move to next attribute
+                        next_attr_idx = 4'd1;
+                        next_phase    = PH_DSP;
+                    end
+                    default: begin
+                        next_phase = PH_DSP;
+                    end
+                endcase
             end else begin
-                next_pair_idx = pair_idx + 3'd1;
+                // Attrs 1-13: full 7-phase cycle
+                case (phase)
+                    PH_DSP: begin
+                        next_phase = PH_INIT_X;
+                    end
+                    PH_INIT_X: begin
+                        next_phase = PH_INIT_Y;
+                    end
+                    PH_INIT_Y: begin
+                        next_phase = PH_EDGE_0;
+                    end
+                    PH_EDGE_0: begin
+                        next_phase = PH_EDGE_1;
+                    end
+                    PH_EDGE_1: begin
+                        next_phase = PH_EDGE_2;
+                    end
+                    PH_EDGE_2: begin
+                        next_phase = PH_EDGE_3;
+                    end
+                    PH_EDGE_3: begin
+                        if (attr_idx == 4'd13) begin
+                            // Last attribute done, go to finishing
+                            next_running  = 1'b0;
+                            next_finishing = 1'b1;
+                            next_phase    = 3'd0;
+                        end else begin
+                            next_attr_idx = attr_idx + 4'd1;
+                            next_phase    = PH_DSP;
+                        end
+                    end
+                    default: begin
+                        next_phase = PH_DSP;
+                    end
+                endcase
             end
-        end
-
-        if (finishing) begin
-            next_deriv_done = 1'b1;
+        end else if (finishing) begin
+            // Finishing: compute init for attr 13
+            if (phase == 3'd0) begin
+                next_phase = 3'd1;
+            end else begin
+                next_finishing  = 1'b0;
+                next_deriv_done = 1'b1;
+            end
         end
     end
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            pair_idx   <= 3'd0;
+            attr_idx   <= 4'd0;
+            phase      <= 3'd0;
             running    <= 1'b0;
             finishing  <= 1'b0;
             deriv_done <= 1'b0;
         end else begin
-            pair_idx   <= next_pair_idx;
+            attr_idx   <= next_attr_idx;
+            phase      <= next_phase;
             running    <= next_running;
             finishing  <= next_finishing;
             deriv_done <= next_deriv_done;
@@ -260,112 +344,381 @@ module raster_deriv (
     wire signed [16:0] d20_q    = $signed({1'b0, q2})     - $signed({1'b0, q0});
 
     // ========================================================================
-    // Delta mux: select 2 attributes' deltas per cycle
+    // Delta mux: select 1 attribute's deltas per attribute cycle
     // ========================================================================
 
-    reg signed [16:0] d10_a;
-    reg signed [16:0] d20_a;
-    reg signed [16:0] d10_b;
-    reg signed [16:0] d20_b;
+    reg signed [16:0] mux_d10;
+    reg signed [16:0] mux_d20;
 
     always_comb begin
-        d10_a = 17'sd0;  d20_a = 17'sd0;
-        d10_b = 17'sd0;  d20_b = 17'sd0;
+        mux_d10 = 17'sd0;
+        mux_d20 = 17'sd0;
 
-        case (pair_idx)
-            3'd0: begin
-                d10_a = 17'(d10_c0r);  d20_a = 17'(d20_c0r);
-                d10_b = 17'(d10_c0g);  d20_b = 17'(d20_c0g);
+        case (attr_idx)
+            4'd0: begin
+                mux_d10 = 17'(d10_c0r);
+                mux_d20 = 17'(d20_c0r);
             end
-            3'd1: begin
-                d10_a = 17'(d10_c0b);  d20_a = 17'(d20_c0b);
-                d10_b = 17'(d10_c0a);  d20_b = 17'(d20_c0a);
+            4'd1: begin
+                mux_d10 = 17'(d10_c0g);
+                mux_d20 = 17'(d20_c0g);
             end
-            3'd2: begin
-                d10_a = 17'(d10_c1r);  d20_a = 17'(d20_c1r);
-                d10_b = 17'(d10_c1g);  d20_b = 17'(d20_c1g);
+            4'd2: begin
+                mux_d10 = 17'(d10_c0b);
+                mux_d20 = 17'(d20_c0b);
             end
-            3'd3: begin
-                d10_a = 17'(d10_c1b);  d20_a = 17'(d20_c1b);
-                d10_b = 17'(d10_c1a);  d20_b = 17'(d20_c1a);
+            4'd3: begin
+                mux_d10 = 17'(d10_c0a);
+                mux_d20 = 17'(d20_c0a);
             end
-            3'd4: begin
-                d10_a = d10_z;         d20_a = d20_z;
-                d10_b = d10_s0;        d20_b = d20_s0;
+            4'd4: begin
+                mux_d10 = 17'(d10_c1r);
+                mux_d20 = 17'(d20_c1r);
             end
-            3'd5: begin
-                d10_a = d10_t0;        d20_a = d20_t0;
-                d10_b = d10_q;         d20_b = d20_q;
+            4'd5: begin
+                mux_d10 = 17'(d10_c1g);
+                mux_d20 = 17'(d20_c1g);
             end
-            3'd6: begin
-                d10_a = d10_s1;        d20_a = d20_s1;
-                d10_b = d10_t1;        d20_b = d20_t1;
+            4'd6: begin
+                mux_d10 = 17'(d10_c1b);
+                mux_d20 = 17'(d20_c1b);
+            end
+            4'd7: begin
+                mux_d10 = 17'(d10_c1a);
+                mux_d20 = 17'(d20_c1a);
+            end
+            4'd8: begin
+                mux_d10 = d10_z;
+                mux_d20 = d20_z;
+            end
+            4'd9: begin
+                mux_d10 = d10_s0;
+                mux_d20 = d20_s0;
+            end
+            4'd10: begin
+                mux_d10 = d10_t0;
+                mux_d20 = d20_t0;
+            end
+            4'd11: begin
+                mux_d10 = d10_q;
+                mux_d20 = d20_q;
+            end
+            4'd12: begin
+                mux_d10 = d10_s1;
+                mux_d20 = d20_s1;
+            end
+            4'd13: begin
+                mux_d10 = d10_t1;
+                mux_d20 = d20_t1;
             end
             default: begin
-                d10_a = 17'sd0;  d20_a = 17'sd0;
-                d10_b = 17'sd0;  d20_b = 17'sd0;
+                mux_d10 = 17'sd0;
+                mux_d20 = 17'sd0;
             end
         endcase
     end
 
     // ========================================================================
-    // 4 MULT18X18D: delta * inv_area (via raster_dsp_mul helper)
+    // 2 MULT18X18D: delta * inv_area (via raster_dsp_mul helper)
     // ========================================================================
-    // Restructured: multiply delta by inv_area FIRST (17x18, 1 DSP each),
-    // then multiply by edge coefficients in LUTs (shift-add).
+    // DSP outputs are combinational; registered in d10_inv_r/d20_inv_r
+    // during PH_DSP phase.
 
-    wire signed [35:0] d10_a_inv;
-    wire signed [35:0] d20_a_inv;
-    wire signed [35:0] d10_b_inv;
-    wire signed [35:0] d20_b_inv;
+    wire signed [35:0] dsp_d10_out;
+    wire signed [35:0] dsp_d20_out;
 
-    raster_dsp_mul u_mul_d10a (.a(d10_a), .b(inv_area), .p(d10_a_inv));
-    raster_dsp_mul u_mul_d20a (.a(d20_a), .b(inv_area), .p(d20_a_inv));
-    raster_dsp_mul u_mul_d10b (.a(d10_b), .b(inv_area), .p(d10_b_inv));
-    raster_dsp_mul u_mul_d20b (.a(d20_b), .b(inv_area), .p(d20_b_inv));
+    raster_dsp_mul u_mul_d10 (
+        .a  (mux_d10),
+        .b  (inv_area),
+        .p  (dsp_d10_out)
+    );
 
-    // ========================================================================
-    // Edge coefficient application (shift-add, LUT-only, no $mul cells)
-    // ========================================================================
-    // deriv_dx = (d10_inv * edge1_A + d20_inv * edge2_A) >>> area_shift
+    raster_dsp_mul u_mul_d20 (
+        .a  (mux_d20),
+        .b  (inv_area),
+        .p  (dsp_d20_out)
+    );
 
-    wire signed [46:0] d10_a_ext = 47'(d10_a_inv);
-    wire signed [46:0] d20_a_ext = 47'(d20_a_inv);
-    wire signed [46:0] d10_b_ext = 47'(d10_b_inv);
-    wire signed [46:0] d20_b_ext = 47'(d20_b_inv);
+    // Registered DSP outputs (held stable during edge phases)
+    reg signed [46:0] d10_inv_r;
+    reg signed [46:0] d20_inv_r;
 
-    // 8 shift-add multiplier instances for edge coefficient application
-    wire signed [46:0] t_dxa_e1, t_dxa_e2, t_dya_e1, t_dya_e2;
-    wire signed [46:0] t_dxb_e1, t_dxb_e2, t_dyb_e1, t_dyb_e2;
+    reg signed [46:0] next_d10_inv_r;
+    reg signed [46:0] next_d20_inv_r;
 
-    raster_shift_mul_47x11 u_dxa_e1 (.a(d10_a_ext), .b(edge1_A), .p(t_dxa_e1));
-    raster_shift_mul_47x11 u_dxa_e2 (.a(d20_a_ext), .b(edge2_A), .p(t_dxa_e2));
-    raster_shift_mul_47x11 u_dya_e1 (.a(d10_a_ext), .b(edge1_B), .p(t_dya_e1));
-    raster_shift_mul_47x11 u_dya_e2 (.a(d20_a_ext), .b(edge2_B), .p(t_dya_e2));
-    raster_shift_mul_47x11 u_dxb_e1 (.a(d10_b_ext), .b(edge1_A), .p(t_dxb_e1));
-    raster_shift_mul_47x11 u_dxb_e2 (.a(d20_b_ext), .b(edge2_A), .p(t_dxb_e2));
-    raster_shift_mul_47x11 u_dyb_e1 (.a(d10_b_ext), .b(edge1_B), .p(t_dyb_e1));
-    raster_shift_mul_47x11 u_dyb_e2 (.a(d20_b_ext), .b(edge2_B), .p(t_dyb_e2));
+    always_comb begin
+        next_d10_inv_r = d10_inv_r;
+        next_d20_inv_r = d20_inv_r;
 
-    wire signed [46:0] scaled_dx_a = t_dxa_e1 + t_dxa_e2;
-    wire signed [46:0] scaled_dy_a = t_dya_e1 + t_dya_e2;
-    wire signed [46:0] scaled_dx_b = t_dxb_e1 + t_dxb_e2;
-    wire signed [46:0] scaled_dy_b = t_dyb_e1 + t_dyb_e2;
+        if (running && phase == PH_DSP) begin
+            next_d10_inv_r = 47'(dsp_d10_out);
+            next_d20_inv_r = 47'(dsp_d20_out);
+        end
+    end
 
-    // For CW triangles (area < 0), negate derivatives because
-    // raster_recip_area uses |area|.  Matching DT rasterize.rs:282-284.
-    wire signed [31:0] raw_dx_a = 32'(scaled_dx_a >>> area_shift);
-    wire signed [31:0] raw_dy_a = 32'(scaled_dy_a >>> area_shift);
-    wire signed [31:0] raw_dx_b = 32'(scaled_dx_b >>> area_shift);
-    wire signed [31:0] raw_dy_b = 32'(scaled_dy_b >>> area_shift);
-
-    wire signed [31:0] deriv_dx_a = ccw ? raw_dx_a : -raw_dx_a;
-    wire signed [31:0] deriv_dy_a = ccw ? raw_dy_a : -raw_dy_a;
-    wire signed [31:0] deriv_dx_b = ccw ? raw_dx_b : -raw_dx_b;
-    wire signed [31:0] deriv_dy_b = ccw ? raw_dy_b : -raw_dy_b;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            d10_inv_r <= 47'sd0;
+            d20_inv_r <= 47'sd0;
+        end else begin
+            d10_inv_r <= next_d10_inv_r;
+            d20_inv_r <= next_d20_inv_r;
+        end
+    end
 
     // ========================================================================
-    // Derivative output register latching (2 pairs per cycle)
+    // Shared 47x11 shift-add multiplier with input mux
+    // ========================================================================
+    // Time-multiplexed for edge-coefficient and init computation.
+
+    wire signed [10:0] bbox_sx = $signed({1'b0, bbox_min_x}) - $signed({1'b0, x0});
+    wire signed [10:0] bbox_sy = $signed({1'b0, bbox_min_y}) - $signed({1'b0, y0});
+
+    // Previous attribute's derivatives for init computation (registered)
+    reg signed [31:0] prev_dx_r;
+    reg signed [31:0] prev_dy_r;
+
+    // Multiplier input mux
+    reg signed [46:0] mul_a;
+    reg signed [10:0] mul_b;
+
+    // Init f0 value for previous attribute
+    reg signed [31:0] init_f0_prev;
+
+    // Which attribute is the "previous" one for init computation
+    wire [3:0] prev_attr = attr_idx - 4'd1;
+
+    always_comb begin
+        mul_a = 47'sd0;
+        mul_b = 11'sd0;
+        init_f0_prev = 32'sd0;
+
+        if (running) begin
+            case (phase)
+                PH_INIT_X: begin
+                    // Init previous attribute: dx * bbox_sx
+                    mul_a = 47'(prev_dx_r);
+                    mul_b = bbox_sx;
+                end
+                PH_INIT_Y: begin
+                    // Init previous attribute: dy * bbox_sy
+                    mul_a = 47'(prev_dy_r);
+                    mul_b = bbox_sy;
+                end
+                PH_EDGE_0: begin
+                    // d10_inv * edge1_A
+                    mul_a = d10_inv_r;
+                    mul_b = edge1_A;
+                end
+                PH_EDGE_1: begin
+                    // d20_inv * edge2_A
+                    mul_a = d20_inv_r;
+                    mul_b = edge2_A;
+                end
+                PH_EDGE_2: begin
+                    // d10_inv * edge1_B
+                    mul_a = d10_inv_r;
+                    mul_b = edge1_B;
+                end
+                PH_EDGE_3: begin
+                    // d20_inv * edge2_B
+                    mul_a = d20_inv_r;
+                    mul_b = edge2_B;
+                end
+                default: begin
+                    mul_a = 47'sd0;
+                    mul_b = 11'sd0;
+                end
+            endcase
+        end else if (finishing) begin
+            // Finishing: init for attr 13
+            if (phase == 3'd0) begin
+                mul_a = 47'(prev_dx_r);
+                mul_b = bbox_sx;
+            end else begin
+                mul_a = 47'(prev_dy_r);
+                mul_b = bbox_sy;
+            end
+        end
+
+        // f0 for previous attribute (used during PH_INIT_Y to compute init)
+        case (prev_attr)
+            4'd0: begin
+                init_f0_prev = $signed({8'b0, c0_r0, 16'b0});
+            end
+            4'd1: begin
+                init_f0_prev = $signed({8'b0, c0_g0, 16'b0});
+            end
+            4'd2: begin
+                init_f0_prev = $signed({8'b0, c0_b0, 16'b0});
+            end
+            4'd3: begin
+                init_f0_prev = $signed({8'b0, c0_a0, 16'b0});
+            end
+            4'd4: begin
+                init_f0_prev = $signed({8'b0, c1_r0, 16'b0});
+            end
+            4'd5: begin
+                init_f0_prev = $signed({8'b0, c1_g0, 16'b0});
+            end
+            4'd6: begin
+                init_f0_prev = $signed({8'b0, c1_b0, 16'b0});
+            end
+            4'd7: begin
+                init_f0_prev = $signed({8'b0, c1_a0, 16'b0});
+            end
+            4'd8: begin
+                init_f0_prev = $signed({z0, 16'b0});
+            end
+            4'd9: begin
+                init_f0_prev = $signed({st0_s0, 16'b0});
+            end
+            4'd10: begin
+                init_f0_prev = $signed({st0_t0, 16'b0});
+            end
+            4'd11: begin
+                init_f0_prev = $signed({q0, 16'b0});
+            end
+            4'd12: begin
+                init_f0_prev = $signed({st1_s0, 16'b0});
+            end
+            4'd13: begin
+                init_f0_prev = $signed({st1_t0, 16'b0});
+            end
+            default: begin
+                init_f0_prev = 32'sd0;
+            end
+        endcase
+    end
+
+    // f0 for the finishing attribute (attr 13 = t1)
+    wire signed [31:0] init_f0_last = $signed({st1_t0, 16'b0});
+
+    // Single shared shift-add multiplier
+    wire signed [46:0] mul_p;
+
+    raster_shift_mul_47x11 u_mul (
+        .a  (mul_a),
+        .b  (mul_b),
+        .p  (mul_p)
+    );
+
+    // ========================================================================
+    // Edge accumulation and derivative computation
+    // ========================================================================
+    // During edge phases, accumulate products to form dx and dy.
+    //   dx = d10_inv * edge1_A + d20_inv * edge2_A
+    //   dy = d10_inv * edge1_B + d20_inv * edge2_B
+
+    reg signed [46:0] edge_acc;
+    reg signed [46:0] next_edge_acc;
+
+    always_comb begin
+        next_edge_acc = edge_acc;
+
+        if (running) begin
+            case (phase)
+                PH_EDGE_0: begin
+                    // First term of dx: d10_inv * edge1_A
+                    next_edge_acc = mul_p;
+                end
+                PH_EDGE_2: begin
+                    // First term of dy: d10_inv * edge1_B
+                    next_edge_acc = mul_p;
+                end
+                default: begin
+                    next_edge_acc = edge_acc;
+                end
+            endcase
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            edge_acc <= 47'sd0;
+        end else begin
+            edge_acc <= next_edge_acc;
+        end
+    end
+
+    // Complete dx/dy from accumulator + current multiplier output
+    wire signed [46:0] scaled_dx = edge_acc + mul_p;
+    wire signed [46:0] scaled_dy = edge_acc + mul_p;
+
+    // Apply area shift and winding correction
+    wire signed [31:0] raw_dx = 32'(scaled_dx >>> area_shift);
+    wire signed [31:0] raw_dy = 32'(scaled_dy >>> area_shift);
+
+    wire signed [31:0] deriv_dx = ccw ? raw_dx : -raw_dx;
+    wire signed [31:0] deriv_dy = ccw ? raw_dy : -raw_dy;
+
+    // ========================================================================
+    // Init accumulation
+    // ========================================================================
+    // init = f0 + dx*bbox_sx + dy*bbox_sy
+    // PH_INIT_X: compute dx*bbox_sx, register low 32 bits as init_acc
+    // PH_INIT_Y: compute dy*bbox_sy, add init_acc + f0 -> final init value
+
+    reg signed [31:0] init_acc;
+    reg signed [31:0] next_init_acc;
+
+    always_comb begin
+        next_init_acc = init_acc;
+
+        if (running && phase == PH_INIT_X) begin
+            next_init_acc = 32'(mul_p);
+        end else if (finishing && phase == 3'd0) begin
+            next_init_acc = 32'(mul_p);
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            init_acc <= 32'sd0;
+        end else begin
+            init_acc <= next_init_acc;
+        end
+    end
+
+    // Computed init value: f0 + dx*bbox_sx + dy*bbox_sy
+    wire signed [31:0] computed_init_prev = init_f0_prev + init_acc + 32'(mul_p);
+    wire signed [31:0] computed_init_last = init_f0_last + init_acc + 32'(mul_p);
+
+    // ========================================================================
+    // Previous attribute derivative storage for init computation
+    // ========================================================================
+    // After each attribute's edge phases complete (PH_EDGE_3), store its
+    // dx/dy derivatives for init computation in the next attribute's phases.
+
+    reg signed [31:0] next_prev_dx_r;
+    reg signed [31:0] next_prev_dy_r;
+
+    always_comb begin
+        next_prev_dx_r = prev_dx_r;
+        next_prev_dy_r = prev_dy_r;
+
+        if (running && phase == PH_EDGE_1) begin
+            // dx is ready at PH_EDGE_1 (acc + mul_p)
+            next_prev_dx_r = deriv_dx;
+        end
+        if (running && phase == PH_EDGE_3) begin
+            // dy is ready at PH_EDGE_3 (acc + mul_p)
+            next_prev_dy_r = deriv_dy;
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            prev_dx_r <= 32'sd0;
+            prev_dy_r <= 32'sd0;
+        end else begin
+            prev_dx_r <= next_prev_dx_r;
+            prev_dy_r <= next_prev_dy_r;
+        end
+    end
+
+    // ========================================================================
+    // Derivative output register latching (1 attribute per edge-phase set)
     // ========================================================================
 
     reg signed [31:0] next_pre_c0r_dx, next_pre_c0r_dy;
@@ -376,234 +729,135 @@ module raster_deriv (
     reg signed [31:0] next_pre_c1g_dx, next_pre_c1g_dy;
     reg signed [31:0] next_pre_c1b_dx, next_pre_c1b_dy;
     reg signed [31:0] next_pre_c1a_dx, next_pre_c1a_dy;
-    reg signed [31:0] next_pre_z_dx,   next_pre_z_dy;
+    reg signed [31:0] next_pre_z_dx, next_pre_z_dy;
     reg signed [31:0] next_pre_s0_dx, next_pre_s0_dy;
     reg signed [31:0] next_pre_t0_dx, next_pre_t0_dy;
     reg signed [31:0] next_pre_s1_dx, next_pre_s1_dy;
     reg signed [31:0] next_pre_t1_dx, next_pre_t1_dy;
-    reg signed [31:0] next_pre_q_dx,   next_pre_q_dy;
+    reg signed [31:0] next_pre_q_dx, next_pre_q_dy;
 
     always_comb begin
-        next_pre_c0r_dx  = pre_c0r_dx;   next_pre_c0r_dy  = pre_c0r_dy;
-        next_pre_c0g_dx  = pre_c0g_dx;   next_pre_c0g_dy  = pre_c0g_dy;
-        next_pre_c0b_dx  = pre_c0b_dx;   next_pre_c0b_dy  = pre_c0b_dy;
-        next_pre_c0a_dx  = pre_c0a_dx;   next_pre_c0a_dy  = pre_c0a_dy;
-        next_pre_c1r_dx  = pre_c1r_dx;   next_pre_c1r_dy  = pre_c1r_dy;
-        next_pre_c1g_dx  = pre_c1g_dx;   next_pre_c1g_dy  = pre_c1g_dy;
-        next_pre_c1b_dx  = pre_c1b_dx;   next_pre_c1b_dy  = pre_c1b_dy;
-        next_pre_c1a_dx  = pre_c1a_dx;   next_pre_c1a_dy  = pre_c1a_dy;
-        next_pre_z_dx    = pre_z_dx;     next_pre_z_dy    = pre_z_dy;
-        next_pre_s0_dx = pre_s0_dx;  next_pre_s0_dy = pre_s0_dy;
-        next_pre_t0_dx = pre_t0_dx;  next_pre_t0_dy = pre_t0_dy;
-        next_pre_s1_dx = pre_s1_dx;  next_pre_s1_dy = pre_s1_dy;
-        next_pre_t1_dx = pre_t1_dx;  next_pre_t1_dy = pre_t1_dy;
-        next_pre_q_dx    = pre_q_dx;     next_pre_q_dy    = pre_q_dy;
+        next_pre_c0r_dx = pre_c0r_dx;
+        next_pre_c0r_dy = pre_c0r_dy;
+        next_pre_c0g_dx = pre_c0g_dx;
+        next_pre_c0g_dy = pre_c0g_dy;
+        next_pre_c0b_dx = pre_c0b_dx;
+        next_pre_c0b_dy = pre_c0b_dy;
+        next_pre_c0a_dx = pre_c0a_dx;
+        next_pre_c0a_dy = pre_c0a_dy;
+        next_pre_c1r_dx = pre_c1r_dx;
+        next_pre_c1r_dy = pre_c1r_dy;
+        next_pre_c1g_dx = pre_c1g_dx;
+        next_pre_c1g_dy = pre_c1g_dy;
+        next_pre_c1b_dx = pre_c1b_dx;
+        next_pre_c1b_dy = pre_c1b_dy;
+        next_pre_c1a_dx = pre_c1a_dx;
+        next_pre_c1a_dy = pre_c1a_dy;
+        next_pre_z_dx = pre_z_dx;
+        next_pre_z_dy = pre_z_dy;
+        next_pre_s0_dx = pre_s0_dx;
+        next_pre_s0_dy = pre_s0_dy;
+        next_pre_t0_dx = pre_t0_dx;
+        next_pre_t0_dy = pre_t0_dy;
+        next_pre_s1_dx = pre_s1_dx;
+        next_pre_s1_dy = pre_s1_dy;
+        next_pre_t1_dx = pre_t1_dx;
+        next_pre_t1_dy = pre_t1_dy;
+        next_pre_q_dx = pre_q_dx;
+        next_pre_q_dy = pre_q_dy;
 
-        if (running) begin
-            case (pair_idx)
-                3'd0: begin
-                    next_pre_c0r_dx = deriv_dx_a;  next_pre_c0r_dy = deriv_dy_a;
-                    next_pre_c0g_dx = deriv_dx_b;  next_pre_c0g_dy = deriv_dy_b;
+        // Latch dx at PH_EDGE_1, dy at PH_EDGE_3
+        if (running && phase == PH_EDGE_1) begin
+            case (attr_idx)
+                4'd0: begin
+                    next_pre_c0r_dx = deriv_dx;
                 end
-                3'd1: begin
-                    next_pre_c0b_dx = deriv_dx_a;  next_pre_c0b_dy = deriv_dy_a;
-                    next_pre_c0a_dx = deriv_dx_b;  next_pre_c0a_dy = deriv_dy_b;
+                4'd1: begin
+                    next_pre_c0g_dx = deriv_dx;
                 end
-                3'd2: begin
-                    next_pre_c1r_dx = deriv_dx_a;  next_pre_c1r_dy = deriv_dy_a;
-                    next_pre_c1g_dx = deriv_dx_b;  next_pre_c1g_dy = deriv_dy_b;
+                4'd2: begin
+                    next_pre_c0b_dx = deriv_dx;
                 end
-                3'd3: begin
-                    next_pre_c1b_dx = deriv_dx_a;  next_pre_c1b_dy = deriv_dy_a;
-                    next_pre_c1a_dx = deriv_dx_b;  next_pre_c1a_dy = deriv_dy_b;
+                4'd3: begin
+                    next_pre_c0a_dx = deriv_dx;
                 end
-                3'd4: begin
-                    next_pre_z_dx    = deriv_dx_a;  next_pre_z_dy    = deriv_dy_a;
-                    next_pre_s0_dx = deriv_dx_b;  next_pre_s0_dy = deriv_dy_b;
+                4'd4: begin
+                    next_pre_c1r_dx = deriv_dx;
                 end
-                3'd5: begin
-                    next_pre_t0_dx = deriv_dx_a;  next_pre_t0_dy = deriv_dy_a;
-                    next_pre_q_dx    = deriv_dx_b;  next_pre_q_dy    = deriv_dy_b;
+                4'd5: begin
+                    next_pre_c1g_dx = deriv_dx;
                 end
-                3'd6: begin
-                    next_pre_s1_dx = deriv_dx_a;  next_pre_s1_dy = deriv_dy_a;
-                    next_pre_t1_dx = deriv_dx_b;  next_pre_t1_dy = deriv_dy_b;
+                4'd6: begin
+                    next_pre_c1b_dx = deriv_dx;
                 end
-                default: begin
-                    // No latch for invalid indices
+                4'd7: begin
+                    next_pre_c1a_dx = deriv_dx;
                 end
+                4'd8: begin
+                    next_pre_z_dx = deriv_dx;
+                end
+                4'd9: begin
+                    next_pre_s0_dx = deriv_dx;
+                end
+                4'd10: begin
+                    next_pre_t0_dx = deriv_dx;
+                end
+                4'd11: begin
+                    next_pre_q_dx = deriv_dx;
+                end
+                4'd12: begin
+                    next_pre_s1_dx = deriv_dx;
+                end
+                4'd13: begin
+                    next_pre_t1_dx = deriv_dx;
+                end
+                default: ;
             endcase
         end
-    end
 
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            pre_c0r_dx  <= 32'sd0;  pre_c0r_dy  <= 32'sd0;
-            pre_c0g_dx  <= 32'sd0;  pre_c0g_dy  <= 32'sd0;
-            pre_c0b_dx  <= 32'sd0;  pre_c0b_dy  <= 32'sd0;
-            pre_c0a_dx  <= 32'sd0;  pre_c0a_dy  <= 32'sd0;
-            pre_c1r_dx  <= 32'sd0;  pre_c1r_dy  <= 32'sd0;
-            pre_c1g_dx  <= 32'sd0;  pre_c1g_dy  <= 32'sd0;
-            pre_c1b_dx  <= 32'sd0;  pre_c1b_dy  <= 32'sd0;
-            pre_c1a_dx  <= 32'sd0;  pre_c1a_dy  <= 32'sd0;
-            pre_z_dx    <= 32'sd0;  pre_z_dy    <= 32'sd0;
-            pre_s0_dx <= 32'sd0;  pre_s0_dy <= 32'sd0;
-            pre_t0_dx <= 32'sd0;  pre_t0_dy <= 32'sd0;
-            pre_s1_dx <= 32'sd0;  pre_s1_dy <= 32'sd0;
-            pre_t1_dx <= 32'sd0;  pre_t1_dy <= 32'sd0;
-            pre_q_dx    <= 32'sd0;  pre_q_dy    <= 32'sd0;
-        end else begin
-            pre_c0r_dx  <= next_pre_c0r_dx;   pre_c0r_dy  <= next_pre_c0r_dy;
-            pre_c0g_dx  <= next_pre_c0g_dx;   pre_c0g_dy  <= next_pre_c0g_dy;
-            pre_c0b_dx  <= next_pre_c0b_dx;   pre_c0b_dy  <= next_pre_c0b_dy;
-            pre_c0a_dx  <= next_pre_c0a_dx;   pre_c0a_dy  <= next_pre_c0a_dy;
-            pre_c1r_dx  <= next_pre_c1r_dx;   pre_c1r_dy  <= next_pre_c1r_dy;
-            pre_c1g_dx  <= next_pre_c1g_dx;   pre_c1g_dy  <= next_pre_c1g_dy;
-            pre_c1b_dx  <= next_pre_c1b_dx;   pre_c1b_dy  <= next_pre_c1b_dy;
-            pre_c1a_dx  <= next_pre_c1a_dx;   pre_c1a_dy  <= next_pre_c1a_dy;
-            pre_z_dx    <= next_pre_z_dx;      pre_z_dy    <= next_pre_z_dy;
-            pre_s0_dx <= next_pre_s0_dx;  pre_s0_dy <= next_pre_s0_dy;
-            pre_t0_dx <= next_pre_t0_dx;  pre_t0_dy <= next_pre_t0_dy;
-            pre_s1_dx <= next_pre_s1_dx;  pre_s1_dy <= next_pre_s1_dy;
-            pre_t1_dx <= next_pre_t1_dx;  pre_t1_dy <= next_pre_t1_dy;
-            pre_q_dx    <= next_pre_q_dx;      pre_q_dy    <= next_pre_q_dy;
-        end
-    end
-
-    // ========================================================================
-    // Pipelined initial attribute values at bbox origin
-    // ========================================================================
-    // Init values are computed one pair per cycle, pipelined behind derivatives.
-    // During running cycle N (pair_idx=N, N>=1), we compute init for pair N-1
-    // using its registered derivatives from the previous posedge.
-    // During finishing, we compute init for pair 6 (the last pair).
-    // This uses only 4 smul_32x11 instances instead of 28.
-
-    wire signed [10:0] bbox_sx = $signed({1'b0, bbox_min_x}) - $signed({1'b0, x0});
-    wire signed [10:0] bbox_sy = $signed({1'b0, bbox_min_y}) - $signed({1'b0, y0});
-
-    // Init pipeline control: which pair to compute init for this cycle
-    wire        init_active = (running && pair_idx != 3'd0) || finishing;
-    wire  [2:0] init_pair   = finishing ? 3'd6 : (pair_idx - 3'd1);
-
-    // Mux: select the registered derivative pair and f0 value for init computation
-    reg signed [31:0] init_dx_a, init_dy_a, init_dx_b, init_dy_b;
-    reg signed [31:0] init_f0_a, init_f0_b;
-
-    always_comb begin
-        init_dx_a = 32'sd0;  init_dy_a = 32'sd0;
-        init_dx_b = 32'sd0;  init_dy_b = 32'sd0;
-        init_f0_a = 32'sd0;  init_f0_b = 32'sd0;
-
-        case (init_pair)
-            3'd0: begin
-                init_dx_a = pre_c0r_dx;  init_dy_a = pre_c0r_dy;
-                init_dx_b = pre_c0g_dx;  init_dy_b = pre_c0g_dy;
-                init_f0_a = $signed({8'b0, c0_r0, 16'b0});
-                init_f0_b = $signed({8'b0, c0_g0, 16'b0});
-            end
-            3'd1: begin
-                init_dx_a = pre_c0b_dx;  init_dy_a = pre_c0b_dy;
-                init_dx_b = pre_c0a_dx;  init_dy_b = pre_c0a_dy;
-                init_f0_a = $signed({8'b0, c0_b0, 16'b0});
-                init_f0_b = $signed({8'b0, c0_a0, 16'b0});
-            end
-            3'd2: begin
-                init_dx_a = pre_c1r_dx;  init_dy_a = pre_c1r_dy;
-                init_dx_b = pre_c1g_dx;  init_dy_b = pre_c1g_dy;
-                init_f0_a = $signed({8'b0, c1_r0, 16'b0});
-                init_f0_b = $signed({8'b0, c1_g0, 16'b0});
-            end
-            3'd3: begin
-                init_dx_a = pre_c1b_dx;  init_dy_a = pre_c1b_dy;
-                init_dx_b = pre_c1a_dx;  init_dy_b = pre_c1a_dy;
-                init_f0_a = $signed({8'b0, c1_b0, 16'b0});
-                init_f0_b = $signed({8'b0, c1_a0, 16'b0});
-            end
-            3'd4: begin
-                init_dx_a = pre_z_dx;     init_dy_a = pre_z_dy;
-                init_dx_b = pre_s0_dx;  init_dy_b = pre_s0_dy;
-                init_f0_a = $signed({z0, 16'b0});
-                init_f0_b = $signed({st0_s0, 16'b0});
-            end
-            3'd5: begin
-                init_dx_a = pre_t0_dx;  init_dy_a = pre_t0_dy;
-                init_dx_b = pre_q_dx;     init_dy_b = pre_q_dy;
-                init_f0_a = $signed({st0_t0, 16'b0});
-                init_f0_b = $signed({q0, 16'b0});
-            end
-            3'd6: begin
-                init_dx_a = pre_s1_dx;  init_dy_a = pre_s1_dy;
-                init_dx_b = pre_t1_dx;  init_dy_b = pre_t1_dy;
-                init_f0_a = $signed({st1_s0, 16'b0});
-                init_f0_b = $signed({st1_t0, 16'b0});
-            end
-            default: begin
-                init_dx_a = 32'sd0;  init_dy_a = 32'sd0;
-                init_dx_b = 32'sd0;  init_dy_b = 32'sd0;
-                init_f0_a = 32'sd0;  init_f0_b = 32'sd0;
-            end
-        endcase
-    end
-
-    // 4 shift-add multiplier instances for init computation (32-bit truncated)
-    wire signed [31:0] t_init_ax, t_init_ay, t_init_bx, t_init_by;
-
-    raster_shift_mul_32x11 u_init_ax (.a(init_dx_a), .b(bbox_sx), .p(t_init_ax));
-    raster_shift_mul_32x11 u_init_ay (.a(init_dy_a), .b(bbox_sy), .p(t_init_ay));
-    raster_shift_mul_32x11 u_init_bx (.a(init_dx_b), .b(bbox_sx), .p(t_init_bx));
-    raster_shift_mul_32x11 u_init_by (.a(init_dy_b), .b(bbox_sy), .p(t_init_by));
-
-    wire signed [31:0] computed_init_a = init_f0_a + t_init_ax + t_init_ay;
-    wire signed [31:0] computed_init_b = init_f0_b + t_init_bx + t_init_by;
-
-    // Init output register latching (one pair per cycle, pipelined behind derivs)
-    reg signed [31:0] next_init_c0r, next_init_c0g;
-    reg signed [31:0] next_init_c0b, next_init_c0a;
-    reg signed [31:0] next_init_c1r, next_init_c1g;
-    reg signed [31:0] next_init_c1b, next_init_c1a;
-    reg signed [31:0] next_init_z,   next_init_s0;
-    reg signed [31:0] next_init_t0, next_init_q;
-    reg signed [31:0] next_init_s1, next_init_t1;
-
-    always_comb begin
-        next_init_c0r  = init_c0r;   next_init_c0g  = init_c0g;
-        next_init_c0b  = init_c0b;   next_init_c0a  = init_c0a;
-        next_init_c1r  = init_c1r;   next_init_c1g  = init_c1g;
-        next_init_c1b  = init_c1b;   next_init_c1a  = init_c1a;
-        next_init_z    = init_z;     next_init_s0 = init_s0;
-        next_init_t0 = init_t0;  next_init_q    = init_q;
-        next_init_s1 = init_s1;  next_init_t1 = init_t1;
-
-        if (init_active) begin
-            case (init_pair)
-                3'd0: begin
-                    next_init_c0r = computed_init_a;
-                    next_init_c0g = computed_init_b;
+        if (running && phase == PH_EDGE_3) begin
+            case (attr_idx)
+                4'd0: begin
+                    next_pre_c0r_dy = deriv_dy;
                 end
-                3'd1: begin
-                    next_init_c0b = computed_init_a;
-                    next_init_c0a = computed_init_b;
+                4'd1: begin
+                    next_pre_c0g_dy = deriv_dy;
                 end
-                3'd2: begin
-                    next_init_c1r = computed_init_a;
-                    next_init_c1g = computed_init_b;
+                4'd2: begin
+                    next_pre_c0b_dy = deriv_dy;
                 end
-                3'd3: begin
-                    next_init_c1b = computed_init_a;
-                    next_init_c1a = computed_init_b;
+                4'd3: begin
+                    next_pre_c0a_dy = deriv_dy;
                 end
-                3'd4: begin
-                    next_init_z    = computed_init_a;
-                    next_init_s0 = computed_init_b;
+                4'd4: begin
+                    next_pre_c1r_dy = deriv_dy;
                 end
-                3'd5: begin
-                    next_init_t0 = computed_init_a;
-                    next_init_q    = computed_init_b;
+                4'd5: begin
+                    next_pre_c1g_dy = deriv_dy;
                 end
-                3'd6: begin
-                    next_init_s1 = computed_init_a;
-                    next_init_t1 = computed_init_b;
+                4'd6: begin
+                    next_pre_c1b_dy = deriv_dy;
+                end
+                4'd7: begin
+                    next_pre_c1a_dy = deriv_dy;
+                end
+                4'd8: begin
+                    next_pre_z_dy = deriv_dy;
+                end
+                4'd9: begin
+                    next_pre_s0_dy = deriv_dy;
+                end
+                4'd10: begin
+                    next_pre_t0_dy = deriv_dy;
+                end
+                4'd11: begin
+                    next_pre_q_dy = deriv_dy;
+                end
+                4'd12: begin
+                    next_pre_s1_dy = deriv_dy;
+                end
+                4'd13: begin
+                    next_pre_t1_dy = deriv_dy;
                 end
                 default: ;
             endcase
@@ -612,21 +866,182 @@ module raster_deriv (
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            init_c0r  <= 32'sd0;  init_c0g  <= 32'sd0;
-            init_c0b  <= 32'sd0;  init_c0a  <= 32'sd0;
-            init_c1r  <= 32'sd0;  init_c1g  <= 32'sd0;
-            init_c1b  <= 32'sd0;  init_c1a  <= 32'sd0;
-            init_z    <= 32'sd0;  init_s0 <= 32'sd0;
-            init_t0 <= 32'sd0;  init_q    <= 32'sd0;
-            init_s1 <= 32'sd0;  init_t1 <= 32'sd0;
+            pre_c0r_dx <= 32'sd0;
+            pre_c0r_dy <= 32'sd0;
+            pre_c0g_dx <= 32'sd0;
+            pre_c0g_dy <= 32'sd0;
+            pre_c0b_dx <= 32'sd0;
+            pre_c0b_dy <= 32'sd0;
+            pre_c0a_dx <= 32'sd0;
+            pre_c0a_dy <= 32'sd0;
+            pre_c1r_dx <= 32'sd0;
+            pre_c1r_dy <= 32'sd0;
+            pre_c1g_dx <= 32'sd0;
+            pre_c1g_dy <= 32'sd0;
+            pre_c1b_dx <= 32'sd0;
+            pre_c1b_dy <= 32'sd0;
+            pre_c1a_dx <= 32'sd0;
+            pre_c1a_dy <= 32'sd0;
+            pre_z_dx <= 32'sd0;
+            pre_z_dy <= 32'sd0;
+            pre_s0_dx <= 32'sd0;
+            pre_s0_dy <= 32'sd0;
+            pre_t0_dx <= 32'sd0;
+            pre_t0_dy <= 32'sd0;
+            pre_s1_dx <= 32'sd0;
+            pre_s1_dy <= 32'sd0;
+            pre_t1_dx <= 32'sd0;
+            pre_t1_dy <= 32'sd0;
+            pre_q_dx <= 32'sd0;
+            pre_q_dy <= 32'sd0;
         end else begin
-            init_c0r  <= next_init_c0r;   init_c0g  <= next_init_c0g;
-            init_c0b  <= next_init_c0b;   init_c0a  <= next_init_c0a;
-            init_c1r  <= next_init_c1r;   init_c1g  <= next_init_c1g;
-            init_c1b  <= next_init_c1b;   init_c1a  <= next_init_c1a;
-            init_z    <= next_init_z;     init_s0 <= next_init_s0;
-            init_t0 <= next_init_t0;  init_q    <= next_init_q;
-            init_s1 <= next_init_s1;  init_t1 <= next_init_t1;
+            pre_c0r_dx <= next_pre_c0r_dx;
+            pre_c0r_dy <= next_pre_c0r_dy;
+            pre_c0g_dx <= next_pre_c0g_dx;
+            pre_c0g_dy <= next_pre_c0g_dy;
+            pre_c0b_dx <= next_pre_c0b_dx;
+            pre_c0b_dy <= next_pre_c0b_dy;
+            pre_c0a_dx <= next_pre_c0a_dx;
+            pre_c0a_dy <= next_pre_c0a_dy;
+            pre_c1r_dx <= next_pre_c1r_dx;
+            pre_c1r_dy <= next_pre_c1r_dy;
+            pre_c1g_dx <= next_pre_c1g_dx;
+            pre_c1g_dy <= next_pre_c1g_dy;
+            pre_c1b_dx <= next_pre_c1b_dx;
+            pre_c1b_dy <= next_pre_c1b_dy;
+            pre_c1a_dx <= next_pre_c1a_dx;
+            pre_c1a_dy <= next_pre_c1a_dy;
+            pre_z_dx <= next_pre_z_dx;
+            pre_z_dy <= next_pre_z_dy;
+            pre_s0_dx <= next_pre_s0_dx;
+            pre_s0_dy <= next_pre_s0_dy;
+            pre_t0_dx <= next_pre_t0_dx;
+            pre_t0_dy <= next_pre_t0_dy;
+            pre_s1_dx <= next_pre_s1_dx;
+            pre_s1_dy <= next_pre_s1_dy;
+            pre_t1_dx <= next_pre_t1_dx;
+            pre_t1_dy <= next_pre_t1_dy;
+            pre_q_dx <= next_pre_q_dx;
+            pre_q_dy <= next_pre_q_dy;
+        end
+    end
+
+    // ========================================================================
+    // Init output register latching
+    // ========================================================================
+    // Init for each attribute is computed during the NEXT attribute's init
+    // phases.  Init for attr 13 is computed during the finishing state.
+
+    reg signed [31:0] next_init_c0r, next_init_c0g;
+    reg signed [31:0] next_init_c0b, next_init_c0a;
+    reg signed [31:0] next_init_c1r, next_init_c1g;
+    reg signed [31:0] next_init_c1b, next_init_c1a;
+    reg signed [31:0] next_init_z, next_init_s0;
+    reg signed [31:0] next_init_t0, next_init_q;
+    reg signed [31:0] next_init_s1, next_init_t1;
+
+    // Init latch occurs at PH_INIT_Y (running) or phase 1 (finishing)
+    wire init_latch_running  = running && (phase == PH_INIT_Y);
+    wire init_latch_finish   = finishing && (phase == 3'd1);
+
+    always_comb begin
+        next_init_c0r = init_c0r;
+        next_init_c0g = init_c0g;
+        next_init_c0b = init_c0b;
+        next_init_c0a = init_c0a;
+        next_init_c1r = init_c1r;
+        next_init_c1g = init_c1g;
+        next_init_c1b = init_c1b;
+        next_init_c1a = init_c1a;
+        next_init_z = init_z;
+        next_init_s0 = init_s0;
+        next_init_t0 = init_t0;
+        next_init_q = init_q;
+        next_init_s1 = init_s1;
+        next_init_t1 = init_t1;
+
+        if (init_latch_running) begin
+            case (prev_attr)
+                4'd0: begin
+                    next_init_c0r = computed_init_prev;
+                end
+                4'd1: begin
+                    next_init_c0g = computed_init_prev;
+                end
+                4'd2: begin
+                    next_init_c0b = computed_init_prev;
+                end
+                4'd3: begin
+                    next_init_c0a = computed_init_prev;
+                end
+                4'd4: begin
+                    next_init_c1r = computed_init_prev;
+                end
+                4'd5: begin
+                    next_init_c1g = computed_init_prev;
+                end
+                4'd6: begin
+                    next_init_c1b = computed_init_prev;
+                end
+                4'd7: begin
+                    next_init_c1a = computed_init_prev;
+                end
+                4'd8: begin
+                    next_init_z = computed_init_prev;
+                end
+                4'd9: begin
+                    next_init_s0 = computed_init_prev;
+                end
+                4'd10: begin
+                    next_init_t0 = computed_init_prev;
+                end
+                4'd11: begin
+                    next_init_q = computed_init_prev;
+                end
+                4'd12: begin
+                    next_init_s1 = computed_init_prev;
+                end
+                default: ;
+            endcase
+        end
+
+        if (init_latch_finish) begin
+            // Attr 13 = t1
+            next_init_t1 = computed_init_last;
+        end
+    end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            init_c0r <= 32'sd0;
+            init_c0g <= 32'sd0;
+            init_c0b <= 32'sd0;
+            init_c0a <= 32'sd0;
+            init_c1r <= 32'sd0;
+            init_c1g <= 32'sd0;
+            init_c1b <= 32'sd0;
+            init_c1a <= 32'sd0;
+            init_z <= 32'sd0;
+            init_s0 <= 32'sd0;
+            init_t0 <= 32'sd0;
+            init_q <= 32'sd0;
+            init_s1 <= 32'sd0;
+            init_t1 <= 32'sd0;
+        end else begin
+            init_c0r <= next_init_c0r;
+            init_c0g <= next_init_c0g;
+            init_c0b <= next_init_c0b;
+            init_c0a <= next_init_c0a;
+            init_c1r <= next_init_c1r;
+            init_c1g <= next_init_c1g;
+            init_c1b <= next_init_c1b;
+            init_c1a <= next_init_c1a;
+            init_z <= next_init_z;
+            init_s0 <= next_init_s0;
+            init_t0 <= next_init_t0;
+            init_q <= next_init_q;
+            init_s1 <= next_init_s1;
+            init_t1 <= next_init_t1;
         end
     end
 

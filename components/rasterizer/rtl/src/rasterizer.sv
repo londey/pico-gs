@@ -506,8 +506,8 @@ module rasterizer (
     // ========================================================================
     // Derivative Precomputation Sub-module (UNIT-005.02 sequential)
     // ========================================================================
-    // Extracted into raster_deriv.sv — sequential time-multiplexed, 14 cycles.
-    // Pulse deriv_enable to start; deriv_done asserts 14 cycles later.
+    // Extracted into raster_deriv.sv — area-optimized sequential, 98 cycles.
+    // Pulse deriv_enable to start; deriv_done asserts 98 cycles later.
 
     wire deriv_done;                                // Completion flag from raster_deriv
     wire deriv_enable = (iter_state == I_INIT_E2);  // Start derivative computation

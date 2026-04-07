@@ -19,7 +19,7 @@ Sub-unit of UNIT-005 (Rasterizer).
 
 ## Design Description
 
-**FSM states:** ITER_START → INIT_E1 → INIT_E2 → 7 derivative cycles → FINISHING (3 + 7 + 1 = 11 cycles from parent FSM perspective; `raster_deriv` uses 7 running + 1 finishing = 8 internal cycles)
+**FSM states:** ITER_START → INIT_E1 → INIT_E2 → 98 derivative cycles → FINISHING (3 + 98 = 101 cycles from parent FSM perspective; `raster_deriv` uses 96 running + 2 finishing = 98 internal cycles)
 
 The derivative precomputation operates in two phases:
 
@@ -27,10 +27,12 @@ The derivative precomputation operates in two phases:
 Evaluates the three edge functions at the bounding box origin using 2 MULT18X18D blocks shared with UNIT-005.02 (cold path, once per triangle).
 Latches the evaluated edge function values into e0/e1/e2 and the row-start registers e0_row/e1_row/e2_row.
 
-**Phase 2 — Sequential derivative computation (8 cycles, `raster_deriv` module):**
-Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 14 interpolated attributes, two attributes per cycle, using 4 dedicated MULT18X18D blocks.
-A 3-bit attribute-pair index counter (0–6) selects which pair of attributes feeds the multipliers each cycle.
-The 7 running cycles cover attribute pairs 0–1, 2–3, …, 12–13; the 8th cycle (FINISHING) registers the final outputs and asserts `deriv_done`.
+**Phase 2 — Sequential derivative computation (98 cycles, `raster_deriv` module):**
+Computes per-attribute derivatives (dAttr/dx and dAttr/dy) for all 14 interpolated attributes, one attribute at a time, using 2 dedicated MULT18X18D blocks and 1 shared shift-add LUT multiplier (47x11).
+A 4-bit attribute index counter (0–13) and 3-bit phase counter sequence through DSP, init, and edge-coefficient phases per attribute.
+Per-attribute schedule: 1 DSP cycle + 4 edge cycles + 2 init cycles (for previous attribute).
+Attr 0 takes 5 cycles (no init), attrs 1–13 take 7 cycles each, and a 2-cycle finishing phase computes init for attr 13.
+Total: 5 + 13*7 + 2 = 98 cycles.
 
 The computation is restructured to keep DSP operands within 18×18 bits:
 
@@ -46,7 +48,7 @@ Each DSP multiply is performed by a `raster_dsp_mul` helper that computes `|a| *
 
 Edge coefficient application (36×11 bit) and initial value computation (32×11 bit) use shift-and-add functions that synthesize to LUT logic only, avoiding DSP inference by Yosys `mul2dsp`.
 
-The 4 MULT18X18D blocks are dedicated to `raster_deriv` (not shared with UNIT-005.02).
+The 2 MULT18X18D blocks are dedicated to `raster_deriv` (not shared with UNIT-005.02).
 UNIT-005.02 edge evaluation in Phase 1 uses the parent rasterizer's own multiplier resources.
 
 Initializes the accumulated attribute value registers at the bounding box origin after all derivatives are computed.
@@ -78,8 +80,9 @@ This gives Q4.28 for UV/Q/Z and Q4.28 for colors (with the UNORM8 value promoted
 
 - `components/rasterizer/rtl/src/rasterizer.sv`: Derivative precomputation logic within the parent rasterizer module.
   Corresponds to the `always_comb` next-state block covering ITER_START/INIT_E1/INIT_E2/DERIV_0–DERIV_13 states and the associated flat `always_ff` register assignments.
-- `components/rasterizer/rtl/src/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation module.
-  Contains a `raster_dsp_mul` helper (signed 17×unsigned 18 via 1 MULT18X18D), 4 DSP instances for `delta × inv_area`, shift-and-add functions for LUT-only edge and init multiplies, and a 3-bit attribute-pair counter processing 2 attributes per cycle (7 running + 1 finishing = 8 cycles).
+- `components/rasterizer/rtl/src/raster_deriv.sv`: Area-optimized sequential derivative precomputation module.
+  Contains 2 `raster_dsp_mul` instances for `delta × inv_area` and 1 shared `raster_shift_mul_47x11` instance time-multiplexed for edge-coefficient application (4 cycles) and init computation (2 cycles).
+  A 4-bit attribute index and 3-bit phase counter process 1 attribute at a time (98 total cycles).
 
 ## Verification
 

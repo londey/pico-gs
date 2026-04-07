@@ -170,9 +170,11 @@ module tb_edge_walk_dt;
                 tri_valid = 0;
 
                 // Collect fragments until rasterizer goes idle.
-                // Detect idle: no frag_valid for 100 consecutive cycles.
+                // Detect idle: no frag_valid for 200 consecutive cycles.
+                // (derivative precomputation takes up to 98 cycles before
+                //  the first fragment is emitted)
                 idle_cycles = 0;
-                while (idle_cycles < 100) begin
+                while (idle_cycles < 200) begin
                     @(posedge clk);
                     if (frag_valid && frag_ready) begin
                         idle_cycles = 0;
@@ -385,9 +387,10 @@ module tb_edge_walk_dt;
                 while (tri_ready) @(posedge clk);
                 tri_valid = 0;
 
-                // Collect fragments until idle (100-cycle timeout)
+                // Collect fragments until idle (200-cycle timeout)
+                // (derivative precomputation takes up to 98 cycles)
                 idle_cycles = 0;
-                while (idle_cycles < 100) begin
+                while (idle_cycles < 200) begin
                     @(posedge clk);
                     if (frag_valid && frag_ready) begin
                         idle_cycles = 0;

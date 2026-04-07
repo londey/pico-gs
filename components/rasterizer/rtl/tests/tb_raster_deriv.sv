@@ -257,7 +257,7 @@ module tb_raster_deriv;
             enable = 1'b0;
             cycle_count = 1;
             // Wait for deriv_done (with timeout)
-            while (!deriv_done && cycle_count < 30) begin
+            while (!deriv_done && cycle_count < 150) begin
                 @(posedge clk);
                 cycle_count = cycle_count + 1;
             end
@@ -285,14 +285,14 @@ module tb_raster_deriv;
         @(posedge clk);
 
         // ============================================================
-        // Test 0: Verify deriv_done timing (8 cycles after enable)
+        // Test 0: Verify deriv_done timing (98 cycles after enable)
         // ============================================================
         $display("--- Test 0: deriv_done Timing ---");
         zero_all_inputs;
         run_deriv;
-        // cycle_count should be 9 (enable at cycle 0, 7 pair cycles + 1 finishing)
-        if (cycle_count >= 30) begin
-            $display("FAIL: deriv_done did not assert within 30 cycles");
+        // cycle_count should be ~99 (1 cycle enable + 98 compute cycles)
+        if (cycle_count >= 150) begin
+            $display("FAIL: deriv_done did not assert within 150 cycles");
             fail_count = fail_count + 1;
         end else begin
             $display("  deriv_done asserted after %0d cycles", cycle_count);

@@ -21,9 +21,9 @@ units:
   triangle_setup:
     name: Triangle Setup
     pipeline: geometry
-    dsp: 2
-    ebr: 2        # recip LUTs
-    lut4: 1500
+    dsp: 2              # 2 MULT18X18D in raster_deriv (delta * inv_area)
+    ebr: 2              # recip LUTs
+    lut4: 600           # 1 shift-mul-47x11 (shared edge+init), down from 8+4
     status: verified
     rtl: [rasterizer.sv, raster_recip_area.sv, raster_deriv.sv]
     twin: gs-rasterizer
@@ -31,10 +31,10 @@ units:
       - id: edge_setup
         latency: 3
       - id: deriv_compute
-        latency: 14      # 14 attributes sequential
+        latency: 98     # 14 attributes sequential, 1 at a time
       - id: recip
         latency: 2
-    notes: "Multi-cycle per triangle. DD-036 time-shared DSPs."
+    notes: "Area-optimized: 1 shared 47x11 LUT mul, 2 DSPs. 98-cycle latency hidden behind pixel processing of previous triangle."
 
   block_rasterize:
     name: Block Rasterize (4x4)

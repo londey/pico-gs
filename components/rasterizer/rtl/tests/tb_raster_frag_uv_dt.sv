@@ -160,9 +160,11 @@ module tb_raster_frag_uv_dt;
             tri_valid = 0;
 
             // Collect fragments until rasterizer goes idle.
-            // Detect idle: no frag_valid for 100 consecutive cycles.
+            // Detect idle: no frag_valid for 200 consecutive cycles.
+            // (derivative precomputation takes up to 98 cycles before
+            //  the first fragment is emitted)
             idle_cycles = 0;
-            while (idle_cycles < 100) begin
+            while (idle_cycles < 200) begin
                 @(posedge clk);
                 if (frag_valid && frag_ready) begin
                     idle_cycles = 0;
