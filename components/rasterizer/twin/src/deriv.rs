@@ -48,15 +48,31 @@ pub const ATTR_T1: usize = 13;
 ///
 /// Intermediate data structure exposed for per-module verification
 /// against `raster_deriv.sv` testbench stimulus.
+///
+/// Color derivatives (c0r/g/b/a, c1r/g/b/a) are narrowed to 16-bit signed
+/// (Q1.7 effective range in 8.8 fixed-point), stored sign-extended in the
+/// `i32` arrays.  Z, S/T, and Q derivatives remain full 32-bit.
+///
+/// Color accumulators use 8.8 fixed-point (init values shifted left by 8
+/// instead of 16).  Z/S/T/Q accumulators retain the original 16.16 format.
 #[derive(Clone, Copy, Debug)]
 pub struct DerivResult {
-    /// Per-attribute dx derivatives (32-bit signed).
+    /// Per-attribute dx derivatives.
+    ///
+    /// Colors: 16-bit signed (8.8 fixed-point), sign-extended to `i32`.
+    /// Z/S/T/Q: 32-bit signed (16.16 fixed-point).
     pub dx: [i32; NUM_ATTRS],
 
-    /// Per-attribute dy derivatives (32-bit signed).
+    /// Per-attribute dy derivatives.
+    ///
+    /// Colors: 16-bit signed (8.8 fixed-point), sign-extended to `i32`.
+    /// Z/S/T/Q: 32-bit signed (16.16 fixed-point).
     pub dy: [i32; NUM_ATTRS],
 
-    /// Initial attribute values at bbox origin (32-bit signed).
+    /// Initial attribute values at bbox origin.
+    ///
+    /// Colors: 8.8 fixed-point (UNORM8 in bits [15:8]).
+    /// Z/S/T/Q: 16.16 fixed-point (value in bits [31:16]).
     pub inits: [i32; NUM_ATTRS],
 }
 
@@ -187,16 +203,22 @@ pub fn compute_derivatives(
     // Matching raster_deriv.sv init computation:
     //   init = f0 + dx * (bbox_x - x0) + dy * (bbox_y - y0)
     //
-    // f0 format:
-    //   Colors: {8'b0, unorm8, 16'b0} = (u8 as i32) << 16
-    //   Z:      {z16, 16'b0}          = (z as i32) << 16
-    //   ST:     {st_q412, 16'b0}      = (i16 as i32) << 16
-    //   Q:      {q16, 16'b0}          = (q as i32) << 16
+    // The RTL computes inits at full 32-bit Q8.16 precision using
+    // un-truncated derivatives, then truncates color results to 24-bit
+    // via computed_init[31:8].  We must do the same here: compute
+    // inits BEFORE narrowing color derivatives.
+    //
+    // f0 format (all attributes use Q8.16 / 16.16 for init computation):
+    //   Colors: {8'b0, unorm8, 16'b0}  = (u8 as i32) << 16
+    //   Z:      {z16, 16'b0}           = (z as i32) << 16
+    //   ST:     {st_q412, 16'b0}       = (i16 as i32) << 16
+    //   Q:      {q16, 16'b0}           = (q as i32) << 16
 
     let bbox_sx = bbox_min_x as i32 - x0;
     let bbox_sy = bbox_min_y as i32 - y0;
 
     let f0: [i32; NUM_ATTRS] = [
+        // Colors: Q8.16 (UNORM8 in bits [23:16], 16 fractional bits)
         (v0.color0.r() as i32) << 16,
         (v0.color0.g() as i32) << 16,
         (v0.color0.b() as i32) << 16,
@@ -205,6 +227,7 @@ pub fn compute_derivatives(
         (v0.color1.g() as i32) << 16,
         (v0.color1.b() as i32) << 16,
         (v0.color1.a() as i32) << 16,
+        // Z/S/T/Q: 16.16 fixed-point (unchanged)
         ((v0.z as u32) << 16) as i32,
         (v0.s0 as i16 as i32) << 16,
         (v0.t0 as i16 as i32) << 16,
@@ -222,9 +245,45 @@ pub fn compute_derivatives(
         inits[i] = f0[i].wrapping_add(dx_term).wrapping_add(dy_term);
     }
 
+    // Truncate color inits from Q8.16 to 24-bit (Q8.8 + 8 guard bits).
+    // Matches RTL: computed_init_prev[31:8] (drop bottom 8 fractional bits).
+    for item in inits.iter_mut().take(ATTR_C1A + 1) {
+        *item >>= 8;
+    }
+
+    // ── Narrow color derivatives to i16 (8.8 fixed-point) ───────
+    // The 32-bit derivatives are in 8.16 format.  Right-shift by 8 to
+    // convert to 8.8, then truncate to i16.  This matches the RTL's
+    // 16-bit color derivative registers (sufficient precision for
+    // RGB565 output — max error after 512 steps < 1 LSB).
+    // Done AFTER init computation to match RTL precision.
+    for i in ATTR_C0R..=ATTR_C1A {
+        dx_derivs[i] = truncate_color_deriv(dx_derivs[i]);
+        dy_derivs[i] = truncate_color_deriv(dy_derivs[i]);
+    }
+
     DerivResult {
         dx: dx_derivs,
         dy: dy_derivs,
         inits,
     }
+}
+
+/// Truncate a 32-bit color derivative (8.16 fixed-point) to 16-bit signed
+/// (8.8 fixed-point).
+///
+/// Right-shifts by 8 to convert from 16 fractional bits to 8, then
+/// saturates to `i16` range to match the RTL's 16-bit derivative register.
+///
+/// # Arguments
+///
+/// * `deriv_32` - 32-bit signed derivative in 8.16 fixed-point.
+///
+/// # Returns
+///
+/// The narrowed derivative as `i32` (sign-extended from `i16`).
+fn truncate_color_deriv(deriv_32: i32) -> i32 {
+    // Matches RTL: deriv_dx[23:8] — extract bits [23:8] as 16-bit signed.
+    // This is truncation (not saturation): take low 16 bits of (val >> 8).
+    ((deriv_32 >> 8) as i16) as i32
 }

@@ -30,22 +30,22 @@ module tb_raster_attr_accum;
     // Derivative Inputs (from raster_deriv, only c0r/z/s0/q used in tests)
     // ========================================================================
 
-    reg signed [31:0] pre_c0r_dx;   // Color0 R dx
-    reg signed [31:0] pre_c0r_dy;   // Color0 R dy
-    reg signed [31:0] pre_c0g_dx;   // Color0 G dx
-    reg signed [31:0] pre_c0g_dy;   // Color0 G dy
-    reg signed [31:0] pre_c0b_dx;   // Color0 B dx
-    reg signed [31:0] pre_c0b_dy;   // Color0 B dy
-    reg signed [31:0] pre_c0a_dx;   // Color0 A dx
-    reg signed [31:0] pre_c0a_dy;   // Color0 A dy
-    reg signed [31:0] pre_c1r_dx;   // Color1 R dx
-    reg signed [31:0] pre_c1r_dy;   // Color1 R dy
-    reg signed [31:0] pre_c1g_dx;   // Color1 G dx
-    reg signed [31:0] pre_c1g_dy;   // Color1 G dy
-    reg signed [31:0] pre_c1b_dx;   // Color1 B dx
-    reg signed [31:0] pre_c1b_dy;   // Color1 B dy
-    reg signed [31:0] pre_c1a_dx;   // Color1 A dx
-    reg signed [31:0] pre_c1a_dy;   // Color1 A dy
+    reg signed [15:0] pre_c0r_dx;   // Color0 R dx, Q8.8
+    reg signed [15:0] pre_c0r_dy;   // Color0 R dy, Q8.8
+    reg signed [15:0] pre_c0g_dx;   // Color0 G dx, Q8.8
+    reg signed [15:0] pre_c0g_dy;   // Color0 G dy, Q8.8
+    reg signed [15:0] pre_c0b_dx;   // Color0 B dx, Q8.8
+    reg signed [15:0] pre_c0b_dy;   // Color0 B dy, Q8.8
+    reg signed [15:0] pre_c0a_dx;   // Color0 A dx, Q8.8
+    reg signed [15:0] pre_c0a_dy;   // Color0 A dy, Q8.8
+    reg signed [15:0] pre_c1r_dx;   // Color1 R dx, Q8.8
+    reg signed [15:0] pre_c1r_dy;   // Color1 R dy, Q8.8
+    reg signed [15:0] pre_c1g_dx;   // Color1 G dx, Q8.8
+    reg signed [15:0] pre_c1g_dy;   // Color1 G dy, Q8.8
+    reg signed [15:0] pre_c1b_dx;   // Color1 B dx, Q8.8
+    reg signed [15:0] pre_c1b_dy;   // Color1 B dy, Q8.8
+    reg signed [15:0] pre_c1a_dx;   // Color1 A dx, Q8.8
+    reg signed [15:0] pre_c1a_dy;   // Color1 A dy, Q8.8
     reg signed [31:0] pre_z_dx;     // Z dx
     reg signed [31:0] pre_z_dy;     // Z dy
     reg signed [31:0] pre_s0_dx;  // ST0 S dx
@@ -63,14 +63,14 @@ module tb_raster_attr_accum;
     // Initial Value Inputs (from raster_deriv)
     // ========================================================================
 
-    reg signed [31:0] init_c0r;     // Color0 R initial
-    reg signed [31:0] init_c0g;     // Color0 G initial
-    reg signed [31:0] init_c0b;     // Color0 B initial
-    reg signed [31:0] init_c0a;     // Color0 A initial
-    reg signed [31:0] init_c1r;     // Color1 R initial
-    reg signed [31:0] init_c1g;     // Color1 G initial
-    reg signed [31:0] init_c1b;     // Color1 B initial
-    reg signed [31:0] init_c1a;     // Color1 A initial
+    reg signed [23:0] init_c0r;     // Color0 R initial
+    reg signed [23:0] init_c0g;     // Color0 G initial
+    reg signed [23:0] init_c0b;     // Color0 B initial
+    reg signed [23:0] init_c0a;     // Color0 A initial
+    reg signed [23:0] init_c1r;     // Color1 R initial
+    reg signed [23:0] init_c1g;     // Color1 G initial
+    reg signed [23:0] init_c1b;     // Color1 B initial
+    reg signed [23:0] init_c1a;     // Color1 A initial
     reg signed [31:0] init_z;       // Z initial
     reg signed [31:0] init_s0;    // ST0 S initial
     reg signed [31:0] init_t0;    // ST0 T initial

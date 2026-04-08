@@ -512,23 +512,24 @@ module rasterizer (
     wire deriv_done;                                // Completion flag from raster_deriv
     wire deriv_enable = (iter_state == I_INIT_E2);  // Start derivative computation
 
-    // Derivative output wires (from raster_deriv)
-    wire signed [31:0] pre_c0r_dx;
-    wire signed [31:0] pre_c0r_dy;
-    wire signed [31:0] pre_c0g_dx;
-    wire signed [31:0] pre_c0g_dy;
-    wire signed [31:0] pre_c0b_dx;
-    wire signed [31:0] pre_c0b_dy;
-    wire signed [31:0] pre_c0a_dx;
-    wire signed [31:0] pre_c0a_dy;
-    wire signed [31:0] pre_c1r_dx;
-    wire signed [31:0] pre_c1r_dy;
-    wire signed [31:0] pre_c1g_dx;
-    wire signed [31:0] pre_c1g_dy;
-    wire signed [31:0] pre_c1b_dx;
-    wire signed [31:0] pre_c1b_dy;
-    wire signed [31:0] pre_c1a_dx;
-    wire signed [31:0] pre_c1a_dy;
+    // Color derivative output wires (16-bit signed Q8.8, from raster_deriv)
+    wire signed [15:0] pre_c0r_dx;
+    wire signed [15:0] pre_c0r_dy;
+    wire signed [15:0] pre_c0g_dx;
+    wire signed [15:0] pre_c0g_dy;
+    wire signed [15:0] pre_c0b_dx;
+    wire signed [15:0] pre_c0b_dy;
+    wire signed [15:0] pre_c0a_dx;
+    wire signed [15:0] pre_c0a_dy;
+    wire signed [15:0] pre_c1r_dx;
+    wire signed [15:0] pre_c1r_dy;
+    wire signed [15:0] pre_c1g_dx;
+    wire signed [15:0] pre_c1g_dy;
+    wire signed [15:0] pre_c1b_dx;
+    wire signed [15:0] pre_c1b_dy;
+    wire signed [15:0] pre_c1a_dx;
+    wire signed [15:0] pre_c1a_dy;
+    // Non-color derivative output wires (32-bit signed, unchanged)
     wire signed [31:0] pre_z_dx;
     wire signed [31:0] pre_z_dy;
     wire signed [31:0] pre_s0_dx;
@@ -542,15 +543,16 @@ module rasterizer (
     wire signed [31:0] pre_q_dx;
     wire signed [31:0] pre_q_dy;
 
-    // Initial attribute value wires (from raster_deriv)
-    wire signed [31:0] init_c0r;
-    wire signed [31:0] init_c0g;
-    wire signed [31:0] init_c0b;
-    wire signed [31:0] init_c0a;
-    wire signed [31:0] init_c1r;
-    wire signed [31:0] init_c1g;
-    wire signed [31:0] init_c1b;
-    wire signed [31:0] init_c1a;
+    // Color initial value wires (24-bit signed, from raster_deriv)
+    wire signed [23:0] init_c0r;
+    wire signed [23:0] init_c0g;
+    wire signed [23:0] init_c0b;
+    wire signed [23:0] init_c0a;
+    wire signed [23:0] init_c1r;
+    wire signed [23:0] init_c1g;
+    wire signed [23:0] init_c1b;
+    wire signed [23:0] init_c1a;
+    // Non-color initial value wires (32-bit signed, unchanged)
     wire signed [31:0] init_z;
     wire signed [31:0] init_s0;
     wire signed [31:0] init_t0;

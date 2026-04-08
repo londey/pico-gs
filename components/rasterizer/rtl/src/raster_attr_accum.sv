@@ -29,23 +29,24 @@ module raster_attr_accum (
     input  wire        tile_col_step,    // Advance to next tile column: _tcol += 4*dx
     input  wire        tile_row_step,    // Advance to next tile row: _trow += 4*dy
 
-    // Derivative values from raster_deriv (latched on latch_derivs)
-    input  wire signed [31:0] pre_c0r_dx,  // Color0 R dx derivative
-    input  wire signed [31:0] pre_c0r_dy,  // Color0 R dy derivative
-    input  wire signed [31:0] pre_c0g_dx,  // Color0 G dx derivative
-    input  wire signed [31:0] pre_c0g_dy,  // Color0 G dy derivative
-    input  wire signed [31:0] pre_c0b_dx,  // Color0 B dx derivative
-    input  wire signed [31:0] pre_c0b_dy,  // Color0 B dy derivative
-    input  wire signed [31:0] pre_c0a_dx,  // Color0 A dx derivative
-    input  wire signed [31:0] pre_c0a_dy,  // Color0 A dy derivative
-    input  wire signed [31:0] pre_c1r_dx,  // Color1 R dx derivative
-    input  wire signed [31:0] pre_c1r_dy,  // Color1 R dy derivative
-    input  wire signed [31:0] pre_c1g_dx,  // Color1 G dx derivative
-    input  wire signed [31:0] pre_c1g_dy,  // Color1 G dy derivative
-    input  wire signed [31:0] pre_c1b_dx,  // Color1 B dx derivative
-    input  wire signed [31:0] pre_c1b_dy,  // Color1 B dy derivative
-    input  wire signed [31:0] pre_c1a_dx,  // Color1 A dx derivative
-    input  wire signed [31:0] pre_c1a_dy,  // Color1 A dy derivative
+    // Color derivative values from raster_deriv (16-bit signed Q8.8, latched on latch_derivs)
+    input  wire signed [15:0] pre_c0r_dx,  // Color0 R dx derivative, Q8.8
+    input  wire signed [15:0] pre_c0r_dy,  // Color0 R dy derivative, Q8.8
+    input  wire signed [15:0] pre_c0g_dx,  // Color0 G dx derivative, Q8.8
+    input  wire signed [15:0] pre_c0g_dy,  // Color0 G dy derivative, Q8.8
+    input  wire signed [15:0] pre_c0b_dx,  // Color0 B dx derivative, Q8.8
+    input  wire signed [15:0] pre_c0b_dy,  // Color0 B dy derivative, Q8.8
+    input  wire signed [15:0] pre_c0a_dx,  // Color0 A dx derivative, Q8.8
+    input  wire signed [15:0] pre_c0a_dy,  // Color0 A dy derivative, Q8.8
+    input  wire signed [15:0] pre_c1r_dx,  // Color1 R dx derivative, Q8.8
+    input  wire signed [15:0] pre_c1r_dy,  // Color1 R dy derivative, Q8.8
+    input  wire signed [15:0] pre_c1g_dx,  // Color1 G dx derivative, Q8.8
+    input  wire signed [15:0] pre_c1g_dy,  // Color1 G dy derivative, Q8.8
+    input  wire signed [15:0] pre_c1b_dx,  // Color1 B dx derivative, Q8.8
+    input  wire signed [15:0] pre_c1b_dy,  // Color1 B dy derivative, Q8.8
+    input  wire signed [15:0] pre_c1a_dx,  // Color1 A dx derivative, Q8.8
+    input  wire signed [15:0] pre_c1a_dy,  // Color1 A dy derivative, Q8.8
+    // Non-color derivative values (32-bit signed, unchanged)
     input  wire signed [31:0] pre_z_dx,    // Z dx derivative
     input  wire signed [31:0] pre_z_dy,    // Z dy derivative
     input  wire signed [31:0] pre_s0_dx, // S0 dx derivative
@@ -59,15 +60,16 @@ module raster_attr_accum (
     input  wire signed [31:0] pre_q_dx,    // Q dx derivative
     input  wire signed [31:0] pre_q_dy,    // Q dy derivative
 
-    // Initial attribute values from raster_deriv (loaded on latch_derivs)
-    input  wire signed [31:0] init_c0r,    // Color0 R initial value at bbox origin
-    input  wire signed [31:0] init_c0g,    // Color0 G initial value at bbox origin
-    input  wire signed [31:0] init_c0b,    // Color0 B initial value at bbox origin
-    input  wire signed [31:0] init_c0a,    // Color0 A initial value at bbox origin
-    input  wire signed [31:0] init_c1r,    // Color1 R initial value at bbox origin
-    input  wire signed [31:0] init_c1g,    // Color1 G initial value at bbox origin
-    input  wire signed [31:0] init_c1b,    // Color1 B initial value at bbox origin
-    input  wire signed [31:0] init_c1a,    // Color1 A initial value at bbox origin
+    // Color initial values from raster_deriv (24-bit signed, Q8.8 + 8 guard bits)
+    input  wire signed [23:0] init_c0r,    // Color0 R initial value at bbox origin
+    input  wire signed [23:0] init_c0g,    // Color0 G initial value at bbox origin
+    input  wire signed [23:0] init_c0b,    // Color0 B initial value at bbox origin
+    input  wire signed [23:0] init_c0a,    // Color0 A initial value at bbox origin
+    input  wire signed [23:0] init_c1r,    // Color1 R initial value at bbox origin
+    input  wire signed [23:0] init_c1g,    // Color1 G initial value at bbox origin
+    input  wire signed [23:0] init_c1b,    // Color1 B initial value at bbox origin
+    input  wire signed [23:0] init_c1a,    // Color1 A initial value at bbox origin
+    // Non-color initial values (32-bit signed, unchanged)
     input  wire signed [31:0] init_z,      // Z initial value at bbox origin
     input  wire signed [31:0] init_s0,   // S0 initial value at bbox origin
     input  wire signed [31:0] init_t0,   // T0 initial value at bbox origin
@@ -101,25 +103,25 @@ module raster_attr_accum (
     // ========================================================================
     // Latched from raster_deriv combinational outputs on latch_derivs.
 
-    // Color0 RGBA derivatives
-    reg signed [31:0] c0r_dx;  // Color0 R per-pixel X derivative
-    reg signed [31:0] c0r_dy;  // Color0 R per-pixel Y derivative
-    reg signed [31:0] c0g_dx;  // Color0 G per-pixel X derivative
-    reg signed [31:0] c0g_dy;  // Color0 G per-pixel Y derivative
-    reg signed [31:0] c0b_dx;  // Color0 B per-pixel X derivative
-    reg signed [31:0] c0b_dy;  // Color0 B per-pixel Y derivative
-    reg signed [31:0] c0a_dx;  // Color0 A per-pixel X derivative
-    reg signed [31:0] c0a_dy;  // Color0 A per-pixel Y derivative
+    // Color0 RGBA derivatives (16-bit signed Q8.8)
+    reg signed [15:0] c0r_dx;  // Color0 R per-pixel X derivative, Q8.8
+    reg signed [15:0] c0r_dy;  // Color0 R per-pixel Y derivative, Q8.8
+    reg signed [15:0] c0g_dx;  // Color0 G per-pixel X derivative, Q8.8
+    reg signed [15:0] c0g_dy;  // Color0 G per-pixel Y derivative, Q8.8
+    reg signed [15:0] c0b_dx;  // Color0 B per-pixel X derivative, Q8.8
+    reg signed [15:0] c0b_dy;  // Color0 B per-pixel Y derivative, Q8.8
+    reg signed [15:0] c0a_dx;  // Color0 A per-pixel X derivative, Q8.8
+    reg signed [15:0] c0a_dy;  // Color0 A per-pixel Y derivative, Q8.8
 
-    // Color1 RGBA derivatives
-    reg signed [31:0] c1r_dx;  // Color1 R per-pixel X derivative
-    reg signed [31:0] c1r_dy;  // Color1 R per-pixel Y derivative
-    reg signed [31:0] c1g_dx;  // Color1 G per-pixel X derivative
-    reg signed [31:0] c1g_dy;  // Color1 G per-pixel Y derivative
-    reg signed [31:0] c1b_dx;  // Color1 B per-pixel X derivative
-    reg signed [31:0] c1b_dy;  // Color1 B per-pixel Y derivative
-    reg signed [31:0] c1a_dx;  // Color1 A per-pixel X derivative
-    reg signed [31:0] c1a_dy;  // Color1 A per-pixel Y derivative
+    // Color1 RGBA derivatives (16-bit signed Q8.8)
+    reg signed [15:0] c1r_dx;  // Color1 R per-pixel X derivative, Q8.8
+    reg signed [15:0] c1r_dy;  // Color1 R per-pixel Y derivative, Q8.8
+    reg signed [15:0] c1g_dx;  // Color1 G per-pixel X derivative, Q8.8
+    reg signed [15:0] c1g_dy;  // Color1 G per-pixel Y derivative, Q8.8
+    reg signed [15:0] c1b_dx;  // Color1 B per-pixel X derivative, Q8.8
+    reg signed [15:0] c1b_dy;  // Color1 B per-pixel Y derivative, Q8.8
+    reg signed [15:0] c1a_dx;  // Color1 A per-pixel X derivative, Q8.8
+    reg signed [15:0] c1a_dy;  // Color1 A per-pixel Y derivative, Q8.8
 
     // Z derivative
     reg signed [31:0] z_dx;    // Z per-pixel X derivative
@@ -146,25 +148,25 @@ module raster_attr_accum (
     // ========================================================================
     // acc = current pixel value, row = start-of-row value for reload.
 
-    // Color0 RGBA accumulators (8.16 signed fixed-point)
-    reg signed [31:0] c0r_acc; // Color0 R current pixel accumulator
-    reg signed [31:0] c0r_row; // Color0 R row start value
-    reg signed [31:0] c0g_acc; // Color0 G current pixel accumulator
-    reg signed [31:0] c0g_row; // Color0 G row start value
-    reg signed [31:0] c0b_acc; // Color0 B current pixel accumulator
-    reg signed [31:0] c0b_row; // Color0 B row start value
-    reg signed [31:0] c0a_acc; // Color0 A current pixel accumulator
-    reg signed [31:0] c0a_row; // Color0 A row start value
+    // Color0 RGBA accumulators (24-bit signed: guard[23:16].unorm8[15:8].frac[7:0])
+    reg signed [23:0] c0r_acc; // Color0 R current pixel accumulator
+    reg signed [23:0] c0r_row; // Color0 R row start value
+    reg signed [23:0] c0g_acc; // Color0 G current pixel accumulator
+    reg signed [23:0] c0g_row; // Color0 G row start value
+    reg signed [23:0] c0b_acc; // Color0 B current pixel accumulator
+    reg signed [23:0] c0b_row; // Color0 B row start value
+    reg signed [23:0] c0a_acc; // Color0 A current pixel accumulator
+    reg signed [23:0] c0a_row; // Color0 A row start value
 
-    // Color1 RGBA accumulators (8.16 signed fixed-point)
-    reg signed [31:0] c1r_acc; // Color1 R current pixel accumulator
-    reg signed [31:0] c1r_row; // Color1 R row start value
-    reg signed [31:0] c1g_acc; // Color1 G current pixel accumulator
-    reg signed [31:0] c1g_row; // Color1 G row start value
-    reg signed [31:0] c1b_acc; // Color1 B current pixel accumulator
-    reg signed [31:0] c1b_row; // Color1 B row start value
-    reg signed [31:0] c1a_acc; // Color1 A current pixel accumulator
-    reg signed [31:0] c1a_row; // Color1 A row start value
+    // Color1 RGBA accumulators (24-bit signed: guard[23:16].unorm8[15:8].frac[7:0])
+    reg signed [23:0] c1r_acc; // Color1 R current pixel accumulator
+    reg signed [23:0] c1r_row; // Color1 R row start value
+    reg signed [23:0] c1g_acc; // Color1 G current pixel accumulator
+    reg signed [23:0] c1g_row; // Color1 G row start value
+    reg signed [23:0] c1b_acc; // Color1 B current pixel accumulator
+    reg signed [23:0] c1b_row; // Color1 B row start value
+    reg signed [23:0] c1a_acc; // Color1 A current pixel accumulator
+    reg signed [23:0] c1a_row; // Color1 A row start value
 
     // Z accumulators (16.16 unsigned-origin signed fixed-point)
     reg signed [31:0] z_acc;   // Z current pixel accumulator
@@ -192,14 +194,14 @@ module raster_attr_accum (
     // _trow: attribute value at (bbox_min_x, tile_row_start_y)
     // _tcol: attribute value at (tile_col_start_x, tile_row_start_y)
 
-    reg signed [31:0] c0r_trow, c0r_tcol;
-    reg signed [31:0] c0g_trow, c0g_tcol;
-    reg signed [31:0] c0b_trow, c0b_tcol;
-    reg signed [31:0] c0a_trow, c0a_tcol;
-    reg signed [31:0] c1r_trow, c1r_tcol;
-    reg signed [31:0] c1g_trow, c1g_tcol;
-    reg signed [31:0] c1b_trow, c1b_tcol;
-    reg signed [31:0] c1a_trow, c1a_tcol;
+    reg signed [23:0] c0r_trow, c0r_tcol;
+    reg signed [23:0] c0g_trow, c0g_tcol;
+    reg signed [23:0] c0b_trow, c0b_tcol;
+    reg signed [23:0] c0a_trow, c0a_tcol;
+    reg signed [23:0] c1r_trow, c1r_tcol;
+    reg signed [23:0] c1g_trow, c1g_tcol;
+    reg signed [23:0] c1b_trow, c1b_tcol;
+    reg signed [23:0] c1a_trow, c1a_tcol;
     reg signed [31:0] z_trow, z_tcol;
     reg signed [31:0] s0_trow, s0_tcol;
     reg signed [31:0] t0_trow, t0_tcol;
@@ -211,22 +213,22 @@ module raster_attr_accum (
     // Next-State Declarations — Derivative Registers
     // ========================================================================
 
-    logic signed [31:0] next_c0r_dx;  // Next color0 R dx
-    logic signed [31:0] next_c0r_dy;  // Next color0 R dy
-    logic signed [31:0] next_c0g_dx;  // Next color0 G dx
-    logic signed [31:0] next_c0g_dy;  // Next color0 G dy
-    logic signed [31:0] next_c0b_dx;  // Next color0 B dx
-    logic signed [31:0] next_c0b_dy;  // Next color0 B dy
-    logic signed [31:0] next_c0a_dx;  // Next color0 A dx
-    logic signed [31:0] next_c0a_dy;  // Next color0 A dy
-    logic signed [31:0] next_c1r_dx;  // Next color1 R dx
-    logic signed [31:0] next_c1r_dy;  // Next color1 R dy
-    logic signed [31:0] next_c1g_dx;  // Next color1 G dx
-    logic signed [31:0] next_c1g_dy;  // Next color1 G dy
-    logic signed [31:0] next_c1b_dx;  // Next color1 B dx
-    logic signed [31:0] next_c1b_dy;  // Next color1 B dy
-    logic signed [31:0] next_c1a_dx;  // Next color1 A dx
-    logic signed [31:0] next_c1a_dy;  // Next color1 A dy
+    logic signed [15:0] next_c0r_dx;  // Next color0 R dx
+    logic signed [15:0] next_c0r_dy;  // Next color0 R dy
+    logic signed [15:0] next_c0g_dx;  // Next color0 G dx
+    logic signed [15:0] next_c0g_dy;  // Next color0 G dy
+    logic signed [15:0] next_c0b_dx;  // Next color0 B dx
+    logic signed [15:0] next_c0b_dy;  // Next color0 B dy
+    logic signed [15:0] next_c0a_dx;  // Next color0 A dx
+    logic signed [15:0] next_c0a_dy;  // Next color0 A dy
+    logic signed [15:0] next_c1r_dx;  // Next color1 R dx
+    logic signed [15:0] next_c1r_dy;  // Next color1 R dy
+    logic signed [15:0] next_c1g_dx;  // Next color1 G dx
+    logic signed [15:0] next_c1g_dy;  // Next color1 G dy
+    logic signed [15:0] next_c1b_dx;  // Next color1 B dx
+    logic signed [15:0] next_c1b_dy;  // Next color1 B dy
+    logic signed [15:0] next_c1a_dx;  // Next color1 A dx
+    logic signed [15:0] next_c1a_dy;  // Next color1 A dy
     logic signed [31:0] next_z_dx;    // Next Z dx
     logic signed [31:0] next_z_dy;    // Next Z dy
     logic signed [31:0] next_s0_dx; // Next S0 dx
@@ -244,22 +246,22 @@ module raster_attr_accum (
     // Next-State Declarations — Accumulator and Row Registers
     // ========================================================================
 
-    logic signed [31:0] next_c0r_acc; // Next color0 R accumulator
-    logic signed [31:0] next_c0r_row; // Next color0 R row
-    logic signed [31:0] next_c0g_acc; // Next color0 G accumulator
-    logic signed [31:0] next_c0g_row; // Next color0 G row
-    logic signed [31:0] next_c0b_acc; // Next color0 B accumulator
-    logic signed [31:0] next_c0b_row; // Next color0 B row
-    logic signed [31:0] next_c0a_acc; // Next color0 A accumulator
-    logic signed [31:0] next_c0a_row; // Next color0 A row
-    logic signed [31:0] next_c1r_acc; // Next color1 R accumulator
-    logic signed [31:0] next_c1r_row; // Next color1 R row
-    logic signed [31:0] next_c1g_acc; // Next color1 G accumulator
-    logic signed [31:0] next_c1g_row; // Next color1 G row
-    logic signed [31:0] next_c1b_acc; // Next color1 B accumulator
-    logic signed [31:0] next_c1b_row; // Next color1 B row
-    logic signed [31:0] next_c1a_acc; // Next color1 A accumulator
-    logic signed [31:0] next_c1a_row; // Next color1 A row
+    logic signed [23:0] next_c0r_acc; // Next color0 R accumulator
+    logic signed [23:0] next_c0r_row; // Next color0 R row
+    logic signed [23:0] next_c0g_acc; // Next color0 G accumulator
+    logic signed [23:0] next_c0g_row; // Next color0 G row
+    logic signed [23:0] next_c0b_acc; // Next color0 B accumulator
+    logic signed [23:0] next_c0b_row; // Next color0 B row
+    logic signed [23:0] next_c0a_acc; // Next color0 A accumulator
+    logic signed [23:0] next_c0a_row; // Next color0 A row
+    logic signed [23:0] next_c1r_acc; // Next color1 R accumulator
+    logic signed [23:0] next_c1r_row; // Next color1 R row
+    logic signed [23:0] next_c1g_acc; // Next color1 G accumulator
+    logic signed [23:0] next_c1g_row; // Next color1 G row
+    logic signed [23:0] next_c1b_acc; // Next color1 B accumulator
+    logic signed [23:0] next_c1b_row; // Next color1 B row
+    logic signed [23:0] next_c1a_acc; // Next color1 A accumulator
+    logic signed [23:0] next_c1a_row; // Next color1 A row
     logic signed [31:0] next_z_acc;   // Next Z accumulator
     logic signed [31:0] next_z_row;   // Next Z row
     logic signed [31:0] next_s0_acc; // Next S0 accumulator
@@ -274,14 +276,14 @@ module raster_attr_accum (
     logic signed [31:0] next_q_row;   // Next Q row
 
     // Next-state for tile-row and tile-column origin registers
-    logic signed [31:0] next_c0r_trow, next_c0r_tcol;
-    logic signed [31:0] next_c0g_trow, next_c0g_tcol;
-    logic signed [31:0] next_c0b_trow, next_c0b_tcol;
-    logic signed [31:0] next_c0a_trow, next_c0a_tcol;
-    logic signed [31:0] next_c1r_trow, next_c1r_tcol;
-    logic signed [31:0] next_c1g_trow, next_c1g_tcol;
-    logic signed [31:0] next_c1b_trow, next_c1b_tcol;
-    logic signed [31:0] next_c1a_trow, next_c1a_tcol;
+    logic signed [23:0] next_c0r_trow, next_c0r_tcol;
+    logic signed [23:0] next_c0g_trow, next_c0g_tcol;
+    logic signed [23:0] next_c0b_trow, next_c0b_tcol;
+    logic signed [23:0] next_c0a_trow, next_c0a_tcol;
+    logic signed [23:0] next_c1r_trow, next_c1r_tcol;
+    logic signed [23:0] next_c1g_trow, next_c1g_tcol;
+    logic signed [23:0] next_c1b_trow, next_c1b_tcol;
+    logic signed [23:0] next_c1a_trow, next_c1a_tcol;
     logic signed [31:0] next_z_trow, next_z_tcol;
     logic signed [31:0] next_s0_trow, next_s0_tcol;
     logic signed [31:0] next_t0_trow, next_t0_tcol;
@@ -368,22 +370,23 @@ module raster_attr_accum (
     // Otherwise: hold current values.
 
     // Pre-compute 4*dx and 4*dy for tile stepping (shift, no DSP)
-    wire signed [31:0] c0r_4dx = c0r_dx <<< 2;
-    wire signed [31:0] c0r_4dy = c0r_dy <<< 2;
-    wire signed [31:0] c0g_4dx = c0g_dx <<< 2;
-    wire signed [31:0] c0g_4dy = c0g_dy <<< 2;
-    wire signed [31:0] c0b_4dx = c0b_dx <<< 2;
-    wire signed [31:0] c0b_4dy = c0b_dy <<< 2;
-    wire signed [31:0] c0a_4dx = c0a_dx <<< 2;
-    wire signed [31:0] c0a_4dy = c0a_dy <<< 2;
-    wire signed [31:0] c1r_4dx = c1r_dx <<< 2;
-    wire signed [31:0] c1r_4dy = c1r_dy <<< 2;
-    wire signed [31:0] c1g_4dx = c1g_dx <<< 2;
-    wire signed [31:0] c1g_4dy = c1g_dy <<< 2;
-    wire signed [31:0] c1b_4dx = c1b_dx <<< 2;
-    wire signed [31:0] c1b_4dy = c1b_dy <<< 2;
-    wire signed [31:0] c1a_4dx = c1a_dx <<< 2;
-    wire signed [31:0] c1a_4dy = c1a_dy <<< 2;
+    // Color: 16-bit derivative sign-extended to 24-bit, shift left 2
+    wire signed [23:0] c0r_4dx = 24'(c0r_dx) <<< 2;
+    wire signed [23:0] c0r_4dy = 24'(c0r_dy) <<< 2;
+    wire signed [23:0] c0g_4dx = 24'(c0g_dx) <<< 2;
+    wire signed [23:0] c0g_4dy = 24'(c0g_dy) <<< 2;
+    wire signed [23:0] c0b_4dx = 24'(c0b_dx) <<< 2;
+    wire signed [23:0] c0b_4dy = 24'(c0b_dy) <<< 2;
+    wire signed [23:0] c0a_4dx = 24'(c0a_dx) <<< 2;
+    wire signed [23:0] c0a_4dy = 24'(c0a_dy) <<< 2;
+    wire signed [23:0] c1r_4dx = 24'(c1r_dx) <<< 2;
+    wire signed [23:0] c1r_4dy = 24'(c1r_dy) <<< 2;
+    wire signed [23:0] c1g_4dx = 24'(c1g_dx) <<< 2;
+    wire signed [23:0] c1g_4dy = 24'(c1g_dy) <<< 2;
+    wire signed [23:0] c1b_4dx = 24'(c1b_dx) <<< 2;
+    wire signed [23:0] c1b_4dy = 24'(c1b_dy) <<< 2;
+    wire signed [23:0] c1a_4dx = 24'(c1a_dx) <<< 2;
+    wire signed [23:0] c1a_4dy = 24'(c1a_dy) <<< 2;
     wire signed [31:0] z_4dx   = z_dx <<< 2;
     wire signed [31:0] z_4dy   = z_dy <<< 2;
     wire signed [31:0] s0_4dx = s0_dx <<< 2;
@@ -577,14 +580,15 @@ module raster_attr_accum (
             next_q_acc    = q_trow + q_4dy;
         end else if (step_x) begin
             // Step right: add dx derivatives to accumulators
-            next_c0r_acc  = c0r_acc + c0r_dx;
-            next_c0g_acc  = c0g_acc + c0g_dx;
-            next_c0b_acc  = c0b_acc + c0b_dx;
-            next_c0a_acc  = c0a_acc + c0a_dx;
-            next_c1r_acc  = c1r_acc + c1r_dx;
-            next_c1g_acc  = c1g_acc + c1g_dx;
-            next_c1b_acc  = c1b_acc + c1b_dx;
-            next_c1a_acc  = c1a_acc + c1a_dx;
+            // Color: 16-bit dx sign-extended to 24-bit accumulator width
+            next_c0r_acc  = c0r_acc + 24'(c0r_dx);
+            next_c0g_acc  = c0g_acc + 24'(c0g_dx);
+            next_c0b_acc  = c0b_acc + 24'(c0b_dx);
+            next_c0a_acc  = c0a_acc + 24'(c0a_dx);
+            next_c1r_acc  = c1r_acc + 24'(c1r_dx);
+            next_c1g_acc  = c1g_acc + 24'(c1g_dx);
+            next_c1b_acc  = c1b_acc + 24'(c1b_dx);
+            next_c1a_acc  = c1a_acc + 24'(c1a_dx);
             next_z_acc    = z_acc + z_dx;
             next_s0_acc = s0_acc + s0_dx;
             next_t0_acc = t0_acc + t0_dx;
@@ -593,22 +597,23 @@ module raster_attr_accum (
             next_q_acc    = q_acc + q_dx;
         end else if (step_y) begin
             // New row: add dy derivatives to row registers and reload accumulators
-            next_c0r_row  = c0r_row + c0r_dy;
-            next_c0r_acc  = c0r_row + c0r_dy;
-            next_c0g_row  = c0g_row + c0g_dy;
-            next_c0g_acc  = c0g_row + c0g_dy;
-            next_c0b_row  = c0b_row + c0b_dy;
-            next_c0b_acc  = c0b_row + c0b_dy;
-            next_c0a_row  = c0a_row + c0a_dy;
-            next_c0a_acc  = c0a_row + c0a_dy;
-            next_c1r_row  = c1r_row + c1r_dy;
-            next_c1r_acc  = c1r_row + c1r_dy;
-            next_c1g_row  = c1g_row + c1g_dy;
-            next_c1g_acc  = c1g_row + c1g_dy;
-            next_c1b_row  = c1b_row + c1b_dy;
-            next_c1b_acc  = c1b_row + c1b_dy;
-            next_c1a_row  = c1a_row + c1a_dy;
-            next_c1a_acc  = c1a_row + c1a_dy;
+            // Color: 16-bit dy sign-extended to 24-bit accumulator width
+            next_c0r_row  = c0r_row + 24'(c0r_dy);
+            next_c0r_acc  = c0r_row + 24'(c0r_dy);
+            next_c0g_row  = c0g_row + 24'(c0g_dy);
+            next_c0g_acc  = c0g_row + 24'(c0g_dy);
+            next_c0b_row  = c0b_row + 24'(c0b_dy);
+            next_c0b_acc  = c0b_row + 24'(c0b_dy);
+            next_c0a_row  = c0a_row + 24'(c0a_dy);
+            next_c0a_acc  = c0a_row + 24'(c0a_dy);
+            next_c1r_row  = c1r_row + 24'(c1r_dy);
+            next_c1r_acc  = c1r_row + 24'(c1r_dy);
+            next_c1g_row  = c1g_row + 24'(c1g_dy);
+            next_c1g_acc  = c1g_row + 24'(c1g_dy);
+            next_c1b_row  = c1b_row + 24'(c1b_dy);
+            next_c1b_acc  = c1b_row + 24'(c1b_dy);
+            next_c1a_row  = c1a_row + 24'(c1a_dy);
+            next_c1a_acc  = c1a_row + 24'(c1a_dy);
             next_z_row    = z_row + z_dy;
             next_z_acc    = z_row + z_dy;
             next_s0_row = s0_row + s0_dy;
@@ -625,12 +630,12 @@ module raster_attr_accum (
     end
 
     // ========================================================================
-    // Fragment Output Promotion (8-bit accumulator -> Q4.12)
+    // Fragment Output Promotion (24-bit accumulator -> Q4.12)
     // ========================================================================
-    // UNORM8 [0,255] in 8.16 accumulator: integer part at [23:16].
+    // 24-bit accumulator format: guard[23:16].unorm8[15:8].frac[7:0]
     // Promote to Q4.12: {4'b0, unorm8, unorm8[7:4]}
     // 0 -> 0x0000, 255 -> 0x0FFF (approximately 1.0 in Q4.12)
-    // Clamp negative to 0, overflow to 255.
+    // Clamp: negative (acc[23]) -> 0, overflow (guard != 0) -> 0x0FFF.
 
     logic [15:0] out_c0r_q;   // Color0 R promoted value
     logic [15:0] out_c0g_q;   // Color0 G promoted value
@@ -643,69 +648,69 @@ module raster_attr_accum (
 
     always_comb begin
         // Color0 promotion
-        if (c0r_acc[31]) begin
+        if (c0r_acc[23]) begin
             out_c0r_q = 16'h0000;
-        end else if (c0r_acc[31:24] != 8'd0) begin
+        end else if (c0r_acc[23:16] != 8'd0) begin
             out_c0r_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c0r_q = {4'b0, c0r_acc[23:16], c0r_acc[23:20]};
+            out_c0r_q = {4'b0, c0r_acc[15:8], c0r_acc[15:12]};
         end
 
-        if (c0g_acc[31]) begin
+        if (c0g_acc[23]) begin
             out_c0g_q = 16'h0000;
-        end else if (c0g_acc[31:24] != 8'd0) begin
+        end else if (c0g_acc[23:16] != 8'd0) begin
             out_c0g_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c0g_q = {4'b0, c0g_acc[23:16], c0g_acc[23:20]};
+            out_c0g_q = {4'b0, c0g_acc[15:8], c0g_acc[15:12]};
         end
 
-        if (c0b_acc[31]) begin
+        if (c0b_acc[23]) begin
             out_c0b_q = 16'h0000;
-        end else if (c0b_acc[31:24] != 8'd0) begin
+        end else if (c0b_acc[23:16] != 8'd0) begin
             out_c0b_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c0b_q = {4'b0, c0b_acc[23:16], c0b_acc[23:20]};
+            out_c0b_q = {4'b0, c0b_acc[15:8], c0b_acc[15:12]};
         end
 
-        if (c0a_acc[31]) begin
+        if (c0a_acc[23]) begin
             out_c0a_q = 16'h0000;
-        end else if (c0a_acc[31:24] != 8'd0) begin
+        end else if (c0a_acc[23:16] != 8'd0) begin
             out_c0a_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c0a_q = {4'b0, c0a_acc[23:16], c0a_acc[23:20]};
+            out_c0a_q = {4'b0, c0a_acc[15:8], c0a_acc[15:12]};
         end
 
         // Color1 promotion
-        if (c1r_acc[31]) begin
+        if (c1r_acc[23]) begin
             out_c1r_q = 16'h0000;
-        end else if (c1r_acc[31:24] != 8'd0) begin
+        end else if (c1r_acc[23:16] != 8'd0) begin
             out_c1r_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c1r_q = {4'b0, c1r_acc[23:16], c1r_acc[23:20]};
+            out_c1r_q = {4'b0, c1r_acc[15:8], c1r_acc[15:12]};
         end
 
-        if (c1g_acc[31]) begin
+        if (c1g_acc[23]) begin
             out_c1g_q = 16'h0000;
-        end else if (c1g_acc[31:24] != 8'd0) begin
+        end else if (c1g_acc[23:16] != 8'd0) begin
             out_c1g_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c1g_q = {4'b0, c1g_acc[23:16], c1g_acc[23:20]};
+            out_c1g_q = {4'b0, c1g_acc[15:8], c1g_acc[15:12]};
         end
 
-        if (c1b_acc[31]) begin
+        if (c1b_acc[23]) begin
             out_c1b_q = 16'h0000;
-        end else if (c1b_acc[31:24] != 8'd0) begin
+        end else if (c1b_acc[23:16] != 8'd0) begin
             out_c1b_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c1b_q = {4'b0, c1b_acc[23:16], c1b_acc[23:20]};
+            out_c1b_q = {4'b0, c1b_acc[15:8], c1b_acc[15:12]};
         end
 
-        if (c1a_acc[31]) begin
+        if (c1a_acc[23]) begin
             out_c1a_q = 16'h0000;
-        end else if (c1a_acc[31:24] != 8'd0) begin
+        end else if (c1a_acc[23:16] != 8'd0) begin
             out_c1a_q = {4'b0, 8'hFF, 4'hF};
         end else begin
-            out_c1a_q = {4'b0, c1a_acc[23:16], c1a_acc[23:20]};
+            out_c1a_q = {4'b0, c1a_acc[15:8], c1a_acc[15:12]};
         end
     end
 
@@ -742,22 +747,22 @@ module raster_attr_accum (
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             // Derivative registers
-            c0r_dx   <= 32'sb0;
-            c0r_dy   <= 32'sb0;
-            c0g_dx   <= 32'sb0;
-            c0g_dy   <= 32'sb0;
-            c0b_dx   <= 32'sb0;
-            c0b_dy   <= 32'sb0;
-            c0a_dx   <= 32'sb0;
-            c0a_dy   <= 32'sb0;
-            c1r_dx   <= 32'sb0;
-            c1r_dy   <= 32'sb0;
-            c1g_dx   <= 32'sb0;
-            c1g_dy   <= 32'sb0;
-            c1b_dx   <= 32'sb0;
-            c1b_dy   <= 32'sb0;
-            c1a_dx   <= 32'sb0;
-            c1a_dy   <= 32'sb0;
+            c0r_dx   <= 16'sb0;
+            c0r_dy   <= 16'sb0;
+            c0g_dx   <= 16'sb0;
+            c0g_dy   <= 16'sb0;
+            c0b_dx   <= 16'sb0;
+            c0b_dy   <= 16'sb0;
+            c0a_dx   <= 16'sb0;
+            c0a_dy   <= 16'sb0;
+            c1r_dx   <= 16'sb0;
+            c1r_dy   <= 16'sb0;
+            c1g_dx   <= 16'sb0;
+            c1g_dy   <= 16'sb0;
+            c1b_dx   <= 16'sb0;
+            c1b_dy   <= 16'sb0;
+            c1a_dx   <= 16'sb0;
+            c1a_dy   <= 16'sb0;
             z_dx     <= 32'sb0;
             z_dy     <= 32'sb0;
             s0_dx  <= 32'sb0;
@@ -771,14 +776,14 @@ module raster_attr_accum (
             q_dx     <= 32'sb0;
             q_dy     <= 32'sb0;
             // Accumulator registers
-            c0r_acc  <= 32'sb0; c0r_row  <= 32'sb0;
-            c0g_acc  <= 32'sb0; c0g_row  <= 32'sb0;
-            c0b_acc  <= 32'sb0; c0b_row  <= 32'sb0;
-            c0a_acc  <= 32'sb0; c0a_row  <= 32'sb0;
-            c1r_acc  <= 32'sb0; c1r_row  <= 32'sb0;
-            c1g_acc  <= 32'sb0; c1g_row  <= 32'sb0;
-            c1b_acc  <= 32'sb0; c1b_row  <= 32'sb0;
-            c1a_acc  <= 32'sb0; c1a_row  <= 32'sb0;
+            c0r_acc  <= 24'sb0; c0r_row  <= 24'sb0;
+            c0g_acc  <= 24'sb0; c0g_row  <= 24'sb0;
+            c0b_acc  <= 24'sb0; c0b_row  <= 24'sb0;
+            c0a_acc  <= 24'sb0; c0a_row  <= 24'sb0;
+            c1r_acc  <= 24'sb0; c1r_row  <= 24'sb0;
+            c1g_acc  <= 24'sb0; c1g_row  <= 24'sb0;
+            c1b_acc  <= 24'sb0; c1b_row  <= 24'sb0;
+            c1a_acc  <= 24'sb0; c1a_row  <= 24'sb0;
             z_acc    <= 32'sb0; z_row    <= 32'sb0;
             s0_acc <= 32'sb0; s0_row <= 32'sb0;
             t0_acc <= 32'sb0; t0_row <= 32'sb0;
@@ -786,14 +791,14 @@ module raster_attr_accum (
             t1_acc <= 32'sb0; t1_row <= 32'sb0;
             q_acc    <= 32'sb0; q_row    <= 32'sb0;
             // Tile-origin registers
-            c0r_trow <= 32'sb0; c0r_tcol <= 32'sb0;
-            c0g_trow <= 32'sb0; c0g_tcol <= 32'sb0;
-            c0b_trow <= 32'sb0; c0b_tcol <= 32'sb0;
-            c0a_trow <= 32'sb0; c0a_tcol <= 32'sb0;
-            c1r_trow <= 32'sb0; c1r_tcol <= 32'sb0;
-            c1g_trow <= 32'sb0; c1g_tcol <= 32'sb0;
-            c1b_trow <= 32'sb0; c1b_tcol <= 32'sb0;
-            c1a_trow <= 32'sb0; c1a_tcol <= 32'sb0;
+            c0r_trow <= 24'sb0; c0r_tcol <= 24'sb0;
+            c0g_trow <= 24'sb0; c0g_tcol <= 24'sb0;
+            c0b_trow <= 24'sb0; c0b_tcol <= 24'sb0;
+            c0a_trow <= 24'sb0; c0a_tcol <= 24'sb0;
+            c1r_trow <= 24'sb0; c1r_tcol <= 24'sb0;
+            c1g_trow <= 24'sb0; c1g_tcol <= 24'sb0;
+            c1b_trow <= 24'sb0; c1b_tcol <= 24'sb0;
+            c1a_trow <= 24'sb0; c1a_tcol <= 24'sb0;
             z_trow   <= 32'sb0; z_tcol   <= 32'sb0;
             s0_trow <= 32'sb0; s0_tcol <= 32'sb0;
             t0_trow <= 32'sb0; t0_tcol <= 32'sb0;

@@ -53,15 +53,15 @@ module tb_deriv_dt;
     // Vertex 0 position
     reg [9:0] x0, y0;
 
-    // Derivative outputs (14 dx + 14 dy)
-    wire signed [31:0] pre_c0r_dx, pre_c0r_dy;
-    wire signed [31:0] pre_c0g_dx, pre_c0g_dy;
-    wire signed [31:0] pre_c0b_dx, pre_c0b_dy;
-    wire signed [31:0] pre_c0a_dx, pre_c0a_dy;
-    wire signed [31:0] pre_c1r_dx, pre_c1r_dy;
-    wire signed [31:0] pre_c1g_dx, pre_c1g_dy;
-    wire signed [31:0] pre_c1b_dx, pre_c1b_dy;
-    wire signed [31:0] pre_c1a_dx, pre_c1a_dy;
+    // Color derivative outputs (16-bit signed Q8.8)
+    wire signed [15:0] pre_c0r_dx, pre_c0r_dy;
+    wire signed [15:0] pre_c0g_dx, pre_c0g_dy;
+    wire signed [15:0] pre_c0b_dx, pre_c0b_dy;
+    wire signed [15:0] pre_c0a_dx, pre_c0a_dy;
+    wire signed [15:0] pre_c1r_dx, pre_c1r_dy;
+    wire signed [15:0] pre_c1g_dx, pre_c1g_dy;
+    wire signed [15:0] pre_c1b_dx, pre_c1b_dy;
+    wire signed [15:0] pre_c1a_dx, pre_c1a_dy;
     wire signed [31:0] pre_z_dx,   pre_z_dy;
     wire signed [31:0] pre_s0_dx,  pre_s0_dy;
     wire signed [31:0] pre_t0_dx,  pre_t0_dy;
@@ -69,9 +69,9 @@ module tb_deriv_dt;
     wire signed [31:0] pre_t1_dx,  pre_t1_dy;
     wire signed [31:0] pre_q_dx,   pre_q_dy;
 
-    // Init outputs
-    wire signed [31:0] init_c0r, init_c0g, init_c0b, init_c0a;
-    wire signed [31:0] init_c1r, init_c1g, init_c1b, init_c1a;
+    // Color init outputs (24-bit signed)
+    wire signed [23:0] init_c0r, init_c0g, init_c0b, init_c0a;
+    wire signed [23:0] init_c1r, init_c1g, init_c1b, init_c1a;
     wire signed [31:0] init_z;
     wire signed [31:0] init_s0, init_t0, init_s1, init_t1;
     wire signed [31:0] init_q;

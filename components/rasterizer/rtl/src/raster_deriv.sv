@@ -121,23 +121,26 @@ module raster_deriv (
     input  wire [9:0]          x0,             // Vertex 0 X
     input  wire [9:0]          y0,             // Vertex 0 Y
 
-    // Derivative outputs (32-bit signed, per-attribute dx and dy, registered)
-    output reg  signed [31:0]  pre_c0r_dx,     // Color0 red dx derivative
-    output reg  signed [31:0]  pre_c0r_dy,     // Color0 red dy derivative
-    output reg  signed [31:0]  pre_c0g_dx,     // Color0 green dx derivative
-    output reg  signed [31:0]  pre_c0g_dy,     // Color0 green dy derivative
-    output reg  signed [31:0]  pre_c0b_dx,     // Color0 blue dx derivative
-    output reg  signed [31:0]  pre_c0b_dy,     // Color0 blue dy derivative
-    output reg  signed [31:0]  pre_c0a_dx,     // Color0 alpha dx derivative
-    output reg  signed [31:0]  pre_c0a_dy,     // Color0 alpha dy derivative
-    output reg  signed [31:0]  pre_c1r_dx,     // Color1 red dx derivative
-    output reg  signed [31:0]  pre_c1r_dy,     // Color1 red dy derivative
-    output reg  signed [31:0]  pre_c1g_dx,     // Color1 green dx derivative
-    output reg  signed [31:0]  pre_c1g_dy,     // Color1 green dy derivative
-    output reg  signed [31:0]  pre_c1b_dx,     // Color1 blue dx derivative
-    output reg  signed [31:0]  pre_c1b_dy,     // Color1 blue dy derivative
-    output reg  signed [31:0]  pre_c1a_dx,     // Color1 alpha dx derivative
-    output reg  signed [31:0]  pre_c1a_dy,     // Color1 alpha dy derivative
+    // Color derivative outputs (16-bit signed Q8.8, per-attribute dx and dy, registered)
+    // Narrowed from 32-bit: final framebuffer is RGB565, max accumulated error
+    // after 512 steps with 16-bit derivatives is ~2 UNORM units < 1 RGB565 LSB.
+    output reg  signed [15:0]  pre_c0r_dx,     // Color0 red dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c0r_dy,     // Color0 red dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c0g_dx,     // Color0 green dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c0g_dy,     // Color0 green dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c0b_dx,     // Color0 blue dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c0b_dy,     // Color0 blue dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c0a_dx,     // Color0 alpha dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c0a_dy,     // Color0 alpha dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c1r_dx,     // Color1 red dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c1r_dy,     // Color1 red dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c1g_dx,     // Color1 green dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c1g_dy,     // Color1 green dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c1b_dx,     // Color1 blue dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c1b_dy,     // Color1 blue dy derivative, Q8.8
+    output reg  signed [15:0]  pre_c1a_dx,     // Color1 alpha dx derivative, Q8.8
+    output reg  signed [15:0]  pre_c1a_dy,     // Color1 alpha dy derivative, Q8.8
+    // Non-color derivative outputs (32-bit signed, unchanged)
     output reg  signed [31:0]  pre_z_dx,       // Depth dx derivative
     output reg  signed [31:0]  pre_z_dy,       // Depth dy derivative
     output reg  signed [31:0]  pre_s0_dx,      // S0 dx derivative
@@ -151,15 +154,17 @@ module raster_deriv (
     output reg  signed [31:0]  pre_q_dx,       // Q/W dx derivative
     output reg  signed [31:0]  pre_q_dy,       // Q/W dy derivative
 
-    // Initial attribute values at bbox origin (32-bit signed, registered)
-    output reg  signed [31:0]  init_c0r,       // Color0 red initial value
-    output reg  signed [31:0]  init_c0g,       // Color0 green initial value
-    output reg  signed [31:0]  init_c0b,       // Color0 blue initial value
-    output reg  signed [31:0]  init_c0a,       // Color0 alpha initial value
-    output reg  signed [31:0]  init_c1r,       // Color1 red initial value
-    output reg  signed [31:0]  init_c1g,       // Color1 green initial value
-    output reg  signed [31:0]  init_c1b,       // Color1 blue initial value
-    output reg  signed [31:0]  init_c1a,       // Color1 alpha initial value
+    // Color initial values at bbox origin (24-bit signed, Q8.8 + 8 guard bits)
+    // Narrowed from 32-bit to match 24-bit color accumulators.
+    output reg  signed [23:0]  init_c0r,       // Color0 red initial value
+    output reg  signed [23:0]  init_c0g,       // Color0 green initial value
+    output reg  signed [23:0]  init_c0b,       // Color0 blue initial value
+    output reg  signed [23:0]  init_c0a,       // Color0 alpha initial value
+    output reg  signed [23:0]  init_c1r,       // Color1 red initial value
+    output reg  signed [23:0]  init_c1g,       // Color1 green initial value
+    output reg  signed [23:0]  init_c1b,       // Color1 blue initial value
+    output reg  signed [23:0]  init_c1a,       // Color1 alpha initial value
+    // Non-color initial values (32-bit signed, unchanged)
     output reg  signed [31:0]  init_z,         // Depth initial value
     output reg  signed [31:0]  init_s0,        // S0 initial value
     output reg  signed [31:0]  init_t0,        // T0 initial value
@@ -721,14 +726,14 @@ module raster_deriv (
     // Derivative output register latching (1 attribute per edge-phase set)
     // ========================================================================
 
-    reg signed [31:0] next_pre_c0r_dx, next_pre_c0r_dy;
-    reg signed [31:0] next_pre_c0g_dx, next_pre_c0g_dy;
-    reg signed [31:0] next_pre_c0b_dx, next_pre_c0b_dy;
-    reg signed [31:0] next_pre_c0a_dx, next_pre_c0a_dy;
-    reg signed [31:0] next_pre_c1r_dx, next_pre_c1r_dy;
-    reg signed [31:0] next_pre_c1g_dx, next_pre_c1g_dy;
-    reg signed [31:0] next_pre_c1b_dx, next_pre_c1b_dy;
-    reg signed [31:0] next_pre_c1a_dx, next_pre_c1a_dy;
+    reg signed [15:0] next_pre_c0r_dx, next_pre_c0r_dy;
+    reg signed [15:0] next_pre_c0g_dx, next_pre_c0g_dy;
+    reg signed [15:0] next_pre_c0b_dx, next_pre_c0b_dy;
+    reg signed [15:0] next_pre_c0a_dx, next_pre_c0a_dy;
+    reg signed [15:0] next_pre_c1r_dx, next_pre_c1r_dy;
+    reg signed [15:0] next_pre_c1g_dx, next_pre_c1g_dy;
+    reg signed [15:0] next_pre_c1b_dx, next_pre_c1b_dy;
+    reg signed [15:0] next_pre_c1a_dx, next_pre_c1a_dy;
     reg signed [31:0] next_pre_z_dx, next_pre_z_dy;
     reg signed [31:0] next_pre_s0_dx, next_pre_s0_dy;
     reg signed [31:0] next_pre_t0_dx, next_pre_t0_dy;
@@ -767,31 +772,33 @@ module raster_deriv (
         next_pre_q_dy = pre_q_dy;
 
         // Latch dx at PH_EDGE_1, dy at PH_EDGE_3
+        // Color derivatives truncated from Q8.16 (32-bit) to Q8.8 (16-bit)
+        // by extracting bits [23:8], dropping 8 LSB frac bits and 8 MSB guard bits.
         if (running && phase == PH_EDGE_1) begin
             case (attr_idx)
                 4'd0: begin
-                    next_pre_c0r_dx = deriv_dx;
+                    next_pre_c0r_dx = deriv_dx[23:8];
                 end
                 4'd1: begin
-                    next_pre_c0g_dx = deriv_dx;
+                    next_pre_c0g_dx = deriv_dx[23:8];
                 end
                 4'd2: begin
-                    next_pre_c0b_dx = deriv_dx;
+                    next_pre_c0b_dx = deriv_dx[23:8];
                 end
                 4'd3: begin
-                    next_pre_c0a_dx = deriv_dx;
+                    next_pre_c0a_dx = deriv_dx[23:8];
                 end
                 4'd4: begin
-                    next_pre_c1r_dx = deriv_dx;
+                    next_pre_c1r_dx = deriv_dx[23:8];
                 end
                 4'd5: begin
-                    next_pre_c1g_dx = deriv_dx;
+                    next_pre_c1g_dx = deriv_dx[23:8];
                 end
                 4'd6: begin
-                    next_pre_c1b_dx = deriv_dx;
+                    next_pre_c1b_dx = deriv_dx[23:8];
                 end
                 4'd7: begin
-                    next_pre_c1a_dx = deriv_dx;
+                    next_pre_c1a_dx = deriv_dx[23:8];
                 end
                 4'd8: begin
                     next_pre_z_dx = deriv_dx;
@@ -818,28 +825,28 @@ module raster_deriv (
         if (running && phase == PH_EDGE_3) begin
             case (attr_idx)
                 4'd0: begin
-                    next_pre_c0r_dy = deriv_dy;
+                    next_pre_c0r_dy = deriv_dy[23:8];
                 end
                 4'd1: begin
-                    next_pre_c0g_dy = deriv_dy;
+                    next_pre_c0g_dy = deriv_dy[23:8];
                 end
                 4'd2: begin
-                    next_pre_c0b_dy = deriv_dy;
+                    next_pre_c0b_dy = deriv_dy[23:8];
                 end
                 4'd3: begin
-                    next_pre_c0a_dy = deriv_dy;
+                    next_pre_c0a_dy = deriv_dy[23:8];
                 end
                 4'd4: begin
-                    next_pre_c1r_dy = deriv_dy;
+                    next_pre_c1r_dy = deriv_dy[23:8];
                 end
                 4'd5: begin
-                    next_pre_c1g_dy = deriv_dy;
+                    next_pre_c1g_dy = deriv_dy[23:8];
                 end
                 4'd6: begin
-                    next_pre_c1b_dy = deriv_dy;
+                    next_pre_c1b_dy = deriv_dy[23:8];
                 end
                 4'd7: begin
-                    next_pre_c1a_dy = deriv_dy;
+                    next_pre_c1a_dy = deriv_dy[23:8];
                 end
                 4'd8: begin
                     next_pre_z_dy = deriv_dy;
@@ -866,22 +873,22 @@ module raster_deriv (
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            pre_c0r_dx <= 32'sd0;
-            pre_c0r_dy <= 32'sd0;
-            pre_c0g_dx <= 32'sd0;
-            pre_c0g_dy <= 32'sd0;
-            pre_c0b_dx <= 32'sd0;
-            pre_c0b_dy <= 32'sd0;
-            pre_c0a_dx <= 32'sd0;
-            pre_c0a_dy <= 32'sd0;
-            pre_c1r_dx <= 32'sd0;
-            pre_c1r_dy <= 32'sd0;
-            pre_c1g_dx <= 32'sd0;
-            pre_c1g_dy <= 32'sd0;
-            pre_c1b_dx <= 32'sd0;
-            pre_c1b_dy <= 32'sd0;
-            pre_c1a_dx <= 32'sd0;
-            pre_c1a_dy <= 32'sd0;
+            pre_c0r_dx <= 16'sd0;
+            pre_c0r_dy <= 16'sd0;
+            pre_c0g_dx <= 16'sd0;
+            pre_c0g_dy <= 16'sd0;
+            pre_c0b_dx <= 16'sd0;
+            pre_c0b_dy <= 16'sd0;
+            pre_c0a_dx <= 16'sd0;
+            pre_c0a_dy <= 16'sd0;
+            pre_c1r_dx <= 16'sd0;
+            pre_c1r_dy <= 16'sd0;
+            pre_c1g_dx <= 16'sd0;
+            pre_c1g_dy <= 16'sd0;
+            pre_c1b_dx <= 16'sd0;
+            pre_c1b_dy <= 16'sd0;
+            pre_c1a_dx <= 16'sd0;
+            pre_c1a_dy <= 16'sd0;
             pre_z_dx <= 32'sd0;
             pre_z_dy <= 32'sd0;
             pre_s0_dx <= 32'sd0;
@@ -932,10 +939,10 @@ module raster_deriv (
     // Init for each attribute is computed during the NEXT attribute's init
     // phases.  Init for attr 13 is computed during the finishing state.
 
-    reg signed [31:0] next_init_c0r, next_init_c0g;
-    reg signed [31:0] next_init_c0b, next_init_c0a;
-    reg signed [31:0] next_init_c1r, next_init_c1g;
-    reg signed [31:0] next_init_c1b, next_init_c1a;
+    reg signed [23:0] next_init_c0r, next_init_c0g;
+    reg signed [23:0] next_init_c0b, next_init_c0a;
+    reg signed [23:0] next_init_c1r, next_init_c1g;
+    reg signed [23:0] next_init_c1b, next_init_c1a;
     reg signed [31:0] next_init_z, next_init_s0;
     reg signed [31:0] next_init_t0, next_init_q;
     reg signed [31:0] next_init_s1, next_init_t1;
@@ -963,28 +970,29 @@ module raster_deriv (
         if (init_latch_running) begin
             case (prev_attr)
                 4'd0: begin
-                    next_init_c0r = computed_init_prev;
+                    // Color init: truncate Q8.16 (32b) to Q8.8+guard (24b)
+                    next_init_c0r = computed_init_prev[31:8];
                 end
                 4'd1: begin
-                    next_init_c0g = computed_init_prev;
+                    next_init_c0g = computed_init_prev[31:8];
                 end
                 4'd2: begin
-                    next_init_c0b = computed_init_prev;
+                    next_init_c0b = computed_init_prev[31:8];
                 end
                 4'd3: begin
-                    next_init_c0a = computed_init_prev;
+                    next_init_c0a = computed_init_prev[31:8];
                 end
                 4'd4: begin
-                    next_init_c1r = computed_init_prev;
+                    next_init_c1r = computed_init_prev[31:8];
                 end
                 4'd5: begin
-                    next_init_c1g = computed_init_prev;
+                    next_init_c1g = computed_init_prev[31:8];
                 end
                 4'd6: begin
-                    next_init_c1b = computed_init_prev;
+                    next_init_c1b = computed_init_prev[31:8];
                 end
                 4'd7: begin
-                    next_init_c1a = computed_init_prev;
+                    next_init_c1a = computed_init_prev[31:8];
                 end
                 4'd8: begin
                     next_init_z = computed_init_prev;
@@ -1013,14 +1021,14 @@ module raster_deriv (
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            init_c0r <= 32'sd0;
-            init_c0g <= 32'sd0;
-            init_c0b <= 32'sd0;
-            init_c0a <= 32'sd0;
-            init_c1r <= 32'sd0;
-            init_c1g <= 32'sd0;
-            init_c1b <= 32'sd0;
-            init_c1a <= 32'sd0;
+            init_c0r <= 24'sd0;
+            init_c0g <= 24'sd0;
+            init_c0b <= 24'sd0;
+            init_c0a <= 24'sd0;
+            init_c1r <= 24'sd0;
+            init_c1g <= 24'sd0;
+            init_c1b <= 24'sd0;
+            init_c1a <= 24'sd0;
             init_z <= 32'sd0;
             init_s0 <= 32'sd0;
             init_t0 <= 32'sd0;

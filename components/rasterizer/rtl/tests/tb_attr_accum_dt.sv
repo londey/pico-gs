@@ -21,15 +21,15 @@ module tb_attr_accum_dt;
     reg tile_col_step;
     reg tile_row_step;
 
-    // Derivative inputs (28 × 32-bit: 14 dx + 14 dy)
-    reg signed [31:0] pre_c0r_dx, pre_c0r_dy;
-    reg signed [31:0] pre_c0g_dx, pre_c0g_dy;
-    reg signed [31:0] pre_c0b_dx, pre_c0b_dy;
-    reg signed [31:0] pre_c0a_dx, pre_c0a_dy;
-    reg signed [31:0] pre_c1r_dx, pre_c1r_dy;
-    reg signed [31:0] pre_c1g_dx, pre_c1g_dy;
-    reg signed [31:0] pre_c1b_dx, pre_c1b_dy;
-    reg signed [31:0] pre_c1a_dx, pre_c1a_dy;
+    // Color derivative inputs (16 × 16-bit signed Q8.8)
+    reg signed [15:0] pre_c0r_dx, pre_c0r_dy;
+    reg signed [15:0] pre_c0g_dx, pre_c0g_dy;
+    reg signed [15:0] pre_c0b_dx, pre_c0b_dy;
+    reg signed [15:0] pre_c0a_dx, pre_c0a_dy;
+    reg signed [15:0] pre_c1r_dx, pre_c1r_dy;
+    reg signed [15:0] pre_c1g_dx, pre_c1g_dy;
+    reg signed [15:0] pre_c1b_dx, pre_c1b_dy;
+    reg signed [15:0] pre_c1a_dx, pre_c1a_dy;
     reg signed [31:0] pre_z_dx, pre_z_dy;
     reg signed [31:0] pre_s0_dx, pre_s0_dy;
     reg signed [31:0] pre_t0_dx, pre_t0_dy;
@@ -37,9 +37,9 @@ module tb_attr_accum_dt;
     reg signed [31:0] pre_t1_dx, pre_t1_dy;
     reg signed [31:0] pre_q_dx, pre_q_dy;
 
-    // Initial value inputs (14 × 32-bit)
-    reg signed [31:0] init_c0r, init_c0g, init_c0b, init_c0a;
-    reg signed [31:0] init_c1r, init_c1g, init_c1b, init_c1a;
+    // Color initial value inputs (8 × 24-bit)
+    reg signed [23:0] init_c0r, init_c0g, init_c0b, init_c0a;
+    reg signed [23:0] init_c1r, init_c1g, init_c1b, init_c1a;
     reg signed [31:0] init_z;
     reg signed [31:0] init_s0, init_t0, init_s1, init_t1;
     reg signed [31:0] init_q;
