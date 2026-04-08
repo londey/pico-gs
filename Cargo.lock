@@ -144,6 +144,7 @@ dependencies = [
  "gpu-registers",
  "gs-memory",
  "gs-twin-core",
+ "qfixed",
 ]
 
 [[package]]

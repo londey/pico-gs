@@ -433,3 +433,110 @@ fn ver_023_stipple_test() {
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-023 golden image: {}", png_path.display());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-024: Alpha Blend Modes
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VER_024_HEX: &str = include_str!("../../scripts/ver_024_alpha_blend.hex");
+
+#[test]
+fn ver_024_alpha_blend() {
+    let png_path = dt_out_dir().join("ver_024_alpha_blend.png");
+    let _ = test_harness::write_placeholder_png(&png_path);
+
+    let script = hex_parser::parse_hex_str(VER_024_HEX).unwrap();
+    let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+
+    for phase in &script.phases {
+        gpu.reg_write_script(&phase.commands);
+    }
+
+    let pixels = gpu.extract_framebuffer_rgb565();
+
+    // Save PNG first for visual inspection
+    gpu.framebuffer_to_png(&png_path).unwrap();
+    eprintln!("VER-024 golden image: {}", png_path.display());
+
+    // Background is a dark/light grey checkerboard.
+    // Foreground triangles are red with Gouraud alpha gradient (opaque
+    // top vertices, transparent bottom vertex).
+    let w = script.fb_width as usize;
+
+    // Helper: count pixels in a quadrant matching a predicate.
+    let count_in_quad = |qx_min: usize, qy_min: usize, pred: &dyn Fn(u16) -> bool| -> usize {
+        pixels
+            .iter()
+            .enumerate()
+            .filter(|&(i, &p)| {
+                let x = i % w;
+                let y = i / w;
+                x >= qx_min && x < qx_min + 128 && y >= qy_min && y < qy_min + 128 && pred(p)
+            })
+            .count()
+    };
+
+    // Verify checkerboard is present: should have at least 2 distinct
+    // grey levels (dark and light) that aren't black.
+    let is_grey = |p: u16| -> bool {
+        let r = (p >> 11) & 0x1F;
+        let g = (p >> 5) & 0x3F;
+        let b = p & 0x1F;
+        // Grey: channels roughly equal (accounting for 5/6/5 bit widths)
+        let g5 = g >> 1; // scale G6 to G5 for comparison
+        r > 2 && r.abs_diff(b) <= 2 && r.abs_diff(g5) <= 2
+    };
+    let grey_count = pixels.iter().filter(|&&p| is_grey(p)).count();
+    assert!(
+        grey_count > 20_000,
+        "checkerboard background expected grey pixels, got {grey_count}"
+    );
+
+    // Top-left (DISABLED): red pixels that completely overwrite the
+    // background (high R, no contribution from grey dest).
+    let tl_red = count_in_quad(0, 0, &|p| {
+        let r = (p >> 11) & 0x1F;
+        r > 20
+    });
+    assert!(
+        tl_red > 500,
+        "DISABLED mode should have red pixels overwriting bg, got {tl_red}"
+    );
+
+    // Top-right (ADD): red + grey = brighter-than-grey pixels with R.
+    // Red channel should be elevated above the background grey level.
+    let tr_bright = count_in_quad(128, 0, &|p| {
+        let r = (p >> 11) & 0x1F;
+        r > 15
+    });
+    assert!(
+        tr_bright > 500,
+        "ADD mode should produce bright red-tinted pixels, got {tr_bright}"
+    );
+
+    // Bottom-left (SUBTRACT): red - grey.  Red channel stays high (src
+    // red > dst grey red), green/blue channels clamp to 0.  Result is a
+    // darker red compared to the source.
+    let bl_sub = count_in_quad(0, 128, &|p| {
+        let r = (p >> 11) & 0x1F;
+        r > 8
+    });
+    assert!(
+        bl_sub > 500,
+        "SUBTRACT mode should produce reddish pixels, got {bl_sub}"
+    );
+
+    // Bottom-right (BLEND): alpha gradient.  Near the opaque top edge
+    // we should see red; near the transparent bottom tip we should see
+    // the checkerboard showing through.  Count pixels where red is
+    // present but not at full intensity (blended).
+    let br_blend = count_in_quad(128, 128, &|p| {
+        let r = (p >> 11) & 0x1F;
+        // Partially blended: red present but below full red
+        r > 4 && r < 28
+    });
+    assert!(
+        br_blend > 500,
+        "BLEND mode should produce partially-blended red pixels, got {br_blend}"
+    );
+}

@@ -329,7 +329,19 @@ impl Gpu {
         let alpha_ref_u8 = rm.alpha_ref();
         let alpha_ref_q412 =
             Q::<4, 12>::from_bits(((alpha_ref_u8 as u16) << 4 | (alpha_ref_u8 as u16) >> 4) as i64);
-        gs_twin_core::alpha_test::alpha_test(frag, true, rm.z_compare(), alpha_ref_q412)
+        let frag =
+            gs_twin_core::alpha_test::alpha_test(frag, true, rm.z_compare(), alpha_ref_q412)?;
+
+        // Stage 7: Alpha blend (read dst from framebuffer, blend with src)
+        let blend_mode = rm
+            .alpha_blend()
+            .unwrap_or(gpu_registers::components::alpha_blend_e::AlphaBlendE::Disabled);
+        Some(gs_alpha_blend::alpha_blend(
+            frag,
+            &self.memory,
+            &fb_cfg,
+            blend_mode,
+        ))
     }
 
     /// Write a colored fragment to the framebuffer (post-pipeline shim).

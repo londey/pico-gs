@@ -183,7 +183,7 @@ units:
     dsp: 0              # TBD -- may use DSP or LUT shift-and-add
     ebr: 0
     lut4: 300
-    status: planned
+    status: implemented
     rtl: [alpha_blend.sv]
     twin: gs-alpha-blend
     stages:
