@@ -1,5 +1,8 @@
 //! Basic tests for qfixed `Q` and `UQ` types.
 
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
 use qfixed::{Q, UQ};
 
 // ---------------------------------------------------------------------------
@@ -91,14 +94,14 @@ fn q_neg() {
     assert_eq!(b.to_int(), -5);
 }
 
-/// Verifies that Q4.4 addition traps on overflow in debug mode.
+/// Verifies that Q4.4 addition widens to Q5.4 (no overflow possible).
 #[test]
-#[should_panic(expected = "overflow")]
-#[cfg(debug_assertions)]
-fn q_add_overflow_traps() {
-    let a = Q::<4, 4>::MAX;
+fn q_add_widens() {
+    let a = Q::<4, 4>::MAX; // 7.9375
     let b = Q::<4, 4>::from_int(1);
-    let _ = a + b; // Should panic: 7.9375 + 1.0 overflows Q4.4
+    let c: Q<5, 4> = a + b;
+    // Q5.4 has enough range — no overflow
+    assert!((c.to_f64() - 8.9375).abs() < 1e-4);
 }
 
 // ---------------------------------------------------------------------------
@@ -262,14 +265,13 @@ fn uq_add() {
     assert!((c.to_f64() - 0.75).abs() < 0.01);
 }
 
-/// Verifies that UQ subtraction traps on underflow in debug mode.
+/// Verifies that UQ subtraction returns signed Q (can be negative).
 #[test]
-#[should_panic(expected = "underflow")]
-#[cfg(debug_assertions)]
-fn uq_sub_underflow_traps() {
+fn uq_sub_returns_signed() {
     let a = UQ::<1, 7>::from_f64(0.25);
     let b = UQ::<1, 7>::from_f64(0.5);
-    let _ = a - b;
+    let c: Q<2, 7> = a - b;
+    assert!((c.to_f64() - (-0.25)).abs() < 0.01);
 }
 
 // ---------------------------------------------------------------------------
@@ -423,12 +425,15 @@ fn q_reformat() {
 // Edge case: Q<32, 32> (full 64-bit)
 // ---------------------------------------------------------------------------
 
-/// Verifies full 64-bit Q<32, 32> addition works.
+/// Verifies full 64-bit Q<32, 32> wrapping addition works.
+///
+/// Q<32,32> is already at the 64-bit limit, so widening `+` can't be used.
+/// Use `wrapping_add` for same-type addition at maximum width.
 #[test]
 fn q_64bit_full() {
     let a = Q::<32, 32>::from_int(1);
     let b = Q::<32, 32>::from_int(2);
-    let c = a + b;
+    let c = a.wrapping_add(b);
     assert_eq!(c.to_int(), 3);
 }
 
@@ -443,4 +448,261 @@ fn q_abs() {
     assert_eq!(a.abs().to_int(), 5);
     let b = Q::<8, 8>::from_int(3);
     assert_eq!(b.abs().to_int(), 3);
+}
+
+// ---------------------------------------------------------------------------
+// Q: Saturating arithmetic
+// ---------------------------------------------------------------------------
+
+/// saturating_add clamps to MAX on positive overflow.
+#[test]
+fn q_saturating_add_overflow() {
+    let max = Q::<4, 4>::MAX;
+    let one = Q::<4, 4>::from_int(1);
+    assert_eq!(max.saturating_add(one), Q::<4, 4>::MAX);
+}
+
+/// saturating_add works normally when no overflow.
+#[test]
+fn q_saturating_add_normal() {
+    let a = Q::<8, 8>::from_int(3);
+    let b = Q::<8, 8>::from_int(4);
+    assert_eq!(a.saturating_add(b).to_int(), 7);
+}
+
+/// saturating_sub clamps to MIN on negative overflow.
+#[test]
+fn q_saturating_sub_underflow() {
+    let min = Q::<4, 4>::MIN;
+    let one = Q::<4, 4>::from_int(1);
+    assert_eq!(min.saturating_sub(one), Q::<4, 4>::MIN);
+}
+
+/// saturating_sub works normally when no underflow.
+#[test]
+fn q_saturating_sub_normal() {
+    let a = Q::<8, 8>::from_int(7);
+    let b = Q::<8, 8>::from_int(3);
+    assert_eq!(a.saturating_sub(b).to_int(), 4);
+}
+
+/// saturating_mul clamps to MAX on positive overflow.
+#[test]
+fn q_saturating_mul_overflow() {
+    let max = Q::<4, 4>::MAX;
+    let two = Q::<4, 4>::from_int(2);
+    assert_eq!(max.saturating_mul(two), Q::<4, 4>::MAX);
+}
+
+/// saturating_mul clamps to MIN on negative overflow.
+#[test]
+fn q_saturating_mul_negative_overflow() {
+    let max = Q::<4, 4>::MAX;
+    let neg_two = Q::<4, 4>::from_int(-2);
+    assert_eq!(max.saturating_mul(neg_two), Q::<4, 4>::MIN);
+}
+
+/// saturating_mul works normally when no overflow.
+#[test]
+fn q_saturating_mul_normal() {
+    let a = Q::<8, 8>::from_f64(2.0);
+    let b = Q::<8, 8>::from_f64(3.5);
+    assert_eq!(a.saturating_mul(b).to_f64(), 7.0);
+}
+
+/// saturating_neg: MIN saturates to MAX.
+#[test]
+fn q_saturating_neg_min() {
+    let min = Q::<4, 4>::MIN;
+    assert_eq!(min.saturating_neg(), Q::<4, 4>::MAX);
+}
+
+/// saturating_neg works normally for non-MIN values.
+#[test]
+fn q_saturating_neg_normal() {
+    let a = Q::<8, 8>::from_int(5);
+    assert_eq!(a.saturating_neg().to_int(), -5);
+    let b = Q::<8, 8>::from_int(-3);
+    assert_eq!(b.saturating_neg().to_int(), 3);
+}
+
+// ---------------------------------------------------------------------------
+// UQ: Saturating arithmetic
+// ---------------------------------------------------------------------------
+
+/// saturating_add clamps to MAX on overflow.
+#[test]
+fn uq_saturating_add_overflow() {
+    let max = UQ::<4, 4>::MAX;
+    let one = UQ::<4, 4>::from_int(1);
+    assert_eq!(max.saturating_add(one), UQ::<4, 4>::MAX);
+}
+
+/// saturating_add works normally when no overflow.
+#[test]
+fn uq_saturating_add_normal() {
+    let a = UQ::<8, 8>::from_int(3);
+    let b = UQ::<8, 8>::from_int(4);
+    assert_eq!(a.saturating_add(b).to_int(), 7);
+}
+
+/// saturating_sub clamps to zero on underflow.
+#[test]
+fn uq_saturating_sub_underflow() {
+    let a = UQ::<4, 4>::from_int(1);
+    let b = UQ::<4, 4>::from_int(3);
+    assert_eq!(a.saturating_sub(b), UQ::<4, 4>::ZERO);
+}
+
+/// saturating_sub works normally when no underflow.
+#[test]
+fn uq_saturating_sub_normal() {
+    let a = UQ::<8, 8>::from_int(7);
+    let b = UQ::<8, 8>::from_int(3);
+    assert_eq!(a.saturating_sub(b).to_int(), 4);
+}
+
+/// saturating_mul clamps to MAX on overflow.
+#[test]
+fn uq_saturating_mul_overflow() {
+    let max = UQ::<4, 4>::MAX;
+    let two = UQ::<4, 4>::from_int(2);
+    assert_eq!(max.saturating_mul(two), UQ::<4, 4>::MAX);
+}
+
+/// saturating_mul works normally when no overflow.
+#[test]
+fn uq_saturating_mul_normal() {
+    let a = UQ::<8, 8>::from_f64(2.0);
+    let b = UQ::<8, 8>::from_f64(3.5);
+    assert_eq!(a.saturating_mul(b).to_f64(), 7.0);
+}
+
+// ---------------------------------------------------------------------------
+// Q: Widening add/sub
+// ---------------------------------------------------------------------------
+
+/// widening_add: MAX + MAX fits in wider output.
+#[test]
+fn q_widening_add_no_overflow() {
+    let max = Q::<4, 4>::MAX; // 7.9375
+    let sum: Q<5, 4> = max.widening_add(max);
+    assert_eq!(sum.to_f64(), max.to_f64() * 2.0);
+}
+
+/// widening_add: normal values with same fractional bits.
+#[test]
+fn q_widening_add_normal() {
+    let a = Q::<4, 4>::from_f64(2.5);
+    let b = Q::<4, 4>::from_f64(3.25);
+    let sum: Q<5, 4> = a.widening_add(b);
+    assert_eq!(sum.to_f64(), 5.75);
+}
+
+/// widening_add: fractional alignment when FO > F.
+#[test]
+fn q_widening_add_frac_widen() {
+    let a = Q::<4, 4>::from_f64(1.5);
+    let b = Q::<4, 4>::from_f64(2.25);
+    let sum: Q<5, 8> = a.widening_add(b);
+    assert_eq!(sum.to_f64(), 3.75);
+}
+
+/// widening_sub: MIN - MAX fits in wider output.
+#[test]
+fn q_widening_sub_no_overflow() {
+    let min = Q::<4, 4>::MIN; // -8.0
+    let max = Q::<4, 4>::MAX; // 7.9375
+    let diff: Q<5, 4> = min.widening_sub(max);
+    assert_eq!(diff.to_f64(), min.to_f64() - max.to_f64());
+}
+
+/// widening_sub: normal case.
+#[test]
+fn q_widening_sub_normal() {
+    let a = Q::<4, 4>::from_f64(1.5);
+    let b = Q::<4, 4>::from_f64(3.75);
+    let diff: Q<5, 4> = a.widening_sub(b);
+    assert_eq!(diff.to_f64(), -2.25);
+}
+
+// ---------------------------------------------------------------------------
+// UQ: Widening add/sub
+// ---------------------------------------------------------------------------
+
+/// widening_add: MAX + MAX fits in wider output.
+#[test]
+fn uq_widening_add_no_overflow() {
+    let max = UQ::<4, 4>::MAX; // 15.9375
+    let sum: UQ<5, 4> = max.widening_add(max);
+    assert_eq!(sum.to_f64(), max.to_f64() * 2.0);
+}
+
+/// widening_add: normal case.
+#[test]
+fn uq_widening_add_normal() {
+    let a = UQ::<4, 4>::from_f64(5.5);
+    let b = UQ::<4, 4>::from_f64(3.25);
+    let sum: UQ<5, 4> = a.widening_add(b);
+    assert_eq!(sum.to_f64(), 8.75);
+}
+
+/// widening_sub: returns signed Q, positive result.
+#[test]
+fn uq_widening_sub_positive() {
+    let a = UQ::<4, 4>::from_f64(5.5);
+    let b = UQ::<4, 4>::from_f64(3.25);
+    let diff: Q<5, 4> = a.widening_sub(b);
+    assert_eq!(diff.to_f64(), 2.25);
+}
+
+/// widening_sub: returns signed Q, negative result.
+#[test]
+fn uq_widening_sub_negative() {
+    let a = UQ::<4, 4>::from_f64(2.0);
+    let b = UQ::<4, 4>::from_f64(5.5);
+    let diff: Q<5, 4> = a.widening_sub(b);
+    assert_eq!(diff.to_f64(), -3.5);
+}
+
+/// widening_sub: fractional alignment when FO > F.
+#[test]
+fn uq_widening_sub_frac_widen() {
+    let a = UQ::<4, 4>::from_f64(3.0);
+    let b = UQ::<4, 4>::from_f64(1.5);
+    let diff: Q<5, 8> = a.widening_sub(b);
+    assert_eq!(diff.to_f64(), 1.5);
+}
+
+// ---------------------------------------------------------------------------
+// Q4.12 pipeline-realistic tests
+// ---------------------------------------------------------------------------
+
+/// Saturating add on Q4.12 (the main DT format).
+#[test]
+fn q4_12_saturating_add() {
+    let a = Q::<4, 12>::from_f64(0.75);
+    let b = Q::<4, 12>::from_f64(0.5);
+    let sum = a.saturating_add(b);
+    // 1.25 fits in Q4.12 (range [-8, ~8)
+    assert!((sum.to_f64() - 1.25).abs() < 1e-4);
+}
+
+/// Saturating mul on Q4.12 (color blending).
+#[test]
+fn q4_12_saturating_mul() {
+    let color = Q::<4, 12>::from_f64(0.8);
+    let alpha = Q::<4, 12>::from_f64(0.5);
+    let result = color.saturating_mul(alpha);
+    assert!((result.to_f64() - 0.4).abs() < 1e-3);
+}
+
+/// Widening mul then saturate back (typical pipeline pattern).
+#[test]
+fn q4_12_widening_mul_then_saturate() {
+    let a = Q::<4, 12>::from_f64(1.5);
+    let b = Q::<4, 12>::from_f64(2.0);
+    let wide: Q<8, 24> = a.widening_mul(b);
+    let narrow: Q<4, 12> = wide.saturate();
+    assert!((narrow.to_f64() - 3.0).abs() < 1e-3);
 }

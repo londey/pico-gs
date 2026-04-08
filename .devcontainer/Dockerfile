@@ -82,12 +82,15 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust via rustup (required for sysdoc + RP2350 firmware)
+# Nightly is default — needed for generic_const_exprs in qfixed crate.
+# Stable is also installed for crates that don't need nightly features.
 ENV RUSTUP_HOME=/opt/rustup
 ENV CARGO_HOME=/opt/cargo
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
-RUN rustup component add rust-src
+RUN rustup toolchain install stable \
+    && rustup component add rust-src
 
 # Add RP2350 (Cortex-M33) cross-compilation target for firmware builds
 RUN rustup target add thumbv8m.main-none-eabihf

@@ -115,11 +115,11 @@ fn alpha_broadcast(c: ColorQ412) -> ColorQ412 {
 
 /// Per-channel `(A - B) * C + D` using Q4.12 fixed-point arithmetic.
 ///
-/// Uses `wrapping_mul` which computes the full product in 128 bits,
-/// then truncates to Q4.12 (matching RTL bit extraction).
+/// All intermediate results are kept in Q4.12 with wrapping semantics,
+/// matching RTL bit extraction.
 #[inline]
 fn abcd(a: Q<4, 12>, b: Q<4, 12>, c: Q<4, 12>, d: Q<4, 12>) -> Q<4, 12> {
-    (a - b).wrapping_mul(c) + d
+    a.wrapping_sub(b).wrapping_mul(c).wrapping_add(d)
 }
 
 /// Per-stage mux selectors decoded from one half of `CcModeReg`.

@@ -5,13 +5,22 @@
 //! is the number of fractional bits.
 //! Total bit width is `I + F`, backed by `i64`/`u64` internally.
 //!
-//! Overflow behavior matches Rust integers: traps in debug, wraps in release.
-//! Explicit `wrapping_*` methods are provided for intentional rollover.
-//! Multiplication always requires explicit width management via `widening_mul`
-//! or `wrapping_mul`.
+//! Arithmetic operators produce widened outputs that cannot overflow:
+//! - `Q<I,F> + Q<I,F>` → `Q<{I+1}, F>`
+//! - `Q<I,F> - Q<I,F>` → `Q<{I+1}, F>`
+//! - `Q<I,F> * Q<I,F>` → `Q<{I+I}, {F+F}>`
+//! - `-Q<I,F>` → `Q<{I+1}, F>`
+//! - `UQ<I,F> - UQ<I,F>` → `Q<{I+1}, F>` (signed, since result can be negative)
+//!
+//! Use `.truncate()` or `.saturate()` to narrow results back down.
+//! Use `wrapping_add`/`wrapping_sub`/`wrapping_mul` for same-type RTL
+//! truncation semantics.
+//! Use `saturating_add`/`saturating_sub`/`saturating_mul` to clamp.
 
 #![no_std]
 #![deny(unsafe_code)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 #![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::all))]
 #![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::pedantic))]
 #![cfg_attr(all(not(debug_assertions), not(test)), deny(missing_docs))]

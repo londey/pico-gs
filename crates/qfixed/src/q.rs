@@ -15,8 +15,14 @@
 pub struct Q<const I: u32, const F: u32>(pub(crate) i64);
 
 impl<const I: u32, const F: u32> Q<I, F> {
+    /// Total number of integer bits in this fixed-point type.
+    pub const INTEGER_BITS: u32 = I;
+
+    /// Total number of fractional bits in this fixed-point type.
+    pub const FRACTIONAL_BITS: u32 = F;
+
     /// Total number of bits in this fixed-point type.
-    pub const TOTAL_BITS: u32 = I + F;
+    pub const TOTAL_BITS: u32 = Self::INTEGER_BITS + Self::FRACTIONAL_BITS;
 
     /// Bitmask covering the valid bits.
     const MASK: u64 = if I + F >= 64 {
@@ -366,6 +372,183 @@ impl<const I: u32, const F: u32> Q<I, F> {
         let numer = (self.0 as i128) << F;
         let result = (numer / rhs.0 as i128) as i64;
         Self::from_raw(result)
+    }
+
+    /// Saturating addition: clamps to `[MIN, MAX]` on overflow.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to add.
+    ///
+    /// # Returns
+    ///
+    /// The sum, clamped to the representable range.
+    #[inline]
+    pub const fn saturating_add(self, rhs: Self) -> Self {
+        if I + F >= 64 {
+            Self(self.0.saturating_add(rhs.0))
+        } else {
+            let sum = self.0 as i128 + rhs.0 as i128;
+            let clamped = if sum < Self::MIN.0 as i128 {
+                Self::MIN.0
+            } else if sum > Self::MAX.0 as i128 {
+                Self::MAX.0
+            } else {
+                sum as i64
+            };
+            Self::from_raw(clamped)
+        }
+    }
+
+    /// Saturating subtraction: clamps to `[MIN, MAX]` on overflow.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to subtract.
+    ///
+    /// # Returns
+    ///
+    /// The difference, clamped to the representable range.
+    #[inline]
+    pub const fn saturating_sub(self, rhs: Self) -> Self {
+        if I + F >= 64 {
+            Self(self.0.saturating_sub(rhs.0))
+        } else {
+            let diff = self.0 as i128 - rhs.0 as i128;
+            let clamped = if diff < Self::MIN.0 as i128 {
+                Self::MIN.0
+            } else if diff > Self::MAX.0 as i128 {
+                Self::MAX.0
+            } else {
+                diff as i64
+            };
+            Self::from_raw(clamped)
+        }
+    }
+
+    /// Saturating same-type multiply: `(self * rhs) >> F`, clamped to
+    /// `[MIN, MAX]`.
+    ///
+    /// The full product is computed in 128 bits, then the fractional
+    /// point is realigned by shifting right by `F`.
+    /// The result is clamped rather than truncated.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to multiply by.
+    ///
+    /// # Returns
+    ///
+    /// The product clamped to the representable range.
+    #[inline]
+    pub const fn saturating_mul(self, rhs: Self) -> Self {
+        let product = self.0 as i128 * rhs.0 as i128;
+        let shifted = product >> F;
+        let clamped = if shifted < Self::MIN.0 as i128 {
+            Self::MIN.0
+        } else if shifted > Self::MAX.0 as i128 {
+            Self::MAX.0
+        } else {
+            shifted as i64
+        };
+        Self::from_raw(clamped)
+    }
+
+    /// Saturating negation: `MIN` saturates to `MAX` instead of wrapping.
+    ///
+    /// # Returns
+    ///
+    /// The negated value, or `MAX` when negating `MIN`.
+    #[inline]
+    pub const fn saturating_neg(self) -> Self {
+        if I + F >= 64 {
+            Self(self.0.saturating_neg())
+        } else {
+            let neg = -(self.0 as i128);
+            if neg > Self::MAX.0 as i128 {
+                Self::MAX
+            } else {
+                Self::from_raw(neg as i64)
+            }
+        }
+    }
+
+    /// Widening addition with full-precision output.
+    ///
+    /// The output type `Q<IO, FO>` must be wide enough to hold the sum
+    /// without overflow (at least one extra integer bit).
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to add.
+    ///
+    /// # Returns
+    ///
+    /// The exact sum in `Q<IO, FO>` format.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, panics if `IO + FO < I + F + 1`.
+    #[inline]
+    pub fn widening_add<const IO: u32, const FO: u32>(self, rhs: Self) -> Q<IO, FO> {
+        Q::<IO, FO>::check();
+        debug_assert!(
+            IO + FO > I + F,
+            "widening_add: output Q<{}, {}> ({} bits) too narrow for Q<{}, {}> + Q<{}, {}> ({} bits needed)",
+            IO, FO, IO + FO,
+            I, F, I, F, I + F + 1
+        );
+        let shift = FO as i32 - F as i32;
+        let a = if shift >= 0 {
+            (self.0 as i128) << shift
+        } else {
+            (self.0 as i128) >> (-shift)
+        };
+        let b = if shift >= 0 {
+            (rhs.0 as i128) << shift
+        } else {
+            (rhs.0 as i128) >> (-shift)
+        };
+        Q::<IO, FO>::from_raw((a + b) as i64)
+    }
+
+    /// Widening subtraction with full-precision output.
+    ///
+    /// The output type `Q<IO, FO>` must be wide enough to hold the
+    /// difference without overflow (at least one extra integer bit).
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to subtract.
+    ///
+    /// # Returns
+    ///
+    /// The exact difference in `Q<IO, FO>` format.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, panics if `IO + FO < I + F + 1`.
+    #[inline]
+    pub fn widening_sub<const IO: u32, const FO: u32>(self, rhs: Self) -> Q<IO, FO> {
+        Q::<IO, FO>::check();
+        debug_assert!(
+            IO + FO > I + F,
+            "widening_sub: output Q<{}, {}> ({} bits) too narrow for Q<{}, {}> - Q<{}, {}> ({} bits needed)",
+            IO, FO, IO + FO,
+            I, F, I, F, I + F + 1
+        );
+        let shift = FO as i32 - F as i32;
+        let a = if shift >= 0 {
+            (self.0 as i128) << shift
+        } else {
+            (self.0 as i128) >> (-shift)
+        };
+        let b = if shift >= 0 {
+            (rhs.0 as i128) << shift
+        } else {
+            (rhs.0 as i128) >> (-shift)
+        };
+        Q::<IO, FO>::from_raw((a - b) as i64)
     }
 
     /// Widening multiply: `self * rhs` with full-precision output.

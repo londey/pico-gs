@@ -303,6 +303,150 @@ impl<const I: u32, const F: u32> UQ<I, F> {
         Self::from_raw(result)
     }
 
+    /// Saturating addition: clamps to `MAX` on overflow.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to add.
+    ///
+    /// # Returns
+    ///
+    /// The sum, clamped to the representable range.
+    #[inline]
+    pub const fn saturating_add(self, rhs: Self) -> Self {
+        if I + F >= 64 {
+            Self(self.0.saturating_add(rhs.0))
+        } else {
+            let sum = self.0 as u128 + rhs.0 as u128;
+            if sum > Self::MASK as u128 {
+                Self::MAX
+            } else {
+                Self::from_raw(sum as u64)
+            }
+        }
+    }
+
+    /// Saturating subtraction: clamps to zero on underflow.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to subtract.
+    ///
+    /// # Returns
+    ///
+    /// The difference, or zero if `rhs > self`.
+    #[inline]
+    pub const fn saturating_sub(self, rhs: Self) -> Self {
+        if rhs.0 > self.0 {
+            Self::ZERO
+        } else {
+            Self::from_raw(self.0 - rhs.0)
+        }
+    }
+
+    /// Saturating same-type multiply: `(self * rhs) >> F`, clamped to
+    /// `MAX`.
+    ///
+    /// The full product is computed in 128 bits, then the fractional
+    /// point is realigned by shifting right by `F`.
+    /// The result is clamped rather than truncated.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to multiply by.
+    ///
+    /// # Returns
+    ///
+    /// The product clamped to the representable range.
+    #[inline]
+    pub const fn saturating_mul(self, rhs: Self) -> Self {
+        let product = self.0 as u128 * rhs.0 as u128;
+        let shifted = product >> F;
+        if shifted > Self::MASK as u128 {
+            Self::MAX
+        } else {
+            Self::from_raw(shifted as u64)
+        }
+    }
+
+    /// Widening addition with full-precision output.
+    ///
+    /// The output type `UQ<IO, FO>` must be wide enough to hold the sum
+    /// without overflow (at least one extra integer bit).
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to add.
+    ///
+    /// # Returns
+    ///
+    /// The exact sum in `UQ<IO, FO>` format.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, panics if `IO + FO < I + F + 1`.
+    #[inline]
+    pub fn widening_add<const IO: u32, const FO: u32>(self, rhs: Self) -> UQ<IO, FO> {
+        UQ::<IO, FO>::check();
+        debug_assert!(
+            IO + FO > I + F,
+            "widening_add: output UQ<{}, {}> ({} bits) too narrow for UQ<{}, {}> + UQ<{}, {}> ({} bits needed)",
+            IO, FO, IO + FO,
+            I, F, I, F, I + F + 1
+        );
+        let shift = FO as i32 - F as i32;
+        let a = if shift >= 0 {
+            (self.0 as u128) << shift
+        } else {
+            (self.0 as u128) >> (-shift)
+        };
+        let b = if shift >= 0 {
+            (rhs.0 as u128) << shift
+        } else {
+            (rhs.0 as u128) >> (-shift)
+        };
+        UQ::<IO, FO>::from_raw((a + b) as u64)
+    }
+
+    /// Widening subtraction with signed output.
+    ///
+    /// Returns a signed `Q<IO, FO>` because `UQ - UQ` can be negative.
+    /// The output type must be wide enough to hold the difference.
+    ///
+    /// # Arguments
+    ///
+    /// * `rhs` - The value to subtract.
+    ///
+    /// # Returns
+    ///
+    /// The exact difference as a signed `Q<IO, FO>`.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, panics if `IO + FO < I + F + 1`.
+    #[inline]
+    pub fn widening_sub<const IO: u32, const FO: u32>(self, rhs: Self) -> crate::q::Q<IO, FO> {
+        crate::q::Q::<IO, FO>::check();
+        debug_assert!(
+            IO + FO > I + F,
+            "widening_sub: output Q<{}, {}> ({} bits) too narrow for UQ<{}, {}> - UQ<{}, {}> ({} bits needed)",
+            IO, FO, IO + FO,
+            I, F, I, F, I + F + 1
+        );
+        let shift = FO as i32 - F as i32;
+        let a = if shift >= 0 {
+            (self.0 as i128) << shift
+        } else {
+            (self.0 as i128) >> (-shift)
+        };
+        let b = if shift >= 0 {
+            (rhs.0 as i128) << shift
+        } else {
+            (rhs.0 as i128) >> (-shift)
+        };
+        crate::q::Q::<IO, FO>::from_raw((a - b) as i64)
+    }
+
     /// Widening multiply with full-precision output.
     ///
     /// The output type `UQ<IO, FO>` must be wide enough to hold the
