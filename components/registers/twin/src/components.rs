@@ -1,7 +1,6 @@
 //! SystemRDL component definitions
 #![allow(non_camel_case_types)] // needed for type normalization suffixes
 
-pub mod alpha_blend_e;
 pub mod alpha_test_e;
 pub mod cc_rgb_c_source_e;
 pub mod cc_source_e;

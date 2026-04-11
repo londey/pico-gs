@@ -395,20 +395,23 @@ For a 256×240 surface with LINE_DOUBLE=1, display bandwidth ≈ 7.4 MB/s — le
 
 ---
 
-### Triangle Rasterization (Write)
+### Framebuffer Read/Write via Color Tile Buffer (Port 1)
 
 ```
 Priority: LOW (yields to display)
-Pattern: 4×4 tile order within bounding box; burst writes per tile
-Bandwidth: Variable, up to ~28–35 Mpixels/sec (see ARCHITECTURE.md)
-Access: Write-coalescing buffer collects pixels within a tile; issues 16-word burst per tile
+Pattern: Per-tile burst read (blend enabled) + per-tile burst write; 4×4 tile order within bounding box
+Bandwidth: Variable, up to ~28–35 Mpixels/sec write; up to equal read bandwidth when blend is active
+Access: 16-word burst read at tile entry (blend enabled only); 16-word burst write at tile exit
 ```
 
-**Write Coalescing**:
+**Color Tile Buffer (UNIT-006)**:
 - Rasterizer walks the triangle bounding box in 4×4 tile order (aligned with block-tiled layout and Z-cache block size)
-- Adjacent pixels within the same tile are collected by the write-coalescing buffer
-- A full tile: 16-word burst write, ~22 cycles (ACTIVATE + tRCD + 16 writes + tWR + PRECHARGE)
-- A partial tile (edge/corner): shorter burst; cost amortized over tile count, not individual pixels
+- At tile entry, if blending is enabled: a 16-word burst read from the destination tile's SDRAM address pre-fetches the destination pixels into the on-chip color tile buffer
+- Fragments within the tile are processed through the full pixel pipeline; color writes land in the on-chip tile buffer (no per-pixel SDRAM write)
+- At tile exit: a 16-word burst write from the color tile buffer to the tile's SDRAM address flushes all written pixels in one transaction
+- When blending is disabled: the tile prefetch read is skipped; only the flush write is issued (same bandwidth as the prior write-coalescing design)
+- A full tile flush: 16-word burst write, ~22 cycles (ACTIVATE + tRCD + 16 writes + tWR + PRECHARGE)
+- A partial tile (edge/corner): flush still issues a 16-word burst; partially-modified words carry the pre-fetched destination values for unmodified pixel positions
 - Row changes: tiles within the same SDRAM row proceed without PRECHARGE; a new tile column may cross row boundaries (~5 cycle overhead per row change)
 
 ---
@@ -488,11 +491,13 @@ The 4×4 block-tiled layout ensures most accesses are 16-word bursts within a si
 |----------|-----------|------------|-------|
 | Display scanout | ~30 MB/s (max) | 15% | 16-word tile bursts; 512-wide surface at 60 Hz (LINE_DOUBLE=0) |
 | Display scanout | ~7.4 MB/s (min) | 3.7% | 256-wide surface with LINE_DOUBLE=1 at 60 Hz |
-| Framebuffer write | ~40 MB/s | 20% | 16-word tile bursts; coalesced writes |
+| Framebuffer write (Port 1) | ~40 MB/s | 20% | 16-word tile burst writes at tile exit via color tile buffer |
+| Framebuffer read (Port 1, blend) | ~40 MB/s (max) | 20% | 16-word tile burst reads at tile entry; only when blending enabled; equal to write bandwidth in worst case |
 | Z-buffer R/W | ~10 MB/s | 5% | Tile cache absorbs 85–95% of Z traffic; Hi-Z tile rejection and fast-clear lazy-fill reduce SDRAM traffic further |
 | Texture fetch | ~5–15 MB/s | 2.5–7.5% | Sequential cache fills; >90% hit rate |
 | Auto-refresh | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |
-| **Headroom** | ~100–115 MB/s | ~51–57% | Available for fill rate, overdraw (at 512-wide reference) |
+| **Headroom (no blend)** | ~100–115 MB/s | ~51–57% | Available for fill rate, overdraw (at 512-wide reference, blend disabled) |
+| **Headroom (with blend)** | ~60–75 MB/s | ~30–37% | Tile prefetch reads consume an additional ~40 MB/s when blending is enabled at full fill rate |
 
 **Note**: Display scanout bandwidth is proportional to `(1 << FB_WIDTH_LOG2) × source_rows × 2 × 60`.
 The 512-wide surface (WIDTH_LOG2=9, 480 rows, LINE_DOUBLE=0) is the reference case (~30 MB/s).

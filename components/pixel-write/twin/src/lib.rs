@@ -10,7 +10,9 @@
 //! `gs-zbuf` crate (RTL: `zbuf_tile_cache.sv`).
 //! See UNIT-006, pixel_write stage.
 
-// Spec-ref: unit_006_pixel_pipeline.md `4dffd877eb8ab47b` 2026-04-04
+pub mod tile_buffer;
+
+// Spec-ref: unit_006_pixel_pipeline.md `b8345ae9027d1b73` 2026-04-10
 
 use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 use gs_memory::GpuMemory;

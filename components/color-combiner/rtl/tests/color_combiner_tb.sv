@@ -42,6 +42,8 @@ module color_combiner_tb;
 
     // Configuration
     reg  [63:0] cc_mode;
+    reg  [31:0] cc_mode_2;        // Pass 2 mode (blend), pass-through for existing tests
+    reg  [63:0] dst_color;        // Promoted destination Q4.12 RGBA
     reg  [63:0] const_color;
 
     // Outputs
@@ -106,6 +108,8 @@ module color_combiner_tb;
         .frag_z(frag_z),
         .frag_valid(frag_valid),
         .cc_mode(cc_mode),
+        .cc_mode_2(cc_mode_2),
+        .dst_color(dst_color),
         .const_color(const_color),
         .combined_color(combined_color),
         .out_frag_x(out_frag_x),
@@ -303,13 +307,15 @@ module color_combiner_tb;
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    // Helper: drive one fragment and wait for pipeline output (4 stages)
+    // Helper: drive one fragment and wait for pipeline output (6 stages)
     task drive_fragment();
         begin
             frag_valid = 1;
             @(posedge clk);
             frag_valid = 0;
-            // Wait for 4 pipeline stages
+            // Wait for 6 pipeline stages (3 passes, 2 stages each)
+            @(posedge clk);
+            @(posedge clk);
             @(posedge clk);
             @(posedge clk);
             @(posedge clk);
@@ -343,6 +349,9 @@ module color_combiner_tb;
         frag_z = 16'h0;
         frag_valid = 0;
         cc_mode = 64'h0;
+        // Pass 2 = pass-through: (COMBINED-ZERO)*ONE+ZERO
+        cc_mode_2 = 32'h7670_7670;
+        dst_color = 64'h0;
         const_color = 64'h0;
         out_ready = 1;
 
@@ -797,8 +806,8 @@ module color_combiner_tb;
         // ============================================================
         // Pipeline throughput test
         // Submit 8 consecutive fragments with back-to-back valid.
-        // Verify 4-cycle latency to first output, then one output
-        // per clock in steady state.
+        // Verify 6-cycle latency to first output (3-pass, 2 stages each),
+        // then one output per clock in steady state.
         // ============================================================
         $display("--- Pipeline throughput ---");
 
@@ -860,11 +869,11 @@ module color_combiner_tb;
                 end
             end
 
-            // Verify: first output at cycle 4 (4-stage pipeline latency)
-            if (first_out_cycle == 4) begin
+            // Verify: first output at cycle 6 (6-stage pipeline latency)
+            if (first_out_cycle == 6) begin
                 pass_count = pass_count + 1;
             end else begin
-                $display("FAIL: pipeline latency - expected first output at cycle 4, got cycle %0d", first_out_cycle);
+                $display("FAIL: pipeline latency - expected first output at cycle 6, got cycle %0d", first_out_cycle);
                 fail_count = fail_count + 1;
             end
 

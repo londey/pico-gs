@@ -16,11 +16,11 @@
 //! - UNIT-003 (Register File)
 
 use gpu_registers::components::gpu_regs::named_types::{
-    cc_mode_reg::CcModeReg, color_reg::ColorReg, const_color_reg::ConstColorReg,
-    fb_config_reg::FbConfigReg, fb_control_reg::FbControlReg, fb_display_reg::FbDisplayReg,
-    mem_fill_reg::MemFillReg, render_mode_reg::RenderModeReg, st0_st1_reg::St0St1Reg,
-    stipple_pattern_reg::StipplePatternReg, tex_cfg_reg::TexCfgReg, vertex_reg::VertexReg,
-    z_range_reg::ZRangeReg,
+    cc_mode_2_reg::CcMode2Reg, cc_mode_reg::CcModeReg, color_reg::ColorReg,
+    const_color_reg::ConstColorReg, fb_config_reg::FbConfigReg, fb_control_reg::FbControlReg,
+    fb_display_reg::FbDisplayReg, mem_fill_reg::MemFillReg, render_mode_reg::RenderModeReg,
+    st0_st1_reg::St0St1Reg, stipple_pattern_reg::StipplePatternReg, tex_cfg_reg::TexCfgReg,
+    vertex_reg::VertexReg, z_range_reg::ZRangeReg,
 };
 use gs_twin_core::reg_ext::{reg_from_raw, reg_to_raw};
 use gs_twin_core::triangle::{RasterTriangle, RasterVertex};
@@ -56,6 +56,9 @@ pub const ADDR_CC_MODE: u8 = 0x18;
 
 /// CONST_COLOR: per-draw constant colors (CONST0 + CONST1).
 pub const ADDR_CONST_COLOR: u8 = 0x19;
+
+/// CC_MODE_2: color combiner pass 2 (blend) equation configuration.
+pub const ADDR_CC_MODE_2: u8 = 0x1A;
 
 /// RENDER_MODE: unified rendering state (Z, alpha, cull, dither, stipple).
 pub const ADDR_RENDER_MODE: u8 = 0x30;
@@ -199,8 +202,11 @@ pub struct RegisterFile {
     /// TEX1_CFG: texture unit 1 configuration.
     tex1_cfg: TexCfgReg,
 
-    /// CC_MODE: color combiner equation configuration.
+    /// CC_MODE: color combiner equation configuration (passes 0 and 1).
     cc_mode: CcModeReg,
+
+    /// CC_MODE_2: color combiner pass 2 (blend) equation configuration.
+    cc_mode_2: CcMode2Reg,
 
     /// CONST_COLOR: per-draw constant colors.
     const_color: ConstColorReg,
@@ -271,6 +277,11 @@ impl RegisterFile {
 
             ADDR_CC_MODE => {
                 self.cc_mode = reg_from_raw(data);
+                GpuAction::None
+            }
+
+            ADDR_CC_MODE_2 => {
+                self.cc_mode_2 = reg_from_raw(data);
                 GpuAction::None
             }
 
@@ -438,6 +449,11 @@ impl RegisterFile {
     /// Access the CC_MODE register latch.
     pub fn cc_mode(&self) -> CcModeReg {
         self.cc_mode
+    }
+
+    /// Access the CC_MODE_2 register latch.
+    pub fn cc_mode_2(&self) -> CcMode2Reg {
+        self.cc_mode_2
     }
 
     /// Access the CONST_COLOR register latch.

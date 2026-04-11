@@ -34,6 +34,7 @@ import ver_020
 import ver_021
 import ver_022
 import ver_023
+import ver_024
 
 
 GENERATORS = [
@@ -51,6 +52,7 @@ GENERATORS = [
     ("ver_021_rgba8888_texture.hex", ver_021),
     ("ver_022_r8_texture.hex", ver_022),
     ("ver_023_stipple_test.hex", ver_023),
+    ("ver_024_alpha_blend.hex", ver_024),
 ]
 
 

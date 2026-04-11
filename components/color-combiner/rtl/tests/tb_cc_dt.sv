@@ -30,7 +30,9 @@ module tb_cc_dt;
     reg  [15:0] frag_y;           // Fragment Y coordinate
     reg  [15:0] frag_z;           // Fragment Z depth
     reg         frag_valid;       // Fragment valid
-    reg  [63:0] cc_mode;          // Combiner mode config
+    reg  [63:0] cc_mode;          // Combiner mode config (passes 0 + 1)
+    reg  [31:0] cc_mode_2;        // Pass 2 mode config (blend)
+    reg  [63:0] dst_color;        // Promoted destination Q4.12 RGBA
     reg  [63:0] const_color;      // Constant colors RGBA8888
 
     wire [63:0] combined_color;   // Q4.12 RGBA output
@@ -60,6 +62,8 @@ module tb_cc_dt;
         .frag_z         (frag_z),
         .frag_valid     (frag_valid),
         .cc_mode        (cc_mode),
+        .cc_mode_2      (cc_mode_2),
+        .dst_color      (dst_color),
         .const_color    (const_color),
         .combined_color (combined_color),
         .out_frag_x     (out_frag_x),
@@ -101,6 +105,9 @@ module tb_cc_dt;
         frag_y      = 16'd0;
         frag_z      = 16'd0;
         cc_mode     = 64'd0;
+        // Pass 2 = pass-through: (COMBINED-ZERO)*ONE+ZERO for both RGB and alpha
+        cc_mode_2   = 32'h7670_7670;
+        dst_color   = 64'd0;
         const_color = 64'd0;
 
         // Load hex test vectors

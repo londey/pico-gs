@@ -1,19 +1,25 @@
-//! Color combiner — two-stage `(A-B)*C+D` programmable blending.
+//! Color combiner — three-pass `(A-B)*C+D` programmable blending.
 //!
-//! Each stage evaluates `(A-B)*C+D` independently for RGB and alpha,
+//! Each pass evaluates `(A-B)*C+D` independently for RGB and alpha,
 //! selecting operands from: texture colors, vertex shade colors,
-//! per-draw-call constants, and the COMBINED feedback path.
+//! per-draw-call constants, the COMBINED feedback path, and (pass 2
+//! only) the DST_COLOR source from the color tile buffer.
 //!
-//! Stage 0's output feeds stage 1 via the COMBINED source, enabling
-//! multi-texture blending, fog, and specular-add in a single pass.
+//! Pass 0's output feeds pass 1 via the COMBINED source, enabling
+//! multi-texture blending, fog, and specular-add.
+//! Pass 1's output feeds pass 2 via COMBINED, where the destination
+//! pixel can be blended using the same `(A-B)*C+D` equation.
 //!
 //! # RTL Implementation Notes
 //!
-//! Two-stage pipeline, one pixel per clock.
+//! Single physical instance, time-multiplexed over 3 passes (4 cycles).
 //! See UNIT-010 (Color Combiner).
+
+pub mod blend_templates;
 
 use gpu_registers::components::cc_rgb_c_source_e::CcRgbCSourceE;
 use gpu_registers::components::cc_source_e::CcSourceE;
+use gpu_registers::components::gpu_regs::named_types::cc_mode_2_reg::CcMode2Reg;
 use gpu_registers::components::gpu_regs::named_types::cc_mode_reg::CcModeReg;
 use qfixed::Q;
 
@@ -44,6 +50,11 @@ pub struct CcInputs {
 
     /// Previous combiner stage output (opaque white for stage 0).
     pub combined: ColorQ412,
+
+    /// Promoted destination pixel from color tile buffer (RGB565 -> Q4.12).
+    ///
+    /// Only meaningful in pass 2; passes 0 and 1 supply `ColorQ412::default()`.
+    pub dst_color: ColorQ412,
 }
 
 // ── Source mux resolution ────────────────────────────────────────────────────
@@ -64,6 +75,7 @@ fn resolve_source(sel: CcSourceE, inputs: &CcInputs) -> ColorQ412 {
         CcSourceE::CcOne => ColorQ412::OPAQUE_WHITE,
         CcSourceE::CcZero => ColorQ412::default(),
         CcSourceE::CcShade1 => inputs.shade1,
+        CcSourceE::CcDstColor => inputs.dst_color,
         _ => {
             debug_assert!(false, "reserved CC source selector: {sel:?}");
             ColorQ412::default()
@@ -207,6 +219,7 @@ pub fn color_combine_0(
         const0,
         const1,
         combined: ColorQ412::OPAQUE_WHITE,
+        dst_color: ColorQ412::default(),
     };
 
     let sel = CcSelectors {
@@ -225,10 +238,10 @@ pub fn color_combine_0(
     frag
 }
 
-/// Color combiner stage 1: `(A-B)*C+D` using COMBINED from stage 0.
+/// Color combiner pass 1: `(A-B)*C+D` using COMBINED from pass 0.
 ///
-/// Produces the final fragment color by consuming the COMBINED output
-/// from stage 0 along with remaining shade/texture inputs.
+/// Produces the pass 1 output by consuming the COMBINED output
+/// from pass 0 along with remaining shade/texture inputs.
 /// Saturates the result to UNORM \[0.0, 1.0\] range.
 ///
 /// # Arguments
@@ -255,6 +268,7 @@ pub fn color_combine_1(
         const0,
         const1,
         combined: frag.comb.unwrap_or(ColorQ412::OPAQUE_WHITE),
+        dst_color: ColorQ412::default(),
     };
 
     let sel = CcSelectors {
@@ -266,6 +280,64 @@ pub fn color_combine_1(
         alpha_b: cc_mode.c1_alpha_b(),
         alpha_c: cc_mode.c1_alpha_c(),
         alpha_d: cc_mode.c1_alpha_d(),
+    };
+
+    let color = evaluate_cc(&sel, &inputs);
+
+    ColoredFragment {
+        x: frag.x,
+        y: frag.y,
+        z: frag.z,
+        color: saturate_unorm(color),
+    }
+}
+
+/// Color combiner pass 2 (blend): `(A-B)*C+D` using COMBINED from pass 1.
+///
+/// This third pass replaces the dedicated alpha blend unit.
+/// The DST_COLOR source selects the promoted destination pixel from the
+/// color tile buffer, enabling all blend modes via the same `(A-B)*C+D`
+/// equation.
+/// Saturates the result to UNORM \[0.0, 1.0\] range.
+///
+/// # Arguments
+///
+/// * `frag` - Colored fragment output from pass 1.
+/// * `cc_mode_2` - Typed CC_MODE_2 register selecting A, B, C, D operands.
+/// * `const0` - CONST0 color from register file (Q4.12).
+/// * `const1` - CONST1 color from register file (Q4.12).
+/// * `dst_color` - Promoted destination pixel from color tile buffer (Q4.12).
+///
+/// # Returns
+///
+/// A `ColoredFragment` with the blended and saturated color.
+pub fn color_combine_2(
+    frag: ColoredFragment,
+    cc_mode_2: CcMode2Reg,
+    const0: ColorQ412,
+    const1: ColorQ412,
+    dst_color: ColorQ412,
+) -> ColoredFragment {
+    let inputs = CcInputs {
+        tex0: ColorQ412::default(),
+        tex1: ColorQ412::default(),
+        shade0: ColorQ412::default(),
+        shade1: ColorQ412::default(),
+        const0,
+        const1,
+        combined: frag.color,
+        dst_color,
+    };
+
+    let sel = CcSelectors {
+        rgb_a: cc_mode_2.c2_rgb_a(),
+        rgb_b: cc_mode_2.c2_rgb_b(),
+        rgb_c: cc_mode_2.c2_rgb_c(),
+        rgb_d: cc_mode_2.c2_rgb_d(),
+        alpha_a: cc_mode_2.c2_alpha_a(),
+        alpha_b: cc_mode_2.c2_alpha_b(),
+        alpha_c: cc_mode_2.c2_alpha_c(),
+        alpha_d: cc_mode_2.c2_alpha_d(),
     };
 
     let color = evaluate_cc(&sel, &inputs);

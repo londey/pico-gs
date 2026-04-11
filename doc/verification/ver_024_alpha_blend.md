@@ -11,7 +11,8 @@
 ## Verified Design Units
 
 - UNIT-003 (Register File) — RENDER_MODE.ALPHA_BLEND field decode
-- UNIT-006 (Pixel Pipeline) — alpha blend stage, framebuffer readback + RGB565→Q4.12 promotion
+- UNIT-006 (Pixel Pipeline) — color tile buffer fill/flush, RGB565→Q4.12 promotion
+- UNIT-010 (Color Combiner) — CC pass 2 blend equation with DST_COLOR source
 
 ## Preconditions
 
@@ -62,7 +63,8 @@ All non-DISABLED modes pre-multiply the source color by the fragment alpha befor
 - **SUBTRACT**: `result = saturate(dst − src × alpha)`
 - **BLEND**: `result = src × alpha + dst × (1 − alpha)` (Porter-Duff source-over)
 
-The destination pixel is read from the framebuffer (RGB565) and promoted to Q4.12 via MSB-replication (`fb_promote.sv` / `promote_rgb565()`).
+The destination pixel is read from the color tile buffer (RGB565) and promoted to Q4.12 via MSB-replication (`fb_promote.sv` / `promote_rgb565()`).
+The tile buffer is pre-filled via a 16-word burst read from SDRAM on first access to each 4×4 tile when blending is enabled.
 Saturation clamps each channel to [0, 0x1000].
 
 ### Running the Test
@@ -88,19 +90,17 @@ Output PNG: `build/dt_out/ver_024_alpha_blend.png`.
 
 ## Test Implementation
 
-- `integration/scripts/ver_024_alpha_blend.hex` — register-write hex script.
+- `integration/scripts/ver_024_alpha_blend.hex` — register-write hex script (configures blend via RENDER_MODE.ALPHA_BLEND; CC pass 2 equation template is selected internally by UNIT-010 based on this field).
 - `integration/gs-twin/tests/integration.rs` — `ver_024_alpha_blend` test function.
-- `integration/golden/ver_024_alpha_blend.png` — approved golden image.
-- `components/alpha-blend/twin/src/lib.rs` — `gs-alpha-blend` digital twin crate (authoritative blend algorithm).
-- `components/alpha-blend/rtl/src/alpha_blend.sv` — RTL implementation (must match twin).
+- `integration/golden/ver_024_alpha_blend.png` — approved golden image (must be re-approved after CC pass 2 implementation).
+- `components/color-combiner/twin/src/lib.rs` — `gs-color-combiner` digital twin crate (authoritative blend algorithm via CC pass 2 / DST_COLOR source).
 
 ## Notes
 
 - This test exercises the digital twin only.
   RTL-vs-twin comparison via Verilator testbench is tracked separately.
-- The alpha blend RTL (`alpha_blend.sv`) predates the twin implementation and does not yet pre-multiply source by alpha for ADD/SUBTRACT modes.
-  The twin (this test's reference) is the authoritative algorithm spec; the RTL must be updated to match.
-- REQ-005.03 wording ("add the source fragment color to the destination") does not explicitly mention pre-multiplying by alpha for ADD/SUBTRACT.
-  The requirement text should be updated to reflect the implemented behavior: source is always scaled by fragment alpha before combining with the destination.
+- The blend algorithm is implemented as CC pass 2 in UNIT-010 using the `DST_COLOR` source (destination pixel from the color tile buffer).
+  The `gs-color-combiner` twin is the authoritative algorithm spec for all blend modes.
+- Source is always pre-multiplied by fragment alpha before combining with the destination for ADD and SUBTRACT modes.
 - Dithering is disabled (`DITHER_EN=0`) for deterministic output.
 - Z-testing is disabled to isolate blend mode correctness from depth buffer behavior.

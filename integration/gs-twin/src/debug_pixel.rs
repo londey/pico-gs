@@ -7,6 +7,7 @@
 
 use gpu_registers::components::cc_rgb_c_source_e::CcRgbCSourceE;
 use gpu_registers::components::cc_source_e::CcSourceE;
+use gpu_registers::components::gpu_regs::named_types::cc_mode_2_reg::CcMode2Reg;
 use gpu_registers::components::gpu_regs::named_types::cc_mode_reg::CcModeReg;
 use gpu_registers::components::gpu_regs::named_types::const_color_reg::ConstColorReg;
 use gpu_registers::components::gpu_regs::named_types::render_mode_reg::RenderModeReg;
@@ -148,13 +149,13 @@ pub fn print_textured_fragment(frag: &TexturedFragment) {
     print_color_q412("tex1", &frag.tex1);
 }
 
-/// Print color combiner debug state for one stage.
-pub fn print_combiner_stage(stage: u8, cc_mode: CcModeReg, inputs: &CcInputs, output: &ColorQ412) {
+/// Print color combiner debug state for pass 0 or 1.
+pub fn print_combiner_stage(pass: u8, cc_mode: CcModeReg, inputs: &CcInputs, output: &ColorQ412) {
     eprintln!("╠──────────────────────────────────────────────────────────────╣");
-    eprintln!("║  Color Combiner Stage {stage}");
+    eprintln!("║  Color Combiner Pass {pass}");
     eprintln!("╠──────────────────────────────────────────────────────────────╣");
 
-    if stage == 0 {
+    if pass == 0 {
         let rgb_a = cc_mode.c0_rgb_a();
         let rgb_b = cc_mode.c0_rgb_b();
         let rgb_c = cc_mode.c0_rgb_c();
@@ -203,6 +204,37 @@ pub fn print_combiner_stage(stage: u8, cc_mode: CcModeReg, inputs: &CcInputs, ou
     print_color_q412("output", output);
 }
 
+/// Print color combiner pass 2 (blend) debug state.
+pub fn print_combiner_pass_2(cc_mode_2: CcMode2Reg, inputs: &CcInputs, output: &ColorQ412) {
+    eprintln!("╠──────────────────────────────────────────────────────────────╣");
+    eprintln!("║  Color Combiner Pass 2 (Blend)");
+    eprintln!("╠──────────────────────────────────────────────────────────────╣");
+
+    let rgb_a = cc_mode_2.c2_rgb_a();
+    let rgb_b = cc_mode_2.c2_rgb_b();
+    let rgb_c = cc_mode_2.c2_rgb_c();
+    let rgb_d = cc_mode_2.c2_rgb_d();
+    let alpha_a = cc_mode_2.c2_alpha_a();
+    let alpha_b = cc_mode_2.c2_alpha_b();
+    let alpha_c = cc_mode_2.c2_alpha_c();
+    let alpha_d = cc_mode_2.c2_alpha_d();
+
+    eprintln!("  RGB:   A={rgb_a:?} B={rgb_b:?} C={rgb_c:?} D={rgb_d:?}");
+    eprintln!("  Alpha: A={alpha_a:?} B={alpha_b:?} C={alpha_c:?} D={alpha_d:?}");
+
+    let a_rgb = resolve_source_val(rgb_a, inputs);
+    let b_rgb = resolve_source_val(rgb_b, inputs);
+    let c_rgb = resolve_rgb_c_source_val(rgb_c, inputs);
+    let d_rgb = resolve_source_val(rgb_d, inputs);
+    eprintln!("  RGB resolved:");
+    print_color_q412("    A", &a_rgb);
+    print_color_q412("    B", &b_rgb);
+    print_color_q412("    C", &c_rgb);
+    print_color_q412("    D", &d_rgb);
+    print_color_q412("  dst_color", &inputs.dst_color);
+    print_color_q412("output", output);
+}
+
 /// Print the final colored fragment.
 pub fn print_final_fragment(frag: &ColoredFragment) {
     eprintln!("╠──────────────────────────────────────────────────────────────╣");
@@ -216,6 +248,7 @@ pub fn print_final_fragment(frag: &ColoredFragment) {
 pub fn print_register_snapshot(
     render_mode: RenderModeReg,
     cc_mode: CcModeReg,
+    cc_mode_2: CcMode2Reg,
     tex0_cfg: Option<TexCfgReg>,
     tex1_cfg: Option<TexCfgReg>,
     const_color: ConstColorReg,
@@ -225,6 +258,7 @@ pub fn print_register_snapshot(
     eprintln!("╠──────────────────────────────────────────────────────────────╣");
     eprintln!("  render_mode = 0x{:016X}", reg_to_raw(render_mode));
     eprintln!("  cc_mode     = 0x{:016X}", reg_to_raw(cc_mode));
+    eprintln!("  cc_mode_2   = 0x{:016X}", reg_to_raw(cc_mode_2));
     if let Some(cfg) = tex0_cfg {
         eprintln!("  tex0_cfg    = 0x{:016X}", reg_to_raw(cfg));
     }
@@ -255,10 +289,29 @@ pub fn debug_breakpoint(px: u16, py: u16) {
 
 // ── Helper functions ────────────────────────────────────────────────────────
 
-/// Print a Q4.12 color with label.
+/// Convert a Q4.12 channel value to 8-bit [0..255], clamped to [0, 1.0].
+fn q412_to_u8(val: i64) -> u8 {
+    let clamped = val.clamp(0, 0x1000);
+    // Scale 0..0x1000 → 0..255: (val * 255 + 0x800) >> 12
+    ((clamped * 255 + 0x800) >> 12) as u8
+}
+
+/// Render a colored block using 24-bit ANSI foreground color.
+/// Uses filled block characters so the swatch is visible on any terminal background.
+fn color_swatch(r: u8, g: u8, b: u8) -> String {
+    format!("\x1b[38;2;{r};{g};{b}m\u{2588}\u{2588}\x1b[0m")
+}
+
+/// Print a Q4.12 color with label and colored swatches.
 fn print_color_q412(label: &str, c: &ColorQ412) {
+    let r8 = q412_to_u8(c.r.to_bits());
+    let g8 = q412_to_u8(c.g.to_bits());
+    let b8 = q412_to_u8(c.b.to_bits());
+    let a8 = q412_to_u8(c.a.to_bits());
+    let rgb_swatch = color_swatch(r8, g8, b8);
+    let alpha_swatch = color_swatch(a8, a8, a8);
     eprintln!(
-        "  {label}: R=0x{:04X} G=0x{:04X} B=0x{:04X} A=0x{:04X}",
+        "  {label}: R=0x{:04X} G=0x{:04X} B=0x{:04X} A=0x{:04X} {rgb_swatch} {alpha_swatch}",
         c.r.to_bits() as u16,
         c.g.to_bits() as u16,
         c.b.to_bits() as u16,
@@ -278,6 +331,7 @@ fn resolve_source_val(sel: CcSourceE, inputs: &CcInputs) -> ColorQ412 {
         CcSourceE::CcOne => ColorQ412::OPAQUE_WHITE,
         CcSourceE::CcZero => ColorQ412::default(),
         CcSourceE::CcShade1 => inputs.shade1,
+        CcSourceE::CcDstColor => inputs.dst_color,
         _ => ColorQ412::default(),
     }
 }

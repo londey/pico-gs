@@ -34,6 +34,7 @@ pub use gs_twin_core::triangle;
 use gpu_registers::components::z_compare_e::ZCompareE;
 use gs_color_combiner::CcInputs;
 use gs_memory::GpuMemory;
+use gs_pixel_write::tile_buffer::{self, ColorTileBuffer};
 use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
 use gs_texture::tex_sample::TextureSampler;
@@ -75,6 +76,9 @@ pub struct Gpu {
     /// Z-buffer tile cache (4-way set-associative, lazy-fill).
     zbuf_cache: ZbufTileCache,
 
+    /// Color tile buffer (4x4 RGB565 cache for burst SDRAM access).
+    color_tile_buffer: ColorTileBuffer,
+
     /// Default framebuffer width (used when fb_config hasn't been set).
     pub default_width: u32,
 
@@ -106,6 +110,7 @@ impl Gpu {
             hiz: HizMetadata::new(),
             uninit_flags: UninittedFlagArray::new(),
             zbuf_cache: ZbufTileCache::new(),
+            color_tile_buffer: ColorTileBuffer::new(),
             default_width: width,
             default_height: height,
             debug_pixel: None,
@@ -130,11 +135,13 @@ impl Gpu {
                 self.execute_kick(&tri);
             }
             GpuAction::FbConfig => {
-                // Reset Hi-Z metadata, uninit flags, and Z-buffer cache
-                // on any FB_CONFIG write (UNIT-005.06 fast-clear trigger).
+                // Reset Hi-Z metadata, uninit flags, Z-buffer cache,
+                // and color tile buffer on any FB_CONFIG write
+                // (UNIT-005.06 fast-clear trigger).
                 self.hiz.reset_all();
                 self.uninit_flags.reset_all();
                 self.zbuf_cache.invalidate();
+                self.color_tile_buffer.invalidate();
             }
             GpuAction::MemFill { base, value, count } => {
                 let byte_addr = (base as usize) * 2;
@@ -220,6 +227,12 @@ impl Gpu {
                 self.write_colored_fragment(&colored);
             }
         }
+
+        // Flush color tile buffer at end of triangle to ensure all
+        // dirty pixels are written back to SDRAM.
+        let fb_cfg = self.regs.fb_config();
+        self.color_tile_buffer
+            .flush_if_dirty(&mut self.memory, &fb_cfg);
     }
 
     /// Execute the pixel fragment pipeline from rasterizer output through
@@ -284,7 +297,7 @@ impl Gpu {
             debug_pixel::print_textured_fragment(&frag);
         }
 
-        // Stage 4-5: Color combiner (two-stage (A-B)*C+D)
+        // Stage 4-5: Color combiner passes 0 and 1 (two-stage (A-B)*C+D)
         let cc_mode = self.regs.cc_mode();
         let cc = self.regs.const_color();
         let const0 =
@@ -302,6 +315,7 @@ impl Gpu {
                 const0,
                 const1,
                 combined: ColorQ412::OPAQUE_WHITE,
+                dst_color: ColorQ412::default(),
             };
             debug_pixel::print_combiner_stage(
                 0,
@@ -311,18 +325,26 @@ impl Gpu {
             );
         }
 
+        // Capture pass 1 inputs before color_combine_1 consumes the TexturedFragment.
+        let cc1_inputs_dbg = if debug {
+            Some(CcInputs {
+                tex0: frag.tex0,
+                tex1: frag.tex1,
+                shade0: frag.shade0,
+                shade1: frag.shade1,
+                const0,
+                const1,
+                combined: frag.comb.unwrap_or_default(),
+                dst_color: ColorQ412::default(),
+            })
+        } else {
+            None
+        };
+
         let frag = gs_color_combiner::color_combine_1(frag, cc_mode, const0, const1);
 
-        if debug {
-            debug_pixel::print_final_fragment(&frag);
-            debug_pixel::print_register_snapshot(
-                rm,
-                cc_mode,
-                self.tex0_sampler.tex_cfg(),
-                self.tex1_sampler.tex_cfg(),
-                cc,
-            );
-            debug_pixel::debug_breakpoint(frag.x, frag.y);
+        if let Some(cc1_inputs) = &cc1_inputs_dbg {
+            debug_pixel::print_combiner_stage(1, cc_mode, cc1_inputs, &frag.color);
         }
 
         // Stage 6: Alpha test
@@ -332,16 +354,49 @@ impl Gpu {
         let frag =
             gs_twin_core::alpha_test::alpha_test(frag, true, rm.z_compare(), alpha_ref_q412)?;
 
-        // Stage 7: Alpha blend (read dst from framebuffer, blend with src)
-        let blend_mode = rm
-            .alpha_blend()
-            .unwrap_or(gpu_registers::components::alpha_blend_e::AlphaBlendE::Disabled);
-        Some(gs_alpha_blend::alpha_blend(
-            frag,
-            &self.memory,
-            &fb_cfg,
-            blend_mode,
-        ))
+        // Stage 7: Color combiner pass 2 (blend via (A-B)*C+D)
+        //
+        // Pass 2 configuration comes directly from the CC_MODE_2 register.
+        // The default value (all pass-through) leaves the pass 1 output
+        // unchanged, so there is no implicit "blend disabled" path.
+        let cc_mode_2 = self.regs.cc_mode_2();
+
+        // Read destination pixel from color tile buffer (prefetch on tile entry)
+        self.color_tile_buffer
+            .ensure_tile(&mut self.memory, &fb_cfg, frag.x as u32, frag.y as u32);
+        let local_x = (frag.x as u32) & 3;
+        let local_y = (frag.y as u32) & 3;
+        let dst_rgb565 = self.color_tile_buffer.read_pixel(local_x, local_y);
+        let dst_color = tile_buffer::promote_rgb565(dst_rgb565);
+
+        let cc2_inputs = gs_color_combiner::CcInputs {
+            tex0: ColorQ412::default(),
+            tex1: ColorQ412::default(),
+            shade0: ColorQ412::default(),
+            shade1: ColorQ412::default(),
+            const0,
+            const1,
+            combined: frag.color,
+            dst_color,
+        };
+
+        let frag = gs_color_combiner::color_combine_2(frag, cc_mode_2, const0, const1, dst_color);
+
+        if debug {
+            debug_pixel::print_combiner_pass_2(cc_mode_2, &cc2_inputs, &frag.color);
+            debug_pixel::print_final_fragment(&frag);
+            debug_pixel::print_register_snapshot(
+                rm,
+                cc_mode,
+                cc_mode_2,
+                self.tex0_sampler.tex_cfg(),
+                self.tex1_sampler.tex_cfg(),
+                cc,
+            );
+            debug_pixel::debug_breakpoint(frag.x, frag.y);
+        }
+
+        Some(frag)
     }
 
     /// Write a colored fragment to the framebuffer (post-pipeline shim).
@@ -380,7 +435,7 @@ impl Gpu {
         }
 
         if rm.color_write_en() {
-            // Q4.12 → RGB565 truncation (no dither)
+            // Q4.12 -> RGB565 truncation (no dither)
             let r_q412 = frag.color.r.to_bits().max(0) as u16;
             let g_q412 = frag.color.g.to_bits().max(0) as u16;
             let b_q412 = frag.color.b.to_bits().max(0) as u16;
@@ -390,8 +445,13 @@ impl Gpu {
             let b5 = (b_q412 >> 7).min(31) as u8;
 
             let color = Rgb565(((r5 as u16) << 11) | ((g6 as u16) << 5) | (b5 as u16));
-            self.memory
-                .write_tiled(fb_cfg.color_base(), wl2, fx, fy, color.0);
+
+            // Write to the color tile buffer instead of directly to SDRAM.
+            // The tile buffer was already ensured/prefetched in the
+            // fragment pipeline (CC pass 2), so we can write directly.
+            let local_x = fx & 3;
+            let local_y = fy & 3;
+            self.color_tile_buffer.write_pixel(local_x, local_y, color);
         }
     }
 

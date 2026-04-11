@@ -11,3 +11,4 @@ gs-twin-core = { path = "../../../shared/gs-twin-core" }
 gs-memory = { path = "../../memory/twin" }
 gs-zbuf = { path = "../../zbuf/twin" }
 gpu-registers.workspace = true
+qfixed = { path = "../../../crates/qfixed" }

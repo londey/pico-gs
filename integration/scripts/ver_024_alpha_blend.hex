@@ -1,185 +1,137 @@
-# VER-024: Alpha Blend Golden Image Test
-#
-# Demonstrates all four alpha blend modes on a 256x256 framebuffer.
-# Background: dark/light grey 4x4 checkerboard (64px tiles).
-# Foreground: red triangles with two opaque top vertices and one
-# transparent bottom vertex.  Gouraud shading interpolates alpha
-# across the triangle, revealing how each mode treats transparency.
-#
+# VER-024: Alpha Blend Modes
+# 
+# 256x256 framebuffer.  Background is a 4x4 dark/light grey
+# checkerboard.  Each quadrant draws a red triangle with two
+# opaque top vertices and one transparent bottom vertex.
+# CC pass 0 pre-multiplies RGB by SHADE0_ALPHA so the color
+# itself fades along with the interpolated alpha.
+# 
+# CC passes 0 and 1 are plain pass-through; all alpha modulation
+# happens in pass 2 via CC_MODE_2.
+# 
 # Quadrants:
-#   Top-left:     DISABLED  — source overwrites, alpha ignored
-#   Top-right:    ADD       — src + dst, alpha ignored (uniform bright)
-#   Bottom-left:  SUBTRACT  — src - dst, alpha ignored (uniform dark)
-#   Bottom-right: BLEND     — src*a + dst*(1-a), shows gradient
-#
-# Vertex register: [15:0]=X  [31:16]=Y  [47:32]=Z  [63:48]=Q
-# X,Y are Q12.4: pixel_coord * 16.
-# COLOR register: [63:32]=color0(RGBA8888)  [31:0]=color1(RGBA8888)
-#   RGBA8888 byte order: R[31:24] G[23:16] B[15:8] A[7:0]
+#   Top-left     (0,0):     CC2_PREMUL_OVERWRITE -- src*alpha overwrites dst
+#   Top-right    (128,0):   CC2_ADD              -- src*alpha + dst
+#   Bottom-left  (0,128):   CC2_SUBTRACT         -- dst - src*alpha
+#   Bottom-right (128,128): CC2_BLEND            -- Porter-Duff src-over
+# 
+# Each phase programs CC_MODE_2 directly; the pixel pipeline
+# decodes the selectors to decide whether to fetch DST_COLOR.
 
 ## FRAMEBUFFER: 256 256
 
-# ======================================================================
-# Phase 1: Clear and configure pipeline
-# ======================================================================
 ## PHASE: clear
 
-44 0200_0000_0000_0000  # MEM_FILL: clear to black (value=0, count=0x20000)
+# Clear color buffer: base_word=0x000000 value=0x0000 count=65536
+44 0100_0000_0000_0000  # MEM_FILL: base_word=0x000000 value=0x0000 count=65536
 40 0000_0088_0000_0000  # FB_CONFIG: color_base=0 w_log2=8 h_log2=8
-43 0000_0040_1000_0000  # FB_CONTROL: scissor w=256 h=256
-18 7670_7670_7673_7673  # CC_MODE: SHADE_PASSTHROUGH
+43 0000_0040_1000_0000  # FB_CONTROL: scissor x=0 y=0 w=256 h=256
+18 7670_7670_7673_7673  # CC_MODE: SHADE_PASSTHROUGH: pass 0 and 1 forward SHADE0 unchanged
 
-# ======================================================================
-# Phase 2: Draw checkerboard (dark grey base + light grey squares)
-# ======================================================================
 ## PHASE: checkerboard
 
-30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD | COLOR_WRITE
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
 
-# Fill entire framebuffer with dark grey via two triangles.
-#   Dark grey: R=0x55 G=0x55 B=0x55 A=0xFF → RGBA8888 = 0x555555FF
-00 555555FF_00000000    # COLOR: diffuse=dark_grey
-06 0000_0000_0000_0000  # x=0   y=0
-06 0000_0000_0000_1000  # x=256 y=0
-07 0000_0000_1000_1000  # x=256 y=256
-06 0000_0000_0000_0000  # x=0   y=0
-06 0000_0000_1000_1000  # x=256 y=256
-07 0000_0000_1000_0000  # x=0   y=256
+# Fill background with dark grey (two covering triangles)
+00 5555_55FF_0000_0000  # COLOR: diffuse=(85,85,85,255) specular=zero
+06 0000_0000_0000_0000  # VERTEX_NOKICK: x=0 y=0 z=0x0000
+06 0000_0000_0000_1000  # VERTEX_NOKICK: x=256 y=0 z=0x0000
+07 0000_0000_1000_1000  # VERTEX_KICK_012: x=256 y=256 z=0x0000
+06 0000_0000_0000_0000  # VERTEX_NOKICK: x=0 y=0 z=0x0000
+06 0000_0000_1000_1000  # VERTEX_NOKICK: x=256 y=256 z=0x0000
+07 0000_0000_1000_0000  # VERTEX_KICK_012: x=0 y=256 z=0x0000
 
-# Draw light grey checkerboard squares on top.
-#   Light grey: R=0xB0 G=0xB0 B=0xB0 A=0xFF → RGBA8888 = 0xB0B0B0FF
-00 B0B0B0FF_00000000    # COLOR: diffuse=light_grey
+# Light grey 64x64 tiles forming the checkerboard
+00 B0B0_B0FF_0000_0000  # COLOR: diffuse=(176,176,176,255) specular=zero
+06 0000_0000_0000_0000  # VERTEX_NOKICK: x=0 y=0 z=0x0000
+06 0000_0000_0000_0400  # VERTEX_NOKICK: x=64 y=0 z=0x0000
+07 0000_0000_0400_0400  # VERTEX_KICK_012: x=64 y=64 z=0x0000
+06 0000_0000_0000_0000  # VERTEX_NOKICK: x=0 y=0 z=0x0000
+06 0000_0000_0400_0400  # VERTEX_NOKICK: x=64 y=64 z=0x0000
+07 0000_0000_0400_0000  # VERTEX_KICK_012: x=0 y=64 z=0x0000
+06 0000_0000_0000_0800  # VERTEX_NOKICK: x=128 y=0 z=0x0000
+06 0000_0000_0000_0C00  # VERTEX_NOKICK: x=192 y=0 z=0x0000
+07 0000_0000_0400_0C00  # VERTEX_KICK_012: x=192 y=64 z=0x0000
+06 0000_0000_0000_0800  # VERTEX_NOKICK: x=128 y=0 z=0x0000
+06 0000_0000_0400_0C00  # VERTEX_NOKICK: x=192 y=64 z=0x0000
+07 0000_0000_0400_0800  # VERTEX_KICK_012: x=128 y=64 z=0x0000
+06 0000_0000_0400_0400  # VERTEX_NOKICK: x=64 y=64 z=0x0000
+06 0000_0000_0400_0800  # VERTEX_NOKICK: x=128 y=64 z=0x0000
+07 0000_0000_0800_0800  # VERTEX_KICK_012: x=128 y=128 z=0x0000
+06 0000_0000_0400_0400  # VERTEX_NOKICK: x=64 y=64 z=0x0000
+06 0000_0000_0800_0800  # VERTEX_NOKICK: x=128 y=128 z=0x0000
+07 0000_0000_0800_0400  # VERTEX_KICK_012: x=64 y=128 z=0x0000
+06 0000_0000_0400_0C00  # VERTEX_NOKICK: x=192 y=64 z=0x0000
+06 0000_0000_0400_1000  # VERTEX_NOKICK: x=256 y=64 z=0x0000
+07 0000_0000_0800_1000  # VERTEX_KICK_012: x=256 y=128 z=0x0000
+06 0000_0000_0400_0C00  # VERTEX_NOKICK: x=192 y=64 z=0x0000
+06 0000_0000_0800_1000  # VERTEX_NOKICK: x=256 y=128 z=0x0000
+07 0000_0000_0800_0C00  # VERTEX_KICK_012: x=192 y=128 z=0x0000
+06 0000_0000_0800_0000  # VERTEX_NOKICK: x=0 y=128 z=0x0000
+06 0000_0000_0800_0400  # VERTEX_NOKICK: x=64 y=128 z=0x0000
+07 0000_0000_0C00_0400  # VERTEX_KICK_012: x=64 y=192 z=0x0000
+06 0000_0000_0800_0000  # VERTEX_NOKICK: x=0 y=128 z=0x0000
+06 0000_0000_0C00_0400  # VERTEX_NOKICK: x=64 y=192 z=0x0000
+07 0000_0000_0C00_0000  # VERTEX_KICK_012: x=0 y=192 z=0x0000
+06 0000_0000_0800_0800  # VERTEX_NOKICK: x=128 y=128 z=0x0000
+06 0000_0000_0800_0C00  # VERTEX_NOKICK: x=192 y=128 z=0x0000
+07 0000_0000_0C00_0C00  # VERTEX_KICK_012: x=192 y=192 z=0x0000
+06 0000_0000_0800_0800  # VERTEX_NOKICK: x=128 y=128 z=0x0000
+06 0000_0000_0C00_0C00  # VERTEX_NOKICK: x=192 y=192 z=0x0000
+07 0000_0000_0C00_0800  # VERTEX_KICK_012: x=128 y=192 z=0x0000
+06 0000_0000_0C00_0400  # VERTEX_NOKICK: x=64 y=192 z=0x0000
+06 0000_0000_0C00_0800  # VERTEX_NOKICK: x=128 y=192 z=0x0000
+07 0000_0000_1000_0800  # VERTEX_KICK_012: x=128 y=256 z=0x0000
+06 0000_0000_0C00_0400  # VERTEX_NOKICK: x=64 y=192 z=0x0000
+06 0000_0000_1000_0800  # VERTEX_NOKICK: x=128 y=256 z=0x0000
+07 0000_0000_1000_0400  # VERTEX_KICK_012: x=64 y=256 z=0x0000
+06 0000_0000_0C00_0C00  # VERTEX_NOKICK: x=192 y=192 z=0x0000
+06 0000_0000_0C00_1000  # VERTEX_NOKICK: x=256 y=192 z=0x0000
+07 0000_0000_1000_1000  # VERTEX_KICK_012: x=256 y=256 z=0x0000
+06 0000_0000_0C00_0C00  # VERTEX_NOKICK: x=192 y=192 z=0x0000
+06 0000_0000_1000_1000  # VERTEX_NOKICK: x=256 y=256 z=0x0000
+07 0000_0000_1000_0C00  # VERTEX_KICK_012: x=192 y=256 z=0x0000
 
-# 4x4 grid, 64px tiles.  Light squares at (col,row):
-# (0,0) (2,0) (1,1) (3,1) (0,2) (2,2) (1,3) (3,3)
-#
-# Pixel coords for tile (c,r): [c*64, r*64] – [(c+1)*64, (r+1)*64]
-# Q12.4: 0→0x0000  64→0x0400  128→0x0800  192→0x0C00  256→0x1000
-
-# -- (0,0): [0,0]-[64,64] --
-06 0000_0000_0000_0000  # x=0   y=0
-06 0000_0000_0000_0400  # x=64  y=0
-07 0000_0000_0400_0400  # x=64  y=64
-06 0000_0000_0000_0000  # x=0   y=0
-06 0000_0000_0400_0400  # x=64  y=64
-07 0000_0000_0400_0000  # x=0   y=64
-
-# -- (2,0): [128,0]-[192,64] --
-06 0000_0000_0000_0800  # x=128 y=0
-06 0000_0000_0000_0C00  # x=192 y=0
-07 0000_0000_0400_0C00  # x=192 y=64
-06 0000_0000_0000_0800  # x=128 y=0
-06 0000_0000_0400_0C00  # x=192 y=64
-07 0000_0000_0400_0800  # x=128 y=64
-
-# -- (1,1): [64,64]-[128,128] --
-06 0000_0000_0400_0400  # x=64  y=64
-06 0000_0000_0400_0800  # x=128 y=64
-07 0000_0000_0800_0800  # x=128 y=128
-06 0000_0000_0400_0400  # x=64  y=64
-06 0000_0000_0800_0800  # x=128 y=128
-07 0000_0000_0800_0400  # x=64  y=128
-
-# -- (3,1): [192,64]-[256,128] --
-06 0000_0000_0400_0C00  # x=192 y=64
-06 0000_0000_0400_1000  # x=256 y=64
-07 0000_0000_0800_1000  # x=256 y=128
-06 0000_0000_0400_0C00  # x=192 y=64
-06 0000_0000_0800_1000  # x=256 y=128
-07 0000_0000_0800_0C00  # x=192 y=128
-
-# -- (0,2): [0,128]-[64,192] --
-06 0000_0000_0800_0000  # x=0   y=128
-06 0000_0000_0800_0400  # x=64  y=128
-07 0000_0000_0C00_0400  # x=64  y=192
-06 0000_0000_0800_0000  # x=0   y=128
-06 0000_0000_0C00_0400  # x=64  y=192
-07 0000_0000_0C00_0000  # x=0   y=192
-
-# -- (2,2): [128,128]-[192,192] --
-06 0000_0000_0800_0800  # x=128 y=128
-06 0000_0000_0800_0C00  # x=192 y=128
-07 0000_0000_0C00_0C00  # x=192 y=192
-06 0000_0000_0800_0800  # x=128 y=128
-06 0000_0000_0C00_0C00  # x=192 y=192
-07 0000_0000_0C00_0800  # x=128 y=192
-
-# -- (1,3): [64,192]-[128,256] --
-06 0000_0000_0C00_0400  # x=64  y=192
-06 0000_0000_0C00_0800  # x=128 y=192
-07 0000_0000_1000_0800  # x=128 y=256
-06 0000_0000_0C00_0400  # x=64  y=192
-06 0000_0000_1000_0800  # x=128 y=256
-07 0000_0000_1000_0400  # x=64  y=256
-
-# -- (3,3): [192,192]-[256,256] --
-06 0000_0000_0C00_0C00  # x=192 y=192
-06 0000_0000_0C00_1000  # x=256 y=192
-07 0000_0000_1000_1000  # x=256 y=256
-06 0000_0000_0C00_0C00  # x=192 y=192
-06 0000_0000_1000_1000  # x=256 y=256
-07 0000_0000_1000_0C00  # x=192 y=256
-
-# ======================================================================
-# Foreground triangles: red with alpha gradient
-#
-# Each triangle: wide at top (two opaque vertices, A=0xFF),
-# pointed at bottom (one transparent vertex, A=0x00).
-# Gouraud interpolation creates a smooth alpha gradient.
-#
-# Per-quadrant vertex layout (qx,qy = quadrant origin):
-#   v0 = (qx+12,  qy+12)  — opaque red
-#   v1 = (qx+116, qy+12)  — opaque red
-#   v2 = (qx+64,  qy+116) — transparent red
-#
-# Q12.4: 12→0x00C0  64→0x0400  116→0x0740  140→0x08C0  192→0x0C00
-#         244→0x0F40
-# ======================================================================
-
-# ======================================================================
-# Phase 3: DISABLED — alpha ignored, source overwrites destination
-# ======================================================================
 ## PHASE: blend_disabled
 
-30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD | COLOR_WRITE | BLEND=DISABLED
-00 FF0000FF_00000000    # COLOR: red opaque (A=0xFF)
-06 0000_0000_00C0_00C0  # VERTEX_NOKICK: x=12 y=12
-06 0000_0000_00C0_0740  # VERTEX_NOKICK: x=116 y=12
-00 FF000000_00000000    # COLOR: red transparent (A=0x00)
-07 0000_0000_0740_0400  # VERTEX_KICK_012: x=64 y=116
+1A 0000_0000_7670_7C70  # CC_MODE_2: PREMUL_OVERWRITE: (COMBINED-ZERO)*COMBINED_ALPHA + ZERO
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+# PREMUL_OVERWRITE: src*alpha overwrites destination.
+00 FF00_00FF_0000_0000  # COLOR: diffuse=red specular=zero
+06 0000_0000_00C0_00C0  # VERTEX_NOKICK: x=12 y=12 z=0x0000
+06 0000_0000_00C0_0740  # VERTEX_NOKICK: x=116 y=12 z=0x0000
+00 FF00_0000_0000_0000  # COLOR: diffuse=black(A=0) specular=zero
+07 0000_0000_0740_0400  # VERTEX_KICK_012: x=64 y=116 z=0x0000
 
-# ======================================================================
-# Phase 4: ADD — src + dst, alpha not used; uniform bright result
-# ======================================================================
 ## PHASE: blend_add
 
-30 0000_0000_0000_0091  # RENDER_MODE: GOURAUD | COLOR_WRITE | BLEND=ADD
-00 FF0000FF_00000000    # COLOR: red opaque
-06 0000_0000_00C0_08C0  # VERTEX_NOKICK: x=140 y=12
-06 0000_0000_00C0_0F40  # VERTEX_NOKICK: x=244 y=12
-00 FF000000_00000000    # COLOR: red transparent
-07 0000_0000_0740_0C00  # VERTEX_KICK_012: x=192 y=116
+1A 0000_0000_7670_9C70  # CC_MODE_2: ADD: (COMBINED-ZERO)*COMBINED_ALPHA + DST_COLOR
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+# ADD: dst + src*alpha.
+00 FF00_00FF_0000_0000  # COLOR: diffuse=red specular=zero
+06 0000_0000_00C0_08C0  # VERTEX_NOKICK: x=140 y=12 z=0x0000
+06 0000_0000_00C0_0F40  # VERTEX_NOKICK: x=244 y=12 z=0x0000
+00 FF00_0000_0000_0000  # COLOR: diffuse=black(A=0) specular=zero
+07 0000_0000_0740_0C00  # VERTEX_KICK_012: x=192 y=116 z=0x0000
 
-# ======================================================================
-# Phase 5: SUBTRACT — src - dst, alpha not used
-# ======================================================================
 ## PHASE: blend_subtract
 
-30 0000_0000_0000_0111  # RENDER_MODE: GOURAUD | COLOR_WRITE | BLEND=SUBTRACT
-00 FF0000FF_00000000    # COLOR: red opaque
-06 0000_0000_08C0_00C0  # VERTEX_NOKICK: x=12 y=140
-06 0000_0000_08C0_0740  # VERTEX_NOKICK: x=116 y=140
-00 FF000000_00000000    # COLOR: red transparent
-07 0000_0000_0F40_0400  # VERTEX_KICK_012: x=64 y=244
+1A 0000_0000_7670_9C07  # CC_MODE_2: SUBTRACT: (ZERO-COMBINED)*COMBINED_ALPHA + DST_COLOR
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+# SUBTRACT: dst - src*alpha.
+00 FF00_00FF_0000_0000  # COLOR: diffuse=red specular=zero
+06 0000_0000_08C0_00C0  # VERTEX_NOKICK: x=12 y=140 z=0x0000
+06 0000_0000_08C0_0740  # VERTEX_NOKICK: x=116 y=140 z=0x0000
+00 FF00_0000_0000_0000  # COLOR: diffuse=black(A=0) specular=zero
+07 0000_0000_0F40_0400  # VERTEX_KICK_012: x=64 y=244 z=0x0000
 
-# ======================================================================
-# Phase 6: BLEND — Porter-Duff src-over; alpha gradient shows fade
-# ======================================================================
 ## PHASE: blend_porter_duff
 
-30 0000_0000_0000_0191  # RENDER_MODE: GOURAUD | COLOR_WRITE | BLEND=BLEND
-00 FF0000FF_00000000    # COLOR: red opaque
-06 0000_0000_08C0_08C0  # VERTEX_NOKICK: x=140 y=140
-06 0000_0000_08C0_0F40  # VERTEX_NOKICK: x=244 y=140
-00 FF000000_00000000    # COLOR: red transparent
-07 0000_0000_0F40_0C00  # VERTEX_KICK_012: x=192 y=244
+1A 0000_0000_7670_9C90  # CC_MODE_2: BLEND: (COMBINED-DST_COLOR)*COMBINED_ALPHA + DST_COLOR
+30 0000_0000_0000_0011  # RENDER_MODE: GOURAUD_EN | COLOR_WRITE_EN
+# BLEND: src*alpha + dst*(1-alpha) (Porter-Duff source-over).
+00 FF00_00FF_0000_0000  # COLOR: diffuse=red specular=zero
+06 0000_0000_08C0_08C0  # VERTEX_NOKICK: x=140 y=140 z=0x0000
+06 0000_0000_08C0_0F40  # VERTEX_NOKICK: x=244 y=140 z=0x0000
+00 FF00_0000_0000_0000  # COLOR: diffuse=black(A=0) specular=zero
+07 0000_0000_0F40_0C00  # VERTEX_KICK_012: x=192 y=244 z=0x0000

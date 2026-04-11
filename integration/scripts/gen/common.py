@@ -21,6 +21,7 @@ ADDR_VERTEX_KICK_012 = 0x07
 ADDR_VERTEX_KICK_021 = 0x08
 ADDR_TEX0_CFG = 0x10
 ADDR_CC_MODE = 0x18
+ADDR_CC_MODE_2 = 0x1A
 ADDR_RENDER_MODE = 0x30
 ADDR_FB_CONFIG = 0x40
 ADDR_FB_CONTROL = 0x43
@@ -38,6 +39,7 @@ REG_NAMES = {
     0x08: "VERTEX_KICK_021",
     0x10: "TEX0_CFG",
     0x18: "CC_MODE",
+    0x1A: "CC_MODE_2",
     0x30: "RENDER_MODE",
     0x40: "FB_CONFIG",
     0x43: "FB_CONTROL",
@@ -100,6 +102,49 @@ CC_MODE_SHADE_PASSTHROUGH = 0x7670_7670_7673_7673
 #   Cycle 0: A=TEX0(1), B=ZERO(7), C=SHADE0(3), D=ZERO(7)
 #   Cycle 1: A=COMBINED(0), B=ZERO(7), C=ONE(6), D=ZERO(7)
 CC_MODE_MODULATE = 0x7670_7670_7371_7371
+
+# SHADE_PREMUL_ALPHA: pre-multiply RGB by SHADE0_ALPHA in cycle 0.
+#   Cycle 0 RGB:   A=SHADE0(3), B=ZERO(7), C=SHADE0_ALPHA(0xA), D=ZERO(7)
+#   Cycle 0 Alpha: A=SHADE0(3), B=ZERO(7), C=ONE(6),            D=ZERO(7)
+#   Cycle 1: passthrough COMBINED
+# Useful for alpha blending tests where the source color should fade
+# with its own alpha value.
+CC_MODE_SHADE_PREMUL_ALPHA = 0x7670_7670_7673_7A73
+
+
+# ---------------------------------------------------------------------------
+# CC_MODE_2 presets (pass 2 / blend stage)
+#
+# Equation: (A - B) * C + D  with CcSourceE selectors for A/B/D and
+# CcRgbCSourceE selectors for the RGB C position.
+# Field layout (32-bit):
+#   [3:0]=A_rgb  [7:4]=B_rgb  [11:8]=C_rgb  [15:12]=D_rgb
+#   [19:16]=A_a  [23:20]=B_a  [27:24]=C_a  [31:28]=D_a
+# All templates leave the alpha channel as pass-through
+# (A=COMBINED(0), B=ZERO(7), C=ONE(6), D=ZERO(7)) -> 0x7670.
+# ---------------------------------------------------------------------------
+
+# DISABLED: RGB pass-through (COMBINED-ZERO)*ONE+ZERO.
+CC_MODE_2_DISABLED = 0x7670_7670
+
+# PREMUL_OVERWRITE: (COMBINED-ZERO)*COMBINED_ALPHA + ZERO = src*alpha.
+# Source is pre-multiplied by its own alpha and overwrites the destination.
+# Useful for tests that want to show an alpha fade without any blend math.
+#   RGB: A=COMBINED(0) B=ZERO(7) C=COMBINED_ALPHA(0xC) D=ZERO(7)
+CC_MODE_2_PREMUL_OVERWRITE = 0x7670_7C70
+
+# ADD: (COMBINED-ZERO)*COMBINED_ALPHA + DST_COLOR = src*alpha + dst.
+#   RGB: A=COMBINED(0) B=ZERO(7) C=COMBINED_ALPHA(0xC) D=DST_COLOR(9)
+CC_MODE_2_ADD = 0x7670_9C70
+
+# SUBTRACT: (ZERO-COMBINED)*COMBINED_ALPHA + DST_COLOR = dst - src*alpha.
+#   RGB: A=ZERO(7) B=COMBINED(0) C=COMBINED_ALPHA(0xC) D=DST_COLOR(9)
+CC_MODE_2_SUBTRACT = 0x7670_9C07
+
+# BLEND (Porter-Duff source-over): (COMBINED-DST_COLOR)*COMBINED_ALPHA + DST_COLOR
+#   = src*alpha + dst*(1-alpha).
+#   RGB: A=COMBINED(0) B=DST_COLOR(9) C=COMBINED_ALPHA(0xC) D=DST_COLOR(9)
+CC_MODE_2_BLEND = 0x7670_9C90
 
 
 # ---------------------------------------------------------------------------

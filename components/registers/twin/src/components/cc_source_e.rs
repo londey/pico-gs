@@ -21,8 +21,8 @@ pub enum CcSourceE {
     CcZero = 7,
     /// Interpolated vertex color 1 (COLOR1, typically specular)
     CcShade1 = 8,
-    /// Reserved (reads as 0)
-    CcRsvd9 = 9,
+    /// Promoted destination pixel from color tile buffer (RGB565 → Q4.12)
+    CcDstColor = 9,
     /// Reserved (reads as 0)
     CcRsvd10 = 10,
     /// Reserved (reads as 0)
@@ -53,7 +53,7 @@ impl CcSourceE {
             6 => Ok(Self::CcOne),
             7 => Ok(Self::CcZero),
             8 => Ok(Self::CcShade1),
-            9 => Ok(Self::CcRsvd9),
+            9 => Ok(Self::CcDstColor),
             10 => Ok(Self::CcRsvd10),
             11 => Ok(Self::CcRsvd11),
             12 => Ok(Self::CcRsvd12),

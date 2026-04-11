@@ -54,6 +54,7 @@ module tb_pixel_pipeline_uninit_flags;
     reg  [31:0] reg_tex1_cfg;
     reg  [31:0] reg_fb_config;
     reg  [31:0] reg_fb_control;
+    reg  [31:0] reg_cc_mode_2;
 
     // Color combiner output -> input loopback
     wire        cc_valid;
@@ -142,6 +143,7 @@ module tb_pixel_pipeline_uninit_flags;
         .reg_tex1_cfg    (reg_tex1_cfg),
         .reg_fb_config   (reg_fb_config),
         .reg_fb_control  (reg_fb_control),
+        .reg_cc_mode_2   (reg_cc_mode_2),
 
         .cc_valid       (cc_valid),
         .cc_tex_color0  (cc_tex_color0),
@@ -331,6 +333,7 @@ module tb_pixel_pipeline_uninit_flags;
         reg_tex1_cfg    = 32'h0;  // TEX1 disabled
         reg_fb_config   = {12'd0, 4'd9, 1'b0, 15'd0}; // width_log2=9 (512px)
         reg_fb_control  = 32'h0;
+        reg_cc_mode_2   = 32'h7670_7670; // Pass-through (no DST_COLOR read)
 
         // Release reset
         repeat(3) @(posedge clk);

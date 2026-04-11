@@ -43,7 +43,7 @@ TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
 CC_RTL = $(COMP_DIR)/color-combiner/rtl/src
 CC_TB_DIR = $(COMP_DIR)/color-combiner/rtl/tests
 CC_VEC_DIR = $(CC_TB_DIR)/vectors
-ABLEND_RTL = $(COMP_DIR)/alpha-blend/rtl/src
+# ABLEND_RTL removed — alpha_blend.sv deprecated (blend now via CC pass 2)
 DITHER_RTL = $(COMP_DIR)/dither/rtl/src
 PXWRITE_RTL = $(COMP_DIR)/pixel-write/rtl/src
 ZBUF_RTL    = $(COMP_DIR)/zbuf/rtl/src
@@ -100,7 +100,6 @@ RTL_SOURCES = \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(TEXTURE_DEC_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
-	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(CC_RTL)/color_combiner.sv \
 	$(UTILS_RTL)/sync_fifo.sv
@@ -132,12 +131,12 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined \
 	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture \
 	render-bc3-texture render-bc4-texture render-rgba8888-texture render-r8-texture \
-	render-stipple-test render-all \
+	render-stipple-test render-alpha-blend render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-stipple-test \
 	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
 	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
-	test-fb-promote test-zbuf-uninit test-alpha-blend test-dither test-stipple test-raster-viz \
+	test-fb-promote test-zbuf-uninit test-dither test-stipple test-raster-viz \
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
 	test-block-decoder-all \
@@ -788,13 +787,8 @@ test-zbuf-uninit: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_zbuf_uninit_flags -o tb_zbuf_uninit_flags
 	$(OBJ_DIR)/tb_zbuf_uninit_flags
 
-# VER-007: Alpha blend unit testbench (Q4.12 blend modes)
-test-alpha-blend: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(ABLEND_RTL)/alpha_blend.sv \
-		$(COMP_DIR)/alpha-blend/rtl/tests/tb_alpha_blend.sv \
-		--top-module tb_alpha_blend -o tb_alpha_blend
-	$(OBJ_DIR)/tb_alpha_blend
+# VER-007: Alpha blend unit testbench — RETIRED (blend now via CC pass 2)
+# See: components/alpha-blend/rtl/src/alpha_blend.sv (deprecated)
 
 # VER-008: Dither unit testbench (ordered dithering matrix)
 test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -865,9 +859,13 @@ render-r8-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 render-stipple-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness stipple_test $(abspath $(SIM_OUT_DIR))/ver_023_stipple_test.png
 
+render-alpha-blend: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness alpha_blend $(abspath $(SIM_OUT_DIR))/ver_024_alpha_blend.png
+
 render-all: render-gouraud render-depth-test render-textured render-color-combined render-textured-cube \
 	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture render-bc3-texture \
-	render-bc4-texture render-rgba8888-texture render-r8-texture render-stipple-test
+	render-bc4-texture render-rgba8888-texture render-r8-texture render-stipple-test \
+	render-alpha-blend
 
 # Golden image diff targets — compare rendered output against approved golden images
 # VER-010: Gouraud triangle
@@ -929,7 +927,7 @@ test-stipple-test: render-stipple-test
 # Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
 # Golden image renders run as prerequisites. Diffs run in the recipe so all
 # comparisons execute even if some fail.
-test: lint test-rasterizer-all test-early-z test-stipple test-register-file test-color-combiner test-texture-decoder test-fb-promote test-zbuf-uninit test-alpha-blend test-dither render-all
+test: lint test-rasterizer-all test-early-z test-stipple test-register-file test-color-combiner test-texture-decoder test-fb-promote test-zbuf-uninit test-dither render-all
 	@echo "Unit testbenches passed."
 	@echo "All images rendered to $(SIM_OUT_DIR)/"
 	@failures=0; \
@@ -948,6 +946,7 @@ test: lint test-rasterizer-all test-early-z test-stipple test-register-file test
 		ver_021_rgba8888_texture.png \
 		ver_022_r8_texture.png \
 		ver_023_stipple_test.png \
+		ver_024_alpha_blend.png \
 	; do \
 		golden="$(GOLDEN_DIR)/$$pair"; \
 		rendered="$(SIM_OUT_DIR)/$$pair"; \
@@ -997,7 +996,6 @@ LEAF_LINT_FILES = \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(RASTER_RTL)/raster_dsp_mul.sv \
@@ -1104,8 +1102,7 @@ lint:
 		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 		$(TEXTURE_RTL)/texture_sampler.sv \
 		$(CC_RTL)/color_combiner.sv \
-		$(ABLEND_RTL)/alpha_blend.sv \
-		$(DITHER_RTL)/dither.sv \
+			$(DITHER_RTL)/dither.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		$(PXWRITE_RTL)/fb_promote.sv \
 		$(ZBUF_RTL)/zbuf_tag_bram.sv \
@@ -1176,7 +1173,6 @@ HARNESS_RTL_SOURCES = \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(TEXTURE_DEC_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
-	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(CC_RTL)/color_combiner.sv \
 	$(UTILS_RTL)/sync_fifo.sv
@@ -1275,7 +1271,6 @@ SIM_RTL_SOURCES = \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(TEXTURE_DEC_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
-	$(ABLEND_RTL)/alpha_blend.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(CC_RTL)/color_combiner.sv \
 	$(UTILS_RTL)/sync_fifo.sv

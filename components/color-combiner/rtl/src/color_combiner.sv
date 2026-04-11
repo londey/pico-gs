@@ -1,18 +1,26 @@
-// Spec-ref: unit_010_color_combiner.md `e41d77b81dae13c1` 2026-03-22
+// Spec-ref: unit_010_color_combiner.md `5dc99ee271f0e771` 2026-04-10
 //
-// Color Combiner — Two-Stage Pipelined Programmable Color Combiner
+// Color Combiner — Three-Pass Pipelined Programmable Color Combiner
 //
-// Evaluates (A - B) * C + D independently for RGB and Alpha in two
-// combiner cycles, each split into two pipeline stages (4 stages total):
-//   Stage 0A: Cycle 0 source mux + A-B subtraction
-//   Stage 0B: Cycle 0 multiply by C, add D, saturate -> COMBINED
-//   Stage 1A: Cycle 1 source mux + A-B subtraction (COMBINED available)
-//   Stage 1B: Cycle 1 multiply by C, add D, saturate -> final output
+// Evaluates (A - B) * C + D independently for RGB and Alpha in three
+// combiner passes, each split into two pipeline stages (6 stages total):
+//   Stage 0A: Pass 0 source mux + A-B subtraction
+//   Stage 0B: Pass 0 multiply by C, add D, saturate -> COMBINED
+//   Stage 1A: Pass 1 source mux + A-B subtraction (COMBINED available)
+//   Stage 1B: Pass 1 multiply by C, add D, saturate -> final pass 1 output
+//   Stage 2A: Pass 2 source mux + A-B subtraction (COMBINED = pass 1 output)
+//   Stage 2B: Pass 2 multiply by C, add D, saturate -> final output
+//
+// Pass 2 replaces the dedicated alpha blend unit.  The DST_COLOR source
+// (cc_source_e value 9) selects the promoted destination pixel from the
+// color tile buffer, enabling all blend modes via the same (A-B)*C+D
+// equation.
 //
 // All arithmetic is Q4.12 signed fixed-point (16-bit per channel).
 // Saturation clamps output to UNORM range [0x0000, 0x1000].
 //
-// See: UNIT-010, REQ-004.01, REQ-004.02, INT-010 (CC_MODE, CONST_COLOR)
+// See: UNIT-010, REQ-004.01, REQ-004.02, INT-010 (CC_MODE, CC_MODE_2,
+//      CONST_COLOR)
 
 `default_nettype none
 
@@ -50,11 +58,19 @@ module color_combiner (
     //     [31:28] ALPHA_D (cc_source_e)
     input  wire [63:0] cc_mode,
 
+    // CC_MODE_2: pass 2 selectors in [31:0] (same field layout as each
+    // half of CC_MODE).  Bits [63:32] are reserved.
+    input  wire [31:0] cc_mode_2,
+
+    // Promoted destination pixel from color tile buffer (Q4.12 RGBA packed)
+    // Used only in pass 2 when DST_COLOR source (sel==9) is selected.
+    input  wire [63:0] dst_color,
+
     // CONST_COLOR: CONST0 RGBA8888 in [31:0], CONST1 RGBA8888 in [63:32]
     input  wire [63:0] const_color,
 
     // ====================================================================
-    // Outputs (to fragment output unit / alpha blend)
+    // Outputs (to pixel pipeline post-combiner stages)
     // ====================================================================
     // Q4.12 RGBA packed as {R[63:48], G[47:32], B[31:16], A[15:0]}
     output reg  [63:0] combined_color,
@@ -84,6 +100,7 @@ module color_combiner (
     localparam [3:0] CC_ONE      = 4'd6;
     localparam [3:0] CC_ZERO     = 4'd7;
     localparam [3:0] CC_SHADE1   = 4'd8;
+    localparam [3:0] CC_DST_COLOR = 4'd9;
 
     // ====================================================================
     // CC_RGB_C_SOURCE Encoding (cc_rgb_c_source_e from RDL)
@@ -173,6 +190,16 @@ module color_combiner (
     wire [3:0] c1_alpha_c_sel = cc_mode[59:56];
     wire [3:0] c1_alpha_d_sel = cc_mode[63:60];
 
+    // Pass 2 fields from cc_mode_2[31:0]
+    wire [3:0] c2_rgb_a_sel   = cc_mode_2[3:0];
+    wire [3:0] c2_rgb_b_sel   = cc_mode_2[7:4];
+    wire [3:0] c2_rgb_c_sel   = cc_mode_2[11:8];   // cc_rgb_c_source_e
+    wire [3:0] c2_rgb_d_sel   = cc_mode_2[15:12];
+    wire [3:0] c2_alpha_a_sel = cc_mode_2[19:16];
+    wire [3:0] c2_alpha_b_sel = cc_mode_2[23:20];
+    wire [3:0] c2_alpha_c_sel = cc_mode_2[27:24];
+    wire [3:0] c2_alpha_d_sel = cc_mode_2[31:28];
+
     // ====================================================================
     // Per-Channel Source Selection Mux (cc_source_e, 16-bit single channel)
     // ====================================================================
@@ -194,20 +221,22 @@ module color_combiner (
         input [63:0] sh0_in,
         input [63:0] sh1_in,
         input [63:0] c0_in,
-        input [63:0] c1_in
+        input [63:0] c1_in,
+        input [63:0] dst_in
     );
         begin
             case (sel)
-                CC_COMBINED: mux_channel = $signed(combined_in[ch_idx*16 +: 16]);
-                CC_TEX0:     mux_channel = $signed(tex0_in[ch_idx*16 +: 16]);
-                CC_TEX1:     mux_channel = $signed(tex1_in[ch_idx*16 +: 16]);
-                CC_SHADE0:   mux_channel = $signed(sh0_in[ch_idx*16 +: 16]);
-                CC_CONST0:   mux_channel = $signed(c0_in[ch_idx*16 +: 16]);
-                CC_CONST1:   mux_channel = $signed(c1_in[ch_idx*16 +: 16]);
-                CC_ONE:      mux_channel = fp_types_pkg::Q412_ONE;
-                CC_ZERO:     mux_channel = fp_types_pkg::Q412_ZERO;
-                CC_SHADE1:   mux_channel = $signed(sh1_in[ch_idx*16 +: 16]);
-                default:     mux_channel = fp_types_pkg::Q412_ZERO;
+                CC_COMBINED:  mux_channel = $signed(combined_in[ch_idx*16 +: 16]);
+                CC_TEX0:      mux_channel = $signed(tex0_in[ch_idx*16 +: 16]);
+                CC_TEX1:      mux_channel = $signed(tex1_in[ch_idx*16 +: 16]);
+                CC_SHADE0:    mux_channel = $signed(sh0_in[ch_idx*16 +: 16]);
+                CC_CONST0:    mux_channel = $signed(c0_in[ch_idx*16 +: 16]);
+                CC_CONST1:    mux_channel = $signed(c1_in[ch_idx*16 +: 16]);
+                CC_ONE:       mux_channel = fp_types_pkg::Q412_ONE;
+                CC_ZERO:      mux_channel = fp_types_pkg::Q412_ZERO;
+                CC_SHADE1:    mux_channel = $signed(sh1_in[ch_idx*16 +: 16]);
+                CC_DST_COLOR: mux_channel = $signed(dst_in[ch_idx*16 +: 16]);
+                default:      mux_channel = fp_types_pkg::Q412_ZERO;
             endcase
         end
     endfunction
@@ -227,7 +256,8 @@ module color_combiner (
         input [63:0] sh0_in,
         input [63:0] sh1_in,
         input [63:0] c0_in,
-        input [63:0] c1_in
+        input [63:0] c1_in,
+        input [63:0] dst_in
     );
         begin
             case (sel)
@@ -286,30 +316,30 @@ module color_combiner (
         reg signed [15:0] b_r, b_g, b_b, b_a;
 
         // Select RGB A, B channels from cc_source_e mux
-        // Cycle 0 COMBINED = ZERO (no previous cycle)
-        a_r = mux_channel(c0_rgb_a_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        a_g = mux_channel(c0_rgb_a_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        a_b = mux_channel(c0_rgb_a_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        // Cycle 0 COMBINED = ZERO (no previous cycle), DST_COLOR = ZERO
+        a_r = mux_channel(c0_rgb_a_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        a_g = mux_channel(c0_rgb_a_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        a_b = mux_channel(c0_rgb_a_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
-        b_r = mux_channel(c0_rgb_b_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        b_g = mux_channel(c0_rgb_b_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        b_b = mux_channel(c0_rgb_b_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        b_r = mux_channel(c0_rgb_b_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        b_g = mux_channel(c0_rgb_b_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        b_b = mux_channel(c0_rgb_b_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Select RGB C from cc_rgb_c_source_e (extended 15-way mux)
-        s0a_c_r = mux_rgb_c_channel(c0_rgb_c_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s0a_c_g = mux_rgb_c_channel(c0_rgb_c_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s0a_c_b = mux_rgb_c_channel(c0_rgb_c_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_c_r = mux_rgb_c_channel(c0_rgb_c_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s0a_c_g = mux_rgb_c_channel(c0_rgb_c_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s0a_c_b = mux_rgb_c_channel(c0_rgb_c_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Select RGB D from cc_source_e mux
-        s0a_d_r = mux_channel(c0_rgb_d_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s0a_d_g = mux_channel(c0_rgb_d_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s0a_d_b = mux_channel(c0_rgb_d_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s0a_d_r = mux_channel(c0_rgb_d_sel, 2'd3, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s0a_d_g = mux_channel(c0_rgb_d_sel, 2'd2, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s0a_d_b = mux_channel(c0_rgb_d_sel, 2'd1, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Select Alpha A, B, C, D from cc_source_e mux (channel index 0 = Alpha)
-        a_a = mux_channel(c0_alpha_a_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        b_a = mux_channel(c0_alpha_b_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s0a_c_a = mux_channel(c0_alpha_c_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s0a_d_a = mux_channel(c0_alpha_d_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        a_a = mux_channel(c0_alpha_a_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        b_a = mux_channel(c0_alpha_b_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s0a_c_a = mux_channel(c0_alpha_c_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s0a_d_a = mux_channel(c0_alpha_d_sel, 2'd0, ZERO_Q412, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Compute A - B (sign-extend to 17 bits for full range)
         s0a_diff_r = {a_r[15], a_r} - {b_r[15], b_r};
@@ -418,30 +448,30 @@ module color_combiner (
         reg signed [15:0] a_r, a_g, a_b, a_a;
         reg signed [15:0] b_r, b_g, b_b, b_a;
 
-        // Select RGB A, B channels (COMBINED = combined_reg from cycle 0)
-        a_r = mux_channel(c1_rgb_a_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        a_g = mux_channel(c1_rgb_a_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        a_b = mux_channel(c1_rgb_a_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        // Select RGB A, B channels (COMBINED = combined_reg from cycle 0, DST_COLOR = ZERO)
+        a_r = mux_channel(c1_rgb_a_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        a_g = mux_channel(c1_rgb_a_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        a_b = mux_channel(c1_rgb_a_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
-        b_r = mux_channel(c1_rgb_b_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        b_g = mux_channel(c1_rgb_b_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        b_b = mux_channel(c1_rgb_b_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        b_r = mux_channel(c1_rgb_b_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        b_g = mux_channel(c1_rgb_b_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        b_b = mux_channel(c1_rgb_b_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Select RGB D from cc_source_e mux
-        s1a_d_r = mux_channel(c1_rgb_d_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s1a_d_g = mux_channel(c1_rgb_d_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s1a_d_b = mux_channel(c1_rgb_d_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_d_r = mux_channel(c1_rgb_d_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s1a_d_g = mux_channel(c1_rgb_d_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s1a_d_b = mux_channel(c1_rgb_d_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Select RGB C from cc_rgb_c_source_e (extended mux, COMBINED = combined_reg)
-        s1a_c_r = mux_rgb_c_channel(c1_rgb_c_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s1a_c_g = mux_rgb_c_channel(c1_rgb_c_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s1a_c_b = mux_rgb_c_channel(c1_rgb_c_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        s1a_c_r = mux_rgb_c_channel(c1_rgb_c_sel, 2'd3, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s1a_c_g = mux_rgb_c_channel(c1_rgb_c_sel, 2'd2, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s1a_c_b = mux_rgb_c_channel(c1_rgb_c_sel, 2'd1, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Select Alpha A, B, C, D (channel index 0 = Alpha)
-        a_a = mux_channel(c1_alpha_a_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        b_a = mux_channel(c1_alpha_b_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s1a_c_a = mux_channel(c1_alpha_c_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
-        s1a_d_a = mux_channel(c1_alpha_d_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q);
+        a_a = mux_channel(c1_alpha_a_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        b_a = mux_channel(c1_alpha_b_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s1a_c_a = mux_channel(c1_alpha_c_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
+        s1a_d_a = mux_channel(c1_alpha_d_sel, 2'd0, combined_reg, tex_color0, tex_color1, shade0, shade1, const0_q, const1_q, ZERO_Q412);
 
         // Compute A - B (sign-extend to 17 bits)
         s1a_diff_r = {a_r[15], a_r} - {b_r[15], b_r};
@@ -527,12 +557,148 @@ module color_combiner (
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
-    // Pipeline Registers (all 4 stages)
+    // Stage 1B -> 2A Pipeline Registers (pass 1 result as COMBINED for pass 2)
     // ====================================================================
-    // Stage 0A -> 0B: Register A-B diff, C, D (cycle 0 subtract output)
-    // Stage 0B -> 1A: Register cycle 0 result as COMBINED; pipeline frag
-    // Stage 1A -> 1B: Register A-B diff, C, D (cycle 1 subtract output)
-    // Stage 1B -> Out: Register final combined color
+
+    reg [63:0] combined2_reg;    // Pass 1 result, fed to pass 2 as COMBINED source
+    reg [15:0] s2a_frag_x;
+    reg [15:0] s2a_frag_y;
+    reg [15:0] s2a_frag_z;
+    reg        s2a_frag_valid;
+
+    // ====================================================================
+    // Stage 2A: Pass 2 Source Mux + A-B Subtraction (combinational)
+    // ====================================================================
+    // COMBINED source = combined2_reg (registered pass 1 output).
+    // DST_COLOR source = dst_color input from color tile buffer.
+    // TEX/SHADE sources are zero (not meaningful in pass 2).
+
+    reg signed [16:0] s2a_diff_r, s2a_diff_g, s2a_diff_b, s2a_diff_a;
+    reg signed [15:0] s2a_c_r,    s2a_c_g,    s2a_c_b,    s2a_c_a;
+    reg signed [15:0] s2a_d_r,    s2a_d_g,    s2a_d_b,    s2a_d_a;
+
+    always_comb begin : stage2a_compute
+        reg signed [15:0] a_r, a_g, a_b, a_a;
+        reg signed [15:0] b_r, b_g, b_b, b_a;
+
+        // Select RGB A, B channels (COMBINED = combined2_reg, DST_COLOR = dst_color)
+        // TEX/SHADE sources default to zero in pass 2.
+        a_r = mux_channel(c2_rgb_a_sel, 2'd3, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        a_g = mux_channel(c2_rgb_a_sel, 2'd2, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        a_b = mux_channel(c2_rgb_a_sel, 2'd1, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+
+        b_r = mux_channel(c2_rgb_b_sel, 2'd3, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        b_g = mux_channel(c2_rgb_b_sel, 2'd2, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        b_b = mux_channel(c2_rgb_b_sel, 2'd1, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+
+        // Select RGB C from cc_rgb_c_source_e (extended mux, COMBINED = combined2_reg)
+        s2a_c_r = mux_rgb_c_channel(c2_rgb_c_sel, 2'd3, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        s2a_c_g = mux_rgb_c_channel(c2_rgb_c_sel, 2'd2, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        s2a_c_b = mux_rgb_c_channel(c2_rgb_c_sel, 2'd1, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+
+        // Select RGB D from cc_source_e mux
+        s2a_d_r = mux_channel(c2_rgb_d_sel, 2'd3, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        s2a_d_g = mux_channel(c2_rgb_d_sel, 2'd2, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        s2a_d_b = mux_channel(c2_rgb_d_sel, 2'd1, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+
+        // Select Alpha A, B, C, D (channel index 0 = Alpha)
+        a_a = mux_channel(c2_alpha_a_sel, 2'd0, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        b_a = mux_channel(c2_alpha_b_sel, 2'd0, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        s2a_c_a = mux_channel(c2_alpha_c_sel, 2'd0, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+        s2a_d_a = mux_channel(c2_alpha_d_sel, 2'd0, combined2_reg, ZERO_Q412, ZERO_Q412, ZERO_Q412, ZERO_Q412, const0_q, const1_q, dst_color);
+
+        // Compute A - B (sign-extend to 17 bits)
+        s2a_diff_r = {a_r[15], a_r} - {b_r[15], b_r};
+        s2a_diff_g = {a_g[15], a_g} - {b_g[15], b_g};
+        s2a_diff_b = {a_b[15], a_b} - {b_b[15], b_b};
+        s2a_diff_a = {a_a[15], a_a} - {b_a[15], b_a};
+    end
+
+    // ====================================================================
+    // Stage 2A -> 2B Pipeline Registers
+    // ====================================================================
+
+    reg signed [16:0] s2b_diff_r, s2b_diff_g, s2b_diff_b, s2b_diff_a;
+    reg signed [15:0] s2b_c_r,    s2b_c_g,    s2b_c_b,    s2b_c_a;
+    reg signed [15:0] s2b_d_r,    s2b_d_g,    s2b_d_b,    s2b_d_a;
+    reg        [15:0] s2b_frag_x;
+    reg        [15:0] s2b_frag_y;
+    reg        [15:0] s2b_frag_z;
+    reg               s2b_frag_valid;
+
+    // ====================================================================
+    // Stage 2B: Pass 2 Multiply + Add + Saturate (combinational)
+    // ====================================================================
+
+    reg [63:0] s2b_result;
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    always_comb begin : stage2b_compute
+        reg signed [33:0] prod_r, prod_g, prod_b, prod_a;
+        reg signed [15:0] shifted_r, shifted_g, shifted_b, shifted_a;
+        reg signed [16:0] sum_r, sum_g, sum_b, sum_a;
+        reg signed [15:0] sat_r, sat_g, sat_b, sat_a;
+
+        // 17x16 -> 33-bit signed multiply; take bits [27:12] for Q4.12 result
+        // Bits [33:28] and [11:0] are inherently unused in Q4.12 extraction.
+        prod_r = s2b_diff_r * s2b_c_r;
+        prod_g = s2b_diff_g * s2b_c_g;
+        prod_b = s2b_diff_b * s2b_c_b;
+        prod_a = s2b_diff_a * s2b_c_a;
+
+        shifted_r = $signed(prod_r[27:12]);
+        shifted_g = $signed(prod_g[27:12]);
+        shifted_b = $signed(prod_b[27:12]);
+        shifted_a = $signed(prod_a[27:12]);
+
+        // Add D with sign extension to 17 bits for overflow detection
+        sum_r = {shifted_r[15], shifted_r} + {s2b_d_r[15], s2b_d_r};
+        sum_g = {shifted_g[15], shifted_g} + {s2b_d_g[15], s2b_d_g};
+        sum_b = {shifted_b[15], shifted_b} + {s2b_d_b[15], s2b_d_b};
+        sum_a = {shifted_a[15], shifted_a} + {s2b_d_a[15], s2b_d_a};
+
+        // Saturate 17-bit sum to 16-bit Q4.12
+        if (sum_r[16] != sum_r[15]) begin
+            sat_r = sum_r[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_r = sum_r[15:0];
+        end
+
+        if (sum_g[16] != sum_g[15]) begin
+            sat_g = sum_g[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_g = sum_g[15:0];
+        end
+
+        if (sum_b[16] != sum_b[15]) begin
+            sat_b = sum_b[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_b = sum_b[15:0];
+        end
+
+        if (sum_a[16] != sum_a[15]) begin
+            sat_a = sum_a[16] ? 16'sh8000 : 16'sh7FFF;
+        end else begin
+            sat_a = sum_a[15:0];
+        end
+
+        // UNORM saturation: clamp to [0x0000, 0x1000]
+        s2b_result[63:48] = saturate_unorm(sat_r);
+        s2b_result[47:32] = saturate_unorm(sat_g);
+        s2b_result[31:16] = saturate_unorm(sat_b);
+        s2b_result[15:0]  = saturate_unorm(sat_a);
+    end
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    // ====================================================================
+    // Pipeline Registers (all 6 stages)
+    // ====================================================================
+    // Stage 0A -> 0B: Register A-B diff, C, D (pass 0 subtract output)
+    // Stage 0B -> 1A: Register pass 0 result as COMBINED; pipeline frag
+    // Stage 1A -> 1B: Register A-B diff, C, D (pass 1 subtract output)
+    // Stage 1B -> 2A: Register pass 1 result as COMBINED; pipeline frag
+    // Stage 2A -> 2B: Register A-B diff, C, D (pass 2 subtract output)
+    // Stage 2B -> Out: Register final combined color
     //
     // All registers are gated by pipeline_enable (out_ready).
     // When pipeline_enable = 0, all stages hold (stall).
@@ -582,7 +748,32 @@ module color_combiner (
             s1b_frag_z     <= 16'd0;
             s1b_frag_valid <= 1'b0;
 
-            // Stage 1B -> Output registers
+            // Stage 1B -> 2A registers (COMBINED pass 2)
+            combined2_reg  <= 64'd0;
+            s2a_frag_x     <= 16'd0;
+            s2a_frag_y     <= 16'd0;
+            s2a_frag_z     <= 16'd0;
+            s2a_frag_valid <= 1'b0;
+
+            // Stage 2A -> 2B registers
+            s2b_diff_r     <= 17'sd0;
+            s2b_diff_g     <= 17'sd0;
+            s2b_diff_b     <= 17'sd0;
+            s2b_diff_a     <= 17'sd0;
+            s2b_c_r        <= 16'sd0;
+            s2b_c_g        <= 16'sd0;
+            s2b_c_b        <= 16'sd0;
+            s2b_c_a        <= 16'sd0;
+            s2b_d_r        <= 16'sd0;
+            s2b_d_g        <= 16'sd0;
+            s2b_d_b        <= 16'sd0;
+            s2b_d_a        <= 16'sd0;
+            s2b_frag_x     <= 16'd0;
+            s2b_frag_y     <= 16'd0;
+            s2b_frag_z     <= 16'd0;
+            s2b_frag_valid <= 1'b0;
+
+            // Stage 2B -> Output registers
             combined_color <= 64'd0;
             out_frag_x     <= 16'd0;
             out_frag_y     <= 16'd0;
@@ -607,7 +798,7 @@ module color_combiner (
             s0b_frag_z     <= frag_z;
             s0b_frag_valid <= frag_valid & pipeline_enable;
 
-            // Stage 0B -> 1A: Register cycle 0 result as COMBINED
+            // Stage 0B -> 1A: Register pass 0 result as COMBINED
             combined_reg   <= s0b_result;
             s1a_frag_x     <= s0b_frag_x;
             s1a_frag_y     <= s0b_frag_y;
@@ -632,12 +823,37 @@ module color_combiner (
             s1b_frag_z     <= s1a_frag_z;
             s1b_frag_valid <= s1a_frag_valid;
 
-            // Stage 1B -> Output: Register final combined color
-            combined_color <= s1b_result;
-            out_frag_x     <= s1b_frag_x;
-            out_frag_y     <= s1b_frag_y;
-            out_frag_z     <= s1b_frag_z;
-            out_frag_valid <= s1b_frag_valid;
+            // Stage 1B -> 2A: Register pass 1 result as COMBINED for pass 2
+            combined2_reg  <= s1b_result;
+            s2a_frag_x     <= s1b_frag_x;
+            s2a_frag_y     <= s1b_frag_y;
+            s2a_frag_z     <= s1b_frag_z;
+            s2a_frag_valid <= s1b_frag_valid;
+
+            // Stage 2A -> 2B: Register subtraction results and C/D operands
+            s2b_diff_r     <= s2a_diff_r;
+            s2b_diff_g     <= s2a_diff_g;
+            s2b_diff_b     <= s2a_diff_b;
+            s2b_diff_a     <= s2a_diff_a;
+            s2b_c_r        <= s2a_c_r;
+            s2b_c_g        <= s2a_c_g;
+            s2b_c_b        <= s2a_c_b;
+            s2b_c_a        <= s2a_c_a;
+            s2b_d_r        <= s2a_d_r;
+            s2b_d_g        <= s2a_d_g;
+            s2b_d_b        <= s2a_d_b;
+            s2b_d_a        <= s2a_d_a;
+            s2b_frag_x     <= s2a_frag_x;
+            s2b_frag_y     <= s2a_frag_y;
+            s2b_frag_z     <= s2a_frag_z;
+            s2b_frag_valid <= s2a_frag_valid;
+
+            // Stage 2B -> Output: Register final combined color
+            combined_color <= s2b_result;
+            out_frag_x     <= s2b_frag_x;
+            out_frag_y     <= s2b_frag_y;
+            out_frag_z     <= s2b_frag_z;
+            out_frag_valid <= s2b_frag_valid;
         end
     end
 

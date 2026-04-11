@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `4dffd877eb8ab47b` 2026-04-04
+// Spec-ref: unit_006_pixel_pipeline.md `b8345ae9027d1b73` 2026-04-10
 //
 // Stipple Pattern Test — Stage 0a of the Pixel Pipeline (UNIT-006)
 //

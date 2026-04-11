@@ -152,16 +152,42 @@ units:
   color_combiner:
     name: Color Combiner
     pipeline: pixel
-    dsp: 6              # (A-B)*C for RGB+A, shared across both uses
+    dsp: 4              # (A-B)*C for RGB+A; single instance, 3-pass time-multiplexed
     ebr: 0
-    lut4: 400
+    lut4: 300
     status: implemented
     rtl: [color_combiner.sv]
     twin: gs-color-combiner
     stages:
       - id: cc_op
-        latency: 1       # (A-B)*C+D
-    notes: "One physical unit, used twice (CC stage 0 then CC stage 1)."
+        latency: 1       # (A-B)*C+D, one pass per cycle
+    notes: >
+      One physical unit, time-multiplexed for 3 passes per fragment (CC0, CC1, CC2/blend).
+      Pass 2 reads DST_COLOR from the color tile buffer for blend/fog.
+      4-cycle/fragment throughput target with passes pipelined back-to-back.
+
+  color_tile_buffer:
+    name: Color Tile Buffer
+    pipeline: pixel
+    dsp: 0
+    ebr: 0
+    lut4: 50            # 4x4 x 16-bit register file in distributed LUTs
+    status: planned
+    rtl: [color_tile_buffer.sv]
+    twin: gs-pixel-write
+    stages:
+      - id: tile_prefetch
+        latency: 1
+        stall: sdram_port_1    # 16-word burst read on tile entry (blend enabled only)
+        conditional: blend_enabled
+      - id: tile_flush
+        latency: 1
+        stall: sdram_port_1    # 16-word burst write on tile exit
+    notes: >
+      Pre-fetches destination tile from SDRAM (16-word burst) at tile entry when blending is enabled.
+      Supplies DST_COLOR to color combiner pass 2.
+      Flushes completed tile to SDRAM (16-word burst write) at tile exit.
+      When blending is disabled, prefetch is skipped; only the flush write is issued.
 
   alpha_test:
     name: Alpha Test
@@ -177,22 +203,7 @@ units:
         latency: 0
     can_kill: true
 
-  alpha_blend:
-    name: Alpha Blend
-    pipeline: pixel
-    dsp: 0              # TBD -- may use DSP or LUT shift-and-add
-    ebr: 0
-    lut4: 300
-    status: implemented
-    rtl: [alpha_blend.sv]
-    twin: gs-alpha-blend
-    stages:
-      - id: fb_fetch
-        latency: 1
-        stall: sdram_port_0    # framebuffer read
-      - id: blend_op
-        latency: 1
-    notes: "Skipped entirely when blend mode = NONE."
+  # alpha_blend: retired — blending is now implemented as color combiner pass 2 via color_tile_buffer.
 
   dither:
     name: Ordered Dither
@@ -221,8 +232,7 @@ units:
         latency: 1
         stall: sdram_port_2
       - id: color_write
-        latency: 1
-        stall: sdram_port_0
+        latency: 0          # writes to color_tile_buffer (on-chip); SDRAM burst issued at tile exit by color_tile_buffer unit
 
   # -- Display ---------------------------------------------------------------
 
@@ -330,20 +340,20 @@ schedules:
       - name: "Color Combiners"
         arrows:
           - from: { cycle: 2, span: textures_sampled }
-            to: { cycle: 3, span: cc_stage0_complete }
-            label: cc_stage0
+            to: { cycle: 3, span: cc_pass0_complete }
+            label: cc_pass0
             unit: color_combiner
-          - from: { cycle: 3, span: cc_stage0_complete }
-            to: { cycle: 4, span: cc_stage1_complete }
-            label: cc_stage1
+          - from: { cycle: 3, span: cc_pass0_complete }
+            to: { cycle: 4, span: cc_pass1_complete }
+            label: cc_pass1
             unit: color_combiner
       - name: "Late Fragment Test"
         arrows:
-          - from: { cycle: 4, span: cc_stage1_complete }
+          - from: { cycle: 4, span: cc_pass1_complete }
             to: { cycle: 5, span: final_fragment_value }
             label: "Alpha Test"
             unit: alpha_test
-          - from: { cycle: 4, span: cc_stage1_complete }
+          - from: { cycle: 4, span: cc_pass1_complete }
             to: { cycle: 5, span: final_fragment_value }
             label: "Color Dither"
             unit: dither
@@ -351,7 +361,7 @@ schedules:
         arrows:
           - from: { cycle: 5, span: final_fragment_value }
             to: { cycle: 6, span: fragment_done }
-            label: "Coalesced Color Write"
+            label: "Tile Buffer Write"
             unit: pixel_output
           - from: { cycle: 5, span: final_fragment_value }
             to: { cycle: 6, span: fragment_done }
@@ -359,7 +369,8 @@ schedules:
             unit: pixel_output
     notes: >
       Assumes z-cache hit (no SDRAM stall), L1 cache hit (no L2/SDRAM),
-      no alpha blend (blend mode = NONE), combinational dither + write overlap.
+      blend mode = NONE (no CC pass 2, no tile prefetch). Tile buffer flush burst
+      issued at tile exit (amortized; not shown per-fragment).
 
   dual_tex:
     name: "Dual Texture (8 cyc/pixel target)"
@@ -395,20 +406,20 @@ schedules:
       - name: "Color Combiners"
         arrows:
           - from: { cycle: 7, span: textures_sampled }
-            to: { cycle: 8, span: cc_stage0_complete }
-            label: cc_stage0
+            to: { cycle: 8, span: cc_pass0_complete }
+            label: cc_pass0
             unit: color_combiner
-          - from: { cycle: 8, span: cc_stage0_complete }
-            to: { cycle: 9, span: cc_stage1_complete }
-            label: cc_stage1
+          - from: { cycle: 8, span: cc_pass0_complete }
+            to: { cycle: 9, span: cc_pass1_complete }
+            label: cc_pass1
             unit: color_combiner
       - name: "Late Fragment Test"
         arrows:
-          - from: { cycle: 9, span: cc_stage1_complete }
+          - from: { cycle: 9, span: cc_pass1_complete }
             to: { cycle: 10, span: final_fragment_value }
             label: "Alpha Test"
             unit: alpha_test
-          - from: { cycle: 9, span: cc_stage1_complete }
+          - from: { cycle: 9, span: cc_pass1_complete }
             to: { cycle: 10, span: final_fragment_value }
             label: "Color Dither"
             unit: dither
@@ -416,7 +427,7 @@ schedules:
         arrows:
           - from: { cycle: 10, span: final_fragment_value }
             to: { cycle: 11, span: fragment_done }
-            label: "Coalesced Color Write"
+            label: "Tile Buffer Write"
             unit: pixel_output
           - from: { cycle: 10, span: final_fragment_value }
             to: { cycle: 11, span: fragment_done }
@@ -425,10 +436,11 @@ schedules:
     notes: >
       Texture sampler time-multiplexed: TEX0 then TEX1.
       CC overlaps with late TEX1 stages if possible.
+      Blend mode = NONE assumed (no CC pass 2). Tile buffer flush burst issued at tile exit.
 
   single_tex_blend:
-    name: "Single Texture + Alpha Blend"
-    cycles_per_pixel: 6
+    name: "Single Texture + Alpha Blend (3-pass CC)"
+    cycles_per_pixel: 4
     lead_in:
       - from: -1
         to: 0
@@ -454,36 +466,40 @@ schedules:
       - name: "Color Combiners"
         arrows:
           - from: { cycle: 2, span: textures_sampled }
-            to: { cycle: 3, span: cc_stage0_complete }
-            label: cc_stage0
+            to: { cycle: 3, span: cc_pass0_complete }
+            label: cc_pass0
             unit: color_combiner
-          - from: { cycle: 3, span: cc_stage0_complete }
-            to: { cycle: 4, span: cc_stage1_complete }
-            label: cc_stage1
+          - from: { cycle: 3, span: cc_pass0_complete }
+            to: { cycle: 4, span: cc_pass1_complete }
+            label: cc_pass1
+            unit: color_combiner
+          - from: { cycle: 4, span: cc_pass1_complete }
+            to: { cycle: 5, span: cc_pass2_complete }
+            label: "cc_pass2 (DST_COLOR)"
             unit: color_combiner
       - name: "Late Fragment Test"
         arrows:
-          - from: { cycle: 4, span: cc_stage1_complete }
-            to: { cycle: 5, span: late_test_complete }
+          - from: { cycle: 5, span: cc_pass2_complete }
+            to: { cycle: 6, span: final_fragment_value }
             label: "Alpha Test"
             unit: alpha_test
-      - name: "Alpha Blend"
-        arrows:
-          - from: { cycle: 5, span: late_test_complete }
-            to: { cycle: 6, span: blended }
-            label: "FB Fetch + Blend"
-            unit: alpha_blend
-      - name: "Fragment Output"
-        arrows:
-          - from: { cycle: 6, span: blended }
-            to: { cycle: 7, span: final_fragment_value }
+          - from: { cycle: 5, span: cc_pass2_complete }
+            to: { cycle: 6, span: final_fragment_value }
             label: "Color Dither"
             unit: dither
-          - from: { cycle: 7, span: final_fragment_value }
-            to: { cycle: 8, span: fragment_done }
-            label: "Coalesced Color Write"
+      - name: "Fragment Output"
+        arrows:
+          - from: { cycle: 6, span: final_fragment_value }
+            to: { cycle: 7, span: fragment_done }
+            label: "Tile Buffer Write"
             unit: pixel_output
-          - from: { cycle: 7, span: final_fragment_value }
-            to: { cycle: 8, span: fragment_done }
+          - from: { cycle: 6, span: final_fragment_value }
+            to: { cycle: 7, span: fragment_done }
             label: "Z-Cache Write"
             unit: pixel_output
+    notes: >
+      CC pass 2 reads DST_COLOR from the color tile buffer (on-chip; no SDRAM stall per fragment).
+      Tile buffer was pre-fetched (16-word burst read) at tile entry.
+      Tile buffer flushed (16-word burst write) at tile exit.
+      4-cycle/fragment throughput maintained: tile buffer read/write amortized over 16 fragments per tile.
+      Assumes z-cache hit, L1 texture cache hit.

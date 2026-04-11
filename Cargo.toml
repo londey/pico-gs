@@ -14,7 +14,6 @@ members = [
     "components/texture/detail/uv-coord/twin",
     "components/texture/detail/bilinear-filter/twin",
     "components/color-combiner/twin",
-    "components/alpha-blend/twin",
     "components/dither/twin",
     "components/pixel-write/twin",
     "components/zbuf/twin",

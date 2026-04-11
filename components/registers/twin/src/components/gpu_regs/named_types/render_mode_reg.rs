@@ -1,7 +1,6 @@
 //! Register: RENDER_MODE
 
 // Instances of named component types
-pub use crate::components::alpha_blend_e as alpha_blend;
 pub use crate::components::alpha_test_e as alpha_test_func;
 pub use crate::components::cull_mode_e as cull_mode;
 pub use crate::components::dither_pattern_e as dither_pattern;
@@ -171,26 +170,25 @@ impl RenderModeReg {
             | ((val & Self::CULL_MODE_MASK) << Self::CULL_MODE_OFFSET);
     }
 
-    pub const ALPHA_BLEND_OFFSET: usize = 7;
-    pub const ALPHA_BLEND_WIDTH: usize = 3;
-    pub const ALPHA_BLEND_MASK: u64 = 0x7;
+    pub const RSVD_9_7_OFFSET: usize = 7;
+    pub const RSVD_9_7_WIDTH: usize = 3;
+    pub const RSVD_9_7_MASK: u64 = 0x7;
 
-    /// ALPHA_BLEND
+    /// RSVD_9_7
     #[inline(always)]
-    #[allow(clippy::missing_errors_doc)]
-    pub fn alpha_blend(
-        &self,
-    ) -> Result<alpha_blend::AlphaBlendE, peakrdl_rust::encode::UnknownVariant<u8>> {
-        let val = (self.0 >> Self::ALPHA_BLEND_OFFSET) & Self::ALPHA_BLEND_MASK;
-        alpha_blend::AlphaBlendE::from_bits(val as u8)
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
+    pub fn rsvd_9_7(&self) -> u8 {
+        let val = (self.0 >> Self::RSVD_9_7_OFFSET) & Self::RSVD_9_7_MASK;
+        val as u8
     }
 
-    /// ALPHA_BLEND
+    /// RSVD_9_7
     #[inline(always)]
-    pub fn set_alpha_blend(&mut self, val: alpha_blend::AlphaBlendE) {
-        let val = val.bits() as u64;
-        self.0 = (self.0 & !(Self::ALPHA_BLEND_MASK << Self::ALPHA_BLEND_OFFSET))
-            | ((val & Self::ALPHA_BLEND_MASK) << Self::ALPHA_BLEND_OFFSET);
+    pub fn set_rsvd_9_7(&mut self, val: u8) {
+        let val = val as u64;
+        self.0 = (self.0 & !(Self::RSVD_9_7_MASK << Self::RSVD_9_7_OFFSET))
+            | ((val & Self::RSVD_9_7_MASK) << Self::RSVD_9_7_OFFSET);
     }
 
     pub const DITHER_EN_OFFSET: usize = 10;
@@ -353,7 +351,7 @@ impl core::fmt::Debug for RenderModeReg {
             .field("z_write_en", &self.z_write_en())
             .field("color_write_en", &self.color_write_en())
             .field("cull_mode", &self.cull_mode())
-            .field("alpha_blend", &self.alpha_blend())
+            .field("rsvd_9_7", &self.rsvd_9_7())
             .field("dither_en", &self.dither_en())
             .field("dither_pattern", &self.dither_pattern())
             .field("z_compare", &self.z_compare())
@@ -378,7 +376,7 @@ mod tests {
         assert_eq!(reg.z_write_en(), false);
         assert_eq!(reg.color_write_en(), false);
         assert_eq!(reg.cull_mode(), Ok(cull_mode::CullModeE::CullNone));
-        assert_eq!(reg.alpha_blend(), Ok(alpha_blend::AlphaBlendE::Disabled));
+        assert_eq!(reg.rsvd_9_7(), 0);
         assert_eq!(reg.dither_en(), false);
         assert_eq!(
             reg.dither_pattern(),

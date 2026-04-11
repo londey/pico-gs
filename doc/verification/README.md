@@ -51,6 +51,7 @@ Verification methods:
 - [VER-014: Textured Cube Golden Image Test](ver_014_textured_cube.md)
 - [VER-015: Triangle Size Grid Golden Image Test](ver_015_size_grid.md)
 - [VER-016: Perspective Road Golden Image Test](ver_016_perspective_road.md)
+- [VER-024: Alpha Blend Modes Golden Image Test](ver_024_alpha_blend.md)
 <!-- TOC-END -->
 
 ## Planned Verification Documents

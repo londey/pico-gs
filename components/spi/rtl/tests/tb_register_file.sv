@@ -28,7 +28,6 @@ module tb_register_file;
     wire        mode_z_write;
     wire        mode_color_write;
     wire [1:0]  mode_cull;
-    wire [2:0]  mode_alpha_blend;
     wire        mode_dither_en;
     wire [1:0]  mode_dither_pattern;
     wire [2:0]  mode_z_compare;
@@ -110,7 +109,6 @@ module tb_register_file;
         .mode_z_write(mode_z_write),
         .mode_color_write(mode_color_write),
         .mode_cull(mode_cull),
-        .mode_alpha_blend(mode_alpha_blend),
         .mode_dither_en(mode_dither_en),
         .mode_dither_pattern(mode_dither_pattern),
         .mode_z_compare(mode_z_compare),

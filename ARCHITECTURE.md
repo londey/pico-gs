@@ -28,7 +28,9 @@ Fragment processing uses Q4.12 signed fixed-point arithmetic (16-bit) as the pip
 All UNORM inputs — vertex colors, material constants, and texture samples — are promoted to Q4.12 at pipeline entry; output converts back to UNORM after optional dithering.
 The signed representation naturally handles the `(A-B)` subtraction in the color combiner, and the 3-bit integer headroom above 1.0 (range up to ~8.0) accommodates additive blending without premature saturation.
 The 12 fractional bits reduce accumulated quantization error through chained combiner stages and alpha blending, preserving gradient fidelity in dark tones.
-Alpha blending promotes the framebuffer's UNORM value to Q4.12 before blending; the result follows the normal dither-and-write path.
+The destination pixel is read from the color tile buffer (promoted from RGB565 to Q4.12) and supplied as the DST_COLOR source operand, available to all three combiner passes.
+Alpha blending conventionally uses pass 2, mapping the selected blend mode directly to the `(A-B)*C+D` equation, but the hardware does not restrict DST_COLOR to any particular pass.
+The result follows the normal dither-and-write path through the tile buffer.
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
 Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
@@ -82,9 +84,12 @@ The per-pixel level-of-detail (LOD) is derived from Q via CLZ and emitted on the
 All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
 The texture sampler (UNIT-011) performs dual-texture sampling through per-sampler two-level caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01), fetches and bilinearly filters texels from the L1 decompressed cache (UNIT-011.03), decompresses blocks on miss via the block decompressor (UNIT-011.04), and fills the L1 cache from the L2 compressed cache (UNIT-011.05), returning decoded Q4.12 RGBA texel data to the pixel pipeline.
 The pixel pipeline (UNIT-006) performs early Z testing, dispatches texture fetch requests to UNIT-011, and receives decoded Q4.12 texel data in return; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
-The color combiner (UNIT-010) is a two-stage pipeline running at one pixel per clock: each stage evaluates `(A-B)*C+D` independently for RGB and alpha, selecting from texture colors, two interpolated vertex colors (SHADE0 for diffuse, SHADE1 for specular), per-draw-call constant colors, and a combined-output feedback path.
-Stage 0's output feeds stage 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add in a single pass; for simple single-equation rendering, stage 1 is configured as a pass-through.
-After optional alpha blending and ordered dithering, fragments are written to the double-buffered framebuffer in SDRAM.
+The color combiner (UNIT-010) is a single time-multiplexed instance that evaluates `(A-B)*C+D` independently for RGB and alpha, executing up to three passes per fragment within a 4-cycle/fragment throughput target.
+Pass 0 and pass 1 replicate the prior two-stage behavior: pass 0's output feeds pass 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add; for simple single-equation rendering, pass 1 is configured as a pass-through.
+The DST_COLOR source (destination pixel from the on-chip color tile buffer) is available to all three passes.
+Pass 2 conventionally implements alpha blending and fog by mapping the selected blend mode to the same `(A-B)*C+D` equation, but DST_COLOR can be selected in any pass for custom effects.
+The color tile buffer (a 4×4, 16×16-bit register file) holds the current destination tile, pre-fetched from SDRAM at the start of each tile when blending is enabled, and flushed back as a 16-word burst write at tile exit.
+After pass 2 and ordered dithering, fragments are written through the tile buffer to the double-buffered framebuffer in SDRAM.
 
 The Z-buffer tile cache (UNIT-012) is an independent component that sits between the pixel pipeline and the SDRAM arbiter: it caches 4×4 tiles of 16-bit Z values in DP16KD BRAM (4-way, 16 sets, write-back), owns the per-tile uninitialized flag array (16,384 1-bit flags in DP16KD) for lazy-fill tracking, and supplies Z-read results and accepts Z-write requests from UNIT-006 while managing fill/evict bursts to SDRAM independently via arbiter port 2.
 A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: display scanout (highest), framebuffer writes, Z-buffer tile cache access, and texture cache fills (lowest).
@@ -113,15 +118,15 @@ flowchart TD
         EZ["Early Z Test ✗"]
         TEX0["TEX0 Sample + Cache"]
         TEX1["TEX1 Sample + Cache"]
-        CC0["Color Combiner 0<br/>(A-B)*C+D"]
-        CC1["Color Combiner 1<br/>(A-B)*C+D"]
+        CC0["Color Combiner pass 0<br/>(A-B)*C+D"]
+        CC1["Color Combiner pass 1<br/>(A-B)*C+D"]
+        CC2["Color Combiner pass 2<br/>Blend/Fog via DST_COLOR"]
         AT["Alpha Test ✗"]
-        AB["Alpha Blend"]
         DITH["Dither"]
         PW["Pixel Write"]
         STIP --> ZRC --> EZ --> TEX0 --> CC0
         EZ --> TEX1 --> CC0
-        CC0 -- "COMBINED" --> CC1 --> AT --> AB --> DITH --> PW
+        CC0 -- "COMBINED" --> CC1 --> CC2 --> AT --> DITH --> PW
     end
 
     REG -- "vertex kick" --> SETUP
@@ -129,6 +134,7 @@ flowchart TD
 
     HIZ_META["Hi-Z Metadata<br/>(8 DP16KD)"]
     ZCACHE["Z-Buffer Tile Cache<br/>(4-way, 4×4 tiles)"]
+    CTBUF["Color Tile Buffer<br/>(4×4 register file)"]
     WBUF["Write-Coalescing<br/>Buffer"]
     ZBUF[("Z-Buffer<br/>SDRAM")]
     TEXMEM[("Texture Data<br/>SDRAM")]
@@ -141,7 +147,10 @@ flowchart TD
     ZCACHE -. "fill/evict burst" .-> ZBUF
     TEXMEM -. "cache fill" .-> TEX0
     TEXMEM -. "cache fill" .-> TEX1
-    FB -. "dst read" .-> AB
+    FB -. "tile prefetch (blend enabled)" .-> CTBUF
+    CTBUF -. "DST_COLOR" .-> CC2
+    PW -. "color write" .-> CTBUF
+    CTBUF -. "tile flush burst" .-> FB
     PW -. "color write" .-> WBUF
     WBUF -. "burst write" .-> FB
 
@@ -171,12 +180,12 @@ Each column shows a value's lifetime from production (first ●) to last consump
 | Depth Range Clip | ● | ● | ● | ● | ● | ● | | | | | |
 | Early Z Test | ● | ● | ● | ● | ● | ● | | | | | Z-buffer read |
 | Texture Sample | ● | ● | ● | ● | ● | ● | ● | ● | | | Texture read (cache miss) |
-| Color Combiner 0 | ● | ● | ● | ● | | | ● | ● | ● | | |
-| Color Combiner 1 | ● | ● | ● | ● | | | ● | ● | ● | ● | |
+| Color Combiner pass 0 | ● | ● | ● | ● | | | ● | ● | ● | | |
+| Color Combiner pass 1 | ● | ● | ● | ● | | | ● | ● | ● | ● | |
+| Color Combiner pass 2 | ● | ● | | | | | | | | ● | Tile prefetch (blend enabled; 16-word burst read on tile entry) |
 | Alpha Test | ● | ● | | | | | | | | ● | |
-| Alpha Blend | ● | ● | | | | | | | | ● | Framebuffer read (dst) |
 | Dither | ● | ● | | | | | | | | ● | |
-| Pixel Write | ● | ● | | | | | | | | ● | FB write, Z write |
+| Pixel Write | ● | ● | | | | | | | | ● | Tile buffer flush (16-word burst write on tile exit), Z write |
 
 **Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits: 4-bit integer mip level, 4-bit trilinear blend fraction, derived from interpolated Q = 1/W by the rasterizer); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
 Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
@@ -197,15 +206,16 @@ The FT232H debug path would remain on standard SPI.
 
 ## Rendering Techniques
 
-The color combiner's `(A-B)*C+D` equation, combined with dual texture units and two pipelined combiner stages, supports several classic rendering techniques in a single pass:
+The color combiner's `(A-B)*C+D` equation, combined with dual texture units and three combiner passes (pass 0, pass 1, and optional pass 2 for blend/fog), supports several classic rendering techniques in a single pipeline pass:
 
 - **Textured Gouraud:** `TEX0 * SHADE0` — diffuse texture modulated by per-vertex lighting.
 - **Lightmapping:** `TEX0 * TEX1` — diffuse texture (UV0) multiplied by a pre-computed lightmap (UV1).
   Unlike the N64 RDP, both texture units are sampled in a single pipeline pass with no throughput penalty.
 - **Lightmap + dynamic fill light:** `TEX0 * TEX1 + SHADE0` — additive per-vertex contribution on top of lightmapped surfaces.
-- **Specular highlight (two-stage):** Stage 0 computes `TEX0 * SHADE0` (diffuse); stage 1 adds the specular color via `COMBINED + SHADE1`.
+- **Specular highlight:** Pass 0 computes `TEX0 * SHADE0` (diffuse); pass 1 adds the specular color via `COMBINED + SHADE1`.
   The host computes both diffuse and specular lighting per-vertex; the combiner composites them in a single pass.
-- **Fog (two-stage):** Stage 0 computes lit/textured color; stage 1 blends COMBINED toward CONST1 (fog color) using vertex alpha as the fog factor.
+- **Fog:** Pass 0 or 1 computes the lit/textured color; pass 2 blends COMBINED toward CONST1 (fog color) using vertex alpha as the fog factor, expressed as `(COMBINED - CONST1) * SHADE0_ALPHA + CONST1`.
+- **Alpha blending:** Pass 2 reads DST_COLOR from the color tile buffer; the selected blend mode (BLEND, ADD, SUBTRACT) maps directly to the `(A-B)*C+D` equation.
 - **Decal / solid color:** `TEX0 * ONE` or `CONST0 * ONE` — trivial pass-through configurations.
 
 Multi-pass rendering extends the repertoire to environment mapping over lightmapped surfaces and similar effects that require more than two texture samples.
@@ -349,13 +359,15 @@ Hi-Z is bypassed when Z_TEST_EN=0 or Z_COMPARE=ALWAYS (no rejection possible wit
 
 **Cost:** 8 EBR (DP16KD, 36-bit wide) for Hi-Z metadata + 1 EBR (DP16KD, 32-bit wide) for Z-cache uninitialized flags, ~200–300 LUTs.
 
-### Burst Coalescing
+### Burst Coalescing and Color Tile Buffer
 
-A write-coalescing buffer sits between the pixel pipeline and the SDRAM arbiter.
-When the pixel pipeline emits a run of adjacent passing fragments on the same scanline (or within the same 4×4 tile), the buffer collects them and issues a single SDRAM burst write rather than individual single-word transactions.
-The rasterizer walks tiles in 4×4 order and feeds fragments to the pixel pipeline; the coalescing buffer observes the output of the full pixel pipeline (post-depth-test, post-blend) rather than the raw rasterizer output.
+The color tile buffer is a 4×4, 16-word register file that sits inside the pixel pipeline.
+All framebuffer color writes target this on-chip buffer rather than SDRAM directly.
+When blending is enabled, the buffer is pre-loaded with the destination tile via a 16-word burst read from SDRAM at the start of each tile; the loaded values are available as the DST_COLOR source for color combiner pass 2.
+At tile exit (all 16 fragments processed, or a tile boundary crossed), the buffer is flushed to SDRAM as a 16-word burst write.
 
 Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after the initial overhead, so a 16-pixel tile write completes in ~24 cycles (1.5 cycles/pixel) versus ~9 cycles per individual write.
+When blending is disabled, the tile prefetch read is skipped; only the flush write is issued, preserving the non-blending throughput of the prior write-coalescing design.
 
 **Cost:** ~100–150 LUTs, zero EBR (distributed RAM).
 
@@ -376,7 +388,7 @@ The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16K
 | Dither matrix | 1 | 16×16 blue noise |
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
-| FB write buffer | 1 | Single-tile coalescing buffer |
+| Color tile buffer | 0 | 4×4 × 16-bit register file; implemented in distributed LUTs |
 | **Total** | **37–38** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
@@ -444,11 +456,11 @@ flowchart LR
 | UNIT-005.05 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
 | UNIT-005.06 | Hi-Z Block Metadata | Per-tile metadata store that enables two Z-buffer optimizations: fast clear (bulk-writing sentinel values to metadata in 512 cycles instead of filling SDRAM in ~266,000 cycles) and hierarchical Z (Hi-Z) tile rejection (rejecting entire 4x4 tiles in the rasterizer before any fragments are emitted). |
 | UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
-| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination, alpha blending, ordered dithering, and framebuffer write. |
+| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via a 4×4 color tile buffer. |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
-| UNIT-010 | Color Combiner | Two-stage pipelined programmable color combiner that produces a final fragment color from multiple input sources. |
+| UNIT-010 | Color Combiner | Single-instance time-multiplexed programmable color combiner that evaluates up to three passes (CC0, CC1, CC2/blend) per fragment, producing the final output color including alpha blending and fog within a 4-cycle/fragment throughput target. |
 | UNIT-011.01 | UV Coordinate Processing | Applies wrap mode, clamp, mirror-repeat, and swizzle pattern to incoming Q4.12 UV coordinates, then selects the final mip level by combining `frag_lod` with `TEXn_MIP_BIAS`. |
 | UNIT-011.02 | Bilinear/Trilinear Filter | Fetches a 2×2 bilinear quad from the four interleaved L1 EBR banks (one texel per bank per cycle), computes bilinear interpolation weights from sub-texel UV fractions, and—when trilinear filtering is enabled—blends two bilinear results from adjacent mip levels using the fractional part of `frag_lod` as the blend weight. |
 | UNIT-011.03 | L1 Decompressed Cache | Per-sampler 4-way set-associative cache storing decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel). |

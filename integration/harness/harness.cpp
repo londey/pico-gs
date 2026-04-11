@@ -119,6 +119,7 @@ static std::string hex_file_for_test(const std::string& test_name) {
         {"rgba8888_texture",  "scripts/ver_021_rgba8888_texture.hex"},
         {"r8_texture",        "scripts/ver_022_r8_texture.hex"},
         {"stipple_test",      "scripts/ver_023_stipple_test.hex"},
+        {"alpha_blend",       "scripts/ver_024_alpha_blend.hex"},
     };
     for (const auto& [name, path] : mappings) {
         if (name == test_name) {
@@ -608,7 +609,8 @@ int main(int argc, char** argv) {
             "Usage: {} <test_name> [output.png] [--zbuf zbuf.png] [--trace]\n"
             "  test_name: gouraud, depth_test, textured, color_combined, textured_cube,\n"
             "             size_grid, perspective_road, bc1_texture, bc2_texture,\n"
-            "             bc3_texture, bc4_texture, rgba8888_texture, r8_texture\n",
+            "             bc3_texture, bc4_texture, rgba8888_texture, r8_texture,\n"
+            "             stipple_test, alpha_blend\n",
             argv[0]
         );
         return 1;
@@ -953,7 +955,14 @@ int main(int argc, char** argv) {
     uint32_t fb_base_word = 0;
     int fb_height = script.fb_height;
     int fb_width = script.fb_width;
-    auto fb = extract_framebuffer(sdram, fb_base_word, FB_WIDTH_LOG2, fb_height);
+    // Width must match FB_CONFIG.WIDTH_LOG2 programmed into the pipeline,
+    // since the tiled addressing formula depends on it. Derive log2 from
+    // script.fb_width (must be a power of two).
+    int fb_width_log2 = 0;
+    for (int w = fb_width; w > 1; w >>= 1) {
+        ++fb_width_log2;
+    }
+    auto fb = extract_framebuffer(sdram, fb_base_word, fb_width_log2, fb_height);
 
     try {
         png_writer::write_png(output_file.c_str(), fb_width, fb_height, fb);

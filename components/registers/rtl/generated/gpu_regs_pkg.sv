@@ -287,6 +287,54 @@ package gpu_regs_pkg;
     } gpu_regs__const_color_reg__out_t;
 
     typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_RGB_A__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_RGB_B__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_RGB_C__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_RGB_D__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_ALPHA_A__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_ALPHA_B__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_ALPHA_C__out_t;
+
+    typedef struct {
+        logic [3:0] value;
+    } gpu_regs__cc_mode_2_reg__C2_ALPHA_D__out_t;
+
+    typedef struct {
+        logic [31:0] value;
+    } gpu_regs__cc_mode_2_reg__RSVD__out_t;
+
+    typedef struct {
+        gpu_regs__cc_mode_2_reg__C2_RGB_A__out_t C2_RGB_A;
+        gpu_regs__cc_mode_2_reg__C2_RGB_B__out_t C2_RGB_B;
+        gpu_regs__cc_mode_2_reg__C2_RGB_C__out_t C2_RGB_C;
+        gpu_regs__cc_mode_2_reg__C2_RGB_D__out_t C2_RGB_D;
+        gpu_regs__cc_mode_2_reg__C2_ALPHA_A__out_t C2_ALPHA_A;
+        gpu_regs__cc_mode_2_reg__C2_ALPHA_B__out_t C2_ALPHA_B;
+        gpu_regs__cc_mode_2_reg__C2_ALPHA_C__out_t C2_ALPHA_C;
+        gpu_regs__cc_mode_2_reg__C2_ALPHA_D__out_t C2_ALPHA_D;
+        gpu_regs__cc_mode_2_reg__RSVD__out_t RSVD;
+    } gpu_regs__cc_mode_2_reg__out_t;
+
+    typedef struct {
         logic value;
     } gpu_regs__render_mode_reg__GOURAUD__out_t;
 
@@ -312,7 +360,7 @@ package gpu_regs_pkg;
 
     typedef struct {
         logic [2:0] value;
-    } gpu_regs__render_mode_reg__ALPHA_BLEND__out_t;
+    } gpu_regs__render_mode_reg__RSVD_9_7__out_t;
 
     typedef struct {
         logic value;
@@ -349,7 +397,7 @@ package gpu_regs_pkg;
         gpu_regs__render_mode_reg__Z_WRITE_EN__out_t Z_WRITE_EN;
         gpu_regs__render_mode_reg__COLOR_WRITE_EN__out_t COLOR_WRITE_EN;
         gpu_regs__render_mode_reg__CULL_MODE__out_t CULL_MODE;
-        gpu_regs__render_mode_reg__ALPHA_BLEND__out_t ALPHA_BLEND;
+        gpu_regs__render_mode_reg__RSVD_9_7__out_t RSVD_9_7;
         gpu_regs__render_mode_reg__DITHER_EN__out_t DITHER_EN;
         gpu_regs__render_mode_reg__DITHER_PATTERN__out_t DITHER_PATTERN;
         gpu_regs__render_mode_reg__Z_COMPARE__out_t Z_COMPARE;
@@ -565,6 +613,7 @@ package gpu_regs_pkg;
         gpu_regs__tex_cfg_reg__out_t TEX1_CFG;
         gpu_regs__cc_mode_reg__out_t CC_MODE;
         gpu_regs__const_color_reg__out_t CONST_COLOR;
+        gpu_regs__cc_mode_2_reg__out_t CC_MODE_2;
         gpu_regs__render_mode_reg__out_t RENDER_MODE;
         gpu_regs__z_range_reg__out_t Z_RANGE;
         gpu_regs__stipple_pattern_reg__out_t STIPPLE_PATTERN;
@@ -611,7 +660,7 @@ package gpu_regs_pkg;
         cc_source_e__CC_ONE = 'h6,
         cc_source_e__CC_ZERO = 'h7,
         cc_source_e__CC_SHADE1 = 'h8,
-        cc_source_e__CC_RSVD_9 = 'h9,
+        cc_source_e__CC_DST_COLOR = 'h9,
         cc_source_e__CC_RSVD_10 = 'ha,
         cc_source_e__CC_RSVD_11 = 'hb,
         cc_source_e__CC_RSVD_12 = 'hc,
@@ -644,13 +693,6 @@ package gpu_regs_pkg;
         cull_mode_e__CULL_CW = 'h1,
         cull_mode_e__CULL_CCW = 'h2
     } cull_mode_e_e;
-
-    typedef enum logic [1:0] {
-        alpha_blend_e__DISABLED = 'h0,
-        alpha_blend_e__ADD = 'h1,
-        alpha_blend_e__SUBTRACT = 'h2,
-        alpha_blend_e__BLEND = 'h3
-    } alpha_blend_e_e;
 
     typedef enum logic {
         dither_pattern_e__BLUE_NOISE_16X16 = 'h0

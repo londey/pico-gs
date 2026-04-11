@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `4dffd877eb8ab47b` 2026-04-04
+// Spec-ref: unit_006_pixel_pipeline.md `b8345ae9027d1b73` 2026-04-10
 // Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
@@ -11,7 +11,8 @@
 //   Stage 1-3: Texture cache lookup + bilinear/nearest sampling + promote
 //   Output:   Fragment data to UNIT-010 (Color Combiner)
 //
-// Post-combiner stages (alpha blend, dither, FB/Z write) are also managed here.
+// Post-combiner stages (dither, FB/Z write) are also managed here.
+// Alpha blending is handled by CC pass 2 (no dedicated alpha blend unit).
 // The color combiner (UNIT-010) is instantiated externally in gpu_top.sv;
 // this module receives the CC result via cc_in_* ports.
 //
@@ -19,10 +20,10 @@
 //   IDLE    -> Accept fragment, stipple + range test (combinational)
 //   Z_READ  -> Issue Z-buffer read request (skip if Z bypass)
 //   Z_WAIT  -> Wait for Z-buffer read data valid
-//   CC_EMIT -> Feed fragment to color combiner
-//   CC_WAIT -> Wait for color combiner result to return
-//   FB_READ -> Issue framebuffer read for alpha blending (skip if DISABLED)
+//   FB_READ -> Issue framebuffer read for CC pass 2 dst_color (skip if no blend)
 //   FB_WAIT -> Wait for framebuffer read data valid
+//   CC_EMIT -> Feed fragment + dst_color to color combiner (3-pass)
+//   CC_WAIT -> Wait for color combiner result (all 3 passes including blend)
 //   WRITE   -> Write framebuffer + Z-buffer
 //
 // See: UNIT-006 (Pixel Pipeline), INT-032 (Texture Cache Architecture),
@@ -65,6 +66,7 @@ module pixel_pipeline (
     input  wire [31:0]  reg_tex1_cfg,     // TEX1_CFG register
     input  wire [31:0]  reg_fb_config,    // FB_CONFIG register
     input  wire [31:0]  reg_fb_control,   // FB_CONTROL register
+    input  wire [31:0]  reg_cc_mode_2,    // CC_MODE_2 register (for dst-color decode)
 
     // ====================================================================
     // Output to UNIT-010 (Color Combiner)
@@ -77,6 +79,12 @@ module pixel_pipeline (
     output reg  [9:0]   cc_frag_x,        // Fragment X passthrough
     output reg  [9:0]   cc_frag_y,        // Fragment Y passthrough
     output reg  [15:0]  cc_frag_z,        // Fragment Z passthrough
+
+    // Promoted destination color for CC pass 2 (blend).
+    // Q4.12 RGBA packed as {R[63:48], G[47:32], B[31:16], A[15:0]}.
+    // Read from framebuffer via fb_promote during FB_READ/FB_WAIT,
+    // then held stable for CC consumption.
+    output wire [63:0]  cc_dst_color,     // Promoted dst for CC pass 2
 
     // ====================================================================
     // Input from UNIT-010 (Color Combiner result)
@@ -149,11 +157,29 @@ module pixel_pipeline (
 
     wire        stipple_en       = reg_render_mode[0];
     wire        z_test_en        = reg_render_mode[1];
-    wire [2:0]  alpha_blend_mode = reg_render_mode[4:2];
+    // reg_render_mode[4:2] is reserved (was alpha_blend_mode; blending is
+    // now fully controlled by CC_MODE_2 and decoded via dst_color_needed).
     wire        dither_en        = reg_render_mode[5];
     wire        z_write_en       = reg_render_mode[6];
     wire        color_write_en   = reg_render_mode[7];
     wire [2:0]  z_compare        = reg_render_mode[15:13];
+
+    // ====================================================================
+    // CC_MODE_2 Field Decode: does pass 2 consume DST_COLOR?
+    // ====================================================================
+    // Each 4-bit selector position (except the RGB C slot, which uses
+    // CcRgbCSourceE and cannot encode DST_COLOR) compared against
+    // CcSourceE::CcDstColor = 4'd9.  If any of them matches, the pipeline
+    // must fetch the framebuffer pixel for pass 2.
+    localparam [3:0] CC_DST_COLOR_SEL = 4'd9;
+    wire dst_color_needed =
+        (reg_cc_mode_2[ 3: 0] == CC_DST_COLOR_SEL) |  // c2_rgb_a
+        (reg_cc_mode_2[ 7: 4] == CC_DST_COLOR_SEL) |  // c2_rgb_b
+        (reg_cc_mode_2[15:12] == CC_DST_COLOR_SEL) |  // c2_rgb_d
+        (reg_cc_mode_2[19:16] == CC_DST_COLOR_SEL) |  // c2_alpha_a
+        (reg_cc_mode_2[23:20] == CC_DST_COLOR_SEL) |  // c2_alpha_b
+        (reg_cc_mode_2[27:24] == CC_DST_COLOR_SEL) |  // c2_alpha_c
+        (reg_cc_mode_2[31:28] == CC_DST_COLOR_SEL);   // c2_alpha_d
 
     // ====================================================================
     // FB_CONFIG Field Extraction
@@ -183,12 +209,20 @@ module pixel_pipeline (
     wire [3:0]  _unused_lod_blend      = lod_blend;
     wire [3:0]  _unused_tex0_mip_level = tex0_mip_level;
     wire [3:0]  _unused_tex1_mip_level = tex1_mip_level;
-    wire [20:0] _unused_render_mode_bits = {reg_render_mode[31:16],
-                                            reg_render_mode[12:8]};
+    wire [23:0] _unused_render_mode_bits = {reg_render_mode[31:16],
+                                            reg_render_mode[12:8],
+                                            reg_render_mode[4:2]};
     wire [12:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15]};
     wire [31:0] _unused_fb_ctrl = reg_fb_control;
+    // CC_MODE_2[11:8] is the RGB C selector (CcRgbCSourceE) which cannot
+    // encode DST_COLOR (9 in that enum means TEX1_ALPHA), so the
+    // dst_color_needed decode skips it.
+    wire [3:0]  _unused_cc_mode_2_rgb_c = reg_cc_mode_2[11:8];
     wire [5:0]  _unused_cc_in_x_hi = cc_in_frag_x[15:10];
     wire [5:0]  _unused_cc_in_y_hi = cc_in_frag_y[15:10];
+    // Alpha channel from CC output is not used post-blend (CC pass 2
+    // handles blending; only RGB goes to dither and FB write).
+    wire [15:0] _unused_post_cc_alpha = post_cc_color[15:0];
     // lat_z_bypass is latched for future use (Z-write-after-bypass path)
     // but not yet read in the current FSM.
     /* verilator lint_on UNUSEDSIGNAL */
@@ -201,9 +235,9 @@ module pixel_pipeline (
         PP_IDLE     = 4'd0,   // Accept new fragment, combinational tests
         PP_Z_READ   = 4'd1,   // Issue Z-buffer read request
         PP_Z_WAIT   = 4'd2,   // Wait for Z-buffer read data
-        PP_CC_EMIT  = 4'd3,   // Feed fragment data to color combiner
-        PP_CC_WAIT  = 4'd4,   // Wait for color combiner result
-        PP_FB_READ  = 4'd5,   // Issue framebuffer read for alpha blend
+        PP_CC_EMIT  = 4'd3,   // Feed fragment + dst_color to color combiner
+        PP_CC_WAIT  = 4'd4,   // Wait for 3-pass color combiner result
+        PP_FB_READ  = 4'd5,   // Issue framebuffer read for CC pass 2 dst_color
         PP_FB_WAIT  = 4'd6,   // Wait for framebuffer read data
         PP_WRITE    = 4'd7,   // Write framebuffer and Z-buffer
         PP_Z_WRITE    = 4'd8,   // Write Z-buffer (after FB write)
@@ -721,25 +755,18 @@ module pixel_pipeline (
     );
 
     // ====================================================================
-    // Alpha Blending (combinational)
+    // CC Pass 2 Destination Color (promoted FB readback)
     // ====================================================================
-
-    wire [63:0] blend_src_rgba = post_cc_color;
-    wire [47:0] blend_dst_rgb  = {fb_r_q412, fb_g_q412, fb_b_q412};
-    wire [47:0] blend_result_rgb;
-
-    alpha_blend u_alpha_blend (
-        .src_rgba   (blend_src_rgba),
-        .dst_rgb    (blend_dst_rgb),
-        .blend_mode (alpha_blend_mode),
-        .result_rgb (blend_result_rgb)
-    );
+    // The CC pass 2 uses the promoted destination color from the
+    // framebuffer readback.  Alpha channel is opaque (0x1000).
+    assign cc_dst_color = {fb_r_q412, fb_g_q412, fb_b_q412, 16'h1000};
 
     // ====================================================================
     // Ordered Dithering (combinational)
     // ====================================================================
+    // Post-CC color goes directly to dithering (blending now done in CC pass 2).
 
-    wire [47:0] dither_input  = blend_result_rgb;
+    wire [47:0] dither_input  = {post_cc_color[63:48], post_cc_color[47:32], post_cc_color[31:16]};
     wire [47:0] dither_output;
 
     dither u_dither (
@@ -877,8 +904,14 @@ module pixel_pipeline (
                         // Fragment discarded, stay idle (consume it)
                         next_state = PP_IDLE;
                     end else if (z_bypass) begin
-                        // Skip Z read; texture lookup if enabled, else CC emit
-                        next_state = tex0_enable ? PP_TEX_LOOKUP : PP_CC_EMIT;
+                        // Skip Z read; texture lookup if enabled, else FB read/CC emit
+                        if (tex0_enable) begin
+                            next_state = PP_TEX_LOOKUP;
+                        end else if (dst_color_needed) begin
+                            next_state = PP_FB_READ;
+                        end else begin
+                            next_state = PP_CC_EMIT;
+                        end
                     end else begin
                         // Need to read Z-buffer for Z-test
                         next_state = PP_Z_READ;
@@ -897,8 +930,14 @@ module pixel_pipeline (
                 if (zbuf_read_valid) begin
                     // Z data received, check Z test
                     if (z_test_pass) begin
-                        // Texture lookup if enabled, else CC emit
-                        next_state = tex0_enable ? PP_TEX_LOOKUP : PP_CC_EMIT;
+                        // Texture lookup if enabled, else FB read/CC emit
+                        if (tex0_enable) begin
+                            next_state = PP_TEX_LOOKUP;
+                        end else if (dst_color_needed) begin
+                            next_state = PP_FB_READ;
+                        end else begin
+                            next_state = PP_CC_EMIT;
+                        end
                     end else begin
                         // Z test failed, discard fragment
                         next_state = PP_IDLE;
@@ -906,28 +945,9 @@ module pixel_pipeline (
                 end
             end
 
-            PP_CC_EMIT: begin
-                // CC valid asserted, wait for downstream to accept
-                // The color combiner uses in_ready (= out_ready) as backpressure.
-                // We hold cc_valid high until we transition to CC_WAIT.
-                next_state = PP_CC_WAIT;
-            end
-
-            PP_CC_WAIT: begin
-                if (cc_in_valid && cc_result_pending) begin
-                    // CC result received for the current fragment.
-                    if (alpha_blend_mode != 3'b000) begin
-                        // Alpha blending enabled: need FB read
-                        next_state = PP_FB_READ;
-                    end else begin
-                        // No blending: go directly to write
-                        next_state = PP_WRITE;
-                    end
-                end
-            end
-
             PP_FB_READ: begin
-                // Hold FB read request until arbiter accepts
+                // Hold FB read request until arbiter accepts.
+                // FB read provides destination color for CC pass 2 (blend).
                 if (fb_ready) begin
                     next_state = PP_FB_WAIT;
                 end
@@ -935,6 +955,23 @@ module pixel_pipeline (
 
             PP_FB_WAIT: begin
                 if (fb_read_valid) begin
+                    // FB data received; proceed to emit fragment to CC
+                    // (fb_data_lat now holds destination for pass 2 blend)
+                    next_state = PP_CC_EMIT;
+                end
+            end
+
+            PP_CC_EMIT: begin
+                // CC valid asserted, wait for downstream to accept.
+                // The color combiner uses in_ready (= out_ready) as backpressure.
+                // dst_color is available from fb_promote (latched in PP_FB_WAIT).
+                next_state = PP_CC_WAIT;
+            end
+
+            PP_CC_WAIT: begin
+                if (cc_in_valid && cc_result_pending) begin
+                    // CC result received (all 3 passes including blend).
+                    // Go directly to framebuffer write.
                     next_state = PP_WRITE;
                 end
             end
@@ -979,7 +1016,11 @@ module pixel_pipeline (
                 // BRAM read data valid this cycle (1 cycle after cache_hit).
                 // For bilinear: loop through all 4 taps; for nearest: tap 0 only.
                 if (tap_idx == last_tap) begin
-                    next_state = PP_CC_EMIT;
+                    if (dst_color_needed) begin
+                        next_state = PP_FB_READ;
+                    end else begin
+                        next_state = PP_CC_EMIT;
+                    end
                 end else begin
                     // More taps needed — issue next cache lookup
                     next_state = PP_TEX_LOOKUP;

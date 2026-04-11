@@ -196,10 +196,12 @@ Latches RGBA colors for the next vertex push. Now holds both diffuse and specula
 **Blending Pipeline** (Color Combiner):
 ```
 Step 1: Sample TEX0, TEX1 (2 texture units max)
-Step 2: Color combiner combines inputs per CC_MODE equation:
+Step 2: Color combiner pass 0 (CC0): combines inputs per CC_MODE[31:0] equation
         Inputs: VER_COLOR0 (diffuse), VER_COLOR1 (specular), TEX_COLOR0, TEX_COLOR1,
                 MAT_COLOR0, MAT_COLOR1, Z_COLOR (fog)
-Step 3: Apply alpha blend with framebuffer if ALPHA_BLEND != DISABLED
+Step 3: Color combiner pass 1 (CC1): combines inputs per CC_MODE[63:32]; COMBINED = pass 0 output
+Step 4: Color combiner pass 2 (CC2/blend): COMBINED = pass 1 output;
+        DST_COLOR from color tile buffer available; RENDER_MODE.ALPHA_BLEND selects blend equation
 ```
 
 **Notes**:
@@ -477,69 +479,37 @@ Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT
 
 ## Color Combiner Registers (0x18-0x1F)
 
-> **Status: Preliminary.**
-> The exact register layout, combiner equation parameters, and input source encoding below are provisional.
-> The color combiner will be defined as its own design unit (UNIT-010) with a detailed data flow diagram.
-> Addresses 0x18–0x1F are reserved for color combiner registers; final field definitions will be determined by UNIT-010.
-
-The color combiner replaces the sequential 4-texture blending pipeline with a programmable combiner inspired by N64 RDP and GeForce2 register combiners.
-It takes up to 7 input sources and produces a final color via a configurable equation.
+The color combiner replaces the sequential 4-texture blending pipeline with a programmable three-pass combiner (CC0, CC1, CC2/blend) implemented on a single time-multiplexed `(A-B)*C+D` datapath (UNIT-010).
+Pass 2 uses DST_COLOR from the color tile buffer to express all alpha blend modes without a dedicated blend unit.
 
 ### 0x18: CC_MODE (Color Combiner Mode)
 
+> **Authoritative bit-field layout:** `registers/rdl/gpu_regs.rdl`, register `cc_mode_reg`.
+> **Source enumerations:** `cc_source_e` (A/B/D and all alpha slots), `cc_rgb_c_source_e` (RGB C slot).
+> This section documents behavioral semantics only; see the RDL for field positions and encodings.
+
 Selects the combiner equation and input mapping.
+Currently 64 bits wide: pass 0 selectors occupy [31:0], pass 1 selectors occupy [63:32].
+Pass-2 configuration for alpha blending is driven by RENDER_MODE.ALPHA_BLEND (see below).
 
-```
-[63:32]   Reserved (write as 0)
-[31:28]   CC_D_SOURCE: Input D source select (4 bits, see source table)
-[27:24]   CC_C_SOURCE: Input C source select (4 bits)
-[23:20]   CC_B_SOURCE: Input B source select (4 bits)
-[19:16]   CC_A_SOURCE: Input A source select (4 bits)
-[15:12]   CC_ALPHA_D: Alpha input D source (4 bits)
-[11:8]    CC_ALPHA_C: Alpha input C source (4 bits)
-[7:4]     CC_ALPHA_B: Alpha input B source (4 bits)
-[3:0]     CC_ALPHA_A: Alpha input A source (4 bits)
-```
+**Combiner Equation** (applied independently to RGB and Alpha for each pass):
 
-**Combiner Equation** (applied independently to RGB and Alpha):
 ```
 result = (A - B) × C + D
 ```
 
-**Source Select Encoding** (4 bits):
+Each pass has 8 source selectors: RGB A/B/C/D and Alpha A/B/C/D.
+The RGB C slot uses `cc_rgb_c_source_e` (includes alpha-to-RGB broadcast sources for blend factors).
+All other slots use `cc_source_e`.
+COMBINED (the output of the previous pass) chains passes together.
+DST_COLOR (the promoted destination pixel from the color tile buffer) is available in all passes.
 
-| Code | Source | Description |
-|------|--------|-------------|
-| 0x0 | TEX_COLOR0 | Sampled+filtered output from texture unit 0 |
-| 0x1 | TEX_COLOR1 | Sampled+filtered output from texture unit 1 |
-| 0x2 | VER_COLOR0 | Interpolated vertex color 0 (diffuse) |
-| 0x3 | VER_COLOR1 | Interpolated vertex color 1 (specular) |
-| 0x4 | MAT_COLOR0 | Material color 0 (from register 0x19) |
-| 0x5 | MAT_COLOR1 | Material color 1 (from register 0x1A) |
-| 0x6 | Z_COLOR | Derived from high byte of interpolated Z (fog factor) |
-| 0x7 | ZERO | Constant zero (0, 0, 0, 0) |
-| 0x8 | ONE | Constant one (1, 1, 1, 1) |
-| 0x9 | ONE_MINUS_A | 1 - input A (computed, only valid for C source) |
-| 0xA-0xF | Reserved | Defaults to ZERO |
+**Behavioral notes:**
 
-**Common Combiner Presets**:
-
-| Use Case | A | B | C | D | Equation |
-|----------|---|---|---|---|----------|
-| Texture × Diffuse | TEX0 | ZERO | VER0 | ZERO | `TEX0 × VER_COLOR0` |
-| Dual-texture modulate | TEX0 | ZERO | TEX1 | ZERO | `TEX0 × TEX1` |
-| Diffuse + Specular | TEX0 | ZERO | VER0 | VER1 | `TEX0 × VER_COLOR0 + VER_COLOR1` |
-| Fog blend | TEX0 | FOG | Z_COLOR | FOG | `(TEX0 - FOG_COLOR) × Z_COLOR + FOG_COLOR` |
-| Lightmap (TEX0 × TEX1 × Diffuse) | TEX0 | ZERO | TEX1 | ZERO | First pass; chain with diffuse in alpha |
-| Material color only | MAT0 | ZERO | ONE | ZERO | `MAT_COLOR0` |
-
-**Notes**:
-- All operations are performed in 10.8 fixed-point format (REQ-004.02)
-- DOT3 bump mapping: configure TEX0 as normal map, use CC_MODE to select DOT3 operation via the LIGHT_DIR register interaction (computed in pixel pipeline before combiner)
+- All operations are performed in Q4.12 fixed-point format (REQ-004.02)
+- RENDER_MODE.ALPHA_BLEND selects the blend equation for the third combiner pass (CC2); when DISABLED, pass 2 is a passthrough
 - Z_COLOR is computed as `interpolated_Z[15:8]` (high byte), providing 256-level fog granularity
-- The combiner equation `(A - B) × C + D` can express multiply, add, subtract, lerp, and fog operations
-
-**Reset Value**: 0x0000000000720020 (A=TEX0, B=ZERO, C=VER0, D=ZERO → `TEX0 × VER_COLOR0`, default textured Gouraud)
+- The combiner equation `(A - B) × C + D` can express multiply, add, subtract, lerp, fog, and all blend modes
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination, alpha blending, ordered dithering, and framebuffer write.
+Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via a 4×4 color tile buffer.
 UNIT-006 is a thin pipeline orchestrator: it sequences fragment processing stages and passes UV/LOD/configuration signals to UNIT-011 (Texture Sampler), receiving back Q4.12 texel data for the color combiner.
 
 ## Implements Requirements
@@ -39,10 +39,9 @@ None (texture cache architecture is now provided by UNIT-011).
 - Receives fragment data (position, UV, color, Z) from UNIT-005 (Rasterizer)
 - Forwards UV coordinates, LOD, and TEXn_CFG configuration to UNIT-011 (Texture Sampler); receives Q4.12 RGBA texel results
 - Reads/writes Z-buffer via UNIT-012 (Z-buffer tile cache); UNIT-012 arbitrates SDRAM access through UNIT-007
-- Reads framebuffer pixel for alpha blending via UNIT-007
 - Receives render mode, dither, blend, scissor, and Z-range configuration from UNIT-003 (Register File)
 - Receives CC_MODE and CONST_COLOR from UNIT-003 for UNIT-010 (Color Combiner)
-- Outputs final RGB565 pixel + Z value to SDRAM via UNIT-007
+- Outputs final RGB565 pixel + Z value to SDRAM via UNIT-007 (tile-burst through color tile buffer)
 
 ## Clock Domain
 
@@ -92,7 +91,9 @@ UNIT-006 issues Z-read and Z-write requests to UNIT-012 and receives responses; 
 
 The pixel pipeline processes rasterized fragments through a staged pipeline.
 Texture operations are delegated to UNIT-011, which delivers Q4.12 RGBA texel results back to UNIT-006.
-Color operations in UNIT-010 and alpha blending use Q4.12 format (REQ-004.02).
+Color operations in UNIT-010 use Q4.12 format across all three passes (REQ-004.02).
+The `DST_COLOR` source (destination pixel from the color tile buffer) is available to all three UNIT-010 passes.
+Alpha blending (REQ-005.03) conventionally uses pass 2 (CC2), but the hardware does not enforce this assignment.
 
 **Stage 0a: Stipple Test:**
 - If RENDER_MODE.STIPPLE_EN=1: Compute bit index = (y & 7) × 8 + (x & 7); read corresponding bit from STIPPLE_PATTERN register
@@ -127,14 +128,18 @@ See UNIT-011 for the detailed texture sampling design.
 - CONST0, CONST1 (Q4.12 promoted from CONST_COLOR register)
 - Fragment position (x, y) and Z passthrough
 
-**Alpha Blending (Q4.12 precision, UNIT-010 downstream):**
-- For alpha blending (REQ-005.03) after the color combiner:
-  1. Read destination pixel from framebuffer (RGB565), promote to Q4.12
-  2. Blend in Q4.12 using RENDER_MODE.ALPHA_BLEND selection:
-     - **DISABLED:** Overwrite destination
-     - **ADD:** `result = saturate(src + dst)` at [0, 1.0]
-     - **SUBTRACT:** `result = saturate(src - dst)` at [0.0, 0.0]
-     - **BLEND:** `result = src * alpha + dst * (1.0 - alpha)` (Porter-Duff source-over)
+**CC Pass 2 / Alpha Blending (Q4.12 precision, via UNIT-010 CC2):**
+
+Alpha blending (REQ-005.03) is implemented as the third pass of UNIT-010 (CC pass 2), configured by RENDER_MODE.ALPHA_BLEND:
+
+- The color tile buffer holds the current 4×4 framebuffer tile (16 RGB565 pixels) as the `DST_COLOR` source.
+- On first access to a new tile when blending is enabled, UNIT-006 issues a 16-word burst read (port 1) to fill the tile buffer from SDRAM.
+- The `DST_COLOR` source from the tile buffer (promoted to Q4.12 via MSB-replication) is available to all CC passes; conventionally pass 2 computes the blend equation using the `(A-B)*C+D` combiner:
+  - **DISABLED:** CC pass 2 is a passthrough; no framebuffer read is required.
+  - **ADD:** `result = saturate(CC1_out + dst_color × 1.0)`
+  - **SUBTRACT:** `result = saturate(dst_color − CC1_out × alpha)`
+  - **BLEND:** `result = CC1_out × alpha + dst_color × (1.0 − alpha)` (Porter-Duff source-over)
+- The updated pixel is written back to the tile buffer slot; the tile is flushed to SDRAM as a 16-word burst write when the pipeline moves to a new tile or rendering completes.
 
 **Ordered Dithering + Framebuffer Write + Z Write:**
 - If RENDER_MODE.DITHER_EN=1 (REQ-005.10):
@@ -168,10 +173,10 @@ Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes
 ## Implementation
 
 - `shared/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
-- `components/pixel-write/twin/src/lib.rs`: Digital twin pixel-write stage (framebuffer write, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`)
+- `components/pixel-write/twin/src/lib.rs`: Digital twin pixel-write stage (tile buffer read-modify-write, framebuffer burst flush, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`)
 - `components/pixel-write/rtl/src/pixel_pipeline.sv`: Main implementation
 - `components/pixel-write/rtl/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
-- `components/alpha-blend/rtl/src/alpha_blend.sv`: Q4.12 alpha blend operations (REQ-004.02)
+- `components/pixel-write/rtl/src/color_tile_buffer.sv`: 4×4 register-file tile buffer (16×16-bit), burst fill/flush arbiter interface
 - `components/dither/rtl/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
 - `components/early-z/rtl/src/early_z.sv`: Depth range test + early Z-test logic
 - `components/stipple/rtl/src/stipple.sv`: Stipple pattern test
@@ -185,11 +190,13 @@ Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned
 - **VER-012** (Textured Triangle Golden Image Test)
 - **VER-013** (Color-Combined Output Golden Image Test)
 - **VER-014** (Textured Cube Golden Image Test)
+- **VER-024** (Alpha Blend Modes Golden Image Test — covers REQ-005.03 via CC pass 2 and tile buffer)
 
 ## Design Notes
 
 **Arbiter port ownership:** UNIT-006 owns arbiter ports 1 and 3 (UNIT-007); UNIT-012 owns port 2:
-- Port 1: framebuffer write (RGB565, tiled 4×4)
+
+- Port 1: framebuffer tile burst read (16-word fill when blending is enabled and a new tile is entered) and tile burst write (16-word flush on tile exit or end-of-render)
 - Port 2: Z-buffer read/write — owned by UNIT-012 (Z-buffer tile cache)
 - Port 3: texture cache fill reads (burst, format-dependent burst_len) — issued on behalf of UNIT-011
 
@@ -218,14 +225,15 @@ UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occur
 1. **UNIT-011 (Texture Sampler):** UV coordinate processing, two-level texture cache (L1 decoded + L2 compressed), block decompression for all eight texture formats, format promotion to Q4.12.
    Delivers TEX_COLOR0, TEX_COLOR1 in Q4.12 RGBA to UNIT-006.
 2. **UNIT-006 (this unit):** Stipple test, depth range clipping, early Z-test, dispatches fragment UV/LOD to UNIT-011, receives Q4.12 texel results, passes them to UNIT-010.
-3. **UNIT-010 (Color Combiner):** Two-stage pipelined programmable color combiner `(A-B)*C+D`.
-   Takes TEX_COLOR0, TEX_COLOR1, SHADE0, SHADE1, CONST0, CONST1, COMBINED as inputs.
-   Outputs combined fragment color downstream.
-4. **Fragment Output (alpha blend + dither + write):** Alpha blending with framebuffer, frame/Z buffer read/write, ordered dithering, pixel write (implemented within UNIT-006).
+3. **UNIT-010 (Color Combiner):** Single time-multiplexed programmable color combiner `(A-B)*C+D` executing three passes (CC0, CC1, CC2) per fragment within a 4-cycle/fragment throughput.
+   CC0 and CC1 take TEX_COLOR0, TEX_COLOR1, SHADE0, SHADE1, CONST0, CONST1, COMBINED as inputs.
+   CC2 (blend pass) additionally takes DST_COLOR (promoted destination pixel from the color tile buffer) and implements alpha blending via a CC equation template selected by RENDER_MODE.ALPHA_BLEND.
+   Outputs the final blended color downstream.
+4. **Fragment Output (dither + write via tile buffer):** Ordered dithering, pixel write to the color tile buffer; burst tile flush to SDRAM (implemented within UNIT-006).
 
-**Estimated FPGA Resources (UNIT-006 only, excluding UNIT-011):**
+**Estimated FPGA Resources (UNIT-006 only, excluding UNIT-010 and UNIT-011):**
 
-- Q4.12 alpha blend pipeline: ~2-4 DSP slices, ~500-800 LUTs
-- FB promotion: ~200-400 LUTs (combinational)
+- Color tile buffer: ~50 LUTs (16×16-bit register file + burst arbiter interface), 0 EBR
+- FB promote: ~200-400 LUTs (combinational, shared with tile buffer fill path)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
-- Total pipeline latency: ~13-16 cycles at 100 MHz (130-160 ns), fully pipelined, 1 pixel/cycle throughput (100 Mpixels/sec peak)
+- Total pipeline throughput: 1 fragment per 4 cycles at 100 MHz (25 Mfragments/sec), limited by the 3-pass CC schedule

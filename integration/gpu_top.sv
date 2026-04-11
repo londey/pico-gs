@@ -156,7 +156,6 @@ module gpu_top (
     wire        mode_z_write;
     wire        mode_color_write;
     wire [1:0]  mode_cull;
-    wire [2:0]  mode_alpha_blend;
     wire        mode_dither_en;
     wire [1:0]  mode_dither_pattern;
     wire [2:0]  mode_z_compare;
@@ -201,6 +200,7 @@ module gpu_top (
 
     // Color combiner
     wire [63:0] cc_mode;
+    wire [31:0] cc_mode_2;
     wire [63:0] const_color;
 
     // Texture configuration
@@ -341,7 +341,6 @@ module gpu_top (
         .mode_z_write(mode_z_write),
         .mode_color_write(mode_color_write),
         .mode_cull(mode_cull),
-        .mode_alpha_blend(mode_alpha_blend),
         .mode_dither_en(mode_dither_en),
         .mode_dither_pattern(mode_dither_pattern),
         .mode_z_compare(mode_z_compare),
@@ -386,6 +385,7 @@ module gpu_top (
 
         // Color combiner
         .cc_mode(cc_mode),
+        .cc_mode_2(cc_mode_2),
         .const_color(const_color),
 
         // Texture configuration
@@ -1018,6 +1018,9 @@ module gpu_top (
     wire [9:0]  pp_cc_frag_y;
     wire [15:0] pp_cc_frag_z;
 
+    // Pixel pipeline -> Color combiner: promoted destination color for pass 2
+    wire [63:0] pp_cc_dst_color;
+
     // Color combiner -> Pixel pipeline interface
     wire        cc_out_valid;
     wire        cc_in_ready;
@@ -1068,7 +1071,7 @@ module gpu_top (
         mode_color_write,               // [7]
         mode_z_write,                   // [6]
         mode_dither_en,                 // [5]
-        mode_alpha_blend,               // [4:2]
+        3'b0,                           // [4:2] reserved (was alpha_blend)
         mode_z_test,                    // [1]
         mode_stipple_en                 // [0]
     };
@@ -1153,6 +1156,7 @@ module gpu_top (
         .reg_tex1_cfg(tex1_cfg[31:0]),
         .reg_fb_config(fb_config_packed),
         .reg_fb_control(fb_control_packed),
+        .reg_cc_mode_2(cc_mode_2),
 
         // Output to color combiner
         .cc_valid(pp_cc_valid),
@@ -1163,6 +1167,7 @@ module gpu_top (
         .cc_frag_x(pp_cc_frag_x),
         .cc_frag_y(pp_cc_frag_y),
         .cc_frag_z(pp_cc_frag_z),
+        .cc_dst_color(pp_cc_dst_color),
 
         // Input from color combiner
         .cc_in_valid(cc_out_valid),
@@ -1331,6 +1336,8 @@ module gpu_top (
 
         // Configuration from register file
         .cc_mode(cc_mode),
+        .cc_mode_2(cc_mode_2),
+        .dst_color(pp_cc_dst_color),
         .const_color(const_color),
 
         // Output to pixel pipeline post-combiner stages

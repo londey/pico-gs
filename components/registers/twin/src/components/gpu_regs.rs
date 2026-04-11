@@ -2,6 +2,7 @@
 
 /// Named types defined within this component's body
 pub mod named_types {
+    pub mod cc_mode_2_reg;
     pub mod cc_mode_reg;
     pub mod color_reg;
     pub mod const_color_reg;
@@ -22,6 +23,7 @@ pub mod named_types {
 }
 
 // Instances of named component types
+pub use crate::components::gpu_regs::named_types::cc_mode_2_reg as cc_mode_2;
 pub use crate::components::gpu_regs::named_types::cc_mode_reg as cc_mode;
 pub use crate::components::gpu_regs::named_types::color_reg as color;
 pub use crate::components::gpu_regs::named_types::const_color_reg as const_color;
@@ -276,6 +278,24 @@ impl<'io, IO: peakrdl_rust::io::RegisterIO> GpuRegs<'io, IO> {
     pub const fn const_color(&self) -> peakrdl_rust::reg::Reg<'io, const_color::ConstColorReg, IO> {
         unsafe {
             peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0xC8).cast(), self.io)
+        }
+    }
+
+    /// CC_MODE_2
+    ///
+    /// Color combiner pass 2 (blend) mode: equation (A-B)*C+D for the third
+    /// combiner pass.  Pass 2's COMBINED input is the output of pass 1.
+    /// The DST_COLOR source (cc_source_e value 9) selects the promoted
+    /// destination pixel from the color tile buffer.
+    /// When blending is disabled, configure pass 2 as pass-through:
+    /// A=COMBINED, B=ZERO, C=ONE, D=ZERO.
+    /// This register is written separately from CC_MODE because the SPI
+    /// transport uses 64-bit data width.
+    #[inline(always)]
+    #[must_use]
+    pub const fn cc_mode_2(&self) -> peakrdl_rust::reg::Reg<'io, cc_mode_2::CcMode2Reg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0xD0).cast(), self.io)
         }
     }
 

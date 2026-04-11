@@ -36,7 +36,6 @@ module register_file (
     output reg          mode_z_write,       // Z-write enabled (RENDER_MODE[3])
     output reg          mode_color_write,   // Color buffer write (RENDER_MODE[4])
     output reg  [1:0]   mode_cull,          // Backface culling (RENDER_MODE[6:5])
-    output reg  [2:0]   mode_alpha_blend,   // Alpha blend mode (RENDER_MODE[9:7])
     output reg          mode_dither_en,     // Dithering enable (RENDER_MODE[10])
     output reg  [1:0]   mode_dither_pattern, // Dither pattern (RENDER_MODE[12:11])
     output reg  [2:0]   mode_z_compare,     // Z comparison func (RENDER_MODE[15:13])
@@ -80,7 +79,8 @@ module register_file (
     output reg          color_grade_enable,  // Color grading LUT enabled
 
     // Color combiner
-    output reg  [63:0]  cc_mode,             // Color combiner mode
+    output reg  [63:0]  cc_mode,             // Color combiner mode (passes 0 + 1)
+    output reg  [31:0]  cc_mode_2,           // Color combiner pass 2 (blend) mode
     output reg  [63:0]  const_color,         // Constant colors 0+1 packed
 
     // Texture configuration
@@ -125,8 +125,9 @@ module register_file (
     localparam ADDR_VERTEX_KICK_RECT   = 7'h09;  // Two-corner rectangle emit
     localparam ADDR_TEX0_CFG           = 7'h10;  // Texture unit 0 configuration
     localparam ADDR_TEX1_CFG           = 7'h11;  // Texture unit 1 configuration
-    localparam ADDR_CC_MODE            = 7'h18;  // Color combiner mode
+    localparam ADDR_CC_MODE            = 7'h18;  // Color combiner mode (passes 0 + 1)
     localparam ADDR_CONST_COLOR        = 7'h19;  // Constant color 0+1
+    localparam ADDR_CC_MODE_2          = 7'h1A;  // Color combiner pass 2 (blend) mode
     localparam ADDR_RENDER_MODE        = 7'h30;  // Unified rendering state
     localparam ADDR_Z_RANGE            = 7'h31;  // Depth range clipping min/max
     localparam ADDR_STIPPLE_PATTERN    = 7'h32;  // 8x8 stipple bitmask
@@ -174,6 +175,7 @@ module register_file (
     wire [13:0] _unused_fb_disp_rsv = fb_display_reg[15:2];
     reg [63:0] fb_control_reg;          // FB_CONTROL register
     reg [63:0] cc_mode_reg;             // CC_MODE register
+    reg [63:0] cc_mode_2_reg;           // CC_MODE_2 register
     reg [63:0] const_color_reg;         // CONST_COLOR register
     reg [63:0] tex0_cfg_reg;            // TEX0_CFG register
     reg [63:0] tex1_cfg_reg;            // TEX1_CFG register
@@ -199,7 +201,7 @@ module register_file (
         mode_z_write        = render_mode_reg[3];
         mode_color_write    = render_mode_reg[4];
         mode_cull           = render_mode_reg[6:5];
-        mode_alpha_blend    = render_mode_reg[9:7];
+        // render_mode_reg[9:7] is reserved (was ALPHA_BLEND, removed)
         mode_dither_en      = render_mode_reg[10];
         mode_dither_pattern = render_mode_reg[12:11];
         mode_z_compare      = render_mode_reg[15:13];
@@ -265,6 +267,7 @@ module register_file (
 
     always_comb begin
         cc_mode     = cc_mode_reg;
+        cc_mode_2   = cc_mode_2_reg[31:0];
         const_color = const_color_reg;
     end
 
@@ -327,6 +330,7 @@ module register_file (
     reg [63:0] next_fb_display;
     reg [63:0] next_fb_control;
     reg [63:0] next_cc_mode;
+    reg [63:0] next_cc_mode_2;
     reg [63:0] next_const_color;
     reg [63:0] next_tex0_cfg;
     reg [63:0] next_tex1_cfg;
@@ -396,6 +400,7 @@ module register_file (
         next_fb_display            = fb_display_reg;
         next_fb_control            = fb_control_reg;
         next_cc_mode               = cc_mode_reg;
+        next_cc_mode_2             = cc_mode_2_reg;
         next_const_color           = const_color_reg;
         next_tex0_cfg              = tex0_cfg_reg;
         next_tex1_cfg              = tex1_cfg_reg;
@@ -627,6 +632,10 @@ module register_file (
                     next_cc_mode = cmd_wdata;
                 end
 
+                ADDR_CC_MODE_2: begin
+                    next_cc_mode_2 = cmd_wdata;
+                end
+
                 ADDR_CONST_COLOR: begin
                     next_const_color = cmd_wdata;
                 end
@@ -717,6 +726,8 @@ module register_file (
             // MODULATE preset: (TEX0 - ZERO) * SHADE0 + ZERO in cycle 0,
             // (COMBINED - ZERO) * ONE + ZERO (pass-through) in cycle 1.
             cc_mode_reg         <= 64'h7670_7670_7371_7371;
+            // Pass-through preset: (COMBINED - ZERO) * ONE + ZERO (no blend)
+            cc_mode_2_reg       <= 64'h0000_0000_7670_7670;
             const_color_reg     <= 64'h0;
             tex0_cfg_reg        <= 64'h0;
             tex1_cfg_reg        <= 64'h0;
@@ -783,6 +794,7 @@ module register_file (
             fb_display_reg      <= next_fb_display;
             fb_control_reg      <= next_fb_control;
             cc_mode_reg         <= next_cc_mode;
+            cc_mode_2_reg       <= next_cc_mode_2;
             const_color_reg     <= next_const_color;
             tex0_cfg_reg        <= next_tex0_cfg;
             tex1_cfg_reg        <= next_tex1_cfg;
@@ -857,6 +869,7 @@ module register_file (
             ADDR_FB_CONTROL:      cmd_rdata = fb_control_reg;
             ADDR_MEM_FILL:        cmd_rdata = 64'b0;  // Write-only (trigger register)
             ADDR_CC_MODE:         cmd_rdata = cc_mode_reg;
+            ADDR_CC_MODE_2:       cmd_rdata = cc_mode_2_reg;
             ADDR_CONST_COLOR:     cmd_rdata = const_color_reg;
             ADDR_TEX0_CFG:        cmd_rdata = tex0_cfg_reg;
             ADDR_TEX1_CFG:        cmd_rdata = tex1_cfg_reg;

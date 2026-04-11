@@ -18,7 +18,6 @@ gs-stipple = { path = "../../components/stipple/twin" }
 gs-early-z = { path = "../../components/early-z/twin" }
 gs-texture = { path = "../../components/texture/twin" }
 gs-color-combiner = { path = "../../components/color-combiner/twin" }
-gs-alpha-blend = { path = "../../components/alpha-blend/twin" }
 gs-dither = { path = "../../components/dither/twin" }
 gs-pixel-write = { path = "../../components/pixel-write/twin" }
 gs-zbuf = { path = "../../components/zbuf/twin" }

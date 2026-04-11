@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `4dffd877eb8ab47b` 2026-04-04
+// Spec-ref: unit_006_pixel_pipeline.md `b8345ae9027d1b73` 2026-04-10
 //
 // Framebuffer Promote — RGB565 to Q4.12 Conversion
 //
@@ -37,23 +37,24 @@ module fb_promote (
     // ========================================================================
     // R5 -> Q4.12 Promotion
     // ========================================================================
-    // {3'b0, R5[4:0], R5[4:0], R5[4:2]} = 3+5+5+3 = 16 bits
+    // Base MSB-replication gives max = 0x0FFF.  Adding r5[4] (i.e. v >> 4)
+    // promotes all-ones exactly to 0x1000 = 1.0 while leaving smaller
+    // values within 1 LSB of the ideal `v * 0x1000 / 31` ratio.
 
-    assign r_q412 = {3'b000, r5[4:0], r5[4:0], r5[4:2]};
+    assign r_q412 = {4'b0000, r5[4:0], r5[4:0], r5[4:3]} + {15'b0, r5[4]};
 
     // ========================================================================
     // G6 -> Q4.12 Promotion
     // ========================================================================
-    // {3'b0, G6[5:0], G6[5:0], 1'b0} = 3+6+6+1 = 16 bits
+    // Same scheme: base max = 0x0FFF, add g6[5] to land 0x3F on 0x1000.
 
-    assign g_q412 = {3'b000, g6[5:0], g6[5:0], 1'b0};
+    assign g_q412 = {4'b0000, g6[5:0], g6[5:0]} + {15'b0, g6[5]};
 
     // ========================================================================
     // B5 -> Q4.12 Promotion
     // ========================================================================
-    // Same MSB-replication as R5.
 
-    assign b_q412 = {3'b000, b5[4:0], b5[4:0], b5[4:2]};
+    assign b_q412 = {4'b0000, b5[4:0], b5[4:0], b5[4:3]} + {15'b0, b5[4]};
 
 endmodule
 

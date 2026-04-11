@@ -138,16 +138,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gs-alpha-blend"
-version = "0.1.0"
-dependencies = [
- "gpu-registers",
- "gs-memory",
- "gs-twin-core",
- "qfixed",
-]
-
-[[package]]
 name = "gs-color-combiner"
 version = "0.1.0"
 dependencies = [
@@ -199,6 +189,7 @@ dependencies = [
  "gs-memory",
  "gs-twin-core",
  "gs-zbuf",
+ "qfixed",
 ]
 
 [[package]]
@@ -291,7 +282,6 @@ version = "0.1.0"
 dependencies = [
  "dbg_breakpoint",
  "gpu-registers",
- "gs-alpha-blend",
  "gs-color-combiner",
  "gs-display",
  "gs-dither",

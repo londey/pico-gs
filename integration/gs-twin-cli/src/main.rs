@@ -65,6 +65,12 @@ mod scripts {
 
     /// VER-022: R8 uncompressed texture (single-channel grayscale).
     pub const VER_022: &str = include_str!("../../scripts/ver_022_r8_texture.hex");
+
+    /// VER-023: Stipple test (checkerboard stipple pattern).
+    pub const VER_023: &str = include_str!("../../scripts/ver_023_stipple_test.hex");
+
+    /// VER-024: Alpha blend modes (disabled, add, subtract, Porter-Duff).
+    pub const VER_024: &str = include_str!("../../scripts/ver_024_alpha_blend.hex");
 }
 
 /// Top-level CLI argument parser.
@@ -234,8 +240,14 @@ fn main() -> Result<()> {
                 "ver_022" => {
                     render_hex_scene(scripts::VER_022, &mut gpu)?;
                 }
+                "ver_023" => {
+                    render_hex_scene(scripts::VER_023, &mut gpu)?;
+                }
+                "ver_024" => {
+                    render_hex_scene(scripts::VER_024, &mut gpu)?;
+                }
                 other => {
-                    anyhow::bail!("unknown scene: {other}\navailable: ver_010..ver_022")
+                    anyhow::bail!("unknown scene: {other}\navailable: ver_010..ver_024")
                 }
             };
 
