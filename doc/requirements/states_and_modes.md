@@ -215,92 +215,107 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Restrictions:** FIFO must have space (depth 1024 words ≈ 1.6 scanlines)
 - **Source:** [components/display/rtl/display_controller.sv:171](../../components/display/rtl/display_controller.sv#L171)
 
-### 6. Rasterizer States (12-State Triangle Processing FSM)
+### 6. Render Pipeline States
 
-The rasterizer FSM spans two substages of the Render Pipeline (see ARCHITECTURE.md).
-The **Triangle Setup** substage comprises the SETUP and ITER_START states, which compute edge coefficients, the bounding box, attribute derivatives, and initialize the iteration accumulators.
-The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner coverage check, Hi-Z metadata lookup, per-pixel edge test, and attribute interpolation).
+The render pipeline is a series of concurrent stages connected by ready/valid handshakes.
+Each stage has its own local state machine and operates on a different work item (triangle, block, or fragment) simultaneously.
+Triangle N+1 can begin setup while Triangle N's blocks are still being processed downstream.
+See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yaml` for cycle-level scheduling.
 
-#### State: IDLE
+#### 6.1 Triangle Setup
 
-- **Description:** Waiting for triangle submission
-- **Entry Conditions:** Reset or previous triangle complete (ITER_NEXT at bbox end)
-- **Exit Conditions:** tri_valid=1
-- **Capabilities:** tri_ready=1; latches 3 vertices
-- **Restrictions:** No rasterization in progress
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:74-87](../../components/rasterizer/rtl/rasterizer.sv#L74-L87)
+- **Description:** Computes edge function coefficients, bounding box, attribute derivatives, and reciprocal area.
+  Operates as a 3-state FSM (IDLE → SETUP → ITER_START) that accepts triangles from the register file and produces block coordinates for the Block Rasterize stage.
+  A depth-2 register FIFO between setup and downstream iteration allows Triangle N+1 setup to overlap with Triangle N's block processing.
+- **Entry Conditions:** tri_valid=1 from register file (third vertex write)
+- **Exit Conditions:** Setup complete; first block coordinate emitted to Block Rasterize
+- **Capabilities:** Edge coefficients, bounding box min/max, attribute derivative computation (98-cycle latency, hidden behind pixel processing of previous triangle)
+- **Restrictions:** tri_ready=0 while setup FIFO is full (back-pressure from downstream)
+- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-003
 
-#### State: SETUP
+#### 6.2 Block Rasterize
 
-- **Description:** Calculate edge function coefficients and bounding box
-- **Entry Conditions:** IDLE with tri_valid=1
-- **Exit Conditions:** Setup complete (1 cycle)
-- **Capabilities:** Computes edge0/edge1/edge2 coefficients, bbox min/max
-- **Restrictions:** Single-cycle state
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
+- **Description:** Walks the triangle's bounding box in 4×4 tile order, emitting one block coordinate per cycle.
+  Uses incremental derivative-based traversal (no per-block multiply).
+- **Entry Conditions:** Block coordinate valid from Triangle Setup
+- **Exit Conditions:** Block coordinate emitted to Hi-Z Test; advances to next tile in bounding box
+- **Capabilities:** 1-cycle latency per block; wraps scanlines at bbox boundary
+- **Restrictions:** Stalls if Hi-Z Test is not ready
+- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-003
 
-#### State: ITER_START
+#### 6.3 Hi-Z Test
 
-- **Description:** Initialize bounding box iteration
-- **Entry Conditions:** SETUP complete
-- **Exit Conditions:** Always transitions to EDGE_TEST
-- **Capabilities:** Sets curr_x/curr_y to bbox minimum, calculates triangle area
-- **Restrictions:** None
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
+- **Description:** Block-level early depth rejection using cached Z metadata (min/max per 4×4 tile stored in 8 EBR).
+  Rejected blocks skip all downstream stages, saving SDRAM traffic and pixel pipeline cycles.
+- **Entry Conditions:** Block coordinate valid from Block Rasterize
+- **Exit Conditions:** PASS → block proceeds to Fragment Rasterize; REJECT → block discarded, ready for next
+- **Capabilities:** Tag lookup + Z-range comparison; operates on block granularity
+- **Restrictions:** Metadata must be initialized (first write to a tile populates it)
+- **Source:** UNIT-012 (Z-buffer tile cache)
 
-#### State: EDGE_TEST
+#### 6.4 Fragment Rasterize
 
-- **Description:** Evaluate edge functions at current pixel
-- **Entry Conditions:** ITER_START or ITER_NEXT
-- **Exit Conditions:** Always transitions to BARY_CALC
-- **Capabilities:** Computes edge function values for inside/outside test
-- **Restrictions:** None
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
+- **Description:** Per-fragment edge evaluation and perspective-correct attribute interpolation within a 4×4 block.
+  Generates up to 16 fragments per block; fragments that fail the edge test are discarded immediately.
+- **Entry Conditions:** Block passes Hi-Z Test
+- **Exit Conditions:** Each surviving fragment is emitted to the Early Fragment Test stage with interpolated Z, color, and UV coordinates
+- **Capabilities:** 1–2 cycle latency per fragment; edge function evaluation uses incremental updates from block-level values
+- **Restrictions:** Stalls if Early Fragment Test is not ready
+- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-003
 
-#### State: BARY_CALC
+#### 6.5 Early Fragment Test (Stipple + Z-Bounds + Z-Cache)
 
-- **Description:** Test if pixel inside triangle; calculate barycentric weights
-- **Entry Conditions:** EDGE_TEST complete
-- **Exit Conditions:** Inside → INTERPOLATE; Outside → ITER_NEXT
-- **Capabilities:** Tests all edges ≥ 0; computes barycentric coordinates
-- **Restrictions:** Branching state (inside vs. outside)
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
+- **Description:** Three independent checks run in parallel on each incoming fragment:
+  - **Stipple test:** combinational check of (x, y) against the stipple pattern register — resolves in cycle 1.
+  - **Z-bounds (depth range):** combinational comparison of interpolated Z against configured depth range — resolves in cycle 1.
+  - **Z-cache tag lookup:** 3-cycle fetch sequence (tag match → uninit check → value read) from the 4-way set-associative Z-buffer tile cache.
 
-#### State: INTERPOLATE
+  If stipple or z-bounds kills the fragment on cycle 1, the in-flight Z-cache lookup result is discarded.
+  If both pass and the Z-cache value arrives (end of cycle 3), the early-Z comparison (interpolated Z vs. cached Z, using the configured compare function from FB_ZBUFFER) determines whether the fragment survives.
+- **Entry Conditions:** Fragment valid from Fragment Rasterize with interpolated Z, (x, y)
+- **Exit Conditions:** Fragment survives all three tests → proceeds to Texture Sampling; any test fails → fragment killed
+- **Capabilities:** Parallel early rejection minimizes downstream work; Z-cache hit rate 85–95% typical
+- **Restrictions:** Stalls on Z-cache SDRAM miss (port 2); Z compare function is configurable (8 modes, see Section 4)
+- **Source:** [components/stipple/rtl/stipple.sv](../../components/stipple/rtl/stipple.sv), [components/early-z/rtl/early_z.sv](../../components/early-z/rtl/early_z.sv), UNIT-012
 
-- **Description:** Interpolate Z and RGB using barycentric weights
-- **Entry Conditions:** BARY_CALC with pixel inside triangle
-- **Exit Conditions:** Always transitions to ZBUF_READ
-- **Capabilities:** Calculates sum_r, sum_g, sum_b, sum_z with saturation
-- **Restrictions:** Only executes for pixels inside triangle
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:326-345](../../components/rasterizer/rtl/rasterizer.sv#L326-L345)
+#### 6.6 Texture Sampling
 
-#### States: ZBUF_READ → ZBUF_WAIT → ZBUF_TEST
+- **Description:** Fetches and filters texel data for the surviving fragment.
+  Uses an L1 (decoded) / L2 (compressed) cache hierarchy.
+  Time-multiplexed for dual-texture modes: TEX0 and TEX1 are sampled sequentially through the same physical unit.
+- **Entry Conditions:** Fragment survives Early Fragment Test with interpolated UV coordinates
+- **Exit Conditions:** Filtered texel color(s) available; fragment proceeds to Color Combiner
+- **Capabilities:** 1 cycle on L1 hit; bilinear/trilinear filtering; block decompression on L2 hit
+- **Restrictions:** Variable latency — 8–40 cycles on SDRAM miss (L2 fill via port 1); stalls pipeline on miss
+- **Source:** [components/texture/rtl/src/texture_sampler.sv](../../components/texture/rtl/src/texture_sampler.sv), UNIT-011
 
-- **Description:** Memory access sequence for depth testing
-- **Entry Conditions:** INTERPOLATE complete
-- **Exit Conditions:** Z-test pass → WRITE_PIXEL; Z-test fail → ITER_NEXT
-- **Capabilities:** Reads Z-buffer value, compares with interpolated Z
-- **Restrictions:** Memory latency; compare function from FB_ZBUFFER register
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:347-380](../../components/rasterizer/rtl/rasterizer.sv#L347-L380)
+#### 6.7 Color Combiner (3-Pass Time-Multiplexed)
 
-#### States: WRITE_PIXEL → WRITE_WAIT
+- **Description:** Single physical unit executing three sequential passes per fragment:
+  - **CC0:** First color combination (e.g., TEX0 × SHADE0)
+  - **CC1:** Second color combination (e.g., COMBINED + SHADE1 for specular, or pass-through)
+  - **CC2:** Blend/fog pass (e.g., alpha blend using DST_COLOR from color tile buffer)
 
-- **Description:** Write to framebuffer and Z-buffer
-- **Entry Conditions:** ZBUF_TEST pass (or Z-test disabled)
-- **Exit Conditions:** Write complete
-- **Capabilities:** Simultaneous framebuffer (RGB) and Z-buffer writes
-- **Restrictions:** Memory access latency
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
+  Each pass evaluates the programmable `(A−B)×C+D` equation with configurable source selection.
+  DST_COLOR (destination pixel from the color tile buffer) is available as a source to all three passes.
+- **Entry Conditions:** Texel color(s) available from Texture Sampling
+- **Exit Conditions:** Final combined color produced after 3 passes (3 cycles at 1 cycle/pass)
+- **Capabilities:** Programmable per-pass source selection; supports textured Gouraud, multi-texture, specular, fog, and alpha blending configurations
+- **Restrictions:** 3 cycles minimum per fragment; color tile buffer prefetch/flush amortized over 16 fragments per 4×4 block
+- **Source:** [components/color-combiner/rtl/color_combiner.sv](../../components/color-combiner/rtl/color_combiner.sv), UNIT-006
 
-#### State: ITER_NEXT
+#### 6.8 Late Fragment Test + Output
 
-- **Description:** Move to next pixel in bounding box
-- **Entry Conditions:** Pixel processed (inside or outside) or Z-test failed
-- **Exit Conditions:** End of bbox → IDLE; Otherwise → EDGE_TEST
-- **Capabilities:** Increments curr_x; wraps to next scanline at bbox_max_x
-- **Restrictions:** None
-- **Source:** [components/rasterizer/rtl/rasterizer.sv:216-350](../../components/rasterizer/rtl/rasterizer.sv#L216-L350)
+- **Description:** Final fragment processing after color combining:
+  - **Alpha test:** combinational comparison of fragment alpha against reference value — can kill fragment.
+  - **Dither:** 1-cycle ordered dithering using blue noise matrix before RGB565 quantization.
+  - **Pixel output:** Writes final color to the color tile buffer and updated Z to the Z-cache.
+    Color tile buffer operates as a pair of 4×4 register files (two-tile cache) with 16-word burst transfers to/from SDRAM at block entry/exit.
+- **Entry Conditions:** Final color from Color Combiner
+- **Exit Conditions:** Pixel written to tile buffer and Z-cache; fragment retired
+- **Capabilities:** Alpha test kill avoids unnecessary writes; tile buffer double-buffering hides SDRAM latency
+- **Restrictions:** Stalls if tile buffer flush is pending on SDRAM port 1
+- **Source:** [components/alpha-blend/rtl/alpha_blend.sv](../../components/alpha-blend/rtl/alpha_blend.sv), [components/dither/rtl/dither.sv](../../components/dither/rtl/dither.sv), [components/pixel-write/rtl/pixel_pipeline.sv](../../components/pixel-write/rtl/pixel_pipeline.sv), UNIT-007, UNIT-009
 
 ---
 
@@ -313,7 +328,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Flat Shading
 
 - **Description:** Solid color fills (Gouraud shading disabled)
-- **Applicable States:** Rasterizer INTERPOLATE state
+- **Applicable States:** Fragment Rasterize stage (attribute interpolation)
 - **Configuration:** TRI_MODE_GOURAUD = 0
 - **Behavior Differences:** No color interpolation; uses single vertex color
 - **Use Case:** Clearing, simple geometric fills
@@ -321,7 +336,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Gouraud Shading
 
 - **Description:** Per-pixel color interpolation using barycentric coordinates
-- **Applicable States:** Rasterizer INTERPOLATE state
+- **Applicable States:** Fragment Rasterize stage (attribute interpolation)
 - **Configuration:** TRI_MODE_GOURAUD = 1 (bit 0)
 - **Behavior Differences:** Interpolates RGB at each pixel (sum_r, sum_g, sum_b)
 - **Use Case:** GouraudTriangle demo, SpinningTeapot demo
@@ -329,17 +344,17 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z-Testing
 
 - **Description:** Depth comparison before pixel write
-- **Applicable States:** Rasterizer ZBUF_TEST state
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** TRI_MODE_Z_TEST = 1 (bit 2)
-- **Behavior Differences:** Reads Z-buffer, compares using FB_ZBUFFER compare function
+- **Behavior Differences:** Reads Z-cache value, compares using FB_ZBUFFER compare function
 - **Use Case:** 3D scenes requiring occlusion (SpinningTeapot)
 
 #### Mode: Z-Writing
 
 - **Description:** Update Z-buffer on depth test pass
-- **Applicable States:** Rasterizer WRITE_PIXEL state
+- **Applicable States:** Late Fragment Test + Output stage (pixel output)
 - **Configuration:** TRI_MODE_Z_WRITE = 1 (bit 3)
-- **Behavior Differences:** Writes interpolated Z to Z-buffer on pass
+- **Behavior Differences:** Writes interpolated Z to Z-cache on depth test pass
 - **Use Case:** Building depth buffer for 3D scenes
 
 ### 2. Texture Mapping Modes
@@ -362,7 +377,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Texture Blend Modes
 
 - **Description:** How texture color blends with vertex color
-- **Applicable States:** Rasterizer INTERPOLATE state
+- **Applicable States:** Color Combiner stage
 - **Configuration:** TEX0_BLEND register (bits TBD)
 - **Behavior Differences:**
   - ALPHA_DISABLED (0b00): No blending
@@ -419,7 +434,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_LESS (0b000)
 
 - **Description:** Pass if z_new < z_buffer
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b000
 - **Behavior Differences:** Strict less-than comparison
 - **Use Case:** Specific depth test scenarios
@@ -427,7 +442,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_LEQUAL (0b001) — Default
 
 - **Description:** Pass if z_new ≤ z_buffer
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b001
 - **Behavior Differences:** Allows equal depths to pass
 - **Use Case:** Standard depth testing (SpinningTeapot demo)
@@ -435,7 +450,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_EQUAL (0b010)
 
 - **Description:** Pass if z_new == z_buffer
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b010
 - **Behavior Differences:** Strict equality test
 - **Use Case:** Special effects requiring exact depth match
@@ -443,7 +458,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_GEQUAL (0b011)
 
 - **Description:** Pass if z_new ≥ z_buffer
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b011
 - **Behavior Differences:** Greater-or-equal comparison
 - **Use Case:** Reverse depth testing
@@ -451,7 +466,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_GREATER (0b100)
 
 - **Description:** Pass if z_new > z_buffer
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b100
 - **Behavior Differences:** Strict greater-than comparison
 - **Use Case:** Reverse depth testing (strict)
@@ -459,7 +474,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_NOTEQUAL (0b101)
 
 - **Description:** Pass if z_new ≠ z_buffer
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b101
 - **Behavior Differences:** Rejects equal depths only
 - **Use Case:** Special effects
@@ -467,7 +482,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_ALWAYS (0b110)
 
 - **Description:** Always pass depth test
-- **Applicable States:** Rasterizer ZBUF_TEST (effectively bypassed)
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison) (effectively bypassed)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b110
 - **Behavior Differences:** Disables depth testing; always writes
 - **Use Case:** Depth buffer clearing
@@ -475,7 +490,7 @@ The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner cov
 #### Mode: Z_COMPARE_NEVER (0b111)
 
 - **Description:** Never pass depth test
-- **Applicable States:** Rasterizer ZBUF_TEST
+- **Applicable States:** Early Fragment Test stage (Z-cache comparison)
 - **Configuration:** FB_ZBUFFER[34:32] = 0b111
 - **Behavior Differences:** Rejects all pixels
 - **Use Case:** Debugging or disabling writes
@@ -525,89 +540,95 @@ Power-on
 └──────────────────┘
 ```
 
-### Rasterizer Triangle Processing (12-State Pipeline)
+### Render Pipeline Flow
+
+Stages operate concurrently on different work items.
+Ready/valid handshakes between stages provide flow control and back-pressure.
+Early-exit points are marked with ✗ (fragment/block killed).
 
 ```
-┌─────────────┐
-│    IDLE     │  Waiting for tri_valid, tri_ready=1
-└──────┬──────┘
-       │ [tri_valid=1]
-       ▼
-┌─────────────┐
-│    SETUP    │  Calculate edge functions, bounding box
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│ ITER_START  │  Initialize bbox iteration, curr_x/curr_y
-└──────┬──────┘
-       │
-       ▼
-       ┌────────────────────────────────────┐
-       │                                    │
-       ▼                                    │
-┌─────────────┐                             │
-│  EDGE_TEST  │  Evaluate edge functions    │
-└──────┬──────┘                             │
-       │                                    │
-       ▼                                    │
-┌─────────────┐                             │
-│  BARY_CALC  │  Inside/outside test        │
-└──────┬──────┘                             │
-       │                                    │
-   ┌───┴────┐                               │
-   │        │                               │
-[inside] [outside]                          │
-   │        │                               │
-   │        └──────────┐                    │
-   ▼                   │                    │
-┌─────────────┐        │                    │
-│ INTERPOLATE │  Z+RGB │                    │
-└──────┬──────┘        │                    │
-       │               │                    │
-       ▼               │                    │
-┌─────────────┐        │                    │
-│ ZBUF_READ   │        │                    │
-└──────┬──────┘        │                    │
-       │               │                    │
-       ▼               │                    │
-┌─────────────┐        │                    │
-│ ZBUF_WAIT   │        │                    │
-└──────┬──────┘        │                    │
-       │               │                    │
-       ▼               │                    │
-┌─────────────┐        │                    │
-│ ZBUF_TEST   │        │                    │
-└──────┬──────┘        │                    │
-       │               │                    │
-   ┌───┴────┐          │                    │
-   │        │          │                    │
-[pass]   [fail]        │                    │
-   │        │          │                    │
-   ▼        └──────────┤                    │
-┌─────────────┐        │                    │
-│ WRITE_PIXEL │        │                    │
-└──────┬──────┘        │                    │
-       │               │                    │
-       ▼               │                    │
-┌─────────────┐        │                    │
-│ WRITE_WAIT  │        │                    │
-└──────┬──────┘        │                    │
-       │               │                    │
-       └───────────────┤                    │
-                       ▼                    │
-                 ┌─────────────┐            │
-                 │  ITER_NEXT  │  curr_x++ │
-                 └──────┬──────┘            │
-                        │                   │
-                   ┌────┴────┐              │
-                   │         │              │
-            [end of bbox] [continue]        │
-                   │         │              │
-                   │         └──────────────┘
-                   │
-                   ▼
-              [return to IDLE]
+                    ┌─────────────────┐
+                    │ Register File   │  tri_valid pulse on 3rd vertex write
+                    └────────┬────────┘
+                             │ tri_valid / tri_ready
+                             ▼
+                    ┌─────────────────┐
+                    │ Triangle Setup  │  Edge coefficients, bbox, derivatives
+                    │ (IDLE→SETUP→    │  98-cycle latency (hidden behind
+                    │  ITER_START)    │  pixel processing of previous tri)
+                    └────────┬────────┘
+                             │ block coords (ready/valid)
+                             ▼
+                    ┌─────────────────┐
+                    │ Block Rasterize │  4×4 tile walk through bbox
+                    │                 │  1 cycle/block
+                    └────────┬────────┘
+                             │ block coord (ready/valid)
+                             ▼
+                    ┌─────────────────┐
+                    │   Hi-Z Test     │  Block-level Z metadata check
+                    └────────┬────────┘
+                             │
+                        ┌────┴────┐
+                     [pass]    [reject ✗]  (block skips all downstream)
+                        │
+                        ▼
+                    ┌─────────────────┐
+                    │Fragment Rasterize│  Per-fragment edge test +
+                    │                 │  attribute interpolation
+                    │                 │  Up to 16 frags per 4×4 block
+                    └────────┬────────┘
+                             │ fragment (ready/valid)
+                             ▼
+              ┌──────────────────────────────┐
+              │     Early Fragment Test       │
+              │                              │
+              │  ┌─────────┐ ┌──────────┐   │
+              │  │ Stipple │ │ Z-bounds │   │  Combinational (cycle 1)
+              │  └────┬────┘ └─────┬────┘   │
+              │       │            │         │
+              │    [kill ✗]    [kill ✗]      │
+              │       │            │         │
+              │  ┌────┴────────────┴───┐    │
+              │  │   Z-cache lookup    │    │  3-cycle tag/value fetch
+              │  └──────────┬──────────┘    │  (parallel with above)
+              │             │               │
+              │        [Z compare]          │
+              │             │               │
+              └─────────────┼───────────────┘
+                            │
+                       ┌────┴────┐
+                    [pass]    [fail ✗]
+                       │
+                       ▼
+              ┌─────────────────┐
+              │Texture Sampling │  L1/L2 cache, TEX0/TEX1
+              │                 │  1 cycle (L1 hit) – 40 cycles (SDRAM miss)
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ Color Combiner  │  3-pass: CC0 → CC1 → CC2/blend
+              │                 │  1 cycle/pass (3 cycles total)
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │  Alpha Test     │  Combinational
+              └────────┬────────┘
+                       │
+                  ┌────┴────┐
+               [pass]    [kill ✗]
+                  │
+                  ▼
+              ┌─────────────────┐
+              │  Dither         │  1 cycle, blue noise matrix
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │  Pixel Output   │  Z-write + color tile buffer write
+              └─────────────────┘
 ```
 
 ---
@@ -624,22 +645,46 @@ Power-on
 | PLL Locked | Reset synchronizers deassert | Boot Command Processing | FIFO non-empty with boot commands |
 | Boot Command Processing | All boot commands consumed | Ready | CMD_EMPTY asserts; boot screen visible |
 | Ready | First SPI transaction | Normal Operation | Host communication begins |
-| **Rasterizer** |
+| **Render Pipeline** |
+| **Triangle Setup** |
 | IDLE | tri_valid=1 | SETUP | Latch 3 vertices |
-| SETUP | (always) | ITER_START | Compute edge functions, bbox |
-| ITER_START | (always) | EDGE_TEST | Initialize curr_x, curr_y |
-| EDGE_TEST | (always) | BARY_CALC | Evaluate edge functions |
-| BARY_CALC | pixel inside | INTERPOLATE | Compute barycentric weights |
-| BARY_CALC | pixel outside | ITER_NEXT | Skip pixel |
-| INTERPOLATE | (always) | ZBUF_READ | Calculate interp_z, interp_rgb |
-| ZBUF_READ | (always) | ZBUF_WAIT | Issue SDRAM read |
-| ZBUF_WAIT | sram_ack | ZBUF_TEST | Latch Z-buffer value |
-| ZBUF_TEST | Z-test pass | WRITE_PIXEL | Prepare framebuffer/Z writes |
-| ZBUF_TEST | Z-test fail | ITER_NEXT | Discard pixel |
-| WRITE_PIXEL | (always) | WRITE_WAIT | Issue SDRAM writes |
-| WRITE_WAIT | sram_ack | ITER_NEXT | Writes complete |
-| ITER_NEXT | end of bbox | IDLE | Triangle complete, tri_ready=1 |
-| ITER_NEXT | continue | EDGE_TEST | curr_x++, wrap to next scanline |
+| SETUP | (always) | ITER_START | Compute edge coefficients, bbox |
+| ITER_START | (always) | emit block | Initialize iteration, emit first block coord |
+| (any) | setup FIFO full | stall | Back-pressure from downstream |
+| **Block Rasterize** |
+| (active) | block coord valid | emit to Hi-Z | Walk next 4×4 tile in bbox |
+| (active) | end of bbox | idle | Triangle iteration complete |
+| **Hi-Z Test** |
+| (active) | block coord valid | test | Fetch Z metadata for tile |
+| test | Z-range pass | Fragment Rasterize | Block proceeds downstream |
+| test | Z-range reject | ready for next | Block killed, skip all downstream |
+| **Fragment Rasterize** |
+| (active) | block passes Hi-Z | iterate fragments | Edge test + interpolation per fragment |
+| (per fragment) | edge inside | emit fragment | Fragment with interpolated attributes |
+| (per fragment) | edge outside | next fragment | Fragment discarded |
+| **Early Fragment Test** |
+| (active) | fragment valid | parallel test | Stipple + Z-bounds (cycle 1) ∥ Z-cache fetch (cycles 1–3) |
+| parallel test | stipple/z-bounds fail | kill fragment | Fragment discarded before Z-cache completes |
+| parallel test | all pass, Z compare pass | Texture Sampling | Fragment survives |
+| parallel test | all pass, Z compare fail | kill fragment | Fragment discarded |
+| parallel test | Z-cache miss | stall | Wait for SDRAM port 2 |
+| **Texture Sampling** |
+| (active) | fragment valid | sample TEX0 | L1/L2 cache lookup |
+| sample TEX0 | L1 hit | Color Combiner (or TEX1) | Texel available in 1 cycle |
+| sample TEX0 | L2 miss | stall | Wait for SDRAM port 1 fill (8–40 cycles) |
+| sample TEX1 | (dual-tex mode) | Color Combiner | Second texture sample complete |
+| **Color Combiner** |
+| (active) | texel(s) ready | CC0 | Pass 0: first color equation |
+| CC0 | (always) | CC1 | Pass 1: second color equation |
+| CC1 | (always) | CC2 | Pass 2: blend/fog equation |
+| CC2 | (always) | Late Fragment Test | Final color produced |
+| **Late Fragment Test + Output** |
+| (active) | color ready | alpha test | Compare alpha vs reference |
+| alpha test | pass | dither | Apply ordered dithering |
+| alpha test | fail | kill fragment | Fragment discarded |
+| dither | (always) | pixel output | RGB565 quantization |
+| pixel output | (always) | done | Write color tile buffer + Z-cache |
+| pixel output | tile buffer flush pending | stall | Wait for SDRAM port 1 burst |
 | **SDRAM Controller** |
 | INIT | initialization complete | IDLE | SDRAM ready for access |
 | IDLE | req=1 | ACTIVATE | Decompose address, open row |
@@ -714,7 +759,14 @@ Power-on
 - [components/spi/rtl/register_file.sv](../../components/spi/rtl/register_file.sv) — Vertex submission FSM
 - [components/utils/rtl/async_fifo.sv](../../components/utils/rtl/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
 - [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv) — SDRAM 8-state FSM
-- [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv) — Rasterizer 12-state FSM
+- [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv) — Triangle setup, block rasterize, fragment rasterize
+- [components/stipple/rtl/stipple.sv](../../components/stipple/rtl/stipple.sv) — Stipple test
+- [components/early-z/rtl/early_z.sv](../../components/early-z/rtl/early_z.sv) — Early Z test (Z-cache comparison)
+- [components/texture/rtl/src/texture_sampler.sv](../../components/texture/rtl/src/texture_sampler.sv) — Texture sampling (L1/L2 cache, bilinear filter)
+- [components/color-combiner/rtl/color_combiner.sv](../../components/color-combiner/rtl/color_combiner.sv) — 3-pass color combiner
+- [components/alpha-blend/rtl/alpha_blend.sv](../../components/alpha-blend/rtl/alpha_blend.sv) — Alpha blending
+- [components/dither/rtl/dither.sv](../../components/dither/rtl/dither.sv) — Ordered dithering
+- [components/pixel-write/rtl/pixel_pipeline.sv](../../components/pixel-write/rtl/pixel_pipeline.sv) — Pixel output (tile buffer + Z-write)
 - [components/display/rtl/display_controller.sv](../../components/display/rtl/display_controller.sv) — Display fetch FSM
 
 ### Register Definitions
