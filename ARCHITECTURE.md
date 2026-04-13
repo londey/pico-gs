@@ -34,6 +34,287 @@ The result follows the normal dither-and-write path through the tile buffer.
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
 Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
+## Execution Model
+
+### High Level Functional Blocks
+
+The GPU is organized into a hierarchy of pipelines and components:
+
+```mermaid
+flowchart LR
+    CMD_PIPE["Command Pipeline"]
+    RENDER_PIPE["Render Pipeline"]
+    DISPLAY_PIPE["Display Pipeline"]
+
+    CMD_PIPE --> RENDER_PIPE
+
+    CMD_PIPE --> DISPLAY_PIPE
+```
+
+#### Command Pipeline
+
+The command pipeline receives register reads and writes from the host, queues them in a FIFO, and dispatches them to the register file.
+The register file accumulates per-vertex state; the third vertex write triggers Triangle Setup.
+
+#### Render Pipeline
+
+The render pipeline executes the core rendering algorithm: triangle setup, rasterization, texturing, depth testing, and color combining.
+The pipeline is initiated when the Command Pipeline pushes a vertex that kicks off triangle setup; the pipeline then runs autonomously until the triangle is fully rendered, at which point it waits for the next vertex kick.
+
+The render pipeline itself is divided into several stages:
+
+```mermaid
+flowchart LR
+    CMD_PIPE["Command Pipeline"]
+
+    subgraph RENDER_PIPE["Render Pipeline"]
+        SETUP["Triangle Setup"]
+        BLOCK["Block Pipeline"]
+        PIXEL["Pixel Pipeline"]
+
+        SETUP --> BLOCK --> PIXEL
+    end
+
+    CMD_PIPE --> |kick| SETUP
+```
+
+##### Triangle Setup
+
+Triangle setup computes edge coefficients for rasterization and performs back-face culling.
+It then walks the triangle's bounding box in 4×4 tile order, aligned with the surface tiling and Z-cache block size, using incremental derivative-based traversal.
+
+##### Block Pipeline
+
+The block pipeline processes one 4×4 tile of fragments at a time.
+For each tile, it performs a hierarchical Z test against the Hi-Z metadata.
+If the tile passes, it loads the Z-buffer and color tile buffer entries for the tile, avoiding per-fragment cache tag checks.
+It then runs edge tests to determine coverage and interpolates per-fragment data (Z, Q, two vertex colors, two UV coordinate pairs) for the Pixel Pipeline.
+
+```mermaid
+flowchart LR
+    SETUP["Triangle Setup"]
+
+    subgraph BLOCK["Block Pipeline"]
+        HIZ["Hi-Z Test"]
+        PREFETCH_Z["Z Tile Load"]
+        PREFETCH_COLOR["Color Tile Load"]
+        EDGE["Edge Test + Interpolation"]
+
+        HIZ --> EDGE
+        HIZ --> PREFETCH_Z
+        HIZ --> PREFETCH_COLOR
+    end
+
+    SETUP --> HIZ
+
+    PIXEL["Pixel Pipeline"]
+
+    EDGE --> PIXEL
+```
+
+##### Pixel Pipeline
+
+The pixel pipeline performs stipple and depth range tests, early Z testing, dispatches texture fetch requests to the texture units, evaluates the color combiner, applies alpha test and dithering, and issues pixel write requests to the tile buffer.
+
+The pixel pipeline has four independent stages: early fragment test, texture sampling, color combining, and fragment retirement.
+The current throughput target is 4 cycles per fragment (25 Mfragments/sec at 100 MHz), driven by the 3-pass color combiner schedule.
+A longer-term goal is to pipeline each stage independently, which would allow stages to overlap and increase sustained throughput.
+
+```mermaid
+flowchart TB
+    BLOCK["Block Pipeline"]
+
+    subgraph PIXEL["Pixel Pipeline"]
+        direction TB
+        subgraph Z_TEST_STAGE["Early Fragment Test Stage"]
+            direction LR
+            STIPPLE["Stipple Test"]
+            ZRC["Depth Range Clip"]
+            Z_TEST["Z Test"]
+            EARLY_DISCARD@{shape=diamond, label="Early Fragment Kill"}
+
+            BLOCK --> STIPPLE --> EARLY_DISCARD
+            BLOCK --> ZRC --> EARLY_DISCARD
+            BLOCK --> Z_TEST --> EARLY_DISCARD
+        end
+
+        subgraph TEX_STAGE["Texture Sampler Stage"]
+            direction LR
+            TEX0["TEX0 Sample"]
+            TEX1["TEX1 Sample"]
+
+            TEX0 --> TEX1
+        end
+
+        EARLY_DISCARD -- No --> TEX0
+
+        subgraph CC_STAGE["Color Combiner Stage"]
+            direction LR
+            CC0["Color Combiner pass 0"]
+            CC1["Color Combiner pass 1"]
+            CC2["Color Combiner pass 2"]
+
+            CC0 --> CC1 --> CC2
+        end
+
+        subgraph RETIREMENT_STAGE["Fragment Retirement Stage"]
+            direction LR
+            A_TEST["Alpha Test"]
+            DITH["Dither"]
+            COLOR_WRITE["Color Write"]
+            Z_WRITE["Z Write"]
+        end
+
+        TEX1 --> CC0
+        CC2 --> A_TEST --> DITH --> COLOR_WRITE
+        CC2 --> Z_WRITE
+    end
+
+```
+
+The color tile buffer is a pair of 4×4 register files (16 RGB565 entries each), effectively a two-tile cache: one tile is actively drawn while the other is being read from or written to SDRAM via burst transfers.
+The tile is always loaded at block entry (not only when blending is enabled), ensuring all color buffer accesses use burst mode.
+It supplies DST_COLOR as a source to all color combiner passes and is flushed back as a 16-word burst write at block exit.
+
+##### Texture Pipeline
+
+The texture sampler stage first samples TEX0 and then samples TEX1.
+The same sampler hardware is used for both textures but with separate L1 caches for each.
+The two samples run back-to-back with no gap but also no parallelism — while one sample is waiting on a cache miss or SDRAM access, the other sample cannot proceed.
+
+###### Texture Sampling Order
+
+```mermaid
+---
+title: Texture Sampler Stage
+---
+flowchart LR
+    PIXEL["Pixel Pipeline"]
+
+    subgraph TEX_STAGE["Texture Sampler"]
+        TEX0_SAMPLE["Sample TEX0"]
+        TEX1_SAMPLE["Sample TEX1"]
+
+        TEX0_SAMPLE --> TEX1_SAMPLE
+    end
+
+    PIXEL --> TEX0_SAMPLE
+
+    CC_STAGE["Color Combiner Stage"]
+
+    TEX1_SAMPLE --> CC_STAGE
+```
+
+
+####### Texture Sampling Flow
+
+```mermaid
+---
+title: Texture Sampler Flow
+---
+flowchart LR
+    PIXEL["Pixel Pipeline"]
+
+    subgraph TEX_STAGE["Sample TEX0/1"]
+        UV_WRAP["UV Wrap/Clamp/Mirror"]
+        MIP_SELECT["Mip Level Select"]
+        TEX_ADDR["Texel Address Calc"]
+
+        TEX_FETCH["Texel Fetch"]
+                
+        UV_WRAP --> TEX_ADDR --> TEX_FETCH
+        MIP_SELECT --> TEX_ADDR
+    end
+
+    TEX_SAMPLE_OUT["Sampled Texel (Q4.12 RGBA)"]
+    CC_STAGE["Color Combiner Stage"]
+
+    PIXEL --> UV_WRAP
+    PIXEL --> MIP_SELECT
+
+    TEX_STAGE --> TEX_SAMPLE_OUT --> CC_STAGE
+```
+
+###### Texture Fetch Flow
+
+```mermaid
+flowchart TB
+    TEX_ADDR["Texel Address Calc"]
+
+    subgraph TEX_FETCH["Texel Fetch"]
+        L1_TAG_FETCH["L1 Cache Tag Fetch (per-texture)"]
+        L2_TAG_FETCH["L2 Cache Tag Fetch (shared)"]
+
+        L1_CACHE_HIT@{shape=diamond, label="L1 Cache Hit?"}
+        L2_CACHE_HIT@{shape=diamond, label="L2 Cache Hit?"}
+
+        L1_DATA_FETCH["L1 Cache Data Fetch (per-texture)"]
+        L2_DATA_FETCH["L2 Cache Data Fetch (shared)"]
+
+        L1_TAG_UPDATE["L1 Cache Tag Update (per-texture)"]
+        L1_LRU_UPDATE["L1 Cache LRU Update (per-texture)"]
+        L1_DATA_UPDATE["L1 Cache Data Update (per-texture)"]
+
+        L2_TAG_UPDATE["L2 Cache Tag Update (shared)"]
+        L2_LRU_UPDATE["L2 Cache LRU Update (shared)"]
+        L2_DATA_UPDATE["L2 Cache Data Update (shared)"]
+
+        TEX_BLOCK_DECODE["Block Decoder"]
+
+        SDRAM_ARB["SDRAM Load"]
+
+        L1_TAG_FETCH --> L1_CACHE_HIT
+        L1_CACHE_HIT -- Yes --> L1_DATA_FETCH
+        L1_DATA_FETCH --> L1_LRU_UPDATE
+
+        L1_CACHE_HIT -- No --> L2_TAG_FETCH
+        L2_TAG_FETCH --> L2_CACHE_HIT
+
+        L2_CACHE_HIT -- Yes --> L2_DATA_FETCH --> L2_LRU_UPDATE
+        L2_DATA_FETCH --> TEX_BLOCK_DECODE --> L1_TAG_UPDATE
+        TEX_BLOCK_DECODE --> L1_DATA_UPDATE --> L1_DATA_FETCH
+
+        L2_CACHE_HIT -- No --> SDRAM_ARB
+        SDRAM_ARB --> L2_TAG_UPDATE
+        SDRAM_ARB --> L2_DATA_UPDATE --> L2_DATA_FETCH
+    end
+
+    TEX_SAMPLE_OUT["Sampled Texel (Q4.12 RGBA)"]
+
+    TEX_ADDR --> TEX_FETCH
+    L1_DATA_FETCH --> TEX_SAMPLE_OUT
+```
+
+#### Display Pipeline
+
+The display pipeline runs in parallel with the render pipeline, reading the front buffer for scanout, performing color grading, resolution scaling, and generating the DVI output signal.
+
+```mermaid
+flowchart LR
+    COMMAND_PIPE["Command Pipeline"]
+
+    subgraph DISPLAY_PIPE["Display Pipeline"]
+        VSYNC["VSYNC Wait"]
+        LUT_LOAD["LUT DMA Load<br/>(vblank)"]
+
+        subgraph SCANOUT["Scanout"]
+            SCAN["Scanline Buffered Read<br/>(burst read)"]
+            CLUT["Color Grade LUT<br/>R32 · G64 · B32<br/>RGB565 → RGB888"]
+            HSCALE["Horizontal Scale<br/>(nearest-neighbor)"]
+            TMDS["DVI TMDS Encode<br/>+ 10:1 Serialize"]
+
+            SCAN --> CLUT --> HSCALE --> TMDS
+        end
+
+        VSYNC --> LUT_LOAD --> SCAN
+
+        TMDS --> SCAN
+    end
+
+    COMMAND_PIPE --> |"FB_DISPLAY"| VSYNC
+```
+
+
 ## Verification Strategy
 
 The project uses a two-tier verification model with clearly separated responsibilities.
@@ -82,7 +363,7 @@ A compile-time configurable register FIFO (default depth 2, ~730 bits wide) betw
 Four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.
 The per-pixel level-of-detail (LOD) is derived from Q via CLZ and emitted on the fragment bus as `frag_lod` (UQ4.4).
 All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
-The texture sampler (UNIT-011) performs dual-texture sampling through per-sampler two-level caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01), fetches and bilinearly filters texels from the L1 decompressed cache (UNIT-011.03), decompresses blocks on miss via the block decompressor (UNIT-011.04), and fills the L1 cache from the L2 compressed cache (UNIT-011.05), returning decoded Q4.12 RGBA texel data to the pixel pipeline.
+The texture sampler (UNIT-011) performs dual-texture sampling through per-texture two-level caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01), fetches and bilinearly filters texels from the L1 decompressed cache (UNIT-011.03), decompresses blocks on miss via the block decompressor (UNIT-011.04), and fills the L1 cache from the L2 compressed cache (UNIT-011.05), returning decoded Q4.12 RGBA texel data to the pixel pipeline.
 The pixel pipeline (UNIT-006) performs early Z testing, dispatches texture fetch requests to UNIT-011, and receives decoded Q4.12 texel data in return; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
 The color combiner (UNIT-010) is a single time-multiplexed instance that evaluates `(A-B)*C+D` independently for RGB and alpha, executing up to three passes per fragment within a 4-cycle/fragment throughput target.
 Pass 0 and pass 1 replicate the prior two-stage behavior: pass 0's output feeds pass 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add; for simple single-equation rendering, pass 1 is configured as a pass-through.
@@ -97,9 +378,9 @@ The display controller (UNIT-008) reads from the block-tiled framebuffer surface
 The render framebuffer may be smaller than the display resolution (typically 512×480 or 256×240); the display controller stretches horizontally and optionally line-doubles to fill the 640×480 output.
 Frame presentation is double-buffered — the host writes to one framebuffer while the display controller scans out the other, swapping atomically at VSYNC.
 
-## Fragment Pipeline
+## Fragment Pipeline — Memory Interactions
 
-The stages below trace a fragment from SPI command to DVI output.
+The diagram below shows the same pipeline stages as the [Execution Model](#execution-model) but adds the SDRAM data-flow layer: on-chip caches, burst transfers, and memory arbiter connections.
 Stages marked **✗** can kill the fragment, skipping all subsequent stages and SDRAM traffic.
 
 ```mermaid
@@ -135,7 +416,6 @@ flowchart TD
     HIZ_META["Hi-Z Metadata<br/>(8 DP16KD)"]
     ZCACHE["Z-Buffer Tile Cache<br/>(4-way, 4×4 tiles)"]
     CTBUF["Color Tile Buffer<br/>(4×4 register file)"]
-    WBUF["Write-Coalescing<br/>Buffer"]
     ZBUF[("Z-Buffer<br/>SDRAM")]
     TEXMEM[("Texture Data<br/>SDRAM")]
     FB[("Framebuffer<br/>SDRAM")]
@@ -147,12 +427,10 @@ flowchart TD
     ZCACHE -. "fill/evict burst" .-> ZBUF
     TEXMEM -. "cache fill" .-> TEX0
     TEXMEM -. "cache fill" .-> TEX1
-    FB -. "tile prefetch (blend enabled)" .-> CTBUF
+    FB -. "tile load (blend enabled)" .-> CTBUF
     CTBUF -. "DST_COLOR" .-> CC2
     PW -. "color write" .-> CTBUF
     CTBUF -. "tile flush burst" .-> FB
-    PW -. "color write" .-> WBUF
-    WBUF -. "burst write" .-> FB
 
     subgraph display["Display · per scanline"]
         SCAN["Scanline Prefetch<br/>(burst read)"]
@@ -165,9 +443,6 @@ flowchart TD
     FB -. "scanline burst" .-> SCAN
     TMDS -. "HDMI" .-> HDMI[("DVI Output<br/>640×480 @ 60 Hz")]
 ```
-
-After framebuffer write, the display controller (UNIT-008) prefetches scanlines via burst reads from SDRAM, applies the optional color-grade LUT (three per-channel 1D tables producing RGB888 — see REQ-006.03), scales horizontally to 640 pixels (see [Display Scaling](#display-scaling)), and feeds the DVI TMDS encoder (UNIT-009) at 25 MHz pixel clock.
-The LUT is double-buffered in EBR and auto-loaded from SDRAM via DMA during vblank.
 
 ### Per-fragment data lanes
 

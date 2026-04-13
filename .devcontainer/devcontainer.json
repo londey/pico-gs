@@ -41,7 +41,8 @@
                 "streetsidesoftware.code-spell-checker",
                 "tamasfe.even-better-toml",
                 "yzhang.markdown-all-in-one",
-                "DavidAnson.vscode-markdownlint"
+                "DavidAnson.vscode-markdownlint",
+                "vstirbu.vscode-mermaid-preview"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
