@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `b8345ae9027d1b73` 2026-04-10
+// Spec-ref: unit_006_pixel_pipeline.md `2914e4600ea3cd6f` 2026-04-13
 //
 // Framebuffer Promote — RGB565 to Q4.12 Conversion
 //

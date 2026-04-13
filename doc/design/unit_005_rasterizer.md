@@ -34,6 +34,16 @@ None
 - Outputs fragment data to UNIT-006 (Pixel Pipeline) via frag_valid/frag_ready handshake
 - All internal interfaces operate in the unified 100 MHz `clk_core` domain (no CDC required)
 
+## Pipeline Substage Scope
+
+UNIT-005 spans two substages of the Render Pipeline as defined in ARCHITECTURE.md:
+
+- **Triangle Setup** — validates the triangle, computes edge coefficients and attribute derivatives, and performs backface culling (UNIT-005.01 through UNIT-005.03).
+- **Block Pipeline** — walks the triangle's bounding box in 4×4 tile order, performs Hi-Z tile rejection (UNIT-005.06), tests edge coverage per tile, and interpolates per-fragment attributes before emission to the Pixel Pipeline.
+  The Block Pipeline's Z Tile Load and Color Tile Load prefetches are initiated by UNIT-006 in response to fragment handshake signals from UNIT-005.
+
+UNIT-006 (Pixel Pipeline) receives the per-fragment output of the Block Pipeline and executes the Pixel Pipeline substage (stipple test, depth range clip, early Z-test, texture sampling, color combining, dithering, and framebuffer write).
+
 ## Design Description
 
 ### Inputs

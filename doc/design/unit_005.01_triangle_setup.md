@@ -5,6 +5,9 @@
 Validates incoming triangle data, computes the signed triangle area, performs backface culling, and passes vertex positions and attributes to the rasterizer pipeline.
 Sub-unit of UNIT-005 (Rasterizer).
 
+UNIT-005.01 corresponds to the **Triangle Setup** substage of the Render Pipeline as defined in ARCHITECTURE.md.
+It is the entry point of the Render Pipeline: Triangle Setup completes before the Block Pipeline (tile traversal, Hi-Z test, edge test, and interpolation) begins.
+
 ## Implements Requirements
 
 - REQ-002.03 (Rasterization Algorithm) — triangle validation, backface culling, and vertex attribute passthrough to the rasterizer

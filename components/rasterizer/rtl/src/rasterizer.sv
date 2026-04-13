@@ -1,8 +1,8 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
-// Spec-ref: unit_005.01_triangle_setup.md `9cab47512acac4b1` 2026-03-22
+// Spec-ref: unit_005_rasterizer.md `3ecb0185ef52b6ad` 2026-04-13
+// Spec-ref: unit_005.01_triangle_setup.md `919176a043df0644` 2026-04-13
 // Spec-ref: unit_005.03_derivative_precomputation.md `7181be3ee823f32a` 2026-03-22
-// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `4c168133e627c4f6` 2026-04-13
 
 // Triangle Rasterizer
 // Converts triangles to pixels using edge functions and incremental

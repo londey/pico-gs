@@ -1,5 +1,5 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
+// Spec-ref: unit_005_rasterizer.md `3ecb0185ef52b6ad` 2026-04-13
 // Spec-ref: unit_005.02_edge_setup.md `5455ba0dd721cbf0` 2026-03-22
 
 // Module: raster_recip_area

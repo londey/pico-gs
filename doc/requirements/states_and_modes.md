@@ -217,6 +217,10 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 
 ### 6. Rasterizer States (12-State Triangle Processing FSM)
 
+The rasterizer FSM spans two substages of the Render Pipeline (see ARCHITECTURE.md).
+The **Triangle Setup** substage comprises the SETUP and ITER_START states, which compute edge coefficients, the bounding box, attribute derivatives, and initialize the iteration accumulators.
+The **Block Pipeline** substage begins with the EDGE_TEST state (tile corner coverage check, Hi-Z metadata lookup, per-pixel edge test, and attribute interpolation).
+
 #### State: IDLE
 
 - **Description:** Waiting for triangle submission

@@ -1,4 +1,4 @@
-// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `4c168133e627c4f6` 2026-04-13
 
 //! Hi-Z block metadata store for hierarchical Z rejection.
 //!

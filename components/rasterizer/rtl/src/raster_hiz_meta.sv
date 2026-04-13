@@ -1,6 +1,6 @@
 `default_nettype none
-// Spec-ref: unit_005_rasterizer.md `d2c599e44ddb0ae8` 2026-04-01
-// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
+// Spec-ref: unit_005_rasterizer.md `3ecb0185ef52b6ad` 2026-04-13
+// Spec-ref: unit_005.06_hiz_block_metadata.md `4c168133e627c4f6` 2026-04-13
 
 // Module: raster_hiz_meta
 // Purpose: Hi-Z block metadata store for fast clear and hierarchical Z

@@ -5,6 +5,10 @@
 Per-tile metadata store that enables two Z-buffer optimizations: fast clear (bulk-writing sentinel values to metadata in 512 cycles instead of filling SDRAM in ~266,000 cycles) and hierarchical Z (Hi-Z) tile rejection (rejecting entire 4x4 tiles in the rasterizer before any fragments are emitted).
 Sub-unit of UNIT-005 (Rasterizer).
 
+UNIT-005.06 implements the **Hi-Z Test** step of the Block Pipeline substage as defined in ARCHITECTURE.md.
+The Block Pipeline processes one 4×4 tile at a time: Hi-Z Test (this unit) → Z Tile Load → Color Tile Load → Edge Test + Interpolation.
+Rejected tiles skip all subsequent Block Pipeline and Pixel Pipeline processing for that tile.
+
 The store uses 8 DP16KD blocks in 36x512 mode, holding 16,384 metadata entries (one per 4x4 tile in a 512x512 surface).
 Each 9-bit entry contains a 9-bit truncated minimum Z (`min_z = tile_min_Z[15:7]`), with no valid bit.
 A sentinel value of `9'h1FF` (all-ones) indicates that no Z-write has reached the tile since the last clear; the uninitialized/cleared state is tracked separately by the Z-buffer tile cache (UNIT-012).

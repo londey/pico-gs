@@ -5,6 +5,11 @@
 Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via a 4×4 color tile buffer.
 UNIT-006 is a thin pipeline orchestrator: it sequences fragment processing stages and passes UV/LOD/configuration signals to UNIT-011 (Texture Sampler), receiving back Q4.12 texel data for the color combiner.
 
+UNIT-006 implements the **Pixel Pipeline** substage of the Render Pipeline as defined in ARCHITECTURE.md.
+Fragments arrive from UNIT-005 having already passed through the Block Pipeline (Hi-Z Test, Z Tile Load, Color Tile Load, and Edge Test + Interpolation).
+The color tile buffer pre-fetch — loading the current destination tile's RGB565 pixels from SDRAM — is the Block Pipeline's **Color Tile Load** step; it feeds the `DST_COLOR` operand to the Pixel Pipeline's color combiner passes.
+The Z tile pre-fetch (**Z Tile Load**) is performed by UNIT-012 (Z-Buffer Tile Cache) and supplies per-fragment stored Z values to the early Z-test stage of this unit.
+
 ## Implements Requirements
 
 - REQ-002.02 (Gouraud Shaded Triangle)

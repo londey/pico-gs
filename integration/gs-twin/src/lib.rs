@@ -11,7 +11,7 @@
 // Until 1.0.0, allow dead code and unused dependency warnings
 #![allow(dead_code)]
 #![allow(unused_crate_dependencies)]
-// Spec-ref: unit_005.06_hiz_block_metadata.md `7890b690336304c7` 2026-04-01
+// Spec-ref: unit_005.06_hiz_block_metadata.md `4c168133e627c4f6` 2026-04-13
 
 //! # gs-twin
 //!
