@@ -225,13 +225,13 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 #### 6.1 Triangle Setup
 
 - **Description:** Computes edge function coefficients, bounding box, attribute derivatives, and reciprocal area.
-  Operates as a 3-state FSM (IDLE → SETUP → ITER_START) that accepts triangles from the register file and produces block coordinates for the Block Rasterize stage.
+  Operates as a dual-FSM producer-consumer architecture (DD-035): a 6-state setup producer (S_IDLE → S_SETUP → S_SETUP_2 → S_SETUP_3 → S_RECIP_WAIT → S_RECIP_DONE) and a 5-state iteration consumer (I_IDLE → I_ITER_START → I_INIT_E1 → I_INIT_E2 → I_DERIV_WAIT → I_WALKING).
   A depth-2 register FIFO between setup and downstream iteration allows Triangle N+1 setup to overlap with Triangle N's block processing.
 - **Entry Conditions:** tri_valid=1 from register file (third vertex write)
 - **Exit Conditions:** Setup complete; first block coordinate emitted to Block Rasterize
 - **Capabilities:** Edge coefficients, bounding box min/max, attribute derivative computation (98-cycle latency, hidden behind pixel processing of previous triangle)
 - **Restrictions:** tri_ready=0 while setup FIFO is full (back-pressure from downstream)
-- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-003
+- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-005
 
 #### 6.2 Block Rasterize
 
@@ -241,7 +241,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Block coordinate emitted to Hi-Z Test; advances to next tile in bounding box
 - **Capabilities:** 1-cycle latency per block; wraps scanlines at bbox boundary
 - **Restrictions:** Stalls if Hi-Z Test is not ready
-- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-003
+- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-005
 
 #### 6.3 Hi-Z Test
 
@@ -251,7 +251,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** PASS → block proceeds to Fragment Rasterize; REJECT → block discarded, ready for next
 - **Capabilities:** Tag lookup + Z-range comparison; operates on block granularity
 - **Restrictions:** Metadata must be initialized (first write to a tile populates it)
-- **Source:** UNIT-012 (Z-buffer tile cache)
+- **Source:** UNIT-005.06 (Hi-Z Block Metadata), [components/rasterizer/rtl/raster_hiz_meta.sv](../../components/rasterizer/rtl/src/raster_hiz_meta.sv)
 
 #### 6.4 Fragment Rasterize
 
@@ -261,7 +261,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Each surviving fragment is emitted to the Early Fragment Test stage with interpolated Z, color, and UV coordinates
 - **Capabilities:** 1–2 cycle latency per fragment; edge function evaluation uses incremental updates from block-level values
 - **Restrictions:** Stalls if Early Fragment Test is not ready
-- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-003
+- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-005
 
 #### 6.5 Early Fragment Test (Stipple + Z-Bounds + Z-Cache)
 
@@ -271,7 +271,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
   - **Z-cache tag lookup:** 3-cycle fetch sequence (tag match → uninit check → value read) from the 4-way set-associative Z-buffer tile cache.
 
   If stipple or z-bounds kills the fragment on cycle 1, the in-flight Z-cache lookup result is discarded.
-  If both pass and the Z-cache value arrives (end of cycle 3), the early-Z comparison (interpolated Z vs. cached Z, using the configured compare function from FB_ZBUFFER) determines whether the fragment survives.
+  If both pass and the Z-cache value arrives (end of cycle 3), the early-Z comparison (interpolated Z vs. cached Z, using the configured compare function from RENDER_MODE.Z_COMPARE) determines whether the fragment survives.
 - **Entry Conditions:** Fragment valid from Fragment Rasterize with interpolated Z, (x, y)
 - **Exit Conditions:** Fragment survives all three tests → proceeds to Texture Sampling; any test fails → fragment killed
 - **Capabilities:** Parallel early rejection minimizes downstream work; Z-cache hit rate 85–95% typical
@@ -323,13 +323,13 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 ### 1. Triangle Rendering Modes
 
-**Control Register:** TRI_MODE (0x30) — see INT-010 (GPU Register Map)
+**Control Register:** RENDER_MODE (0x30) — see INT-010 (GPU Register Map)
 
 #### Mode: Flat Shading
 
 - **Description:** Solid color fills (Gouraud shading disabled)
 - **Applicable States:** Fragment Rasterize stage (attribute interpolation)
-- **Configuration:** TRI_MODE_GOURAUD = 0
+- **Configuration:** RENDER_MODE.GOURAUD = 0
 - **Behavior Differences:** No color interpolation; uses single vertex color
 - **Use Case:** Clearing, simple geometric fills
 
@@ -337,7 +337,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Per-pixel color interpolation using barycentric coordinates
 - **Applicable States:** Fragment Rasterize stage (attribute interpolation)
-- **Configuration:** TRI_MODE_GOURAUD = 1 (bit 0)
+- **Configuration:** RENDER_MODE.GOURAUD = 1 (bit 0)
 - **Behavior Differences:** Interpolates RGB at each pixel (sum_r, sum_g, sum_b)
 - **Use Case:** GouraudTriangle demo, SpinningTeapot demo
 
@@ -345,15 +345,15 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Depth comparison before pixel write
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** TRI_MODE_Z_TEST = 1 (bit 2)
-- **Behavior Differences:** Reads Z-cache value, compares using FB_ZBUFFER compare function
+- **Configuration:** RENDER_MODE.Z_TEST_EN = 1 (bit 2)
+- **Behavior Differences:** Reads Z-cache value, compares using RENDER_MODE.Z_COMPARE function
 - **Use Case:** 3D scenes requiring occlusion (SpinningTeapot)
 
 #### Mode: Z-Writing
 
 - **Description:** Update Z-buffer on depth test pass
 - **Applicable States:** Late Fragment Test + Output stage (pixel output)
-- **Configuration:** TRI_MODE_Z_WRITE = 1 (bit 3)
+- **Configuration:** RENDER_MODE.Z_WRITE_EN = 1 (bit 3)
 - **Behavior Differences:** Writes interpolated Z to Z-cache on depth test pass
 - **Use Case:** Building depth buffer for 3D scenes
 
@@ -399,7 +399,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 ### 3. Framebuffer Management Modes
 
-**Control Registers:** FB_DRAW (0x40), FB_DISPLAY (0x41), FB_ZBUFFER (0x42) — see INT-010 (GPU Register Map)
+**Control Registers:** FB_DRAW (0x40), FB_DISPLAY (0x41) — see INT-010 (GPU Register Map)
 
 #### Mode: Dual-Framebuffer Swap
 
@@ -415,7 +415,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Clear framebuffer to solid color without depth clear
 - **Applicable States:** All rendering states
-- **Configuration:** Two viewport triangles at Z=0.0, TRI_MODE=0 (flat shading, Z_WRITE disabled)
+- **Configuration:** Two viewport triangles at Z=0.0, RENDER_MODE=0 (flat shading, Z_WRITE_EN disabled)
 - **Behavior Differences:** Fast clear without Z-buffer writes
 - **Use Case:** Single-layer 2D rendering, resetting framebuffer between frames
 
@@ -429,13 +429,13 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 ### 4. Z-Buffer Compare Modes
 
-**Control Register:** FB_ZBUFFER (bits 34:32) — see INT-010 (GPU Register Map)
+**Control Register:** RENDER_MODE.Z_COMPARE (bits 15:13) — see INT-010 (GPU Register Map)
 
 #### Mode: Z_COMPARE_LESS (0b000)
 
 - **Description:** Pass if z_new < z_buffer
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b000
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b000
 - **Behavior Differences:** Strict less-than comparison
 - **Use Case:** Specific depth test scenarios
 
@@ -443,7 +443,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Pass if z_new ≤ z_buffer
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b001
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b001
 - **Behavior Differences:** Allows equal depths to pass
 - **Use Case:** Standard depth testing (SpinningTeapot demo)
 
@@ -451,7 +451,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Pass if z_new == z_buffer
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b010
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b010
 - **Behavior Differences:** Strict equality test
 - **Use Case:** Special effects requiring exact depth match
 
@@ -459,7 +459,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Pass if z_new ≥ z_buffer
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b011
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b011
 - **Behavior Differences:** Greater-or-equal comparison
 - **Use Case:** Reverse depth testing
 
@@ -467,7 +467,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Pass if z_new > z_buffer
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b100
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b100
 - **Behavior Differences:** Strict greater-than comparison
 - **Use Case:** Reverse depth testing (strict)
 
@@ -475,7 +475,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Pass if z_new ≠ z_buffer
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b101
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b101
 - **Behavior Differences:** Rejects equal depths only
 - **Use Case:** Special effects
 
@@ -483,7 +483,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Always pass depth test
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison) (effectively bypassed)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b110
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b110
 - **Behavior Differences:** Disables depth testing; always writes
 - **Use Case:** Depth buffer clearing
 
@@ -491,7 +491,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 - **Description:** Never pass depth test
 - **Applicable States:** Early Fragment Test stage (Z-cache comparison)
-- **Configuration:** FB_ZBUFFER[34:32] = 0b111
+- **Configuration:** RENDER_MODE.Z_COMPARE = 0b111
 - **Behavior Differences:** Rejects all pixels
 - **Use Case:** Debugging or disabling writes
 
