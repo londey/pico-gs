@@ -359,43 +359,57 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 ### 2. Texture Mapping Modes
 
-**Control Registers:** TEX0_BASE, TEX0_FMT, TEX0_BLEND, TEX0_LUT_BASE, TEX0_WRAP (and TEX1-TEX3) — see INT-010 (GPU Register Map)
+**Control Registers:** TEX0_CFG (index 0x10), TEX1_CFG (index 0x11) — see INT-010 (GPU Register Map).
+All texture state is consolidated into a single 64-bit register per texture unit.
+Any write to a TEXn_CFG register invalidates the corresponding texture unit's L1/L2 caches.
 
-#### Mode: Texture Format Configuration
+#### Mode: Texture Unit Configuration
 
-- **Description:** Configure texture dimensions, format, and enable
-- **Applicable States:** All rendering states when texture enabled
-- **Configuration:** TEX0_FMT register bits:
-  - [16:19]: Swizzle pattern (RGBA, BGRA, etc.)
-  - [8:15]: Height log2
-  - [4:7]: Width log2
-  - [1]: Compressed flag
-  - [0]: Enable
-- **Behavior Differences:** Different swizzle patterns reorder RGBA channels
-- **Use Case:** TexturedTriangle demo uses checkerboard texture
+- **Description:** Configure texture dimensions, format, filtering, and enable for one texture unit
+- **Applicable States:** Texture Sampling stage; sampled per fragment when the unit is enabled
+- **Configuration:** TEXn_CFG register fields (see gpu_regs.rdl `tex_cfg_reg`):
+  - bit 0 — ENABLE
+  - bits 3:2 — FILTER (see Filter Modes below)
+  - bits 7:4 — FORMAT (BC1/BC2/BC3/BC4, RGB565, RGBA8888, R8 — see `tex_format_e`)
+  - bits 11:8 — WIDTH_LOG2 (width = 1 << n, up to 1024)
+  - bits 15:12 — HEIGHT_LOG2 (height = 1 << n, up to 1024)
+  - bits 17:16 — U_WRAP; bits 19:18 — V_WRAP (see UV Wrapping Modes below)
+  - bits 23:20 — MIP_LEVELS (1 disables mipmapping)
+  - bits 47:32 — BASE_ADDR (16-bit, multiplied by 512 for byte address)
+- **Behavior Differences:** FORMAT selects compressed vs. uncompressed decode path; disabled units bypass texture sampling (color combiner sources TEXn produce zero)
+- **Use Case:** TexturedTriangle demo (uncompressed RGB565 checkerboard); future BC1–BC4 compressed textures
 
-#### Mode: Texture Blend Modes
+#### Mode: Texture Filter Modes
 
-- **Description:** How texture color blends with vertex color
+- **Description:** Texel filtering applied during sampling
+- **Applicable States:** Texture Sampling stage (per unit)
+- **Configuration:** TEXn_CFG.FILTER[3:2] (see `tex_filter_e`):
+  - NEAREST (0): point sample — one texel per fragment
+  - BILINEAR (1): 2×2 tap filter with sub-texel weights
+  - TRILINEAR (2): reserved; requires MIP_LEVELS > 1 and currently degrades to BILINEAR at the base mip
+- **Behavior Differences:** Bilinear issues 4 cache taps per fragment; nearest issues 1. Both complete in 1 cycle on L1 hit.
+- **Use Case:** Bilinear for smooth magnification; nearest for pixel-art and LUT textures
+
+#### Mode: Texture Blend (Color Combiner)
+
+- **Description:** Texture color combination is handled in the 3-pass color combiner (UNIT-006), not in the texture sampler.
+  TEX0 and TEX1 appear as programmable sources (CC_TEX0, CC_TEX1, plus alpha-broadcast variants in the RGB C slot) in the `(A−B)×C+D` equation for each pass.
 - **Applicable States:** Color Combiner stage
-- **Configuration:** TEX0_BLEND register (bits TBD)
-- **Behavior Differences:**
-  - ALPHA_DISABLED (0b00): No blending
-  - ALPHA_ADD (0b01): Additive blending
-  - ALPHA_SUBTRACT (0b10): Subtractive blending
-  - ALPHA_BLEND_MODE (0b11): Alpha blend
-- **Use Case:** Future multi-texture effects
+- **Configuration:** CC_MODE (0x18), CC_MODE_2 (0x1A); no texture-side blend register exists
+- **Behavior Differences:** Any per-texture "blend mode" (add, subtract, alpha blend, pass-through) is expressed as combiner source/equation programming
+- **Use Case:** Textured Gouraud, dual-texture modulation, alpha blending via CC pass 2
 
 #### Mode: UV Wrapping Modes
 
-- **Description:** Behavior at texture edges
-- **Applicable States:** Texture sampling
-- **Configuration:** TEX0_WRAP register
-- **Behavior Differences:**
-  - REPEAT: Tile texture (default)
-  - CLAMP: Clamp UV to [0,1]
-  - MIRROR: Mirrored repeat
-- **Use Case:** Controlling texture edge behavior
+- **Description:** Behavior at texture edges (independent U and V axes)
+- **Applicable States:** Texture Sampling stage
+- **Configuration:** TEXn_CFG.U_WRAP[17:16] and V_WRAP[19:18] (see `wrap_mode_e`):
+  - REPEAT (0): wrap around (default)
+  - CLAMP_TO_EDGE (1): clamp to [0, size−1]
+  - MIRROR (2): reflect at boundaries
+  - OCTAHEDRAL (3): coupled diagonal mirror for octahedral mapping (crossing one axis flips the other)
+- **Behavior Differences:** Applied per-axis in the UV-coord subunit before tap generation
+- **Use Case:** REPEAT for tiled textures, CLAMP_TO_EDGE for UI sprites, OCTAHEDRAL for cube-map-like lookups
 
 ### 3. Framebuffer Management Modes
 
@@ -738,16 +752,22 @@ Early-exit points are marked with ✗ (fragment/block killed).
 | **Clearing Z-buffer** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
 | **Standard 3D** | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-### Texture Modes (Future Multi-Texture Support)
+### Texture Modes (Dual Texture Unit)
 
-| Texture Unit | TEX0 | TEX1 | TEX2 | TEX3 | Notes |
-|--------------|------|------|------|------|-------|
-| **Independent Enable** | ✓ | ✓ | ✓ | ✓ | Each unit has separate enable bit |
-| **Swizzle Patterns** | RGBA, BGRA, etc. | RGBA, BGRA, etc. | RGBA, BGRA, etc. | RGBA, BGRA, etc. | Per-unit configuration |
-| **Blend Modes** | DISABLED, ADD, SUBTRACT, ALPHA | DISABLED, ADD, SUBTRACT, ALPHA | DISABLED, ADD, SUBTRACT, ALPHA | DISABLED, ADD, SUBTRACT, ALPHA | Independent blending |
-| **UV Wrap Modes** | REPEAT, CLAMP, MIRROR | REPEAT, CLAMP, MIRROR | REPEAT, CLAMP, MIRROR | REPEAT, CLAMP, MIRROR | Per-unit wrapping |
+The hardware implements two texture units (TEX0 and TEX1), time-multiplexed through a single physical sampler (UNIT-011).
+Each unit has its own TEXn_CFG register and independent L1/L2 cache state.
 
-**Current Usage:** TEX1–TEX3 reserved for future multi-texturing.
+| Capability             | TEX0 | TEX1 | Notes                                                                      |
+|------------------------|------|------|----------------------------------------------------------------------------|
+| **Independent Enable** | ✓    | ✓    | TEXn_CFG.ENABLE (bit 0)                                                    |
+| **Format**             | ✓    | ✓    | TEXn_CFG.FORMAT (bits 7:4) — BC1/BC2/BC3/BC4, RGB565, RGBA8888, R8         |
+| **Filter Modes**       | ✓    | ✓    | TEXn_CFG.FILTER (bits 3:2) — NEAREST, BILINEAR, TRILINEAR (reserved)       |
+| **UV Wrap Modes**      | ✓    | ✓    | TEXn_CFG.U_WRAP / V_WRAP — REPEAT, CLAMP_TO_EDGE, MIRROR, OCTAHEDRAL       |
+| **Mip Levels**         | ✓    | ✓    | TEXn_CFG.MIP_LEVELS (bits 23:20); TRILINEAR filter requires MIP_LEVELS > 1 |
+| **Blend Mode**         | n/a  | n/a  | Texture blending is expressed in the 3-pass color combiner (CC_MODE)       |
+
+**Current Usage:** Single-texture rendering uses TEX0 with TEX1 disabled.
+Dual-texture modes sample TEX0 and TEX1 sequentially through the shared sampler; the color combiner consumes both results.
 
 ---
 
