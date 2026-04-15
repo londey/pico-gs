@@ -119,11 +119,26 @@ units:
   tex_sampler:
     name: Texture Sampler
     pipeline: pixel
-    dsp: 0              # nearest-only for now; bilinear adds 12 (deferred)
+    dsp: 0              # not yet instantiated at top level; bilinear filter will add 12 DSP per sampler when integrated
     ebr: 16             # L1/L2 cache per sampler instance
     lut4: 2000
     status: in_progress
-    rtl: [texture_sampler.sv, texture_uv_coord.sv]
+    rtl: [
+      texture_sampler.sv,
+      texture_uv_coord.sv,
+      texture_bilinear.sv,
+      texture_cache_l1.sv,
+      texture_l2_cache.sv,
+      texture_block_decode.sv,
+      texture_bc1.sv,
+      texture_bc2.sv,
+      texture_bc3.sv,
+      texture_bc4.sv,
+      texture_rgb565.sv,
+      texture_rgba8888.sv,
+      texture_r8.sv,
+      texel_promote.sv,
+    ]
     twin: gs-texture
     stages:
       - id: uv_wrap
@@ -143,11 +158,14 @@ units:
       - id: l1_sample
         latency: 1
       - id: filter
-        latency: 0       # nearest=combinational; bilinear=deferred
+        latency: 1       # bilinear blend (nearest passes through)
     notes: >
       One physical unit, time-multiplexed for TEX0 and TEX1.
       16 EBR per sampler instance (4 banks x 4 EBR each).
-      Bilinear filter deferred -- see doc/reports/bilinear_filter_dsp_analysis.md
+      Bilinear filtering is implemented in the twin (gs-tex-bilinear-filter) and in
+      texture_bilinear.sv RTL; top-level assembly of the L1/L2/block-decoder subunits
+      into texture_sampler.sv is still in progress.
+      See doc/reports/bilinear_filter_dsp_analysis.md for the 12-DSP filter sizing.
 
   color_combiner:
     name: Color Combiner

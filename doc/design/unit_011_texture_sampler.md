@@ -71,7 +71,7 @@ Fragment Bus (UV, frag_lod) from UNIT-005 via UNIT-006
          │                ┌────────────────────────┐
          └───────────────►│ UNIT-011.04             │
                           │ Block Decompressor       │
-                          │ BC1–BC5, RGB565,         │
+                          │ BC1–BC4, RGB565,         │
                           │ RGBA8888, R8             │
                           │ + texel_promote (Q4.12)  │
                           └────────────┬────────────┘
@@ -111,10 +111,13 @@ Fragment needs texel → UNIT-011.03 L1 lookup
     → L2 miss: SDRAM burst read (arbiter port 3) → fill L2 → decompress → fill L1 → return
 ```
 
-The cache fill FSM in `texture_cache.sv` implements:
-`IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE`
+Miss handling is split across two cooperating FSMs rather than a single monolithic cache controller:
 
-While the FSM is in any state other than IDLE, UNIT-006 holds its fragment pipeline stalled (no new pixels are accepted and no SDRAM writes are issued on ports 1 or 2 for the affected sampler).
+- The L1 fill FSM in `texture_cache_l1.sv` (UNIT-011.03) sequences `IDLE → L2_FETCH → DECODE → WRITE_BANKS → IDLE`, requesting a 4×4 block from L2 on miss and writing the decoded UQ1.8 texels into the four interleaved L1 banks.
+- The L2 fill FSM in `texture_l2_cache.sv` (UNIT-011.05) sequences `IDLE → SDRAM_REQ → SDRAM_BURST → IDLE`, issuing an arbiter-port-3 burst read on L2 miss and writing the compressed block words into the L2 RAM.
+- Decompression is performed by the format-dispatched decoders in `texture_block_decode.sv` (UNIT-011.04) during the L1 fill FSM's `DECODE` state.
+
+While either FSM is in a non-IDLE state for a given sampler, UNIT-006 holds its fragment pipeline stalled (no new pixels are accepted and no SDRAM writes are issued on ports 1 or 2 for the affected sampler).
 
 ### Cache Invalidation Protocol
 
@@ -127,7 +130,7 @@ No explicit flush register is required.
 ### Arbiter Port 3 Ownership
 
 UNIT-011 owns arbiter port 3 on UNIT-007 for all texture SDRAM burst reads.
-Burst lengths are format-dependent: 4 words (BC1, BC4), 8 words (BC2, BC3, BC5, R8), 16 words (RGB565), 32 words (RGBA8888).
+Burst lengths are format-dependent: 4 words (BC1, BC4), 8 words (BC2, BC3, R8), 16 words (RGB565), 32 words (RGBA8888).
 Port 3 is also used by `gpu_top.sv` for fire-and-forget `PERF_TIMESTAMP` writes at lowest priority; texture bursts have effective precedence because the arbiter serves port 3 in arrival order and texture bursts hold the port for up to 32 words.
 See DD-026 for the port 3 sharing rationale and latch-and-serialize scheme.
 
@@ -161,15 +164,15 @@ The RTL must produce bit-identical results to the twin at the Q4.12 texel output
 ## Design Notes
 
 **Two-sampler symmetry:** Both samplers share identical hardware structure.
-Each sampler is an independent instance of `texture_cache.sv` with its own L1 EBR banks, L2 EBR banks, tag arrays, valid bits, and fill FSM.
-Inter-sampler contention does not occur.
+Each sampler is an independent instance of the subunit stack (`texture_uv_coord.sv`, `texture_bilinear.sv`, `texture_cache_l1.sv`, `texture_block_decode.sv`, `texture_l2_cache.sv`) with its own L1 EBR banks, L2 EBR banks, tag arrays, valid bits, and fill FSMs.
+Inter-sampler contention occurs only at the shared arbiter port 3 when both samplers miss L2 simultaneously; the arbiter serves them in arrival order.
 
 **gs-twin is the authoritative algorithmic reference:** Before modifying texture RTL, read `components/texture/twin/` to understand the expected bit-accurate behavior.
 Any pixel-level mismatch between RTL and twin output is a real bug in the RTL.
 
 **Format encoding:** `tex_format[3:0]` from TEXn_CFG selects the decode path.
-BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7.
-Codes 8–15 are reserved.
+BC1=0, BC2=1, BC3=2, BC4=3, RGB565=5, RGBA8888=6, R8=7.
+Code 4 and codes 8–15 are reserved (see `tex_format_e` in gpu_regs.rdl).
 See DD-041.
 
 **EBR budget:** 8 EBR per sampler (4 L1 + 4 L2), 16 EBR total for 2 samplers.
