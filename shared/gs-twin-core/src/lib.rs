@@ -19,7 +19,6 @@
 
 pub mod alpha_test;
 pub mod debug_types;
-pub mod depth_range;
 pub mod fragment;
 pub mod hex_parser;
 pub mod hiz;

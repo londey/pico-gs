@@ -31,7 +31,6 @@ pub use gs_twin_core::hex_parser;
 pub use gs_twin_core::math;
 pub use gs_twin_core::triangle;
 
-use gpu_registers::components::z_compare_e::ZCompareE;
 use gs_color_combiner::CcInputs;
 use gs_memory::GpuMemory;
 use gs_pixel_write::tile_buffer::{self, ColorTileBuffer};
@@ -249,41 +248,29 @@ impl Gpu {
         let frag =
             gs_stipple::stipple_test(frag, rm.stipple_en(), self.regs.stipple_pattern().pattern())?;
 
-        // Stage 0b: Depth range clip
-        let zr = self.regs.z_range();
-        let frag =
-            gs_twin_core::depth_range::depth_range_clip(frag, zr.z_range_min(), zr.z_range_max())?;
-
-        // Stage 0c: Early Z test (read-compare only, no write).
+        // Stage 0b+0c: Depth range clip + early Z test.
         // Z reads go through the tile cache to see uncommitted writes.
-        let frag = if rm.z_test_en() {
+        let zr = self.regs.z_range();
+        let zbuffer_z = if rm.z_test_en() {
             let mut zctx = ZbufContext {
                 uninit_flags: &self.uninit_flags,
                 memory: &mut self.memory,
                 z_base: fb_cfg.z_base(),
                 wl2: fb_cfg.width_log2(),
             };
-            let stored = self
-                .zbuf_cache
-                .read(frag.x as u32, frag.y as u32, &mut zctx);
-            let pass = match rm.z_compare() {
-                ZCompareE::Never => false,
-                ZCompareE::Less => frag.z < stored,
-                ZCompareE::Lequal => frag.z <= stored,
-                ZCompareE::Equal => frag.z == stored,
-                ZCompareE::Greater => frag.z > stored,
-                ZCompareE::Gequal => frag.z >= stored,
-                ZCompareE::Notequal => frag.z != stored,
-                ZCompareE::Always => true,
-            };
-            if pass {
-                frag
-            } else {
-                return None;
-            }
+            self.zbuf_cache
+                .read(frag.x as u32, frag.y as u32, &mut zctx)
         } else {
-            frag
+            0
         };
+        let frag = gs_early_z::early_z_test(
+            frag,
+            zbuffer_z,
+            zr.z_range_min(),
+            zr.z_range_max(),
+            rm.z_test_en(),
+            rm.z_compare(),
+        )?;
 
         // Stage 1-3: Texture sampling (TEX0 + TEX1)
         let frag = gs_texture::tex_sample::tex_sample(

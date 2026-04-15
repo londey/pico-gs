@@ -8,7 +8,7 @@
 //!
 //! ```text
 //! Rasterizer ──→ RasterFragment
-//!   → stipple_test → depth_range_clip → early_z_test
+//!   → stipple_test → early_z_test
 //!   → tex_sample ──→ TexturedFragment
 //!   → color_combine_0 → color_combine_1 ──→ ColoredFragment
 //!   → alpha_test → alpha_blend

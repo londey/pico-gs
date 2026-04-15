@@ -168,7 +168,6 @@ name = "gs-early-z"
 version = "0.1.0"
 dependencies = [
  "gpu-registers",
- "gs-memory",
  "gs-twin-core",
 ]
 
