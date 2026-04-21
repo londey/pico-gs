@@ -1,5 +1,5 @@
 __pycache__
-.claude/
+/.claude/*
 .syskit
 *.bk
 *.fst
@@ -9,3 +9,5 @@ __pycache__
 build/
 obj_dir/
 target/
+
+!/.claude/skills/
