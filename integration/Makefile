@@ -49,6 +49,14 @@ DITHER_RTL = $(COMP_DIR)/dither/src
 PXWRITE_RTL = $(COMP_DIR)/pixel-write/src
 ZBUF_RTL    = $(COMP_DIR)/zbuf/src
 
+# Contracts (interfaces + bound SVA properties + conformance testbenches)
+CONTRACTS_DIR    = ../rtl/contracts
+CONTRACTS_TB_DIR = ../rtl/tb/contracts
+CONTRACT_INTERFACES = \
+	$(CONTRACTS_DIR)/sram_port_if.sv
+CONTRACT_PROPERTIES = \
+	$(CONTRACTS_DIR)/sram_port_properties.sv
+
 # Source files
 RTL_SOURCES = \
 	$(TOP_DIR)/gpu_top.sv \
@@ -127,7 +135,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-async-fifo test-command-fifo test-sync-fifo test-l2-cache \
 	test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst \
 	test-burst-integration test-burst-all test-register-file-v10 test-color-combiner \
-	test-texture-decoder lint-memory lint harness-scaffold clean help \
+	test-texture-decoder lint-memory lint lint-contracts \
+	test-sram-port-conformance test-contracts-all harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined \
 	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture \
@@ -301,6 +310,43 @@ test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 # Run all burst-related testbenches
 test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
+
+# ============================================================================
+# Contract verification (interfaces + bound SVA properties + conformance TBs)
+# ============================================================================
+
+# Lint the contract layer (interfaces + properties) together with
+# representative server modules to surface any struct/modport breakage.
+lint-contracts:
+	@echo "Linting contracts layer..."
+	@fail=0; \
+	echo "  sram_port_if + properties (bind shim)"; \
+	$(VERILATOR) --lint-only -Wall \
+		$(PKG_DIR)/fp_types_pkg.sv \
+		$(CONTRACTS_DIR)/sram_port_if.sv \
+		$(CONTRACTS_DIR)/sram_port_properties.sv \
+		$(MEMORY_RTL)/sdram_controller.sv \
+		$(MEMORY_RTL)/sram_arbiter.sv \
+		$(CONTRACTS_TB_DIR)/sram_port_conformance/mem_stub.sv \
+		$(CONTRACTS_TB_DIR)/sram_port_conformance/tb_sram_port_conformance.sv \
+		--top-module tb_sram_port_conformance 2>&1 || fail=1; \
+	if [ $$fail -ne 0 ]; then echo "lint-contracts FAILED"; exit 1; fi; \
+	echo "lint-contracts passed."
+
+# sram_port_if conformance testbench (Phase 1 foundation: properties bind and fire)
+test-sram-port-conformance: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(PKG_DIR)/fp_types_pkg.sv \
+		$(CONTRACTS_DIR)/sram_port_if.sv \
+		$(CONTRACTS_DIR)/sram_port_properties.sv \
+		$(MEMORY_RTL)/sram_arbiter.sv \
+		$(CONTRACTS_TB_DIR)/sram_port_conformance/mem_stub.sv \
+		$(CONTRACTS_TB_DIR)/sram_port_conformance/tb_sram_port_conformance.sv \
+		--top-module tb_sram_port_conformance -o tb_sram_port_conformance
+	$(OBJ_DIR)/tb_sram_port_conformance
+
+# Aggregate target for every contract's conformance TB
+test-contracts-all: test-sram-port-conformance
 
 # Register file v10 testbench (vertex submission, MEM_FILL, RENDER_MODE, ID, CC_MODE, FB_CONFIG, FB_CONTROL)
 test-register-file-v10: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -757,7 +803,7 @@ test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_hiz_meta.sv \
 		$(RASTER_RTL)/rasterizer.sv \
 		--top-module rasterizer \
-		$(COMP_DIR)/rasterizer/tests/tb_raster_viz.cpp \
+		$(abspath $(COMP_DIR)/rasterizer/tests/tb_raster_viz.cpp) \
 		-CFLAGS "-std=c++20 -I$(abspath $(HARNESS_DIR))" \
 		-o tb_raster_viz
 	$(OBJ_DIR)/raster_viz/tb_raster_viz
@@ -1112,6 +1158,7 @@ lint:
 		--top-module pixel_pipeline 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
 	echo "Lint passed."
+	@$(MAKE) --no-print-directory lint-contracts
 
 # Integration test harness scaffold (compile check, no Verilator model)
 # Builds the harness C++ files without RTL to verify they compile.
@@ -1196,7 +1243,7 @@ $(BUILD_DIR)/harness: $(HARNESS_SOURCES) $(HARNESS_RTL_SOURCES) | $(BUILD_DIR) $
 		--pins-inout-enables \
 		$(HARNESS_RTL_SOURCES) \
 		--top-module gpu_top \
-		$(HARNESS_SOURCES) \
+		$(abspath $(HARNESS_SOURCES)) \
 		-CFLAGS "-std=c++20 -I$(abspath $(HARNESS_DIR))" \
 		-o harness
 	cp $(OBJ_DIR)/harness $(BUILD_DIR)/harness

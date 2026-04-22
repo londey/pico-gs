@@ -27,6 +27,7 @@ CHECK_ONLY=false
 RESOURCES_ONLY=false
 DT_VERIFY=false
 PIPELINE_ONLY=false
+CONTRACTS_ONLY=false
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --pipeline)
             PIPELINE_ONLY=true
+            shift
+            ;;
+        --contracts)
+            CONTRACTS_ONLY=true
             shift
             ;;
         --resources)
@@ -87,6 +92,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --fpga-only         Build only FPGA bitstream (skip DT and RTL tests)"
             echo "  --check             Quick check: Verilator lint, cargo fmt, cargo check, cargo clippy"
             echo "  --pipeline          Validate pipeline model and generate D2 diagrams"
+            echo "  --contracts         Run all contract conformance testbenches (properties + trace diff)"
             echo "  --resources         Per-module ECP5 resource utilization report"
             echo "  --dt-only           Build and test digital twin only"
             echo "  --dt-verify         Verify RTL modules against digital twin (DT-generated test vectors)"
@@ -182,6 +188,23 @@ if [ "$PIPELINE_ONLY" = true ]; then
     echo ""
 
     echo -e "${GREEN}=== Pipeline Complete ===${NC}"
+    exit 0
+fi
+
+# Contract conformance mode: lint contracts + run every conformance TB
+if [ "$CONTRACTS_ONLY" = true ]; then
+    echo -e "${YELLOW}[1/2] Linting contracts layer...${NC}"
+    cd "${INTEGRATION}"
+    make lint-contracts
+    echo -e "${GREEN}Contract lint passed${NC}"
+    echo ""
+
+    echo -e "${YELLOW}[2/2] Running contract conformance testbenches...${NC}"
+    make test-contracts-all
+    echo -e "${GREEN}All contract conformance testbenches passed${NC}"
+    echo ""
+
+    echo -e "${GREEN}=== Contracts Complete ===${NC}"
     exit 0
 fi
 

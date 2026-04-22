@@ -104,6 +104,37 @@ package fp_types_pkg;
         promote_unorm8_to_q412 = {4'b0000, unorm8[7:0], unorm8[7:4]};
     endfunction
 
+    // ========================================================================
+    // SRAM Arbiter Port Types (sram_port_if contract)
+    // ========================================================================
+    // Client-to-server request on an sram_arbiter port. Matches the raw port
+    // shape of sram_arbiter ports 0-3 (the server side remains 4-port-per-port
+    // today; the interface groups fields for type-safe client/monitor views).
+
+    // verilator lint_off UNUSEDSIGNAL
+
+    typedef struct packed {
+        logic        we;          // 1 = write, 0 = read
+        logic [23:0] addr;        // 24-bit word address into memory space
+        logic [31:0] wdata;       // Single-word write data (bits [15:0] used today)
+        logic [7:0]  burst_len;   // 0 = single word, N = N words in burst
+        logic [15:0] burst_wdata; // Burst write 16-bit word (supplied on wdata_req)
+    } sram_req_t;
+
+    // Server-to-client response on an sram_arbiter port. burst_data_valid pulses
+    // for each 16-bit word of a read burst; burst_wdata_req pulses for each
+    // 16-bit word the server expects on burst_wdata. ack pulses once per
+    // completed transaction (single or burst).
+    typedef struct packed {
+        logic [31:0] rdata;            // Single-word read result
+        logic [15:0] burst_rdata;      // Current 16-bit word of a read burst
+        logic        burst_data_valid; // burst_rdata valid this cycle
+        logic        burst_wdata_req;  // Server requests next 16-bit burst write word
+        logic        ack;              // Transaction complete pulse
+    } sram_resp_t;
+
+    // verilator lint_on UNUSEDSIGNAL
+
 endpackage
 
 `default_nettype wire
