@@ -211,7 +211,7 @@ The register file maintains a 3-entry vertex ring buffer indexed by vertex_count
 
 ## Implementation
 
-- `components/spi/rtl/src/register_file.sv`: Main implementation
+- `rtl/components/spi/src/register_file.sv`: Main implementation
 
 ## Verification
 

@@ -142,10 +142,10 @@ These signals enable downstream consumers to optimize SDRAM burst scheduling and
 
 ## Implementation
 
-- `components/rasterizer/rtl/src/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, Hi-Z metadata lookup (HIZ_TEST state), edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
-- `components/rasterizer/rtl/src/raster_recip_q.sv`: Dedicated per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), UQ1.17 entries, 2-cycle latency (BRAM read + MULT18X18D interpolation), UQ4.14 output.
-- `components/rasterizer/rtl/src/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — provides the read/write interface consumed by HIZ_TEST and the Hi-Z metadata update path from the pixel pipeline.
-- `components/rasterizer/twin/src/rasterize.rs`: Digital twin — `HizMetadata` struct and Hi-Z tile rejection logic integrated into the tile traversal loop.
+- `rtl/components/rasterizer/src/raster_edge_walk.sv`: Tile-ordered iteration FSM, hierarchical tile rejection, Hi-Z metadata lookup (HIZ_TEST state), edge testing, 3-cycle perspective correction pipeline, block framing signals, fragment output handshake.
+- `rtl/components/rasterizer/src/raster_recip_q.sv`: Dedicated per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), UQ1.17 entries, 2-cycle latency (BRAM read + MULT18X18D interpolation), UQ4.14 output.
+- `rtl/components/rasterizer/src/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — provides the read/write interface consumed by HIZ_TEST and the Hi-Z metadata update path from the pixel pipeline.
+- `twin/components/rasterizer/src/rasterize.rs`: Digital twin — `HizMetadata` struct and Hi-Z tile rejection logic integrated into the tile traversal loop.
 
 ## Verification
 

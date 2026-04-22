@@ -1,7 +1,7 @@
 # Test Strategy
 
 This document records the cross-cutting verification strategy: frameworks, tools, approaches, and coverage goals that apply across all verification documents.
-The scope of RTL verification is Verilator-based simulation of the SystemVerilog sources under `components/*/rtl/` and `integration/`.
+The scope of RTL verification is Verilator-based simulation of the SystemVerilog sources under `rtl/components/*/` and `integration/`.
 Rust-side verification (host firmware, asset tools) is out of scope for this document.
 
 ## Test Frameworks and Tools
@@ -73,7 +73,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 ### Integration Simulation Harness
 
-- **Description:** The golden image tests share a common C++ simulation harness (`integration/harness/`) that:
+- **Description:** The golden image tests share a common C++ simulation harness (`rtl/tb/`) that:
   - Instantiates the full GPU RTL hierarchy under Verilator.
   - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
     This FSM is consumed by UNIT-011 (Texture Sampler — specifically UNIT-011.05, L2 Compressed Cache).
@@ -96,7 +96,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 ### RTL Unit Coverage
 
-- **Target:** All RTL modules under `components/*/rtl/` and `integration/` are exercised by at least one VER document (unit or integration).
+- **Target:** All RTL modules under `rtl/components/*/` and `integration/` are exercised by at least one VER document (unit or integration).
 - **Measurement:** Manual traceability table in each VER document (`Verified Design Units` section).
 
 ### Branch Coverage
@@ -138,7 +138,7 @@ cd integration && make test-<ver_name>
 ### CI/CD Integration
 
 - **Pipeline:** Runs on push to `master` and on pull requests targeting `master`.
-- **Triggers:** Any change under `components/`, `integration/`, or `shared/` triggers the RTL test suite.
+- **Triggers:** Any change under `rtl/`, `twin/`, `integration/`, or `shared/` triggers the RTL test suite.
 - **Reporting:** Test results are reported as CI check statuses; VCD traces are uploaded as artifacts on failure.
 
 ### Manual Testing

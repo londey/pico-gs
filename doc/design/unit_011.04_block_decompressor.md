@@ -53,7 +53,7 @@ All source-format channel values are expanded to 9-bit UQ1.8 using correction te
 The naive `{1'b0, unorm8}` mapping is not used because it maps 255 to 0xFF (≈0.996), failing to represent 1.0 exactly.
 See DD-038 for rationale.
 
-The gs-texture twin crate (`components/texture/twin/`) is authoritative for these formulas; RTL must be bit-identical:
+The gs-texture twin crate (`twin/components/texture/`) is authoritative for these formulas; RTL must be bit-identical:
 
 - **8-bit → UQ1.8**: `ch8_to_uq18(x) = {1'b0, x[7:0]} + {8'b0, x[7]}` — maps 0→0x000, 255→0x100
 - **5-bit → UQ1.8**: `ch5_to_uq18(x) = {1'b0, x[4:0], x[4:2]} + {8'b0, x[4]}` — maps 0→0x000, 31→0x100
@@ -124,17 +124,17 @@ The UNIT-011 output contract is Q4.12 RGBA texel data.
 
 ## Implementation
 
-- `components/texture/detail/block-decoder/rtl/src/texture_bc1.sv`: BC1 decoder
-- `components/texture/detail/block-decoder/rtl/src/texture_bc2.sv`: BC2 decoder
-- `components/texture/detail/block-decoder/rtl/src/texture_bc3.sv`: BC3 decoder
-- `components/texture/detail/block-decoder/rtl/src/texture_bc4.sv`: BC4 single-channel decoder
-- `components/texture/detail/block-decoder/rtl/src/texture_rgb565.sv`: RGB565 uncompressed decoder
-- `components/texture/detail/block-decoder/rtl/src/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
-- `components/texture/detail/block-decoder/rtl/src/texture_r8.sv`: R8 single-channel decoder
-- `components/texture/detail/block-decoder/rtl/src/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
-- `shared/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions
+- `rtl/components/texture/detail/block-decoder/src/texture_bc1.sv`: BC1 decoder
+- `rtl/components/texture/detail/block-decoder/src/texture_bc2.sv`: BC2 decoder
+- `rtl/components/texture/detail/block-decoder/src/texture_bc3.sv`: BC3 decoder
+- `rtl/components/texture/detail/block-decoder/src/texture_bc4.sv`: BC4 single-channel decoder
+- `rtl/components/texture/detail/block-decoder/src/texture_rgb565.sv`: RGB565 uncompressed decoder
+- `rtl/components/texture/detail/block-decoder/src/texture_rgba8888.sv`: RGBA8888 uncompressed decoder
+- `rtl/components/texture/detail/block-decoder/src/texture_r8.sv`: R8 single-channel decoder
+- `rtl/components/texture/detail/block-decoder/src/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (combinational)
+- `rtl/pkg/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions
 
-The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
+The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/`).
 The RTL must produce bit-identical UQ1.8 and Q4.12 outputs to the twin for every supported format.
 
 ## Verification

@@ -18,7 +18,8 @@
       "Bash(cargo run:*)",
       "Bash(python3 spi_gpu/tests/scripts/gen/generate_all.py)",
       "Bash(find:*)",
-      "Read(//workspaces/**)"
+      "Read(//workspaces/**)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

@@ -18,7 +18,7 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 ## Preconditions
 
-- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
 - Golden image `integration/golden/ver_012_textured_triangle.png` has been approved and committed.
@@ -139,7 +139,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `integration/harness/`: Integration simulation harness.
+- `rtl/tb/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PNG files.
 - `integration/golden/ver_012_textured_triangle.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 

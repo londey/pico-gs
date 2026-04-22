@@ -20,7 +20,7 @@ The test confirms that the color combiner correctly evaluates the MODULATE equat
 
 - UNIT-010 (Color Combiner) has reached Stable status: the WIP flag has been removed from `doc/design/unit_010_color_combiner.md`, indicating that combiner equation pipeline timing and register decoding are finalized.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-010 (Color Combiner) with live connections to `cc_mode` and `const_color` from the register file, along with UNIT-011 (Texture Sampler) providing Q4.12 texel data, and FB/Z write logic per UNIT-006.
-- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - Golden image `integration/golden/ver_013_color_combined.png` has been approved and committed.
   This image is created after the pixel pipeline integration and UNIT-010 stabilization; the simulation output must be visually inspected and approved before the first commit of the golden file.
 - Verilator 5.x is installed and available on `$PATH`.
@@ -169,7 +169,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `integration/harness/`: Integration simulation harness.
+- `rtl/tb/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PNG files.
 - `integration/golden/ver_013_color_combined.png`: Approved golden image (created after the initial simulation run following UNIT-010 stabilization and pixel pipeline integration; visually inspected and approved before commit).
 

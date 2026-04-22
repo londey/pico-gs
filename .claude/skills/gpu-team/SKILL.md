@@ -21,11 +21,11 @@ The team has five roles:
 
 2. **syskit-specialist** — Specification documentation. Keeps requirement, interface, design, and verification docs under `doc/` in sync with what the team implements. Updates Spec-ref hashes and maintains traceability.
 
-3. **verilog-specialist** — SystemVerilog RTL implementation. Works on `components/*/rtl/src/` modules. Reads the digital twin first, then implements RTL to match it bit-exactly. Follows `.claude/skills/claude-skill-verilog/SKILL.md` and `.claude/skills/ecp5-sv-yosys-verilator/SKILL.md`.
+3. **verilog-specialist** — SystemVerilog RTL implementation. Works on `rtl/components/*/src/` modules. Reads the digital twin first, then implements RTL to match it bit-exactly. Follows `.claude/skills/claude-skill-verilog/SKILL.md` and `.claude/skills/ecp5-sv-yosys-verilator/SKILL.md`.
 
-4. **rust-twin-specialist** — Digital twin implementation. Works on `components/*/twin/` crates and `integration/gs-twin/`. Implements the bit-accurate algorithm in Rust first. Follows `.claude/skills/claude-skill-rust/SKILL.md`. Generates expected outputs for verification.
+4. **rust-twin-specialist** — Digital twin implementation. Works on `twin/components/*/` crates and `integration/gs-twin/`. Implements the bit-accurate algorithm in Rust first. Follows `.claude/skills/claude-skill-rust/SKILL.md`. Generates expected outputs for verification.
 
-5. **verification-specialist** — Verilator testbenches and synthesis validation. Works on `components/*/rtl/tests/` and `integration/harness/`. Compares RTL output against twin output using shared `.hex` stimulus. Follows `.claude/skills/claude-skill-cpp/SKILL.md`.
+5. **verification-specialist** — Verilator testbenches and synthesis validation. Works on `rtl/components/*/tests/` and `rtl/tb/`. Compares RTL output against twin output using shared `.hex` stimulus. Follows `.claude/skills/claude-skill-cpp/SKILL.md`.
 
 ## Spawning responsibility
 

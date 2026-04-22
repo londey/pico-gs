@@ -1,0 +1,16 @@
+[package]
+name = "gs-texture"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Texture sampling component of the pico-gs digital twin"
+
+[dependencies]
+gs-twin-core = { path = "../../../shared/gs-twin-core" }
+qfixed = { path = "../../../crates/qfixed" }
+gpu-registers.workspace = true
+gs-tex-l1-cache = { path = "detail/l1-cache" }
+gs-tex-l2-cache = { path = "detail/l2-cache" }
+gs-tex-block-decoder = { path = "detail/block-decoder" }
+gs-tex-bilinear-filter = { path = "detail/bilinear-filter" }

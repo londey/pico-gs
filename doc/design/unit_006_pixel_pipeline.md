@@ -177,14 +177,14 @@ Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes
 
 ## Implementation
 
-- `shared/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
-- `components/pixel-write/twin/src/lib.rs`: Digital twin pixel-write stage (tile buffer read-modify-write, framebuffer burst flush, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`)
-- `components/pixel-write/rtl/src/pixel_pipeline.sv`: Main implementation
-- `components/pixel-write/rtl/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
-- `components/pixel-write/rtl/src/color_tile_buffer.sv`: 4×4 register-file tile buffer (16×16-bit), burst fill/flush arbiter interface
-- `components/dither/rtl/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
-- `components/early-z/rtl/src/early_z.sv`: Depth range test + early Z-test logic
-- `components/stipple/rtl/src/stipple.sv`: Stipple pattern test
+- `rtl/pkg/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
+- `twin/components/pixel-write/src/lib.rs`: Digital twin pixel-write stage (tile buffer read-modify-write, framebuffer burst flush, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`)
+- `rtl/components/pixel-write/src/pixel_pipeline.sv`: Main implementation
+- `rtl/components/pixel-write/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
+- `rtl/components/pixel-write/src/color_tile_buffer.sv`: 4×4 register-file tile buffer (16×16-bit), burst fill/flush arbiter interface
+- `rtl/components/dither/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
+- `rtl/components/early-z/src/early_z.sv`: Depth range test + early Z-test logic
+- `rtl/components/stipple/src/stipple.sv`: Stipple pattern test
 Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned by UNIT-011.
 
 ## Verification

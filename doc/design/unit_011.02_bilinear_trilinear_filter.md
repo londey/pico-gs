@@ -97,9 +97,9 @@ If either neighbor is not resident, the fill FSM is invoked before the bilinear 
 
 ## Implementation
 
-- `components/texture/detail/bilinear-filter/rtl/src/texture_bilinear.sv`: Bilinear weight computation and blending
+- `rtl/components/texture/detail/bilinear-filter/src/texture_bilinear.sv`: Bilinear weight computation and blending
 
-The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
+The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/`).
 RTL output must be bit-identical to the twin's filtered texel values.
 
 ## Design Notes

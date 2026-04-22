@@ -136,22 +136,22 @@ See DD-026 for the port 3 sharing rationale and latch-and-serialize scheme.
 
 ## Implementation
 
-- `components/texture/rtl/src/texture_sampler.sv`: Texture sampler assembly (wrap modes, bilinear address generation, blending)
-- `components/texture/detail/uv-coord/rtl/src/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation (UNIT-011.01)
-- `components/texture/detail/bilinear-filter/rtl/src/texture_bilinear.sv`: Bilinear weight computation and blending (UNIT-011.02)
-- `components/texture/detail/l1-cache/rtl/src/texture_cache_l1.sv`: L1 decompressed cache + fill FSM, instantiated twice for 2 samplers (UNIT-011.03)
-- `components/texture/detail/l2-cache/rtl/src/texture_l2_cache.sv`: L2 compressed block cache (UNIT-011.05)
-- `components/texture/detail/block-decoder/rtl/src/texture_bc1.sv`: BC1 block decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texture_bc2.sv`: BC2 block decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texture_bc3.sv`: BC3 block decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texture_bc4.sv`: BC4 single-channel decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texture_rgb565.sv`: RGB565 uncompressed decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texture_rgba8888.sv`: RGBA8888 uncompressed decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texture_r8.sv`: R8 single-channel decoder (UNIT-011.04)
-- `components/texture/detail/block-decoder/rtl/src/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (UNIT-011.04)
-- `shared/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions (shared package)
+- `rtl/components/texture/src/texture_sampler.sv`: Texture sampler assembly (wrap modes, bilinear address generation, blending)
+- `rtl/components/texture/detail/uv-coord/src/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation (UNIT-011.01)
+- `rtl/components/texture/detail/bilinear-filter/src/texture_bilinear.sv`: Bilinear weight computation and blending (UNIT-011.02)
+- `rtl/components/texture/detail/l1-cache/src/texture_cache_l1.sv`: L1 decompressed cache + fill FSM, instantiated twice for 2 samplers (UNIT-011.03)
+- `rtl/components/texture/detail/l2-cache/src/texture_l2_cache.sv`: L2 compressed block cache (UNIT-011.05)
+- `rtl/components/texture/detail/block-decoder/src/texture_bc1.sv`: BC1 block decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texture_bc2.sv`: BC2 block decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texture_bc3.sv`: BC3 block decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texture_bc4.sv`: BC4 single-channel decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texture_rgb565.sv`: RGB565 uncompressed decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texture_rgba8888.sv`: RGBA8888 uncompressed decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texture_r8.sv`: R8 single-channel decoder (UNIT-011.04)
+- `rtl/components/texture/detail/block-decoder/src/texel_promote.sv`: UQ1.8 → Q4.12 texel promotion (UNIT-011.04)
+- `rtl/pkg/fp_types_pkg.sv`: Q4.12 type definitions and promotion functions (shared package)
 
-The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
+The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/`).
 The RTL must produce bit-identical results to the twin at the Q4.12 texel output level.
 
 ## Verification
@@ -167,7 +167,7 @@ The RTL must produce bit-identical results to the twin at the Q4.12 texel output
 Each sampler is an independent instance of the subunit stack (`texture_uv_coord.sv`, `texture_bilinear.sv`, `texture_cache_l1.sv`, `texture_block_decode.sv`, `texture_l2_cache.sv`) with its own L1 EBR banks, L2 EBR banks, tag arrays, valid bits, and fill FSMs.
 Inter-sampler contention occurs only at the shared arbiter port 3 when both samplers miss L2 simultaneously; the arbiter serves them in arrival order.
 
-**gs-twin is the authoritative algorithmic reference:** Before modifying texture RTL, read `components/texture/twin/` to understand the expected bit-accurate behavior.
+**gs-twin is the authoritative algorithmic reference:** Before modifying texture RTL, read `twin/components/texture/` to understand the expected bit-accurate behavior.
 Any pixel-level mismatch between RTL and twin output is a real bug in the RTL.
 
 **Format encoding:** `tex_format[3:0]` from TEXn_CFG selects the decode path.

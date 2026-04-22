@@ -20,10 +20,10 @@ You are an expert in FPGA verification using Verilator (simulation) and Yosys (s
 
 ## Responsibilities
 
-- Write and maintain Verilator C++ testbenches under `components/*/rtl/tests/`
-- Write and maintain integration testbenches under `integration/harness/`
+- Write and maintain Verilator C++ testbenches under `rtl/components/*/tests/`
+- Write and maintain integration testbenches under `rtl/tb/`
 - Verify RTL output matches digital twin output using shared `.hex` stimulus files
-- Run component-level tests: `cd components/<name>/rtl && make test` (or equivalent)
+- Run component-level tests: `cd rtl/components/<name> && make test` (or equivalent)
 - Run integration tests: `cd integration && make test`
 - Validate pipeline resource budgets: `python3 pipeline/validate.py`
 - Run synthesis checks when resource estimates change: `cd integration && make synth`

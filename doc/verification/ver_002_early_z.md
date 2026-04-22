@@ -16,8 +16,8 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 ## Preconditions
 
 - Verilator 5.x installed and available on `$PATH`.
-- `components/early-z/rtl/early_z.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `components/pixel-write/rtl/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (`early_z.sv` is a sub-module of UNIT-006 and shares its port declarations with the pipeline FSM).
+- `rtl/components/early-z/early_z.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `rtl/components/pixel-write/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (`early_z.sv` is a sub-module of UNIT-006 and shares its port declarations with the pipeline FSM).
   This precondition does not require the full pixel pipeline to be instantiated in the testbench; it ensures the interface definitions are consistent before isolating `early_z.sv` for unit testing.
 
 ## Procedure
@@ -77,7 +77,7 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 
 ## Test Implementation
 
-- `components/early-z/rtl/tests/tb_early_z.sv`: Verilator unit testbench for the `early_z.sv` module.
+- `rtl/components/early-z/tests/tb_early_z.sv`: Verilator unit testbench for the `early_z.sv` module.
   Drives fragment depth and Z-buffer inputs through the depth range clipper and Z comparison logic, checking `range_pass`, `z_test_pass`, and `z_bypass` outputs against expected values for all comparison functions, bypass conditions, and boundary cases.
 
 ## Notes

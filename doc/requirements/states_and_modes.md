@@ -21,7 +21,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** PLL achieves lock (typically 50-500ms after reset release)
 - **Capabilities:** None - all subsystems held in reset
 - **Restrictions:** No operation possible until PLL locks
-- **Source:** [components/core/rtl/pll_core.sv](../../components/core/rtl/pll_core.sv), [components/core/rtl/reset_sync.sv](../../components/core/rtl/reset_sync.sv)
+- **Source:** [rtl/rtl/components/core/pll_core.sv](../../rtl/rtl/components/core/pll_core.sv), [rtl/rtl/components/core/reset_sync.sv](../../rtl/rtl/components/core/reset_sync.sv)
 
 #### State: PLL Locked
 
@@ -30,7 +30,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** PLL loses lock (rare, indicates stability issue)
 - **Capabilities:** Normal system operation with synchronized reset release
 - **Restrictions:** None
-- **Source:** [components/core/rtl/reset_sync.sv:6-34](../../components/core/rtl/reset_sync.sv#L6-L34)
+- **Source:** [rtl/rtl/components/core/reset_sync.sv:6-34](../../rtl/rtl/components/core/reset_sync.sv#L6-L34)
 
 #### State: Boot Command Processing
 
@@ -53,7 +53,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Chip select (CS) asserted by host
 - **Capabilities:** Ready to receive new 72-bit transaction
 - **Restrictions:** No data transfer occurs
-- **Source:** [components/spi/rtl/spi_slave.sv:30-59](../../components/spi/rtl/spi_slave.sv#L30-L59)
+- **Source:** [rtl/components/spi/spi_slave.sv:30-59](../../rtl/components/spi/spi_slave.sv#L30-L59)
 
 #### State: Shifting In
 
@@ -62,7 +62,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** 72 bits received (bit_count reaches 71)
 - **Capabilities:** Serial-to-parallel conversion at SPI clock rate
 - **Restrictions:** Transaction incomplete until all bits received
-- **Source:** [components/spi/rtl/spi_slave.sv:30-59](../../components/spi/rtl/spi_slave.sv#L30-L59)
+- **Source:** [rtl/components/spi/spi_slave.sv:30-59](../../rtl/components/spi/spi_slave.sv#L30-L59)
 
 #### State: Transaction Complete
 
@@ -71,7 +71,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** CS deasserted or new transaction begins
 - **Capabilities:** transaction_done pulse triggers register write
 - **Restrictions:** Single-cycle pulse; must be captured by register file
-- **Source:** [components/spi/rtl/spi_slave.sv:82-95](../../components/spi/rtl/spi_slave.sv#L82-L95)
+- **Source:** [rtl/components/spi/spi_slave.sv:82-95](../../rtl/components/spi/spi_slave.sv#L82-L95)
 
 ### 3. Register File Vertex Submission States
 
@@ -82,7 +82,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** First ADDR_VERTEX write
 - **Capabilities:** Ready to latch first vertex data
 - **Restrictions:** tri_valid = 0 (no triangle output)
-- **Source:** [components/spi/rtl/register_file.sv:66-164](../../components/spi/rtl/register_file.sv#L66-L164)
+- **Source:** [rtl/components/spi/register_file.sv:66-164](../../rtl/components/spi/register_file.sv#L66-L164)
 
 #### State: Vertex Count 1
 
@@ -91,7 +91,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Second ADDR_VERTEX write
 - **Capabilities:** vertex_x[0], vertex_y[0], vertex_z[0], vertex_colors[0] stored
 - **Restrictions:** Triangle not yet valid
-- **Source:** [components/spi/rtl/register_file.sv:66-164](../../components/spi/rtl/register_file.sv#L66-L164)
+- **Source:** [rtl/components/spi/register_file.sv:66-164](../../rtl/components/spi/register_file.sv#L66-L164)
 
 #### State: Vertex Count 2
 
@@ -100,7 +100,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Third ADDR_VERTEX write (triggers triangle emission)
 - **Capabilities:** Two vertices stored; ready to emit complete triangle
 - **Restrictions:** Triangle not yet valid
-- **Source:** [components/spi/rtl/register_file.sv:66-164](../../components/spi/rtl/register_file.sv#L66-L164)
+- **Source:** [rtl/components/spi/register_file.sv:66-164](../../rtl/components/spi/register_file.sv#L66-L164)
 
 #### State: Triangle Emission
 
@@ -109,7 +109,7 @@ Host application states (RP2350 boot sequence, demo state machine, Core 1 render
 - **Exit Conditions:** Single-cycle pulse complete
 - **Capabilities:** All three vertices + inv_area output on tri_valid pulse
 - **Restrictions:** vertex_count resets to 0 immediately
-- **Source:** [components/spi/rtl/register_file.sv:138-164](../../components/spi/rtl/register_file.sv#L138-L164)
+- **Source:** [rtl/components/spi/register_file.sv:138-164](../../rtl/components/spi/register_file.sv#L138-L164)
 
 ### 4. SDRAM Controller States (8-State FSM)
 
@@ -126,7 +126,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Initialization sequence complete (~20,016 cycles at 100 MHz)
 - **Capabilities:** Executes: 200 us wait, PRECHARGE ALL, 2x AUTO REFRESH, LOAD MODE REGISTER (CL=3, burst length=1)
 - **Restrictions:** No memory access permitted; ready=0 throughout initialization
-- **Source:** [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv)
+- **Source:** [rtl/components/memory/sdram_controller.sv](../../rtl/components/memory/sdram_controller.sv)
 
 #### State: IDLE
 
@@ -135,7 +135,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** req asserted (burst_len determines single vs. sequential), or refresh timer expires
 - **Capabilities:** ready=1; latches address, write data, and burst_len; decomposes byte address into bank, row, and column
 - **Restrictions:** No memory access in progress; all banks precharged
-- **Source:** [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv)
+- **Source:** [rtl/components/memory/sdram_controller.sv](../../rtl/components/memory/sdram_controller.sv)
 
 #### State: ACTIVATE
 
@@ -184,7 +184,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** Always transitions to IDLE
 - **Capabilities:** ack pulsed high to signal completion; for sequential access, burst_done also asserted
 - **Restrictions:** Single-cycle state
-- **Source:** [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv)
+- **Source:** [rtl/components/memory/sdram_controller.sv](../../rtl/components/memory/sdram_controller.sv)
 
 ### 5. Display Controller Fetch States (3-State FSM)
 
@@ -195,7 +195,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** FIFO level < 32 words AND fetch_y < 480
 - **Capabilities:** Issues SDRAM request for current scanline
 - **Restrictions:** Prefetch threshold prevents underrun
-- **Source:** [components/display/rtl/display_controller.sv:82-168](../../components/display/rtl/display_controller.sv#L82-L168)
+- **Source:** [rtl/components/display/display_controller.sv:82-168](../../rtl/components/display/display_controller.sv#L82-L168)
 
 #### State: FETCH_WAIT_ACK
 
@@ -204,7 +204,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** sram_ack received
 - **Capabilities:** Prepares to store read data
 - **Restrictions:** Blocked until SDRAM controller responds
-- **Source:** [components/display/rtl/display_controller.sv:82-168](../../components/display/rtl/display_controller.sv#L82-L168)
+- **Source:** [rtl/components/display/display_controller.sv:82-168](../../rtl/components/display/display_controller.sv#L82-L168)
 
 #### State: FETCH_STORE
 
@@ -213,7 +213,7 @@ Sequential access reads or writes multiple 16-bit words within an active row, im
 - **Exit Conditions:** End of scanline or FIFO full
 - **Capabilities:** fifo_wr_en=1; increments fetch_addr and fetch_y
 - **Restrictions:** FIFO must have space (depth 1024 words ≈ 1.6 scanlines)
-- **Source:** [components/display/rtl/display_controller.sv:171](../../components/display/rtl/display_controller.sv#L171)
+- **Source:** [rtl/components/display/display_controller.sv:171](../../rtl/components/display/display_controller.sv#L171)
 
 ### 6. Render Pipeline States
 
@@ -231,7 +231,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Setup complete; first block coordinate emitted to Block Rasterize
 - **Capabilities:** Edge coefficients, bounding box min/max, attribute derivative computation (98-cycle latency, hidden behind pixel processing of previous triangle)
 - **Restrictions:** tri_ready=0 while setup FIFO is full (back-pressure from downstream)
-- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-005
+- **Source:** [rtl/components/rasterizer/rasterizer.sv](../../rtl/components/rasterizer/rasterizer.sv), UNIT-005
 
 #### 6.2 Block Rasterize
 
@@ -241,7 +241,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Block coordinate emitted to Hi-Z Test; advances to next tile in bounding box
 - **Capabilities:** 1-cycle latency per block; wraps scanlines at bbox boundary
 - **Restrictions:** Stalls if Hi-Z Test is not ready
-- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-005
+- **Source:** [rtl/components/rasterizer/rasterizer.sv](../../rtl/components/rasterizer/rasterizer.sv), UNIT-005
 
 #### 6.3 Hi-Z Test
 
@@ -251,7 +251,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** PASS → block proceeds to Fragment Rasterize; REJECT → block discarded, ready for next
 - **Capabilities:** Tag lookup + Z-range comparison; operates on block granularity
 - **Restrictions:** Metadata must be initialized (first write to a tile populates it)
-- **Source:** UNIT-005.06 (Hi-Z Block Metadata), [components/rasterizer/rtl/raster_hiz_meta.sv](../../components/rasterizer/rtl/src/raster_hiz_meta.sv)
+- **Source:** UNIT-005.06 (Hi-Z Block Metadata), [rtl/components/rasterizer/raster_hiz_meta.sv](../../rtl/components/rasterizer/src/raster_hiz_meta.sv)
 
 #### 6.4 Fragment Rasterize
 
@@ -261,7 +261,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Each surviving fragment is emitted to the Early Fragment Test stage with interpolated Z, color, and UV coordinates
 - **Capabilities:** 1–2 cycle latency per fragment; edge function evaluation uses incremental updates from block-level values
 - **Restrictions:** Stalls if Early Fragment Test is not ready
-- **Source:** [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv), UNIT-005
+- **Source:** [rtl/components/rasterizer/rasterizer.sv](../../rtl/components/rasterizer/rasterizer.sv), UNIT-005
 
 #### 6.5 Early Fragment Test (Stipple + Z-Bounds + Z-Cache)
 
@@ -276,7 +276,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Fragment survives all three tests → proceeds to Texture Sampling; any test fails → fragment killed
 - **Capabilities:** Parallel early rejection minimizes downstream work; Z-cache hit rate 85–95% typical
 - **Restrictions:** Stalls on Z-cache SDRAM miss (port 2); Z compare function is configurable (8 modes, see Section 4)
-- **Source:** [components/stipple/rtl/stipple.sv](../../components/stipple/rtl/stipple.sv), [components/early-z/rtl/early_z.sv](../../components/early-z/rtl/early_z.sv), UNIT-012
+- **Source:** [rtl/components/stipple/stipple.sv](../../rtl/components/stipple/stipple.sv), [rtl/components/early-z/early_z.sv](../../rtl/components/early-z/early_z.sv), UNIT-012
 
 #### 6.6 Texture Sampling
 
@@ -287,7 +287,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Filtered texel color(s) available; fragment proceeds to Color Combiner
 - **Capabilities:** 1 cycle on L1 hit; bilinear/trilinear filtering; block decompression on L2 hit
 - **Restrictions:** Variable latency — 8–40 cycles on SDRAM miss (L2 fill via port 1); stalls pipeline on miss
-- **Source:** [components/texture/rtl/src/texture_sampler.sv](../../components/texture/rtl/src/texture_sampler.sv), UNIT-011
+- **Source:** [rtl/components/texture/src/texture_sampler.sv](../../rtl/components/texture/src/texture_sampler.sv), UNIT-011
 
 #### 6.7 Color Combiner (3-Pass Time-Multiplexed)
 
@@ -302,7 +302,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Final combined color produced after 3 passes (3 cycles at 1 cycle/pass)
 - **Capabilities:** Programmable per-pass source selection; supports textured Gouraud, multi-texture, specular, fog, and alpha blending configurations
 - **Restrictions:** 3 cycles minimum per fragment; color tile buffer prefetch/flush amortized over 16 fragments per 4×4 block
-- **Source:** [components/color-combiner/rtl/color_combiner.sv](../../components/color-combiner/rtl/color_combiner.sv), UNIT-006
+- **Source:** [rtl/components/color-combiner/color_combiner.sv](../../rtl/components/color-combiner/color_combiner.sv), UNIT-006
 
 #### 6.8 Late Fragment Test + Output
 
@@ -315,7 +315,7 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 - **Exit Conditions:** Pixel written to tile buffer and Z-cache; fragment retired
 - **Capabilities:** Alpha test kill avoids unnecessary writes; tile buffer double-buffering hides SDRAM latency
 - **Restrictions:** Stalls if tile buffer flush is pending on SDRAM port 1
-- **Source:** [components/alpha-blend/rtl/alpha_blend.sv](../../components/alpha-blend/rtl/alpha_blend.sv), [components/dither/rtl/dither.sv](../../components/dither/rtl/dither.sv), [components/pixel-write/rtl/pixel_pipeline.sv](../../components/pixel-write/rtl/pixel_pipeline.sv), UNIT-007, UNIT-009
+- **Source:** [rtl/components/alpha-blend/alpha_blend.sv](../../rtl/components/alpha-blend/alpha_blend.sv), [rtl/components/dither/dither.sv](../../rtl/components/dither/dither.sv), [rtl/components/pixel-write/pixel_pipeline.sv](../../rtl/components/pixel-write/pixel_pipeline.sv), UNIT-007, UNIT-009
 
 ---
 
@@ -774,20 +774,20 @@ Dual-texture modes sample TEX0 and TEX1 sequentially through the shared sampler;
 ## References
 
 ### GPU RTL Sources
-- [components/core/rtl/reset_sync.sv](../../components/core/rtl/reset_sync.sv) — Reset synchronization
-- [components/spi/rtl/spi_slave.sv](../../components/spi/rtl/spi_slave.sv) — SPI transaction states
-- [components/spi/rtl/register_file.sv](../../components/spi/rtl/register_file.sv) — Vertex submission FSM
-- [components/utils/rtl/async_fifo.sv](../../components/utils/rtl/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
-- [components/memory/rtl/sdram_controller.sv](../../components/memory/rtl/sdram_controller.sv) — SDRAM 8-state FSM
-- [components/rasterizer/rtl/rasterizer.sv](../../components/rasterizer/rtl/rasterizer.sv) — Triangle setup, block rasterize, fragment rasterize
-- [components/stipple/rtl/stipple.sv](../../components/stipple/rtl/stipple.sv) — Stipple test
-- [components/early-z/rtl/early_z.sv](../../components/early-z/rtl/early_z.sv) — Early Z test (Z-cache comparison)
-- [components/texture/rtl/src/texture_sampler.sv](../../components/texture/rtl/src/texture_sampler.sv) — Texture sampling (L1/L2 cache, bilinear filter)
-- [components/color-combiner/rtl/color_combiner.sv](../../components/color-combiner/rtl/color_combiner.sv) — 3-pass color combiner
-- [components/alpha-blend/rtl/alpha_blend.sv](../../components/alpha-blend/rtl/alpha_blend.sv) — Alpha blending
-- [components/dither/rtl/dither.sv](../../components/dither/rtl/dither.sv) — Ordered dithering
-- [components/pixel-write/rtl/pixel_pipeline.sv](../../components/pixel-write/rtl/pixel_pipeline.sv) — Pixel output (tile buffer + Z-write)
-- [components/display/rtl/display_controller.sv](../../components/display/rtl/display_controller.sv) — Display fetch FSM
+- [rtl/rtl/components/core/reset_sync.sv](../../rtl/rtl/components/core/reset_sync.sv) — Reset synchronization
+- [rtl/components/spi/spi_slave.sv](../../rtl/components/spi/spi_slave.sv) — SPI transaction states
+- [rtl/components/spi/register_file.sv](../../rtl/components/spi/register_file.sv) — Vertex submission FSM
+- [rtl/rtl/components/utils/async_fifo.sv](../../rtl/rtl/components/utils/async_fifo.sv) — Command FIFO (soft FIFO with boot pre-population)
+- [rtl/components/memory/sdram_controller.sv](../../rtl/components/memory/sdram_controller.sv) — SDRAM 8-state FSM
+- [rtl/components/rasterizer/rasterizer.sv](../../rtl/components/rasterizer/rasterizer.sv) — Triangle setup, block rasterize, fragment rasterize
+- [rtl/components/stipple/stipple.sv](../../rtl/components/stipple/stipple.sv) — Stipple test
+- [rtl/components/early-z/early_z.sv](../../rtl/components/early-z/early_z.sv) — Early Z test (Z-cache comparison)
+- [rtl/components/texture/src/texture_sampler.sv](../../rtl/components/texture/src/texture_sampler.sv) — Texture sampling (L1/L2 cache, bilinear filter)
+- [rtl/components/color-combiner/color_combiner.sv](../../rtl/components/color-combiner/color_combiner.sv) — 3-pass color combiner
+- [rtl/components/alpha-blend/alpha_blend.sv](../../rtl/components/alpha-blend/alpha_blend.sv) — Alpha blending
+- [rtl/components/dither/dither.sv](../../rtl/components/dither/dither.sv) — Ordered dithering
+- [rtl/components/pixel-write/pixel_pipeline.sv](../../rtl/components/pixel-write/pixel_pipeline.sv) — Pixel output (tile buffer + Z-write)
+- [rtl/components/display/display_controller.sv](../../rtl/components/display/display_controller.sv) — Display fetch FSM
 
 ### Register Definitions
 - INT-010 (GPU Register Map) — authoritative register field definitions and addresses

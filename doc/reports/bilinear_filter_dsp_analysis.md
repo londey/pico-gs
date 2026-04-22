@@ -88,8 +88,8 @@ Weights are computed once per pixel and shared across all channels, so LUT cost 
 
 ## References
 
-- RTL: `components/texture/detail/bilinear-filter/rtl/src/texture_bilinear.sv`
-- Twin: `components/texture/detail/bilinear-filter/twin/src/lib.rs`
+- RTL: `rtl/components/texture/detail/bilinear-filter/src/texture_bilinear.sv`
+- Twin: `twin/components/texture/detail/bilinear-filter/src/lib.rs`
 - DSP precision report: `doc/reports/dsp_block_precision.md`
 - Resource constraints: `doc/requirements/req_011.02_resource_constraints.md`
 - ECP5 DSP guide: `.claude/skills/ecp5-sv-yosys-verilator/references/dsp_guide.md`

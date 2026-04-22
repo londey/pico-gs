@@ -80,7 +80,7 @@ Receives 72-bit SPI transactions and writes to register file
 
 ## Implementation
 
-- `components/spi/rtl/src/spi_slave.sv`: Main implementation
+- `rtl/components/spi/src/spi_slave.sv`: Main implementation
 
 ## Verification
 

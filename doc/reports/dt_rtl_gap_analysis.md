@@ -14,30 +14,30 @@ Below is the status of each link in the stall chain.
 ### 1.1 Rasterizer -> Pixel Pipeline: COMPLETE
 
 - `frag_valid`/`frag_ready` handshake at rasterizer output and pixel_pipeline input.
-- `frag_ready` is driven by pixel_pipeline when FSM is in `PP_IDLE` ([pixel_pipeline.sv:837](components/pixel-write/rtl/src/pixel_pipeline.sv#L837)).
+- `frag_ready` is driven by pixel_pipeline when FSM is in `PP_IDLE` ([pixel_pipeline.sv:837](rtl/components/pixel-write/src/pixel_pipeline.sv#L837)).
 - Rasterizer holds iteration when `frag_ready` is deasserted.
 
 ### 1.2 Texture Sampler Stall: IMPLICIT
 
-- On cache miss, pixel_pipeline FSM holds at `PP_TEX_LOOKUP` waiting for `tc_cache_ready` ([pixel_pipeline.sv:995](components/pixel-write/rtl/src/pixel_pipeline.sv#L995)).
+- On cache miss, pixel_pipeline FSM holds at `PP_TEX_LOOKUP` waiting for `tc_cache_ready` ([pixel_pipeline.sv:995](rtl/components/pixel-write/src/pixel_pipeline.sv#L995)).
 - While the FSM is stalled, `frag_ready` is deasserted (FSM not in `PP_IDLE`), so the rasterizer is implicitly back-pressured.
 - There is no dedicated "texture stall" signal — backpressure works through the FSM state machine.
 
 ### 1.3 Color Combiner Backpressure: COMPLETE
 
-- `out_ready` input to color_combiner is driven by pixel_pipeline's `cc_in_ready` output ([pixel_pipeline.sv:844](components/pixel-write/rtl/src/pixel_pipeline.sv#L844), [gpu_top.sv:1169](integration/gpu_top.sv#L1169), [gpu_top.sv:1345](integration/gpu_top.sv#L1345)).
-- `pipeline_enable = out_ready` gates all pipeline register advances ([color_combiner.sv:149](components/color-combiner/rtl/src/color_combiner.sv#L149)).
+- `out_ready` input to color_combiner is driven by pixel_pipeline's `cc_in_ready` output ([pixel_pipeline.sv:844](rtl/components/pixel-write/src/pixel_pipeline.sv#L844), [gpu_top.sv:1169](rtl/top/gpu_top.sv#L1169), [gpu_top.sv:1345](rtl/top/gpu_top.sv#L1345)).
+- `pipeline_enable = out_ready` gates all pipeline register advances ([color_combiner.sv:149](rtl/components/color-combiner/src/color_combiner.sv#L149)).
 - Pixel pipeline asserts `cc_in_ready` only when in `PP_CC_WAIT` state, preventing color combiner from advancing when pixel pipeline isn't ready.
 
 ### 1.4 Pixel Write -> SDRAM Arbiter: COMPLETE
 
-- `fb_ready` from sram_arbiter port 1 gates the `PP_WRITE` state ([pixel_pipeline.sv:942-957](components/pixel-write/rtl/src/pixel_pipeline.sv#L942)).
-- Arbiter drives `port1_ready` based on `mem_ready` from SDRAM controller ([gpu_top.sv:370-372](integration/gpu_top.sv#L370)).
+- `fb_ready` from sram_arbiter port 1 gates the `PP_WRITE` state ([pixel_pipeline.sv:942-957](rtl/components/pixel-write/src/pixel_pipeline.sv#L942)).
+- Arbiter drives `port1_ready` based on `mem_ready` from SDRAM controller ([gpu_top.sv:370-372](rtl/top/gpu_top.sv#L370)).
 
 ### 1.5 Z-Buffer Cache Stall: COMPLETE
 
-- `cache_ready` is deasserted during evict/fill/lazy-fill states ([zbuf_tile_cache.sv:628](components/zbuf/rtl/src/zbuf_tile_cache.sv#L628)).
-- Pixel pipeline `PP_Z_READ` and `PP_Z_WRITE` states gate on `zbuf_ready` ([pixel_pipeline.sv:889-894](components/pixel-write/rtl/src/pixel_pipeline.sv#L889)).
+- `cache_ready` is deasserted during evict/fill/lazy-fill states ([zbuf_tile_cache.sv:628](rtl/components/zbuf/src/zbuf_tile_cache.sv#L628)).
+- Pixel pipeline `PP_Z_READ` and `PP_Z_WRITE` states gate on `zbuf_ready` ([pixel_pipeline.sv:889-894](rtl/components/pixel-write/src/pixel_pipeline.sv#L889)).
 
 ### 1.6 Overall Stall Chain: COMPLETE
 

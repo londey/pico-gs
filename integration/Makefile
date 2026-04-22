@@ -7,50 +7,51 @@ DEVICE = 25k
 PACKAGE = CABGA256
 
 # Directories
-COMP_DIR = ../components
-SHARED_DIR = ../shared
+COMP_DIR = ../rtl/components
+PKG_DIR = ../rtl/pkg
+TOP_DIR = ../rtl/top
 BUILD_DIR = ../build/fpga
 OBJ_DIR = ../build/verilator
 SIM_OUT_DIR = ../build/sim_out
 CONSTRAINTS_DIR = ../constraints
-HARNESS_DIR = harness
+HARNESS_DIR = ../rtl/tb
 GOLDEN_DIR = golden
 SCRIPTS_DIR = scripts
 
 # Component RTL directories
-CORE_RTL = $(COMP_DIR)/core/rtl/src
-UTILS_RTL = $(COMP_DIR)/utils/rtl/src
-SPI_RTL = $(COMP_DIR)/spi/rtl/src
-REG_GEN = $(COMP_DIR)/registers/rtl/generated
-MEMORY_RTL = $(COMP_DIR)/memory/rtl/src
-DISPLAY_RTL = $(COMP_DIR)/display/rtl/src
-RASTER_RTL = $(COMP_DIR)/rasterizer/rtl/src
-STIPPLE_RTL = $(COMP_DIR)/stipple/rtl/src
-EARLYZ_RTL = $(COMP_DIR)/early-z/rtl/src
-TEXTURE_RTL     = $(COMP_DIR)/texture/rtl/src
-TEXTURE_UV_RTL     = $(COMP_DIR)/texture/detail/uv-coord/rtl/src
-TEXTURE_UV_TB_DIR  = $(COMP_DIR)/texture/detail/uv-coord/rtl/tests
+CORE_RTL = $(COMP_DIR)/core/src
+UTILS_RTL = $(COMP_DIR)/utils/src
+SPI_RTL = $(COMP_DIR)/spi/src
+REG_GEN = $(COMP_DIR)/registers/generated
+MEMORY_RTL = $(COMP_DIR)/memory/src
+DISPLAY_RTL = $(COMP_DIR)/display/src
+RASTER_RTL = $(COMP_DIR)/rasterizer/src
+STIPPLE_RTL = $(COMP_DIR)/stipple/src
+EARLYZ_RTL = $(COMP_DIR)/early-z/src
+TEXTURE_RTL     = $(COMP_DIR)/texture/src
+TEXTURE_UV_RTL     = $(COMP_DIR)/texture/detail/uv-coord/src
+TEXTURE_UV_TB_DIR  = $(COMP_DIR)/texture/detail/uv-coord/tests
 TEXTURE_UV_VEC_DIR = $(TEXTURE_UV_TB_DIR)/vectors
-TEXTURE_BLN_RTL    = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/src
-TEXTURE_BLN_TB_DIR = $(COMP_DIR)/texture/detail/bilinear-filter/rtl/tests
+TEXTURE_BLN_RTL    = $(COMP_DIR)/texture/detail/bilinear-filter/src
+TEXTURE_BLN_TB_DIR = $(COMP_DIR)/texture/detail/bilinear-filter/tests
 TEXTURE_BLN_VEC_DIR = $(TEXTURE_BLN_TB_DIR)/vectors
-TEXTURE_L1_RTL     = $(COMP_DIR)/texture/detail/l1-cache/rtl/src
-TEXTURE_L1_TB_DIR  = $(COMP_DIR)/texture/detail/l1-cache/rtl/tests
+TEXTURE_L1_RTL     = $(COMP_DIR)/texture/detail/l1-cache/src
+TEXTURE_L1_TB_DIR  = $(COMP_DIR)/texture/detail/l1-cache/tests
 TEXTURE_L1_VEC_DIR = $(TEXTURE_L1_TB_DIR)/vectors
-TEXTURE_DEC_RTL     = $(COMP_DIR)/texture/detail/block-decoder/rtl/src
+TEXTURE_DEC_RTL     = $(COMP_DIR)/texture/detail/block-decoder/src
 TEXTURE_DEC_VEC_DIR = $(TEXTURE_DEC_TESTS)/vectors
-TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/rtl/src
-CC_RTL = $(COMP_DIR)/color-combiner/rtl/src
-CC_TB_DIR = $(COMP_DIR)/color-combiner/rtl/tests
+TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/src
+CC_RTL = $(COMP_DIR)/color-combiner/src
+CC_TB_DIR = $(COMP_DIR)/color-combiner/tests
 CC_VEC_DIR = $(CC_TB_DIR)/vectors
 # ABLEND_RTL removed — alpha_blend.sv deprecated (blend now via CC pass 2)
-DITHER_RTL = $(COMP_DIR)/dither/rtl/src
-PXWRITE_RTL = $(COMP_DIR)/pixel-write/rtl/src
-ZBUF_RTL    = $(COMP_DIR)/zbuf/rtl/src
+DITHER_RTL = $(COMP_DIR)/dither/src
+PXWRITE_RTL = $(COMP_DIR)/pixel-write/src
+ZBUF_RTL    = $(COMP_DIR)/zbuf/src
 
 # Source files
 RTL_SOURCES = \
-	gpu_top.sv \
+	$(TOP_DIR)/gpu_top.sv \
 	$(CORE_RTL)/pll_core.sv \
 	$(CORE_RTL)/reset_sync.sv \
 	$(SPI_RTL)/spi_slave.sv \
@@ -64,7 +65,7 @@ RTL_SOURCES = \
 	$(DISPLAY_RTL)/tmds_encoder.sv \
 	$(DISPLAY_RTL)/dvi_output.sv \
 	$(DISPLAY_RTL)/display_controller.sv \
-	$(SHARED_DIR)/fp_types_pkg.sv \
+	$(PKG_DIR)/fp_types_pkg.sv \
 	$(RASTER_RTL)/rasterizer.sv \
 	$(RASTER_RTL)/raster_dsp_mul.sv \
 	$(RASTER_RTL)/raster_shift_mul_47x11.sv \
@@ -207,7 +208,7 @@ program: bitstream
 test-async-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/async_fifo.sv \
-		$(COMP_DIR)/utils/rtl/tests/tb_async_fifo.sv \
+		$(COMP_DIR)/utils/tests/tb_async_fifo.sv \
 		--top-module tb_async_fifo -o tb_async_fifo
 	$(OBJ_DIR)/tb_async_fifo
 
@@ -216,7 +217,7 @@ test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/async_fifo.sv \
 		$(SPI_RTL)/command_fifo.sv \
-		$(COMP_DIR)/spi/rtl/tests/tb_command_fifo.sv \
+		$(COMP_DIR)/spi/tests/tb_command_fifo.sv \
 		--top-module tb_command_fifo -o tb_command_fifo
 	$(OBJ_DIR)/tb_command_fifo
 
@@ -224,7 +225,7 @@ test-command-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/sync_fifo.sv \
-		$(COMP_DIR)/utils/rtl/tests/tb_sync_fifo.sv \
+		$(COMP_DIR)/utils/tests/tb_sync_fifo.sv \
 		--top-module tb_sync_fifo -o tb_sync_fifo
 	$(OBJ_DIR)/tb_sync_fifo
 
@@ -232,7 +233,7 @@ test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-l2-cache: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
-		$(COMP_DIR)/texture/detail/l2-cache/rtl/tests/tb_texture_l2_cache.sv \
+		$(COMP_DIR)/texture/detail/l2-cache/tests/tb_texture_l2_cache.sv \
 		--top-module tb_texture_l2_cache -o tb_texture_l2_cache
 	$(OBJ_DIR)/tb_texture_l2_cache
 
@@ -240,7 +241,7 @@ test-l2-cache: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(MEMORY_RTL)/sdram_controller.sv \
-		$(COMP_DIR)/memory/rtl/tests/tb_sdram_controller.sv \
+		$(COMP_DIR)/memory/tests/tb_sdram_controller.sv \
 		--top-module tb_sdram_controller -o tb_sdram_controller
 	$(OBJ_DIR)/tb_sdram_controller
 
@@ -250,7 +251,7 @@ test-sram-arbiter: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(MEMORY_RTL)/sdram_controller.sv \
 		$(MEMORY_RTL)/sram_arbiter.sv \
 		$(MEMORY_RTL)/mem_dma.sv \
-		$(COMP_DIR)/memory/rtl/tests/tb_sram_arbiter.sv \
+		$(COMP_DIR)/memory/tests/tb_sram_arbiter.sv \
 		--top-module tb_sram_arbiter -o tb_sram_arbiter
 	$(OBJ_DIR)/tb_sram_arbiter
 
@@ -259,14 +260,14 @@ test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(UTILS_RTL)/sync_fifo.sv \
 		$(DISPLAY_RTL)/display_controller.sv \
-		$(COMP_DIR)/display/rtl/tests/tb_display_burst.sv \
+		$(COMP_DIR)/display/tests/tb_display_burst.sv \
 		--top-module tb_display_burst -o tb_display_burst
 	$(OBJ_DIR)/tb_display_burst
 
 # Texture cache burst testbench (cache fill via burst SRAM reads)
 test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
@@ -284,7 +285,7 @@ test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 		$(TEXTURE_RTL)/texture_sampler.sv \
-		$(COMP_DIR)/texture/rtl/tests/tb_texture_cache_burst.sv \
+		$(COMP_DIR)/texture/tests/tb_texture_cache_burst.sv \
 		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
 	$(OBJ_DIR)/tb_texture_cache_burst
 
@@ -294,7 +295,7 @@ test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(MEMORY_RTL)/sdram_controller.sv \
 		$(MEMORY_RTL)/sram_arbiter.sv \
 		$(MEMORY_RTL)/mem_dma.sv \
-		$(COMP_DIR)/memory/rtl/tests/tb_burst_integration.sv \
+		$(COMP_DIR)/memory/tests/tb_burst_integration.sv \
 		--top-module tb_burst_integration -o tb_burst_integration
 	$(OBJ_DIR)/tb_burst_integration
 
@@ -305,23 +306,23 @@ test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-
 test-register-file-v10: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SPI_RTL)/register_file.sv \
-		$(COMP_DIR)/spi/rtl/tests/register_file_v10_tb.sv \
+		$(COMP_DIR)/spi/tests/register_file_v10_tb.sv \
 		--top-module register_file_v10_tb -o tb_register_file_v10
 	$(OBJ_DIR)/tb_register_file_v10
 
 # VER-004: Color combiner unit testbench (deferred: UNIT-010 WIP)
 test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(CC_RTL)/color_combiner.sv \
-		$(COMP_DIR)/color-combiner/rtl/tests/color_combiner_tb.sv \
+		$(COMP_DIR)/color-combiner/tests/color_combiner_tb.sv \
 		--top-module color_combiner_tb -o tb_color_combiner
 	$(OBJ_DIR)/tb_color_combiner
 
 # VER-005: Texture decoder unit testbench
 test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
@@ -333,16 +334,16 @@ test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		$(STIPPLE_RTL)/stipple.sv \
-		$(COMP_DIR)/texture/rtl/tests/texture_decoder_tb.sv \
+		$(COMP_DIR)/texture/tests/texture_decoder_tb.sv \
 		--top-module texture_decoder_tb -o tb_texture_decoder
 	$(OBJ_DIR)/tb_texture_decoder
 
 # Block decoder per-module testbenches
-TEXTURE_DEC_TESTS = $(COMP_DIR)/texture/detail/block-decoder/rtl/tests
+TEXTURE_DEC_TESTS = $(COMP_DIR)/texture/detail/block-decoder/tests
 
 test-bc-color-block: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_TESTS)/tb_bc_color_block.sv \
 		--top-module tb_bc_color_block -o tb_bc_color_block
@@ -357,7 +358,7 @@ test-bc-alpha-block: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-bc1: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texture_bc1.sv \
@@ -366,7 +367,7 @@ test-bc1: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-bc2: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texture_bc2.sv \
@@ -375,7 +376,7 @@ test-bc2: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-bc3: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
@@ -385,7 +386,7 @@ test-bc3: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-bc4: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texture_bc4.sv \
@@ -394,7 +395,7 @@ test-bc4: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-r8: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texture_r8.sv \
 		--top-module tb_texture_r8 -o tb_texture_r8
@@ -402,7 +403,7 @@ test-r8: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-rgb565: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texture_rgb565.sv \
 		--top-module tb_texture_rgb565 -o tb_texture_rgb565
@@ -410,7 +411,7 @@ test-rgb565: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-rgba8888: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texture_rgba8888.sv \
 		--top-module tb_texture_rgba8888 -o tb_texture_rgba8888
@@ -418,7 +419,7 @@ test-rgba8888: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-block-decode: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
@@ -435,7 +436,7 @@ test-block-decode: | $(OBJ_DIR) $(SIM_OUT_DIR)
 
 test-texel-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		$(TEXTURE_DEC_TESTS)/tb_texel_promote.sv \
 		--top-module tb_texel_promote -o tb_texel_promote
@@ -454,7 +455,7 @@ test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
 		$(RASTER_RTL)/raster_deriv.sv \
-		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_deriv.sv \
+		$(COMP_DIR)/rasterizer/tests/tb_raster_deriv.sv \
 		--top-module tb_raster_deriv -o tb_raster_deriv
 	$(OBJ_DIR)/tb_raster_deriv
 
@@ -462,7 +463,7 @@ test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RASTER_RTL)/raster_edge_walk.sv \
-		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_edge_walk.sv \
+		$(COMP_DIR)/rasterizer/tests/tb_raster_edge_walk.sv \
 		--top-module tb_raster_edge_walk -o tb_raster_edge_walk
 	$(OBJ_DIR)/tb_raster_edge_walk
 
@@ -470,15 +471,15 @@ test-raster-edge-walk: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-raster-attr-accum: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(RASTER_RTL)/raster_attr_accum.sv \
-		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_attr_accum.sv \
+		$(COMP_DIR)/rasterizer/tests/tb_raster_attr_accum.sv \
 		--top-module tb_raster_attr_accum -o tb_raster_attr_accum
 	$(OBJ_DIR)/tb_raster_attr_accum
 
 # ── DT-verified rasterizer testbenches ────────────────────────────────────
 # Generate test vectors from digital twin, then run RTL against them.
 
-RASTER_VEC_DIR = $(COMP_DIR)/rasterizer/rtl/tests/vectors
-RASTER_TB_DIR  = $(COMP_DIR)/rasterizer/rtl/tests
+RASTER_VEC_DIR = $(COMP_DIR)/rasterizer/tests/vectors
+RASTER_TB_DIR  = $(COMP_DIR)/rasterizer/tests
 
 # Generate hex test vectors from the digital twin
 gen-raster-vectors:
@@ -540,7 +541,7 @@ test-attr-accum-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 VERILATOR_NOTRACE_FLAGS = --binary -Wall -Wno-fatal --assert --timing -j 0 --Mdir $(OBJ_DIR)
 test-raster-frag-uv-dt: gen-raster-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_NOTRACE_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(RASTER_RTL)/raster_dsp_mul.sv \
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
@@ -563,7 +564,7 @@ gen-edge-walk-vectors:
 # DT-verified: edge walk fragment comparison (tile traversal, Hi-Z rejection)
 test-raster-edge-walk-dt: gen-edge-walk-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_NOTRACE_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(RASTER_RTL)/raster_dsp_mul.sv \
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
@@ -637,7 +638,7 @@ gen-l1-mirror-vectors:
 # DT-verified: L1 cache wrap mode
 test-l1-wrap-dt: gen-l1-wrap-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
@@ -658,7 +659,7 @@ test-l1-wrap-dt: gen-l1-wrap-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 # DT-verified: L1 cache mirror mode
 test-l1-mirror-dt: gen-l1-mirror-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
@@ -683,7 +684,7 @@ gen-block-decode-vectors:
 # DT-verified: block decoder (all formats)
 test-block-decode-dt: gen-block-decode-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
@@ -709,7 +710,7 @@ gen-cc-vectors:
 # DT-verified color combiner testbench
 test-cc-dt: gen-cc-vectors | $(OBJ_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(CC_RTL)/color_combiner.sv \
 		$(CC_TB_DIR)/tb_cc_dt.sv \
 		--top-module tb_cc_dt -o tb_cc_dt
@@ -722,7 +723,7 @@ test-cc-dt-all: test-cc-dt
 # VER-001: Rasterizer unit testbench
 test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(RASTER_RTL)/raster_dsp_mul.sv \
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
@@ -734,7 +735,7 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_setup_fifo.sv \
 		$(RASTER_RTL)/raster_hiz_meta.sv \
 		$(RASTER_RTL)/rasterizer.sv \
-		$(COMP_DIR)/rasterizer/rtl/tests/tb_rasterizer.sv \
+		$(COMP_DIR)/rasterizer/tests/tb_rasterizer.sv \
 		--top-module tb_rasterizer -o tb_rasterizer
 	$(OBJ_DIR)/tb_rasterizer
 
@@ -743,7 +744,7 @@ test-rasterizer: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) --cc --exe --build -f verilator.f \
 		--Mdir $(OBJ_DIR)/raster_viz \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(RASTER_RTL)/raster_dsp_mul.sv \
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
@@ -756,7 +757,7 @@ test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(RASTER_RTL)/raster_hiz_meta.sv \
 		$(RASTER_RTL)/rasterizer.sv \
 		--top-module rasterizer \
-		$(COMP_DIR)/rasterizer/rtl/tests/tb_raster_viz.cpp \
+		$(COMP_DIR)/rasterizer/tests/tb_raster_viz.cpp \
 		-CFLAGS "-std=c++20 -I$(abspath $(HARNESS_DIR))" \
 		-o tb_raster_viz
 	$(OBJ_DIR)/raster_viz/tb_raster_viz
@@ -765,7 +766,7 @@ test-raster-viz: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(EARLYZ_RTL)/early_z.sv \
-		$(COMP_DIR)/early-z/rtl/tests/tb_early_z.sv \
+		$(COMP_DIR)/early-z/tests/tb_early_z.sv \
 		--top-module tb_early_z -o tb_early_z
 	$(OBJ_DIR)/tb_early_z
 
@@ -773,17 +774,17 @@ test-early-z: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-fb-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(PXWRITE_RTL)/fb_promote.sv \
-		$(COMP_DIR)/pixel-write/rtl/tests/tb_fb_promote.sv \
+		$(COMP_DIR)/pixel-write/tests/tb_fb_promote.sv \
 		--top-module tb_fb_promote -o tb_fb_promote
 	$(OBJ_DIR)/tb_fb_promote
 
 # Uninit flag EBR testbench (UNIT-006: lazy-fill flag tracking)
 test-zbuf-uninit: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(ZBUF_RTL)/zbuf_tag_bram.sv \
 		$(ZBUF_RTL)/zbuf_tile_cache.sv \
-		$(COMP_DIR)/zbuf/rtl/tests/tb_zbuf_uninit_flags.sv \
+		$(COMP_DIR)/zbuf/tests/tb_zbuf_uninit_flags.sv \
 		--top-module tb_zbuf_uninit_flags -o tb_zbuf_uninit_flags
 	$(OBJ_DIR)/tb_zbuf_uninit_flags
 
@@ -794,7 +795,7 @@ test-zbuf-uninit: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(DITHER_RTL)/dither.sv \
-		$(COMP_DIR)/dither/rtl/tests/tb_dither.sv \
+		$(COMP_DIR)/dither/tests/tb_dither.sv \
 		--top-module tb_dither -o tb_dither
 	$(OBJ_DIR)/tb_dither
 
@@ -802,7 +803,7 @@ test-dither: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-stipple: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(STIPPLE_RTL)/stipple.sv \
-		$(COMP_DIR)/stipple/rtl/tests/tb_stipple.sv \
+		$(COMP_DIR)/stipple/tests/tb_stipple.sv \
 		--top-module tb_stipple -o tb_stipple
 	$(OBJ_DIR)/tb_stipple
 
@@ -810,7 +811,7 @@ test-stipple: | $(OBJ_DIR) $(SIM_OUT_DIR)
 test-register-file: test-register-file-v10 | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) \
 		$(SPI_RTL)/register_file.sv \
-		$(COMP_DIR)/spi/rtl/tests/tb_register_file.sv \
+		$(COMP_DIR)/spi/tests/tb_register_file.sv \
 		--top-module tb_register_file -o tb_register_file
 	$(OBJ_DIR)/tb_register_file
 
@@ -979,7 +980,7 @@ lint-memory:
 # sync_fifo), dvi_output.sv (instantiates tmds_encoder), pixel_pipeline.sv
 # (instantiates sub-modules).
 LEAF_LINT_FILES = \
-	$(SHARED_DIR)/fp_types_pkg.sv \
+	$(PKG_DIR)/fp_types_pkg.sv \
 	$(CORE_RTL)/reset_sync.sv \
 	$(SPI_RTL)/spi_slave.sv \
 	$(SPI_RTL)/register_file.sv \
@@ -1036,17 +1037,17 @@ lint:
 		--top-module dvi_output 2>&1 || fail=1; \
 	echo "Linting color_combiner.sv (with fp_types_pkg)..."; \
 	$(VERILATOR) --lint-only -Wall \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(CC_RTL)/color_combiner.sv \
 		--top-module color_combiner 2>&1 || fail=1; \
 	echo "Linting texel_promote.sv (with fp_types_pkg)..."; \
 	$(VERILATOR) --lint-only -Wall \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
 		--top-module texel_promote 2>&1 || fail=1; \
 	echo "Linting block decoders (with fp_types_pkg, shared modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
 		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
 		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
@@ -1066,7 +1067,7 @@ lint:
 		--top-module texture_sampler 2>&1 || fail=1; \
 	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_area, raster_recip_q, raster_setup_fifo, raster_hiz_meta)..."; \
 	$(VERILATOR) --lint-only -Wall \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(RASTER_RTL)/raster_dsp_mul.sv \
 		$(RASTER_RTL)/raster_shift_mul_47x11.sv \
 		$(RASTER_RTL)/raster_shift_mul_32x11.sv \
@@ -1081,7 +1082,7 @@ lint:
 		--top-module rasterizer 2>&1 || fail=1; \
 	echo "Linting pixel_pipeline.sv (with sub-modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
-		$(SHARED_DIR)/fp_types_pkg.sv \
+		$(PKG_DIR)/fp_types_pkg.sv \
 		$(EARLYZ_RTL)/early_z.sv \
 		$(STIPPLE_RTL)/stipple.sv \
 		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
@@ -1123,7 +1124,7 @@ HARNESS_SOURCES = \
 # Same as RTL_SOURCES but with pll_core_sim.sv (passthrough stub) replacing
 # pll_core.sv (ECP5 EHXPLLL vendor primitive that Verilator cannot simulate).
 HARNESS_RTL_SOURCES = \
-	gpu_top.sv \
+	$(TOP_DIR)/gpu_top.sv \
 	$(CORE_RTL)/pll_core_sim.sv \
 	$(CORE_RTL)/reset_sync.sv \
 	$(SPI_RTL)/spi_slave.sv \
@@ -1137,7 +1138,7 @@ HARNESS_RTL_SOURCES = \
 	$(DISPLAY_RTL)/tmds_encoder.sv \
 	$(DISPLAY_RTL)/dvi_output.sv \
 	$(DISPLAY_RTL)/display_controller.sv \
-	$(SHARED_DIR)/fp_types_pkg.sv \
+	$(PKG_DIR)/fp_types_pkg.sv \
 	$(RASTER_RTL)/rasterizer.sv \
 	$(RASTER_RTL)/raster_dsp_mul.sv \
 	$(RASTER_RTL)/raster_shift_mul_47x11.sv \
@@ -1223,7 +1224,7 @@ SIM_SOURCES = $(SIM_DIR)/gpu_sim.cpp $(SIM_DIR)/sdram_model_sim.cpp
 # Same as HARNESS_RTL_SOURCES but WITHOUT dvi_output.sv and tmds_encoder.sv
 # (UNIT-009). Uses pll_core_sim.sv (passthrough stub) instead of pll_core.sv.
 SIM_RTL_SOURCES = \
-	gpu_top.sv \
+	$(TOP_DIR)/gpu_top.sv \
 	$(CORE_RTL)/pll_core_sim.sv \
 	$(CORE_RTL)/reset_sync.sv \
 	$(SPI_RTL)/spi_slave.sv \
@@ -1235,7 +1236,7 @@ SIM_RTL_SOURCES = \
 	$(MEMORY_RTL)/mem_dma.sv \
 	$(DISPLAY_RTL)/timing_generator.sv \
 	$(DISPLAY_RTL)/display_controller.sv \
-	$(SHARED_DIR)/fp_types_pkg.sv \
+	$(PKG_DIR)/fp_types_pkg.sv \
 	$(RASTER_RTL)/rasterizer.sv \
 	$(RASTER_RTL)/raster_dsp_mul.sv \
 	$(RASTER_RTL)/raster_shift_mul_47x11.sv \

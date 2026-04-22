@@ -30,16 +30,16 @@ This report investigates using ECP5 DP16KD block RAM to store per-tile metadata 
 ### Sources Examined
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) --- EBR budget table (line 325), SDRAM specs (line 266), Z-cache design (line 299)
-- [gpu_regs.rdl](../../components/registers/rdl/gpu_regs.rdl) --- MEM_FILL register definition
+- [gpu_regs.rdl](../../rtl/components/registers/rdl/gpu_regs.rdl) --- MEM_FILL register definition
 - [int_010_gpu_register_map.md](../interfaces/int_010_gpu_register_map.md) --- Register map, Z format (line 319)
 - [int_011_sram_memory_layout.md](../interfaces/int_011_sram_memory_layout.md) --- Tiled addressing, Z-buffer layout (line 219)
-- [early_z.sv](../../components/early-z/rtl/early_z.sv) --- Combinational Z compare + depth range clip
-- [components/early-z/twin/src/lib.rs](../../components/early-z/twin/src/lib.rs) --- Authoritative Z-test algorithm
-- [components/memory/twin/src/lib.rs](../../components/memory/twin/src/lib.rs) --- Memory model, tiled addressing, MEM_FILL
+- [early_z.sv](../../rtl/components/early-z/early_z.sv) --- Combinational Z compare + depth range clip
+- [twin/twin/components/early-z/src/lib.rs](../../components/early-z/src/lib.rs) --- Authoritative Z-test algorithm
+- [twin/twin/components/memory/src/lib.rs](../../components/memory/src/lib.rs) --- Memory model, tiled addressing, MEM_FILL
 - [integration/gs-twin/src/lib.rs](../../integration/gs-twin/src/lib.rs) --- Pipeline orchestrator, deferred Z write
 - [doc/verification/test_strategy.md](../verification/test_strategy.md) --- Reverse-Z convention (line 29)
-- [raster_edge_walk.sv](../../components/rasterizer/rtl/raster_edge_walk.sv) --- Two-level tile/fragment FSM
-- [rasterize.rs](../../components/rasterizer/twin/src/rasterize.rs) --- Twin rasterizer with tile-row / tile-pixel hierarchy
+- [raster_edge_walk.sv](../../rtl/components/rasterizer/raster_edge_walk.sv) --- Two-level tile/fragment FSM
+- [rasterize.rs](../../twin/components/rasterizer/src/rasterize.rs) --- Twin rasterizer with tile-row / tile-pixel hierarchy
 - [.claude/skills/ecp5-sv-yosys-verilator/references/ecp5_bram_guide.md](../../.claude/skills/ecp5-sv-yosys-verilator/references/ecp5_bram_guide.md) --- DP16KD width modes
 
 ## Findings
@@ -354,7 +354,7 @@ By using DATA_WIDTH=36 mode and packing 4 x 9-bit entries per word, each DP16KD'
 
 ### 8. Digital Twin Modeling
 
-The gs-twin currently models Z-buffer operations as direct SDRAM reads/writes through `GpuMemory` ([components/memory/twin/src/lib.rs](../../components/memory/twin/src/lib.rs)).
+The gs-twin currently models Z-buffer operations as direct SDRAM reads/writes through `GpuMemory` ([twin/twin/components/memory/src/lib.rs](../../components/memory/src/lib.rs)).
 The rasterizer twin (`rasterize.rs`) walks tiles in `scan_tile_row()`, then iterates pixels within accepted tiles via `init_tile_pixels()`.
 There is no cache model --- the twin is transaction-level, not cycle-accurate.
 

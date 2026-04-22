@@ -93,7 +93,7 @@ Output PNG: `build/dt_out/ver_024_alpha_blend.png`.
 - `integration/scripts/ver_024_alpha_blend.hex` — register-write hex script (configures blend via RENDER_MODE.ALPHA_BLEND; CC pass 2 equation template is selected internally by UNIT-010 based on this field).
 - `integration/gs-twin/tests/integration.rs` — `ver_024_alpha_blend` test function.
 - `integration/golden/ver_024_alpha_blend.png` — approved golden image (must be re-approved after CC pass 2 implementation).
-- `components/color-combiner/twin/src/lib.rs` — `gs-color-combiner` digital twin crate (authoritative blend algorithm via CC pass 2 / DST_COLOR source).
+- `twin/components/color-combiner/src/lib.rs` — `gs-color-combiner` digital twin crate (authoritative blend algorithm via CC pass 2 / DST_COLOR source).
 
 ## Notes
 

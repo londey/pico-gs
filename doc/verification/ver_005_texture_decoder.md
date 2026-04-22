@@ -21,14 +21,14 @@ The testbench drives known input data through each texture format decoder and th
 
 - Verilator 5.x installed and available on `$PATH`.
 - The following RTL source files compile without errors under `verilator --lint-only -Wall`:
-  - `components/texture/detail/block-decoder/rtl/texture_rgb565.sv`
-  - `components/texture/detail/block-decoder/rtl/texture_rgba8888.sv`
-  - `components/texture/detail/block-decoder/rtl/texture_r8.sv`
-  - `components/texture/detail/block-decoder/rtl/texture_bc2.sv`
-  - `components/texture/detail/block-decoder/rtl/texture_bc3.sv`
-  - `components/texture/detail/block-decoder/rtl/texture_bc4.sv`
-  - `components/texture/detail/block-decoder/rtl/texel_promote.sv`
-  - `components/stipple/rtl/stipple.sv`
+  - `rtl/components/texture/detail/block-decoder/texture_rgb565.sv`
+  - `rtl/components/texture/detail/block-decoder/texture_rgba8888.sv`
+  - `rtl/components/texture/detail/block-decoder/texture_r8.sv`
+  - `rtl/components/texture/detail/block-decoder/texture_bc2.sv`
+  - `rtl/components/texture/detail/block-decoder/texture_bc3.sv`
+  - `rtl/components/texture/detail/block-decoder/texture_bc4.sv`
+  - `rtl/components/texture/detail/block-decoder/texel_promote.sv`
+  - `rtl/components/stipple/stipple.sv`
 - Test vector data is embedded directly in the testbench source (no external vector files required).
 
 ## Procedure
@@ -120,14 +120,14 @@ The testbench drives known input data through each texture format decoder and th
 
 ## Test Implementation
 
-- `components/texture/rtl/tests/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
+- `rtl/components/texture/tests/texture_decoder_tb.sv`: Verilator unit testbench covering the RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5, texel_promote, stipple, and format-select mux.
   Instantiates each decoder as a separate DUT plus the format-select mux, drives known input block data with specific texel indices, and checks output values (UQ1.8 format) against expected constants.
   Uses embedded test vectors (no external file dependencies).
 
 ## Notes
 
 - See INT-032 (Texture Cache Architecture) for the UQ1.8 format definition, conversion tables from each source format, the Q4.12 promotion formula, and the 4-bit `tex_format` encoding table.
-  The `fp_types_pkg.sv` package (`shared/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the INT-032 formula in RTL.
+  The `fp_types_pkg.sv` package (`rtl/pkg/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the INT-032 formula in RTL.
   If Step 4 promotion output differs from the INT-032 formula, verify the `fp_types_pkg.sv` function implementation against INT-032 before updating test vectors.
 - `texel_promote.sv` belongs to UNIT-011.04 (Block Decompressor); it implements the UQ1.8 → Q4.12 promotion step that forms the output contract of UNIT-011.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.

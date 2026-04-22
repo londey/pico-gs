@@ -10,30 +10,32 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the GPU pipeline architecture, block 
 
 ```text
 pico-gs/
-├── components/           # Component-centric layout (RTL + digital twin per component)
-│   ├── rasterizer/       # Triangle setup + iteration
-│   ├── stipple/          # Stipple test
-│   ├── early-z/          # Early depth test
-│   ├── texture/          # Texture sampling + decoding (with detail sub-crates)
-│   ├── color-combiner/   # Two-stage color combiner
-│   ├── alpha-blend/      # Alpha blending
-│   ├── dither/           # Ordered dithering
-│   ├── pixel-write/      # Framebuffer write
-│   ├── zbuf/             # Z-buffer tile cache
-│   ├── memory/           # SDRAM + SRAM controllers
-│   ├── display/          # Scan-out / DVI output
-│   ├── spi/              # SPI transport + register file
-│   ├── registers/        # GPU register interface (SystemRDL source of truth)
-│   ├── core/             # PLL, reset (RTL only)
-│   └── utils/            # FIFOs (RTL only)
+├── rtl/                  # SystemVerilog RTL
+│   ├── pkg/              # Shared SV packages (fp_types_pkg.sv)
+│   ├── top/gpu_top.sv    # Top-level RTL module
+│   ├── tb/               # C++ Verilator integration-level testbench (harness, sdram model)
+│   └── components/       # Per-component RTL (one subdir each)
+│       ├── rasterizer/   # Triangle setup + iteration
+│       ├── stipple/      # Stipple test
+│       ├── early-z/      # Early depth test
+│       ├── texture/      # Texture sampling + decoding (with detail/ subunits)
+│       ├── color-combiner/
+│       ├── dither/
+│       ├── pixel-write/  # Framebuffer write
+│       ├── zbuf/         # Z-buffer tile cache
+│       ├── memory/       # SDRAM + SRAM controllers
+│       ├── display/      # Scan-out / DVI output
+│       ├── spi/          # SPI transport + register file
+│       ├── registers/    # GPU register interface (SystemRDL source + generated SV)
+│       ├── core/         # PLL, reset (RTL only)
+│       └── utils/        # FIFOs (RTL only)
+├── twin/                 # Rust digital twin crates (one per component)
+│   └── components/       # gs-rasterizer, gs-texture, gs-memory, gpu-registers, …
 ├── shared/
-│   ├── fp_types_pkg.sv   # Shared RTL type package
 │   └── gs-twin-core/     # Shared Rust foundation crate (types, math)
 ├── integration/
-│   ├── gpu_top.sv        # Top-level RTL module
 │   ├── gs-twin/          # Pipeline orchestrator crate
 │   ├── gs-twin-cli/      # CLI: render golden references
-│   ├── harness/          # C++ Verilator test harness
 │   ├── sim/              # Interactive simulator
 │   ├── golden/           # Approved golden images
 │   └── scripts/          # Hex test scripts + Python generators
@@ -210,10 +212,10 @@ The `/dt-verify-team` Claude Code command spawns an agent team to create DT-veri
 ### Usage
 
 ```bash
-/dt-verify-team components/texture/detail/l1-cache
+/dt-verify-team rtl/components/texture/detail/l1-cache
 ```
 
-The command accepts any component path under `components/` that has both `rtl/` and `twin/` directories.
+The command accepts any component path under `rtl/components/` that has a matching twin crate under `twin/components/`.
 
 ### What it does
 

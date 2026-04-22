@@ -203,7 +203,7 @@ Each lower-priority port is only ready when no higher-priority port is requestin
 
 ## Implementation
 
-- `components/memory/rtl/src/sram_arbiter.sv`: Main implementation (filename retained for compatibility; arbitrates SDRAM controller)
+- `rtl/components/memory/src/sram_arbiter.sv`: Main implementation (filename retained for compatibility; arbitrates SDRAM controller)
 
 ## Verification
 

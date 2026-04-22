@@ -127,9 +127,9 @@ See REQ-011.02 for the complete EBR budget across the GPU.
 
 ## Implementation
 
-- `components/texture/detail/l1-cache/rtl/src/texture_cache_l1.sv`: L1 cache arrays, tag storage, set indexing, replacement logic, and invalidation logic
+- `rtl/components/texture/detail/l1-cache/src/texture_cache_l1.sv`: L1 cache arrays, tag storage, set indexing, replacement logic, and invalidation logic
 
-The authoritative algorithmic design is the gs-texture twin crate (`components/texture/twin/`).
+The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/`).
 The RTL tag-comparison, replacement, and bank-interleaving behavior must be bit-identical to the twin.
 
 ## Design Notes

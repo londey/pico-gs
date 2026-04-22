@@ -127,7 +127,7 @@ A single physical `(A-B)*C+D` datapath is time-multiplexed across all three pass
 - ADD: signed addition, saturate at ±Q4.12 max
 - SUBTRACT: signed subtraction, result may be negative (this is intentional for the `A-B` term)
 - All operations per-component (R, G, B, A independently)
-- ONE (1.0 in Q4.12 = 0x1000) and ZERO (0.0 in Q4.12 = 0x0000) are arithmetic constants defined in `shared/fp_types_pkg.sv`; color_combiner.sv imports this package rather than duplicating the literal values.
+- ONE (1.0 in Q4.12 = 0x1000) and ZERO (0.0 in Q4.12 = 0x0000) are arithmetic constants defined in `rtl/pkg/fp_types_pkg.sv`; color_combiner.sv imports this package rather than duplicating the literal values.
 
 **CONST color promotion:**
 
@@ -166,7 +166,7 @@ UNIT-006 (Pixel Pipeline)          UNIT-010 (Color Combiner)         Framebuffer
 
 ## Implementation
 
-- `components/color-combiner/rtl/src/color_combiner.sv`: Single-instance time-multiplexed programmable color combiner with 3-pass control (CC0, CC1, CC2/blend); 2 pipeline stages per pass (mux+subtract, then multiply+add+saturate) within the 4-cycle/fragment budget.
+- `rtl/components/color-combiner/src/color_combiner.sv`: Single-instance time-multiplexed programmable color combiner with 3-pass control (CC0, CC1, CC2/blend); 2 pipeline stages per pass (mux+subtract, then multiply+add+saturate) within the 4-cycle/fragment budget.
 
 ## Verification
 

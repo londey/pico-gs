@@ -13,17 +13,17 @@ qfixed = { path = "../../crates/qfixed" }
 gpu-registers.workspace = true
 
 # Component crates
-gs-rasterizer = { path = "../../components/rasterizer/twin" }
-gs-stipple = { path = "../../components/stipple/twin" }
-gs-early-z = { path = "../../components/early-z/twin" }
-gs-texture = { path = "../../components/texture/twin" }
-gs-color-combiner = { path = "../../components/color-combiner/twin" }
-gs-dither = { path = "../../components/dither/twin" }
-gs-pixel-write = { path = "../../components/pixel-write/twin" }
-gs-zbuf = { path = "../../components/zbuf/twin" }
-gs-memory = { path = "../../components/memory/twin" }
-gs-display = { path = "../../components/display/twin" }
-gs-spi = { path = "../../components/spi/twin" }
+gs-rasterizer = { path = "../../twin/components/rasterizer" }
+gs-stipple = { path = "../../twin/components/stipple" }
+gs-early-z = { path = "../../twin/components/early-z" }
+gs-texture = { path = "../../twin/components/texture" }
+gs-color-combiner = { path = "../../twin/components/color-combiner" }
+gs-dither = { path = "../../twin/components/dither" }
+gs-pixel-write = { path = "../../twin/components/pixel-write" }
+gs-zbuf = { path = "../../twin/components/zbuf" }
+gs-memory = { path = "../../twin/components/memory" }
+gs-display = { path = "../../twin/components/display" }
+gs-spi = { path = "../../twin/components/spi" }
 
 # Image output for golden reference PNGs
 image = { version = "0.25", default-features = false, features = ["png"] }

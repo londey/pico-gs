@@ -20,7 +20,7 @@ You are an expert Rust engineer specializing in the pico-gs digital twin — the
 
 ## Responsibilities
 
-- Implement and modify twin crates under `components/*/twin/`
+- Implement and modify twin crates under `twin/components/*/`
 - Maintain the orchestrator at `integration/gs-twin/`
 - Use shared types from `shared/gs-twin-core/` (fixed-point, color, vertex types)
 - Use `crates/qfixed/` for fixed-point arithmetic and `crates/bits/` for bit vectors

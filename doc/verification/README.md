@@ -79,4 +79,4 @@ Each file should be created from `ver_000_template.md` and placed in this direct
 | VER-013 | `ver_013_color_combined_output.md` | Blended/color-combined output | REQ-004.01 |
 | VER-014 | `ver_014_textured_cube.md` | Perspective-projected textured cube (12 triangles, Z-tested) | REQ-003.01, REQ-005.02 |
 
-These tests require the common integration simulation harness (`integration/harness/`) described in `test_strategy.md`.
+These tests require the common integration simulation harness (`rtl/tb/`) described in `test_strategy.md`.

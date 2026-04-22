@@ -19,7 +19,7 @@ The test confirms that the near triangle occludes the far triangle at every over
 
 ## Preconditions
 
-- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator.
 - Golden image `integration/golden/ver_011_depth_test.png` has been approved and committed.
 - Z-buffer initialized to `0xFFFF` via a Z-buffer clear pass before rendering (see Z-buffer clear step below).
 - Verilator 5.x is installed and available on `$PATH`.
@@ -161,7 +161,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `integration/harness/`: Integration simulation harness.
+- `rtl/tb/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model, drives register-write command sequences, and reads back the framebuffer as PNG files.
 - `integration/golden/ver_011_depth_test.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 

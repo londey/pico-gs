@@ -1,13 +1,15 @@
 <!-- .claude/commands/dt-verify-team.md -->
 ---
 description: Spawn an agent team to create and verify digital twin test benches for a component
-argument-hint: <component-path> (e.g. components/texture/detail/l1-cache)
+argument-hint: <component-path> (e.g. rtl/components/texture/detail/l1-cache)
 ---
 
 Create an agent team to plan and implement DT-verified test benches for the
 component at $ARGUMENTS.
 
-The component must have both `$ARGUMENTS/rtl/` and `$ARGUMENTS/twin/` directories.
+The component must live under `rtl/components/` with a matching crate at the
+corresponding path under `twin/components/` (for example
+`rtl/components/texture/detail/l1-cache` ↔ `twin/components/texture/detail/l1-cache`).
 Test benches verify that RTL output binary-matches the digital twin's expected
 output for identical stimulus inputs.
 

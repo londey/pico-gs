@@ -78,9 +78,9 @@ This gives Q4.28 for UV/Q/Z and Q4.28 for colors (with the UNORM8 value promoted
 
 ## Implementation
 
-- `components/rasterizer/rtl/src/rasterizer.sv`: Derivative precomputation logic within the parent rasterizer module.
+- `rtl/components/rasterizer/src/rasterizer.sv`: Derivative precomputation logic within the parent rasterizer module.
   Corresponds to the `always_comb` next-state block covering ITER_START/INIT_E1/INIT_E2/DERIV_0–DERIV_13 states and the associated flat `always_ff` register assignments.
-- `components/rasterizer/rtl/src/raster_deriv.sv`: Area-optimized sequential derivative precomputation module.
+- `rtl/components/rasterizer/src/raster_deriv.sv`: Area-optimized sequential derivative precomputation module.
   Contains 2 `raster_dsp_mul` instances for `delta × inv_area` and 1 shared `raster_shift_mul_47x11` instance time-multiplexed for edge-coefficient application (4 cycles) and init computation (2 cycles).
   A 4-bit attribute index and 3-bit phase counter process 1 attribute at a time (98 total cycles).
 

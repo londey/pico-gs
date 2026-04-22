@@ -155,13 +155,13 @@ Both tile index decomposition (set/tag split) and SDRAM burst addressing use onl
 
 ## Implementation
 
-- `components/zbuf/rtl/src/zbuf_tile_cache.sv`: Main RTL module (FSM, data BRAM, uninit flag EBR, LRU, Hi-Z feedback)
-- `components/zbuf/rtl/src/zbuf_tag_bram.sv`: Tag EBR helper module (PDPW16KD 512x36 wrapper, 128x7-bit tag storage)
-- `components/zbuf/rtl/tests/tb_zbuf_uninit_flags.sv`: Verilator testbench for uninit flag behavior (reset sweep, lazy-fill, bit-clear, re-sweep)
-- `components/zbuf/twin/src/lib.rs`: Digital twin crate root (`gs-zbuf`), re-exports `ZbufTileCache` and `UninittedFlagArray`
-- `components/zbuf/twin/src/zbuf_cache.rs`: Digital twin Z-buffer tile cache (4-way set-associative, pseudo-LRU, lazy-fill, write-back)
-- `components/zbuf/twin/src/uninit_flags.rs`: Digital twin per-tile uninitialized flag array
-- `components/pixel-write/rtl/tests/tb_pixel_pipeline_uninit_flags.sv`: Verilator testbench for pixel pipeline uninit flag EBR behavior
+- `rtl/components/zbuf/src/zbuf_tile_cache.sv`: Main RTL module (FSM, data BRAM, uninit flag EBR, LRU, Hi-Z feedback)
+- `rtl/components/zbuf/src/zbuf_tag_bram.sv`: Tag EBR helper module (PDPW16KD 512x36 wrapper, 128x7-bit tag storage)
+- `rtl/components/zbuf/tests/tb_zbuf_uninit_flags.sv`: Verilator testbench for uninit flag behavior (reset sweep, lazy-fill, bit-clear, re-sweep)
+- `twin/components/zbuf/src/lib.rs`: Digital twin crate root (`gs-zbuf`), re-exports `ZbufTileCache` and `UninittedFlagArray`
+- `twin/components/zbuf/src/zbuf_cache.rs`: Digital twin Z-buffer tile cache (4-way set-associative, pseudo-LRU, lazy-fill, write-back)
+- `twin/components/zbuf/src/uninit_flags.rs`: Digital twin per-tile uninitialized flag array
+- `rtl/components/pixel-write/tests/tb_pixel_pipeline_uninit_flags.sv`: Verilator testbench for pixel pipeline uninit flag EBR behavior
 
 ## Verification
 

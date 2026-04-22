@@ -147,14 +147,14 @@ UNIT-005 decomposes internally into six functional sub-units, each documented in
 
 ## Implementation
 
-- `components/rasterizer/rtl/src/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
-- `components/rasterizer/rtl/src/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
-- `components/rasterizer/rtl/src/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
-- `components/rasterizer/rtl/src/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — 8 DP16KD (36×512), 16,384-entry packed metadata (9-bit min_z per tile, sentinel `9'h1FF` for unwritten tiles), fast-clear (512-cycle sentinel-write sweep), Hi-Z tile rejection read/write interface.
-- `components/rasterizer/rtl/src/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.03), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
-- `components/rasterizer/rtl/src/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.03 latching / UNIT-005.04).
-- `components/rasterizer/rtl/src/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
-- `components/rasterizer/rtl/src/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline, Hi-Z metadata lookup (HIZ_TEST state) (UNIT-005.05).
+- `rtl/components/rasterizer/src/rasterizer.sv`: Parent module — FSM, vertex latches, reciprocal module instantiation, setup-iteration overlap FIFO, sub-module instantiation (DD-029).
+- `rtl/components/rasterizer/src/raster_recip_area.sv`: Triangle setup reciprocal module — 1 DP16KD (36×512), CLZ normalization on signed 22-bit magnitude, UQ4.14 inv_area output, optional Newton-Raphson refinement.
+- `rtl/components/rasterizer/src/raster_recip_q.sv`: Per-pixel 1/Q reciprocal module — 1 DP16KD (18×1024), CLZ normalization on unsigned input, UQ4.14 output, 2-cycle latency.
+- `rtl/components/rasterizer/src/raster_hiz_meta.sv`: Hi-Z block metadata store (UNIT-005.06) — 8 DP16KD (36×512), 16,384-entry packed metadata (9-bit min_z per tile, sentinel `9'h1FF` for unwritten tiles), fast-clear (512-cycle sentinel-write sweep), Hi-Z tile rejection read/write interface.
+- `rtl/components/rasterizer/src/raster_deriv.sv`: Sequential time-multiplexed derivative precomputation (UNIT-005.03), 2 shared MULT18X18D, 14-cycle attribute loop (DD-036).
+- `rtl/components/rasterizer/src/raster_attr_accum.sv`: Attribute accumulators, derivative registers, output promotion and clamping (UNIT-005.03 latching / UNIT-005.04).
+- `rtl/components/rasterizer/src/raster_setup_fifo.sv`: Parameterized register-based FIFO for setup-iteration overlap (DD-035).
+- `rtl/components/rasterizer/src/raster_edge_walk.sv`: Tile-ordered iteration, edge functions, fragment emission, 3-cycle perspective correction pipeline, Hi-Z metadata lookup (HIZ_TEST state) (UNIT-005.05).
 
 ## Verification
 

@@ -332,7 +332,7 @@ All fixed-point formats, bit widths, rounding behavior, and overflow conventions
 The twin is deliberately *not* cycle-accurate and does not model pipeline timing, valid/ready handshaking, stall propagation, cache miss penalties, or SDRAM arbitration contention.
 These are hardware implementation concerns owned by the RTL and verified by Verilator.
 
-For the module-to-RTL mapping, see `CLAUDE.md` (module mapping table) and the individual component twin crates under `components/*/twin/`.
+For the module-to-RTL mapping, see `CLAUDE.md` (module mapping table) and the individual component twin crates under `twin/components/*/`.
 
 ### Tier 2: Verilator — Cycle-Accurate Verification
 

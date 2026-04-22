@@ -209,8 +209,8 @@ The 192 sequential 16-bit SDRAM reads are issued as burst requests, reducing the
 
 ## Implementation
 
-- `components/display/rtl/src/display_controller.sv`: Main implementation
-- `components/display/rtl/src/color_grade_lut.sv`: Color grading LUT module (REQ-006.03)
+- `rtl/components/display/src/display_controller.sv`: Main implementation
+- `rtl/components/display/src/color_grade_lut.sv`: Color grading LUT module (REQ-006.03)
 
 ## Verification
 

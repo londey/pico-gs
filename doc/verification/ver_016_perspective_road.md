@@ -22,7 +22,7 @@ The test confirms that perspective-correct texture mapping, Z interpolation acro
 
 - Digital twin library (`gs-twin`) compiles and passes unit tests.
 - Integration test harness can write PNG output to `build/dt_out/`.
-- For RTL verification: integration simulation harness (`integration/harness/`) compiles under Verilator; golden image `integration/golden/ver_016_perspective_road.png` has been approved and committed.
+- For RTL verification: integration simulation harness (`rtl/tb/`) compiles under Verilator; golden image `integration/golden/ver_016_perspective_road.png` has been approved and committed.
 - Behavioral SDRAM model correctly implements the INT-032 Cache Miss Handling Protocol.
 
 ## Procedure
@@ -96,7 +96,7 @@ Rendering configuration:
 - `integration/scripts/ver_016_perspective_road.hex`: Hex command script defining the perspective road scene.
 - `integration/gs-twin/tests/integration.rs`: `ver_016_perspective_road()` — digital twin integration test.
 - `integration/gs-twin-cli/src/main.rs`: CLI `render --scene ver_016` entry point.
-- `integration/harness/`: Integration simulation harness (RTL path).
+- `rtl/tb/`: Integration simulation harness (RTL path).
 - `integration/golden/ver_016_perspective_road.png`: Approved golden image (RTL path).
 
 ## Notes

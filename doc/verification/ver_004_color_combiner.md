@@ -17,8 +17,8 @@ Pass-2 blend mode cases supply a simulated DST_COLOR value in place of the color
 ## Preconditions
 
 - Verilator 5.x installed and available on `$PATH`.
-- `components/color-combiner/rtl/color_combiner.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `components/pixel-write/rtl/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (color combiner is instantiated inside the pixel pipeline; interface consistency is required before isolating the combiner for unit testing).
+- `rtl/components/color-combiner/color_combiner.sv` compiles without errors under `verilator --lint-only -Wall`.
+- `rtl/components/pixel-write/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (color combiner is instantiated inside the pixel pipeline; interface consistency is required before isolating the combiner for unit testing).
 - The testbench provides a simulated DST_COLOR input vector for pass-2 blend test cases (the color tile buffer is not instantiated in the unit testbench; DST_COLOR is driven directly).
 
 ## Procedure
@@ -150,7 +150,7 @@ Pass-2 blend mode cases supply a simulated DST_COLOR value in place of the color
 
 ## Test Implementation
 
-- `components/color-combiner/rtl/tests/color_combiner_tb.sv`: Verilator unit testbench for the color combiner module.
+- `rtl/components/color-combiner/tests/color_combiner_tb.sv`: Verilator unit testbench for the color combiner module.
   Drives fragment inputs with known Q4.12 RGBA values, configures CC_MODE for various combiner presets, and checks combined output colors against reference values with Q4.12 rounding tolerance.
 
 ## Notes
@@ -162,6 +162,6 @@ Pass-2 blend mode cases supply a simulated DST_COLOR value in place of the color
 - The color combiner operates at the unified 100 MHz `clk_core` domain with a 4-cycle/fragment throughput target.
   The testbench uses a matching 100 MHz clock and drives fragments at the 4-cycle rate.
 - Q4.12 rounding tolerance of +/-1 LSB per channel accounts for the truncation inherent in `(a * b) >> 12` fixed-point multiplication.
-- The Q4.12 arithmetic constants ONE (0x1000) and ZERO (0x0000) used in the testbench are sourced from `fp_types_pkg.sv` (`shared/fp_types_pkg.sv`), which centralizes all fixed-point type definitions and constants for the render pipeline.
+- The Q4.12 arithmetic constants ONE (0x1000) and ZERO (0x0000) used in the testbench are sourced from `fp_types_pkg.sv` (`rtl/pkg/fp_types_pkg.sv`), which centralizes all fixed-point type definitions and constants for the render pipeline.
   When configuring pass-through or identity combiner modes (C=ONE, B=ZERO, D=ZERO), the testbench must use the constant values defined in `fp_types_pkg.sv` to remain consistent with the RTL under test.
 - Pass-2 blend test cases (tests 15–18) drive DST_COLOR as a direct testbench input; integration with the actual color tile buffer is covered by VER-024.

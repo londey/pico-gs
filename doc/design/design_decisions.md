@@ -468,7 +468,7 @@ A single authoritative source prevents divergence between hardware and software 
 ### Decision
 
 `registers/rdl/gpu_regs.rdl` (SystemRDL) is the single source of truth for the GPU register map.
-PeakRDL generates the SystemVerilog package and register module into `components/registers/rtl/generated/`.
+PeakRDL generates the SystemVerilog package and register module into `rtl/components/registers/generated/`.
 `registers/src/lib.rs` provides the hand-maintained Rust constants crate (`gpu-registers`, `no_std`), matching the RDL.
 Register specifications (INT-010 through INT-014) live in `doc/interfaces/` alongside other interface specs, but are not managed by syskit.
 
@@ -587,7 +587,7 @@ The parent module's external port list is unchanged; `gpu_top.sv` requires no mo
 
 ### Consequences
 
-- Three new RTL files in `components/rasterizer/rtl/`.
+- Three new RTL files in `rtl/components/rasterizer/`.
 - Makefile `RTL_SOURCES`, `HARNESS_RTL_SOURCES`, `SIM_RTL_SOURCES`, `test-rasterizer`, and lint targets updated.
 - Testbench `tb_rasterizer.sv` internal signal paths updated (e.g., `dut.c0r_dx` → `dut.u_attr_accum.c0r_dx`).
 - `rasterizer.sv` removed from `LEAF_LINT_FILES`; composite lint entry added.
@@ -782,7 +782,7 @@ All RTL files must conform to a consistent coding style for safety (`\`default_n
 
 ### Decision
 
-All SystemVerilog files in `components/*/rtl/` and `integration/` conform to the project style guide (`.claude/skills/claude-skill-verilog/SKILL.md`).
+All SystemVerilog files in `rtl/components/*/` and `integration/` conform to the project style guide (`.claude/skills/claude-skill-verilog/SKILL.md`).
 Key requirements enforced:
 - `\`default_nettype none` in every file
 - `always_ff` contains only flat `reg <= next_reg` assignments; all logic in companion `always_comb` blocks

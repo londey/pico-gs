@@ -17,7 +17,7 @@
 
 ## Preconditions
 
-- Integration simulation harness (`integration/harness/`) compiles successfully under Verilator.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator.
 - Golden image `integration/golden/ver_010_gouraud_triangle.png` has been approved and committed.
 - Verilator 5.x is installed and available on `$PATH`.
 - All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`) compile without errors under `verilator --lint-only -Wall`.
@@ -92,7 +92,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 ## Test Implementation
 
-- `integration/harness/`: Integration simulation harness.
+- `rtl/tb/`: Integration simulation harness.
   Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model, drives register-write command sequences, and reads back the framebuffer as PNG files.
 - `integration/golden/ver_010_gouraud_triangle.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 

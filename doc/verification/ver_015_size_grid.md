@@ -21,7 +21,7 @@ The test confirms that the rasterizer correctly handles triangles from sub-tile 
 
 - Digital twin library (`gs-twin`) compiles and passes unit tests.
 - Integration test harness can write PNG output to `build/dt_out/`.
-- For RTL verification: integration simulation harness (`integration/harness/`) compiles under Verilator; golden image `integration/golden/ver_015_size_grid.png` has been approved and committed.
+- For RTL verification: integration simulation harness (`rtl/tb/`) compiles under Verilator; golden image `integration/golden/ver_015_size_grid.png` has been approved and committed.
 
 ## Procedure
 
@@ -78,7 +78,7 @@ All triangles use:
 - `integration/scripts/ver_015_size_grid.hex`: Hex command script defining the 8-triangle scene.
 - `integration/gs-twin/tests/integration.rs`: `ver_015_size_grid()` — digital twin integration test.
 - `integration/gs-twin-cli/src/main.rs`: CLI `render --scene ver_015` entry point.
-- `integration/harness/`: Integration simulation harness (RTL path).
+- `rtl/tb/`: Integration simulation harness (RTL path).
 - `integration/golden/ver_015_size_grid.png`: Approved golden image (RTL path).
 
 ## Notes
