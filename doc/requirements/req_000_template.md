@@ -10,12 +10,6 @@ Or copy this template and modify.
 
 ---
 
-## Classification
-
-- **Priority:** Essential | Important | Nice-to-have
-- **Stability:** Stable | Evolving | Volatile
-- **Verification:** Test | Analysis | Inspection | Demonstration
-
 ## Requirement
 
 When [condition/trigger], the system SHALL [observable behavior/response].
@@ -28,7 +22,7 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 
 ## Rationale
 
-<Why this requirement exists. What problem does it solve? What drives this need?>
+<Why this requirement exists. Keep to ≤ 2 sentences; explain the *why*, do not restate the requirement or enumerate all design options.>
 
 ## Parent Requirements
 
@@ -42,13 +36,8 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 
 ## Verification Method
 
-<How this requirement will be verified>
-
-- **Test:** Verified by executing a test procedure
-- **Analysis:** Verified by technical evaluation
-- **Inspection:** Verified by examination
-- **Demonstration:** Verified by operation
+<How this requirement will be verified: Test | Analysis | Inspection | Demonstration. VER docs that cover this requirement list it in their "Verifies Requirements" section — do not mirror that list here.>
 
 ## Notes
 
-<Additional context, open questions, or references>
+<Optional. Include only if there is genuine context, caveat, or open question to add — do not restate the requirement or title.>

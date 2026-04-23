@@ -8,7 +8,7 @@
 //   - Mid-range values
 //   - All four channels independent
 //
-// See: UNIT-011.04 (Block Decompressor), INT-032, UNIT-006
+// See: UNIT-011.04 (Block Decompressor), UNIT-011.04, UNIT-006
 
 `timescale 1ns/1ps
 

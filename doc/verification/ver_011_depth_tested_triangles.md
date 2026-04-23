@@ -22,8 +22,6 @@ The test confirms that the near triangle occludes the far triangle at every over
 - Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator.
 - Golden image `integration/golden/ver_011_depth_test.png` has been approved and committed.
 - Z-buffer initialized to `0xFFFF` via a Z-buffer clear pass before rendering (see Z-buffer clear step below).
-- Verilator 5.x is installed and available on `$PATH`.
-- All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `early_z.sv`) compile without errors under `verilator --lint-only -Wall`.
 
 ## Procedure
 
@@ -148,16 +146,6 @@ The integration harness drives the following register-write sequence into UNIT-0
   The near triangle (blue, Z=`0x4000`) occludes the far triangle (red, Z=`0x8000`) at every pixel in the overlap region.
   Pixels outside the overlap show only the triangle that covers them (red or blue), and the background is black.
   Hi-Z tile rejection counter is greater than zero, confirming the mechanism is active and exercised by this scene.
-
-- **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
-  Common failure modes include:
-  - Far triangle bleeding through in the overlap region (Z-test not comparing correctly).
-  - Z-buffer not being cleared to `0xFFFF` before rendering (first triangle fails depth test).
-  - Z-write not updating the Z-buffer after Triangle A (Triangle B's LEQUAL test has no stored value to compare against).
-  - Incorrect Z interpolation across the triangle surface.
-  - ALWAYS compare mode not bypassing the depth comparison during the clear pass.
-  - Hi-Z false rejection: a tile containing Triangle B fragments is incorrectly rejected, producing missing blue pixels in the output (golden image mismatch).
-  - Hi-Z rejection counter is zero when the scene geometry guarantees occluded tiles (Hi-Z mechanism not engaged).
 
 ## Test Implementation
 

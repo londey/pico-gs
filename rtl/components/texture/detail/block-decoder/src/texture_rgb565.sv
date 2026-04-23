@@ -15,7 +15,7 @@
 //   G6→G9 via ch6_to_uq18()
 //   A9 = 9'h100 (opaque, 1.0 in UQ1.8)
 //
-// See: INT-014 (Texture Memory Layout, Format 4), INT-032 (Texture Cache, RGB565),
+// See: INT-014 (Texture Memory Layout, Format 4), UNIT-011.04 (Block Decompressor, RGB565),
 //      UNIT-006 (Pixel Pipeline), REQ-003.06 (Texture Sampling FR-024-5), DD-038
 
 module texture_rgb565 (

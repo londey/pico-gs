@@ -14,7 +14,7 @@
 // The block_data input holds 16 texels x 8 bits = 128 bits.
 // Texels are stored in row-major order within the 4x4 block.
 //
-// See: INT-014 (Texture Memory Layout, Format 6), INT-032 (Texture Cache, R8),
+// See: INT-014 (Texture Memory Layout, Format 6), UNIT-011.04 (Block Decompressor, R8),
 //      UNIT-006 (Pixel Pipeline), REQ-003.06 (Texture Sampling FR-024-7), DD-038
 
 module texture_r8 (

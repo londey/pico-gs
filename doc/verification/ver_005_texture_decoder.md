@@ -19,7 +19,6 @@ The testbench drives known input data through each texture format decoder and th
 
 ## Preconditions
 
-- Verilator 5.x installed and available on `$PATH`.
 - The following RTL source files compile without errors under `verilator --lint-only -Wall`:
   - `rtl/components/texture/detail/block-decoder/texture_rgb565.sv`
   - `rtl/components/texture/detail/block-decoder/texture_rgba8888.sv`
@@ -54,9 +53,9 @@ The testbench drives known input data through each texture format decoder and th
    - channel=0x100 (256/256 = 1.0) produces Q4.12=0x1000.
    - channel=0x080 (128/256 = 0.5) produces Q4.12=0x0800.
    - channel=0x1FF (511/512, maximum UQ1.8) produces Q4.12=0x1FF8.
-   Verify the promotion is a combinational left-shift-by-3 with zero-pad as defined in INT-032: `{3'b000, channel_9bit, 3'b000}`.
+   Verify the promotion is a combinational left-shift-by-3 with zero-pad as defined in UNIT-011.04: `{3'b000, channel_9bit, 3'b000}`.
    Verify all four RGBA channels are promoted independently with the same formula.
-   If Step 4 output differs from the INT-032 formula, verify `fp_types_pkg.sv` against INT-032 before updating test vectors.
+   If Step 4 output differs from the UNIT-011.04 formula, verify `fp_types_pkg.sv` against UNIT-011.04 before updating test vectors.
 
 5. **Stipple test: verify fragment discard logic.**
    - When STIPPLE_EN=1 and the pattern bit at index `(y & 7) * 8 + (x & 7)` is 0: verify discard is asserted.
@@ -94,29 +93,22 @@ The testbench drives known input data through each texture format decoder and th
     Test with a block where red0 > red1 (8-value interpolation table) and a block where red0 <= red1 (6-value table plus 0x00 and 0xFF).
 
 11. **Format-select mux wiring (integration path).**
-    For each of the eight `tex_format` encodings (0=BC1 through 7=R8, per INT-032), drive the format select input to the decoder mux and verify that the correct decoder module output is propagated to the mux output.
+    For each of the eight `tex_format` encodings (0=BC1 through 7=R8, per INT-010), drive the format select input to the decoder mux and verify that the correct decoder module output is propagated to the mux output.
     Decoder outputs for non-selected formats must not affect the result.
-    The `tex_format` input is 4 bits wide (per INT-032, DD-041).
+    The `tex_format` input is 4 bits wide (per INT-010, DD-041).
 
 12. **Cache format bit layout verification.**
-    Confirm UQ1.8 bit layout matches INT-032: R9 in bits [35:27], G9 in bits [26:18], B9 in bits [17:9], A9 in bits [8:0].
+    Confirm UQ1.8 bit layout matches UNIT-011.04: R9 in bits [35:27], G9 in bits [26:18], B9 in bits [17:9], A9 in bits [8:0].
 
 ## Expected Results
 
 - **Pass Criteria:**
   - All decoded texel values exactly match software-computed reference values for every tested format (RGB565, RGBA8888, R8, BC1, BC2, BC3, BC4, BC5) in UQ1.8 output format.
-  - texel_promote output values match the INT-032 specified Q4.12 expansion formula exactly for UQ1.8 promotion (step 4) (no rounding tolerance; promotion is combinational bit manipulation).
+  - texel_promote output values match the UNIT-011.04 specified Q4.12 expansion formula exactly for UQ1.8 promotion (step 4) (no rounding tolerance; promotion is combinational bit manipulation).
   - Stipple discard signal matches expected value for all tested (x, y, pattern, enable) combinations.
-  - Cache format bit field positions match INT-032 UQ1.8 format definition.
+  - Cache format bit field positions match UNIT-011.04 UQ1.8 format definition.
   - Format-select mux routes the correct decoder output for all eight `tex_format` encodings.
   - All test assertions pass with zero failures.
-
-- **Fail Criteria:**
-  - Any decoded texel differs from its expected reference value for any format.
-  - Any texel_promote Q4.12 output differs from the expected bit-exact value.
-  - Stipple discard is incorrect for any tested input combination.
-  - Format-select mux produces incorrect output for any `tex_format` encoding.
-  - The testbench reports one or more assertion failures.
 
 ## Test Implementation
 
@@ -126,13 +118,13 @@ The testbench drives known input data through each texture format decoder and th
 
 ## Notes
 
-- See INT-032 (Texture Cache Architecture) for the UQ1.8 format definition, conversion tables from each source format, the Q4.12 promotion formula, and the 4-bit `tex_format` encoding table.
-  The `fp_types_pkg.sv` package (`rtl/pkg/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the INT-032 formula in RTL.
-  If Step 4 promotion output differs from the INT-032 formula, verify the `fp_types_pkg.sv` function implementation against INT-032 before updating test vectors.
+- See UNIT-011.04 (Block Decompressor) for the UQ1.8 format definition, conversion tables from each source format, and the Q4.12 promotion formula. The 4-bit `tex_format` encoding table is defined in INT-010 (`registers/rdl/gpu_regs.rdl`).
+  The `fp_types_pkg.sv` package (`rtl/pkg/fp_types_pkg.sv`) centralizes the Q4.12 type definitions (`q4_12_t`) and the named promotion functions (e.g., `promote_uq18_to_q412`) that implement the UNIT-011.04 formula in RTL.
+  If Step 4 promotion output differs from the UNIT-011.04 formula, verify the `fp_types_pkg.sv` function implementation against UNIT-011.04 before updating test vectors.
 - `texel_promote.sv` belongs to UNIT-011.04 (Block Decompressor); it implements the UQ1.8 → Q4.12 promotion step that forms the output contract of UNIT-011.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, coverage goals, and test execution procedures.
 - Run this test with: `cd integration && make test-texture-decoder`.
 - REQ-003.01 coverage is jointly satisfied by VER-005 (unit test for the decode path in isolation) and VER-012 (golden image integration test exercising the full texture sampling pipeline including cache, rasterizer, and framebuffer output).
 - The `texture_decoder_tb` testbench exercises only combinational decoder logic and the format-select mux; it does not test the texture cache fill FSM or SDRAM burst protocol (those are covered by VER-012 and future cache-specific VER documents).
-- The `tex_format` field is 4 bits wide, encoding 8 formats (BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7) as defined in INT-032 (DD-041).
+- The `tex_format` field is 4 bits wide, encoding 8 formats (BC1=0, BC2=1, BC3=2, BC4=3, BC5=4, RGB565=5, RGBA8888=6, R8=7) as defined in INT-010 (DD-041).
   The testbench format-select mux test (step 11) must exercise all valid `tex_format` encodings.

@@ -23,7 +23,7 @@ The test confirms that perspective-correct texture mapping, Z interpolation acro
 - Digital twin library (`gs-twin`) compiles and passes unit tests.
 - Integration test harness can write PNG output to `build/dt_out/`.
 - For RTL verification: integration simulation harness (`rtl/tb/`) compiles under Verilator; golden image `integration/golden/ver_016_perspective_road.png` has been approved and committed.
-- Behavioral SDRAM model correctly implements the INT-032 Cache Miss Handling Protocol.
+- Behavioral SDRAM model correctly implements the UNIT-011 cache miss handling protocol.
 
 ## Procedure
 
@@ -83,13 +83,6 @@ Rendering configuration:
   - The Z-buffer visualization shows a smooth depth gradient from far (dark, near horizon) to near (bright, at bottom).
   - The seam between the two triangles of each strip is invisible — no gaps, overlaps, or color discontinuities along the shared edge.
   - Reverse-Z depth comparison (GEQUAL) correctly writes nearer fragments over farther ones.
-
-- **Fail Criteria:**
-  - Checker lines appear curved or warped, indicating affine UV interpolation instead of perspective-correct.
-  - Z-buffer shows discontinuities or banding, indicating incorrect Z interpolation across the depth gradient.
-  - Visible seam between triangles of the same strip.
-  - Texture appears solid or garbled, indicating cache miss handling failure or incorrect UV addressing.
-  - Any pixel differs between RTL output and the approved golden image.
 
 ## Test Implementation
 

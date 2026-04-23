@@ -14,7 +14,7 @@
 //       memory map, surface base addresses.
 //   INT-014 (Texture Memory Layout) -- Texture format block sizes and
 //       block-tiled organization.
-//   INT-032 (Texture Cache Architecture) -- Cache miss burst lengths
+//   UNIT-011 (Texture Sampler) -- Cache miss burst lengths
 //       per texture format:
 //
 //       | Format   | burst_len (16-bit words) | Bytes |
@@ -50,7 +50,7 @@ enum class TexFormat : uint8_t {
     R8 = 6,       ///< 8 bpp, 16 bytes per 4x4 block (single channel)
 };
 
-/// INT-032 burst lengths per format (in 16-bit words).
+/// UNIT-011 burst lengths per format (in 16-bit words).
 /// These are the number of sequential 16-bit words the texture cache
 /// reads from SDRAM on a cache miss fill.
 static constexpr uint8_t BURST_LEN_BC1 = 4;
@@ -61,7 +61,7 @@ static constexpr uint8_t BURST_LEN_RGB565 = 16;
 static constexpr uint8_t BURST_LEN_RGBA8888 = 32;
 static constexpr uint8_t BURST_LEN_R8 = 8;
 
-/// Return the INT-032 burst length for a given texture format.
+/// Return the UNIT-011 burst length for a given texture format.
 ///
 /// @param fmt  Texture format code.
 /// @return Burst length in 16-bit words.
@@ -176,7 +176,7 @@ public:
     ///
     /// Reads sequential 16-bit words starting at start_word_addr into the
     /// caller-supplied buffer. This models the SDRAM controller's sequential
-    /// burst read as described in INT-032, where the texture cache issues
+    /// burst read as described in UNIT-011, where the texture cache issues
     /// burst reads of varying length per texture format.
     ///
     /// Out-of-range addresses read as 0.

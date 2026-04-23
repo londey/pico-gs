@@ -35,6 +35,8 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - **Create new:** `.syskit/scripts/new-req.sh <name>` or `.syskit/scripts/new-req.sh --parent REQ-NNN <name>`
 - **Cross-references:** Use `REQ-NNN` or `REQ-NNN.NN` identifiers (derived from filename)
 - **Hierarchy:** Parent relationship is visible in the ID; `Parent Requirements` field provides explicit back-reference
+- **Rationale:** ≤ 2 sentences; explain *why* the requirement exists (the constraint or need it addresses). Do not restate the requirement, and do not enumerate every design option that was considered.
+- **Traceability:** REQ → INT and REQ → UNIT are canonical directions. VER docs list which REQs they verify; do not mirror that list in the REQ file.
 
 ## Framework Documents
 

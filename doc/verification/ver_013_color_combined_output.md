@@ -20,11 +20,9 @@ The test confirms that the color combiner correctly evaluates the MODULATE equat
 
 - UNIT-010 (Color Combiner) has reached Stable status: the WIP flag has been removed from `doc/design/unit_010_color_combiner.md`, indicating that combiner equation pipeline timing and register decoding are finalized.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-010 (Color Combiner) with live connections to `cc_mode` and `const_color` from the register file, along with UNIT-011 (Texture Sampler) providing Q4.12 texel data, and FB/Z write logic per UNIT-006.
-- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the UNIT-011 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - Golden image `integration/golden/ver_013_color_combined.png` has been approved and committed.
   This image is created after the pixel pipeline integration and UNIT-010 stabilization; the simulation output must be visually inspected and approved before the first commit of the golden file.
-- Verilator 5.x is installed and available on `$PATH`.
-- All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `color_combiner.sv`) compile without errors under `verilator --lint-only -Wall`.
 
 ## Procedure
 
@@ -158,19 +156,10 @@ The integration harness drives the following register-write sequence into UNIT-0
   Output color at each pixel equals `texture_color * vertex_color` (per-component MODULATE), producing a color-tinted checker pattern: the red-green-blue vertex gradient is visible across both white and mid-gray checker regions, with the mid-gray regions at approximately half intensity.
   The color combiner correctly evaluates `(TEX0 - ZERO) * SHADE0 + ZERO` in cycle 0 and passes the result through cycle 1 unchanged.
 
-- **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
-  Common failure modes include:
-  - Texture appears without vertex color tinting (indicating the combiner ignored SHADE0 or defaulted to pass-through instead of MODULATE).
-  - Vertex gradient appears without texture pattern (indicating the combiner ignored TEX_COLOR0 or texture sampling failed).
-  - Output is solid black (indicating the combiner produced ZERO for all inputs, or CC_MODE was not applied).
-  - Incorrect color arithmetic (indicating Q4.12 multiply or saturation error in the combiner pipeline).
-  - Cycle 1 modifies the cycle 0 result (indicating pass-through misconfiguration: A!=COMBINED, B!=ZERO, C!=ONE, or D!=ZERO).
-  - CC_MODE register not decoded correctly by UNIT-010 (indicating register decode mismatch between UNIT-003 output and UNIT-010 input muxing).
-
 ## Test Implementation
 
 - `rtl/tb/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PNG files.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the UNIT-011 cache miss fill FSM, drives register-write command sequences, and reads back the framebuffer as PNG files.
 - `integration/golden/ver_013_color_combined.png`: Approved golden image (created after the initial simulation run following UNIT-010 stabilization and pixel pipeline integration; visually inspected and approved before commit).
 
 ## Notes

@@ -42,7 +42,7 @@
 //! Direct-mapped with format-dependent slot count:
 //! `slot = (base_words ^ block_index) % num_slots(format)`.
 //!
-//! See: INT-032 (Texture Cache Architecture).
+//! See: UNIT-011.05 (L2 Compressed Cache).
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 

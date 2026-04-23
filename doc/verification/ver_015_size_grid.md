@@ -67,12 +67,6 @@ All triangles use:
   - The 1 px triangle (triangle 0) produces at least one fragment — it must not be rejected as degenerate.
   - Triangle 7 (128 px side) is correctly clipped at the right framebuffer edge (x=512).
 
-- **Fail Criteria:**
-  - Any triangle produces zero fragments (empty grid cell).
-  - Color interpolation artifacts in small triangles (incorrect derivative computation with large inv_area).
-  - Missing or displaced triangles in the grid.
-  - Any pixel differs between RTL output and the approved golden image.
-
 ## Test Implementation
 
 - `integration/scripts/ver_015_size_grid.hex`: Hex command script defining the 8-triangle scene.

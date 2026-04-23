@@ -26,7 +26,7 @@
 //   CC_WAIT -> Wait for color combiner result (all 3 passes including blend)
 //   WRITE   -> Write framebuffer + Z-buffer
 //
-// See: UNIT-006 (Pixel Pipeline), INT-032 (Texture Cache Architecture),
+// See: UNIT-006 (Pixel Pipeline), UNIT-011 (Texture Sampler),
 //      INT-010 (GPU Register Map), INT-014 (Texture Memory Layout)
 
 module pixel_pipeline (

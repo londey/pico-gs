@@ -44,7 +44,7 @@
 //! | LRU | 3-bit pseudo-LRU | Binary tree for 4 ways |
 //! | Banks | 4 | `{local_y[0], local_x[0]}` interleaving |
 //!
-//! See: INT-032 (Texture Cache Architecture), UNIT-006 (Pixel Pipeline).
+//! See: UNIT-011.03 (L1 Decompressed Cache), UNIT-006 (Pixel Pipeline).
 
 use gs_twin_core::texel::TexelUq18;
 

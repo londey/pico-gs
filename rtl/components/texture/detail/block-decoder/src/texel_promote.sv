@@ -12,13 +12,13 @@
 //
 // UNORM color range [0.0, 1.0] maps to Q4.12 [0x0000, 0x1000].
 //
-// UQ1.8 bit layout per INT-032:
+// UQ1.8 bit layout per UNIT-011.04:
 //   texel_in[35:27] = R9 (UQ1.8)
 //   texel_in[26:18] = G9 (UQ1.8)
 //   texel_in[17:9]  = B9 (UQ1.8)
 //   texel_in[8:0]   = A9 (UQ1.8)
 //
-// See: INT-032 (Onward Conversion to Q4.12), UNIT-006 (Stage 3),
+// See: UNIT-011.04 (Onward Conversion to Q4.12), UNIT-006 (Stage 3),
 //      REQ-004.02 (Extended Precision Fragment Processing),
 //      REQ-003.06 (FR-024-11), DD-038
 

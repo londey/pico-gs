@@ -85,9 +85,6 @@ Output PNG: `build/dt_out/ver_024_alpha_blend.png`.
   - Bottom-left: cyan-tinted triangle at the top (red subtracted from grey leaves green+blue) fading to checkerboard at the bottom tip.
   - Bottom-right: red triangle blending smoothly into the checkerboard via the alpha gradient.
 
-- **Fail Criteria:** Any pixel differs between the twin output and the approved golden image.
-  Common failure modes include incorrect blend mode selection, missing alpha pre-multiplication in ADD/SUBTRACT, incorrect RGB565→Q4.12 promotion, or incorrect saturation logic.
-
 ## Test Implementation
 
 - `integration/scripts/ver_024_alpha_blend.hex` — register-write hex script (configures blend via RENDER_MODE.ALPHA_BLEND; CC pass 2 equation template is selected internally by UNIT-010 based on this field).

@@ -4,61 +4,6 @@
 
 Internal
 
-## Parties
-
-- **Provider:** UNIT-003 (Register File)
-- **Consumer:** UNIT-001 (SPI Slave Controller)
-- **Consumer:** UNIT-005.01 (Triangle Setup)
-- **Consumer:** UNIT-005 (Rasterizer)
-- **Consumer:** UNIT-006 (Pixel Pipeline)
-- **Consumer:** UNIT-008 (Display Controller)
-- **Consumer:** UNIT-011 (Texture Sampler — TEX0_CFG, TEX1_CFG)
-- **Consumer:** UNIT-010 (Color Combiner)
-- **External consumer:** pico-racer (https://github.com/londey/pico-racer) — host SPI driver and render command dispatch.
-
-## Serves Requirement Areas
-
-- Area 1: GPU SPI Controller (REQ-001.01, REQ-001.02, REQ-001.05, REQ-013.01)
-- Area 2: Rasterizer (REQ-002.02, REQ-002.03)
-- Area 3: Texture Samplers (REQ-003.01, REQ-003.02, REQ-003.03, REQ-003.04, REQ-003.05, REQ-003.06, REQ-003.08)
-- Area 4: Fragment Processor/Color Combiner (REQ-004.01, REQ-004.02)
-- Area 5: Blend/Frame Buffer Store (REQ-005.01, REQ-005.02, REQ-005.04, REQ-005.06, REQ-005.07, REQ-005.08, REQ-005.09, REQ-005.10)
-- Area 6: Screen Scan Out (REQ-006.02, REQ-006.03)
-- Area 11: System Constraints (REQ-011.01, REQ-011.02, REQ-011.03)
-
-## Referenced By
-
-- REQ-001.01 (Basic Host Communication) — Area 1: GPU SPI Controller
-- REQ-005.01 (Framebuffer Management) — Area 5: Blend/Frame Buffer Store
-- REQ-002.02 (Gouraud Shaded Triangle) — Area 2: Rasterizer
-- REQ-005.02 (Depth Tested Triangle) — Area 5: Blend/Frame Buffer Store
-- REQ-003.01 (Textured Triangle) — Area 3: Texture Samplers
-- REQ-003.02 (Multi-Texture Rendering) — Area 3: Texture Samplers
-- REQ-004.01 (Texture Blend Modes) — Area 4: Fragment Processor/Color Combiner
-- REQ-003.03 (Compressed Textures) — Area 3: Texture Samplers
-- REQ-003.04 (Swizzle Patterns) — Area 3: Texture Samplers
-- REQ-003.05 (UV Wrapping Modes) — Area 3: Texture Samplers
-- REQ-005.03 (Alpha Blending) — Area 5: Blend/Frame Buffer Store
-- REQ-005.04 (Enhanced Z-Buffer) — Area 5: Blend/Frame Buffer Store
-- REQ-001.02 (Memory Upload Interface) — Area 1: GPU SPI Controller
-- REQ-001.05 (Vertex Submission Protocol) — Area 1: GPU SPI Controller
-- REQ-002.03 (Rasterization Algorithm) — Area 2: Rasterizer
-- REQ-003.06 (Texture Sampling) — Area 3: Texture Samplers
-- REQ-006.02 (Display Output Timing) — Area 6: Screen Scan Out
-- REQ-005.07 (Z-Buffer Operations) — Area 5: Blend/Frame Buffer Store
-- REQ-011.01 (Performance Targets) — Area 11: System Constraints
-- REQ-011.02 (Resource Constraints) — Area 11: System Constraints
-- REQ-011.03 (Reliability Requirements) — Area 11: System Constraints
-- REQ-013.01 (GPU Communication Protocol) — Area 1: GPU SPI Controller
-- REQ-005.08 (Clear Framebuffer) — Area 5: Blend/Frame Buffer Store
-- REQ-005.09 (Double-Buffered Rendering) — Area 5: Blend/Frame Buffer Store
-- REQ-003.08 (Texture Cache) — Area 3: Texture Samplers
-- REQ-005.10 (Ordered Dithering) — Area 5: Blend/Frame Buffer Store
-- REQ-006.03 (Color Grading LUT) — Area 6: Screen Scan Out
-- REQ-004.02 (Extended Precision Fragment Processing) — Area 4: Fragment Processor/Color Combiner
-
-Note: REQ-110 (GPU Initialization) and REQ-028 (Alpha Blending, duplicate) and REQ-029 (Memory Upload Interface, duplicate) are retired; their references have been removed.
-
 ## Specification
 
 ## Overview
@@ -451,7 +396,7 @@ Indices 0x12–0x17 are reserved (freed by register consolidation).
 > This section documents behavioral semantics only; see the RDL for field positions and encodings.
 
 Each sampler has a single 64-bit configuration register consolidating base address, format, dimensions, filtering, wrap modes, and mipmap levels.
-Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT-032).
+Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (see UNIT-011).
 
 **Key fields** (see RDL for exact bit positions):
 
@@ -462,12 +407,12 @@ Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (INT
 - **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR (octahedral wrap implements coupled diagonal mirroring).
 - **MIP_LEVELS** — number of mipmap levels (0 or 1 = single level; max = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)); see INT-014 for mipmap chain memory layout.
 - **BASE_ADDR** — 16-bit value × 512 = byte address in SDRAM (512-byte granularity, 32 MiB addressable).
-- **RSVD_7** — reserved (formerly planned for CACHE_MODE; the cache now operates exclusively in UQ1.8 mode, see INT-032).
+- **RSVD_7** — reserved (formerly planned for CACHE_MODE; the cache now operates exclusively in UQ1.8 mode, see UNIT-011.04).
 
 **Behavioral notes:**
 
 - Block-compressed formats (BC1–BC5) require dimensions that are multiples of 4; uncompressed formats require power-of-two dimensions.
-- The texture cache (INT-032) converts all source formats to UQ1.8 on cache fill; FORMAT determines the burst length and decoder used on cache miss.
+- The texture cache (UNIT-011) converts all source formats to UQ1.8 on cache fill (see UNIT-011.04 for the decoders); FORMAT determines the burst length and decoder used on cache miss.
 - Textures are sampled independently and passed to the color combiner (CC_MODE, 0x18).
 - Swizzle patterns (SWIZZLE field) apply after texture decode; see INT-014 for channel reordering encodings.
 
@@ -1380,5 +1325,7 @@ No explicit cache control registers are defined.
 Future versions may add a `CACHE_CTRL` register for explicit flush/invalidate commands.
 
 ## Notes
+
+External consumer: [pico-racer](https://github.com/londey/pico-racer) — host SPI driver and render command dispatch.
 
 Migrated from speckit contract: specs/001-spi-gpu/contracts/register-map.md

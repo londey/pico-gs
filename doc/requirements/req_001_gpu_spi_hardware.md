@@ -1,11 +1,5 @@
 # REQ-001: GPU SPI Hardware
 
-## Classification
-
-- **Priority:** Essential
-- **Stability:** Draft
-- **Verification:** Inspection
-
 ## Requirement
 
 The system SHALL provide FPGA-side SPI hardware that accepts register read/write transactions, buffers commands in a FIFO, implements the vertex submission protocol, supports memory upload, and provides GPIO-based flow control to prevent command buffer overflow.
@@ -34,7 +28,3 @@ None (top-level area)
 - INT-010 (GPU Register Map)
 - INT-012 (SPI Transaction Format)
 - INT-013 (GPIO Status Signals)
-
-## Notes
-
-This is one of the top-level requirement areas organizing the specification hierarchy.

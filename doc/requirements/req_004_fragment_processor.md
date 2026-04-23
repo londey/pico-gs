@@ -1,11 +1,5 @@
 # REQ-004: Fragment Processor / Color Combiner
 
-## Classification
-
-- **Priority:** Essential
-- **Stability:** Stable
-- **Verification:** Inspection
-
 ## Requirement
 
 The system SHALL process rasterized fragments through a programmable color combiner stage, combining texture samples, vertex colors, and constant colors using configurable blend equations at extended internal precision.

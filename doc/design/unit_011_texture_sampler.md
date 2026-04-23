@@ -22,7 +22,7 @@ UNIT-011 is decomposed into five subunits covering UV coordinate processing, bil
 
 ### Provides
 
-(none — INT-032 is deprecated and its content is absorbed into the UNIT-011 subunit documents)
+(none — cache-architecture details live in this document and its subunits UNIT-011.03 / UNIT-011.04 / UNIT-011.05)
 
 ### Consumes
 

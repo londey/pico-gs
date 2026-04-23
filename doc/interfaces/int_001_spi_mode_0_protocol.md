@@ -57,7 +57,3 @@ The SPI-to-core crossing remains fully asynchronous because the SPI clock is ind
 ## Constraints
 
 See external specification for full details.
-
-## Notes
-
-This is an external standard. Refer to the official specification for complete details.

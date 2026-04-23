@@ -16,9 +16,6 @@ Pass-2 blend mode cases supply a simulated DST_COLOR value in place of the color
 
 ## Preconditions
 
-- Verilator 5.x installed and available on `$PATH`.
-- `rtl/components/color-combiner/color_combiner.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `rtl/components/pixel-write/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (color combiner is instantiated inside the pixel pipeline; interface consistency is required before isolating the combiner for unit testing).
 - The testbench provides a simulated DST_COLOR input vector for pass-2 blend test cases (the color tile buffer is not instantiated in the unit testbench; DST_COLOR is driven directly).
 
 ## Procedure
@@ -138,15 +135,6 @@ Pass-2 blend mode cases supply a simulated DST_COLOR value in place of the color
   - Overflow saturates to Q4.12(1.0); underflow saturates to Q4.12(0.0).
   - Fragment position (x, y) and depth (z) pass through unchanged.
   - All test assertions pass with zero failures.
-
-- **Fail Criteria:**
-  - Any combined output channel differs from its expected value by more than 1 LSB (Q4.12).
-  - COMBINED propagation fails at any pass boundary.
-  - CONST or DST_COLOR promotion produces incorrect Q4.12 values.
-  - Cross-channel contamination is detected (one channel's value affects another).
-  - Saturation does not clamp at the expected boundaries.
-  - Fragment position or depth values are corrupted.
-  - The testbench reports one or more assertion failures.
 
 ## Test Implementation
 

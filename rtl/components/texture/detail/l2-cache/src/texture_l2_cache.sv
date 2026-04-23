@@ -16,7 +16,7 @@
 //
 // Addressing: direct-mapped, slot = (base_words ^ block_index) % num_slots.
 //
-// See: INT-032 (Texture Cache Architecture), tex_compressed.rs (DT reference)
+// See: UNIT-011.05 (L2 Compressed Cache), tex_compressed.rs (DT reference)
 
 module texture_l2_cache (
     input  wire         clk,

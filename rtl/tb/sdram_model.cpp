@@ -19,12 +19,12 @@
 //
 // burst_read() / burst_write() methods are implemented below, providing
 // sequential word-level access matching the SDRAM controller burst interface.
-// INT-032 burst lengths per texture format are supported.
+// UNIT-011 burst lengths per texture format are supported.
 //
 // References:
 //   INT-011 (SDRAM Memory Layout)
 //   INT-014 (Texture Memory Layout)
-//   INT-032 (Texture Cache Architecture)
+//   UNIT-011 (Texture Sampler)
 
 #include "sdram_model.hpp"
 

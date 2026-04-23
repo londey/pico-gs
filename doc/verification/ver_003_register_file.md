@@ -17,8 +17,6 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 
 ## Preconditions
 
-- Verilator 5.x installed and available on `$PATH`.
-- `rtl/components/spi/register_file.sv` compiles without errors under `verilator --lint-only -Wall`.
 
 ## Procedure
 
@@ -144,10 +142,6 @@ The testbenches drive register read/write sequences, vertex submission flows, an
   - PERF_TIMESTAMP write asserts `ts_mem_wr` with correct address and counter snapshot; read returns the live counter.
   - Full reset restores all registers to documented defaults.
   - All test assertions pass with zero failures.
-
-- **Fail Criteria:**
-  - Any `tri_valid` pulse, vertex output, register read-back, mode decode, trigger pulse, counter behavior, or reset value differs from its expected value.
-  - The testbench reports one or more assertion failures.
 
 ## Test Implementation
 

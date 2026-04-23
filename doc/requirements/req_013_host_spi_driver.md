@@ -1,11 +1,5 @@
 # REQ-013: Host SPI Driver
 
-## Classification
-
-- **Priority:** Essential
-- **Stability:** Draft
-- **Verification:** Inspection
-
 ## Requirement
 
 The system SHALL provide host-side software that communicates with the GPU over SPI, managing the transaction protocol, texture upload sequences, and vsync frame synchronization.
@@ -24,7 +18,3 @@ None (top-level area)
 - REQ-013.01 (GPU Communication Protocol)
 - REQ-013.02 (Upload Texture)
 - REQ-013.03 (VSync Synchronization)
-
-## Notes
-
-This is one of the top-level requirement areas organizing the specification hierarchy.

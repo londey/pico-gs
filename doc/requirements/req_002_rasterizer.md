@@ -1,11 +1,5 @@
 # REQ-002: Rasterizer
 
-## Classification
-
-- **Priority:** Essential
-- **Stability:** Draft
-- **Verification:** Inspection
-
 ## Requirement
 
 The system SHALL rasterize triangles from vertex data into per-pixel fragments, supporting Gouraud shading and edge-function-based coverage evaluation.
@@ -30,7 +24,3 @@ None (top-level area)
 
 - INT-010 (GPU Register Map)
 - INT-011 (SDRAM Memory Layout)
-
-## Notes
-
-This is one of 13 top-level requirement areas organizing the specification hierarchy.

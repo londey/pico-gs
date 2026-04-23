@@ -1,11 +1,5 @@
 # REQ-005: Blend / Frame Buffer Store
 
-## Classification
-
-- **Priority:** Essential
-- **Stability:** Stable
-- **Verification:** Inspection
-
 ## Requirement
 
 The system SHALL manage framebuffer and depth buffer storage, supporting alpha blending, depth testing, double-buffered rendering, pixel format conversion, ordered dithering, and buffer clearing.

@@ -2,7 +2,7 @@
 
 ## Verification Method
 
-**Test:** Verified by executing a Verilator golden image simulation that renders a textured triangle through the full GPU RTL hierarchy -- including the texture cache, texture decoder, and behavioral SDRAM model implementing the INT-032 cache miss handling protocol -- and compares the output pixel-exactly against an approved golden image.
+**Test:** Verified by executing a Verilator golden image simulation that renders a textured triangle through the full GPU RTL hierarchy -- including the texture cache, texture decoder, and behavioral SDRAM model implementing the UNIT-011 cache miss handling protocol -- and compares the output pixel-exactly against an approved golden image.
 The test confirms that UV coordinates are perspective-correct interpolated, the texture cache correctly fetches and decompresses texture data from SDRAM on cache miss, and the final rendered pixels match the expected checker pattern on the triangle surface.
 
 ## Verifies Requirements
@@ -18,13 +18,11 @@ The test confirms that UV coordinates are perspective-correct interpolated, the 
 
 ## Preconditions
 
-- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the UNIT-011 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
 - Golden image `integration/golden/ver_012_textured_triangle.png` has been approved and committed.
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` is added.
-- Verilator 5.x is installed and available on `$PATH`.
-- All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`) compile without errors under `verilator --lint-only -Wall`.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-011 (Texture Sampler) for texture cache lookup and decoding, along with color combiner and FB/Z write logic per UNIT-006.
 
 ## Procedure
@@ -118,7 +116,7 @@ The integration harness drives the following register-write sequence into UNIT-0
     ```
 
 11. **SDRAM burst length assertion:**
-    Verify that during texture cache miss fills, the SDRAM burst length issued by the cache fill FSM matches the INT-032 specification for RGB565 format: `burst_len=16` (32 bytes for 16 x 16-bit pixels in a 4x4 block).
+    Verify that during texture cache miss fills, the SDRAM burst length issued by the cache fill FSM matches the UNIT-011 specification for RGB565 format: `burst_len=16` (32 bytes for 16 x 16-bit pixels in a 4x4 block).
     The harness should log or assert on every burst read request, confirming the burst length field equals 16.
 
 ## Expected Results
@@ -126,30 +124,21 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_012_textured_triangle.png`) and the approved golden image (`integration/golden/ver_012_textured_triangle.png`).
   The rendered image shows a triangle with the 16x16 checker pattern mapped onto its surface via perspective-correct UV interpolation.
   The checker pattern should appear uniform and undistorted -- no affine warping artifacts should be visible (straight checker lines remain straight across the triangle).
-  SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching INT-032.
-
-- **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
-  Common failure modes include:
-  - Texture appears as solid color (indicating cache miss was not handled, or texture was not loaded into SDRAM model).
-  - Checker pattern is distorted or warped (indicating affine rather than perspective-correct UV interpolation).
-  - Incorrect texel colors (indicating RGB565 decoder error or cache-format promotion error).
-  - Cache fill FSM issues incorrect burst length (not `burst_len=16` for RGB565).
-  - Texture appears shifted or mirrored (indicating incorrect UV wrapping or 4x4 block addressing).
-  - Background bleeds into texture (indicating incorrect cache tag matching or set indexing).
+  SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching UNIT-011.
 
 ## Test Implementation
 
 - `rtl/tb/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PNG files.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the UNIT-011 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PNG files.
 - `integration/golden/ver_012_textured_triangle.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
 
-- **INT-032 Cache Miss Handling Protocol:** The behavioral SDRAM model must faithfully implement the cache miss fill FSM defined in INT-032.
+- **UNIT-011 Cache Miss Handling Protocol:** The behavioral SDRAM model must faithfully implement the cache miss fill FSM defined in UNIT-011.
   For RGB565 format, the burst length is 16 (32 bytes = 16 x 16-bit uncompressed texels in a 4x4 block).
   The fill FSM transitions through IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE.
-  Burst lengths for other formats are documented in INT-032: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
-- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-032 (DD-041).
+  Burst lengths for other formats are documented in UNIT-011: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
+- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-010 (DD-041).
   RGB565 is FORMAT=5.
   The format-select mux in UNIT-011 (Block Decompressor, UNIT-011.04) connects all eight format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
   The golden image must be re-approved after any change to the format-select mux path in UNIT-011.04, including this field widening.

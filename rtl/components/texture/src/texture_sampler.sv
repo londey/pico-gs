@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_011_texture_sampler.md `abeca51c3f3dd3a6` 2026-03-23
+// Spec-ref: unit_011_texture_sampler.md `692b2d18436a5eaa` 2026-04-23
 //
 // Texture Sampler — Assembly Module
 //
@@ -15,7 +15,7 @@
 //   texels + frac weights → [texture_bilinear] → sampled texel (UQ1.8)
 //
 // See: UNIT-011.01 (UV Coord), UNIT-011.02 (Bilinear Filter),
-//      INT-032 (Texture Cache Architecture), tex_sample.rs (DT reference)
+//      UNIT-011 (Texture Sampler), tex_sample.rs (DT reference)
 
 module texture_sampler (
     input  wire         clk,

@@ -67,7 +67,7 @@ pub trait TrilinearBlender {
 /// It holds the current [`TexCfgReg`] configuration and delegates
 /// to the block fetcher, sample gatherer, and bilinear blender.
 ///
-/// See: UNIT-006 (Pixel Pipeline), INT-032 (Texture Cache Architecture),
+/// See: UNIT-006 (Pixel Pipeline), UNIT-011 (Texture Sampler),
 ///      INT-014 (Texture Memory Layout).
 pub struct TextureSampler {
     /// Current texture configuration, `None` if unconfigured.

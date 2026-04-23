@@ -21,7 +21,7 @@
 //   6 = RGBA8888 (32 words, 512 bits)
 //   7 = R8        (8 words, 128 bits)
 //
-// See: INT-014 (Texture Memory Layout), INT-032 (Texture Cache Architecture),
+// See: INT-014 (Texture Memory Layout), UNIT-011.04 (Block Decompressor),
 //      UNIT-011.04 (Block Decompressor), REQ-003.03, REQ-003.06
 
 module texture_block_decode (

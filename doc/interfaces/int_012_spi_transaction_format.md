@@ -4,23 +4,9 @@
 
 Internal
 
-## Parties
-
-- **Provider:** External
-- **Consumer:** UNIT-001 (SPI Slave Controller)
-- **Consumer:** Host firmware
-
 ## Parent Area
 
 - REQ-001 (GPU SPI Controller)
-
-## Referenced By
-
-- REQ-001.01 (Basic Host Communication)
-- REQ-001.03 (SPI Electrical Interface)
-- REQ-013.01 (GPU Communication Protocol)
-- REQ-001.04 (Command Buffer FIFO)
-- REQ-121 (Async SPI Transmission)
 
 ## Specification
 

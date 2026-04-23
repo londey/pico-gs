@@ -16,7 +16,6 @@ This document set constitutes the Interface Control Document (ICD) for pico-gs. 
 |-------|-------|
 | INT-001 – INT-002 | External standards (SPI, DVI) |
 | INT-010 – INT-014 | Hardware interfaces between host and FPGA (register map, memory layout, SPI framing, GPIO, textures) |
-| INT-032 | Texture cache architecture |
 
 Each interface names a Provider and one or more Consumers, enabling components to be developed and tested independently against the contract.
 
@@ -47,5 +46,4 @@ Interface types:
 - [INT-012: SPI Transaction Format](int_012_spi_transaction_format.md)
 - [INT-013: GPIO Status Signals](int_013_gpio_status_signals.md)
 - [INT-014: Texture Memory Layout](int_014_texture_memory_layout.md)
-- [INT-032: Texture Cache Architecture](int_032_texture_cache_architecture.md)
 <!-- TOC-END -->

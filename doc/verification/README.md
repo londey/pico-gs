@@ -1,16 +1,8 @@
 # Verification
 
-*Software Verification Description (SVD) for <system name>*
+*Software Verification Description (SVD) for pico-gs*
 
 This directory contains the verification specifications — the authoritative record of **how** the system's requirements are verified.
-
-## System Overview
-
-<Brief description of the system: what it is, what it does, and its operational context.>
-
-## Document Description
-
-<Brief overview of what this document covers and how it is organized.>
 
 ## Purpose
 

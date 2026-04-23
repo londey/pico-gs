@@ -15,9 +15,6 @@ The testbench drives known triangle configurations through the triangle setup an
 
 ## Preconditions
 
-- Verilator 5.x installed and available on `$PATH`.
-- `rtl/components/rasterizer/rasterizer.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `rtl/components/early-z/early_z.sv` compiles without errors under `verilator --lint-only -Wall` (rasterizer depends on early Z integration signals).
 - Triangle setup module (UNIT-005.01) is instantiated or stubbed so that the rasterizer receives valid setup data.
 - The testbench drives `fb_width_log2` and `fb_height_log2` register inputs (from UNIT-003) to configure the active surface dimensions before each test case.
 - The rasterizer computes inv_area internally via a dedicated reciprocal module (`raster_recip_area.sv`, DP16KD 36×512 mode) in UNIT-005.02; the testbench does not supply `setup_inv_area` as an external input.
@@ -112,19 +109,6 @@ The testbench drives known triangle configurations through the triangle setup an
   - Hi-Z rejection: tiles with a valid (non-sentinel) min_z and fragment_z > min_z produce zero fragment emissions; the HIZ_TEST FSM state is entered and exits directly to TILE_NEXT without entering EDGE_TEST.
   - Hi-Z pass-through: tiles with a valid (non-sentinel) min_z and fragment_z <= min_z proceed normally to EDGE_TEST and emit the expected fragments.
   - Hi-Z sentinel: tiles whose metadata contains the sentinel value 9'h1FF are never rejected by Hi-Z, regardless of the incoming fragment Z value.
-
-- **Fail Criteria:**
-  - Any edge function coefficient differs from the reference value.
-  - Bounding box exceeds the configured surface bounds or is incorrectly computed for any `fb_width_log2` / `fb_height_log2` combination.
-  - Fragment count differs from expected value for any test triangle.
-  - Fragments are emitted out of 4×4 tile-major order.
-  - Interpolated color, Z, UV0, UV1 (Q4.12), or `frag_lod` (UQ4.4) values exceed the 1 ULP tolerance at any sampled point.
-  - `frag_q` is present on the fragment bus (it must not be).
-  - Fragment emission continues while `ready = 0`, or any fragment is lost or duplicated around a back-pressure stall.
-  - Degenerate triangle produces unexpected fragments.
-  - Hi-Z rejects a tile where fragment_z <= min_z (false rejection).
-  - Hi-Z fails to reject a tile where fragment_z > min_z and the metadata holds a valid (non-sentinel) min_z value (missed rejection).
-  - Hi-Z rejects a tile whose metadata contains the sentinel value 9'h1FF (spurious rejection on uninitialized metadata).
 
 ## Test Implementation
 

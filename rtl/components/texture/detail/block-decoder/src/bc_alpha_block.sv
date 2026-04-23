@@ -21,7 +21,7 @@
 //
 // Used by BC3 (alpha channel) and BC4 (red channel, replicated to RGB).
 //
-// See: INT-014, INT-032, UNIT-006, REQ-003.03, DD-038, DD-039
+// See: INT-014, UNIT-011.04, UNIT-006, REQ-003.03, DD-038, DD-039
 
 module bc_alpha_block (
     // Two 8-bit endpoints

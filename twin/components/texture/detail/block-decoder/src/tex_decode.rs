@@ -16,7 +16,7 @@
 //! | [`Bc3Decoder`] | `texture_bc3.sv` | 8 words |
 //! | [`Bc4Decoder`] | `texture_bc4.sv` | 4 words |
 //!
-//! See: INT-032 (Texture Cache Architecture), INT-014 (Texture Memory Layout).
+//! See: UNIT-011.04 (Block Decompressor), INT-014 (Texture Memory Layout).
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 use qfixed::UQ;

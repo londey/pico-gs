@@ -8,7 +8,7 @@
 //   - Block word assembly for BC1, RGB565, RGBA8888
 //   - All 4 output lanes produce correct texels
 //
-// See: UNIT-011.04 (Block Decompressor), INT-014, INT-032
+// See: UNIT-011.04 (Block Decompressor), INT-014, UNIT-011.04
 
 `timescale 1ns/1ps
 

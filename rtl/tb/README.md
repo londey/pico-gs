@@ -47,11 +47,11 @@ byte_addr  = word_addr * 2
 
 - `read_word(uint32_t addr)` -- Read a 16-bit word from the given word address.
 - `write_word(uint32_t addr, uint16_t data)` -- Write a 16-bit word at the given word address.
-- `fill_texture(uint32_t base_addr, uint8_t format, const uint8_t* pixel_data, size_t size)` -- Upload texture data to the model, laying out pixels in the INT-011 4x4 block-tiled scheme at the burst lengths defined in INT-032 for each format.
+- `fill_texture(uint32_t base_addr, uint8_t format, const uint8_t* pixel_data, size_t size)` -- Upload texture data to the model, laying out pixels in the INT-011 4x4 block-tiled scheme at the burst lengths defined in UNIT-011 for each format.
 
-### INT-032 Burst Lengths
+### UNIT-011 Burst Lengths
 
-The texture cache (INT-032) issues burst reads with format-dependent lengths on cache miss:
+The texture cache (UNIT-011) issues burst reads with format-dependent lengths on cache miss:
 
 | Format   | burst_len (16-bit words) | Bytes | Description               |
 |----------|--------------------------|-------|---------------------------|
@@ -117,7 +117,7 @@ tests/
 
 - **INT-011** (SDRAM Memory Layout) -- 4x4 block-tiled address calculation, memory map, SDRAM timing.
 - **INT-014** (Texture Memory Layout) -- Texture format encodings and block sizes.
-- **INT-032** (Texture Cache Architecture) -- Cache miss burst lengths per texture format.
+- **UNIT-011** (Texture Sampler) -- Cache miss burst lengths per texture format.
 - **VER-010** -- Flat-Shaded Triangle Golden Image Test.
 - **VER-011** -- Depth-Tested Overlapping Triangles Golden Image Test.
 - **VER-012** -- Textured Triangle Golden Image Test.

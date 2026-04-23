@@ -20,7 +20,7 @@ use crate::fragment::ColorQ412;
 /// All texture formats (BC1–BC4, RGB565, RGBA8888, R8) are decoded to
 /// this format before entering the cache and the fragment pipeline.
 ///
-/// The 36-bit layout in EBR (per INT-032):
+/// The 36-bit layout in EBR (per UNIT-011.04):
 /// `[35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9`.
 ///
 /// # RTL Implementation Notes

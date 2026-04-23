@@ -19,8 +19,6 @@
 
 - Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator.
 - Golden image `integration/golden/ver_010_gouraud_triangle.png` has been approved and committed.
-- Verilator 5.x is installed and available on `$PATH`.
-- All RTL sources in the rendering pipeline (`register_file.sv`, `rasterizer.sv`, `pixel_pipeline.sv`) compile without errors under `verilator --lint-only -Wall`.
 
 ## Procedure
 
@@ -86,9 +84,6 @@ The integration harness drives the following register-write sequence into UNIT-0
 
 - **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_010_gouraud_triangle.png`) and the approved golden image (`integration/golden/ver_010_gouraud_triangle.png`).
   The rendered image should show a triangle with smooth color gradients: red at the top vertex, green at the bottom-left vertex, and blue at the bottom-right vertex, with linearly interpolated colors across the interior.
-
-- **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
-  Common failure modes include incorrect incremental interpolation (incorrect derivative step values or accumulation), incorrect RGB888-to-RGB565 conversion, off-by-one edge walking, or incorrect edge function setup.
 
 ## Test Implementation
 

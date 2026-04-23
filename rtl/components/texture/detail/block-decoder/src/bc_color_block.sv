@@ -19,7 +19,7 @@
 //   2/3: (C0 + 2*C1 + 1) * 683 >> 11
 //   1/2: (C0 + C1 + 1) >> 1
 //
-// See: INT-014, INT-032, UNIT-006, REQ-003.03, DD-038, DD-039
+// See: INT-014, UNIT-011.04, UNIT-006, REQ-003.03, DD-038, DD-039
 
 module bc_color_block (
     // Two RGB565 color endpoints

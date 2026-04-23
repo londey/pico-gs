@@ -4,31 +4,6 @@
 
 Internal
 
-## Parties
-
-- **Provider:** External (W9825G6KH-6 SDRAM)
-- **Consumer:** UNIT-006 (Pixel Pipeline) — framebuffer read/write addressing
-- **Consumer:** UNIT-012 (Z-Buffer Tile Cache) — Z-buffer tiled addressing and SDRAM access
-- **Consumer:** UNIT-007 (Memory Arbiter)
-- **Consumer:** UNIT-008 (Display Controller)
-- **External consumer:** pico-racer (https://github.com/londey/pico-racer) — host memory upload and layout configuration.
-
-## Referenced By
-
-- REQ-005.01 (Framebuffer Management) — area 5: Blend/Frame Buffer Store
-- REQ-005.02 (Depth Tested Triangle) — area 5: Blend/Frame Buffer Store
-- REQ-003.01 (Textured Triangle) — area 3: Texture Samplers
-- REQ-005.04 (Enhanced Z-Buffer) — area 5: Blend/Frame Buffer Store
-- REQ-005.06 (Framebuffer Format) — area 5: Blend/Frame Buffer Store
-- INT-014 (Texture Memory Layout)
-- REQ-005.09 (Double-Buffered Rendering) — area 5: Blend/Frame Buffer Store
-- REQ-011.01 (Performance Targets) — area 11: System Constraints
-- REQ-011.02 (Resource Constraints) — area 11: System Constraints
-- REQ-005.07 (Z-Buffer Operations) — area 5: Blend/Frame Buffer Store
-- REQ-003.06 (Texture Sampling) — area 3: Texture Samplers
-- REQ-002.03 (Rasterization Algorithm) — area 2: Rasterizer
-- REQ-006.03 (Color Grading LUT) — area 6: Screen Scan Out
-
 ## Specification
 
 ## SDRAM Overview
@@ -433,7 +408,7 @@ On cache miss, the full 4×4 block is fetched using a sequential burst read from
 - RGBA8888 tiled: 32 × 16-bit words = 64 bytes. SDRAM timing: ~39 cycles (may cross row boundary).
 - R8 tiled: 8 × 16-bit words = 16 bytes. SDRAM timing: ~15 cycles.
 
-End-to-end cache fill latency (including decompression/conversion overlap) is documented in INT-032.
+End-to-end cache fill latency (including decompression/conversion overlap) is documented in UNIT-011 (Texture Sampler) and UNIT-011.05 (L2 Compressed Cache).
 
 ---
 
@@ -729,5 +704,7 @@ See specification details above.
 - Surface dimensions must be power-of-two per axis for the block-tiled address calculation
 
 ## Notes
+
+External consumer: [pico-racer](https://github.com/londey/pico-racer) — host memory upload and layout configuration.
 
 Migrated from speckit contract: specs/001-spi-gpu/contracts/memory-map.md.

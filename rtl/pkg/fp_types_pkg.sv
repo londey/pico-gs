@@ -11,10 +11,10 @@
 // Q4.12 format: 1 sign bit, 3 integer bits, 12 fractional bits (16 bits total).
 // UNORM color range [0.0, 1.0] maps to [0x0000, 0x1000].
 //
-// Promotion formulas match INT-032 (Onward Conversion to Q4.12) and the
+// Promotion formulas match UNIT-011 (Onward Conversion to Q4.12) and the
 // existing texel_promote.sv implementation.
 //
-// See: UNIT-006 (Pixel Pipeline), UNIT-010 (Color Combiner), INT-032,
+// See: UNIT-006 (Pixel Pipeline), UNIT-010 (Color Combiner), UNIT-011,
 //      REQ-004.02 (Extended Precision Fragment Processing)
 
 package fp_types_pkg;
@@ -86,7 +86,7 @@ package fp_types_pkg;
     // UQ1.8 LSB resolution 2^-8 maps to Q4.12 resolution 2^-8, so no
     // precision is lost.
     //
-    // Used for texel promotion (INT-032, UNIT-006 Stage 3).
+    // Used for texel promotion (UNIT-011, UNIT-006 Stage 3).
     function automatic q4_12_t promote_uq18_to_q412(input logic [8:0] channel);
         promote_uq18_to_q412 = {3'b000, channel[8:0], 4'b0000};
     endfunction

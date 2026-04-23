@@ -25,7 +25,7 @@
 // Writing TEXn_CFG triggers invalidation, ensuring the first access
 // after a config change is a guaranteed miss.
 //
-// See: INT-032 (Texture Cache Architecture), UNIT-006 (Pixel Pipeline),
+// See: UNIT-011.03 (L1 Decompressed Cache), UNIT-006 (Pixel Pipeline),
 //      INT-014 (Texture Memory Layout), REQ-003.08 (Texture Cache),
 //      DD-037 (PDPW16KD EBR), DD-038 (UQ1.8 Format)
 

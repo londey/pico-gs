@@ -4,23 +4,6 @@
 
 Internal
 
-## Parties
-
-- **Provider:** External (host firmware defines layout)
-- **Consumer:** UNIT-011 (Texture Sampler — specifically UNIT-011.05 L2 Compressed Cache)
-- **External consumer:** pico-racer (https://github.com/londey/pico-racer) — texture upload sequencing and layout generation.
-
-## Referenced By
-
-- REQ-003 (Texture Samplers — top-level area 3 requirement, not yet created)
-- REQ-003.01 (Textured Triangle — sub-requirement under area 3)
-- REQ-003.02 (Multi-Texture Rendering — sub-requirement under area 3)
-- REQ-003.03 (Compressed Textures — sub-requirement under area 3)
-- REQ-003.04 (Swizzle Patterns — sub-requirement under area 3)
-- REQ-003.06 (Texture Sampling — sub-requirement under area 3)
-- INT-011 (SDRAM Memory Layout - overall memory allocation)
-- REQ-003.08 (Texture Cache — sub-requirement under area 3)
-
 ## Specification
 
 ## Overview
@@ -470,3 +453,7 @@ The XOR indexing prevents systematic cache aliasing where vertically adjacent bl
 
 **Note:** The 16K-texel cache per sampler significantly reduces cache thrashing for 256×256 and larger textures.
 The cache can hold the equivalent of a 128×128 texel working set per sampler.
+
+## Notes
+
+External consumer: [pico-racer](https://github.com/londey/pico-racer) — texture upload sequencing and layout generation.

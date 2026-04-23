@@ -75,7 +75,7 @@ The alternative — assigning BC5 to the last remaining code (7) and keeping a 3
 `registers/rdl/gpu_regs.rdl` gains `BC5` and the field widens from `FORMAT[6:4]` to `FORMAT[7:4]`.
 `registers/src/lib.rs` and generated SystemVerilog are updated to match.
 All RTL format comparisons in `pixel_pipeline.sv`, `texture_cache.sv`, and the format-select mux use the new 4-bit codes.
-INT-010, INT-032, and UNIT-011 are updated with the new encoding table.
+INT-010 and UNIT-011 (with subunits UNIT-011.04, UNIT-011.05) are updated with the new encoding table.
 VER-012 and VER-014 register-write sequences use `FORMAT=RGB565` code 5 (was 4); golden images require re-approval.
 
 ---
@@ -106,7 +106,7 @@ The invalidation-on-write rule (already required for FORMAT and BASE changes) co
 ### Consequences
 
 INT-010 (GPU Register Map) gains a CACHE_MODE field in TEXn_FMT.
-INT-032 (Texture Cache Architecture) documents the mode-bit semantics and per-mode EBR layout.
+UNIT-011 (with UNIT-011.03 L1 cache and UNIT-011.04 block decompressor) documents the mode-bit semantics and per-mode EBR layout.
 UNIT-011 (Texture Sampler) must route the CACHE_MODE bit from UNIT-003 to the cache bank address and promotion logic.
 REQ-003.08 FR-131-5 is updated to reflect mode-selectable rather than fixed cache format.
 
@@ -194,7 +194,7 @@ The UQ1.8 → Q4.12 promotion is a simple left-shift with zero-pad, cheaper than
 
 ### Consequences
 
-INT-032 gains UQ1.8 format definition, conversion tables from each source format, and UQ1.8 → Q4.12 promotion formula.
+UNIT-011.04 gains the UQ1.8 format definition, conversion tables from each source format, and UQ1.8 → Q4.12 promotion formula.
 UNIT-011.04 `texel_promote.sv` gains a mode input selecting RGBA5652 or UQ1.8 promotion path.
 VER-005 gains test vectors for UQ1.8 promotion (step 4 extended).
 Golden images (VER-012, VER-014) require re-approval if the cache defaults to CACHE_MODE=1 for RGB565 textures.
@@ -232,7 +232,7 @@ The address depth reduction (512 vs 1024 entries per bank) is acceptable in 36-b
 
 ### Consequences
 
-INT-032 documents PDPW16KD 512×36 as the EBR primitive for 36-bit mode banks.
+UNIT-011.03 documents PDPW16KD 512×36 as the EBR primitive for 36-bit mode banks.
 REQ-011.02 EBR budget note must be updated once PDPW16KD EBR consumption is confirmed by synthesis.
 UNIT-011.03 (L1 Decompressed Cache) internal state note is updated to reflect the mode-dependent bank depth.
 The cache fill FSM address counter width narrows from 10-bit to 9-bit in 36-bit mode.

@@ -17,7 +17,7 @@
 //   color0 <= color1: 3-color + transparent mode
 //     palette = [C0, C1, lerp(C0,C1,1/2), transparent]
 //
-// See: INT-014 (Texture Memory Layout, Format 0), INT-032 (Texture Cache),
+// See: INT-014 (Texture Memory Layout, Format 0), UNIT-011.04 (Block Decompressor),
 //      UNIT-006 (Pixel Pipeline), REQ-003.03, DD-038, DD-039
 
 module texture_bc1 (

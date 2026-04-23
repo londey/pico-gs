@@ -1,11 +1,5 @@
 # REQ-003: Texture Samplers
 
-## Classification
-
-- **Priority:** Essential
-- **Stability:** Stable
-- **Verification:** Inspection
-
 ## Requirement
 
 The system SHALL sample, decode, and deliver texture data to the pixel pipeline, supporting multiple texture formats, dual-texture rendering, channel swizzling, UV wrapping, mipmapping, and per-sampler caching.
@@ -22,7 +16,6 @@ None (top-level area)
 
 - INT-010 (GPU Register Map)
 - INT-014 (Texture Memory Layout)
-- INT-032 (Texture Cache Architecture)
 
 ## Design Allocation
 
@@ -35,6 +28,5 @@ Child requirements REQ-003.01 through REQ-003.08 carry individual Test-level ver
 
 ## Notes
 
-This is one of 13 top-level requirement areas organizing the specification hierarchy.
-All eight texture format decoders are wired to the texture cache in UNIT-011 through a 4-bit `tex_format` select (INT-032).
-See INT-014 for texture memory layout and INT-032 for cache architecture and per-format burst lengths.
+All eight texture format decoders are wired to the texture cache in UNIT-011 through a 4-bit `tex_format` select (see UNIT-011.04 and INT-010 for the encoding).
+See INT-014 for texture memory layout and UNIT-011 (with subunits UNIT-011.03, UNIT-011.04, UNIT-011.05) for cache architecture and per-format burst lengths.

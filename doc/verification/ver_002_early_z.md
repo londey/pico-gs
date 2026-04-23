@@ -15,9 +15,6 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
 
 ## Preconditions
 
-- Verilator 5.x installed and available on `$PATH`.
-- `rtl/components/early-z/early_z.sv` compiles without errors under `verilator --lint-only -Wall`.
-- `rtl/components/pixel-write/pixel_pipeline.sv` compiles without errors under `verilator --lint-only -Wall` (`early_z.sv` is a sub-module of UNIT-006 and shares its port declarations with the pipeline FSM).
   This precondition does not require the full pixel pipeline to be instantiated in the testbench; it ensures the interface definitions are consistent before isolating `early_z.sv` for unit testing.
 
 ## Procedure
@@ -70,10 +67,6 @@ The testbench drives fragment depth inputs and Z-buffer values through the `earl
   - All eight comparison functions produce correct pass/fail results for every test vector.
   - ALWAYS mode with fragment_z=0xFFFF passes unconditionally (Z-buffer clear pattern).
   - All test assertions pass with zero failures reported by the testbench.
-
-- **Fail Criteria:**
-  - Any `range_pass`, `z_test_pass`, or `z_bypass` output differs from its expected value for any test vector.
-  - The testbench reports one or more assertion failures.
 
 ## Test Implementation
 

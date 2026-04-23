@@ -59,4 +59,4 @@ For APIs, consider:
 
 ## Notes
 
-<Additional context, rationale for choices, compatibility considerations>
+<Optional. External consumers not covered by a UNIT (e.g., host-side drivers) may be listed here. Provider/consumer UNITs are declared by the UNIT docs themselves — do not mirror that list here. Reverse lists of REQs or UNITs that reference this interface are maintained by those documents, not here.>

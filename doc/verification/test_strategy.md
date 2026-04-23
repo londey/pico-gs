@@ -24,6 +24,18 @@ Rust-side verification (host firmware, asset tools) is out of scope for this doc
   All warnings are treated as errors; no pragma suppressions are permitted per the project SystemVerilog style rules.
 - **Configuration:** Invoked via `cd integration && make lint`.
 
+## Shared Preconditions
+
+These preconditions apply to every Verilator-based VER document and are not repeated per-file.
+Individual VER docs list only preconditions specific to that verification (pre-loaded fixtures, unusual configuration, dependencies on other verifications).
+
+- Verilator 5.x installed and available on `$PATH`.
+- All RTL sources in the component under test compile without errors under `verilator --lint-only -Wall`; lint warnings are treated as errors.
+- The testbench clock matches the target clock domain (`clk_core` at 100 MHz for pipeline tests; see each component's design doc for its clock domain).
+- `cd integration && make <target>` runs the test; per-test Makefile targets are named in each VER's "Test Implementation" section.
+- For golden image tests (VER-010 through VER-016, VER-024): the integration simulation harness (`rtl/tb/`) compiles successfully under Verilator; golden images live in `integration/golden/` and are approved and committed before a VER's first run.
+- For texture-sampling golden image tests: the behavioral SDRAM model in `rtl/tb/` implements UNIT-011's cache miss handling protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE with format-dependent burst lengths). A stub model that skips the cache miss fill FSM is not sufficient.
+
 ## Design Decisions
 
 ### Reverse-Z Depth Convention
@@ -75,7 +87,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 - **Description:** The golden image tests share a common C++ simulation harness (`rtl/tb/`) that:
   - Instantiates the full GPU RTL hierarchy under Verilator.
-  - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
+  - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full UNIT-011 cache miss handling protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
     This FSM is consumed by UNIT-011 (Texture Sampler — specifically UNIT-011.05, L2 Compressed Cache).
     A partial or stub SDRAM model that does not implement the cache miss fill FSM is not sufficient for VER-012 through VER-014.
   - Accepts a command script (encoded as register-write sequences per INT-010 and INT-012) and drives UNIT-003 register-file inputs.

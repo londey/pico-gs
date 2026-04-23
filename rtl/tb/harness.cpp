@@ -7,7 +7,7 @@
 // References:
 //   INT-011 (SDRAM Memory Layout)
 //   INT-014 (Texture Memory Layout)
-//   INT-032 (Texture Cache Architecture)
+//   UNIT-011 (Texture Sampler)
 
 #include <algorithm>
 #include <array>

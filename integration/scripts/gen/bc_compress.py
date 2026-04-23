@@ -400,7 +400,7 @@ def bc4_decode_texel(block: int, texel_idx: int) -> Tuple[int, int]:
 
     Returns:
         (rgb565, alpha2): R replicated to RGB, always opaque (A2=3).
-        INT-032: R5={R8[7:3]}, G6={R8[7:2]}, B5={R8[7:3]}, A2=11
+        UNIT-011.04: R5={R8[7:3]}, G6={R8[7:2]}, B5={R8[7:3]}, A2=11
     """
     red8 = _decode_alpha_texel(block, texel_idx)
     r5 = (red8 >> 3) & 0x1F

@@ -20,13 +20,11 @@ The test confirms that perspective-correct UV interpolation, early Z-testing acr
 
 ## Preconditions
 
-- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the INT-032 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the UNIT-011 Cache Miss Handling Protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
 - A known test texture (16×16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
   Per `test_strategy.md`, large binary assets are generated programmatically by the test harness and are not committed.
 - Golden image `integration/golden/ver_014_textured_cube.png` has been approved and committed.
   This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` (UQ4.4) is added.
-- Verilator 5.x is installed and available on `$PATH`.
-- All RTL sources in the rendering pipeline (`register_file.sv`, `triangle_setup.sv`, `rasterizer.sv`, `pixel_pipeline.sv`, `texture_cache.sv`, `texture_rgb565.sv`, `early_z.sv`) compile without errors under `verilator --lint-only -Wall`.
 - `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates the early Z stage, UNIT-011 (Texture Sampler — cache, decoders, format-select mux), MODULATE combiner (UNIT-010), and FB/Z write logic per UNIT-006.
 - UNIT-010 (Color Combiner) has reached Stable status (WIP flag removed from `doc/design/unit_010_color_combiner.md`).
 - The Z-buffer is initialized to `0xFFFF` via a Z-buffer clear pass before rendering (see Z-Buffer Clear Step below).
@@ -148,7 +146,7 @@ The integration harness drives the following register-write sequence into UNIT-0
    ```
 
 10. **SDRAM burst length assertion:**
-    Verify that during texture cache miss fills, the SDRAM burst length issued by the cache fill FSM equals 16 for RGB565 format (32 bytes for 16 × 16-bit texels in a 4×4 block), matching INT-032.
+    Verify that during texture cache miss fills, the SDRAM burst length issued by the cache fill FSM equals 16 for RGB565 format (32 bytes for 16 × 16-bit texels in a 4×4 block), matching UNIT-011.
     The harness logs or asserts on every burst read request, confirming the burst length field equals 16.
 
 ## Expected Results
@@ -156,23 +154,12 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_014_textured_cube.png`) and the approved golden image (`integration/golden/ver_014_textured_cube.png`).
   The rendered image shows the three visible faces of the perspective-projected cube, each displaying the 16×16 checker pattern with visible perspective foreshortening — checker squares appear smaller toward the vanishing point and larger toward the viewer.
   Back faces of the cube are not visible (occluded by Z-testing or outside the viewing frustum).
-  SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching INT-032.
-
-- **Fail Criteria:** Any pixel differs between the simulation output and the approved golden image.
-  Common failure modes include:
-  - Checker pattern appears affinely warped (curved lines), indicating perspective-correct UV interpolation failure.
-  - Back faces bleed through front faces in the overlap region, indicating Z-test not functioning.
-  - Z-buffer not cleared to `0xFFFF` before rendering, causing the first triangle to fail the depth test.
-  - Texture appears as solid color, indicating cache miss not handled or texture not loaded into SDRAM model.
-  - Incorrect texel colors, indicating RGB565 decoder error or cache-format promotion error.
-  - Cache fill FSM issues incorrect burst length (not `burst_len=16` for RGB565).
-  - Texture appears shifted or mirrored, indicating incorrect UV wrapping or 4×4 block addressing error.
-  - Seams or discontinuities between the two triangles of a face, indicating triangle-setup edge case at shared edges.
+  SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching UNIT-011.
 
 ## Test Implementation
 
 - `rtl/tb/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the INT-032 cache miss fill FSM (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE) as consumed by UNIT-011, drives register-write command sequences for all twelve cube triangles, and reads back the framebuffer as a PNG file.
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the UNIT-011 cache miss fill FSM (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE) as consumed by UNIT-011, drives register-write command sequences for all twelve cube triangles, and reads back the framebuffer as a PNG file.
 - `integration/golden/ver_014_textured_cube.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
 
 ## Notes
@@ -180,7 +167,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Relationship to VER-011:** The Z-buffer clear sequence and depth-tested rendering setup follow the pattern established in VER-011 (depth-tested overlapping flat triangles).
   VER-014 extends that pattern by combining texturing with depth testing in a 3D scene.
   Reviewers should confirm the Z-buffer clear sequence is identical to VER-011's clear pass.
-- **Relationship to VER-012:** The texture setup (16×16 RGB565 checker pattern, INT-014 tiled layout, TEX0_BASE/TEX0_FMT register writes, INT-032 cache miss protocol) follows the pattern established in VER-012 (textured triangle).
+- **Relationship to VER-012:** The texture setup (16×16 RGB565 checker pattern, INT-014 tiled layout, TEX0_BASE/TEX0_FMT register writes, UNIT-011 cache miss protocol) follows the pattern established in VER-012 (textured triangle).
   VER-014 extends that pattern to a multi-triangle scene with multiple distinct texture cache fill patterns arising from spatially varied UV access across differently oriented faces.
 - **Perspective-correct UV and UV format:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.05).
   The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
@@ -199,7 +186,7 @@ The integration harness drives the following register-write sequence into UNIT-0
 - **Winding and back-face submission:** Back-face triangles are submitted first in depth order to validate that depth testing correctly discards their fragments when front-face triangles are rendered subsequently.
   The test does not enable hardware back-face culling — occlusion must be achieved entirely through Z-testing.
 - **Dithering:** Dithering is disabled (`DITHER_EN=0`) for deterministic, reproducible output.
-- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-032 (DD-041).
+- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-010 (DD-041).
   RGB565 is FORMAT=5.
 - **Cache format:** The texture cache operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
 - **Makefile target:** Run this test with: `cd integration && make test-textured-cube`.

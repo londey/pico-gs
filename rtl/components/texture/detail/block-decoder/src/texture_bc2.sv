@@ -16,7 +16,7 @@
 //   Row bits [3:0] = alpha col 0, [7:4] = col 1, [11:8] = col 2, [15:12] = col 3.
 //   A4 expanded to UQ1.8 via ch4_to_uq18().
 //
-// See: INT-014 (Texture Memory Layout, Format 1), INT-032 (Texture Cache, BC2),
+// See: INT-014 (Texture Memory Layout, Format 1), UNIT-011.04 (Block Decompressor, BC2),
 //      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-038, DD-039
 
 module texture_bc2 (

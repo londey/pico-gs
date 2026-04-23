@@ -12,7 +12,7 @@
 //
 // Output: R8→UQ1.8 replicated to G and B; A=opaque (A9=9'h100).
 //
-// See: INT-014 (Texture Memory Layout, Format 3), INT-032 (Texture Cache, BC4),
+// See: INT-014 (Texture Memory Layout, Format 3), UNIT-011.04 (Block Decompressor, BC4),
 //      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-038, DD-039
 
 module texture_bc4 (

@@ -14,7 +14,7 @@
 // Alpha uses the shared bc_alpha_block (8-entry or 6-entry interpolation).
 // Color uses the shared bc_color_block (forced 4-color opaque mode).
 //
-// See: INT-014 (Texture Memory Layout, Format 2), INT-032 (Texture Cache, BC3),
+// See: INT-014 (Texture Memory Layout, Format 2), UNIT-011.04 (Block Decompressor, BC3),
 //      UNIT-006 (Pixel Pipeline), REQ-003.06, REQ-003.03, DD-038, DD-039
 
 module texture_bc3 (

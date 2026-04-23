@@ -13,7 +13,7 @@
 // The block_data input holds 16 texels x 32 bits = 512 bits.
 // Texels are stored in row-major order within the 4x4 block.
 //
-// See: INT-014 (Texture Memory Layout, Format 5), INT-032 (Texture Cache, RGBA8888),
+// See: INT-014 (Texture Memory Layout, Format 5), UNIT-011.04 (Block Decompressor, RGBA8888),
 //      UNIT-006 (Pixel Pipeline), REQ-003.06 (Texture Sampling FR-024-6), DD-038
 
 module texture_rgba8888 (
