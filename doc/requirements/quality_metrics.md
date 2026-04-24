@@ -44,6 +44,7 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
 - **References:** REQ-011.02, REQ-003.08, UNIT-011 (Texture Sampler), UNIT-008 (Display Controller)
 - **Rationale:** Texture cache (UNIT-011) is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches.
+  The 4-bank interleaved L1 cache structure (UNIT-011.03) is retained even though NEAREST-only filtering requires only one bank per lookup — the physical structure costs nothing to keep.
   The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-001.04).
   Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 

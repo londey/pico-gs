@@ -24,7 +24,7 @@ Outputs wrapped integer texel coordinates and a mip level index to UNIT-011.03 (
 
 - Receives Q4.12 UV coordinates (UV0 or UV1) from the UNIT-006 fragment bus
 - Receives `frag_lod` (UQ4.4, 8-bit) from the UNIT-006 fragment bus
-- Outputs wrapped texel coordinates (integer block_x, block_y and sub-texel fraction bits) to UNIT-011.02 and UNIT-011.03
+- Outputs wrapped texel coordinates (integer block_x, block_y and sub-texel position bits) to UNIT-011.03
 - Outputs `mip_level[3:0]` to UNIT-011.03 for cache tag matching
 
 ## Design Description
@@ -42,7 +42,6 @@ Outputs wrapped integer texel coordinates and a mip level index to UNIT-011.03 (
 
 - `block_x[N-1:0]`, `block_y[N-1:0]`: integer texel block coordinates after wrap/clamp/mirror; width N is texture-size-dependent
 - `sub_u[1:0]`, `sub_v[1:0]`: 2-bit sub-texel position within a 4×4 block (selects which of the 16 texels to sample)
-- `bilinear_frac_u[11:0]`, `bilinear_frac_v[11:0]`: sub-texel fractional bits from the Q4.12 coordinate, used by UNIT-011.02 for bilinear weight computation
 - `mip_level[3:0]`: final mip level after bias application
 
 ### Algorithm / Behavior
@@ -51,7 +50,7 @@ Outputs wrapped integer texel coordinates and a mip level index to UNIT-011.03 (
 
 The Q4.12 UV value encodes the texture coordinate as a signed fixed-point number.
 The integer portion `uv[14:12]` selects the texel block column/row.
-The fractional portion `uv[11:0]` carries sub-texel position for bilinear filtering.
+The fractional portion `uv[11:0]` carries the sub-texel position; the lower two bits select the sub-texel within the 4×4 block.
 The sign bit `uv[15]` indicates negative coordinates (used by wrap/mirror logic).
 
 **Wrap Mode Application (applied independently to U and V):**
@@ -86,11 +85,11 @@ The final mip level is computed by adding `TEXn_MIP_BIAS` to the integer mip lev
 mip_level[3:0] = (frag_lod[7:4] + tex_mip_bias[3:0]) & 4'hF
 ```
 The addition is treated as unsigned 4-bit with wrap-around.
-The fractional blend weight `frag_lod[3:0]` is passed through unchanged to UNIT-011.02 for trilinear blending.
+The fractional blend weight `frag_lod[3:0]` is not used (NEAREST filtering only).
 
 ## Implementation
 
-- `rtl/components/texture/detail/uv-coord/src/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation
+- `rtl/components/texture/detail/uv-coord/src/texture_uv_coord.sv`: UV coordinate wrapping and sub-texel position computation
 
 The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/`).
 RTL behavior must be bit-identical to the twin at the texel coordinate level.
@@ -101,7 +100,7 @@ RTL behavior must be bit-identical to the twin at the texel coordinate level.
 Power-of-two texture dimensions (required by INT-014) mean modulo wrap reduces to a single AND mask.
 
 **Swizzle precedes cache lookup:** The swizzle is applied to the UV pair before the block address and cache tag are computed, so the cache stores texels at swizzled addresses.
-This is transparent to UNIT-011.02 (which receives already-swizzled coordinates).
+This is transparent to UNIT-011.03 (which receives already-swizzled coordinates).
 
 **Mip bias clamping:** If the biased mip level exceeds TEXn_CFG.MIP_LEVELS − 1, it is clamped to the maximum valid level.
 This prevents out-of-range lookups for textures with fewer than 16 mip levels.

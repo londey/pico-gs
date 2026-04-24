@@ -31,7 +31,7 @@ The 12 fractional bits reduce accumulated quantization error through chained com
 The destination pixel is read from the color tile buffer (promoted from RGB565 to Q4.12) and supplied as the DST_COLOR source operand, available to all three combiner passes.
 Alpha blending conventionally uses pass 2, mapping the selected blend mode directly to the `(A-B)*C+D` equation, but the hardware does not restrict DST_COLOR to any particular pass.
 The result follows the normal dither-and-write path through the tile buffer.
-The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers; bilinear texture filtering still uses the 9×9 DSP sub-mode, as its inputs (≤8-bit texels and fractional UV weights) remain narrow enough to pack two multiplies per slice.
+The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers.
 Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
 ## Execution Model
@@ -363,7 +363,7 @@ A compile-time configurable register FIFO (default depth 2, ~730 bits wide) betw
 Four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.
 The per-pixel level-of-detail (LOD) is derived from Q via CLZ and emitted on the fragment bus as `frag_lod` (UQ4.4).
 All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
-The texture sampler (UNIT-011) performs dual-texture sampling through per-texture two-level caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01), fetches and bilinearly filters texels from the L1 decompressed cache (UNIT-011.03), decompresses blocks on miss via the block decompressor (UNIT-011.04), and fills the L1 cache from the L2 compressed cache (UNIT-011.05), returning decoded Q4.12 RGBA texel data to the pixel pipeline.
+The texture sampler (UNIT-011) performs dual-texture sampling through per-texture two-level caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01), fetches the nearest texel from the L1 decompressed cache (UNIT-011.03), decompresses blocks on miss via the block decompressor (UNIT-011.04), and fills the L1 cache from the L2 compressed cache (UNIT-011.05), returning decoded Q4.12 RGBA texel data to the pixel pipeline.
 The pixel pipeline (UNIT-006) performs early Z testing, dispatches texture fetch requests to UNIT-011, and receives decoded Q4.12 texel data in return; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
 The color combiner (UNIT-010) is a single time-multiplexed instance that evaluates `(A-B)*C+D` independently for RGB and alpha, executing up to three passes per fragment within a 4-cycle/fragment throughput target.
 Pass 0 and pass 1 replicate the prior two-stage behavior: pass 0's output feeds pass 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add; for simple single-equation rendering, pass 1 is configured as a pass-through.
@@ -462,7 +462,7 @@ Each column shows a value's lifetime from production (first ●) to last consump
 | Dither | ● | ● | | | | | | | | ● | |
 | Pixel Write | ● | ● | | | | | | | | ● | Tile buffer flush (16-word burst write on tile exit), Z write |
 
-**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits: 4-bit integer mip level, 4-bit trilinear blend fraction, derived from interpolated Q = 1/W by the rasterizer); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
+**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits: 4-bit integer mip level, 4-bit fractional part, derived from interpolated Q = 1/W by the rasterizer); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
 Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
 After dither, color is truncated to RGB565 (16-bit) for framebuffer write.
 
@@ -696,7 +696,6 @@ flowchart LR
     UNIT_010["UNIT-010: Color Combiner"]
     subgraph UNIT_011["UNIT-011: Texture Sampler"]
         UNIT_011_01["UNIT-011.01: UV Coordinate Processing"]
-        UNIT_011_02["UNIT-011.02: Bilinear/Trilinear Filter"]
         UNIT_011_03["UNIT-011.03: L1 Decompressed Cache"]
         UNIT_011_04["UNIT-011.04: Block Decompressor"]
         UNIT_011_05["UNIT-011.05: L2 Compressed Cache"]
@@ -710,7 +709,6 @@ flowchart LR
     UNIT_003 -->|INT-010| UNIT_008
     UNIT_003 -->|INT-010| UNIT_010
     UNIT_003 -->|INT-010| UNIT_011_01
-    UNIT_003 -->|INT-010| UNIT_011_02
     UNIT_003 -->|INT-010| UNIT_011_03
     UNIT_003 -->|INT-010| UNIT_011_04
     UNIT_003 -->|INT-010| UNIT_011_05
@@ -737,7 +735,6 @@ flowchart LR
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
 | UNIT-010 | Color Combiner | Single-instance time-multiplexed programmable color combiner that evaluates up to three passes (CC0, CC1, CC2/blend) per fragment, producing the final output color including alpha blending and fog within a 4-cycle/fragment throughput target. |
 | UNIT-011.01 | UV Coordinate Processing | Applies wrap mode, clamp, mirror-repeat, and swizzle pattern to incoming Q4.12 UV coordinates, then selects the final mip level by combining `frag_lod` with `TEXn_MIP_BIAS`. |
-| UNIT-011.02 | Bilinear/Trilinear Filter | Fetches a 2×2 bilinear quad from the four interleaved L1 EBR banks (one texel per bank per cycle), computes bilinear interpolation weights from sub-texel UV fractions, and—when trilinear filtering is enabled—blends two bilinear results from adjacent mip levels using the fractional part of `frag_lod` as the blend weight. |
 | UNIT-011.03 | L1 Decompressed Cache | Per-sampler 4-way set-associative cache storing decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel). |
 | UNIT-011.04 | Block Decompressor | Decodes a compressed or uncompressed 4×4 texel block from its raw SDRAM format into 16 UQ1.8 RGBA texels for storage in UNIT-011.03 (L1 Decompressed Cache), then promotes the UQ1.8 output to Q4.12 via `texel_promote.sv` before passing texels to the color combiner pipeline. |
 | UNIT-011.05 | L2 Compressed Cache | Per-sampler direct-mapped cache storing raw compressed or uncompressed 4×4 block data fetched from SDRAM. |

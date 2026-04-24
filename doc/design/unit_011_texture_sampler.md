@@ -3,8 +3,9 @@
 ## Purpose
 
 Two-sampler texture pipeline providing decoded Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline).
-Each sampler independently fetches, decompresses, caches, and filters texture data from SDRAM, delivering the final `TEX_COLOR0` and `TEX_COLOR1` outputs consumed by UNIT-010 (Color Combiner) via UNIT-006.
-UNIT-011 is decomposed into five subunits covering UV coordinate processing, bilinear/trilinear filtering, L1 decompressed cache, block decompression, and L2 compressed cache.
+Each sampler independently fetches, decompresses, and caches texture data from SDRAM, delivering the final `TEX_COLOR0` and `TEX_COLOR1` outputs consumed by UNIT-010 (Color Combiner) via UNIT-006.
+UNIT-011 is decomposed into four active subunits covering UV coordinate processing, L1 decompressed cache, block decompression, and L2 compressed cache.
+UNIT-011.02 (Bilinear/Trilinear Filter) has been removed; only NEAREST (point-sample) filtering is supported.
 
 ## Implements Requirements
 
@@ -14,8 +15,7 @@ UNIT-011 is decomposed into five subunits covering UV coordinate processing, bil
 - REQ-003.03 (Compressed Textures) — see UNIT-011.04
 - REQ-003.04 (Swizzle Patterns) — see UNIT-011.01
 - REQ-003.05 (UV Wrapping Modes) — see UNIT-011.01
-- REQ-003.06 (Texture Sampling) — filter portion in UNIT-011.02; decoder portion in UNIT-011.04
-- REQ-003.07 (Texture Mipmapping) — see UNIT-011.02
+- REQ-003.06 (Texture Sampling) — NEAREST point-sample only; decoder portion in UNIT-011.04
 - REQ-003.08 (Texture Cache) — L1 in UNIT-011.03; L2 in UNIT-011.05
 
 ## Interfaces
@@ -54,14 +54,7 @@ Fragment Bus (UV, frag_lod) from UNIT-005 via UNIT-006
 │ UV wrap/clamp/   │  wrap mode, swizzle, mip_level selection
 │ mirror + swizzle │
 └────────┬─────────┘
-         │ wrapped texel coords + mip_level
-         ▼
-┌──────────────────┐
-│ UNIT-011.02      │  Bilinear/Trilinear Filter
-│ 2x2 quad fetch + │  sub-texel weights, trilinear LOD blend
-│ weight compute   │
-└────────┬─────────┘
-         │ cache read request (4 texels)
+         │ wrapped texel coords (block_x, block_y, sub_u, sub_v) + mip_level
          ▼
 ┌──────────────────┐
 │ UNIT-011.03      │  L1 Decompressed Cache
@@ -91,7 +84,7 @@ Fragment Bus (UV, frag_lod) from UNIT-005 via UNIT-006
 ### Inputs
 
 - Per-sampler UV coordinates (UV0, UV1) in Q4.12 signed fixed-point (16-bit: sign at [15], integer [14:12], fractional [11:0])
-- Per-pixel level-of-detail `frag_lod` (UQ4.4, 8-bit: integer mip level in [7:4], trilinear blend weight in [3:0]) from UNIT-005
+- Per-pixel level-of-detail `frag_lod` (UQ4.4, 8-bit: integer mip level in [7:4]) from UNIT-005
 - TEX0_CFG and TEX1_CFG register values from UNIT-003 (base address, format, wrap mode, swizzle, mip bias, mip levels)
 
 ### Outputs
@@ -105,7 +98,7 @@ On L1 cache miss, UNIT-011 stalls the fragment pipeline and falls through to L2 
 
 ```text
 Fragment needs texel → UNIT-011.03 L1 lookup
-  → L1 hit:  return 4 texels from 4 interleaved banks (single cycle bilinear quad)
+  → L1 hit:  return nearest texel from the addressed bank (single cycle)
   → L1 miss: UNIT-011.05 L2 lookup
     → L2 hit:  decompress 4×4 block (UNIT-011.04) → fill L1 → return
     → L2 miss: SDRAM burst read (arbiter port 3) → fill L2 → decompress → fill L1 → return
@@ -136,9 +129,8 @@ See DD-026 for the port 3 sharing rationale and latch-and-serialize scheme.
 
 ## Implementation
 
-- `rtl/components/texture/src/texture_sampler.sv`: Texture sampler assembly (wrap modes, bilinear address generation, blending)
-- `rtl/components/texture/detail/uv-coord/src/texture_uv_coord.sv`: UV coordinate wrapping and bilinear tap computation (UNIT-011.01)
-- `rtl/components/texture/detail/bilinear-filter/src/texture_bilinear.sv`: Bilinear weight computation and blending (UNIT-011.02)
+- `rtl/components/texture/src/texture_sampler.sv`: Texture sampler assembly (wrap modes, nearest-texel fetch)
+- `rtl/components/texture/detail/uv-coord/src/texture_uv_coord.sv`: UV coordinate wrapping and sub-texel position computation (UNIT-011.01)
 - `rtl/components/texture/detail/l1-cache/src/texture_cache_l1.sv`: L1 decompressed cache + fill FSM, instantiated twice for 2 samplers (UNIT-011.03)
 - `rtl/components/texture/detail/l2-cache/src/texture_l2_cache.sv`: L2 compressed block cache (UNIT-011.05)
 - `rtl/components/texture/detail/block-decoder/src/texture_bc1.sv`: BC1 block decoder (UNIT-011.04)
@@ -164,7 +156,7 @@ The RTL must produce bit-identical results to the twin at the Q4.12 texel output
 ## Design Notes
 
 **Two-sampler symmetry:** Both samplers share identical hardware structure.
-Each sampler is an independent instance of the subunit stack (`texture_uv_coord.sv`, `texture_bilinear.sv`, `texture_cache_l1.sv`, `texture_block_decode.sv`, `texture_l2_cache.sv`) with its own L1 EBR banks, L2 EBR banks, tag arrays, valid bits, and fill FSMs.
+Each sampler is an independent instance of the subunit stack (`texture_uv_coord.sv`, `texture_cache_l1.sv`, `texture_block_decode.sv`, `texture_l2_cache.sv`) with its own L1 EBR banks, L2 EBR banks, tag arrays, valid bits, and fill FSMs.
 Inter-sampler contention occurs only at the shared arbiter port 3 when both samplers miss L2 simultaneously; the arbiter serves them in arrival order.
 
 **gs-twin is the authoritative algorithmic reference:** Before modifying texture RTL, read `twin/components/texture/` to understand the expected bit-accurate behavior.

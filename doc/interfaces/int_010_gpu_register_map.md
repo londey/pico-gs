@@ -29,7 +29,7 @@ All register semantics are identical regardless of command source.
 - **Dedicated color combiner module with programmable input selection**
 - **DOT3 bump mapping with interpolated light direction**
 - **Dual vertex colors: diffuse (VER_COLOR0) + specular (VER_COLOR1)**
-- **Trilinear texture filtering for smooth LOD transitions**
+- **NEAREST (point-sample) texture filtering**
 - Eight texture formats: BC1, BC2, BC3, BC4, BC5 (block-compressed) and RGB565, RGBA8888, R8 (uncompressed); see INT-014
 - Swizzle patterns for channel reordering
 - **Unified RENDER_MODE register (TRI_MODE + ALPHA_BLEND + Z-modes + dithering)**
@@ -402,7 +402,7 @@ Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (see
 
 - **ENABLE** — activates the sampler; the hardware routes cache miss fills to the decoder selected by FORMAT.
 - **FORMAT** — selects the texture format (BC1–BC5, RGB565, RGBA8888, R8); 4-bit field encoding defined in `registers/rdl/gpu_regs.rdl` (`tex_format_e`); see INT-014 for block layouts.
-- **FILTER** — NEAREST, BILINEAR, or TRILINEAR (trilinear falls back to bilinear when MIP_LEVELS ≤ 1).
+- **FILTER** — NEAREST (0) only; values 1–3 are reserved. The 2-bit field is preserved for ABI compatibility.
 - **WIDTH_LOG2, HEIGHT_LOG2** — log₂ of texture dimensions (valid 3–10, i.e. 8–1024 pixels).
 - **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR (octahedral wrap implements coupled diagonal mirroring).
 - **MIP_LEVELS** — number of mipmap levels (0 or 1 = single level; max = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)); see INT-014 for mipmap chain memory layout.
@@ -1089,7 +1089,7 @@ gpu_write(REG_TEX0_FMT,
     (0x0 << 17) |  // Swizzle: RGBA (identity)
     (8 << 13) |    // HEIGHT_LOG2: 256 (bits [16:13])
     (8 << 9) |     // WIDTH_LOG2: 256 (bits [12:9])
-    (0x1 << 7) |   // FILTER: BILINEAR (bits [8:7])
+    (0x0 << 7) |   // FILTER: NEAREST (bits [8:7])
     (0x5 << 2) |   // FORMAT: RGB565 (bits [5:2], value 0101 = 5)
     (1 << 0)       // ENABLE: yes
 );
@@ -1100,7 +1100,7 @@ gpu_write(REG_TEX1_FMT,
     (0x0 << 17) |  // Swizzle: RGBA (identity)
     (8 << 13) |    // HEIGHT_LOG2: 256 (bits [16:13])
     (8 << 9) |     // WIDTH_LOG2: 256 (bits [12:9])
-    (0x1 << 7) |   // FILTER: BILINEAR (bits [8:7])
+    (0x0 << 7) |   // FILTER: NEAREST (bits [8:7])
     (0x0 << 2) |   // FORMAT: BC1 (bits [5:2], value 0000 = 0)
     (1 << 0)       // ENABLE: yes
 );
@@ -1147,7 +1147,7 @@ gpu_write(REG_TEX0_FMT,
     (0x0 << 17) |  // Swizzle: RGBA (identity)
     (7 << 13) |    // HEIGHT_LOG2: 128 (bits [16:13])
     (7 << 9) |     // WIDTH_LOG2: 128 (bits [12:9])
-    (0x2 << 7) |   // FILTER: TRILINEAR (bits [8:7])
+    (0x0 << 7) |   // FILTER: NEAREST (bits [8:7])
     (0x0 << 2) |   // FORMAT: BC1 (bits [5:2], value 0000 = 0)
     (1 << 0)       // ENABLE: yes
 );
@@ -1234,7 +1234,7 @@ gpu_write(REG_TEX0_FMT,
     (0x7 << 17) |  // Swizzle: RRR1 (grayscale to RGB, bits [20:17])
     (8 << 13) |    // HEIGHT_LOG2: 256 (bits [16:13])
     (8 << 9) |     // WIDTH_LOG2: 256 (bits [12:9])
-    (0x1 << 7) |   // FILTER: BILINEAR (bits [8:7])
+    (0x0 << 7) |   // FILTER: NEAREST (bits [8:7])
     (0x7 << 2) |   // FORMAT: R8 (bits [5:2], value 0111 = 7)
     (1 << 0)       // ENABLE: yes
 );

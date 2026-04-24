@@ -65,7 +65,6 @@ Requirements are traceable: each is allocated to design units (`UNIT-NNN`) and r
 - [REQ-003.04: Swizzle Patterns](req_003.04_swizzle_patterns.md)
 - [REQ-003.05: UV Wrapping Modes](req_003.05_uv_wrapping_modes.md)
 - [REQ-003.06: Texture Sampling](req_003.06_texture_sampling.md)
-- [REQ-003.07: Texture Mipmapping](req_003.07_texture_mipmapping.md)
 - [REQ-003.08: Texture Cache](req_003.08_texture_cache.md)
 - [REQ-003: Texture Samplers](req_003_texture_samplers.md)
 - [REQ-004.01: Color Combiner](req_004.01_color_combiner.md)

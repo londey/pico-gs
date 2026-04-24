@@ -3,7 +3,7 @@
 ## Purpose
 
 Per-sampler 4-way set-associative cache storing decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel).
-Four interleaved PDPW16KD 512×36 EBR banks per sampler guarantee single-cycle bilinear quad access on cache hit.
+Four interleaved PDPW16KD 512×36 EBR banks per sampler provide single-cycle texel access on cache hit.
 On miss, requests UNIT-011.05 (L2 Compressed Cache) to supply the compressed block, then invokes UNIT-011.04 (Block Decompressor) to fill the L1 banks.
 
 ## Implements Requirements
@@ -22,8 +22,8 @@ On miss, requests UNIT-011.05 (L2 Compressed Cache) to supply the compressed blo
 
 ### Internal Interfaces
 
-- Receives cache read requests (block address + mip level + sub-texel position) from UNIT-011.02
-- Returns four UQ1.8 texels (one per bank) per request on hit (single cycle)
+- Receives cache read requests (block address + mip level + sub-texel position) from UNIT-011.01
+- Returns one UQ1.8 texel per request on hit (single cycle)
 - On miss: requests compressed block from UNIT-011.05; receives 16 decompressed UQ1.8 texels from UNIT-011.04 to fill banks
 - Stalls UNIT-006 fragment pipeline while fill is in progress
 
@@ -44,7 +44,7 @@ Per-Sampler L1 Cache (2 samplers, independent):
   Total: 4 EBR per sampler, 8 EBR for 2 samplers
 ```
 
-### Bilinear Bank Interleaving
+### Bank Interleaving
 
 The 16 texels within each cache line are distributed across the four banks by their (x, y) parity within the 4×4 block:
 
@@ -61,7 +61,8 @@ Bank 2: texels at (even_x, odd_y)  positions
 Bank 3: texels at (odd_x,  odd_y)  positions
 ```
 
-**Bilinear access guarantee:** Any 2×2 bilinear filter quad reads exactly one texel from each bank, enabling all four texels to be read in a single cycle on cache hit.
+Each NEAREST texel read touches exactly one bank; the 4-bank structure evenly distributes the 16 texels in a 4×4 block and is retained for structural regularity.
+The bank selected for a NEAREST read is determined by `sub_u[0]` and `sub_v[0]` (the parity of the sub-texel position).
 
 ### Address Fields
 
@@ -87,13 +88,13 @@ bank_addr = {cache_line_index[6:0], texel_within_bank[1:0]}  // 9 bits → 512 e
 
 ### Inputs
 
-- Cache read request: `(tag, set)` from UNIT-011.02
+- Cache read request: `(tag, set, bank_select)` from UNIT-011.01
 - 16 decompressed UQ1.8 texels from UNIT-011.04 (for cache line fill)
 - TEX0_CFG / TEX1_CFG write strobe (cache invalidation trigger from UNIT-003)
 
 ### Outputs
 
-- Four UQ1.8 texels (one per bank) to UNIT-011.02 on hit (single cycle)
+- One UQ1.8 texel (from the addressed bank) to UNIT-011.04 on hit (single cycle)
 - L1 miss signal to trigger UNIT-011.05 L2 lookup
 - Pipeline stall signal to UNIT-006
 
@@ -120,7 +121,7 @@ Each bank stores exactly 512 entries (128 cache lines × 4 texels per bank), ful
 
 **Why PDPW16KD at 512×36?** See DD-037 for the EBR primitive selection rationale.
 The 36-bit width exactly matches the 4-channel UQ1.8 texel width (4 × 9 bits).
-The pseudo-dual-port configuration allows simultaneous read (for bilinear quad fetch) and write (for cache fill) without arbitration, provided the read and write addresses do not collide.
+The pseudo-dual-port configuration allows simultaneous read (for texel fetch) and write (for cache fill) without arbitration, provided the read and write addresses do not collide.
 During fill, the read port is held idle.
 
 See REQ-011.02 for the complete EBR budget across the GPU.

@@ -164,6 +164,10 @@ VER-005 step 6–9 test vectors remain valid (the computed values are unchanged)
 **Date:** 2026-03-14
 **Status:** Proposed
 
+**Note:** Bilinear filtering (UNIT-011.02) has been removed from the pipeline (see DD-010 annotation below).
+The UQ1.8 format and 36-bit PDPW16KD bank structure are retained; the cache now delivers a single nearest texel per cycle rather than a 2×2 bilinear quad.
+The format's precision and EBR footprint are unchanged.
+
 ### Context
 
 The existing RGBA5652 cache format (R5 G6 B5 A2, 18 bits per texel) was chosen to fit one texel per 18-bit EBR word (see DD-010).
@@ -1069,34 +1073,39 @@ Three related changes to the pixel pipeline and register layout:
 **Status:** Accepted
 **Implementation:** RTL PENDING
 
+**Note:** The bilinear-quad access motivation in this ADR is historical.
+Bilinear filtering (UNIT-011.02) has been removed from the pipeline; the GPU now uses NEAREST-only texture filtering.
+The 4-bank interleaved structure is retained unchanged — it costs nothing to keep and preserves the option for re-introduction.
+The cache now delivers a single nearest texel per lookup rather than a 2×2 bilinear quad.
+
 ### Context
 
-Bilinear texture sampling with 4 texture units requires up to 16 SRAM reads per pixel (4 texels x 4 units). At 200 MB/s peak SRAM bandwidth shared with display scanout, Z-buffer, and framebuffer writes, texture fetch bandwidth is the primary bottleneck for textured rendering. The 30 MB/s texture fetch budget (INT-011) is insufficient for multi-textured bilinear sampling.
+Texture sampling with multiple texture units requires frequent SDRAM access.
+At 200 MB/s peak SRAM bandwidth shared with display scanout, Z-buffer, and framebuffer writes, texture fetch bandwidth is the primary bottleneck for textured rendering.
+The 30 MB/s texture fetch budget (INT-011) necessitates an on-chip texture cache.
 
 ### Decision
 
-Add a 4-way set-associative texture cache per sampler (4 caches total):
-- 4 x 1024 x 18-bit EBR banks per cache, interleaved by texel (x%2, y%2) for single-cycle bilinear reads
-- Cache line = decompressed 4x4 RGBA5652 block (18 bits per texel)
-- 64 sets with XOR-folded indexing (set = block_x ^ block_y) to prevent row aliasing
+Add a 4-way set-associative texture cache per sampler (2 caches total):
+
+- 4 interleaved EBR banks per cache, addressed by texel position within the 4×4 block
+- Cache line = decompressed 4×4 texel block in UQ1.8 format (36 bits per texel, stored in PDPW16KD 512×36 mode; see DD-037, DD-038)
+- XOR-folded set indexing (set = block_x ^ block_y) to prevent row aliasing
 - Implicit invalidation on TEXn_BASE/TEXn_FMT register writes
-- 16 EBR blocks total (288 Kbits, 33% of BRAM budget)
 
 ### Rationale
 
-- **4-way associativity**: Handles block-boundary bilinear (2 ways for adjacent blocks), mip-level block (1 way), and one spare. 2-way would thrash at block boundaries; 8-way has diminishing returns with higher LUT cost for tag comparison
-- **RGBA5652 (18-bit)**: Matches ECP5 EBR native 1024x18 configuration (zero wasted bits). RGB565 base is framebuffer-compatible. 2-bit alpha covers BC1 punch-through alpha
-- **XOR set indexing**: Linear indexing maps every block row (e.g., 64 blocks for 256-wide texture) to the same 64 sets, causing vertically adjacent blocks to always alias. XOR is zero-cost in hardware (XOR gates on address bits) and eliminates this systematic aliasing. No impact on asset pipeline or physical memory layout
-- **Per-sampler caches**: Avoids contention between texture units; each cache operates independently with its own tags and replacement policy
+- **4-bank interleaving**: Originally motivated by single-cycle bilinear quad access; retained for headroom with no additional cost.
+- **4-way associativity**: Handles block-boundary crossings (2 ways for adjacent blocks), mip-level changes (1 way), and one spare. 2-way would thrash at block boundaries; 8-way has diminishing returns with higher LUT cost for tag comparison.
+- **XOR set indexing**: Linear indexing maps every block row (e.g., 64 blocks for a 256-wide texture) to the same 64 sets, causing vertically adjacent blocks to always alias. XOR is zero-cost in hardware and eliminates this systematic aliasing. No impact on asset pipeline or physical memory layout.
+- **Per-sampler caches**: Avoids contention between texture units; each cache operates independently with its own tags and replacement policy.
 
 ### Consequences
 
-- +16 EBR blocks consumed (28.6% of ECP5-25k's 56 EBR). Leaves 37 EBR blocks free
-- +~800-1600 LUTs total for tag storage, comparison, control logic, and fill FSMs across all 4 samplers
-- Enables single-cycle bilinear texture sampling at >85% cache hit rate
+- EBR consumed: see ARCHITECTURE.md EBR Budget table (current figures supersede the original estimate)
+- +~800–1600 LUTs total for tag storage, comparison, control logic, and fill FSMs across both samplers
 - BC1 decompression cost amortized over cache line lifetime (16 texels per decompress)
-- RGBA4444 alpha precision reduced from 4-bit to 2-bit in cache (acceptable: framebuffer has no alpha channel)
-- Texture SRAM bandwidth reduced from ~30 MB/s to ~5-15 MB/s average, freeing ~15-25 MB/s for other consumers
+- Texture SRAM bandwidth reduced from ~30 MB/s to ~5–15 MB/s average, freeing ~15–25 MB/s for other consumers
 
 ---
 

@@ -52,7 +52,7 @@ Each strip consists of two triangles forming a quad:
 Rendering configuration:
 - `RENDER_MODE`: `GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE=GEQUAL` (reverse-Z)
 - `CC_MODE`: `MODULATE` (TEX0 × SHADE0)
-- `TEX0_CFG`: bilinear filtering, RGB565, 64×64, repeat wrap
+- `TEX0_CFG`: NEAREST filtering, RGB565, 64×64, repeat wrap
 
 ### Command Sequence
 
@@ -64,7 +64,7 @@ Rendering configuration:
 2. **Phase `setup`:**
    - Upload 64×64 checker texture to SDRAM using block-tiled `MEM_FILL` commands.
    - Configure `FB_CONFIG`, `FB_CONTROL` (scissor 512×512).
-   - Configure `TEX0_CFG`: bilinear, RGB565, 64×64, repeat wrap, base=`0x0C00`.
+   - Configure `TEX0_CFG`: NEAREST, RGB565, 64×64, repeat wrap, base=`0x0C00`.
    - Configure `CC_MODE = MODULATE`, `RENDER_MODE` with Z-test (GEQUAL), Z-write, color-write, Gouraud.
 
 3. **Phase `triangles`:**
@@ -104,5 +104,5 @@ Rendering configuration:
   This is a real-world constraint for scenes with strong perspective foreshortening.
 - **S/T vs U/V:** The hex script provides pre-projected S=U/W and T=V/W texture coordinates at each vertex, along with Q=1/W.
   The rasterizer interpolates S, T, and Q linearly in screen space, then performs per-pixel perspective correction: U=S/Q, V=T/Q (UNIT-005.04).
-- The golden image requires re-approval after any change to the perspective correction pipeline (UNIT-005.05), the per-pixel reciprocal module (`raster_recip_q.sv`), the Z interpolation path, the MODULATE combiner (UNIT-010), or the texture cache and RGB565 decoder path in UNIT-011.
+- The golden image requires re-approval after any change to the perspective correction pipeline (UNIT-005.05), the per-pixel reciprocal module (`raster_recip_q.sv`), the Z interpolation path, the MODULATE combiner (UNIT-010), the texture cache and RGB565 decoder path in UNIT-011, or the NEAREST texel selection logic in UNIT-011.01.
 - Dithering is disabled for deterministic output.

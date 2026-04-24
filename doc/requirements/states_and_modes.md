@@ -385,10 +385,9 @@ Any write to a TEXn_CFG register invalidates the corresponding texture unit's L1
 - **Applicable States:** Texture Sampling stage (per unit)
 - **Configuration:** TEXn_CFG.FILTER[3:2] (see `tex_filter_e`):
   - NEAREST (0): point sample — one texel per fragment
-  - BILINEAR (1): 2×2 tap filter with sub-texel weights
-  - TRILINEAR (2): reserved; requires MIP_LEVELS > 1 and currently degrades to BILINEAR at the base mip
-- **Behavior Differences:** Bilinear issues 4 cache taps per fragment; nearest issues 1. Both complete in 1 cycle on L1 hit.
-- **Use Case:** Bilinear for smooth magnification; nearest for pixel-art and LUT textures
+  - Values 1–3: reserved; the 2-bit field width is preserved for ABI compatibility
+- **Behavior Differences:** NEAREST issues 1 cache tap per fragment, completing in 1 cycle on L1 hit.
+- **Use Case:** Pixel-art and LUT textures; all rendering modes use NEAREST.
 
 #### Mode: Texture Blend (Color Combiner)
 
@@ -757,14 +756,14 @@ Early-exit points are marked with ✗ (fragment/block killed).
 The hardware implements two texture units (TEX0 and TEX1), time-multiplexed through a single physical sampler (UNIT-011).
 Each unit has its own TEXn_CFG register and independent L1/L2 cache state.
 
-| Capability             | TEX0 | TEX1 | Notes                                                                      |
-|------------------------|------|------|----------------------------------------------------------------------------|
-| **Independent Enable** | ✓    | ✓    | TEXn_CFG.ENABLE (bit 0)                                                    |
-| **Format**             | ✓    | ✓    | TEXn_CFG.FORMAT (bits 7:4) — BC1/BC2/BC3/BC4, RGB565, RGBA8888, R8         |
-| **Filter Modes**       | ✓    | ✓    | TEXn_CFG.FILTER (bits 3:2) — NEAREST, BILINEAR, TRILINEAR (reserved)       |
-| **UV Wrap Modes**      | ✓    | ✓    | TEXn_CFG.U_WRAP / V_WRAP — REPEAT, CLAMP_TO_EDGE, MIRROR, OCTAHEDRAL       |
-| **Mip Levels**         | ✓    | ✓    | TEXn_CFG.MIP_LEVELS (bits 23:20); TRILINEAR filter requires MIP_LEVELS > 1 |
-| **Blend Mode**         | n/a  | n/a  | Texture blending is expressed in the 3-pass color combiner (CC_MODE)       |
+| Capability             | TEX0 | TEX1 | Notes                                                                            |
+|------------------------|------|------|----------------------------------------------------------------------------------|
+| **Independent Enable** | ✓    | ✓    | TEXn_CFG.ENABLE (bit 0)                                                          |
+| **Format**             | ✓    | ✓    | TEXn_CFG.FORMAT (bits 7:4) — BC1/BC2/BC3/BC4, RGB565, RGBA8888, R8               |
+| **Filter Modes**       | ✓    | ✓    | TEXn_CFG.FILTER (bits 3:2) — NEAREST (0); values 1–3 reserved                    |
+| **UV Wrap Modes**      | ✓    | ✓    | TEXn_CFG.U_WRAP / V_WRAP — REPEAT, CLAMP_TO_EDGE, MIRROR, OCTAHEDRAL             |
+| **Mip Levels**         | ✓    | ✓    | TEXn_CFG.MIP_LEVELS (bits 23:20); field retained for ABI; not used at runtime    |
+| **Blend Mode**         | n/a  | n/a  | Texture blending is expressed in the 3-pass color combiner (CC_MODE)             |
 
 **Current Usage:** Single-texture rendering uses TEX0 with TEX1 disabled.
 Dual-texture modes sample TEX0 and TEX1 sequentially through the shared sampler; the color combiner consumes both results.

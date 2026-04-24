@@ -63,7 +63,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 
 - Fragment position (x, y) from rasterizer (UNIT-005)
 - Perspective-correct UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0]); these are true U, V values — perspective correction is performed inside the rasterizer (UNIT-005.05) before emission
-- Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); integer part selects the mip level, fractional part is the trilinear blend weight
+- Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); integer part selects the mip level (fractional part is unused; NEAREST filtering only)
 - Interpolated vertex colors (SHADE0, SHADE1) as Q4.12 from rasterizer (UNIT-005)
 - Interpolated Z depth value (16-bit unsigned)
 - Register state (CC_MODE, CONST_COLOR, RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, STIPPLE_PATTERN)
@@ -122,7 +122,7 @@ Alpha blending (REQ-005.03) conventionally uses pass 2 (CC2), but the hardware d
 **Stage 1–3: Texture Sampling (delegated to UNIT-011):**
 
 UNIT-006 forwards the fragment's UV coordinates, `frag_lod`, and register-file configuration (TEX0_CFG, TEX1_CFG) to UNIT-011.
-UNIT-011 performs UV coordinate processing, cache lookup, block decompression, and format promotion, then returns TEX_COLOR0 and TEX_COLOR1 in Q4.12 RGBA format.
+UNIT-011 performs UV coordinate processing (NEAREST point-sample), cache lookup, block decompression, and format promotion, then returns TEX_COLOR0 and TEX_COLOR1 in Q4.12 RGBA format.
 If UNIT-011 encounters a cache miss, it stalls the UNIT-006 pipeline until the fill completes.
 See UNIT-011 for the detailed texture sampling design.
 
@@ -227,7 +227,7 @@ UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occur
 
 **Architectural separation:** The pixel pipeline is decomposed into peer units:
 
-1. **UNIT-011 (Texture Sampler):** UV coordinate processing, two-level texture cache (L1 decoded + L2 compressed), block decompression for all eight texture formats, format promotion to Q4.12.
+1. **UNIT-011 (Texture Sampler):** UV coordinate processing (NEAREST point-sample), two-level texture cache (L1 decoded + L2 compressed), block decompression for all supported texture formats, format promotion to Q4.12.
    Delivers TEX_COLOR0, TEX_COLOR1 in Q4.12 RGBA to UNIT-006.
 2. **UNIT-006 (this unit):** Stipple test, depth range clipping, early Z-test, dispatches fragment UV/LOD to UNIT-011, receives Q4.12 texel results, passes them to UNIT-010.
 3. **UNIT-010 (Color Combiner):** Single time-multiplexed programmable color combiner `(A-B)*C+D` executing three passes (CC0, CC1, CC2) per fragment within a 4-cycle/fragment throughput.
