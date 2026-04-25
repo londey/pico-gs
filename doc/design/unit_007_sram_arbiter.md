@@ -178,7 +178,7 @@ This prevents lower-priority burst transfers from starving higher-priority ports
 | Port 0 (display) | No limit (highest priority) | Display is never preempted |
 | Port 1 (framebuffer) | 16 words | Limits worst-case display latency to 16 cycles; matches 4×4 tile size (16 words) for both prefetch reads and flush writes |
 | Port 2 (Z-buffer) | 16 words | Matches 4×4 Z-tile fill/evict burst size (16 × 16-bit Z values) |
-| Port 3 (texture) | 32 words | Covers largest texture cache fill: RGBA8888 4×4 tile = 32 × 16-bit words |
+| Port 3 (texture) | 32 words | Covers palette load burst (up to 32 × 16-bit words per burst sub-transfer) and index-cache fill (8 words per 4×4 index block) |
 
 When a burst reaches the maximum length without preemption, the arbiter allows it to complete naturally.
 Preemption only occurs if a higher-priority port actually asserts req during the burst.
@@ -260,7 +260,7 @@ The model must replicate:
 - **Auto-refresh**: periodic `mem_ready` deassertion (~1 per 781 cycles) to exercise the arbiter's refresh-stall path.
 - **Burst cancel/PRECHARGE**: on `mem_burst_cancel`, complete the current 16-bit word, then assert `mem_ack` after a simulated PRECHARGE delay.
 
-An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazards in the display prefetch FSM (UNIT-008) and texture cache (UNIT-011).
+An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazards in the display prefetch FSM (UNIT-008) and texture sampler (UNIT-011), including the palette load FSM burst sequencing.
 
 **Unified clock update:** With the GPU core clock unified to 100 MHz (matching the SDRAM controller clock), the arbiter operates in a single clock domain.
 Previously, if the GPU core ran at a different frequency than the memory, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the memory controller.
@@ -280,12 +280,18 @@ Key behavioral differences:
 - Auto-refresh interrupts normal access at a rate of ~1 per 781 cycles; the arbiter must tolerate mem_ready deassertion during refresh
 - The arbiter interface (req/we/addr/wdata/rdata/ack/ready/burst) is preserved; the SDRAM controller internally manages row activation, CAS latency, precharge, and refresh
 
-**Texture format update:** Port 3 texture traffic comes from at most 2 texture samplers.
-Supported texture formats require varying burst sizes per 4×4 cache fill: BC1=4 words, BC4=4 words, R8=8 words, BC2/BC3=8 words, RGB565=16 words, RGBA8888=32 words.
-The max burst length for Port 3 is set to 32 words to cover the largest format (RGBA8888).
-With 16K texels per sampler cache (4-way set-associative), cache miss rates exceed 90% for typical scenes, reducing Port 3 average bandwidth demands substantially.
+**Texture format update:** Port 3 texture traffic comes from at most 2 texture samplers via UNIT-011 (Texture Sampler).
+UNIT-011 contains a 3-way local arbiter that muxes three clients onto Port 3: palette-slot-0 load, palette-slot-1 load, and index-cache fill.
+Index-cache fills use a burst length of 8 words (16 bytes for a 4×4 block of 8-bit indices).
+Palette loads cover a 4096-byte SDRAM payload (256 entries × 4 RGBA8888 colors); the load FSM issues multiple bursts of up to 32 words each, requiring approximately 256 sequential bursts to load a full palette slot (≈515 cycles at 100 MHz if Port 3 is uncontested).
+The max burst length for Port 3 remains 32 words; the palette load FSM never requests more than 32 words per burst.
+With 512 index entries per sampler cache (direct-mapped, 32 sets × 16 indices/line), cache miss handling is simpler than the previous L1/L2 hierarchy; Port 3 average bandwidth for index fills is reduced substantially compared to the previous UQ1.8 cache design.
 
-**Port 3 sharing — texture cache and PERF_TIMESTAMP:** Port 3 is shared between texture cache fill reads (UNIT-006) and `PERF_TIMESTAMP` single-word writes initiated by `gpu_top.sv` on behalf of UNIT-003.
+**Port 3 sharing — texture sampler and PERF_TIMESTAMP:** Port 3 is shared between UNIT-011 (Texture Sampler) and `PERF_TIMESTAMP` single-word writes initiated by `gpu_top.sv` on behalf of UNIT-003.
+UNIT-011 presents a single Port 3 interface to the arbiter; internally it contains a 3-way arbiter that resolves priority among palette-slot-0 loads, palette-slot-1 loads, and per-sampler index-cache fills.
+In-flight index-cache fills take priority over pending palette loads within UNIT-011's internal arbiter; this priority ordering is invisible to UNIT-007.
+
+The serialization scheme for PERF_TIMESTAMP writes onto Port 3 is unchanged:
 The sharing is managed in `gpu_top.sv` using a latch-and-serialize scheme (see DD-026):
 - Texture fill requests from UNIT-006 drive `port3_req` directly.
 - `PERF_TIMESTAMP` write requests are latched into a pending register in `gpu_top.sv` when UNIT-003 asserts `ts_mem_wr`.

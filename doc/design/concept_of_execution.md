@@ -90,7 +90,7 @@ Tiles that pass the Hi-Z test trigger a Z Tile Load and a Color Tile Load, pre-f
 The rasterizer then runs per-pixel edge tests and interpolates Z, Q (1/W), vertex colors, and UV projections, applying perspective correction (1/Q via reciprocal LUT; true U, V reconstructed via DSP multipliers).
 
 **Render Pipeline — Pixel Pipeline** (UNIT-006): The rasterizer emits per-fragment data (x, y, z, color0, color1, uv0, uv1, lod) via a valid/ready handshake to the pixel pipeline; `uv0` and `uv1` carry true perspective-correct U, V coordinates ready for texel addressing.
-The pixel pipeline performs early Z testing, then dispatches UV coordinates and frag_lod to the texture sampler (UNIT-011) for cache lookup and texel decoding; UNIT-011 returns decoded Q4.12 RGBA texel data for each active sampler.
+The pixel pipeline performs early Z testing, then dispatches UV coordinates to the texture sampler (UNIT-011) for index cache lookup and palette LUT lookup; UNIT-011 returns decoded Q4.12 RGBA texel data for each active sampler.
 The pixel pipeline then drives the color combiner (UNIT-010) with the Q4.12 texel results, performs alpha blending, dithering, and writes passing pixels and updated depth values to the framebuffer and Z-buffer in SDRAM via the memory arbiter.
 
 **Display Pipeline**: The display controller independently prefetches scanlines from the display framebuffer into a FIFO and outputs them through the DVI encoder at the 25 MHz pixel clock (synchronous 4:1 from the 100 MHz core clock).
@@ -143,7 +143,7 @@ See INT-011 for the canonical block-tiled address formula and alternative surfac
 | Texture Memory | `0x180000` | Remaining space |
 
 **FPGA resources**: The command FIFO is 32 entries deep (72 bits each), implemented as a custom soft FIFO backed by a regular memory array (not a Lattice EBR FIFO macro) so that the bitstream can pre-populate the memory with boot commands (see DD-019).
-The memory arbiter (UNIT-007) has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1, owned by pixel pipeline), Z-buffer read/write (port 2, owned by pixel pipeline), texture cache fills and timestamp writes (port 3, lowest — shared with time-division between texture burst reads and timestamp SDRAM writes; see UNIT-007 for the sharing policy).
+The memory arbiter (UNIT-007) has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1, owned by pixel pipeline), Z-buffer read/write (port 2, owned by pixel pipeline), texture index cache fills / palette slot loads / timestamp writes (port 3, lowest — shared via the 3-way arbiter internal to texture_sampler.sv plus time-division with PERF_TIMESTAMP SDRAM writes; see UNIT-007 for the sharing policy).
 The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SDRAM access latency (including CAS latency and row activation overhead).
 
 **SDRAM sequential access**: The external SDRAM (W9825G6KH) supports efficient sequential column reads and writes within an active row.

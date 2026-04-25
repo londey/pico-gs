@@ -9,6 +9,7 @@ Stores GPU state and vertex data
 - REQ-001.01 (Basic Host Communication)
 - REQ-001.02 (Memory Upload Interface)
 - REQ-001.05 (Vertex Submission Protocol)
+- REQ-003.09 (Palette Slots)
 - REQ-011.02 (Resource Constraints)
 - REQ-001 (GPU SPI Hardware)
 
@@ -32,7 +33,9 @@ None
 - Outputs mode flags (mode_gouraud, mode_cull, mode_alpha_blend, mode_dither_en, mode_dither_pattern, mode_stipple_en, mode_alpha_test, mode_alpha_ref, mode_z_test, mode_z_write, mode_z_compare, mode_color_write) to UNIT-005 (Rasterizer) and UNIT-006 (Pixel Pipeline)
 - Outputs Z range clipping parameters (z_range_min, z_range_max) to pixel pipeline (UNIT-006)
 - Outputs scissor rectangle (scissor_x, scissor_y, scissor_width, scissor_height) to pixel pipeline (UNIT-006)
-- Outputs texture configuration (tex0_cfg, tex1_cfg) to pixel pipeline (UNIT-006); any write to TEX0_CFG or TEX1_CFG also triggers cache invalidation for the corresponding sampler
+- Outputs texture configuration (tex0_cfg, tex1_cfg) to pixel pipeline (UNIT-006); any write to TEX0_CFG or TEX1_CFG also triggers index cache invalidation for the corresponding sampler
+- Outputs palette load triggers (palette0_load_trigger, palette1_load_trigger) as one-cycle pulses to UNIT-011 (Texture Sampler) when PALETTE0/PALETTE1 are written with LOAD_TRIGGER=1; self-clearing the next cycle
+- Outputs palette base addresses (palette0_base_addr, palette1_base_addr) as continuous wires to UNIT-011 (Texture Sampler)
 - Outputs color combiner configuration (cc_mode, const_color) to color combiner (UNIT-010)
 - Outputs mem_fill trigger and parameters to the SDRAM fill unit
 - Outputs fb_display_sync trigger signals to UNIT-008 (Display Controller)
@@ -109,6 +112,10 @@ None
 | `ts_mem_wr` | 1 | One-cycle pulse: write cycle counter to SDRAM |
 | `ts_mem_addr` | 23 | SDRAM word address for timestamp write |
 | `ts_mem_data` | 32 | Cycle counter value to write |
+| `palette0_load_trigger` | 1 | One-cycle pulse when PALETTE0 is written with LOAD_TRIGGER=1 |
+| `palette0_base_addr` | 16 | Palette 0 SDRAM base address (PALETTE0[15:0], ×512 byte addr) |
+| `palette1_load_trigger` | 1 | One-cycle pulse when PALETTE1 is written with LOAD_TRIGGER=1 |
+| `palette1_base_addr` | 16 | Palette 1 SDRAM base address (PALETTE1[15:0], ×512 byte addr) |
 
 ### Internal State
 
@@ -127,6 +134,8 @@ None
 - **tex0_cfg, tex1_cfg** [63:0]: TEX0_CFG, TEX1_CFG registers
 - **cycle_counter** [31:0]: Frame-relative cycle counter (clk_core, resets to 0 on vsync rising edge)
 - **vblank_prev** [0]: Previous vblank value for rising-edge detection
+- **palette0_reg** [63:0]: PALETTE0 register (BASE_ADDR in bits [15:0], LOAD_TRIGGER self-clearing pulse in bit [16])
+- **palette1_reg** [63:0]: PALETTE1 register (BASE_ADDR in bits [15:0], LOAD_TRIGGER self-clearing pulse in bit [16])
 
 **Register Address Map:**
 
@@ -140,6 +149,8 @@ None
 | 0x09 | VERTEX_KICK_RECT | W (two-corner rectangle emit) |
 | 0x10 | TEX0_CFG | R/W |
 | 0x11 | TEX1_CFG | R/W |
+| 0x12 | PALETTE0 | W (triggers palette slot 0 load when LOAD_TRIGGER=1) |
+| 0x13 | PALETTE1 | W (triggers palette slot 1 load when LOAD_TRIGGER=1) |
 | 0x18 | CC_MODE | R/W |
 | 0x19 | CONST_COLOR | R/W |
 | 0x30 | RENDER_MODE | R/W |
@@ -177,7 +188,15 @@ The register file maintains a 3-entry vertex ring buffer indexed by vertex_count
 - **CC_MODE (0x18):** Stores cc_mode register; passed combinationally to UNIT-010 (Color Combiner).
   Two-stage combiner: cycle 0 fields [31:0], cycle 1 fields [63:32].
 - **CONST_COLOR (0x19):** Stores const_color register; CONST0 in [31:0], CONST1/fog color in [63:32].
-- **TEX0_CFG (0x10), TEX1_CFG (0x11):** Any write invalidates the corresponding texture cache in UNIT-006.
+- **TEX0_CFG (0x10), TEX1_CFG (0x11):** Any write invalidates the corresponding index cache in UNIT-011 via the tex0_cache_inv / tex1_cache_inv signals.
+  TEXn_CFG carries the PALETTE_IDX[24:24] field selecting one of two resident palette slots for that sampler.
+  Palette slot contents are not affected by TEXn_CFG writes; the palette persists until overwritten by a new PALETTE0/PALETTE1 load.
+- **PALETTE0 (0x12), PALETTE1 (0x13):** Writing stores BASE_ADDR in bits [15:0] (×512 byte address granularity for the palette SDRAM blob).
+  If bit [16] (LOAD_TRIGGER) is set in the write data, the register file asserts the corresponding palette_load_trigger output for one cycle and self-clears bit [16] the next cycle.
+  BASE_ADDR is retained until the next write; palette0_base_addr / palette1_base_addr are continuous outputs.
+  LOAD_TRIGGER behavior is analogous to the existing mem_fill_trigger pulse: fire-and-forget, one cycle wide.
+  Firmware must load a palette slot before any sampler referencing that slot issues texture fetches; there is no hardware fault for accessing an unloaded slot.
+  In-flight index-cache fills take priority over pending palette loads inside UNIT-011; the register file itself imposes no ordering — it only emits the pulse.
 - **FB_DISPLAY (0x41):** Blocking register — write blocks the GPU pipeline until the next vsync, then applies atomically.
   Outputs fb_display_addr, fb_lut_addr, fb_display_width_log2, fb_line_double, color_grade_enable to UNIT-008.
   `fb_display_width_log2` drives the horizontal scaler source width in UNIT-008 (`source_width = 1 << fb_display_width_log2`).
@@ -232,7 +251,14 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - Verify FB_CONTROL: write scissor rectangle; confirm scissor_x/y/width/height outputs
 - Verify CC_MODE: write two-stage combiner configuration; confirm cc_mode output passes through
 - Verify CONST_COLOR: write two constant colors; confirm const_color output
-- Verify TEXn_CFG write triggers cache invalidation signal for sampler N
+- Verify TEXn_CFG write triggers index cache invalidation signal for sampler N
+- Verify TEXn_CFG PALETTE_IDX[24:24] field is stored and read back correctly
+- Verify PALETTE0 write stores base address and asserts palette0_load_trigger pulse for one cycle when LOAD_TRIGGER=1
+- Verify PALETTE1 write stores base address and asserts palette1_load_trigger pulse for one cycle when LOAD_TRIGGER=1
+- Verify LOAD_TRIGGER is self-clearing: the trigger bit deasserts the cycle after the write; palette_base_addr output persists
+- Verify PALETTE0/PALETTE1 write without LOAD_TRIGGER=1 does not assert the pulse
+- Verify palette0_base_addr / palette1_base_addr outputs reflect the stored BASE_ADDR after write
+- Verify back-to-back PALETTE0 writes (second write overrides pending base address; trigger fires for each write where LOAD_TRIGGER=1)
 - Verify FB_DISPLAY blocks SPI pipeline until vsync; confirm outputs updated atomically
 - Verify cycle_counter resets to 0 on vsync rising edge
 - Verify cycle_counter increments once per clk_core cycle and saturates at 0xFFFFFFFF

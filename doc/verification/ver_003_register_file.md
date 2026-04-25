@@ -97,29 +97,50 @@ The testbenches drive register read/write sequences, vertex submission flows, an
     Write CONST_COLOR (0x19) with CONST0 in [31:0] and CONST1/fog color in [63:32].
     Verify that the `const_color` output matches the written value.
 
-14. **TEXn_CFG cache invalidation signal.**
+14. **TEXn_CFG cache invalidation signal and PALETTE_IDX field.**
     Write TEX0_CFG (0x10) and verify that the texture cache invalidation signal for sampler 0 is asserted for one cycle.
     Write TEX1_CFG (0x11) and verify that the texture cache invalidation signal for sampler 1 is asserted for one cycle.
+    Write TEX0_CFG with bit 24 set (`PALETTE_IDX=1`) and verify that the `tex0_cfg` output passes bit 24 through to UNIT-011 correctly.
+    Write TEX0_CFG with bit 24 clear (`PALETTE_IDX=0`) and verify the output reflects the updated field.
 
-15. **FB_DISPLAY vsync-blocking behavior.**
+15. **PALETTE0 register write and LOAD_TRIGGER pulse.**
+    Write PALETTE0 (0x12) with `BASE_ADDR[15:0]` set to a known value and `LOAD_TRIGGER[16:16]` set to 1.
+    Verify that `palette0_load_trigger` is asserted for exactly one clock cycle.
+    Verify that `palette0_base_addr` matches the written `BASE_ADDR[15:0]` value (byte address = `BASE_ADDR × 512`).
+    On the next clock cycle, verify that `palette0_load_trigger` is deasserted (self-clearing).
+    Write PALETTE0 again with `LOAD_TRIGGER[16:16]` clear; verify that `palette0_load_trigger` is not asserted.
+
+16. **PALETTE1 register write and LOAD_TRIGGER pulse.**
+    Write PALETTE1 (0x13) with `BASE_ADDR[15:0]` set to a distinct known value and `LOAD_TRIGGER[16:16]` set to 1.
+    Verify that `palette1_load_trigger` is asserted for exactly one clock cycle.
+    Verify that `palette1_base_addr` matches the written `BASE_ADDR[15:0]` value.
+    On the next clock cycle, verify that `palette1_load_trigger` is deasserted (self-clearing).
+
+17. **PALETTE0 and PALETTE1 base address independent storage.**
+    Write PALETTE0 (0x12) with `BASE_ADDR = 0x0010` (no trigger).
+    Write PALETTE1 (0x13) with `BASE_ADDR = 0x0020` (no trigger).
+    Verify that `palette0_base_addr` retains `0x0010` and `palette1_base_addr` retains `0x0020`, confirming independent storage.
+    Write PALETTE0 again with `BASE_ADDR = 0x0030` and verify only `palette0_base_addr` changes; `palette1_base_addr` remains `0x0020`.
+
+18. **FB_DISPLAY vsync-blocking behavior.**
     Write FB_DISPLAY (0x41) while `vblank` is deasserted.
     Verify that the SPI pipeline blocks (does not accept further commands) until the next vsync event (`vblank` assertion).
     After vsync occurs, verify that `fb_display_addr`, `fb_lut_addr`, `fb_display_width_log2`, `fb_line_double`, and `color_grade_enable` outputs are updated atomically to the written values.
 
-16. **Cycle counter reset on vsync edge.**
+19. **Cycle counter reset on vsync edge.**
     Allow `cycle_counter` to increment for several clock cycles, then assert `vblank` (rising edge from 0 to 1).
     Verify that `cycle_counter` resets to 0 on the rising edge of vblank.
 
-17. **Cycle counter increment and saturation.**
+20. **Cycle counter increment and saturation.**
     Verify that `cycle_counter` increments by 1 on each `clk_core` cycle when no vsync edge is present.
     Force the counter near its maximum value (0xFFFFFFFE), advance clocks, and verify that the counter saturates at 0xFFFFFFFF and does not wrap to 0.
 
-18. **PERF_TIMESTAMP write pulse and read.**
+21. **PERF_TIMESTAMP write pulse and read.**
     Write PERF_TIMESTAMP (0x50) with a 23-bit SDRAM word address in DATA[22:0].
     Verify that `ts_mem_wr` is asserted for exactly one cycle with `ts_mem_addr` matching the written address and `ts_mem_data` matching the current `cycle_counter` value.
     Read PERF_TIMESTAMP back and verify that `cmd_rdata` returns `{32'd0, cycle_counter}` (the live instantaneous counter value).
 
-19. **Reset: all registers return to defaults.**
+22. **Reset: all registers return to defaults.**
     Write non-default values to all writable registers.
     Assert reset (`rst_n` low for multiple cycles, then high).
     Read back all registers and verify they have returned to their documented default values.
@@ -136,7 +157,10 @@ The testbenches drive register read/write sequences, vertex submission flows, an
   - All `mode_*` outputs correctly decode the corresponding RENDER_MODE bit fields.
   - Reset values: RENDER_MODE=0, Z_RANGE_MIN=0x0000, Z_RANGE_MAX=0xFFFF, STIPPLE_PATTERN=0xFFFFFFFF_FFFFFFFF.
   - FB_CONFIG, FB_CONTROL, CC_MODE, CONST_COLOR outputs match written values.
-  - TEXn_CFG writes assert the cache invalidation signal for the correct sampler.
+  - TEXn_CFG writes assert the cache invalidation signal for the correct sampler; PALETTE_IDX[24:24] passes through to the `tex0_cfg`/`tex1_cfg` output correctly.
+  - PALETTE0 (0x12) and PALETTE1 (0x13) writes store `BASE_ADDR[15:0]` independently in separate registers.
+  - `LOAD_TRIGGER[16:16]` set during a PALETTE0 or PALETTE1 write asserts `palette0_load_trigger` or `palette1_load_trigger` for exactly one clock cycle, then self-clears.
+  - Writing PALETTEn with `LOAD_TRIGGER` clear does not assert the trigger pulse.
   - FB_DISPLAY write blocks until vsync, then updates outputs atomically.
   - Cycle counter resets on vsync rising edge, increments each cycle, and saturates at 0xFFFFFFFF.
   - PERF_TIMESTAMP write asserts `ts_mem_wr` with correct address and counter snapshot; read returns the live counter.
@@ -157,7 +181,7 @@ The testbenches drive register read/write sequences, vertex submission flows, an
 - The register file is clocked at the unified 100 MHz `clk_core` domain.
 - FB_DISPLAY blocking behavior involves interaction with the display controller's vblank signal; the testbench must provide a stimulus model for vblank timing.
 - The PERF_TIMESTAMP fire-and-forget behavior (back-to-back writes overwrite the pending request) is documented in UNIT-003 but may require integration-level verification beyond the unit testbench scope.
-- Steps 10 and 15 verify that the register file correctly extracts and outputs `fb_width_log2`, `fb_height_log2`, `fb_display_width_log2`, and `fb_line_double` fields.
+- Steps 10 and 18 verify that the register file correctly extracts and outputs `fb_width_log2`, `fb_height_log2`, `fb_display_width_log2`, and `fb_line_double` fields.
   VER-003 does not cover downstream consumption of these signals.
   Coverage of the rasterizer's use of `fb_width_log2` and `fb_height_log2` is provided by VER-001.
   Coverage of the display controller's use of `fb_display_width_log2` and `fb_line_double` is provided by VER-010 through VER-013.

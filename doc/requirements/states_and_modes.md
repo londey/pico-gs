@@ -280,13 +280,13 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 #### 6.6 Texture Sampling
 
-- **Description:** Fetches and filters texel data for the surviving fragment.
-  Uses an L1 (decoded) / L2 (compressed) cache hierarchy.
+- **Description:** Fetches INDEXED8_2X2 texel data for the surviving fragment.
+  Looks up an 8-bit index from the per-sampler index cache, extracts the sub-texel quadrant from UV[0], and reads the UQ1.8 RGBA color from the shared palette EBR.
   Time-multiplexed for dual-texture modes: TEX0 and TEX1 are sampled sequentially through the same physical unit.
 - **Entry Conditions:** Fragment survives Early Fragment Test with interpolated UV coordinates
-- **Exit Conditions:** Filtered texel color(s) available; fragment proceeds to Color Combiner
-- **Capabilities:** 1 cycle on L1 hit; bilinear/trilinear filtering; block decompression on L2 hit
-- **Restrictions:** Variable latency — 8–40 cycles on SDRAM miss (L2 fill via port 1); stalls pipeline on miss
+- **Exit Conditions:** UQ1.8 texel color(s) available; fragment proceeds to Color Combiner
+- **Capabilities:** 4-cycle best-case latency (index cache hit + palette EBR lookup); palette data is always on-chip after firmware load
+- **Restrictions:** Variable latency on index cache miss — SDRAM index cache fill adds ~8+ cycles; stalls pipeline on miss
 - **Source:** [rtl/components/texture/src/texture_sampler.sv](../../rtl/components/texture/src/texture_sampler.sv), UNIT-011
 
 #### 6.7 Color Combiner (3-Pass Time-Multiplexed)
@@ -361,23 +361,39 @@ See ARCHITECTURE.md for the full pipeline description and `pipeline/pipeline.yam
 
 **Control Registers:** TEX0_CFG (index 0x10), TEX1_CFG (index 0x11) — see INT-010 (GPU Register Map).
 All texture state is consolidated into a single 64-bit register per texture unit.
-Any write to a TEXn_CFG register invalidates the corresponding texture unit's L1/L2 caches.
+Any write to a TEXn_CFG register invalidates the corresponding texture unit's index cache.
 
 #### Mode: Texture Unit Configuration
 
-- **Description:** Configure texture dimensions, format, filtering, and enable for one texture unit
+- **Description:** Configure texture dimensions, palette slot, filtering, UV wrap, and enable for one texture unit
 - **Applicable States:** Texture Sampling stage; sampled per fragment when the unit is enabled
 - **Configuration:** TEXn_CFG register fields (see gpu_regs.rdl `tex_cfg_reg`):
   - bit 0 — ENABLE
-  - bits 3:2 — FILTER (see Filter Modes below)
-  - bits 7:4 — FORMAT (BC1/BC2/BC3/BC4, RGB565, RGBA8888, R8 — see `tex_format_e`)
-  - bits 11:8 — WIDTH_LOG2 (width = 1 << n, up to 1024)
-  - bits 15:12 — HEIGHT_LOG2 (height = 1 << n, up to 1024)
+  - bits 3:2 — FILTER (see Filter Modes below; only NEAREST supported)
+  - bits 7:4 — FORMAT (INDEXED8_2X2 = 4'd0; values 4'd1–4'd15 reserved — see `tex_format_e`)
+  - bits 11:8 — WIDTH_LOG2 (apparent width = 1 << n, ≥ 1)
+  - bits 15:12 — HEIGHT_LOG2 (apparent height = 1 << n, ≥ 1)
   - bits 17:16 — U_WRAP; bits 19:18 — V_WRAP (see UV Wrapping Modes below)
-  - bits 23:20 — MIP_LEVELS (1 disables mipmapping)
-  - bits 47:32 — BASE_ADDR (16-bit, multiplied by 512 for byte address)
-- **Behavior Differences:** FORMAT selects compressed vs. uncompressed decode path; disabled units bypass texture sampling (color combiner sources TEXn produce zero)
-- **Use Case:** TexturedTriangle demo (uncompressed RGB565 checkerboard); future BC1–BC4 compressed textures
+  - bit 24 — PALETTE_IDX (0 = slot 0, 1 = slot 1; see PALETTE0/PALETTE1 registers)
+  - bits 47:32 — BASE_ADDR (16-bit, multiplied by 512 for SDRAM byte address of index array)
+- **Behavior Differences:** FORMAT is always INDEXED8_2X2; disabled units bypass texture sampling (color combiner sources TEXn produce zero)
+- **Use Case:** Any textured rendering; both TEX0 and TEX1 independently select a palette slot via PALETTE_IDX
+
+#### Mode: Palette Slot State
+
+- **Description:** Each of the two on-chip palette slots (slot 0 and slot 1) holds 256 entries × 4 UQ1.8 RGBA quadrant colors, loaded from SDRAM on firmware request
+- **Applicable States:** Texture Sampling stage; palette EBR is read per fragment after index cache lookup
+- **Configuration:** PALETTE0 (0x12) / PALETTE1 (0x13) registers:
+  - bits 15:0 — BASE_ADDR (palette SDRAM byte address = BASE_ADDR × 512)
+  - bit 16 — LOAD_TRIGGER (write 1 to initiate SDRAM load; self-clears on completion)
+- **Palette slot sub-states (firmware-tracked, no hardware register):**
+  - **Uninitialized:** Contents undefined; sampling produces undefined colors.
+  - **Loading:** LOAD_TRIGGER has been written; SDRAM DMA is in progress.
+    Reads from this slot during loading may return stale or partial data.
+  - **Loaded:** SDRAM DMA complete; palette contents valid for sampling.
+- **Behavior Differences:** Per-slot isolation — a load of slot N does not stall reads from slot M (N ≠ M).
+  No hardware status register exists; firmware must serialize palette loads before dependent draw commands.
+- **Use Case:** Initialize palette slot before first textured draw; reload between scenes or when reusing a slot with a different codebook
 
 #### Mode: Texture Filter Modes
 
@@ -682,9 +698,9 @@ Early-exit points are marked with ✗ (fragment/block killed).
 | parallel test | all pass, Z compare fail | kill fragment | Fragment discarded |
 | parallel test | Z-cache miss | stall | Wait for SDRAM port 2 |
 | **Texture Sampling** |
-| (active) | fragment valid | sample TEX0 | L1/L2 cache lookup |
-| sample TEX0 | L1 hit | Color Combiner (or TEX1) | Texel available in 1 cycle |
-| sample TEX0 | L2 miss | stall | Wait for SDRAM port 1 fill (8–40 cycles) |
+| (active) | fragment valid | sample TEX0 | Index cache lookup + palette EBR read |
+| sample TEX0 | index cache hit | Color Combiner (or TEX1) | Texel available in 4 cycles |
+| sample TEX0 | index cache miss | stall | Wait for SDRAM index fill (~8+ cycles) |
 | sample TEX1 | (dual-tex mode) | Color Combiner | Second texture sample complete |
 | **Color Combiner** |
 | (active) | texel(s) ready | CC0 | Pass 0: first color equation |
@@ -754,19 +770,21 @@ Early-exit points are marked with ✗ (fragment/block killed).
 ### Texture Modes (Dual Texture Unit)
 
 The hardware implements two texture units (TEX0 and TEX1), time-multiplexed through a single physical sampler (UNIT-011).
-Each unit has its own TEXn_CFG register and independent L1/L2 cache state.
+Each unit has its own TEXn_CFG register and independent per-sampler index cache.
+Both units share the same two on-chip palette slots (PALETTE0 / PALETTE1).
 
-| Capability             | TEX0 | TEX1 | Notes                                                                            |
-|------------------------|------|------|----------------------------------------------------------------------------------|
-| **Independent Enable** | ✓    | ✓    | TEXn_CFG.ENABLE (bit 0)                                                          |
-| **Format**             | ✓    | ✓    | TEXn_CFG.FORMAT (bits 7:4) — BC1/BC2/BC3/BC4, RGB565, RGBA8888, R8               |
-| **Filter Modes**       | ✓    | ✓    | TEXn_CFG.FILTER (bits 3:2) — NEAREST (0); values 1–3 reserved                    |
-| **UV Wrap Modes**      | ✓    | ✓    | TEXn_CFG.U_WRAP / V_WRAP — REPEAT, CLAMP_TO_EDGE, MIRROR, OCTAHEDRAL             |
-| **Mip Levels**         | ✓    | ✓    | TEXn_CFG.MIP_LEVELS (bits 23:20); field retained for ABI; not used at runtime    |
-| **Blend Mode**         | n/a  | n/a  | Texture blending is expressed in the 3-pass color combiner (CC_MODE)             |
+| Capability | TEX0 | TEX1 | Notes |
+| --- | --- | --- | --- |
+| **Independent Enable** | yes | yes | TEXn_CFG.ENABLE (bit 0) |
+| **Format** | yes | yes | TEXn_CFG.FORMAT (bits 7:4) - INDEXED8_2X2 = 4'd0 only; values 1-15 reserved |
+| **Filter Modes** | yes | yes | TEXn_CFG.FILTER (bits 3:2) - NEAREST (0) only; values 1-3 reserved |
+| **UV Wrap Modes** | yes | yes | TEXn_CFG.U_WRAP / V_WRAP - REPEAT, CLAMP_TO_EDGE, MIRROR, OCTAHEDRAL |
+| **Palette Slot** | yes | yes | TEXn_CFG.PALETTE_IDX (bit 24) - 0 = slot 0, 1 = slot 1; slots shared between units |
+| **Blend Mode** | n/a | n/a | Texture blending is expressed in the 3-pass color combiner (CC_MODE) |
 
 **Current Usage:** Single-texture rendering uses TEX0 with TEX1 disabled.
 Dual-texture modes sample TEX0 and TEX1 sequentially through the shared sampler; the color combiner consumes both results.
+TEX0 and TEX1 may each independently select palette slot 0 or slot 1 via PALETTE_IDX.
 
 ---
 

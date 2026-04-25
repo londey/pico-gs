@@ -127,7 +127,7 @@ The testbench drives known triangle configurations through the triangle setup an
 - The rasterizer does not perform direct SDRAM writes.
   Fragment data (x, y, z, color0, color1, uv0, uv1, lod) is emitted on the fragment output bus toward the pixel pipeline (UNIT-006) via a valid/ready handshake.
   UV coordinates (`frag_uv0`, `frag_uv1`) carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
-  `frag_lod` (UQ4.4) carries the per-pixel mip level derived from CLZ on the interpolated Q value; it is added to TEXn_MIP_BIAS in UNIT-006 to produce the final mip level.
+  `frag_lod` (UQ4.4) carries a per-pixel LOD estimate derived from CLZ on the interpolated Q value; it is present on the fragment bus and forwarded to UNIT-006, but is not consumed by the texture sampler (UNIT-011) under the INDEXED8_2X2 NEAREST-only architecture (mipmapping is not supported).
   `frag_q` is not present on this bus.
   The testbench instantiates a simple ready-signal driver to simulate downstream back-pressure.
 - The rasterizer operates at the unified 100 MHz `clk_core` domain.

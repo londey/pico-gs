@@ -35,10 +35,76 @@ When adding a new decision, copy this template:
 
 <!-- Add decisions below, newest first -->
 
+## DD-042: Single-Format INDEXED8_2X2 Texture Architecture with 2-Slot Palette
+
+**Date:** 2026-04-25
+**Status:** Accepted
+
+### Context
+
+The multi-format texture pipeline (BC1–BC5, RGB565, RGBA8888, R8) required a complex two-level cache hierarchy (16 EBR per sampler for L1+L2), a block decompressor (UNIT-011.04), and mipmap selection logic.
+This consumed 32 EBR blocks for the texture subsystem alone and added ~8 cycles of fragment latency.
+The retro aesthetic target for pico-racer does not benefit from block compression or mipmapping; a compact palette-indexed format aligns better with the visual goal while dramatically reducing FPGA resource use.
+
+### Decision
+
+Replace the multi-format texture pipeline with a single format: `INDEXED8_2X2 = 4'd0`.
+Each apparent 2×2 texel tile is represented by one 8-bit index into a 256-entry per-slot palette.
+The palette entry for each index contains four UQ1.8 RGBA colors: NW, NE, SW, SE — one per quadrant of the 2×2 tile.
+The active quadrant is selected by `{v[0], u[0]}` from the wrapped UV coordinates.
+
+Two palette slots (PALETTE0 at register 0x12, PALETTE1 at 0x13) reside in on-chip EBR shared across both samplers.
+Each slot holds 256 entries × 4 quadrants × 4 channels (UQ1.8 RGBA) = 4096 16-bit words in 4 PDPW16KD.
+Firmware loads a slot by writing `PALETTEn.BASE_ADDR` (× 512 byte granularity) and asserting the self-clearing `LOAD_TRIGGER` pulse.
+The palette loader fetches 4096 bytes (256 RGBA8888 entries × 4 quadrant colors × 4 bytes) from SDRAM and promotes each channel inline: `UQ1.8 = UNORM8 << 1`.
+A 3-way arbiter internal to `texture_sampler.sv` schedules palette slot 0 load, palette slot 1 load, and index cache fill requests onto SDRAM Port 3.
+
+The per-sampler index cache (UNIT-011.03) is repurposed as a direct-mapped 8-bit store: 1 DP16KD per sampler, 32 sets × 1 way × 16 indices/line, covering 4×4 index blocks (each block spans 8×8 apparent texels at half resolution).
+UNIT-011.02 (bilinear filter) and UNIT-011.04 (block decompressor) and UNIT-011.05 (L2 compressed cache) are deleted.
+UNIT-011.06 (Palette LUT) is a new shared component.
+
+The 4-bit FORMAT field is retained for ABI stability; values 4'd1–4'd15 are reserved.
+`TEXn_CFG.PALETTE_IDX[24:24]` selects which of the two resident palette slots is active for a given sampler.
+`TEXn_CFG.MIP_LEVELS` is removed; mipmapping is not supported.
+Registers at 0x12 and 0x13, previously assigned to TEX0_MIP_BIAS and TEX0_WRAP, are replaced by PALETTE0 and PALETTE1; wrap mode fields are consolidated into TEXn_CFG.
+
+Minimum texture size: 2×2 apparent texels (WIDTH_LOG2 ≥ 1, HEIGHT_LOG2 ≥ 1).
+
+### Rationale
+
+The INDEXED8_2X2 format provides ~3× SDRAM compression versus uncompressed INDEXED8 (4 bpp vs ~12 bpp for RGB565) by encoding a 2×2 patch as one byte.
+It is competitive with BC1 (4 bpp) while requiring no integer division or combinational decode logic.
+The palette approach offers a retro aesthetic consistent with pico-racer's visual target.
+
+Resource savings vs. the former multi-format pipeline:
+- EBR: 32 → 6 blocks for the texture subsystem (4 shared palette + 2 per-sampler index cache).
+- DSP: 0 (unchanged — BC decoders already used 0 DSPs per DD-039, but the decoder logic itself is eliminated entirely).
+- LUT4: ~750 vs the former multi-format cache and decoder logic.
+- Fragment latency: 4 cycles best-case (down from ~8).
+
+Tradeoffs accepted:
+- No bilinear filtering (NEAREST only, PR1 already dropped bilinear).
+- No mipmapping.
+- Firmware responsibility: palette slot must be loaded before sampling; no hardware fault on unloaded slot.
+- 2×2 granularity means coarser color variation than per-texel formats at the same index resolution.
+
+### Consequences
+
+UNIT-011.02, UNIT-011.04, and UNIT-011.05 are deleted.
+UNIT-011.03 is repurposed from L1 decoded cache to half-resolution index cache.
+UNIT-011.06 (Palette LUT) is added.
+DD-039 is superseded (no BC decoders remain).
+DD-041 is superseded (FORMAT field retains 4 bits but only code 0 is valid).
+DD-038 and DD-037 are partially superseded: UQ1.8 is still used in the palette LUT, but the L1 EBR structure (PDPW16KD 512×36, 4-bank) is replaced for the index cache by a single DP16KD.
+INT-010, INT-011, INT-014, UNIT-011, UNIT-011.01, and UNIT-011.03 require major updates.
+REQ-003.06, REQ-003.08, REQ-011.02 require rewriting.
+
+---
+
 ## DD-041: Widen FORMAT Field to 4 Bits and Renumber Texture Format Codes
 
 **Date:** 2026-03-15
-**Status:** Accepted
+**Status:** Superseded by DD-042
 
 ### Context
 
@@ -125,7 +191,7 @@ The RSVD_7 field in TEXn_FMT (INT-010) is documented as reserved.
 ## DD-039: Shift+Add Reciprocal-Multiply Replaces Verilog Division in BC Decoders
 
 **Date:** 2026-03-14
-**Status:** Proposed
+**Status:** Superseded by DD-042
 
 ### Context
 
@@ -162,11 +228,11 @@ VER-005 step 6–9 test vectors remain valid (the computed values are unchanged)
 ## DD-038: UQ1.8 (9 bits per channel, 36-bit RGBA) as High-Quality Cache Storage Format
 
 **Date:** 2026-03-14
-**Status:** Proposed
+**Status:** Partially superseded by DD-042
 
-**Note:** Bilinear filtering (UNIT-011.02) has been removed from the pipeline (see DD-010 annotation below).
-The UQ1.8 format and 36-bit PDPW16KD bank structure are retained; the cache now delivers a single nearest texel per cycle rather than a 2×2 bilinear quad.
-The format's precision and EBR footprint are unchanged.
+**Note:** The UQ1.8 format is retained for palette LUT storage (UNIT-011.06) and for the Q4.12 promotion path.
+The PDPW16KD 512×36 4-bank L1 cache structure described here is superseded: the per-sampler index cache (UNIT-011.03) now uses a single DP16KD storing 8-bit indices, not 36-bit UQ1.8 texels.
+UQ1.8 promotion from RGBA8888 is applied inline during palette SDRAM load, not at cache fill time.
 
 ### Context
 
@@ -208,7 +274,7 @@ Golden images (VER-012, VER-014) require re-approval if the cache defaults to CA
 ## DD-037: PDPW16KD in 512×36 Mode for 36-bit Texture Cache Banks
 
 **Date:** 2026-03-14
-**Status:** Proposed
+**Status:** Partially superseded by DD-042
 
 ### Context
 

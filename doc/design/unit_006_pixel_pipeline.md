@@ -63,7 +63,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 
 - Fragment position (x, y) from rasterizer (UNIT-005)
 - Perspective-correct UV coordinates per texture unit (up to 2 sets: UV0, UV1), each component in Q4.12 signed fixed-point (16-bit: sign at [15], integer bits [14:12], fractional bits [11:0]); these are true U, V values — perspective correction is performed inside the rasterizer (UNIT-005.05) before emission
-- Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); integer part selects the mip level (fractional part is unused; NEAREST filtering only)
+- Per-pixel level-of-detail `frag_lod` (UQ4.4) from rasterizer (UNIT-005); emitted by UNIT-005 but not consumed by UNIT-011 (mipmapping is not supported in the INDEXED8_2X2 architecture)
 - Interpolated vertex colors (SHADE0, SHADE1) as Q4.12 from rasterizer (UNIT-005)
 - Interpolated Z depth value (16-bit unsigned)
 - Register state (CC_MODE, CONST_COLOR, RENDER_MODE, Z_RANGE, FB_CONFIG, FB_CONTROL, STIPPLE_PATTERN)
@@ -77,6 +77,7 @@ The pipeline processes fragments at the full 100 MHz rate; scanout to the displa
 ### Pipeline Data Format
 
 All internal fragment processing uses **Q4.12 signed fixed-point format** (16 bits per channel):
+
 - 1 sign bit, 3 integer bits, 12 fractional bits
 - Range: approximately −8.0 to +7.999755859375 (signed)
 - UNORM color range [0.0, 1.0] maps to [0x0000, 0x1000]
@@ -101,11 +102,13 @@ The `DST_COLOR` source (destination pixel from the color tile buffer) is availab
 Alpha blending (REQ-005.03) conventionally uses pass 2 (CC2), but the hardware does not enforce this assignment.
 
 **Stage 0a: Stipple Test:**
+
 - If RENDER_MODE.STIPPLE_EN=1: Compute bit index = (y & 7) × 8 + (x & 7); read corresponding bit from STIPPLE_PATTERN register
 - If bit is 0: discard fragment (no SDRAM access)
 - If bit is 1 or STIPPLE_EN=0: continue
 
 **Stage 0b: Depth Range Test + Early Z-Test:**
+
 - **Depth Range Test** (Z Scissor): Compare fragment Z against Z_RANGE register (0x31):
   - If `fragment_z < Z_RANGE_MIN` or `fragment_z > Z_RANGE_MAX`: discard fragment immediately
   - No SDRAM access required (register comparison only)
@@ -121,9 +124,9 @@ Alpha blending (REQ-005.03) conventionally uses pass 2 (CC2), but the hardware d
 
 **Stage 1–3: Texture Sampling (delegated to UNIT-011):**
 
-UNIT-006 forwards the fragment's UV coordinates, `frag_lod`, and register-file configuration (TEX0_CFG, TEX1_CFG) to UNIT-011.
-UNIT-011 performs UV coordinate processing (NEAREST point-sample), cache lookup, block decompression, and format promotion, then returns TEX_COLOR0 and TEX_COLOR1 in Q4.12 RGBA format.
-If UNIT-011 encounters a cache miss, it stalls the UNIT-006 pipeline until the fill completes.
+UNIT-006 forwards the fragment's UV coordinates and register-file configuration (TEX0_CFG, TEX1_CFG) to UNIT-011.
+UNIT-011 performs UV coordinate processing (NEAREST point-sample), half-resolution index cache lookup, and palette LUT promotion, then returns TEX_COLOR0 and TEX_COLOR1 in Q4.12 RGBA format within 4 cycles (best case).
+If UNIT-011 encounters an index cache miss or a palette slot not-ready condition, it stalls the UNIT-006 pipeline until the fill or load completes.
 See UNIT-011 for the detailed texture sampling design.
 
 **Output to UNIT-010 (Color Combiner):**
@@ -147,6 +150,7 @@ Alpha blending (REQ-005.03) is implemented as the third pass of UNIT-010 (CC pas
 - The updated pixel is written back to the tile buffer slot; the tile is flushed to SDRAM as a 16-word burst write when the pipeline moves to a new tile or rendering completes.
 
 **Ordered Dithering + Framebuffer Write + Z Write:**
+
 - If RENDER_MODE.DITHER_EN=1 (REQ-005.10):
   1. Read dither matrix entry indexed by `{screen_y[3:0], screen_x[3:0]}` from EBR
   2. Add dither offset to the Q4.12 value before truncation to RGB565
@@ -161,7 +165,7 @@ Alpha blending (REQ-005.03) is implemented as the third pass of UNIT-010 (CC pas
 The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
 For a pixel at (x, y) in a surface with width `2^WIDTH_LOG2` pixels, where `WIDTH_LOG2 = fb_width_log2` from UNIT-003 (Register File):
 
-```
+```text
 block_x   = x >> 2
 block_y   = y >> 2
 local_x   = x & 3
@@ -203,10 +207,10 @@ Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned
 
 - Port 1: framebuffer tile burst read (16-word fill when blending is enabled and a new tile is entered) and tile burst write (16-word flush on tile exit or end-of-render)
 - Port 2: Z-buffer read/write — owned by UNIT-012 (Z-buffer tile cache)
-- Port 3: texture cache fill reads (burst, format-dependent burst_len) — issued on behalf of UNIT-011
+- Port 3: texture index cache fill reads (8-word burst per 4×4 index block) and palette slot loads (multi-burst, 4096 bytes per slot) — issued on behalf of UNIT-011 via its internal 3-way arbiter
 
 Port 3 is shared with `PERF_TIMESTAMP` writes initiated by `gpu_top.sv` on behalf of UNIT-003.
-Timestamp writes are fire-and-forget single-word writes at the lowest priority on port 3; the pixel pipeline's texture burst requests have effective precedence because the arbiter serves port 3 requests in arrival order and texture bursts hold port 3 for up to 32 words.
+Timestamp writes are fire-and-forget single-word writes at the lowest priority on port 3; texture index cache fills hold port 3 for 8 words and palette load sub-bursts hold it for up to 32 words, giving texture operations effective precedence via arrival-order arbitration.
 See DD-026 for the port 3 sharing rationale and the latch-and-serialize scheme used in `gpu_top.sv`.
 
 The pipeline operates at 100 MHz in a unified clock domain with the SDRAM controller.
@@ -227,7 +231,7 @@ UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occur
 
 **Architectural separation:** The pixel pipeline is decomposed into peer units:
 
-1. **UNIT-011 (Texture Sampler):** UV coordinate processing (NEAREST point-sample), two-level texture cache (L1 decoded + L2 compressed), block decompression for all supported texture formats, format promotion to Q4.12.
+1. **UNIT-011 (Texture Sampler):** UV coordinate processing (NEAREST point-sample), half-resolution index cache (UNIT-011.03), palette LUT lookup (UNIT-011.06), and UQ1.8-to-Q4.12 promotion.
    Delivers TEX_COLOR0, TEX_COLOR1 in Q4.12 RGBA to UNIT-006.
 2. **UNIT-006 (this unit):** Stipple test, depth range clipping, early Z-test, dispatches fragment UV/LOD to UNIT-011, receives Q4.12 texel results, passes them to UNIT-010.
 3. **UNIT-010 (Color Combiner):** Single time-multiplexed programmable color combiner `(A-B)*C+D` executing three passes (CC0, CC1, CC2) per fragment within a 4-cycle/fragment throughput.

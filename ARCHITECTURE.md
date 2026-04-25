@@ -32,7 +32,7 @@ The destination pixel is read from the color tile buffer (promoted from RGB565 t
 Alpha blending conventionally uses pass 2, mapping the selected blend mode directly to the `(A-B)*C+D` equation, but the hardware does not restrict DST_COLOR to any particular pass.
 The result follows the normal dither-and-write path through the tile buffer.
 The 16-bit operands fit within the ECP5's native 18×18 DSP multipliers.
-Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a 4-way set-associative texture cache (>90% hit rate; stores texels in UQ1.8 per channel format, 36 bits per texel; supports eight texture formats via a 4-bit format-select field), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
+Memory bandwidth is managed through native 16-bit pixel addressing (one SDRAM column per RGB565 or Z16 value), a per-sampler index cache (UNIT-011.03; direct-mapped, 32 sets × 16 indices/line, 1 DP16KD each) backed by a shared 2-slot palette LUT (UNIT-011.06; 4 PDPW16KD EBR, addressed by `{slot, index, quadrant}`), a Z-buffer tile cache (UNIT-012; 4-way, 16 sets, 4×4 tiles, 85–95% hit rate), early Z rejection before texture fetch, and write-coalescing burst output.
 
 ## Execution Model
 
@@ -217,20 +217,20 @@ flowchart LR
 
     subgraph TEX_STAGE["Sample TEX0/1"]
         UV_WRAP["UV Wrap/Clamp/Mirror"]
-        MIP_SELECT["Mip Level Select"]
-        TEX_ADDR["Texel Address Calc"]
+        QUAD_SPLIT["Quadrant Split\n{v[0],u[0]}"]
+        IDX_ADDR["Index Address Calc\n(u>>1, v>>1)"]
+        IDX_FETCH["Index Cache Fetch"]
+        PAL_LUT["Palette LUT Lookup\n{slot, idx, quadrant}"]
 
-        TEX_FETCH["Texel Fetch"]
-                
-        UV_WRAP --> TEX_ADDR --> TEX_FETCH
-        MIP_SELECT --> TEX_ADDR
+        UV_WRAP --> QUAD_SPLIT
+        UV_WRAP --> IDX_ADDR --> IDX_FETCH --> PAL_LUT
+        QUAD_SPLIT --> PAL_LUT
     end
 
     TEX_SAMPLE_OUT["Sampled Texel (Q4.12 RGBA)"]
     CC_STAGE["Color Combiner Stage"]
 
     PIXEL --> UV_WRAP
-    PIXEL --> MIP_SELECT
 
     TEX_STAGE --> TEX_SAMPLE_OUT --> CC_STAGE
 ```
@@ -239,50 +239,29 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    TEX_ADDR["Texel Address Calc"]
+    IDX_ADDR["Index Address Calc"]
 
     subgraph TEX_FETCH["Texel Fetch"]
-        L1_TAG_FETCH["L1 Cache Tag Fetch (per-texture)"]
-        L2_TAG_FETCH["L2 Cache Tag Fetch (shared)"]
+        IDX_TAG_FETCH["Index Cache Tag Fetch (per-sampler)"]
+        IDX_CACHE_HIT@{shape=diamond, label="Index Cache Hit?"}
+        IDX_DATA_FETCH["Index Cache Data Fetch"]
+        IDX_TAG_UPDATE["Index Cache Tag Update"]
+        IDX_DATA_UPDATE["Index Cache Data Update"]
+        SDRAM_IDX["SDRAM Index Block Load\n(8 words / 4×4 block)"]
 
-        L1_CACHE_HIT@{shape=diamond, label="L1 Cache Hit?"}
-        L2_CACHE_HIT@{shape=diamond, label="L2 Cache Hit?"}
+        PAL_LUT["Palette LUT Lookup\n{slot[0], idx[7:0], quadrant[1:0]}"]
 
-        L1_DATA_FETCH["L1 Cache Data Fetch (per-texture)"]
-        L2_DATA_FETCH["L2 Cache Data Fetch (shared)"]
-
-        L1_TAG_UPDATE["L1 Cache Tag Update (per-texture)"]
-        L1_LRU_UPDATE["L1 Cache LRU Update (per-texture)"]
-        L1_DATA_UPDATE["L1 Cache Data Update (per-texture)"]
-
-        L2_TAG_UPDATE["L2 Cache Tag Update (shared)"]
-        L2_LRU_UPDATE["L2 Cache LRU Update (shared)"]
-        L2_DATA_UPDATE["L2 Cache Data Update (shared)"]
-
-        TEX_BLOCK_DECODE["Block Decoder"]
-
-        SDRAM_ARB["SDRAM Load"]
-
-        L1_TAG_FETCH --> L1_CACHE_HIT
-        L1_CACHE_HIT -- Yes --> L1_DATA_FETCH
-        L1_DATA_FETCH --> L1_LRU_UPDATE
-
-        L1_CACHE_HIT -- No --> L2_TAG_FETCH
-        L2_TAG_FETCH --> L2_CACHE_HIT
-
-        L2_CACHE_HIT -- Yes --> L2_DATA_FETCH --> L2_LRU_UPDATE
-        L2_DATA_FETCH --> TEX_BLOCK_DECODE --> L1_TAG_UPDATE
-        TEX_BLOCK_DECODE --> L1_DATA_UPDATE --> L1_DATA_FETCH
-
-        L2_CACHE_HIT -- No --> SDRAM_ARB
-        SDRAM_ARB --> L2_TAG_UPDATE
-        SDRAM_ARB --> L2_DATA_UPDATE --> L2_DATA_FETCH
+        IDX_TAG_FETCH --> IDX_CACHE_HIT
+        IDX_CACHE_HIT -- Yes --> IDX_DATA_FETCH
+        IDX_CACHE_HIT -- No --> SDRAM_IDX
+        SDRAM_IDX --> IDX_TAG_UPDATE --> IDX_DATA_UPDATE --> IDX_DATA_FETCH
+        IDX_DATA_FETCH --> PAL_LUT
     end
 
     TEX_SAMPLE_OUT["Sampled Texel (Q4.12 RGBA)"]
 
-    TEX_ADDR --> TEX_FETCH
-    L1_DATA_FETCH --> TEX_SAMPLE_OUT
+    IDX_ADDR --> TEX_FETCH
+    PAL_LUT --> TEX_SAMPLE_OUT
 ```
 
 #### Display Pipeline
@@ -363,7 +342,9 @@ A compile-time configurable register FIFO (default depth 2, ~730 bits wide) betw
 Four dedicated MULT18X18D blocks compute true U = S×(1/Q) and V = T×(1/Q) for both texture units.
 The per-pixel level-of-detail (LOD) is derived from Q via CLZ and emitted on the fragment bus as `frag_lod` (UQ4.4).
 All pixels within a tile are processed before advancing to the next, maximizing Z-cache locality.
-The texture sampler (UNIT-011) performs dual-texture sampling through per-texture two-level caches; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01), fetches the nearest texel from the L1 decompressed cache (UNIT-011.03), decompresses blocks on miss via the block decompressor (UNIT-011.04), and fills the L1 cache from the L2 compressed cache (UNIT-011.05), returning decoded Q4.12 RGBA texel data to the pixel pipeline.
+The texture sampler (UNIT-011) performs dual-texture sampling; it receives true perspective-correct U, V coordinates directly from the rasterizer, applies wrap/clamp/mirror UV processing (UNIT-011.01) and extracts the 2-bit quadrant `{v[0],u[0]}`, fetches the 8-bit palette index from the per-sampler half-resolution index cache (UNIT-011.03), and looks up the selected quadrant's UQ1.8 RGBA color from the shared 2-slot palette LUT (UNIT-011.06), returning Q4.12 RGBA texel data to the pixel pipeline.
+Palette slots are pre-loaded from SDRAM via the PALETTEn registers using an internal 3-way arbiter (palette slot 0 load, palette slot 1 load, index cache fill) that drives the same SDRAM Port 3 used by the index cache.
+Cache misses trigger a short 8-word SDRAM burst to fill a 4×4 index block.
 The pixel pipeline (UNIT-006) performs early Z testing, dispatches texture fetch requests to UNIT-011, and receives decoded Q4.12 texel data in return; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
 The color combiner (UNIT-010) is a single time-multiplexed instance that evaluates `(A-B)*C+D` independently for RGB and alpha, executing up to three passes per fragment within a 4-cycle/fragment throughput target.
 Pass 0 and pass 1 replicate the prior two-stage behavior: pass 0's output feeds pass 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add; for simple single-equation rendering, pass 1 is configured as a pass-through.
@@ -462,7 +443,7 @@ Each column shows a value's lifetime from production (first ●) to last consump
 | Dither | ● | ● | | | | | | | | ● | |
 | Pixel Write | ● | ● | | | | | | | | ● | Tile buffer flush (16-word burst write on tile exit), Z write |
 
-**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits: 4-bit integer mip level, 4-bit fractional part, derived from interpolated Q = 1/W by the rasterizer); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
+**Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits, derived from interpolated Q = 1/W by the rasterizer; emitted by the rasterizer but not consumed by the texture sampler — mipmapping is not supported); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
 Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
 After dither, color is truncated to RGB565 (16-bit) for framebuffer write.
 
@@ -529,8 +510,9 @@ Typical render-to-texture flow:
 2. Clear color and Z via MEM_FILL (contiguous for any power-of-two surface).
 3. Set scissor rectangle and render the off-screen scene.
 4. Write FB_CONFIG back to the display framebuffer.
-5. Write TEX0_CFG with the render target's base address, dimensions, and format (RGB565).
-   This implicitly invalidates the texture cache for the sampler.
+5. Write TEX0_CFG with the render target's base address, dimensions, and format.
+   This implicitly invalidates the index cache for the sampler.
+   Note: render-to-texture results are RGB565 surfaces; sampling them as INDEXED8_2X2 requires pre-converting the surface to an indexed palette representation.
 6. Render geometry that samples from the render target.
 7. Write FB_DISPLAY to present the display framebuffer at VSYNC.
 
@@ -648,12 +630,12 @@ When blending is disabled, the tile prefetch read is skipped; only the flush wri
 
 ### EBR Budget
 
-The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16KD 512×36, UQ1.8) and L2 compressed (DP16KD 1024×16, format-aware packing).
+The texture subsystem uses a per-sampler half-resolution index cache (1 DP16KD each) plus a shared 2-slot palette LUT (4 PDPW16KD).
 
 | Component | EBR | Notes |
 |---|---|---|
-| Texture L1 decoded (2 samplers) | 8 | 4 per sampler; PDPW16KD 512×36 (UQ1.8) |
-| Texture L2 compressed (2 samplers) | 8 | 4 per sampler; DP16KD 1024×16 (64-bit entries) |
+| Texture index cache (2 samplers) | 2 | 1 per sampler; DP16KD, 32 sets × 16 indices/line |
+| Texture palette LUT (shared) | 4 | 4 PDPW16KD; 2 slots × 256 entries × 4 quadrants, UQ1.8 RGBA |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
 | Z-cache uninitialized flags | 1 | DP16KD 32-bit wide; 16,384 1-bit flags as 512 words (UNIT-006) |
 | Hi-Z block metadata | 8 | DP16KD 36-bit wide; 9-bit min_z per tile (Z[15:7], sentinel 0x1FF), 4 entries per word |
@@ -664,7 +646,7 @@ The texture cache uses a two-level architecture per sampler: L1 decoded (PDPW16K
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
 | Color tile buffer | 0 | 4×4 × 16-bit register file; implemented in distributed LUTs |
-| **Total** | **37–38** | **of 56 available (ECP5-25K)** |
+| **Total** | **26–27** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 
@@ -696,9 +678,8 @@ flowchart LR
     UNIT_010["UNIT-010: Color Combiner"]
     subgraph UNIT_011["UNIT-011: Texture Sampler"]
         UNIT_011_01["UNIT-011.01: UV Coordinate Processing"]
-        UNIT_011_03["UNIT-011.03: L1 Decompressed Cache"]
-        UNIT_011_04["UNIT-011.04: Block Decompressor"]
-        UNIT_011_05["UNIT-011.05: L2 Compressed Cache"]
+        UNIT_011_03["UNIT-011.03: Index Cache"]
+        UNIT_011_06["UNIT-011.06: Palette LUT"]
     end
     UNIT_012["UNIT-012: Z-Buffer Tile Cache"]
     UNIT_001 -->|INT-001| UNIT_001
@@ -710,8 +691,7 @@ flowchart LR
     UNIT_003 -->|INT-010| UNIT_010
     UNIT_003 -->|INT-010| UNIT_011_01
     UNIT_003 -->|INT-010| UNIT_011_03
-    UNIT_003 -->|INT-010| UNIT_011_04
-    UNIT_003 -->|INT-010| UNIT_011_05
+    UNIT_003 -->|INT-010| UNIT_011_06
     UNIT_003 -->|INT-010| UNIT_011
 ```
 
@@ -734,10 +714,9 @@ flowchart LR
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
 | UNIT-010 | Color Combiner | Single-instance time-multiplexed programmable color combiner that evaluates up to three passes (CC0, CC1, CC2/blend) per fragment, producing the final output color including alpha blending and fog within a 4-cycle/fragment throughput target. |
-| UNIT-011.01 | UV Coordinate Processing | Applies wrap mode, clamp, mirror-repeat, and swizzle pattern to incoming Q4.12 UV coordinates, then selects the final mip level by combining `frag_lod` with `TEXn_MIP_BIAS`. |
-| UNIT-011.03 | L1 Decompressed Cache | Per-sampler 4-way set-associative cache storing decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel). |
-| UNIT-011.04 | Block Decompressor | Decodes a compressed or uncompressed 4×4 texel block from its raw SDRAM format into 16 UQ1.8 RGBA texels for storage in UNIT-011.03 (L1 Decompressed Cache), then promotes the UQ1.8 output to Q4.12 via `texel_promote.sv` before passing texels to the color combiner pipeline. |
-| UNIT-011.05 | L2 Compressed Cache | Per-sampler direct-mapped cache storing raw compressed or uncompressed 4×4 block data fetched from SDRAM. |
-| UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing decoded Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline). |
+| UNIT-011.01 | UV Coordinate Processing | Applies wrap mode, clamp, mirror-repeat to incoming Q4.12 UV coordinates; extracts the 2-bit sub-texel quadrant `{v[0],u[0]}`; outputs half-resolution index-space coordinates `(u>>1, v>>1)`. |
+| UNIT-011.03 | Index Cache | Per-sampler direct-mapped cache storing 8-bit INDEXED8_2X2 palette indices; 1 DP16KD per sampler, 32 sets × 1 way × 16 indices/line; 4×4-block cache lines covering 8×8 apparent texels at half resolution. |
+| UNIT-011.06 | Palette LUT | Shared 2-slot codebook in 4 PDPW16KD EBR; addressed by `{slot[0], idx[7:0], quadrant[1:0]}`; holds UQ1.8 RGBA colors promoted inline from RGBA8888 during SDRAM palette load; includes 3-way arbiter for palette slot 0 load, slot 1 load, and index cache fill on SDRAM Port 3. |
+| UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing decoded Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline); single format INDEXED8_2X2; best-case fragment latency 4 cycles. |
 | UNIT-012 | Z-Buffer Tile Cache | 4-way set-associative write-back Z-buffer tile cache with per-tile uninitialized flag tracking. |
 <!-- syskit-arch-end -->

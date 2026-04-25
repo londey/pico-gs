@@ -30,7 +30,8 @@ All register semantics are identical regardless of command source.
 - **DOT3 bump mapping with interpolated light direction**
 - **Dual vertex colors: diffuse (VER_COLOR0) + specular (VER_COLOR1)**
 - **NEAREST (point-sample) texture filtering**
-- Eight texture formats: BC1, BC2, BC3, BC4, BC5 (block-compressed) and RGB565, RGBA8888, R8 (uncompressed); see INT-014
+- **Single texture format: INDEXED8_2X2** — 8-bit palette index per 2×2 apparent-texel tile; 4-bit FORMAT field retained for ABI stability (values 4'd1–4'd15 reserved); see INT-014
+- **2-slot shared palette LUT** — 256 entries × 4 quadrant RGBA colors per slot; loaded via PALETTE0/PALETTE1 registers (0x12/0x13)
 - Swizzle patterns for channel reordering
 - **Unified RENDER_MODE register (TRI_MODE + ALPHA_BLEND + Z-modes + dithering)**
 - **Scissor rectangle for pixel clipping**
@@ -80,16 +81,12 @@ All register semantics are identical regardless of command source.
 | 0x07 | VERTEX_KICK_012 | W | Vertex position + 1/W, draw tri (v[0], v[1], v[2]) |
 | 0x08 | VERTEX_KICK_021 | W | Vertex position + 1/W, draw tri (v[0], v[2], v[1]) |
 | 0x09-0x0F | - | - | Reserved (future vertex attributes) |
-| **Texture Unit 0** ||||
-| 0x10 | TEX0_BASE | R/W | Texture 0 base address |
-| 0x11 | TEX0_FMT | R/W | Format, dimensions, swizzle, **blend, filter** |
-| 0x12 | TEX0_MIP_BIAS | R/W | Mipmap LOD bias |
-| 0x13 | TEX0_WRAP | R/W | UV wrapping mode |
-| **Texture Unit 1** ||||
-| 0x14 | TEX1_BASE | R/W | Texture 1 base address |
-| 0x15 | TEX1_FMT | R/W | Format, dimensions, swizzle, blend, filter |
-| 0x16 | TEX1_MIP_BIAS | R/W | Mipmap LOD bias |
-| 0x17 | TEX1_WRAP | R/W | UV wrapping mode |
+| **Texture Units** ||||
+| 0x10 | TEX0_CFG | R/W | Texture unit 0: enable, format, dimensions, filter, wrap, palette slot, base addr, cache inv |
+| 0x11 | TEX1_CFG | R/W | Texture unit 1: same layout as TEX0_CFG |
+| 0x12 | PALETTE0 | R/W | Palette slot 0: SDRAM base address + load trigger |
+| 0x13 | PALETTE1 | R/W | Palette slot 1: SDRAM base address + load trigger |
+| 0x14–0x17 | - | - | Reserved |
 | **Color Combiner** ||||
 | 0x18 | CC_MODE | R/W | Color combiner mode and input selection |
 | 0x19 | MAT_COLOR0 | R/W | Material color 0 (RGBA8888) |
@@ -382,11 +379,11 @@ gpu_write(COLOR, color4); gpu_write(ST0_ST1, st4); gpu_write(VERTEX_KICK_012, v4
 
 ---
 
-## Texture Configuration Registers (0x10-0x17)
+## Texture Configuration Registers (0x10-0x13)
 
-Each texture unit has a single 64-bit configuration register (TEXn_CFG).
 TEX0_CFG is at index 0x10, TEX1_CFG at 0x11.
-Indices 0x12–0x17 are reserved (freed by register consolidation).
+PALETTE0 is at index 0x12, PALETTE1 at 0x13.
+Indices 0x14–0x17 are reserved.
 
 ---
 
@@ -395,28 +392,66 @@ Indices 0x12–0x17 are reserved (freed by register consolidation).
 > **Authoritative bit-field layout:** `registers/rdl/gpu_regs.rdl`, register `tex_cfg_reg`.
 > This section documents behavioral semantics only; see the RDL for field positions and encodings.
 
-Each sampler has a single 64-bit configuration register consolidating base address, format, dimensions, filtering, wrap modes, and mipmap levels.
-Any write to TEXn_CFG invalidates the corresponding sampler's texture cache (see UNIT-011).
+Each sampler has a single 64-bit configuration register consolidating base address, format, dimensions, filtering, wrap modes, palette slot selection, and cache invalidation.
+Any write to TEXn_CFG invalidates the corresponding sampler's index cache (see UNIT-011).
 
 **Key fields** (see RDL for exact bit positions):
 
-- **ENABLE** — activates the sampler; the hardware routes cache miss fills to the decoder selected by FORMAT.
-- **FORMAT** — selects the texture format (BC1–BC5, RGB565, RGBA8888, R8); 4-bit field encoding defined in `registers/rdl/gpu_regs.rdl` (`tex_format_e`); see INT-014 for block layouts.
-- **FILTER** — NEAREST (0) only; values 1–3 are reserved. The 2-bit field is preserved for ABI compatibility.
-- **WIDTH_LOG2, HEIGHT_LOG2** — log₂ of texture dimensions (valid 3–10, i.e. 8–1024 pixels).
-- **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR (octahedral wrap implements coupled diagonal mirroring).
-- **MIP_LEVELS** — number of mipmap levels (0 or 1 = single level; max = min(11, min(WIDTH_LOG2, HEIGHT_LOG2) + 1)); see INT-014 for mipmap chain memory layout.
-- **BASE_ADDR** — 16-bit value × 512 = byte address in SDRAM (512-byte granularity, 32 MiB addressable).
-- **RSVD_7** — reserved (formerly planned for CACHE_MODE; the cache now operates exclusively in UQ1.8 mode, see UNIT-011.04).
+- **ENABLE** — activates the sampler.
+- **FORMAT** — 4-bit field; only `INDEXED8_2X2 = 4'd0` is valid.
+  Values 4'd1–4'd15 are reserved.
+  The 4-bit field width is retained for ABI stability (see DD-042).
+  Field encoding is defined in `registers/rdl/gpu_regs.rdl` (`tex_format_e`); see INT-014 for the INDEXED8_2X2 memory layout.
+- **FILTER** — NEAREST (2'd0) only; values 2'd1–2'd3 are reserved.
+  The 2-bit field is preserved for ABI compatibility.
+- **WIDTH_LOG2, HEIGHT_LOG2** — log₂ of apparent texture dimensions (valid range: 1–10, i.e. 2–1024 apparent texels per axis; minimum texture 2×2).
+- **U_WRAP, V_WRAP** — REPEAT, CLAMP_TO_EDGE, CLAMP_TO_ZERO, or MIRROR.
+  For MIRROR, wrapping is applied on the full apparent (u, v) coordinates; the low bit then becomes the quadrant selector naturally (mirrored tiles swap NE↔NW or SE↔SW).
+  Octahedral wrap implements coupled diagonal mirroring.
+- **PALETTE_IDX[24:24]** — selects which of the two resident palette slots (0 or 1) is active for this sampler.
+  The slot must be loaded via the corresponding PALETTEn register before sampling.
+- **BASE_ADDR** — 16-bit value × 512 = byte address in SDRAM of the INDEXED8_2X2 index array (512-byte granularity, 32 MiB addressable).
+- **RSVD_MID[31:25]** — reserved, write as zero.
 
 **Behavioral notes:**
 
-- Block-compressed formats (BC1–BC5) require dimensions that are multiples of 4; uncompressed formats require power-of-two dimensions.
-- The texture cache (UNIT-011) converts all source formats to UQ1.8 on cache fill (see UNIT-011.04 for the decoders); FORMAT determines the burst length and decoder used on cache miss.
+- Any write to TEXn_CFG invalidates the corresponding per-sampler index cache.
+  Palette slot contents are not affected by TEXn_CFG writes; slots persist until a new PALETTEn load completes.
 - Textures are sampled independently and passed to the color combiner (CC_MODE, 0x18).
-- Swizzle patterns (SWIZZLE field) apply after texture decode; see INT-014 for channel reordering encodings.
+- Swizzle patterns (SWIZZLE field) apply after palette lookup; see INT-014.
 
-**Reset Value**: 0x0000000000000000 (disabled, BC1, 8×8, nearest, repeat, no mipmaps)
+**Reset Value**: 0x0000000000000000 (disabled, INDEXED8_2X2, 2×2, NEAREST, REPEAT, slot 0)
+
+---
+
+### PALETTE0 (0x12) / PALETTE1 (0x13) — Palette Slot Load
+
+> **Authoritative bit-field layout:** `registers/rdl/gpu_regs.rdl`, register `palette_reg`.
+> This section documents behavioral semantics only; see the RDL for field positions and encodings.
+
+Each register controls loading of one of the two resident palette slots into UNIT-011.06 (Palette LUT).
+
+**Key fields:**
+
+- **BASE_ADDR[15:0]** — 16-bit value × 512 = SDRAM byte address of the palette payload.
+  The payload is 4096 bytes: 256 entries × 4 quadrant colors (NW, NE, SW, SE) × 4 bytes (RGBA8888 little-endian, R at lowest byte).
+  Base address must be 512-byte aligned.
+- **LOAD_TRIGGER[16:16]** — self-clearing pulse.
+  When written as 1, the palette load FSM inside UNIT-011 begins a DMA load of 4096 bytes from `BASE_ADDR × 512` into the corresponding slot.
+  The hardware clears this bit automatically when the load completes; reads return 0 when idle.
+  Firmware must not assume the slot is valid until the load is complete (no status register; see firmware contract notes below).
+- **[63:17]** — reserved, write as zero.
+
+**Behavioral notes:**
+
+- The palette load FSM is internal to `texture_sampler.sv` (UNIT-011) and uses SDRAM Port 3 via the 3-way arbiter shared with index cache fills.
+- Each RGBA8888 channel byte is promoted to UQ1.8 inline during load: `UQ1.8 = UNORM8 << 1` (9-bit, top bit always 0 since UNORM8 ≤ 0xFF).
+- An in-flight index cache fill preempts a pending palette load; the palette load resumes on the next Port 3 grant.
+- Slot contents are isolated: writing PALETTE0 does not affect slot 1 and vice versa.
+- There is no hardware fault or status if a sampler references an unloaded slot; firmware is responsible for loading before rendering.
+- LOAD_TRIGGER is not affected by TEXn_CFG writes (palette contents persist across sampler reconfiguration).
+
+**Reset Value**: 0x0000000000000000
 
 ---
 

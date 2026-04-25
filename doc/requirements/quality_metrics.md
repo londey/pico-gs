@@ -38,13 +38,13 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
   - Display scanline FIFO: ~32 Kbits (4 KB, 1024 words × 32 bits)
   - SPI receive FIFO: ~8 Kbits (1 KB, EBR)
   - Command FIFO: distributed RAM (~2.3 Kbits, 72 bits × 32 entries, not EBR)
-  - Texture cache (2 samplers × 16 EBR each): ~288 Kbits (36 KB, 32 EBR blocks total) (REQ-003.08, UNIT-011)
-  - **Total EBR allocated:** ~328 Kbits (~41 KB)
-  - **Headroom:** ~428 Kbits (~54 KB) for future features
+  - Texture subsystem (UNIT-011): ~54 Kbits (~7 KB, 6 EBR blocks total — 4 shared palette PDPW16KD + 2 per-sampler index DP16KD) (REQ-003.08, REQ-003.09, UNIT-011)
+  - **Total EBR allocated:** ~94 Kbits (~12 KB)
+  - **Headroom:** ~662 Kbits (~83 KB) for future features
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
-- **References:** REQ-011.02, REQ-003.08, UNIT-011 (Texture Sampler), UNIT-008 (Display Controller)
-- **Rationale:** Texture cache (UNIT-011) is the primary BRAM consumer; remaining headroom for larger FIFOs or additional caches.
-  The 4-bank interleaved L1 cache structure (UNIT-011.03) is retained even though NEAREST-only filtering requires only one bank per lookup — the physical structure costs nothing to keep.
+- **References:** REQ-011.02, REQ-003.08, REQ-003.09, UNIT-011 (Texture Sampler), UNIT-008 (Display Controller)
+- **Rationale:** The texture subsystem uses two on-chip palette EBR slots (shared across both samplers) plus one direct-mapped index cache per sampler.
+  Palette codebooks are loaded from SDRAM by firmware via PALETTE0/PALETTE1.LOAD_TRIGGER and are resident on-chip during sampling.
   The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-001.04).
   Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 

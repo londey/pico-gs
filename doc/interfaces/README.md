@@ -47,3 +47,15 @@ Interface types:
 - [INT-013: GPIO Status Signals](int_013_gpio_status_signals.md)
 - [INT-014: Texture Memory Layout](int_014_texture_memory_layout.md)
 <!-- TOC-END -->
+
+## Interface Summaries
+
+| Interface | Scope |
+| --------- | ----- |
+| INT-001 | SPI Mode 0 electrical and protocol contract between host MCU and FPGA |
+| INT-002 | DVI TMDS output signal contract for the display subsystem |
+| INT-010 | GPU register map: 7-bit address space, 64-bit registers. Texture registers: TEXn_CFG (format fixed at INDEXED8_2X2 = 4'd0, PALETTE_IDX[24], dimensions, wrap, filter), PALETTE0/PALETTE1 (0x12/0x13) with BASE_ADDR×512 and self-clearing LOAD_TRIGGER |
+| INT-011 | SDRAM memory layout: framebuffer, Z-buffer, texture index arrays, palette blobs |
+| INT-012 | SPI transaction framing: 72-bit frames (1 R/W̄ + 7 addr + 64 data) |
+| INT-013 | GPIO status signals: VSYNC, IRQ, flow control |
+| INT-014 | Texture memory layout: single format INDEXED8_2X2 — 4×4 index blocks (8-bit index per apparent 2×2 tile, 16 bytes per block); palette blob (256 entries × 4 RGBA8888 quadrant colors = 4096 bytes, addressed at BASE_ADDR×512) |

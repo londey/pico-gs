@@ -34,7 +34,9 @@ Individual VER docs list only preconditions specific to that verification (pre-l
 - The testbench clock matches the target clock domain (`clk_core` at 100 MHz for pipeline tests; see each component's design doc for its clock domain).
 - `cd integration && make <target>` runs the test; per-test Makefile targets are named in each VER's "Test Implementation" section.
 - For golden image tests (VER-010 through VER-016, VER-024): the integration simulation harness (`rtl/tb/`) compiles successfully under Verilator; golden images live in `integration/golden/` and are approved and committed before a VER's first run.
-- For texture-sampling golden image tests: the behavioral SDRAM model in `rtl/tb/` implements UNIT-011's cache miss handling protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE with format-dependent burst lengths). A stub model that skips the cache miss fill FSM is not sufficient.
+- For texture-sampling golden image tests: the behavioral SDRAM model in `rtl/tb/` implements UNIT-011's index-cache miss handling protocol (IDLE → FETCH → WRITE_INDEX → IDLE, burst_len=8 per 4×4 index block) and the palette load FSM (IDLE → PALETTE_LOAD → IDLE, multiple 32-word bursts covering 4096 bytes per slot).
+  A stub model that skips the cache miss fill FSM or palette load protocol is not sufficient.
+  All texture-sampling tests require palette slot 0 to be pre-loaded before the first draw call; the pre-load sequence must appear in the test command script and be exercised by the SDRAM model.
 
 ## Design Decisions
 
@@ -62,7 +64,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 - **Description:** Each RTL module or subsystem is exercised in isolation with a dedicated C++ or SV testbench that drives inputs and checks outputs cycle-by-cycle.
   Test vectors are embedded in the testbench source or loaded from CSV files in `integration/scripts/`.
-- **Applicable to:** VER-001 (rasterizer), VER-002 (early Z), VER-003 (register file), VER-004 (color combiner), VER-005 (texture decoder).
+- **Applicable to:** VER-001 (rasterizer), VER-002 (early Z), VER-003 (register file), VER-004 (color combiner), VER-005 (texture palette LUT).
 
 ### Golden Image Approval Testing
 
@@ -80,26 +82,54 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
   For cases where hardware rounding differs between RTL revisions, a tolerance of ±1 LSB per channel may be accepted; document any such tolerance in the relevant VER document.
 - **Approved files location:** `integration/golden/`
 - **Applicable to:** VER-010 (Gouraud triangle), VER-011 (depth-tested overlapping triangles), VER-012 (textured triangle), VER-013 (color-combined output), VER-014 (textured cube).
-- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline orchestration (UNIT-006), texture sampling or cache behavior (UNIT-011), color combiner arithmetic (UNIT-010), or `tex_format` encoding (INT-010) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
+- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline orchestration (UNIT-006), texture sampling or cache behavior (UNIT-011), color combiner arithmetic (UNIT-010), `tex_format` encoding (INT-010), or texture format (collapsing to INDEXED8_2X2) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
+  The PR2 texture architecture change (INDEXED8_2X2 replacing all previous formats) triggers re-approval of all texture-sampling golden image tests (VER-012, VER-013, VER-014, VER-016); current golden images are expected to fail after PR2 lands.
   The commit message must describe the change that caused the image to update.
 
 ### Integration Simulation Harness
 
 - **Description:** The golden image tests share a common C++ simulation harness (`rtl/tb/`) that:
   - Instantiates the full GPU RTL hierarchy under Verilator.
-  - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the texture layout (INT-014), and the full UNIT-011 cache miss handling protocol (IDLE → FETCH → DECOMPRESS → WRITE_BANKS → IDLE FSM, with format-dependent burst lengths per format: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32 16-bit words).
-    This FSM is consumed by UNIT-011 (Texture Sampler — specifically UNIT-011.05, L2 Compressed Cache).
-    A partial or stub SDRAM model that does not implement the cache miss fill FSM is not sufficient for VER-012 through VER-014.
+  - Provides a behavioral SDRAM model that implements the 4×4 block-tiled address layout (INT-011), the INDEXED8_2X2 index array layout (INT-014), the index-cache miss fill FSM (IDLE → FETCH → WRITE_INDEX → IDLE, burst_len=8 for 4×4 8-bit index blocks), and the palette load FSM (IDLE → PALETTE_LOAD → IDLE, up to 32-word bursts, ~128 bursts per 4096-byte palette slot).
+    These FSMs are consumed by UNIT-011 (Texture Sampler — specifically UNIT-011.03 index cache and UNIT-011.06 palette LUT).
+    A partial or stub SDRAM model that does not implement both FSMs is not sufficient for VER-012 through VER-014.
   - Accepts a command script (encoded as register-write sequences per INT-010 and INT-012) and drives UNIT-003 register-file inputs.
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.
     The framebuffer readback uses the WIDTH_LOG2 value written to FB_CONFIG in the test command script; each test must write an explicit FB_CONFIG that establishes the surface dimensions before rendering.
-- **Post-integration re-approval:** All five golden image tests (VER-010 through VER-014) require golden image re-approval after the pixel pipeline integration change (UNIT-006 stub → functional, UNIT-005 incremental interpolation redesign, `tex_format` 3-bit widening).
-  VER-010 and VER-011 require re-approval because the incremental interpolation redesign (step 1) may shift interpolated color and Z values.
-  VER-012 requires re-approval because the format-select mux path changes even for RGB565.
-  VER-013 and VER-014 require initial creation and approval because they depend on the now-integrated UNIT-010 (Color Combiner) and pixel pipeline.
+- **Post-integration re-approval:** All five golden image tests (VER-010 through VER-014) require golden image re-approval after the pixel pipeline integration change (UNIT-006 stub → functional, UNIT-005 incremental interpolation redesign).
+  VER-010 and VER-011 require re-approval because the incremental interpolation redesign may shift interpolated color and Z values.
+  VER-012, VER-013, and VER-014 additionally require re-approval after PR2 (INDEXED8_2X2 texture architecture), because all texture format, cache, and palette configuration changes directly alter sampled texel values.
+  VER-016 requires re-approval after PR2 for the same reason (texture format changed from RGB565 to INDEXED8_2X2).
+  The current golden images for VER-012 through VER-016 are expected to fail after PR2 RTL implementation lands and must not be passed as green until re-approved with INDEXED8_2X2 output.
 - **Applicable to:** VER-010 through VER-014.
 
 ## Coverage Goals
+
+### Texture Format and Filter Coverage
+
+The supported texture format is exclusively INDEXED8_2X2 (FORMAT=4'd0, per INT-010).
+The supported filter mode is exclusively NEAREST (FILTER=2'd0, per INT-010).
+All texture-related golden image tests (VER-012, VER-013, VER-014, VER-016) use INDEXED8_2X2 format and NEAREST filtering only.
+No BC-family, RGB565, RGBA8888, or R8 format coverage is required.
+BILINEAR and TRILINEAR filter coverage is not required.
+
+### Palette Lifecycle Coverage
+
+VER-005 (Texture Palette LUT) provides dedicated coverage for the palette subsystem.
+The following cases must be covered across VER-005 and the golden image tests:
+
+| Coverage Item | Primary VER |
+| --- | --- |
+| Palette slot 0 load → sample (full 4096-byte SDRAM burst) | VER-005 |
+| Palette slot 1 load → sample (independent of slot 0) | VER-005 |
+| Reload palette slot 0 mid-frame (slot 0 updated while rendering) | VER-005 |
+| Per-slot isolation (slot 0 reload does not alter slot 1) | VER-005 |
+| Quadrant selection exhaustive (NW/NE/SW/SE for a single palette entry) | VER-005 |
+| UNORM8→UQ1.8 promotion correctness on all RGBA channels | VER-005 |
+| `{slot, idx, quadrant}` addressing to palette LUT | VER-005 |
+| Index cache invalidation via TEXn_CFG write (does not clear palette) | VER-003 |
+| Palette slot persists across TEXn_CFG write (index cache clear) | VER-003 |
+| Palette-loaded texture renders correct pixel colors | VER-012 |
 
 ### Requirement Coverage
 

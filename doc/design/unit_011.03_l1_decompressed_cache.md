@@ -1,14 +1,17 @@
-# UNIT-011.03: L1 Decompressed Cache
+# UNIT-011.03: Index Cache
 
 ## Purpose
 
-Per-sampler 4-way set-associative cache storing decompressed 4×4 texel blocks in UQ1.8 format (36 bits per texel).
-Four interleaved PDPW16KD 512×36 EBR banks per sampler provide single-cycle texel access on cache hit.
-On miss, requests UNIT-011.05 (L2 Compressed Cache) to supply the compressed block, then invokes UNIT-011.04 (Block Decompressor) to fill the L1 banks.
+Per-sampler direct-mapped cache storing 8-bit palette indices at half the apparent texture resolution.
+One DP16KD EBR per sampler provides single-cycle index access on cache hit.
+On miss, issues an SDRAM burst read (8 words = 16 bytes per 4×4 index block) via arbiter port 3 to fill a cache line, then resumes the stalled fragment.
+
+**Note:** This document has been renamed from `unit_011.03_l1_decompressed_cache.md` to `unit_011.03_index_cache.md`.
+The rename is tracked as a task in the implementation plan; the file content is authoritative under either name during the transition.
 
 ## Implements Requirements
 
-- REQ-003.08 (Texture Cache) — L1 portion: per-sampler 2,048-texel decoded cache with pseudo-LRU replacement
+- REQ-003.08 (Texture Cache) — per-sampler index cache: 512-entry direct-mapped 8-bit index store
 
 ## Interfaces
 
@@ -18,130 +21,123 @@ On miss, requests UNIT-011.05 (L2 Compressed Cache) to supply the compressed blo
 
 ### Consumes
 
-- INT-010 (GPU Register Map) — TEX0_CFG / TEX1_CFG base address, format, and write-invalidate trigger
+- INT-010 (GPU Register Map) — TEX0_CFG / TEX1_CFG base address and write-invalidate trigger
 
 ### Internal Interfaces
 
-- Receives cache read requests (block address + mip level + sub-texel position) from UNIT-011.01
-- Returns one UQ1.8 texel per request on hit (single cycle)
-- On miss: requests compressed block from UNIT-011.05; receives 16 decompressed UQ1.8 texels from UNIT-011.04 to fill banks
+- Receives index-resolution cache read requests `(u_idx, v_idx)` from UNIT-011.01
+- Returns one 8-bit index byte per request on hit (single cycle)
+- On miss: issues SDRAM burst read via UNIT-007 port 3; fills 16-entry cache line; returns index to UNIT-011.06
 - Stalls UNIT-006 fragment pipeline while fill is in progress
 
 ## Design Description
 
 ### Cache Organization
 
+```text
+Per-Sampler Index Cache (2 samplers, independent):
+
+  32 sets × 1 way × 16 indices/line = 512 index entries per sampler
+  8-bit index per entry
+  Cache line: 4×4 index block (16 bytes) covering an 8×8 apparent-texel area
+
+  EBR primitive: DP16KD in 2048×9 mode
+  Single bank per sampler
+  Total: 1 EBR per sampler, 2 EBR for 2 samplers
 ```
-Per-Sampler L1 Cache (2 samplers, independent):
-
-  32 sets × 4 ways × 16 texels/line = 2,048 texels per sampler
-  UQ1.8 format: 36 bits per texel (4 × 9-bit channels: R, G, B, A)
-  Cache line: single 4×4 decompressed texel block (16 texels, 576 bits)
-
-  EBR primitive: PDPW16KD in 512×36 mode
-  4 banks per sampler (Bank 0–Bank 3), interleaved by texel parity within the 4×4 block
-  Each bank: 512 entries = 128 cache lines × 4 texels/bank
-  Total: 4 EBR per sampler, 8 EBR for 2 samplers
-```
-
-### Bank Interleaving
-
-The 16 texels within each cache line are distributed across the four banks by their (x, y) parity within the 4×4 block:
-
-```
-Texel Positions:       Bank Assignment:
-(0,0) (1,0) (2,0) (3,0)    0     1     0     1
-(0,1) (1,1) (2,1) (3,1)    2     3     2     3
-(0,2) (1,2) (2,2) (3,2)    0     1     0     1
-(0,3) (1,3) (2,3) (3,3)    2     3     2     3
-
-Bank 0: texels at (even_x, even_y) positions
-Bank 1: texels at (odd_x,  even_y) positions
-Bank 2: texels at (even_x, odd_y)  positions
-Bank 3: texels at (odd_x,  odd_y)  positions
-```
-
-Each NEAREST texel read touches exactly one bank; the 4-bank structure evenly distributes the 16 texels in a 4×4 block and is retained for structural regularity.
-The bank selected for a NEAREST read is determined by `sub_u[0]` and `sub_v[0]` (the parity of the sub-texel position).
 
 ### Address Fields
 
-**Tag** (stored per way per set):
-- `tex_base[31:12]`: texture base address from TEXn_CFG.BASE_ADDR (upper 20 bits of SDRAM byte address)
-- `mip_level[3:0]`: mip level (0–15) from UNIT-011.01 output
-- Block address bits above the 5-bit set index, derived from UV coordinates and mip level
-
 **Set index (XOR folding):**
-```
-block_x = pixel_x >> 2
-block_y = pixel_y >> 2
-set = block_x[4:0] ^ block_y[4:0]    // XOR of low 5 bits → 32 sets
+
+```text
+block_x = u_idx >> 2        // 4×4 index block column
+block_y = v_idx >> 2        // 4×4 index block row
+set     = block_x[4:0] ^ block_y[4:0]    // XOR of low 5 bits → 32 sets
 ```
 
-XOR indexing distributes spatially adjacent 4×4 blocks across different cache sets, preventing systematic aliasing from row-major access patterns.
-Vertically and horizontally adjacent blocks always map to different sets.
+XOR indexing distributes spatially adjacent index blocks across different cache sets, preventing systematic aliasing for row-major access patterns.
+The same XOR scheme is retained from the previous L1 cache design (see DD-037 and DD-038 for historical context).
 
-**Bank address:**
+**Within-line address:**
+
+```text
+line_offset = {v_idx[1:0], u_idx[1:0]}   // 4 bits → 16 index entries per line
 ```
-bank_addr = {cache_line_index[6:0], texel_within_bank[1:0]}  // 9 bits → 512 entries
+
+**EBR address:**
+
+```text
+ebr_addr[10:0] = {set[4:0], line_offset[3:0], ...}  // 9-bit word address within 2048-deep EBR
 ```
+
+Each EBR word stores one 8-bit index (lower 8 bits of the 9-bit DP16KD data word; the ninth bit is unused).
+
+**Tag:**
+
+Each set stores one tag entry (valid bit + `(tex_base[15:0], block_x_upper, block_y_upper)`).
+A tag match on base address and upper block coordinates constitutes a hit.
 
 ### Inputs
 
-- Cache read request: `(tag, set, bank_select)` from UNIT-011.01
-- 16 decompressed UQ1.8 texels from UNIT-011.04 (for cache line fill)
+- Cache read request: `(u_idx, v_idx)` from UNIT-011.01
 - TEX0_CFG / TEX1_CFG write strobe (cache invalidation trigger from UNIT-003)
 
 ### Outputs
 
-- One UQ1.8 texel (from the addressed bank) to UNIT-011.04 on hit (single cycle)
-- L1 miss signal to trigger UNIT-011.05 L2 lookup
+- One 8-bit palette index `idx[7:0]` to UNIT-011.06 on hit
+- Cache miss signal to trigger SDRAM fill
 - Pipeline stall signal to UNIT-006
 
 ### Replacement Policy
 
-Pseudo-LRU per set (32 sets, each with 4 ways).
-On a cache fill, the pseudo-LRU victim way is selected and its tag and valid bit are updated.
-Pseudo-LRU avoids thrashing for sequential access patterns such as horizontal scanline sweeps across a texture.
+Direct-mapped (1 way per set); no replacement policy required.
+A miss always overwrites the single resident line in the addressed set.
 
 ### Cache Invalidation
 
-A TEX0_CFG write clears all 128 valid bits for sampler 0 in a single cycle.
-A TEX1_CFG write clears all 128 valid bits for sampler 1 in a single cycle.
-The sampler's L2 valid bits are also cleared (see UNIT-011.05).
+A TEX0_CFG write clears all 32 valid bits for sampler 0 in a single cycle.
+A TEX1_CFG write clears all 32 valid bits for sampler 1 in a single cycle.
 The next access after invalidation is guaranteed to miss and will trigger an SDRAM fill.
-Stale data is never served after a configuration change.
+Stale indices are never served after a configuration change.
+
+### Fill State Machine
+
+On miss, the fill FSM sequences:
+
+```text
+IDLE → SDRAM_REQ → SDRAM_BURST (8 words) → WRITE_LINE → IDLE
+```
+
+- **SDRAM_REQ:** Assert port 3 request with burst address (from INT-014 block-tiled index layout) and length = 8 words (16 bytes)
+- **SDRAM_BURST:** Receive 8 × 16-bit words from UNIT-007; accumulate 16 bytes = 16 index entries
+- **WRITE_LINE:** Write 16 index entries into the EBR line; update tag and set valid bit
+- **IDLE:** Remove pipeline stall; return `idx[7:0]` for the requested position
 
 ### EBR Notes
 
-**Primitive:** PDPW16KD (ECP5 pseudo-dual-port EBR)
-**Mode:** 512×36 (the maximum width mode of this primitive)
-**Per sampler:** 4 banks × 1 EBR per bank in 512×36 mode = 4 EBR
-Each bank stores exactly 512 entries (128 cache lines × 4 texels per bank), fully utilizing the 512-deep primitive.
-
-**Why PDPW16KD at 512×36?** See DD-037 for the EBR primitive selection rationale.
-The 36-bit width exactly matches the 4-channel UQ1.8 texel width (4 × 9 bits).
-The pseudo-dual-port configuration allows simultaneous read (for texel fetch) and write (for cache fill) without arbitration, provided the read and write addresses do not collide.
+**Primitive:** DP16KD (ECP5 true dual-port EBR)
+**Mode:** 2048×9 (9-bit word, 2048 deep)
+**Per sampler:** 1 EBR
+The true dual-port configuration allows simultaneous index read (for texel fetch) and index write (for cache fill) without arbitration, provided read and write addresses differ.
 During fill, the read port is held idle.
 
 See REQ-011.02 for the complete EBR budget across the GPU.
 
 ## Implementation
 
-- `rtl/components/texture/detail/l1-cache/src/texture_cache_l1.sv`: L1 cache arrays, tag storage, set indexing, replacement logic, and invalidation logic
+- `rtl/components/texture/detail/l1-cache/src/texture_index_cache.sv`: Index cache arrays, tag storage, set indexing, fill FSM, invalidation logic
 
-The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/`).
-The RTL tag-comparison, replacement, and bank-interleaving behavior must be bit-identical to the twin.
+The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/detail/uv-coord/`).
+The RTL tag-comparison and XOR set-indexing behavior must be bit-identical to the twin.
 
 ## Design Notes
 
-**L1 capacity:** 2,048 texels per sampler ≈ 45×45 texel equivalent for non-blocked access.
-The 32-set × 4-way organization provides working-set locality for typical triangle texture footprints.
-The L2 backstop (UNIT-011.05) ensures that L1 misses to recently-evicted blocks are fast (no SDRAM access).
+**Capacity:** 512 index entries per sampler = 512 × 2×2 apparent texels = up to a 32×32-texel apparent working set per sampler (depending on access pattern and XOR distribution).
 
-**XOR set indexing is a hardware optimization only:** The physical texture layout in SDRAM (INT-014) is not affected.
+**XOR set indexing is a hardware optimization only:** The physical texture layout in SDRAM (INT-014) uses block-tiled order without XOR.
 The XOR folding is applied entirely within the cache address computation.
 
-**L2 fallback:** When UNIT-011.03 signals an L1 miss, UNIT-011.05 is checked before SDRAM.
-The L2 path avoids the full SDRAM burst latency for recently-evicted but not yet-stale blocks.
-See UNIT-011.05 for L2 hit latency characteristics.
+**No L2 backstop:** Unlike the former two-level hierarchy, every index cache miss goes directly to SDRAM.
+The miss penalty is one burst of 8 × 16-bit words ≈ 11 cycles at 100 MHz.
+The simplified hierarchy reduces EBR usage from 8 EBR per sampler to 1 EBR per sampler.

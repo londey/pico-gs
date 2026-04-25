@@ -2,74 +2,95 @@
 
 ## Verification Method
 
-**Test:** Verified by executing a Verilator golden image simulation that renders a textured triangle through the full GPU RTL hierarchy -- including the texture cache, texture decoder, and behavioral SDRAM model implementing the UNIT-011 cache miss handling protocol -- and compares the output pixel-exactly against an approved golden image.
-The test confirms that UV coordinates are perspective-correct interpolated, the texture cache correctly fetches and decompresses texture data from SDRAM on cache miss, and the final rendered pixels match the expected checker pattern on the triangle surface.
+**Test:** Verified by executing a Verilator golden image simulation that renders a textured triangle through the full GPU RTL hierarchy — including the INDEXED8_2X2 index cache (UNIT-011.03), palette LUT (UNIT-011.06), and behavioral SDRAM model implementing the UNIT-011 index-cache miss fill FSM and palette load FSM — and compares the output pixel-exactly against an approved golden image.
+The test confirms that UV coordinates are perspective-correct interpolated, the quadrant `{v[0], u[0]}` selects the correct palette sub-entry, the index cache correctly fetches index blocks from SDRAM on miss, and the final rendered pixels match the expected checker pattern on the triangle surface.
+
+> **Golden image re-approval required.** The current golden image predates the INDEXED8_2X2 texture architecture (PR2).
+> After PR2 RTL implementation lands, re-run this test, visually inspect the output, and re-approve the golden image before marking this test as passing.
 
 ## Verifies Requirements
 
 - REQ-003.01 (Textured Triangle)
+- REQ-003.09 (Palette Slots)
 
 ## Verified Design Units
 
-- UNIT-003 (Register File -- TEX0_BASE, TEX0_FMT, ST0_ST1 register writes)
-- UNIT-005 (Rasterizer -- UV interpolation across triangle surface)
-- UNIT-006 (Pixel Pipeline -- pipeline orchestration, fragment dispatch)
-- UNIT-011 (Texture Sampler -- texture cache lookup, cache miss fill FSM, texture decoder, cache-format promotion to Q4.12)
+- UNIT-003 (Register File — TEX0_CFG, PALETTE0 register writes)
+- UNIT-005 (Rasterizer — UV interpolation across triangle surface)
+- UNIT-006 (Pixel Pipeline — pipeline orchestration, fragment dispatch)
+- UNIT-011 (Texture Sampler — index cache lookup, cache miss fill FSM, palette LUT lookup, UQ1.8→Q4.12 promotion)
+- UNIT-011.01 (UV Coordinate Processing — quadrant extraction, index-resolution coordinate output)
+- UNIT-011.03 (Index Cache — direct-mapped 8-bit index storage, 32-set × 16 indices/line)
+- UNIT-011.06 (Palette LUT — 2-slot shared palette, SDRAM load FSM, UNORM8→UQ1.8 promotion)
 
 ## Preconditions
 
-- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements the UNIT-011 Cache Miss Handling Protocol (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE FSM, with format-dependent burst lengths) as consumed by UNIT-011.
-- A known test texture (16x16 RGB565 checker pattern) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model at the address specified in TEX0_BASE.
-  Per `test_strategy.md`, large binary assets (textures for VER-012) are generated programmatically by the test harness and are not committed.
+- Integration simulation harness (`rtl/tb/`) compiles successfully under Verilator, with a behavioral SDRAM model that correctly implements:
+  - Index-cache miss fill FSM: IDLE → FETCH → WRITE_INDEX → IDLE, burst_len=8 (8 words × 2 bytes = 16 bytes for a 4×4 8-bit index block).
+  - Palette load FSM: IDLE → PALETTE_LOAD → IDLE, up to 32-word bursts, covering the full 4096-byte palette payload (256 entries × 4 RGBA8888 colors).
+- Palette slot 0 is pre-loaded by the test command sequence before any draw calls (see step 1 below).
+- A known test texture (16×16 INDEXED8_2X2 checker pattern, index array + palette) is generated programmatically by the harness and pre-loaded into the behavioral SDRAM model.
+  Per `test_strategy.md`, large binary assets are generated programmatically and are not committed.
 - Golden image `integration/golden/ver_012_textured_triangle.png` has been approved and committed.
-  This image must be re-approved after Phase 2 RTL implementation (UNIT-005 rasterizer rewrite), because the rasterizer traversal order changes to 4×4 tile-major, UV bus semantics change to true perspective-correct U,V, `frag_q` is removed, and `frag_lod` is added.
-- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-011 (Texture Sampler) for texture cache lookup and decoding, along with color combiner and FB/Z write logic per UNIT-006.
+  The current golden image was generated with RGB565 format and is expected to fail after PR2 RTL implementation.
+  Re-approval is required after PR2 lands.
+- `pixel_pipeline.sv` is the fully integrated module (not a stub): it instantiates UNIT-011 (Texture Sampler) for index cache lookup and palette LUT lookup, along with color combiner and FB/Z write logic per UNIT-006.
 
 ## Procedure
 
 ### Test Texture
 
-The harness generates a 16x16 RGB565 checker pattern programmatically (no file commit required per `test_strategy.md`):
+The harness generates a 16×16 INDEXED8_2X2 checker pattern programmatically (no file commit required per `test_strategy.md`):
 
-- **Dimensions:** 16x16 pixels (WIDTH_LOG2=4, HEIGHT_LOG2=4).
-- **Format:** RGB565 (FORMAT=5, uncompressed).
-- **Pattern:** 4x4 block checker.
-  Even blocks (where `(block_x + block_y) % 2 == 0`) are white (`0xFFFF`); odd blocks are black (`0x0000`).
-  This yields a visually distinctive pattern that makes UV mapping errors immediately visible.
-- **Layout:** Stored in SDRAM using the 4x4 block-tiled layout defined in INT-014.
-- **Base address:** A known aligned address (e.g., `0x00040000`) written to TEX0_BASE.
+- **Apparent dimensions:** 16×16 texels (WIDTH_LOG2=4, HEIGHT_LOG2=4).
+- **Index array dimensions:** 8×8 index entries (each index covers a 2×2 apparent-texel tile).
+  Stored as a 4×4 block-tiled index array in SDRAM per INT-014.
+- **Format:** INDEXED8_2X2 (FORMAT=4'd0, per INT-010).
+- **Pattern:** 4×4 apparent-texel block checker.
+  Even apparent-texel blocks have all sub-entries (NW/NE/SW/SE) set to white (RGBA=0xFFFFFFFF); odd apparent-texel blocks are black (RGBA=0x000000FF).
+  The corresponding 8-bit indices in the index array point to the matching white or black palette entries.
+- **Palette:** Slot 0 contains two entries at minimum — index 0=white (RGBA8888=0xFFFFFFFF) with all four quadrant colors identical, and index 1=black (RGBA8888=0x000000FF) with all four quadrant colors identical.
+  The remaining 254 palette entries are set to a known default (e.g., mid-gray).
+  Palette is stored as a 4096-byte SDRAM payload at a known aligned address.
+- **Base addresses:**
+  - Index array: a known aligned address (e.g., `0x00040000`) written to TEX0_CFG BASE_ADDR.
+  - Palette slot 0: a known aligned address (e.g., `0x00050000`) written to PALETTE0 BASE_ADDR.
 
 ### Test Scene
 
 The test renders a single textured triangle with three vertices at known screen coordinates.
-Each vertex has UV coordinates that map to specific regions of the 16x16 checker texture.
+Each vertex has UV coordinates that map to specific regions of the 16×16 apparent checker texture.
 
 | Vertex | Screen Position (Q12.4) | UV Coordinates (U, V) — Q4.12 on fragment bus | Description |
-|--------|-------------------------|-----------------------------------------------|-------------|
+| --- | --- | --- | --- |
 | V0 | (320, 60) | (0.5, 0.0) | Top center |
 | V1 | (100, 380) | (0.0, 1.0) | Bottom left |
 | V2 | (540, 380) | (1.0, 1.0) | Bottom right |
 
-The triangle covers a large sub-region of the 640x480 framebuffer.
-The UV coordinates span the full [0,1] range of the texture, ensuring the entire checker pattern is visible on the triangle surface.
+The triangle covers a large sub-region of the 640×480 framebuffer.
+The UV coordinates span the full [0, 1] range of the apparent texture, ensuring the entire checker pattern is visible on the triangle surface.
 
 ### Harness Command Sequence
 
 The integration harness drives the following register-write sequence into UNIT-003 (Register File):
 
-1. **Load test texture into behavioral SDRAM model:**
-   Generate the 16x16 RGB565 checker pattern and write it into the SDRAM model at the chosen base address using the 4x4 block-tiled layout (INT-014).
+1. **Load palette slot 0 and index array into behavioral SDRAM model:**
+   Write the 4096-byte palette payload into the SDRAM model at the palette base address.
+   Write the 8×8 index array (block-tiled per INT-014) into the SDRAM model at the texture base address.
+   Write `PALETTE0` (address `0x12`) with:
+   - `BASE_ADDR[15:0]` = palette slot 0 base address (×512 byte granularity).
+   - `LOAD_TRIGGER[16:16] = 1` (self-clearing; triggers palette load FSM in UNIT-011).
+   Wait for the palette load FSM to complete (SDRAM model signals completion after 4096-byte burst).
 
 2. **Configure texture unit 0:**
-   - Write `TEX0_BASE` (address `0x10`) with the texture base address (e.g., `0x00040000`, 4K aligned).
-   - Write `TEX0_FMT` (address `0x11`) with:
-     - `ENABLE = 1` (bit 0)
-     - `FORMAT = RGB565` (5 << 2, bits [5:2]; 4-bit field per INT-010, DD-041)
-     - `WIDTH_LOG2 = 4` (4 << 8, bits [11:8])
-     - `HEIGHT_LOG2 = 4` (4 << 12, bits [15:12])
-     - `SWIZZLE = 0` (identity, bits [19:16])
-     - `FILTER = NEAREST` (0, bits [7:6])
-     - `MIP_LEVELS = 1` (1 << 20, bits [23:20])
+   Write `TEX0_CFG` (address `0x10`) with:
+   - `ENABLE = 1` (bit 0)
+   - `FORMAT = INDEXED8_2X2` (4'd0, bits [7:4])
+   - `FILTER = NEAREST` (2'd0, bits [9:8])
+   - `WIDTH_LOG2 = 4` (bits [13:10], apparent texture width = 16)
+   - `HEIGHT_LOG2 = 4` (bits [17:14], apparent texture height = 16)
+   - `PALETTE_IDX = 0` (bit [24], selects palette slot 0)
+   - `WRAP_U = REPEAT`, `WRAP_V = REPEAT`
 
 3. **Configure render mode:**
    Write `RENDER_MODE` (address `0x30`) with:
@@ -77,7 +98,6 @@ The integration harness drives the following register-write sequence into UNIT-0
    - `Z_TEST_EN = 0` (bit 2, no depth test)
    - `Z_WRITE_EN = 0` (bit 3, no depth write)
    - `COLOR_WRITE_EN = 1` (bit 4)
-   - `TEX0_EN` via TEX0_FMT (texture unit 0 enabled above)
    - All other mode bits = 0 (no dithering, no alpha blend, no stipple, no culling)
 
 4. **Configure framebuffer:**
@@ -85,87 +105,72 @@ The integration harness drives the following register-write sequence into UNIT-0
    - `fb_color_base` = chosen color buffer base address (SDRAM-aligned).
    - `fb_width_log2 = 9` (surface width = 512 pixels).
    - `fb_height_log2 = 9` (surface height = 512 pixels).
-   The harness framebuffer readback in step 9 must use `WIDTH_LOG2 = 9` for the block-tiled address calculation (INT-011).
 
 5. **Submit vertex 0:**
-   - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque -- modulated with texture).
+   - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque).
    - Write `ST0_ST1` (address `0x01`) with UV0 = (0.5, 0.0) packed per register format.
    - Write `VERTEX_NOKICK` (address `0x06`) with V0 position (X=320, Y=60, Z=`0x0000`).
 
 6. **Submit vertex 1:**
-   - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque).
+   - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF`.
    - Write `ST0_ST1` (address `0x01`) with UV0 = (0.0, 1.0).
    - Write `VERTEX_NOKICK` (address `0x06`) with V1 position (X=100, Y=380, Z=`0x0000`).
 
 7. **Submit vertex 2 (with kick):**
-   - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF` (COLOR1=black, COLOR0=white opaque).
+   - Write `COLOR` (address `0x00`) with `0x000000FF_FFFFFFFF`.
    - Write `ST0_ST1` (address `0x01`) with UV0 = (1.0, 1.0).
    - Write `VERTEX_KICK_012` (address `0x07`) with V2 position (X=540, Y=380, Z=`0x0000`).
 
 8. **Wait for completion:**
-   Run the simulation until the `frag_done` signal (or equivalent pipeline-idle indicator) asserts, indicating all fragments have been processed and written to the behavioral SDRAM model.
+   Run the simulation until the pipeline-idle indicator asserts, indicating all fragments have been processed and written to the behavioral SDRAM model.
 
 9. **Read back framebuffer:**
-   The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4x4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 4.
+   The harness reads the simulated framebuffer contents from the behavioral SDRAM model using the 4×4 block-tiled address layout per INT-011, with `WIDTH_LOG2 = 9` matching the `fb_width_log2` written in step 4.
    The pixel data is serialized as a PNG file at `integration/sim_out/ver_012_textured_triangle.png`.
 
 10. **Pixel-exact comparison:**
     Compare the simulation output against the approved golden image:
-    ```
+
+    ```sh
     diff -q integration/sim_out/ver_012_textured_triangle.png integration/golden/ver_012_textured_triangle.png
     ```
 
 11. **SDRAM burst length assertion:**
-    Verify that during texture cache miss fills, the SDRAM burst length issued by the cache fill FSM matches the UNIT-011 specification for RGB565 format: `burst_len=16` (32 bytes for 16 x 16-bit pixels in a 4x4 block).
-    The harness should log or assert on every burst read request, confirming the burst length field equals 16.
+    Verify that during index-cache miss fills, the SDRAM burst length issued by the cache fill FSM equals 8 (8 words × 2 bytes = 16 bytes for a 4×4 8-bit index block), matching UNIT-011.03.
 
 ## Expected Results
 
-- **Pass Criteria:** Pixel-exact match between the simulation output (`integration/sim_out/ver_012_textured_triangle.png`) and the approved golden image (`integration/golden/ver_012_textured_triangle.png`).
-  The rendered image shows a triangle with the 16x16 checker pattern mapped onto its surface via perspective-correct UV interpolation.
-  The checker pattern should appear uniform and undistorted -- no affine warping artifacts should be visible (straight checker lines remain straight across the triangle).
-  SDRAM burst requests during cache misses use `burst_len=16` for RGB565 format, matching UNIT-011.
+- **Pass Criteria:** Pixel-exact match between the simulation output and the approved golden image.
+  The rendered image shows a triangle with the 16×16 apparent checker pattern mapped onto its surface via perspective-correct UV interpolation.
+  The checker pattern should appear uniform and undistorted — no affine warping artifacts should be visible.
+  SDRAM burst requests during index-cache misses use `burst_len=8`, matching UNIT-011.03.
+  The palette load step completes before the first draw call.
 
 ## Test Implementation
 
 - `rtl/tb/`: Integration simulation harness.
-  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing the UNIT-011 cache miss fill FSM (IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE) as consumed by UNIT-011, drives register-write command sequences, and reads back the framebuffer as PNG files.
-- `integration/golden/ver_012_textured_triangle.png`: Approved golden image (created after the initial simulation run is visually inspected and approved).
+  Instantiates the full GPU RTL hierarchy under Verilator, provides a behavioral SDRAM model implementing both the UNIT-011 index-cache miss fill FSM and the palette load FSM, drives register-write command sequences, and reads back the framebuffer as PNG files.
+- `integration/golden/ver_012_textured_triangle.png`: Approved golden image (must be regenerated and re-approved after PR2 RTL implementation).
 
 ## Notes
 
-- **UNIT-011 Cache Miss Handling Protocol:** The behavioral SDRAM model must faithfully implement the cache miss fill FSM defined in UNIT-011.
-  For RGB565 format, the burst length is 16 (32 bytes = 16 x 16-bit uncompressed texels in a 4x4 block).
-  The fill FSM transitions through IDLE -> FETCH -> DECOMPRESS -> WRITE_BANKS -> IDLE.
-  Burst lengths for other formats are documented in UNIT-011: BC1/BC4=4, BC2/BC3/R8=8, RGB565=16, RGBA8888=32.
-- **tex_format 4-bit field:** The FORMAT field in TEXn_FMT is 4 bits wide (bits [5:2]), supporting all eight texture formats (BC1=0 through R8=7) as defined in INT-010 (DD-041).
-  RGB565 is FORMAT=5.
-  The format-select mux in UNIT-011 (Block Decompressor, UNIT-011.04) connects all eight format decoders; RGB565 continues to be decoded by `texture_rgb565.sv`.
-  The golden image must be re-approved after any change to the format-select mux path in UNIT-011.04, including this field widening.
+- **UNIT-011 Index-Cache Miss Fill Protocol:** The behavioral SDRAM model must implement the index-cache fill FSM (IDLE → FETCH → WRITE_INDEX → IDLE).
+  Burst length is 8 words (16 bytes for 16 × 8-bit index values in a 4×4 apparent-texel block at half resolution).
+- **UNIT-011 Palette Load Protocol:** The behavioral SDRAM model must implement the palette load FSM (IDLE → PALETTE_LOAD → IDLE).
+  The full 4096-byte palette payload requires approximately 128 sequential 32-word bursts.
+- **Palette slot must be loaded before first draw call.** Firmware (and the test command sequence) must issue the PALETTE0 LOAD_TRIGGER write and wait for the load to complete before any texture sampling occurs.
+  There is no hardware fault for sampling from an unloaded slot.
+- **tex_format 4-bit field:** FORMAT=4'd0 encodes INDEXED8_2X2.
+  Values 4'd1–4'd15 are reserved.
+  The 4-bit field width is retained for ABI stability per INT-010.
 - **test_strategy.md:** Per the Test Data Management section, the test texture is generated programmatically by the harness and is not committed as a binary asset.
   See the Golden Image Approval Testing section for the approval workflow.
 - **Makefile target:** Run this test with: `cd integration && make test-textured`.
 - **Perspective-correct UV:** UV coordinates are perspective-correct (U/W, V/W divisions are performed inside the rasterizer per UNIT-005.05).
-  The per-pixel 1/Q computation uses a dedicated reciprocal module (`raster_recip_q.sv`, DP16KD 18×1024 mode, UQ4.14 output); the area reciprocal for triangle setup uses a separate module (`raster_recip_area.sv`, DP16KD 36×512 mode).
-  `frag_uv0` and `frag_uv1` on the fragment bus carry the fully corrected U,V values; UNIT-011 uses them directly for texture cache lookup without further division.
-  With the checker pattern, any affine warping would be visible as curved checker lines — the test implicitly verifies perspective correctness by requiring pixel-exact match with the golden image.
-- **Vertex color modulation:** All vertex colors are set to white (`0xFFFFFFFF`) so the MODULATE combiner mode produces `texture_color x 1.0 = texture_color`.
-  This isolates texture sampling correctness from color blending behavior.
-- **Dithering:** Dithering is disabled (`DITHER_EN=0`) for this test to ensure deterministic, fully reproducible output.
-- **VER-012 together with VER-005** (Texture Decoder Unit Testbench) jointly satisfies REQ-003.01 per the requirement document's Verification Method section.
-  VER-005 verifies individual format decoders at the unit level; VER-012 verifies the full texture sampling path through the integrated pipeline.
-- The background of the framebuffer (pixels outside the triangle) will contain whatever the SDRAM model initializes to (typically zero/black).
-  The golden image includes the full 512×512 framebuffer surface, so the background color is part of the pixel-exact comparison.
-- **Cache format:** The texture cache operates exclusively in UQ1.8 mode (36-bit, PDPW16KD 512×36).
-- The golden image must be regenerated and re-approved whenever the rasterizer tiled address stride changes (e.g. after wiring `fb_width_log2` to replace a hardcoded constant), after the incremental interpolation redesign (UNIT-005 step 1 of the pixel pipeline integration change), after the reciprocal module split (replacing the shared `raster_recip_lut.sv` with dedicated `raster_recip_area.sv` and `raster_recip_q.sv` backed by DP16KD block RAMs), or after any change to the format-select mux path in UNIT-011.04 (Block Decompressor).
-  The reciprocal module split may produce different rounding in the UQ4.14 output compared to the previous shared LUT, potentially shifting UV values by up to 1 ULP at some pixel locations.
-  The conversion of derivative precomputation (UNIT-005.03) from combinational to sequential time-multiplexed computation does not change the computed derivative values, only the timing.
-  However, if the derivative computation fix also corrects rendering bugs (displaced fragments, incorrect UV interpolation) that affect textured output, golden image re-approval is required.
+  `frag_uv0` and `frag_uv1` carry fully corrected U,V values in Q4.12; UNIT-011 uses them directly for index cache lookup and quadrant extraction without further division.
+- **Vertex color modulation:** All vertex colors are set to white so the MODULATE combiner produces `texture_color × 1.0 = texture_color`, isolating texture sampling correctness from color blending.
+- **Dithering:** Dithering is disabled (`DITHER_EN=0`) for deterministic, reproducible output.
+- **VER-012 together with VER-005** (Texture Palette LUT Unit Testbench) jointly satisfies REQ-003.01 per the requirement document's Verification Method section.
+  VER-005 verifies the palette LUT and index cache in isolation; VER-012 verifies the full texture sampling path through the integrated pipeline.
+- The golden image must be regenerated and re-approved after: PR2 RTL implementation (INDEXED8_2X2 format replaces RGB565); rasterizer tiled address stride changes; perspective-correct interpolation changes in UNIT-005; any change to the palette LUT addressing or UNORM8→UQ1.8 promotion in UNIT-011.06.
   See `test_strategy.md` for the re-approval workflow.
-- **UV format and golden image:** UV coordinates (`frag_uv0`, `frag_uv1`) on the rasterizer→pixel_pipeline fragment bus carry true perspective-correct U,V values in Q4.12 (16-bit signed), as defined by the `q4_12_t` typedef in `fp_types_pkg.sv`.
-  Perspective correction (S×(1/Q), T×(1/Q)) is performed inside the rasterizer (UNIT-005.05); the pixel pipeline (UNIT-006) receives fully corrected U,V coordinates directly and no longer performs 1/Q division on the UV bus.
-  `frag_q` is not present on the fragment bus; `frag_lod` (UQ4.4) is present in its place, carrying the per-pixel mip level derived from CLZ on Q and consumed by UNIT-011.
-  **The golden image requires re-approval after Phase 2 RTL implementation.**
-  The rasterizer traversal order changes to 4×4 tile-major order, the UV bus semantics change (true U,V vs. S=U/W projections), and `frag_q` is removed and `frag_lod` added.
-  These changes alter the UV coordinates consumed by UNIT-011, changing the checker pattern rendering at pixel level.
-  After Phase 2 RTL implementation is complete, re-run this test, visually inspect the corrected output, and re-approve the golden image before marking this test as passing.

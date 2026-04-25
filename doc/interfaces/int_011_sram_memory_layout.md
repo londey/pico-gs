@@ -221,45 +221,33 @@ Register encoding: `Z_BASE = 0x0800` (address >> 9).
 | Base Address | 0x180000 |
 | End Address | 0x2FFFFF |
 | Size | 1,572,864 bytes (~1.5 MB) |
-| Formats Supported | BC1, BC2, BC3, BC4, RGB565 (tiled), RGBA8888 (tiled), R8 (tiled) |
+| Format Supported | INDEXED8_2X2 (single format; see INT-014) |
 
-**Memory layout:** See INT-014 (Texture Memory Layout) for detailed format specifications.
-All textures use 4×4 block-tiled layout.
+**Memory layout:** See INT-014 (Texture Memory Layout) for the INDEXED8_2X2 index array layout and the separate palette payload layout.
+Index arrays use 4×4 block-tiled layout where each block covers 8×8 apparent texels (indices are stored at half resolution).
 
-**RGB565 Capacity (16 bpp, tiled):**
+**INDEXED8_2X2 Index Array Capacity (8 bits per 2×2 apparent-texel tile, ~2 bpp apparent):**
 
-| Texture Size | Bytes | Count in 1.5 MB |
-|--------------|-------|-----------------|
-| 512×512 | 524,288 | 3 |
-| 256×256 | 131,072 | 12 |
-| 128×128 | 32,768 | 48 |
-| 64×64 | 8,192 | 192 |
+| Apparent Texture Size | Index Bytes | Count in 1.5 MB |
+|-----------------------|-------------|-----------------|
+| 1024×1024 | 262,144 | 6 |
+| 512×512 | 65,536 | 24 |
+| 256×256 | 16,384 | 96 |
+| 128×128 | 4,096 | 384 |
 
-**BC1 Capacity (4 bpp compressed):**
+**Palette Payload:** Each palette slot occupies a separate 4096-byte region (256 entries × 4 quadrant colors × 4 bytes RGBA8888).
+Two slots = 8192 bytes total of palette storage in SDRAM.
+Palettes may be placed anywhere within the texture region (or elsewhere in SDRAM) at any 512-byte-aligned address.
 
-| Texture Size | Bytes | Count in 1.5 MB |
-|--------------|-------|-----------------|
-| 1024×1024 | 524,288 | 3 |
-| 512×512 | 131,072 | 12 |
-| 256×256 | 32,768 | 48 |
-| 128×128 | 8,192 | 192 |
+**Texture Address Alignment**: Index arrays must be 512-byte aligned for the TEXn_CFG BASE_ADDR register; palette payloads must be 512-byte aligned for the PALETTEn BASE_ADDR register.
 
-**Texture Address Alignment**: Textures must be 512-byte aligned for the TEX_CFG BASE_ADDR register (512-byte granularity).
-
-**Recommended Texture Layout (RGB565, 256×256)**:
+**Recommended Texture Layout (256×256 INDEXED8_2X2 + 2 palettes)**:
 ```
-0x180000  Texture 0 (128 KB)
-0x1A0000  Texture 1 (128 KB)
-0x1C0000  Texture 2 (128 KB)
-0x1E0000  Texture 3 (128 KB)
-0x200000  Texture 4 (128 KB)
-0x220000  Texture 5 (128 KB)
-0x240000  Texture 6 (128 KB)
-0x260000  Texture 7 (128 KB)
-0x280000  Texture 8 (128 KB)
-0x2A0000  Texture 9 (128 KB)
-0x2C0000  Texture 10 (128 KB)
-0x2E0000  Texture 11 (128 KB)
+0x180000  Palette slot 0 payload (4 KB)
+0x181000  Palette slot 1 payload (4 KB)
+0x182000  Texture 0 index array (16 KB)
+0x186000  Texture 1 index array (16 KB)
+...
 0x300000  (end of default texture region)
 ```
 
@@ -394,21 +382,24 @@ Access: 16-word burst read at tile entry (blend enabled only); 16-word burst wri
 ### Texture Fetch (Read)
 
 ```
-Priority: MEDIUM
-Pattern: Burst block reads on cache miss (REQ-003.08)
-Bandwidth: ~5–15 MB/s average (with >90% cache hit rate)
-Access: BC1: 4 words per cache miss (burst); RGB565 tiled: 16 words per cache miss (burst)
+Priority: MEDIUM (Port 3, shared via internal 3-way arbiter for index fills + palette loads)
+Pattern: Burst index-block reads on index cache miss; burst palette payload reads on PALETTEn LOAD_TRIGGER
+Bandwidth: ~3–10 MB/s average for index fills; per-load 4 KB burst for palette loads (rare event)
+Access: Index fill: 8 words per 4×4 index block (burst); Palette load: 2048 words = 4096 bytes per slot (multi-burst)
 ```
 
-**Texture Cache**: Each of the 2 texture samplers has an on-chip 4-way set-associative texture cache with 16,384 texels.
-On cache hit, no SDRAM access is needed.
-On cache miss, the full 4×4 block is fetched using a sequential burst read from SDRAM:
-- BC1: 4 × 16-bit words = 8 bytes. SDRAM timing: ~11 cycles.
-- RGB565 tiled: 16 × 16-bit words = 32 bytes. SDRAM timing: ~23 cycles.
-- RGBA8888 tiled: 32 × 16-bit words = 64 bytes. SDRAM timing: ~39 cycles (may cross row boundary).
-- R8 tiled: 8 × 16-bit words = 16 bytes. SDRAM timing: ~15 cycles.
+**Texture Subsystem (Port 3 client)**: Each of the 2 texture samplers has an on-chip half-resolution index cache (UNIT-011.03; 1 DP16KD, 32 sets × 16 indices/line) and shares a 2-slot palette LUT (UNIT-011.06; 4 PDPW16KD).
+A 3-way arbiter internal to `texture_sampler.sv` schedules palette slot 0 load, palette slot 1 load, and index cache fill requests onto the single SDRAM Port 3 grant; UNIT-007 itself still has 4 ports with Port 3 shared between UNIT-011 and PERF_TIMESTAMP writes (DD-026).
 
-End-to-end cache fill latency (including decompression/conversion overlap) is documented in UNIT-011 (Texture Sampler) and UNIT-011.05 (L2 Compressed Cache).
+On index cache hit, no SDRAM access is needed.
+On index cache miss, a 4×4 block of 8-bit indices (16 indices = 16 bytes = 8 × 16-bit words) is fetched as a sequential burst read from SDRAM (~15 cycles).
+Each block covers an 8×8 apparent-texel region.
+
+On PALETTEn LOAD_TRIGGER, the palette load FSM reads 4096 bytes (2048 × 16-bit words) from `BASE_ADDR × 512` covering 256 palette entries × 4 RGBA8888 quadrant colors per entry.
+The transfer is split into multiple SDRAM bursts (each up to 512 words within a single SDRAM row) and may be preempted by an in-flight index cache fill; the loader resumes on the next Port 3 grant.
+Each RGBA8888 byte is promoted inline to UQ1.8 (`UQ1.8 = UNORM8 << 1`) before writing into the palette EBR.
+
+End-to-end cache fill latency and palette load latency are documented in UNIT-011 (Texture Sampler) and UNIT-011.06 (Palette LUT).
 
 ---
 
