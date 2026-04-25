@@ -48,10 +48,11 @@ enum tex_format_e {
     R8         = 4'd7 { desc = "8 bpp, single channel, 4x4 tiled"; };
 };
 
+// Texture filter mode.  The 2-bit FILTER field is preserved for ABI
+// compatibility, but only NEAREST is a legal write — values 1–3 are reserved
+// and must not be programmed.  The hardware implements point-sampling only.
 enum tex_filter_e {
-    NEAREST    = 2'd0 { desc = "No interpolation"; };
-    BILINEAR   = 2'd1 { desc = "2x2 tap filter"; };
-    TRILINEAR  = 2'd2 { desc = "Mipmap blend, requires MIP_LEVELS>1"; };
+    NEAREST    = 2'd0 { desc = "No interpolation (only legal value; 1-3 reserved)"; };
 };
 
 enum wrap_mode_e {

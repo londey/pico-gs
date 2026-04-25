@@ -2,15 +2,15 @@
 //!
 //! This module provides the [`TextureSampler`] facade and the
 //! [`TrilinearBlender`] trait.
-//! The sampler owns the full texture pipeline stack (fetcher, filter,
-//! blender) and presents a simple `sample(u, v, lod)` interface to
-//! the fragment pipeline.
+//! The sampler owns the texture pipeline stack (block fetcher) and
+//! presents a simple `sample(u, v, lod)` interface to the fragment
+//! pipeline.
 //!
 //! # Layer stack (owned by `TextureSampler`)
 //!
 //! ```text
 //! TrilinearBlender (this module)
-//!   → SampleGatherer + BilinearBlender (tex_filter)
+//!   → compute_nearest_tap (tex_uv_coord)
 //!     → BlockFetcher (tex_fetch)
 //!       → DecodedBlockProvider (tex_cache) + CompressedBlockProvider (tex_compressed)
 //!         → TexelDecoder (tex_decode)
@@ -23,15 +23,15 @@
 //! (9 bits per channel, 36 bits per texel) using PDPW16KD EBR banks
 //! in 512×36 mode.
 //! Cache misses stall the pipeline until the SDRAM fill completes.
-//! See UNIT-006, texture_cache.sv.
+//! See UNIT-011, texture_sampler.sv.
 
 use gpu_registers::components::gpu_regs::named_types::tex_cfg_reg::TexCfgReg;
 use qfixed::Q;
 
-use gs_tex_bilinear_filter::{BilinearBlender, SampleGatherer, StandardBlender, StandardGatherer};
 use gs_tex_block_decoder::tex_fetch::{BlockFetcher, ConcreteFetcher};
 use gs_tex_l1_cache::CacheStats;
 use gs_tex_l2_cache::L2CacheStats;
+use gs_tex_uv_coord::compute_nearest_tap;
 use gs_twin_core::fragment::{ColorQ412, RasterFragment, TexturedFragment};
 pub use gs_twin_core::texel::TexelUq18;
 
@@ -39,9 +39,9 @@ pub use gs_twin_core::texel::TexelUq18;
 
 /// Top-level texture sampling trait.
 ///
-/// Implements trilinear filtering as a blend of two bilinear samples
-/// at adjacent mip levels (not yet fully implemented — currently falls
-/// back to bilinear).
+/// The pico-gs pipeline implements NEAREST filtering only; the trait
+/// name is retained for API compatibility but the implementation
+/// returns a single texel without filtering.
 pub trait TrilinearBlender {
     /// Sample a texel at the given UV coordinates and LOD level.
     ///
@@ -65,7 +65,7 @@ pub trait TrilinearBlender {
 /// Each `TextureSampler` corresponds to one hardware texture unit
 /// (TEX0 or TEX1).
 /// It holds the current [`TexCfgReg`] configuration and delegates
-/// to the block fetcher, sample gatherer, and bilinear blender.
+/// to the block fetcher for cache lookup, decode, and SDRAM fills.
 ///
 /// See: UNIT-006 (Pixel Pipeline), UNIT-011 (Texture Sampler),
 ///      INT-014 (Texture Memory Layout).
@@ -75,12 +75,6 @@ pub struct TextureSampler {
 
     /// Block fetcher owning decoded + compressed caches.
     fetcher: ConcreteFetcher,
-
-    /// Sample gatherer (wrap + tap computation).
-    gatherer: StandardGatherer,
-
-    /// Bilinear blender.
-    blender: StandardBlender,
 }
 
 impl Default for TextureSampler {
@@ -96,8 +90,6 @@ impl TextureSampler {
         Self {
             cfg: None,
             fetcher: ConcreteFetcher::new(),
-            gatherer: StandardGatherer,
-            blender: StandardBlender,
         }
     }
 
@@ -148,13 +140,39 @@ impl TrilinearBlender for TextureSampler {
             _ => return ColorQ412::OPAQUE_WHITE,
         };
 
-        // Validate format before gathering.
-        if cfg.format().is_err() {
-            return ColorQ412::OPAQUE_WHITE;
-        }
+        // Validate format before fetching.
+        let format = match cfg.format() {
+            Ok(f) => f,
+            Err(_) => return ColorQ412::OPAQUE_WHITE,
+        };
 
-        let sample = self.gatherer.gather(&mut self.fetcher, u, v, cfg, sdram);
-        self.blender.blend(&sample).to_q412()
+        let w_log2 = cfg.width_log2();
+        let h_log2 = cfg.height_log2();
+        let width = 1u32 << w_log2;
+        let height = 1u32 << h_log2;
+        let base_words = u32::from(cfg.base_addr()) * 256;
+
+        let tap = compute_nearest_tap(
+            u,
+            v,
+            width,
+            height,
+            w_log2,
+            h_log2,
+            cfg.u_wrap(),
+            cfg.v_wrap(),
+        );
+
+        let block = self.fetcher.get_block(
+            base_words,
+            tap.block_x,
+            tap.block_y,
+            tap.block_index,
+            format,
+            sdram,
+        );
+        let texel = block[tap.local as usize];
+        texel.to_q412()
     }
 }
 

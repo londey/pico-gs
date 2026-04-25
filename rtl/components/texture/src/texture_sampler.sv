@@ -1,21 +1,23 @@
 `default_nettype none
 
-// Spec-ref: unit_011_texture_sampler.md `692b2d18436a5eaa` 2026-04-23
+// Spec-ref: unit_011_texture_sampler.md `5bceb0685e6d8ee8` 2026-04-25
 //
-// Texture Sampler — Assembly Module
+// Texture Sampler -- Assembly Module (NEAREST-only)
 //
-// Top-level wiring for a single texture sampler unit.
-// Instantiates UV coordinate processing (UNIT-011.01) and bilinear
-// filtering (UNIT-011.02), connecting them through tap coordinates
-// and fractional weights.
+// Top-level wiring for a single texture sampler unit. pico-gs implements
+// NEAREST (point-sample) filtering only; there is no bilinear/trilinear
+// filter stage. This module instantiates UV coordinate processing
+// (UNIT-011.01) and passes the single fetched texel straight through to
+// the output.
 //
 // Data flow:
-//   UV (Q4.12) + config → [texture_uv_coord] → tap coords + frac weights
-//   tap coords → (external cache lookup) → 4 × UQ1.8 texels
-//   texels + frac weights → [texture_bilinear] → sampled texel (UQ1.8)
+//   UV (Q4.12) + config -> [texture_uv_coord] -> wrapped texel coord
+//                                              + sub-texel position
+//   wrapped coord -> (external L1 cache lookup) -> texel_tap0 (UQ1.8)
+//   texel_tap0 -> texel_out (pass-through)
 //
-// See: UNIT-011.01 (UV Coord), UNIT-011.02 (Bilinear Filter),
-//      UNIT-011 (Texture Sampler), tex_sample.rs (DT reference)
+// See: UNIT-011.01 (UV Coord), UNIT-011 (Texture Sampler),
+//      tex_sample.rs (DT reference)
 
 module texture_sampler (
     input  wire         clk,
@@ -34,52 +36,29 @@ module texture_sampler (
     input  wire [3:0]   height_log2,     // Texture height = 1 << height_log2
     input  wire [1:0]   u_wrap,          // U wrap mode (WrapModeE)
     input  wire [1:0]   v_wrap,          // V wrap mode (WrapModeE)
-    input  wire [1:0]   filter_mode,     // Filter mode (TexFilterE)
 
     // ====================================================================
-    // Texel Coordinate Output (to cache lookup)
+    // Texel Coordinate Output (to L1 cache lookup)
     // ====================================================================
-    // For nearest: only tap0 coordinates are used.
-    // For bilinear: all 4 tap coordinates are used.
-    output wire [9:0]   tap0_x,          // Tap 0 wrapped texel X
-    output wire [9:0]   tap0_y,          // Tap 0 wrapped texel Y
-    output wire [9:0]   tap1_x,          // Tap 1 (tx+1, ty)
-    output wire [9:0]   tap1_y,
-    output wire [9:0]   tap2_x,          // Tap 2 (tx, ty+1)
-    output wire [9:0]   tap2_y,
-    output wire [9:0]   tap3_x,          // Tap 3 (tx+1, ty+1)
-    output wire [9:0]   tap3_y,
-
-    output wire         is_bilinear,     // 1 if bilinear/trilinear mode
+    output wire [9:0]   tap0_x,          // Wrapped texel X
+    output wire [9:0]   tap0_y,          // Wrapped texel Y
 
     // ====================================================================
-    // Texel Input from Cache (4 bank outputs, UQ1.8 RGBA)
+    // Sub-Texel Position (within enclosing 4x4 block, to L1 cache)
     // ====================================================================
-    // For nearest: only texel_in_nearest is used (selected externally).
-    // For bilinear: all 4 texels at tap positions are provided.
+    output wire [1:0]   sub_u,           // Column within 4x4 block
+    output wire [1:0]   sub_v,           // Row within 4x4 block
+
+    // ====================================================================
+    // Texel Input from Cache (UQ1.8 RGBA)
+    // ====================================================================
     input  wire [35:0]  texel_tap0,      // Texel at (tap0_x, tap0_y)
-    input  wire [35:0]  texel_tap1,      // Texel at (tap1_x, tap1_y)
-    input  wire [35:0]  texel_tap2,      // Texel at (tap2_x, tap2_y)
-    input  wire [35:0]  texel_tap3,      // Texel at (tap3_x, tap3_y)
 
     // ====================================================================
     // Sampled Texel Output (UQ1.8 RGBA)
     // ====================================================================
-    output wire [35:0]  texel_out        // Blended texel result
+    output wire [35:0]  texel_out        // Sampled texel result
 );
-
-    // ====================================================================
-    // Filter mode detection
-    // ====================================================================
-
-    assign is_bilinear = (filter_mode == 2'd1) || (filter_mode == 2'd2);
-
-    // ====================================================================
-    // Internal wires: UV coord → bilinear filter
-    // ====================================================================
-
-    wire [7:0] frac_u;                   // Sub-texel U fraction, UQ0.8
-    wire [7:0] frac_v;                   // Sub-texel V fraction, UQ0.8
 
     // ====================================================================
     // UNIT-011.01: UV Coordinate Processing
@@ -92,37 +71,24 @@ module texture_sampler (
         .height_log2 (height_log2),
         .u_wrap      (u_wrap),
         .v_wrap      (v_wrap),
-        .is_bilinear (is_bilinear),
         .tap0_x      (tap0_x),
         .tap0_y      (tap0_y),
-        .tap1_x      (tap1_x),
-        .tap1_y      (tap1_y),
-        .tap2_x      (tap2_x),
-        .tap2_y      (tap2_y),
-        .tap3_x      (tap3_x),
-        .tap3_y      (tap3_y),
-        .frac_u      (frac_u),
-        .frac_v      (frac_v)
+        .sub_u       (sub_u),
+        .sub_v       (sub_v)
     );
 
     // ====================================================================
-    // UNIT-011.02: Bilinear Filter
+    // NEAREST pass-through
     // ====================================================================
+    // Single fetched texel from the L1 cache flows directly to the output.
 
-    texture_bilinear u_bilinear (
-        .frac_u      (frac_u),
-        .frac_v      (frac_v),
-        .is_bilinear (is_bilinear),
-        .texel_tap0  (texel_tap0),
-        .texel_tap1  (texel_tap1),
-        .texel_tap2  (texel_tap2),
-        .texel_tap3  (texel_tap3),
-        .texel_out   (texel_out)
-    );
+    assign texel_out = texel_tap0;
 
     // ====================================================================
     // Suppress unused warnings
     // ====================================================================
+    // clk/rst_n are exposed for future pipelined variants but unused in the
+    // current purely combinational NEAREST-only assembly.
 
     /* verilator lint_off UNUSEDSIGNAL */
     wire _unused_clk   = clk;

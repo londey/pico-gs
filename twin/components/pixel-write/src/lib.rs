@@ -12,7 +12,7 @@
 
 pub mod tile_buffer;
 
-// Spec-ref: unit_006_pixel_pipeline.md `2914e4600ea3cd6f` 2026-04-13
+// Spec-ref: unit_006_pixel_pipeline.md `34e87e3db2dfabb8` 2026-04-25
 
 use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 use gs_memory::GpuMemory;

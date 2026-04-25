@@ -32,9 +32,6 @@ TEXTURE_RTL     = $(COMP_DIR)/texture/src
 TEXTURE_UV_RTL     = $(COMP_DIR)/texture/detail/uv-coord/src
 TEXTURE_UV_TB_DIR  = $(COMP_DIR)/texture/detail/uv-coord/tests
 TEXTURE_UV_VEC_DIR = $(TEXTURE_UV_TB_DIR)/vectors
-TEXTURE_BLN_RTL    = $(COMP_DIR)/texture/detail/bilinear-filter/src
-TEXTURE_BLN_TB_DIR = $(COMP_DIR)/texture/detail/bilinear-filter/tests
-TEXTURE_BLN_VEC_DIR = $(TEXTURE_BLN_TB_DIR)/vectors
 TEXTURE_L1_RTL     = $(COMP_DIR)/texture/detail/l1-cache/src
 TEXTURE_L1_TB_DIR  = $(COMP_DIR)/texture/detail/l1-cache/tests
 TEXTURE_L1_VEC_DIR = $(TEXTURE_L1_TB_DIR)/vectors
@@ -104,7 +101,6 @@ RTL_SOURCES = \
 	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(TEXTURE_DEC_RTL)/texel_promote.sv \
@@ -154,7 +150,6 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-recip-area-dt test-recip-q-dt test-dsp-mul-dt \
 	test-shift-mul-dt test-deriv-dt test-attr-accum-dt \
 	test-raster-edge-walk-dt test-hiz-meta-dt test-raster-dt-all \
-	gen-bilinear-vectors test-bilinear-dt \
 	gen-l1-wrap-vectors gen-l1-mirror-vectors \
 	test-l1-wrap-dt test-l1-mirror-dt \
 	gen-block-decode-vectors test-block-decode-dt test-texture-dt-all \
@@ -292,8 +287,7 @@ test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
-		$(TEXTURE_RTL)/texture_sampler.sv \
+			$(TEXTURE_RTL)/texture_sampler.sv \
 		$(COMP_DIR)/texture/tests/tb_texture_cache_burst.sv \
 		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
 	$(OBJ_DIR)/tb_texture_cache_burst
@@ -649,18 +643,6 @@ test-rasterizer-all: test-raster-deriv test-raster-attr-accum test-raster-edge-w
 # DT-verified texture testbenches
 # ===========================================================================
 
-# Generate bilinear filter test vectors from digital twin
-gen-bilinear-vectors:
-	cargo run --bin gen_bilinear_test_vectors -- $(abspath $(TEXTURE_BLN_VEC_DIR))
-
-# DT-verified: texture_bilinear
-test-bilinear-dt: gen-bilinear-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
-		$(TEXTURE_BLN_TB_DIR)/tb_texture_bilinear_dt.sv \
-		--top-module tb_texture_bilinear_dt -o tb_texture_bilinear_dt
-	$(OBJ_DIR)/tb_texture_bilinear_dt
-
 # Generate UV coordinate test vectors from digital twin
 gen-uv-coord-vectors:
 	cargo run --bin gen_uv_coord_vectors -- $(abspath $(TEXTURE_UV_VEC_DIR))
@@ -742,7 +724,7 @@ test-block-decode-dt: gen-block-decode-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(OBJ_DIR)/tb_block_decode_dt
 
 # All DT-verified texture testbenches
-test-texture-dt-all: test-uv-coord-dt test-bilinear-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
+test-texture-dt-all: test-uv-coord-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
 	@echo "All DT-verified texture testbenches passed."
 
 # ===========================================================================
@@ -1041,7 +1023,6 @@ LEAF_LINT_FILES = \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
@@ -1105,11 +1086,10 @@ lint:
 		$(TEXTURE_DEC_RTL)/texture_r8.sv \
 		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
 		--top-module texture_block_decode 2>&1 || fail=1; \
-	echo "Linting texture_sampler.sv (with texture_uv_coord, texture_bilinear)..."; \
+	echo "Linting texture_sampler.sv (with texture_uv_coord)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
-		$(TEXTURE_RTL)/texture_sampler.sv \
+			$(TEXTURE_RTL)/texture_sampler.sv \
 		--top-module texture_sampler 2>&1 || fail=1; \
 	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_area, raster_recip_q, raster_setup_fifo, raster_hiz_meta)..."; \
 	$(VERILATOR) --lint-only -Wall \
@@ -1146,8 +1126,7 @@ lint:
 		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-		$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
-		$(TEXTURE_RTL)/texture_sampler.sv \
+			$(TEXTURE_RTL)/texture_sampler.sv \
 		$(CC_RTL)/color_combiner.sv \
 			$(DITHER_RTL)/dither.sv \
 		$(TEXTURE_DEC_RTL)/texel_promote.sv \
@@ -1216,7 +1195,6 @@ HARNESS_RTL_SOURCES = \
 	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(TEXTURE_DEC_RTL)/texel_promote.sv \
@@ -1314,7 +1292,6 @@ SIM_RTL_SOURCES = \
 	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
 	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-	$(TEXTURE_BLN_RTL)/texture_bilinear.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(TEXTURE_DEC_RTL)/texel_promote.sv \

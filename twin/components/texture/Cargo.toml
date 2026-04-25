@@ -13,4 +13,4 @@ gpu-registers.workspace = true
 gs-tex-l1-cache = { path = "detail/l1-cache" }
 gs-tex-l2-cache = { path = "detail/l2-cache" }
 gs-tex-block-decoder = { path = "detail/block-decoder" }
-gs-tex-bilinear-filter = { path = "detail/bilinear-filter" }
+gs-tex-uv-coord = { path = "detail/uv-coord" }

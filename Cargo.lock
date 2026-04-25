@@ -217,17 +217,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gs-tex-bilinear-filter"
-version = "0.1.0"
-dependencies = [
- "gpu-registers",
- "gs-tex-block-decoder",
- "gs-tex-uv-coord",
- "gs-twin-core",
- "qfixed",
-]
-
-[[package]]
 name = "gs-tex-block-decoder"
 version = "0.1.0"
 dependencies = [
@@ -267,10 +256,10 @@ name = "gs-texture"
 version = "0.1.0"
 dependencies = [
  "gpu-registers",
- "gs-tex-bilinear-filter",
  "gs-tex-block-decoder",
  "gs-tex-l1-cache",
  "gs-tex-l2-cache",
+ "gs-tex-uv-coord",
  "gs-twin-core",
  "qfixed",
 ]

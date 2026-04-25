@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_011.03_l1_decompressed_cache.md `0000000000000000` 2026-03-24
+// Spec-ref: unit_011.03_l1_decompressed_cache.md `b44a0c0b90b39cef` 2026-04-25
 //
 // L1 Decompressed Texture Cache — Per-Sampler Cache with Burst SRAM Fill FSM
 // Implements 4-way set-associative cache for one sampler, storing decompressed
@@ -15,10 +15,17 @@
 // This cache operates exclusively on decompressed UQ1.8 texels and is
 // agnostic to the source texture compression format.
 //
+// NEAREST-only read interface (UNIT-011.03):
+//   The 4-bank physical EBR structure is retained for structural regularity,
+//   but each NEAREST texel read touches exactly one bank. The caller
+//   supplies `bank_select[1:0] = {sub_v[0], sub_u[0]}` (the parity of the
+//   sub-texel position within the 4×4 block) and the cache returns a
+//   single UQ1.8 texel from the addressed bank on `texel_out`.
+//
 // Hit latency (3 cycles):
 //   Cycle 0: lookup_req → tag EBR read initiated, inputs pipelined
 //   Cycle 1: tag compare → cache_hit → bank EBR read initiated
-//   Cycle 2: data_valid — 4 texels available on texel_out_*
+//   Cycle 2: data_valid — addressed texel available on texel_out
 //
 // Cache Fill FSM: IDLE → FETCH → WRITE_BANKS → IDLE
 //
@@ -39,6 +46,7 @@ module texture_cache_l1 (
     input  wire         lookup_req,     // Cache lookup request
     input  wire [9:0]   pixel_x,        // Pixel X coordinate (for block/set calculation)
     input  wire [9:0]   pixel_y,        // Pixel Y coordinate (for block/set calculation)
+    input  wire [1:0]   bank_select,    // {sub_v[0], sub_u[0]} — bank parity for NEAREST mux
     input  wire [23:0]  tex_base_addr,  // Texture base address in SRAM (from TEXn_BASE)
     input  wire [2:0]   tex_format,     // Texture format (3-bit): 0=BC1,1=BC2,2=BC3,3=BC4,4=RGB565,5=RGBA8888,6=R8
     input  wire [7:0]   tex_width_log2, // Texture width as log2 (e.g., 8 for 256)
@@ -50,10 +58,7 @@ module texture_cache_l1 (
     output wire         data_valid,     // BRAM data valid (1 cycle after cache_hit)
     output wire         cache_ready,    // Cache idle, ready for lookup
     output wire         fill_done,      // Cache fill complete (after miss)
-    output wire [35:0]  texel_out_0,    // Texel from bank 0 (even_x, even_y); UQ1.8 {R9, G9, B9, A9}
-    output wire [35:0]  texel_out_1,    // Texel from bank 1 (odd_x, even_y)
-    output wire [35:0]  texel_out_2,    // Texel from bank 2 (even_x, odd_y)
-    output wire [35:0]  texel_out_3,    // Texel from bank 3 (odd_x, odd_y)
+    output wire [35:0]  texel_out,      // Selected texel (UQ1.8 {R9, G9, B9, A9})
 
     // ====================================================================
     // Invalidation (from register file writes)
@@ -82,7 +87,8 @@ module texture_cache_l1 (
     // Unused Signal Declarations
     // ====================================================================
 
-    // pixel_x[0]/pixel_y[0]: sub-texel parity used externally for nearest-neighbor
+    // pixel_x[0]/pixel_y[0]: sub-texel parity now arrives via bank_select;
+    // these LSBs are not used internally for set/tag derivation.
     wire _unused_pixel_x_0 = pixel_x[0];
     wire _unused_pixel_y_0 = pixel_y[0];
 
@@ -230,20 +236,26 @@ module texture_cache_l1 (
     reg [23:0] lookup_tag_r;
     reg        pixel_x_1_r;
     reg        pixel_y_1_r;
+    reg [1:0]  bank_select_r;     // Cycle 1: bank_select aligned with cache_hit
+    reg [1:0]  bank_select_r2;    // Cycle 2: bank_select aligned with bank_rdata_*
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            lookup_req_r <= 1'b0;
-            set_index_r  <= 5'b0;
-            lookup_tag_r <= 24'b0;
-            pixel_x_1_r  <= 1'b0;
-            pixel_y_1_r  <= 1'b0;
+            lookup_req_r   <= 1'b0;
+            set_index_r    <= 5'b0;
+            lookup_tag_r   <= 24'b0;
+            pixel_x_1_r    <= 1'b0;
+            pixel_y_1_r    <= 1'b0;
+            bank_select_r  <= 2'b0;
+            bank_select_r2 <= 2'b0;
         end else begin
-            lookup_req_r <= lookup_req && (fill_state == FILL_IDLE);
-            set_index_r  <= set_index;
-            lookup_tag_r <= lookup_tag;
-            pixel_x_1_r  <= pixel_x[1];
-            pixel_y_1_r  <= pixel_y[1];
+            lookup_req_r   <= lookup_req && (fill_state == FILL_IDLE);
+            set_index_r    <= set_index;
+            lookup_tag_r   <= lookup_tag;
+            pixel_x_1_r    <= pixel_x[1];
+            pixel_y_1_r    <= pixel_y[1];
+            bank_select_r  <= bank_select;
+            bank_select_r2 <= bank_select_r;
         end
     end
 
@@ -294,11 +306,21 @@ module texture_cache_l1 (
     // 36-bit banks have 512 entries (9-bit addr): {set_index[4:0], way[1:0], quad_y, quad_x}
     wire [8:0] read_bank_addr = {set_index_r, hit_way, pixel_y_1_r, pixel_x_1_r};
 
-    // BRAM outputs are registered; data valid 1 cycle after cache_hit
-    assign texel_out_0 = bank_rdata_0;
-    assign texel_out_1 = bank_rdata_1;
-    assign texel_out_2 = bank_rdata_2;
-    assign texel_out_3 = bank_rdata_3;
+    // BRAM outputs are registered; data valid 1 cycle after cache_hit.
+    // For NEAREST sampling each lookup touches exactly one bank, selected
+    // by the parity of the sub-texel position within the 4×4 block.
+    // bank_select_r2 aligns with the bank read data in cycle 2.
+    reg [35:0] texel_out_mux;
+    always_comb begin
+        case (bank_select_r2)
+            2'b00:   texel_out_mux = bank_rdata_0;  // (even_x, even_y)
+            2'b01:   texel_out_mux = bank_rdata_1;  // (odd_x,  even_y)
+            2'b10:   texel_out_mux = bank_rdata_2;  // (even_x, odd_y)
+            2'b11:   texel_out_mux = bank_rdata_3;  // (odd_x,  odd_y)
+            default: texel_out_mux = 36'b0;
+        endcase
+    end
+    assign texel_out = texel_out_mux;
 
     // data_valid: pulses 1 cycle after cache_hit, when BRAM read data is stable
     reg data_valid_r;

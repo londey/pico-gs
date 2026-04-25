@@ -1,16 +1,22 @@
 `default_nettype none
 
-// Spec-ref: unit_011.01_uv_coordinate_processing.md `0000000000000000` 2026-03-24
+// Spec-ref: unit_011.01_uv_coordinate_processing.md `3ad79e16f4fae24b` 2026-04-25
 //
-// Texture UV Coordinate Processing
+// Texture UV Coordinate Processing (NEAREST-only)
 //
-// Converts Q4.12 UV coordinates to texel-space, computes bilinear tap
-// positions with wrap-mode application, and outputs fractional weights
-// for bilinear filtering.
+// Converts Q4.12 UV coordinates to integer texel-space, applies the per-axis
+// wrap mode, and outputs a single wrapped texel coordinate plus the 2-bit
+// sub-texel position within the surrounding 4x4 block.
+//
+// pico-gs implements NEAREST filtering only -- there is no bilinear/trilinear
+// fractional-weight output and no 0.5-texel centering offset. The single
+// (`tap0_x`, `tap0_y`) coordinate identifies the texel to fetch; (`sub_u`,
+// `sub_v`) describe its position within the enclosing 4x4 block, used by
+// UNIT-011.03 to index into the L1 cache line.
 //
 // Data flow:
-//   UV (Q4.12) + config → texel-space fixed-point → tap computation
-//   → wrap mode application → wrapped tap coordinates + fractional weights
+//   UV (Q4.12) + config -> texel-space integer -> wrap mode application
+//                       -> wrapped texel coords + sub-texel position
 //
 // Wrap modes (INT-010 WrapModeE):
 //   0 = Repeat:      texel = texel_raw & (dim - 1)
@@ -18,7 +24,7 @@
 //   2 = Mirror:      mirror-repeat with period 2*dim
 //   3 = Octahedral:  same as Repeat (reserved)
 //
-// See: UNIT-011 (Texture Sampler), tex_filter.rs (DT reference)
+// See: UNIT-011 (Texture Sampler), gs-tex-uv-coord (DT reference)
 
 module texture_uv_coord (
     // ====================================================================
@@ -34,83 +40,58 @@ module texture_uv_coord (
     input  wire [3:0]   height_log2,     // Texture height = 1 << height_log2
     input  wire [1:0]   u_wrap,          // U wrap mode (WrapModeE)
     input  wire [1:0]   v_wrap,          // V wrap mode (WrapModeE)
-    input  wire         is_bilinear,     // 1 if bilinear/trilinear mode
 
     // ====================================================================
-    // Texel Coordinate Output (wrapped tap positions)
+    // Texel Coordinate Output (single wrapped tap)
     // ====================================================================
-    output wire [9:0]   tap0_x,          // Tap 0 wrapped texel X
-    output wire [9:0]   tap0_y,          // Tap 0 wrapped texel Y
-    output wire [9:0]   tap1_x,          // Tap 1 (tx+1, ty)
-    output wire [9:0]   tap1_y,
-    output wire [9:0]   tap2_x,          // Tap 2 (tx, ty+1)
-    output wire [9:0]   tap2_y,
-    output wire [9:0]   tap3_x,          // Tap 3 (tx+1, ty+1)
-    output wire [9:0]   tap3_y,
+    output wire [9:0]   tap0_x,          // Wrapped texel X
+    output wire [9:0]   tap0_y,          // Wrapped texel Y
 
     // ====================================================================
-    // Fractional Weights Output (for bilinear blending)
+    // Sub-Texel Position Output (within 4x4 block)
     // ====================================================================
-    output wire [7:0]   frac_u,          // Sub-texel U fraction, UQ0.8
-    output wire [7:0]   frac_v           // Sub-texel V fraction, UQ0.8
+    output wire [1:0]   sub_u,           // tap0_x[1:0] -- column within 4x4 block
+    output wire [1:0]   sub_v            // tap0_y[1:0] -- row within 4x4 block
 );
 
     // ====================================================================
-    // UV → Texel-Space Fixed Point (combinational)
+    // UV -> Integer Texel Coordinates (combinational)
     // ====================================================================
-    // Convert Q4.12 UV to texel-space with 8 fractional bits.
-    // u_fixed = u_q412 * dim / (1 << 12)
-    //         = (u_q412 * (1 << dim_log2)) >> 12
-    //         = u_q412 << dim_log2 >> 12
-    //         = u_q412 >> (12 - dim_log2)  [when dim_log2 <= 12]
-    // But we want 8 fractional bits, so shift by (4 - dim_log2) from Q4.12.
-    // Result has 8 fractional bits: texel = integer part, frac = sub-texel.
-
-    // Use signed arithmetic to handle negative UVs correctly.
-    // Sign-extend to 24 bits BEFORE shifting so that left shifts for large
-    // textures (dim_log2 > 4) do not overflow the 16-bit input.
+    // NEAREST filtering: no 0.5-texel centering offset. The integer texel
+    // index is floor(u_q412 * dim / 4096), where dim = 1 << width_log2.
+    //   = floor(u_q412 << width_log2 >> 12)
+    //   = u_q412 >>> (12 - width_log2)   [when width_log2 <= 12]
+    //   = u_q412 <<< (width_log2 - 12)   [when width_log2 > 12]
+    //
+    // Use signed arithmetic to handle negative UVs correctly. Sign-extend to
+    // 24 bits BEFORE shifting so that left shifts for large textures
+    // (width_log2 > 12) do not overflow the 16-bit input.
     wire signed [23:0] u_ext = {{8{u_q412[15]}}, $signed(u_q412)};
     wire signed [23:0] v_ext = {{8{v_q412[15]}}, $signed(v_q412)};
 
-    // Shift to get texel-space with 8 fractional bits
-    // u_texel_fixed = u_ext << (width_log2 - 4)  [when width_log2 > 4]
-    //               = u_ext >> (4 - width_log2)   [when width_log2 <= 4]
-    // This gives a signed value with 8 fractional bits.
-    reg signed [23:0] u_fixed, v_fixed;
+    // The intermediate shift result is held in 24 bits to keep the shift
+    // signed; only the low 16 bits feed the wrap logic.
+    /* verilator lint_off UNUSEDSIGNAL */
+    reg signed [23:0] u_int_full, v_int_full;
+    /* verilator lint_on UNUSEDSIGNAL */
 
     always_comb begin
-        if (width_log2 <= 4'd4) begin
-            u_fixed = u_ext >>> (4'd4 - width_log2);
+        if (width_log2 <= 4'd12) begin
+            u_int_full = u_ext >>> (5'd12 - {1'b0, width_log2});
         end else begin
-            u_fixed = u_ext <<< (width_log2 - 4'd4);
+            u_int_full = u_ext <<< ({1'b0, width_log2} - 5'd12);
         end
 
-        if (height_log2 <= 4'd4) begin
-            v_fixed = v_ext >>> (4'd4 - height_log2);
+        if (height_log2 <= 4'd12) begin
+            v_int_full = v_ext >>> (5'd12 - {1'b0, height_log2});
         end else begin
-            v_fixed = v_ext <<< (height_log2 - 4'd4);
+            v_int_full = v_ext <<< ({1'b0, height_log2} - 5'd12);
         end
     end
 
-    // ====================================================================
-    // Bilinear Tap Computation (combinational)
-    // ====================================================================
-    // Subtract 0.5 texel (0x80 in 8-bit fractional) for bilinear center
-    // offset, matching DT compute_bilinear_taps.
-
-    wire signed [23:0] u_offset = is_bilinear ? (u_fixed - 24'sd128) : u_fixed;
-    wire signed [23:0] v_offset = is_bilinear ? (v_fixed - 24'sd128) : v_fixed;
-
     // Integer texel coordinates (before wrap)
-    wire signed [15:0] tx0_raw = u_offset[23:8];  // floor(u_offset)
-    wire signed [15:0] ty0_raw = v_offset[23:8];  // floor(v_offset)
-    wire signed [15:0] tx1_raw = tx0_raw + 16'sd1;
-    wire signed [15:0] ty1_raw = ty0_raw + 16'sd1;
-
-    // Fractional parts (8 bits, unsigned)
-    // Use modular arithmetic to get positive fractional part
-    assign frac_u = u_offset[7:0];
-    assign frac_v = v_offset[7:0];
+    wire signed [15:0] tx0_raw = u_int_full[15:0];
+    wire signed [15:0] ty0_raw = v_int_full[15:0];
 
     // ====================================================================
     // Wrap Mode Application (combinational)
@@ -169,16 +150,13 @@ module texture_uv_coord (
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    // Apply wrap to all 4 taps
-    // For nearest, only tap0 is meaningful
+    // Apply wrap to the single NEAREST tap
     assign tap0_x = wrap_coord(tx0_raw, u_dim, u_mask, u_wrap);
     assign tap0_y = wrap_coord(ty0_raw, v_dim, v_mask, v_wrap);
-    assign tap1_x = wrap_coord(tx1_raw, u_dim, u_mask, u_wrap);
-    assign tap1_y = wrap_coord(ty0_raw, v_dim, v_mask, v_wrap);
-    assign tap2_x = wrap_coord(tx0_raw, u_dim, u_mask, u_wrap);
-    assign tap2_y = wrap_coord(ty1_raw, v_dim, v_mask, v_wrap);
-    assign tap3_x = wrap_coord(tx1_raw, u_dim, u_mask, u_wrap);
-    assign tap3_y = wrap_coord(ty1_raw, v_dim, v_mask, v_wrap);
+
+    // Sub-texel position within the enclosing 4x4 block (UNIT-011.01)
+    assign sub_u = tap0_x[1:0];
+    assign sub_v = tap0_y[1:0];
 
 endmodule
 

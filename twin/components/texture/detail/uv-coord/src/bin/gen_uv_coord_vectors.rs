@@ -9,7 +9,7 @@
 #![deny(unsafe_code)]
 
 use gpu_registers::components::wrap_mode_e::WrapModeE;
-use gs_tex_uv_coord::{compute_bilinear_taps, compute_nearest_tap};
+use gs_tex_uv_coord::compute_nearest_tap;
 use qfixed::Q;
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -36,9 +36,6 @@ struct TestVector {
 
     /// V-axis wrap mode.
     v_wrap: WrapModeE,
-
-    /// Whether bilinear mode is active.
-    is_bilinear: bool,
 }
 
 // ── Simple deterministic PRNG (xorshift32) ──────────────────────────────────
@@ -82,8 +79,7 @@ impl Xorshift32 {
 /// [27:24] = height_log2 (4-bit)
 /// [23:22] = u_wrap (2-bit)
 /// [21:20] = v_wrap (2-bit)
-/// [19]    = is_bilinear (1-bit)
-/// [18:0]  = reserved (zero)
+/// [19:0]  = reserved (zero) — bit [19] was previously is_bilinear
 /// ```
 fn pack_stim(v: &TestVector) -> u64 {
     let u = u64::from(v.u_q412);
@@ -92,67 +88,33 @@ fn pack_stim(v: &TestVector) -> u64 {
     let hl = u64::from(v.height_log2);
     let uw = u64::from(v.u_wrap.bits());
     let vw = u64::from(v.v_wrap.bits());
-    let bi = u64::from(v.is_bilinear as u8);
 
-    (u << 48) | (vi << 32) | (wl << 28) | (hl << 24) | (uw << 22) | (vw << 20) | (bi << 19)
+    (u << 48) | (vi << 32) | (wl << 28) | (hl << 24) | (uw << 22) | (vw << 20)
 }
 
-/// Expected output for one vector: 2 x 64-bit words.
+/// Expected output for one vector: 1 x 64-bit word.
 ///
-/// Word 0 bit layout:
+/// Word 0 bit layout (NEAREST mode — single tap):
 /// ```text
-/// [63:60] = 0 (4-bit padding)
-/// [59:50] = tap0_x (10-bit)
-/// [49:40] = tap0_y (10-bit)
-/// [39:30] = tap1_x (10-bit)
-/// [29:20] = tap1_y (10-bit)
-/// [19:10] = tap2_x (10-bit)
-/// [9:0]   = tap2_y (10-bit)
-/// ```
-///
-/// Word 1 bit layout:
-/// ```text
-/// [63:36] = 0 (28-bit padding)
-/// [35:26] = tap3_x (10-bit)
-/// [25:16] = tap3_y (10-bit)
-/// [15:8]  = frac_u (8-bit)
-/// [7:0]   = frac_v (8-bit)
+/// [63:20] = 0 (44-bit padding)
+/// [19:10] = tap_x (10-bit)
+/// [9:0]   = tap_y (10-bit)
 /// ```
 struct ExpectedOutput {
-    /// Tap X coordinates (10-bit each).
-    tap_x: [u32; 4],
+    /// Single nearest-tap X coordinate (10-bit).
+    tap_x: u32,
 
-    /// Tap Y coordinates (10-bit each).
-    tap_y: [u32; 4],
-
-    /// Bilinear fractional U weight, UQ0.8.
-    frac_u: u8,
-
-    /// Bilinear fractional V weight, UQ0.8.
-    frac_v: u8,
+    /// Single nearest-tap Y coordinate (10-bit).
+    tap_y: u32,
 }
 
 impl ExpectedOutput {
-    /// Pack into word 0 of expected output.
+    /// Pack into the single expected-output word.
     fn word0(&self) -> u64 {
-        let t0x = u64::from(self.tap_x[0] & 0x3FF);
-        let t0y = u64::from(self.tap_y[0] & 0x3FF);
-        let t1x = u64::from(self.tap_x[1] & 0x3FF);
-        let t1y = u64::from(self.tap_y[1] & 0x3FF);
-        let t2x = u64::from(self.tap_x[2] & 0x3FF);
-        let t2y = u64::from(self.tap_y[2] & 0x3FF);
+        let tx = u64::from(self.tap_x & 0x3FF);
+        let ty = u64::from(self.tap_y & 0x3FF);
 
-        (t0x << 50) | (t0y << 40) | (t1x << 30) | (t1y << 20) | (t2x << 10) | t2y
-    }
-
-    /// Pack into word 1 of expected output.
-    fn word1(&self) -> u64 {
-        let t3x = u64::from(self.tap_x[3] & 0x3FF);
-        let t3y = u64::from(self.tap_y[3] & 0x3FF);
-        let fu = u64::from(self.frac_u);
-        let fv = u64::from(self.frac_v);
-
-        (t3x << 26) | (t3y << 16) | (fu << 8) | fv
+        (tx << 10) | ty
     }
 }
 
@@ -165,36 +127,13 @@ fn evaluate(v: &TestVector) -> ExpectedOutput {
     let w = 1u32 << v.width_log2;
     let h = 1u32 << v.height_log2;
 
-    if v.is_bilinear {
-        let result =
-            compute_bilinear_taps(u, vi, w, h, v.width_log2, v.height_log2, v.u_wrap, v.v_wrap);
+    let tap = compute_nearest_tap(u, vi, w, h, v.width_log2, v.height_log2, v.u_wrap, v.v_wrap);
+    let tx = tap.block_x * 4 + (tap.local & 3);
+    let ty = tap.block_y * 4 + (tap.local >> 2);
 
-        let mut tap_x = [0u32; 4];
-        let mut tap_y = [0u32; 4];
-        for (i, tap) in result.taps.iter().enumerate() {
-            tap_x[i] = tap.block_x * 4 + (tap.local & 3);
-            tap_y[i] = tap.block_y * 4 + (tap.local >> 2);
-        }
-
-        ExpectedOutput {
-            tap_x,
-            tap_y,
-            frac_u: result.frac_u,
-            frac_v: result.frac_v,
-        }
-    } else {
-        let tap = compute_nearest_tap(u, vi, w, h, v.width_log2, v.height_log2, v.u_wrap, v.v_wrap);
-        let tx = tap.block_x * 4 + (tap.local & 3);
-        let ty = tap.block_y * 4 + (tap.local >> 2);
-
-        // Nearest mode: all taps report the same coordinate, fracs are the
-        // raw offset low bits (no bilinear centering subtracted).
-        ExpectedOutput {
-            tap_x: [tx, tx, tx, tx],
-            tap_y: [ty, ty, ty, ty],
-            frac_u: 0,
-            frac_v: 0,
-        }
+    ExpectedOutput {
+        tap_x: tx,
+        tap_y: ty,
     }
 }
 
@@ -235,9 +174,6 @@ fn generate_vectors() -> Vec<TestVector> {
     generate_nearest_repeat(&mut vectors);
     generate_nearest_clamp(&mut vectors);
     generate_nearest_mirror(&mut vectors);
-    generate_bilinear_repeat(&mut vectors);
-    generate_bilinear_clamp(&mut vectors);
-    generate_bilinear_boundary_fracs(&mut vectors);
     generate_various_sizes(&mut vectors);
     generate_non_square(&mut vectors);
     generate_edge_cases(&mut vectors);
@@ -273,7 +209,6 @@ fn generate_nearest_repeat(vectors: &mut Vec<TestVector>) {
                     height_log2: dim_log2,
                     u_wrap: wrap,
                     v_wrap: wrap,
-                    is_bilinear: false,
                 });
             }
         }
@@ -305,7 +240,6 @@ fn generate_nearest_clamp(vectors: &mut Vec<TestVector>) {
                 height_log2: dim_log2,
                 u_wrap: wrap,
                 v_wrap: wrap,
-                is_bilinear: false,
             });
         }
     }
@@ -339,136 +273,28 @@ fn generate_nearest_mirror(vectors: &mut Vec<TestVector>) {
                 height_log2: dim_log2,
                 u_wrap: wrap,
                 v_wrap: wrap,
-                is_bilinear: false,
             });
         }
     }
 }
 
-/// Category 4: Bilinear mode, Repeat wrap — verify all 4 taps wrap
-/// correctly, check frac_u/frac_v.
-fn generate_bilinear_repeat(vectors: &mut Vec<TestVector>) {
-    let wrap = WrapModeE::Repeat;
-    let uv_values: &[u16] = &[
-        q412(0.0),
-        q412(0.5),
-        q412(0.999),
-        q412(1.0),
-        q412(-0.001),
-        q412(-0.5),
-        q412(3.75),
-        q412(7.9),
-    ];
-
-    for dim_log2 in [3u8, 5, 7] {
-        for &u_val in uv_values {
-            for &v_val in &[q412(0.0), q412(0.5), q412(0.999), q412(-0.25)] {
-                vectors.push(TestVector {
-                    u_q412: u_val,
-                    v_q412: v_val,
-                    width_log2: dim_log2,
-                    height_log2: dim_log2,
-                    u_wrap: wrap,
-                    v_wrap: wrap,
-                    is_bilinear: true,
-                });
-            }
-        }
-    }
-}
-
-/// Category 5: Bilinear mode, ClampToEdge — taps at edges clamp correctly.
-fn generate_bilinear_clamp(vectors: &mut Vec<TestVector>) {
-    let wrap = WrapModeE::ClampToEdge;
-    let uv_values: &[u16] = &[
-        q412(0.0),
-        q412(0.001),
-        q412(0.5),
-        q412(0.999),
-        q412(1.0),
-        q412(-0.5),
-        q412(-1.0),
-        q412(7.9),
-    ];
-
-    for dim_log2 in [3u8, 6, 9] {
-        for &u_val in uv_values {
+/// Category 4: Various texture sizes — width_log2 from 2 to 10.
+fn generate_various_sizes(vectors: &mut Vec<TestVector>) {
+    for dim_log2 in 2u8..=10 {
+        for &u_val in &[q412(0.0), q412(0.5), q412(0.999)] {
             vectors.push(TestVector {
                 u_q412: u_val,
                 v_q412: q412(0.5),
                 width_log2: dim_log2,
                 height_log2: dim_log2,
-                u_wrap: wrap,
-                v_wrap: wrap,
-                is_bilinear: true,
+                u_wrap: WrapModeE::Repeat,
+                v_wrap: WrapModeE::Repeat,
             });
         }
     }
 }
 
-/// Category 6: Bilinear mode, boundary fracs — frac=0x00, frac=0x80, frac=0xFF.
-fn generate_bilinear_boundary_fracs(vectors: &mut Vec<TestVector>) {
-    // For a 32x32 texture (log2=5), craft UV values that produce specific fracs.
-    // The frac comes from: (u_fixed - 0x80) mod 256, where u_fixed = u_q412 << 1
-    // for log2=5 (since 5 - 4 = 1).
-    //
-    // u_fixed = u_q412 << 1; u_offset = u_fixed - 0x80
-    // frac = u_offset[7:0]
-    //
-    // For frac=0x00: u_offset & 0xFF = 0 → u_fixed & 0xFF = 0x80
-    // For frac=0x80: u_offset & 0xFF = 0x80 → u_fixed & 0xFF = 0x00
-    // For frac=0xFF: u_offset & 0xFF = 0xFF → u_fixed & 0xFF = 0x7F
-
-    let dim_log2 = 5u8;
-    let wraps = [WrapModeE::Repeat, WrapModeE::ClampToEdge, WrapModeE::Mirror];
-
-    // Various UV values that span the texel grid
-    let u_vals: &[u16] = &[
-        q412(0.0),
-        q412(0.25),
-        q412(0.5),
-        q412(0.75),
-        q412(0.125),
-        q412(0.375),
-    ];
-
-    for &wrap in &wraps {
-        for &u_val in u_vals {
-            for &v_val in &[q412(0.0), q412(0.5)] {
-                vectors.push(TestVector {
-                    u_q412: u_val,
-                    v_q412: v_val,
-                    width_log2: dim_log2,
-                    height_log2: dim_log2,
-                    u_wrap: wrap,
-                    v_wrap: wrap,
-                    is_bilinear: true,
-                });
-            }
-        }
-    }
-}
-
-/// Category 7: Various texture sizes — width_log2 from 2 to 10.
-fn generate_various_sizes(vectors: &mut Vec<TestVector>) {
-    for dim_log2 in 2u8..=10 {
-        for &is_bilinear in &[false, true] {
-            for &u_val in &[q412(0.0), q412(0.5), q412(0.999)] {
-                vectors.push(TestVector {
-                    u_q412: u_val,
-                    v_q412: q412(0.5),
-                    width_log2: dim_log2,
-                    height_log2: dim_log2,
-                    u_wrap: WrapModeE::Repeat,
-                    v_wrap: WrapModeE::Repeat,
-                    is_bilinear,
-                });
-            }
-        }
-    }
-}
-
-/// Category 8: Non-square textures — different width_log2 and height_log2.
+/// Category 5: Non-square textures — different width_log2 and height_log2.
 fn generate_non_square(vectors: &mut Vec<TestVector>) {
     let dim_pairs: &[(u8, u8)] = &[
         (3, 5),
@@ -482,23 +308,20 @@ fn generate_non_square(vectors: &mut Vec<TestVector>) {
     ];
 
     for &(wl, hl) in dim_pairs {
-        for &is_bilinear in &[false, true] {
-            for &u_val in &[q412(0.0), q412(0.5), q412(0.999), q412(-0.25)] {
-                vectors.push(TestVector {
-                    u_q412: u_val,
-                    v_q412: q412(0.5),
-                    width_log2: wl,
-                    height_log2: hl,
-                    u_wrap: WrapModeE::Repeat,
-                    v_wrap: WrapModeE::Repeat,
-                    is_bilinear,
-                });
-            }
+        for &u_val in &[q412(0.0), q412(0.5), q412(0.999), q412(-0.25)] {
+            vectors.push(TestVector {
+                u_q412: u_val,
+                v_q412: q412(0.5),
+                width_log2: wl,
+                height_log2: hl,
+                u_wrap: WrapModeE::Repeat,
+                v_wrap: WrapModeE::Repeat,
+            });
         }
     }
 }
 
-/// Category 9: Edge cases — UV = 0, UV = max positive Q4.12,
+/// Category 6: Edge cases — UV = 0, UV = max positive Q4.12,
 /// UV = max negative Q4.12.
 fn generate_edge_cases(vectors: &mut Vec<TestVector>) {
     let special_uvs: &[u16] = &[
@@ -520,21 +343,14 @@ fn generate_edge_cases(vectors: &mut Vec<TestVector>) {
 
     let v_vals: &[u16] = &[0x0000, 0x7FFF, 0x8000];
 
-    // Build the cross-product of (wrap, is_bilinear, u, v) without deep nesting.
-    let configs: Vec<(WrapModeE, bool)> = wraps
-        .iter()
-        .flat_map(|&w| [false, true].map(|b| (w, b)))
-        .collect();
-
-    for (wrap, is_bilinear) in configs {
+    for &wrap in &wraps {
         for &u_val in special_uvs {
-            push_v_variants(vectors, u_val, v_vals, 5, 5, wrap, wrap, is_bilinear);
+            push_v_variants(vectors, u_val, v_vals, 5, 5, wrap, wrap);
         }
     }
 }
 
 /// Push a vector for each V value in `v_vals`, sharing all other fields.
-#[allow(clippy::too_many_arguments)]
 fn push_v_variants(
     vectors: &mut Vec<TestVector>,
     u_q412: u16,
@@ -543,7 +359,6 @@ fn push_v_variants(
     height_log2: u8,
     u_wrap: WrapModeE,
     v_wrap: WrapModeE,
-    is_bilinear: bool,
 ) {
     for &v_q412 in v_vals {
         vectors.push(TestVector {
@@ -553,12 +368,11 @@ fn push_v_variants(
             height_log2,
             u_wrap,
             v_wrap,
-            is_bilinear,
         });
     }
 }
 
-/// Category 10: Random vectors — seeded PRNG sweep for broad coverage.
+/// Category 7: Random vectors — seeded PRNG sweep for broad coverage.
 fn generate_random(vectors: &mut Vec<TestVector>) {
     let mut rng = Xorshift32(0xCAFE_BABE);
 
@@ -570,7 +384,6 @@ fn generate_random(vectors: &mut Vec<TestVector>) {
             height_log2: rng.next_dim_log2(),
             u_wrap: rng.next_wrap(),
             v_wrap: rng.next_wrap(),
-            is_bilinear: (rng.next() & 1) != 0,
         });
     }
 }
@@ -594,10 +407,9 @@ fn write_hex_files(out: &Path, vectors: &[TestVector]) {
         // Stimulus: 1 x 64-bit word per vector
         writeln!(stim, "{:016x}", pack_stim(v)).unwrap();
 
-        // Expected: 2 x 64-bit words per vector
+        // Expected: 1 x 64-bit word per vector (NEAREST mode)
         let expected = evaluate(v);
         writeln!(exp, "{:016x}", expected.word0()).unwrap();
-        writeln!(exp, "{:016x}", expected.word1()).unwrap();
     }
 
     fs::write(out.join("uv_coord_stim.hex"), stim).unwrap();

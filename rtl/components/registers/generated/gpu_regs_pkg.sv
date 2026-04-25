@@ -627,10 +627,8 @@ package gpu_regs_pkg;
         gpu_regs__id_reg__out_t ID;
     } gpu_regs__out_t;
 
-    typedef enum logic [1:0] {
-        tex_filter_e__NEAREST = 'h0,
-        tex_filter_e__BILINEAR = 'h1,
-        tex_filter_e__TRILINEAR = 'h2
+    typedef enum logic {
+        tex_filter_e__NEAREST = 'h0
     } tex_filter_e_e;
 
     typedef enum logic [2:0] {

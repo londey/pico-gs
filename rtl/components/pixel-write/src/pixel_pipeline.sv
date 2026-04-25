@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `2914e4600ea3cd6f` 2026-04-13
+// Spec-ref: unit_006_pixel_pipeline.md `34e87e3db2dfabb8` 2026-04-25
 // Spec-ref: unit_005.06_hiz_block_metadata.md `4c168133e627c4f6` 2026-04-13
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
@@ -8,7 +8,7 @@
 // Processes rasterized fragments through:
 //   Stage 0a: Stipple test (combinational)
 //   Stage 0b: Depth range test + early Z-test (Z-buffer read)
-//   Stage 1-3: Texture cache lookup + bilinear/nearest sampling + promote
+//   Stage 1-3: Texture cache lookup + NEAREST sampling + promote
 //   Output:   Fragment data to UNIT-010 (Color Combiner)
 //
 // Post-combiner stages (dither, FB/Z write) are also managed here.
@@ -197,15 +197,16 @@ module pixel_pipeline (
     /* verilator lint_off UNUSEDSIGNAL */
     wire [15:0] _unused_frag_u1 = frag_u1;
     wire [15:0] _unused_frag_v1 = frag_v1;
-    // TEX0_CFG: [0] ENABLE, [3:2] FILTER, [6:4] FORMAT, [11:8] WIDTH_LOG2,
+    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [11:8] WIDTH_LOG2,
     // [15:12] HEIGHT_LOG2, [19:18] V_WRAP, [17:16] U_WRAP, [23:20] MIP_LEVELS used;
-    // [31:24] (reserved), [7] (reserved), [1] (reserved) unused
-    wire [9:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:24], reg_tex0_cfg[7],
-                                        reg_tex0_cfg[1]};
+    // [31:24] (reserved), [7] (reserved), [3:2] FILTER (NEAREST-only),
+    // [1] (reserved) unused
+    wire [11:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:24], reg_tex0_cfg[7],
+                                         reg_tex0_cfg[3:2], reg_tex0_cfg[1]};
     wire [23:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:24], reg_tex1_cfg[19:8],
                                          reg_tex1_cfg[7], reg_tex1_cfg[3:1]};
     // LOD signals used for mip selection; blend weight and per-tex mip levels
-    // consumed by trilinear filtering (stub: bilinear only, trilinear not yet)
+    // not consumed by NEAREST-only filtering.
     wire [3:0]  _unused_lod_blend      = lod_blend;
     wire [3:0]  _unused_tex0_mip_level = tex0_mip_level;
     wire [3:0]  _unused_tex1_mip_level = tex1_mip_level;
@@ -378,7 +379,7 @@ module pixel_pipeline (
     // ====================================================================
 
     wire        tex0_enable      = reg_tex0_cfg[0];
-    wire [1:0]  tex0_filter      = reg_tex0_cfg[3:2];
+    // FILTER field (reg_tex0_cfg[3:2]) is NEAREST-only and unused here.
     wire [2:0]  tex0_format      = reg_tex0_cfg[6:4];
     wire [3:0]  tex0_width_log2  = reg_tex0_cfg[11:8];
     wire [3:0]  tex0_height_log2 = reg_tex0_cfg[15:12];
@@ -547,45 +548,31 @@ module pixel_pipeline (
     end
 
     // ====================================================================
-    // Texture Sampler (UNIT-011) — UV coord processing + bilinear filter
+    // Texture Sampler (UNIT-011) — UV coord processing (NEAREST-only)
     // ====================================================================
-    // The texture_sampler assembly module computes 4 wrapped bilinear tap
-    // coordinates from Q4.12 UV inputs, and blends the 4 texels returned
-    // by the cache.  For nearest mode, only tap0 is used.
+    // The texture_sampler assembly module wraps the Q4.12 UV inputs into a
+    // single texel coordinate (tap0_x, tap0_y) and exposes the sub-texel
+    // position (sub_u, sub_v) within the enclosing 4x4 cache block. The
+    // L1 cache returns one UQ1.8 texel which flows directly to the output.
 
-    // Latched UV coordinates and cached texel (registered in datapath FSM)
+    // Latched UV coordinates (registered in datapath FSM)
     reg [15:0] lat_u0;
     reg [15:0] lat_v0;
-    // (lat_tex0_texel removed — ts_texel_out from texture_sampler is used directly)
 
-    // -- Tap coordinate wires from texture_sampler --
+    // -- Coordinate wires from texture_sampler --
     wire [9:0]  ts_tap0_x, ts_tap0_y;
-    wire [9:0]  ts_tap1_x, ts_tap1_y;
-    wire [9:0]  ts_tap2_x, ts_tap2_y;
-    wire [9:0]  ts_tap3_x, ts_tap3_y;
-    wire        ts_is_bilinear;
+    /* verilator lint_off UNUSEDSIGNAL */
+    // Only the LSB of each sub-coord parity selects the cache bank; the
+    // upper bit is exposed for future filter implementations.
+    wire [1:0]  ts_sub_u,  ts_sub_v;
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    // -- Tap texel registers (populated by FSM during cache lookups) --
-    reg [35:0]  tap_texel [0:3];
-    reg [1:0]   tap_idx;             // Current tap being looked up (0..3)
+    // -- Single texel register (populated by FSM during cache read) --
+    reg [35:0]  tap_texel0;
 
-    // -- Tap coordinate mux: select current tap's (x,y) for cache lookup --
-    reg [9:0]   cur_tap_x, cur_tap_y;
-
-    always_comb begin
-        case (tap_idx)
-            2'd0: begin cur_tap_x = ts_tap0_x; cur_tap_y = ts_tap0_y; end
-            2'd1: begin cur_tap_x = ts_tap1_x; cur_tap_y = ts_tap1_y; end
-            2'd2: begin cur_tap_x = ts_tap2_x; cur_tap_y = ts_tap2_y; end
-            2'd3: begin cur_tap_x = ts_tap3_x; cur_tap_y = ts_tap3_y; end
-            default: begin cur_tap_x = ts_tap0_x; cur_tap_y = ts_tap0_y; end
-        endcase
-    end
-
-    // -- Blended texel output from texture_sampler --
+    // -- Sampled texel output (NEAREST pass-through of texel_tap0) --
     wire [35:0] ts_texel_out;
 
-    /* verilator lint_off PINCONNECTEMPTY */
     texture_sampler u_tex0_sampler (
         .clk         (clk),
         .rst_n       (rst_n),
@@ -595,30 +582,20 @@ module pixel_pipeline (
         .height_log2 (tex0_height_log2),
         .u_wrap      (tex0_u_wrap),
         .v_wrap      (tex0_v_wrap),
-        .filter_mode (tex0_filter),
         .tap0_x      (ts_tap0_x),
         .tap0_y      (ts_tap0_y),
-        .tap1_x      (ts_tap1_x),
-        .tap1_y      (ts_tap1_y),
-        .tap2_x      (ts_tap2_x),
-        .tap2_y      (ts_tap2_y),
-        .tap3_x      (ts_tap3_x),
-        .tap3_y      (ts_tap3_y),
-        .is_bilinear (ts_is_bilinear),
-        .texel_tap0  (tap_texel[0]),
-        .texel_tap1  (tap_texel[1]),
-        .texel_tap2  (tap_texel[2]),
-        .texel_tap3  (tap_texel[3]),
+        .sub_u       (ts_sub_u),
+        .sub_v       (ts_sub_v),
+        .texel_tap0  (tap_texel0),
         .texel_out   (ts_texel_out)
     );
-    /* verilator lint_on PINCONNECTEMPTY */
 
     // ====================================================================
     // Texture Cache (TEX0) — 4-way set-associative with burst SRAM fill
     // ====================================================================
-    // The FSM issues per-tap cache lookups using cur_tap_x/y.  For each
-    // lookup, the cache returns 4 bank outputs; we select the texel at
-    // the current tap's bank using {cur_tap_y[0], cur_tap_x[0]}.
+    // NEAREST lookup: the cache returns a single UQ1.8 texel selected by
+    // bank_select = {sub_v[0], sub_u[0]} (sub-texel parity within the 4x4
+    // block).
 
     // Texture cache SRAM interface wires
     wire        tc_sram_req;
@@ -627,14 +604,14 @@ module pixel_pipeline (
     wire        tc_sram_we;
     wire [31:0] tc_sram_wdata;
 
-    // Texture cache lookup result wires (36-bit UQ1.8 RGBA)
+    // Texture cache lookup result wires
     wire        tc_cache_hit;
     wire        tc_cache_ready;
     wire        tc_fill_done;
-    wire [35:0] tc_texel_out_0;
-    wire [35:0] tc_texel_out_1;
-    wire [35:0] tc_texel_out_2;
-    wire [35:0] tc_texel_out_3;
+    wire [35:0] tc_texel_out;       // Single UQ1.8 texel from cache
+
+    // Bank select — parity of sub-texel position drives the per-bank read mux
+    wire [1:0]  tc_bank_select = {ts_sub_v[0], ts_sub_u[0]};
 
     // Lookup request: asserted when FSM is in TEX_LOOKUP
     wire tex_lookup_req = (state == PP_TEX_LOOKUP);
@@ -644,8 +621,9 @@ module pixel_pipeline (
         .clk                 (clk),
         .rst_n               (rst_n),
         .lookup_req          (tex_lookup_req),
-        .pixel_x             (cur_tap_x),
-        .pixel_y             (cur_tap_y),
+        .pixel_x             (ts_tap0_x),
+        .pixel_y             (ts_tap0_y),
+        .bank_select         (tc_bank_select),
         .tex_base_addr       (tex0_base_addr),
         .tex_format          (tex0_format),
         .tex_width_log2      ({4'b0, tex0_width_log2}),
@@ -654,10 +632,7 @@ module pixel_pipeline (
         .data_valid          (),
         .cache_ready         (tc_cache_ready),
         .fill_done           (tc_fill_done),
-        .texel_out_0         (tc_texel_out_0),
-        .texel_out_1         (tc_texel_out_1),
-        .texel_out_2         (tc_texel_out_2),
-        .texel_out_3         (tc_texel_out_3),
+        .texel_out           (tc_texel_out),
         .sram_req            (tc_sram_req),
         .sram_addr           (tc_sram_addr),
         .sram_burst_len      (tc_sram_burst_len),
@@ -674,23 +649,6 @@ module pixel_pipeline (
     assign tex_sram_req       = tc_sram_req;
     assign tex_sram_addr      = tc_sram_addr;
     assign tex_sram_burst_len = tc_sram_burst_len;
-
-    // Bank-to-texel selection: pick the texel at the current tap's bank
-    // from the 4 cache bank outputs.  Bank index = {y[0], x[0]}.
-    reg [35:0] tc_tap_texel;
-
-    always_comb begin
-        case ({cur_tap_y[0], cur_tap_x[0]})
-            2'b00:   tc_tap_texel = tc_texel_out_0;
-            2'b01:   tc_tap_texel = tc_texel_out_1;
-            2'b10:   tc_tap_texel = tc_texel_out_2;
-            2'b11:   tc_tap_texel = tc_texel_out_3;
-            default: tc_tap_texel = 36'b0;
-        endcase
-    end
-
-    // Last tap index: 3 for bilinear, 0 for nearest
-    wire [1:0] last_tap = ts_is_bilinear ? 2'd3 : 2'd0;
 
     // Unused cache outputs (write port is read-only)
     /* verilator lint_off UNUSEDSIGNAL */
@@ -711,8 +669,8 @@ module pixel_pipeline (
     // White opaque UQ1.8: R9=0x100, G9=0x100, B9=0x100, A9=0x100 (1.0 each).
     localparam [35:0] TEXEL_WHITE_OPAQUE = {9'h100, 9'h100, 9'h100, 9'h100};
     // ts_texel_out is the combinational output of texture_sampler:
-    // bilinear-blended or nearest pass-through from tap_texel[0..3].
-    // Valid in PP_CC_EMIT because all tap_texel registers are settled.
+    // NEAREST pass-through of tap_texel0. Valid in PP_CC_EMIT because the
+    // single texel register has been latched by PP_TEX_READ.
     wire [35:0] tex0_texel = tex0_enable ? ts_texel_out
                                          : TEXEL_WHITE_OPAQUE;
     wire [15:0] tex0_r_q412, tex0_g_q412, tex0_b_q412, tex0_a_q412;
@@ -1014,16 +972,11 @@ module pixel_pipeline (
 
             PP_TEX_READ: begin
                 // BRAM read data valid this cycle (1 cycle after cache_hit).
-                // For bilinear: loop through all 4 taps; for nearest: tap 0 only.
-                if (tap_idx == last_tap) begin
-                    if (dst_color_needed) begin
-                        next_state = PP_FB_READ;
-                    end else begin
-                        next_state = PP_CC_EMIT;
-                    end
+                // NEAREST: single texel sampled per fragment.
+                if (dst_color_needed) begin
+                    next_state = PP_FB_READ;
                 end else begin
-                    // More taps needed — issue next cache lookup
-                    next_state = PP_TEX_LOOKUP;
+                    next_state = PP_CC_EMIT;
                 end
             end
 
@@ -1060,11 +1013,7 @@ module pixel_pipeline (
             lat_u0         <= 16'b0;
             lat_v0         <= 16'b0;
             lat_frag_lod   <= 8'b0;
-            tap_idx        <= 2'b0;
-            tap_texel[0]   <= 36'b0;
-            tap_texel[1]   <= 36'b0;
-            tap_texel[2]   <= 36'b0;
-            tap_texel[3]   <= 36'b0;
+            tap_texel0     <= 36'b0;
             cc_result_pending <= 1'b0;
             zbuf_data_lat  <= 16'b0;
             fb_data_lat    <= 16'b0;
@@ -1102,7 +1051,6 @@ module pixel_pipeline (
                         lat_u0       <= frag_u0;
                         lat_v0       <= frag_v0;
                         lat_frag_lod <= frag_lod;
-                        tap_idx      <= 2'b0;
 
                         // Latch tiled addresses (combinationally computed)
                         fb_addr_reg  <= fb_tiled_addr;
@@ -1180,13 +1128,10 @@ module pixel_pipeline (
                 end
 
                 PP_TEX_READ: begin
-                    // BRAM read data valid; latch texel for current tap.
+                    // BRAM read data valid; latch the single NEAREST texel.
                     // ts_texel_out (sampler output) becomes valid on the
                     // NEXT cycle when this register update takes effect.
-                    tap_texel[tap_idx] <= tc_tap_texel;
-                    if (tap_idx != last_tap) begin
-                        tap_idx <= tap_idx + 2'd1;
-                    end
+                    tap_texel0 <= tc_texel_out;
                 end
 
                 PP_TEX_WAIT: begin
