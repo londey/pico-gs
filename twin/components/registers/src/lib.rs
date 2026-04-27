@@ -1,4 +1,11 @@
 //! Control/Status Register crate generated with PeakRDL-rust
+//!
+//! The bulk of this crate is auto-generated from
+//! `rtl/components/registers/rdl/gpu_regs.rdl` by
+//! `rtl/components/registers/scripts/generate.sh`.  Hand-maintained items in
+//! this file (re-exports and convenience constants) live alongside the
+//! generated `components/` tree to give consumers stable, ergonomic access
+//! to commonly used register addresses and field encodings.
 #![no_std]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_possible_wrap)]
@@ -11,8 +18,53 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::unnecessary_cast)]
 
+// `_root` is an internal alias used by the PeakRDL-generated `components/`
+// tree to reach back into this crate's root for cross-module re-exports
+// (see e.g. `components/gpu_regs.rs`).  Keep it private to the crate.
+#[cfg(not(doctest))]
+use crate as _root;
+
 #[cfg(not(doctest))]
 pub mod components;
 
 #[cfg(not(doctest))]
 pub use crate::components::gpu_regs::GpuRegs;
+
+// ---------------------------------------------------------------------------
+// Convenience constants
+// ---------------------------------------------------------------------------
+//
+// These constants mirror the authoritative SystemRDL definitions in
+// `rtl/components/registers/rdl/gpu_regs.rdl` and exist for callers that
+// need raw 7-bit register indices or bare bit positions (for example, the
+// SPI command FIFO and the digital twin register decoder).  Update these
+// alongside any RDL change that affects the same field.
+
+/// 7-bit register index of TEX0_CFG (texture sampler 0 configuration).
+pub const TEX0_CFG_ADDR: u8 = 0x10;
+
+/// 7-bit register index of TEX1_CFG (texture sampler 1 configuration).
+pub const TEX1_CFG_ADDR: u8 = 0x11;
+
+/// 7-bit register index of PALETTE0 (palette slot 0 load control).
+pub const PALETTE0_ADDR: u8 = 0x12;
+
+/// 7-bit register index of PALETTE1 (palette slot 1 load control).
+pub const PALETTE1_ADDR: u8 = 0x13;
+
+/// `tex_format_e` encoding for INDEXED8_2X2 (the only currently legal
+/// texture format).  Values 1..=15 are reserved.
+pub const TEX_FORMAT_INDEXED8_2X2: u8 = 0;
+
+/// Bit position of `TEXn_CFG.PALETTE_IDX` (selects palette slot 0 or 1).
+pub const TEX_CFG_PALETTE_IDX_SHIFT: u32 = 24;
+
+/// Field mask of `TEXn_CFG.PALETTE_IDX` (single bit) before shifting.
+pub const TEX_CFG_PALETTE_IDX_MASK: u64 = 0x1;
+
+/// Field mask of `PALETTEn.BASE_ADDR` (16 bits, ×512 to form SDRAM byte
+/// address) before shifting.
+pub const PALETTE_BASE_ADDR_MASK: u64 = 0xFFFF;
+
+/// Bit position of `PALETTEn.LOAD_TRIGGER` (self-clearing pulse).
+pub const PALETTE_LOAD_TRIGGER_BIT: u64 = 1 << 16;

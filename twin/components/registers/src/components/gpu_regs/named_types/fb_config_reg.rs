@@ -1,5 +1,8 @@
 //! Register: FB_CONFIG
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// FB_CONFIG
 ///
 /// Render target configuration: color/Z-buffer base addresses and

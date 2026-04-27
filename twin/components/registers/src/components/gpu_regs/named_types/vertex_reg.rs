@@ -1,5 +1,8 @@
 //! Register: VERTEX
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// VERTEX
 ///
 /// Vertex position + 1/W (write-only trigger).

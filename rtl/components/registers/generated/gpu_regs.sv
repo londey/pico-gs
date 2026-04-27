@@ -73,6 +73,8 @@ module gpu_regs (
         logic VERTEX_KICK_RECT;
         logic TEX0_CFG;
         logic TEX1_CFG;
+        logic PALETTE0;
+        logic PALETTE1;
         logic CC_MODE;
         logic CONST_COLOR;
         logic CC_MODE_2;
@@ -109,6 +111,8 @@ module gpu_regs (
         decoded_reg_strb.VERTEX_KICK_RECT = cpuif_req_masked & (cpuif_addr == 10'h48);
         decoded_reg_strb.TEX0_CFG = cpuif_req_masked & (cpuif_addr == 10'h80);
         decoded_reg_strb.TEX1_CFG = cpuif_req_masked & (cpuif_addr == 10'h88);
+        decoded_reg_strb.PALETTE0 = cpuif_req_masked & (cpuif_addr == 10'h90);
+        decoded_reg_strb.PALETTE1 = cpuif_req_masked & (cpuif_addr == 10'h98);
         decoded_reg_strb.CC_MODE = cpuif_req_masked & (cpuif_addr == 10'hc0);
         decoded_reg_strb.CONST_COLOR = cpuif_req_masked & (cpuif_addr == 10'hc8);
         decoded_reg_strb.CC_MODE_2 = cpuif_req_masked & (cpuif_addr == 10'hd0);
@@ -295,11 +299,11 @@ module gpu_regs (
                 logic load_next;
             } V_WRAP;
             struct {
-                logic [3:0] next;
+                logic next;
                 logic load_next;
-            } MIP_LEVELS;
+            } PALETTE_IDX;
             struct {
-                logic [7:0] next;
+                logic [6:0] next;
                 logic load_next;
             } RSVD_MID;
             struct {
@@ -345,11 +349,11 @@ module gpu_regs (
                 logic load_next;
             } V_WRAP;
             struct {
-                logic [3:0] next;
+                logic next;
                 logic load_next;
-            } MIP_LEVELS;
+            } PALETTE_IDX;
             struct {
-                logic [7:0] next;
+                logic [6:0] next;
                 logic load_next;
             } RSVD_MID;
             struct {
@@ -361,6 +365,34 @@ module gpu_regs (
                 logic load_next;
             } RSVD_HI;
         } TEX1_CFG;
+        struct {
+            struct {
+                logic [15:0] next;
+                logic load_next;
+            } BASE_ADDR;
+            struct {
+                logic next;
+                logic load_next;
+            } LOAD_TRIGGER;
+            struct {
+                logic [46:0] next;
+                logic load_next;
+            } RSVD;
+        } PALETTE0;
+        struct {
+            struct {
+                logic [15:0] next;
+                logic load_next;
+            } BASE_ADDR;
+            struct {
+                logic next;
+                logic load_next;
+            } LOAD_TRIGGER;
+            struct {
+                logic [46:0] next;
+                logic load_next;
+            } RSVD;
+        } PALETTE1;
         struct {
             struct {
                 logic [3:0] next;
@@ -821,10 +853,10 @@ module gpu_regs (
                 logic [1:0] value;
             } V_WRAP;
             struct {
-                logic [3:0] value;
-            } MIP_LEVELS;
+                logic value;
+            } PALETTE_IDX;
             struct {
-                logic [7:0] value;
+                logic [6:0] value;
             } RSVD_MID;
             struct {
                 logic [15:0] value;
@@ -859,10 +891,10 @@ module gpu_regs (
                 logic [1:0] value;
             } V_WRAP;
             struct {
-                logic [3:0] value;
-            } MIP_LEVELS;
+                logic value;
+            } PALETTE_IDX;
             struct {
-                logic [7:0] value;
+                logic [6:0] value;
             } RSVD_MID;
             struct {
                 logic [15:0] value;
@@ -871,6 +903,28 @@ module gpu_regs (
                 logic [15:0] value;
             } RSVD_HI;
         } TEX1_CFG;
+        struct {
+            struct {
+                logic [15:0] value;
+            } BASE_ADDR;
+            struct {
+                logic value;
+            } LOAD_TRIGGER;
+            struct {
+                logic [46:0] value;
+            } RSVD;
+        } PALETTE0;
+        struct {
+            struct {
+                logic [15:0] value;
+            } BASE_ADDR;
+            struct {
+                logic value;
+            } LOAD_TRIGGER;
+            struct {
+                logic [46:0] value;
+            } RSVD;
+        } PALETTE1;
         struct {
             struct {
                 logic [3:0] value;
@@ -1959,37 +2013,37 @@ module gpu_regs (
         end
     end
     assign hwif_out.TEX0_CFG.V_WRAP.value = field_storage.TEX0_CFG.V_WRAP.value;
-    // Field: gpu_regs.TEX0_CFG.MIP_LEVELS
+    // Field: gpu_regs.TEX0_CFG.PALETTE_IDX
     always_comb begin
-        automatic logic [3:0] next_c;
+        automatic logic [0:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX0_CFG.MIP_LEVELS.value;
+        next_c = field_storage.TEX0_CFG.PALETTE_IDX.value;
         load_next_c = '0;
         if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_CFG.MIP_LEVELS.value & ~decoded_wr_biten[23:20]) | (decoded_wr_data[23:20] & decoded_wr_biten[23:20]);
+            next_c = (field_storage.TEX0_CFG.PALETTE_IDX.value & ~decoded_wr_biten[24:24]) | (decoded_wr_data[24:24] & decoded_wr_biten[24:24]);
             load_next_c = '1;
         end
-        field_combo.TEX0_CFG.MIP_LEVELS.next = next_c;
-        field_combo.TEX0_CFG.MIP_LEVELS.load_next = load_next_c;
+        field_combo.TEX0_CFG.PALETTE_IDX.next = next_c;
+        field_combo.TEX0_CFG.PALETTE_IDX.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_CFG.MIP_LEVELS.value <= 4'h0;
+            field_storage.TEX0_CFG.PALETTE_IDX.value <= 1'h0;
         end else begin
-            if(field_combo.TEX0_CFG.MIP_LEVELS.load_next) begin
-                field_storage.TEX0_CFG.MIP_LEVELS.value <= field_combo.TEX0_CFG.MIP_LEVELS.next;
+            if(field_combo.TEX0_CFG.PALETTE_IDX.load_next) begin
+                field_storage.TEX0_CFG.PALETTE_IDX.value <= field_combo.TEX0_CFG.PALETTE_IDX.next;
             end
         end
     end
-    assign hwif_out.TEX0_CFG.MIP_LEVELS.value = field_storage.TEX0_CFG.MIP_LEVELS.value;
+    assign hwif_out.TEX0_CFG.PALETTE_IDX.value = field_storage.TEX0_CFG.PALETTE_IDX.value;
     // Field: gpu_regs.TEX0_CFG.RSVD_MID
     always_comb begin
-        automatic logic [7:0] next_c;
+        automatic logic [6:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.TEX0_CFG.RSVD_MID.value;
         load_next_c = '0;
         if(decoded_reg_strb.TEX0_CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX0_CFG.RSVD_MID.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
+            next_c = (field_storage.TEX0_CFG.RSVD_MID.value & ~decoded_wr_biten[31:25]) | (decoded_wr_data[31:25] & decoded_wr_biten[31:25]);
             load_next_c = '1;
         end
         field_combo.TEX0_CFG.RSVD_MID.next = next_c;
@@ -1997,7 +2051,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX0_CFG.RSVD_MID.value <= 8'h0;
+            field_storage.TEX0_CFG.RSVD_MID.value <= 7'h0;
         end else begin
             if(field_combo.TEX0_CFG.RSVD_MID.load_next) begin
                 field_storage.TEX0_CFG.RSVD_MID.value <= field_combo.TEX0_CFG.RSVD_MID.next;
@@ -2235,37 +2289,37 @@ module gpu_regs (
         end
     end
     assign hwif_out.TEX1_CFG.V_WRAP.value = field_storage.TEX1_CFG.V_WRAP.value;
-    // Field: gpu_regs.TEX1_CFG.MIP_LEVELS
+    // Field: gpu_regs.TEX1_CFG.PALETTE_IDX
     always_comb begin
-        automatic logic [3:0] next_c;
+        automatic logic [0:0] next_c;
         automatic logic load_next_c;
-        next_c = field_storage.TEX1_CFG.MIP_LEVELS.value;
+        next_c = field_storage.TEX1_CFG.PALETTE_IDX.value;
         load_next_c = '0;
         if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_CFG.MIP_LEVELS.value & ~decoded_wr_biten[23:20]) | (decoded_wr_data[23:20] & decoded_wr_biten[23:20]);
+            next_c = (field_storage.TEX1_CFG.PALETTE_IDX.value & ~decoded_wr_biten[24:24]) | (decoded_wr_data[24:24] & decoded_wr_biten[24:24]);
             load_next_c = '1;
         end
-        field_combo.TEX1_CFG.MIP_LEVELS.next = next_c;
-        field_combo.TEX1_CFG.MIP_LEVELS.load_next = load_next_c;
+        field_combo.TEX1_CFG.PALETTE_IDX.next = next_c;
+        field_combo.TEX1_CFG.PALETTE_IDX.load_next = load_next_c;
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_CFG.MIP_LEVELS.value <= 4'h0;
+            field_storage.TEX1_CFG.PALETTE_IDX.value <= 1'h0;
         end else begin
-            if(field_combo.TEX1_CFG.MIP_LEVELS.load_next) begin
-                field_storage.TEX1_CFG.MIP_LEVELS.value <= field_combo.TEX1_CFG.MIP_LEVELS.next;
+            if(field_combo.TEX1_CFG.PALETTE_IDX.load_next) begin
+                field_storage.TEX1_CFG.PALETTE_IDX.value <= field_combo.TEX1_CFG.PALETTE_IDX.next;
             end
         end
     end
-    assign hwif_out.TEX1_CFG.MIP_LEVELS.value = field_storage.TEX1_CFG.MIP_LEVELS.value;
+    assign hwif_out.TEX1_CFG.PALETTE_IDX.value = field_storage.TEX1_CFG.PALETTE_IDX.value;
     // Field: gpu_regs.TEX1_CFG.RSVD_MID
     always_comb begin
-        automatic logic [7:0] next_c;
+        automatic logic [6:0] next_c;
         automatic logic load_next_c;
         next_c = field_storage.TEX1_CFG.RSVD_MID.value;
         load_next_c = '0;
         if(decoded_reg_strb.TEX1_CFG && decoded_req_is_wr) begin // SW write
-            next_c = (field_storage.TEX1_CFG.RSVD_MID.value & ~decoded_wr_biten[31:24]) | (decoded_wr_data[31:24] & decoded_wr_biten[31:24]);
+            next_c = (field_storage.TEX1_CFG.RSVD_MID.value & ~decoded_wr_biten[31:25]) | (decoded_wr_data[31:25] & decoded_wr_biten[31:25]);
             load_next_c = '1;
         end
         field_combo.TEX1_CFG.RSVD_MID.next = next_c;
@@ -2273,7 +2327,7 @@ module gpu_regs (
     end
     always_ff @(posedge clk) begin
         if(rst) begin
-            field_storage.TEX1_CFG.RSVD_MID.value <= 8'h0;
+            field_storage.TEX1_CFG.RSVD_MID.value <= 7'h0;
         end else begin
             if(field_combo.TEX1_CFG.RSVD_MID.load_next) begin
                 field_storage.TEX1_CFG.RSVD_MID.value <= field_combo.TEX1_CFG.RSVD_MID.next;
@@ -2327,6 +2381,144 @@ module gpu_regs (
         end
     end
     assign hwif_out.TEX1_CFG.RSVD_HI.value = field_storage.TEX1_CFG.RSVD_HI.value;
+    // Field: gpu_regs.PALETTE0.BASE_ADDR
+    always_comb begin
+        automatic logic [15:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PALETTE0.BASE_ADDR.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PALETTE0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PALETTE0.BASE_ADDR.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
+            load_next_c = '1;
+        end
+        field_combo.PALETTE0.BASE_ADDR.next = next_c;
+        field_combo.PALETTE0.BASE_ADDR.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PALETTE0.BASE_ADDR.value <= 16'h0;
+        end else begin
+            if(field_combo.PALETTE0.BASE_ADDR.load_next) begin
+                field_storage.PALETTE0.BASE_ADDR.value <= field_combo.PALETTE0.BASE_ADDR.next;
+            end
+        end
+    end
+    assign hwif_out.PALETTE0.BASE_ADDR.value = field_storage.PALETTE0.BASE_ADDR.value;
+    // Field: gpu_regs.PALETTE0.LOAD_TRIGGER
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PALETTE0.LOAD_TRIGGER.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PALETTE0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PALETTE0.LOAD_TRIGGER.value & ~decoded_wr_biten[16:16]) | (decoded_wr_data[16:16] & decoded_wr_biten[16:16]);
+            load_next_c = '1;
+        end
+        field_combo.PALETTE0.LOAD_TRIGGER.next = next_c;
+        field_combo.PALETTE0.LOAD_TRIGGER.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PALETTE0.LOAD_TRIGGER.value <= 1'h0;
+        end else begin
+            if(field_combo.PALETTE0.LOAD_TRIGGER.load_next) begin
+                field_storage.PALETTE0.LOAD_TRIGGER.value <= field_combo.PALETTE0.LOAD_TRIGGER.next;
+            end
+        end
+    end
+    assign hwif_out.PALETTE0.LOAD_TRIGGER.value = field_storage.PALETTE0.LOAD_TRIGGER.value;
+    // Field: gpu_regs.PALETTE0.RSVD
+    always_comb begin
+        automatic logic [46:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PALETTE0.RSVD.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PALETTE0 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PALETTE0.RSVD.value & ~decoded_wr_biten[63:17]) | (decoded_wr_data[63:17] & decoded_wr_biten[63:17]);
+            load_next_c = '1;
+        end
+        field_combo.PALETTE0.RSVD.next = next_c;
+        field_combo.PALETTE0.RSVD.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PALETTE0.RSVD.value <= 47'h0;
+        end else begin
+            if(field_combo.PALETTE0.RSVD.load_next) begin
+                field_storage.PALETTE0.RSVD.value <= field_combo.PALETTE0.RSVD.next;
+            end
+        end
+    end
+    assign hwif_out.PALETTE0.RSVD.value = field_storage.PALETTE0.RSVD.value;
+    // Field: gpu_regs.PALETTE1.BASE_ADDR
+    always_comb begin
+        automatic logic [15:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PALETTE1.BASE_ADDR.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PALETTE1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PALETTE1.BASE_ADDR.value & ~decoded_wr_biten[15:0]) | (decoded_wr_data[15:0] & decoded_wr_biten[15:0]);
+            load_next_c = '1;
+        end
+        field_combo.PALETTE1.BASE_ADDR.next = next_c;
+        field_combo.PALETTE1.BASE_ADDR.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PALETTE1.BASE_ADDR.value <= 16'h0;
+        end else begin
+            if(field_combo.PALETTE1.BASE_ADDR.load_next) begin
+                field_storage.PALETTE1.BASE_ADDR.value <= field_combo.PALETTE1.BASE_ADDR.next;
+            end
+        end
+    end
+    assign hwif_out.PALETTE1.BASE_ADDR.value = field_storage.PALETTE1.BASE_ADDR.value;
+    // Field: gpu_regs.PALETTE1.LOAD_TRIGGER
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PALETTE1.LOAD_TRIGGER.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PALETTE1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PALETTE1.LOAD_TRIGGER.value & ~decoded_wr_biten[16:16]) | (decoded_wr_data[16:16] & decoded_wr_biten[16:16]);
+            load_next_c = '1;
+        end
+        field_combo.PALETTE1.LOAD_TRIGGER.next = next_c;
+        field_combo.PALETTE1.LOAD_TRIGGER.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PALETTE1.LOAD_TRIGGER.value <= 1'h0;
+        end else begin
+            if(field_combo.PALETTE1.LOAD_TRIGGER.load_next) begin
+                field_storage.PALETTE1.LOAD_TRIGGER.value <= field_combo.PALETTE1.LOAD_TRIGGER.next;
+            end
+        end
+    end
+    assign hwif_out.PALETTE1.LOAD_TRIGGER.value = field_storage.PALETTE1.LOAD_TRIGGER.value;
+    // Field: gpu_regs.PALETTE1.RSVD
+    always_comb begin
+        automatic logic [46:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.PALETTE1.RSVD.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.PALETTE1 && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.PALETTE1.RSVD.value & ~decoded_wr_biten[63:17]) | (decoded_wr_data[63:17] & decoded_wr_biten[63:17]);
+            load_next_c = '1;
+        end
+        field_combo.PALETTE1.RSVD.next = next_c;
+        field_combo.PALETTE1.RSVD.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.PALETTE1.RSVD.value <= 47'h0;
+        end else begin
+            if(field_combo.PALETTE1.RSVD.load_next) begin
+                field_storage.PALETTE1.RSVD.value <= field_combo.PALETTE1.RSVD.next;
+            end
+        end
+    end
+    assign hwif_out.PALETTE1.RSVD.value = field_storage.PALETTE1.RSVD.value;
     // Field: gpu_regs.CC_MODE.C0_RGB_A
     always_comb begin
         automatic logic [3:0] next_c;
@@ -4171,8 +4363,8 @@ module gpu_regs (
             readback_data_var[15:12] = field_storage.TEX0_CFG.HEIGHT_LOG2.value;
             readback_data_var[17:16] = field_storage.TEX0_CFG.U_WRAP.value;
             readback_data_var[19:18] = field_storage.TEX0_CFG.V_WRAP.value;
-            readback_data_var[23:20] = field_storage.TEX0_CFG.MIP_LEVELS.value;
-            readback_data_var[31:24] = field_storage.TEX0_CFG.RSVD_MID.value;
+            readback_data_var[24] = field_storage.TEX0_CFG.PALETTE_IDX.value;
+            readback_data_var[31:25] = field_storage.TEX0_CFG.RSVD_MID.value;
             readback_data_var[47:32] = field_storage.TEX0_CFG.BASE_ADDR.value;
             readback_data_var[63:48] = field_storage.TEX0_CFG.RSVD_HI.value;
         end
@@ -4185,10 +4377,20 @@ module gpu_regs (
             readback_data_var[15:12] = field_storage.TEX1_CFG.HEIGHT_LOG2.value;
             readback_data_var[17:16] = field_storage.TEX1_CFG.U_WRAP.value;
             readback_data_var[19:18] = field_storage.TEX1_CFG.V_WRAP.value;
-            readback_data_var[23:20] = field_storage.TEX1_CFG.MIP_LEVELS.value;
-            readback_data_var[31:24] = field_storage.TEX1_CFG.RSVD_MID.value;
+            readback_data_var[24] = field_storage.TEX1_CFG.PALETTE_IDX.value;
+            readback_data_var[31:25] = field_storage.TEX1_CFG.RSVD_MID.value;
             readback_data_var[47:32] = field_storage.TEX1_CFG.BASE_ADDR.value;
             readback_data_var[63:48] = field_storage.TEX1_CFG.RSVD_HI.value;
+        end
+        if(rd_mux_addr == 10'h90) begin
+            readback_data_var[15:0] = field_storage.PALETTE0.BASE_ADDR.value;
+            readback_data_var[16] = field_storage.PALETTE0.LOAD_TRIGGER.value;
+            readback_data_var[63:17] = field_storage.PALETTE0.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h98) begin
+            readback_data_var[15:0] = field_storage.PALETTE1.BASE_ADDR.value;
+            readback_data_var[16] = field_storage.PALETTE1.LOAD_TRIGGER.value;
+            readback_data_var[63:17] = field_storage.PALETTE1.RSVD.value;
         end
         if(rd_mux_addr == 10'hc0) begin
             readback_data_var[3:0] = field_storage.CC_MODE.C0_RGB_A.value;

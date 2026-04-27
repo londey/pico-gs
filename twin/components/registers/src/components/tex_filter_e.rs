@@ -1,7 +1,7 @@
 //! Field Enum: FILTER
-//!
-//! Only `Nearest` (0) is a legal value. Bit patterns 1–3 are reserved for ABI
-//! compatibility with the 2-bit FILTER field and decode to `UnknownVariant`.
+
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

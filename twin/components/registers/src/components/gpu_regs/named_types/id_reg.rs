@@ -1,5 +1,8 @@
 //! Register: ID
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// ID
 ///
 /// GPU identification (read-only)

@@ -6,9 +6,6 @@ Per-sampler direct-mapped cache storing 8-bit palette indices at half the appare
 One DP16KD EBR per sampler provides single-cycle index access on cache hit.
 On miss, issues an SDRAM burst read (8 words = 16 bytes per 4×4 index block) via arbiter port 3 to fill a cache line, then resumes the stalled fragment.
 
-**Note:** This document has been renamed from `unit_011.03_l1_decompressed_cache.md` to `unit_011.03_index_cache.md`.
-The rename is tracked as a task in the implementation plan; the file content is authoritative under either name during the transition.
-
 ## Implements Requirements
 
 - REQ-003.08 (Texture Cache) — per-sampler index cache: 512-entry direct-mapped 8-bit index store
@@ -75,8 +72,11 @@ Each EBR word stores one 8-bit index (lower 8 bits of the 9-bit DP16KD data word
 
 **Tag:**
 
-Each set stores one tag entry (valid bit + `(tex_base[15:0], block_x_upper, block_y_upper)`).
-A tag match on base address and upper block coordinates constitutes a hit.
+Each set stores one tag entry: valid bit + `(tex_base[15:0], block_x, block_y)`.
+A tag match on base address **and full block coordinates** constitutes a hit.
+
+The tag must carry the *full* `(block_x, block_y)` because the XOR set index folds them onto the same set: distinct blocks like `(0,0)` and `(1,1)` share set 0, and any small texture (`block_x < 32`, `block_y < 32`) keeps the upper bits zero.
+Storing only the upper bits would leave aliased blocks indistinguishable in the tag and a fill at one would silently satisfy a lookup at the other.
 
 ### Inputs
 
@@ -127,8 +127,9 @@ See REQ-011.02 for the complete EBR budget across the GPU.
 ## Implementation
 
 - `rtl/components/texture/detail/l1-cache/src/texture_index_cache.sv`: Index cache arrays, tag storage, set indexing, fill FSM, invalidation logic
+- `twin/components/texture/detail/l1-cache/src/lib.rs`: Bit-accurate digital twin model — `IndexCache` struct, XOR-folded set index, line-offset decode, direct-mapped lookup/fill/invalidate
 
-The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/detail/uv-coord/`).
+The authoritative algorithmic design is the `gs-tex-l1-cache` twin crate (`twin/components/texture/detail/l1-cache/`).
 The RTL tag-comparison and XOR set-indexing behavior must be bit-identical to the twin.
 
 ## Design Notes

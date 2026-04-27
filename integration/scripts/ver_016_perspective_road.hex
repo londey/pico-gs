@@ -1,15 +1,15 @@
-# VER-016: Perspective Road Z-Test
+# VER-016: Perspective Road Z-Test (INDEXED8_2X2)
 # 
 # Four-triangle road (2 quads) stretching into the distance.
-# Tests Z interpolation and perspective depth gradient.
-# 64x64 checker texture with 16x16 squares, bilinear filtered.
-# Road split into 2 strips to keep V within Q4.12 range (max 4.0).
-# Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z far)
-# Phase 'setup': configure texture and render mode
+# 64x64 apparent INDEXED8_2X2 texture: 4x4 grid of 16x16 squares,
+# index 0 = white, index 1 = black (uniform per-entry).
+# Road split into strips to keep V within Q4.12 range (max 4.0).
+# Phase 'zclear':    initialise Z-buffer to 0x0000 (reverse-Z far)
+# Phase 'palette':   stage palette + index array, trigger PALETTE0
+# Phase 'setup':     configure texture and render mode
 # Phase 'triangles': submit road strips (MVP-transformed)
 
 ## FRAMEBUFFER: 512 512
-## TEXTURE: checker_wb base=0xC0000 format=RGB565 width_log2=6
 
 ## PHASE: zclear
 
@@ -19,46 +19,154 @@
 40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
 43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
 
-## PHASE: setup
+## PHASE: palette
 
-# Upload 64x64 white/black checker (16x16 squares) texture at word 0xC0000
-44 0010_00FF_FF0C_0000  # MEM_FILL: Fill 64x64 with 0xFFFF
-44 0000_4000_000C_0040  # MEM_FILL: row 0 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_00C0  # MEM_FILL: row 0 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0140  # MEM_FILL: row 1 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_01C0  # MEM_FILL: row 1 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0240  # MEM_FILL: row 2 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_02C0  # MEM_FILL: row 2 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0340  # MEM_FILL: row 3 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_03C0  # MEM_FILL: row 3 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0400  # MEM_FILL: row 4 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0480  # MEM_FILL: row 4 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0500  # MEM_FILL: row 5 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0580  # MEM_FILL: row 5 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0600  # MEM_FILL: row 6 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0680  # MEM_FILL: row 6 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0700  # MEM_FILL: row 7 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0780  # MEM_FILL: row 7 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0840  # MEM_FILL: row 8 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_08C0  # MEM_FILL: row 8 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0940  # MEM_FILL: row 9 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_09C0  # MEM_FILL: row 9 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0A40  # MEM_FILL: row 10 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_0AC0  # MEM_FILL: row 10 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0B40  # MEM_FILL: row 11 bx 4..7 (4 blk, 64 words)
-44 0000_4000_000C_0BC0  # MEM_FILL: row 11 bx 12..15 (4 blk, 64 words)
-44 0000_4000_000C_0C00  # MEM_FILL: row 12 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0C80  # MEM_FILL: row 12 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0D00  # MEM_FILL: row 13 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0D80  # MEM_FILL: row 13 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0E00  # MEM_FILL: row 14 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0E80  # MEM_FILL: row 14 bx 8..11 (4 blk, 64 words)
-44 0000_4000_000C_0F00  # MEM_FILL: row 15 bx 0..3 (4 blk, 64 words)
-44 0000_4000_000C_0F80  # MEM_FILL: row 15 bx 8..11 (4 blk, 64 words)
+# Upload PALETTE0 blob (4096 B, 2 populated entries) at byte 0x110000.
+44 0008_0000_0008_8000  # MEM_FILL: base_word=0x088000 value=0x0000 count=2048
+70 0000_0000_0002_2000  # MEM_ADDR: dword_addr=0x22000
+71 FFFF_FFFF_FFFF_FFFF  # MEM_DATA: palette dword[0]
+71 FFFF_FFFF_FFFF_FFFF  # MEM_DATA: palette dword[1]
+71 FF00_0000_FF00_0000  # MEM_DATA: palette dword[2]
+71 FF00_0000_FF00_0000  # MEM_DATA: palette dword[3]
+12 0000_0000_0001_0880  # PALETTE0: BASE_ADDR=0x0880 LOAD_TRIGGER=1
+
+# Upload 64x64 INDEXED8_2X2 checker indices (1024 B) at word 0xC0000.
+70 0000_0000_0003_0000  # MEM_ADDR: dword_addr=0x30000
+71 0000_0000_0000_0000  # MEM_DATA: index dword[0]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[1]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[2]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[3]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[4]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[5]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[6]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[7]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[8]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[9]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[10]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[11]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[12]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[13]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[14]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[15]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[16]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[17]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[18]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[19]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[20]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[21]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[22]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[23]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[24]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[25]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[26]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[27]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[28]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[29]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[30]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[31]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[32]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[33]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[34]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[35]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[36]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[37]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[38]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[39]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[40]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[41]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[42]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[43]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[44]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[45]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[46]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[47]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[48]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[49]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[50]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[51]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[52]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[53]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[54]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[55]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[56]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[57]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[58]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[59]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[60]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[61]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[62]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[63]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[64]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[65]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[66]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[67]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[68]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[69]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[70]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[71]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[72]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[73]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[74]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[75]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[76]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[77]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[78]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[79]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[80]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[81]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[82]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[83]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[84]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[85]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[86]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[87]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[88]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[89]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[90]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[91]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[92]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[93]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[94]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[95]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[96]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[97]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[98]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[99]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[100]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[101]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[102]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[103]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[104]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[105]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[106]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[107]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[108]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[109]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[110]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[111]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[112]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[113]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[114]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[115]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[116]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[117]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[118]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[119]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[120]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[121]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[122]
+71 0101_0101_0101_0101  # MEM_DATA: index dword[123]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[124]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[125]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[126]
+71 0000_0000_0000_0000  # MEM_DATA: index dword[127]
+
+
+## PHASE: setup
 
 40 0000_0099_0800_0000  # FB_CONFIG: color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9
 43 0000_0080_2000_0000  # FB_CONTROL: scissor x=0 y=0 w=512 h=512
-10 0000_0C00_0000_6655  # TEX0_CFG: ENABLE=1 BILINEAR RGB565 64x64 REPEAT base=0x0C00
+10 0000_0C00_0000_6601  # TEX0_CFG: ENABLE=1 NEAREST INDEXED8_2X2 64x64 REPEAT PALETTE_IDX=0 base=0x0C00
 18 7670_7670_7371_7371  # CC_MODE: MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE
 30 0000_0000_0000_601D  # RENDER_MODE: GOURAUD_EN | Z_TEST_EN | Z_WRITE_EN | COLOR_WRITE_EN | Z_COMPARE=GEQUAL
 

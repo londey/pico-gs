@@ -14,11 +14,7 @@ Or copy this template and modify.
 
 When [condition/trigger], the system SHALL [observable behavior/response].
 
-Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
-
-- Each requirement must have a testable trigger condition and observable outcome
-- Describe capabilities/behaviors, not data layout or encoding
-- For struct fields, byte formats, protocols → create an interface (INT-NNN) and reference it
+See `.syskit/ref/requirement-format.md` for required format, quality criteria, and level-of-abstraction guidance.
 
 ## Rationale
 
@@ -26,9 +22,7 @@ Format: **When** [condition], the system **SHALL/SHOULD/MAY** [behavior].
 
 ## Parent Requirements
 
-- REQ-NNN (<parent requirement name>)
-- Or "None" if this is a top-level requirement
-- Child requirements use hierarchical IDs: REQ-NNN.NN (e.g., REQ-004.01 is a child of REQ-004)
+- REQ-NNN (<parent requirement name>) — or "None" if top-level
 
 ## Interfaces
 

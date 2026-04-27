@@ -20,6 +20,9 @@ ADDR_VERTEX_NOKICK = 0x06
 ADDR_VERTEX_KICK_012 = 0x07
 ADDR_VERTEX_KICK_021 = 0x08
 ADDR_TEX0_CFG = 0x10
+ADDR_TEX1_CFG = 0x11
+ADDR_PALETTE0 = 0x12
+ADDR_PALETTE1 = 0x13
 ADDR_CC_MODE = 0x18
 ADDR_CC_MODE_2 = 0x1A
 ADDR_RENDER_MODE = 0x30
@@ -38,6 +41,9 @@ REG_NAMES = {
     0x07: "VERTEX_KICK_012",
     0x08: "VERTEX_KICK_021",
     0x10: "TEX0_CFG",
+    0x11: "TEX1_CFG",
+    0x12: "PALETTE0",
+    0x13: "PALETTE1",
     0x18: "CC_MODE",
     0x1A: "CC_MODE_2",
     0x30: "RENDER_MODE",
@@ -53,6 +59,10 @@ REG_NAMES = {
 # Texture format codes (matching TexFormatE in gpu_regs.rdl)
 # ---------------------------------------------------------------------------
 
+TEX_FMT_INDEXED8_2X2 = 0
+# Codes 1..15 are reserved.  The legacy multi-format encodings below
+# are kept for the obsolete BC / RGBA / R8 hex generators (VER-017
+# through VER-022) only — those scripts are dead as of PR2.
 TEX_FMT_BC1 = 0
 TEX_FMT_BC2 = 1
 TEX_FMT_BC3 = 2
@@ -61,6 +71,10 @@ TEX_FMT_BC4 = 3
 TEX_FMT_RGB565 = 5
 TEX_FMT_RGBA8888 = 6
 TEX_FMT_R8 = 7
+
+# PALETTEn register field positions and widths (matching gpu_regs.rdl).
+PALETTE_BASE_ADDR_MASK = 0xFFFF        # bits [15:0]
+PALETTE_LOAD_TRIGGER_BIT = 1 << 16     # bit 16, self-clearing pulse
 
 # ---------------------------------------------------------------------------
 # RENDER_MODE bit definitions
@@ -268,7 +282,14 @@ def pack_tex0_cfg(enable: int, filt: int, fmt: int,
                   width_log2: int, height_log2: int,
                   u_wrap: int, v_wrap: int, mip_levels: int,
                   base_addr_512: int) -> int:
-    """Pack TEX0_CFG register."""
+    """Pack TEX0_CFG register.
+
+    NOTE: ``mip_levels`` is kept in the signature for source-level
+    compatibility with the obsolete BC/RGBA/R8 generators but is *not*
+    encoded — UNIT-011 no longer consumes mip metadata after the
+    INDEXED8_2X2 rework.  New generators should use
+    :func:`pack_tex_cfg_indexed` which exposes ``palette_idx`` instead.
+    """
     return (
         (enable & 0x1) |
         ((filt & 0x3) << 2) |
@@ -277,9 +298,39 @@ def pack_tex0_cfg(enable: int, filt: int, fmt: int,
         ((height_log2 & 0xF) << 12) |
         ((u_wrap & 0x3) << 16) |
         ((v_wrap & 0x3) << 18) |
-        ((mip_levels & 0xF) << 20) |
         ((base_addr_512 & 0xFFFF) << 32)
     )
+
+
+def pack_tex_cfg_indexed(enable: int, width_log2: int, height_log2: int,
+                         u_wrap: int, v_wrap: int,
+                         palette_idx: int, base_addr_512: int) -> int:
+    """Pack TEXn_CFG for the sole supported INDEXED8_2X2 format.
+
+    FORMAT is fixed at 0 (INDEXED8_2X2) and FILTER at 0 (NEAREST) — the
+    only encodings honoured by the dual-sampler / quadrant-LUT pipeline.
+    PALETTE_IDX selects which on-chip palette slot resolves the 8-bit
+    index lookups for this sampler.
+    """
+    return (
+        (enable & 0x1) |
+        # FILTER = 0 (NEAREST), FORMAT = 0 (INDEXED8_2X2) — both
+        # explicitly zeroed.
+        ((width_log2 & 0xF) << 8) |
+        ((height_log2 & 0xF) << 12) |
+        ((u_wrap & 0x3) << 16) |
+        ((v_wrap & 0x3) << 18) |
+        ((palette_idx & 0x1) << 24) |
+        ((base_addr_512 & 0xFFFF) << 32)
+    )
+
+
+def pack_palette(base_addr_512: int, load_trigger: int = 1) -> int:
+    """Pack PALETTEn register (BASE_ADDR + LOAD_TRIGGER pulse)."""
+    val = base_addr_512 & PALETTE_BASE_ADDR_MASK
+    if load_trigger:
+        val |= PALETTE_LOAD_TRIGGER_BIT
+    return val
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +534,151 @@ def emit_checker_texture(base_word: int, width_log2: int,
 RGB565_WHITE = 0xFFFF
 RGB565_BLACK = 0x0000
 RGB565_MID_GRAY = 0x7BEF  # (15,31,15) ≈ 50% gray
+RGB565_SKY_BLUE = 0x867D  # (16,51,29) ≈ (128,204,232), distinguishes from black/white texels
+
+# RGBA8888 quadrant colours used by the INDEXED8_2X2 palette helpers.
+RGBA_WHITE = (0xFF, 0xFF, 0xFF, 0xFF)
+RGBA_BLACK = (0x00, 0x00, 0x00, 0xFF)
+RGBA_MID_GREY = (0x80, 0x80, 0x80, 0xFF)
+
+
+# ---------------------------------------------------------------------------
+# INDEXED8_2X2 helpers (UNIT-011 / INT-014)
+# ---------------------------------------------------------------------------
+#
+# Per INT-014 each palette entry is laid out in [NW, NE, SW, SE] order,
+# little-endian RGBA8888 with R at the lowest byte.  The on-chip palette
+# slot is loaded by writing 4096 bytes to SDRAM at PALETTEn.BASE_ADDR ×
+# 512, then issuing a PALETTEn write with LOAD_TRIGGER=1.  Index arrays
+# use the row-major 4×4 block-tiled layout described in INT-014 §3:
+# 16 bytes per 4×4 index block, blocks ordered left-to-right then
+# top-to-bottom across the index grid.
+
+PALETTE_BLOB_BYTES = 4096
+PALETTE_ENTRIES = 256
+PALETTE_BYTES_PER_ENTRY = 16
+
+
+def _quadrant_bytes(rgba: tuple[int, int, int, int]) -> list[int]:
+    """Return 4 bytes (R, G, B, A) for one quadrant colour."""
+    r, g, b, a = rgba
+    return [r & 0xFF, g & 0xFF, b & 0xFF, a & 0xFF]
+
+
+def make_palette_blob(entries: list[tuple] | None = None) -> bytes:
+    """Build a 4096-byte palette blob from an optional list of entries.
+
+    Each entry is a tuple ``(NW, NE, SW, SE)`` of RGBA8888 colours
+    (``(R, G, B, A)`` 4-tuples).  Missing trailing entries are padded
+    with zero quadrants so the result is always exactly
+    :data:`PALETTE_BLOB_BYTES` bytes long.
+    """
+    blob = bytearray(PALETTE_BLOB_BYTES)
+    if entries is None:
+        return bytes(blob)
+    for idx, entry in enumerate(entries):
+        if idx >= PALETTE_ENTRIES:
+            break
+        nw, ne, sw, se = entry
+        base = idx * PALETTE_BYTES_PER_ENTRY
+        blob[base + 0:base + 4] = _quadrant_bytes(nw)
+        blob[base + 4:base + 8] = _quadrant_bytes(ne)
+        blob[base + 8:base + 12] = _quadrant_bytes(sw)
+        blob[base + 12:base + 16] = _quadrant_bytes(se)
+    return bytes(blob)
+
+
+def _bytes_to_dwords(blob: bytes) -> list[int]:
+    """Pack a byte array into 64-bit little-endian dwords."""
+    assert len(blob) % 8 == 0, "blob length must be a multiple of 8"
+    dwords = []
+    for off in range(0, len(blob), 8):
+        d = 0
+        for i in range(8):
+            d |= blob[off + i] << (i * 8)
+        dwords.append(d)
+    return dwords
+
+
+def emit_palette_upload(palette_base_512: int,
+                        entries: list[tuple],
+                        slot: int = 0) -> List[str]:
+    """Emit MEM_FILL/MEM_DATA + PALETTEn LOAD_TRIGGER for a palette slot.
+
+    Uploads the leading entries via MEM_DATA writes (auto-incrementing
+    MEM_ADDR), then triggers the on-chip load FSM.  Trailing palette
+    entries are zero-padded by a single MEM_FILL preceding the entry
+    writes so unused slots in SDRAM are deterministic.
+    """
+    blob = make_palette_blob(entries)
+
+    # Number of leading entries actually populated (so we only stream
+    # the non-zero prefix).  At minimum 1 to keep behaviour predictable.
+    n_entries = max(1, len(entries))
+    used_bytes = n_entries * PALETTE_BYTES_PER_ENTRY
+    used_dwords = used_bytes // 8
+
+    base_byte = palette_base_512 * 512
+    base_word = base_byte // 2
+    base_dword = base_byte // 8
+    palette_words = PALETTE_BLOB_BYTES // 2
+
+    addr_reg = ADDR_PALETTE0 if slot == 0 else ADDR_PALETTE1
+    addr_name = "PALETTE0" if slot == 0 else "PALETTE1"
+
+    lines: List[str] = []
+    lines.append(emit_comment(
+        f"Upload {addr_name} blob ({PALETTE_BLOB_BYTES} B, "
+        f"{n_entries} populated entries) at byte 0x{base_byte:06X}."
+    ))
+    # Zero the trailing region first so unused entries are deterministic.
+    lines.append(emit(ADDR_MEM_FILL,
+                      pack_mem_fill(base_word, 0x0000, palette_words),
+                      mem_fill_comment(base_word, 0x0000, palette_words)))
+    # Stream the populated entries.
+    lines.append(emit(ADDR_MEM_ADDR, base_dword,
+                      f"dword_addr=0x{base_dword:05X}"))
+    for i, dword in enumerate(_bytes_to_dwords(blob[:used_bytes])):
+        lines.append(emit(ADDR_MEM_DATA, dword,
+                          f"palette dword[{i}]"))
+    # Trigger the load FSM.
+    lines.append(emit(addr_reg, pack_palette(palette_base_512, 1),
+                      f"BASE_ADDR=0x{palette_base_512:04X} LOAD_TRIGGER=1"))
+    if used_dwords == 0:  # pragma: no cover — defensive guard
+        lines.append(emit_comment("(palette had no populated entries)"))
+    return lines
+
+
+def emit_indexed_texture_block(base_word: int, indices: bytes,
+                               label: str = "indices") -> List[str]:
+    """Emit MEM_ADDR + MEM_DATA for an INDEXED8_2X2 index array.
+
+    ``indices`` is the raw, already-tiled byte sequence to load (one
+    byte per index, 4×4 block-tiled per INT-014 §3).  The length must
+    be a multiple of 8 so the upload aligns with MEM_DATA's dword
+    granularity.
+    """
+    assert len(indices) % 8 == 0, "index payload must align to 8 bytes"
+    base_dword = base_word // 4
+    lines: List[str] = []
+    lines.append(emit_comment(
+        f"Upload {label} ({len(indices)} B) at word 0x{base_word:05X}."
+    ))
+    lines.append(emit(ADDR_MEM_ADDR, base_dword,
+                      f"dword_addr=0x{base_dword:05X}"))
+    for i, dword in enumerate(_bytes_to_dwords(indices)):
+        lines.append(emit(ADDR_MEM_DATA, dword, f"index dword[{i}]"))
+    return lines
+
+
+def make_uniform_index_block(value: int, n_blocks: int = 1) -> bytes:
+    """Build ``n_blocks`` × 16 bytes of a single index value.
+
+    Useful when every apparent texel resolves to the same palette index
+    and the visible pattern is encoded entirely in the four quadrant
+    colours of that one entry.
+    """
+    return bytes([value & 0xFF]) * (16 * n_blocks)
 
 
 def write_hex_file(path: str, lines: List[str]) -> None:

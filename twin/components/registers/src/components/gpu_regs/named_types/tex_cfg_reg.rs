@@ -1,21 +1,29 @@
 //! Register: TEXn_CFG
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 // Instances of named component types
-pub use crate::components::tex_filter_e as filter;
-pub use crate::components::tex_format_e as format;
-pub use crate::components::wrap_mode_e as u_wrap;
-pub use crate::components::wrap_mode_e as v_wrap;
+pub use _root::components::tex_filter_e as filter;
+pub use _root::components::tex_format_e as format;
+pub use _root::components::wrap_mode_e as u_wrap;
+pub use _root::components::wrap_mode_e as v_wrap;
 
 /// TEXn_CFG
 ///
 /// Texture sampler configuration (single 64-bit register per unit).
-/// All pixel data uses 4x4 block-tiled layout in SDRAM.
+/// FORMAT is fixed at INDEXED8_2X2: each apparent texel is an
+/// 8-bit palette index resolved through the active palette slot
+/// (selected by PALETTE_IDX) into a UQ1.8 RGBA quadrant color.
 /// BASE_ADDR is a 16-bit value multiplied by 512 to form the
-/// byte address (512-byte granularity, 32 MiB addressable).
+/// SDRAM byte address of the index array (512-byte granularity,
+/// 32 MiB addressable).  Palette slot contents are loaded
+/// independently via PALETTE0/PALETTE1 (0x12/0x13).
 /// Octahedral wrap mode implements coupled diagonal mirroring:
 /// crossing one axis edge flips the other axis coordinate.
-/// Any write to this register invalidates the texture cache
-/// for the corresponding texture unit.
+/// Any write to this register invalidates the index cache for
+/// the corresponding texture unit; palette slot contents are
+/// not affected.
 #[repr(transparent)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct TexCfgReg(u64);
@@ -214,30 +222,30 @@ impl TexCfgReg {
             | ((val & Self::V_WRAP_MASK) << Self::V_WRAP_OFFSET);
     }
 
-    pub const MIP_LEVELS_OFFSET: usize = 20;
-    pub const MIP_LEVELS_WIDTH: usize = 4;
-    pub const MIP_LEVELS_MASK: u64 = 0xF;
+    pub const PALETTE_IDX_OFFSET: usize = 24;
+    pub const PALETTE_IDX_WIDTH: usize = 1;
+    pub const PALETTE_IDX_MASK: u64 = 0x1;
 
-    /// MIP_LEVELS
+    /// PALETTE_IDX
     #[inline(always)]
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
-    pub fn mip_levels(&self) -> u8 {
-        let val = (self.0 >> Self::MIP_LEVELS_OFFSET) & Self::MIP_LEVELS_MASK;
-        val as u8
+    pub fn palette_idx(&self) -> bool {
+        let val = (self.0 >> Self::PALETTE_IDX_OFFSET) & Self::PALETTE_IDX_MASK;
+        val != 0
     }
 
-    /// MIP_LEVELS
+    /// PALETTE_IDX
     #[inline(always)]
-    pub fn set_mip_levels(&mut self, val: u8) {
+    pub fn set_palette_idx(&mut self, val: bool) {
         let val = val as u64;
-        self.0 = (self.0 & !(Self::MIP_LEVELS_MASK << Self::MIP_LEVELS_OFFSET))
-            | ((val & Self::MIP_LEVELS_MASK) << Self::MIP_LEVELS_OFFSET);
+        self.0 = (self.0 & !(Self::PALETTE_IDX_MASK << Self::PALETTE_IDX_OFFSET))
+            | ((val & Self::PALETTE_IDX_MASK) << Self::PALETTE_IDX_OFFSET);
     }
 
-    pub const RSVD_MID_OFFSET: usize = 24;
-    pub const RSVD_MID_WIDTH: usize = 8;
-    pub const RSVD_MID_MASK: u64 = 0xFF;
+    pub const RSVD_MID_OFFSET: usize = 25;
+    pub const RSVD_MID_WIDTH: usize = 7;
+    pub const RSVD_MID_MASK: u64 = 0x7F;
 
     /// RSVD_MID
     #[inline(always)]
@@ -310,7 +318,7 @@ impl core::fmt::Debug for TexCfgReg {
             .field("height_log2", &self.height_log2())
             .field("u_wrap", &self.u_wrap())
             .field("v_wrap", &self.v_wrap())
-            .field("mip_levels", &self.mip_levels())
+            .field("palette_idx", &self.palette_idx())
             .field("rsvd_mid", &self.rsvd_mid())
             .field("base_addr", &self.base_addr())
             .field("rsvd_hi", &self.rsvd_hi())
@@ -328,12 +336,12 @@ mod tests {
         assert_eq!(reg.enable(), false);
         assert_eq!(reg.rsvd_1(), false);
         assert_eq!(reg.filter(), Ok(filter::TexFilterE::Nearest));
-        assert_eq!(reg.format(), Ok(format::TexFormatE::Bc1));
+        assert_eq!(reg.format(), Ok(format::TexFormatE::Indexed82x2));
         assert_eq!(reg.width_log2(), 0);
         assert_eq!(reg.height_log2(), 0);
         assert_eq!(reg.u_wrap(), u_wrap::WrapModeE::Repeat);
         assert_eq!(reg.v_wrap(), v_wrap::WrapModeE::Repeat);
-        assert_eq!(reg.mip_levels(), 0);
+        assert_eq!(reg.palette_idx(), false);
         assert_eq!(reg.rsvd_mid(), 0);
         assert_eq!(reg.base_addr(), 0);
         assert_eq!(reg.rsvd_hi(), 0);

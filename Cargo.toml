@@ -12,6 +12,7 @@ members = [
     "twin/components/texture/detail/l2-cache",
     "twin/components/texture/detail/block-decoder",
     "twin/components/texture/detail/uv-coord",
+    "twin/components/texture/detail/palette-lut",
     "twin/components/color-combiner",
     "twin/components/dither",
     "twin/components/pixel-write",

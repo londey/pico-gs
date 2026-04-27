@@ -1,410 +1,276 @@
+// Spec-ref: unit_011.03_index_cache.md
 #![deny(unsafe_code)]
 #![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::all))]
 #![cfg_attr(all(not(debug_assertions), not(test)), deny(clippy::pedantic))]
 #![cfg_attr(all(not(debug_assertions), not(test)), deny(missing_docs))]
 #![allow(clippy::module_name_repetitions)]
-#![allow(dead_code)]
-#![allow(unused_crate_dependencies)]
 
-//! L1 decoded texture block cache — EBR-mapped 4-way set-associative model.
+//! Index cache for the INDEXED8_2X2 texture pipeline (UNIT-011.03).
 //!
-//! Each texture sampler (TEX0, TEX1) has an independent L1 cache that stores
-//! decompressed 4×4 texel blocks in [`TexelUq18`] format (9 bits per channel,
-//! 36 bits per texel).
+//! Per-sampler direct-mapped cache that stores 8-bit palette indices at half
+//! the apparent texture resolution.
+//! Each cache line covers a 4×4 block of index entries (16 bytes total),
+//! corresponding to an 8×8 apparent-texel area.
 //!
-//! The cache uses XOR-folded set indexing and pseudo-LRU replacement.
+//! # Cache Geometry
 //!
-//! # EBR Geometry
+//! - 32 sets × 1 way × 16 indices per line = 512 index entries per sampler
+//! - 8-bit raw index per entry (no decoding — palette lookup happens in UNIT-011.06)
+//! - EBR primitive: one DP16KD in 2048×9 mode per sampler
 //!
-//! 4 banks × 1 PDPW16KD 512×36 each = 4 EBR per sampler.
-//! Address: `{cache_line_index[6:0], texel_within_bank[1:0]}` = 9 bits → 512 entries.
-//! All 512 entries per bank are utilized (128 lines × 4 texels/bank).
+//! # Address Decomposition
 //!
-//! # 4-Bank Bilinear Interleaving
+//! For an incoming index-resolution coordinate `(u_idx, v_idx)`:
 //!
-//! Internally, each cache line stores its 16 texels across 4 banks,
-//! indexed by `{local_y[0], local_x[0]}`:
-//! - Bank 0: even_x, even_y (positions (0,0), (2,0), (0,2), (2,2))
-//! - Bank 1: odd_x, even_y (positions (1,0), (3,0), (1,2), (3,2))
-//! - Bank 2: even_x, odd_y (positions (0,1), (2,1), (0,3), (2,3))
-//! - Bank 3: odd_x, odd_y (positions (1,1), (3,1), (1,3), (3,3))
+//! ```text
+//! block_x = u_idx >> 2          // 4×4 index block column
+//! block_y = v_idx >> 2          // 4×4 index block row
+//! set     = block_x[4:0] ^ block_y[4:0]   // XOR-folded 5-bit set index
+//! line_offset = (v_idx[1:0] << 2) | u_idx[1:0]
+//!                                // 4-bit row-major offset in the 4×4 line
+//! tag     = (tex_base, block_x, block_y)
+//! ```
 //!
-//! This models the RTL's PDPW16KD EBR bank interleaving, which allows
-//! any 2×2 bilinear quad to be read in a single cycle (one texel per bank).
+//! XOR set indexing distributes spatially adjacent index blocks across
+//! different sets, preventing systematic aliasing for row-major access patterns.
+//! The tag carries the full `(block_x, block_y)` because two distinct blocks
+//! can XOR-fold to the same set (e.g. `(0,0)` and `(1,1)`); storing only the
+//! upper bits would alias every small-texture access pair that shares a set.
 //!
-//! # Cache Parameters (matching RTL)
+//! # Replacement and Invalidation
 //!
-//! | Parameter | Value | RTL Reference |
-//! |-----------|-------|---------------|
-//! | Sets | 32 | 5-bit XOR-folded index |
-//! | Ways | 4 | 4-way set-associative |
-//! | Lines | 256 | 64 × 4 = 256 (4096 texels) |
-//! | EBR/bank | 512×36 | PDPW16KD, 256 lines × 4 texels/bank = 1024 entries |
-//! | Set index | 5 bits | `block_x[4:0] ^ block_y[4:0]` |
-//! | LRU | 3-bit pseudo-LRU | Binary tree for 4 ways |
-//! | Banks | 4 | `{local_y[0], local_x[0]}` interleaving |
+//! Direct-mapped (one way per set) — a miss always overwrites the resident
+//! line in the addressed set, no replacement policy required.
+//! `invalidate()` clears every valid bit in a single pass and is invoked by
+//! UNIT-003 on `TEXn_CFG` writes.
 //!
-//! See: UNIT-011.03 (L1 Decompressed Cache), UNIT-006 (Pixel Pipeline).
+//! See: UNIT-011.03 (Index Cache), UNIT-011 (Texture Sampler), REQ-003.08.
 
-use gs_twin_core::texel::TexelUq18;
+// ── Cache geometry constants ────────────────────────────────────────────────
 
-/// Number of cache sets (5-bit index).
-const NUM_SETS: usize = 32;
+/// Number of cache sets (5-bit XOR-folded index).
+pub const NUM_SETS: usize = 32;
 
-/// Number of ways per set.
-const NUM_WAYS: usize = 4;
+/// Number of ways per set (direct-mapped).
+pub const NUM_WAYS: usize = 1;
 
-/// Total cache lines (`NUM_SETS × NUM_WAYS`).
-const NUM_LINES: usize = NUM_SETS * NUM_WAYS;
-
-/// Number of bilinear interleave banks.
-const NUM_BANKS: usize = 4;
-
-/// Number of texels per bank per cache line (16 texels / 4 banks).
-const TEXELS_PER_BANK: usize = 4;
-
-/// Entries per PDPW16KD bank (512×36 mode).
-///
-/// 256 cache lines × 4 texels/bank = 1024 entries.
-#[allow(dead_code)]
-const L1_ENTRIES_PER_BANK: usize = NUM_LINES * TEXELS_PER_BANK;
-
-// ── DecodedBlockProvider trait ─────────────────────────────────────────────
-
-/// Provides decoded 4×4 texel blocks, with caching.
-///
-/// Implementations manage storage of decompressed texel blocks and
-/// support both full-block lookup and single-cycle bilinear quad gather.
-pub trait DecodedBlockProvider {
-    /// Look up a decoded block.
-    ///
-    /// On hit, returns the 16 texels in row-major order.
-    /// On miss, returns `None`.
-    fn lookup(&mut self, base_words: u32, block_x: u32, block_y: u32) -> Option<[TexelUq18; 16]>;
-
-    /// Fill a cache line with a decoded block (row-major order).
-    fn fill(&mut self, base_words: u32, block_x: u32, block_y: u32, data: [TexelUq18; 16]);
-
-    /// Invalidate all entries (called on TEXn_CFG write).
-    fn invalidate(&mut self);
-
-    /// Gather a bilinear quad: 4 texels from potentially different blocks,
-    /// one from each bank, in a single call.
-    ///
-    /// Each coordinate is `(base_words, block_x, block_y, local_index)`
-    /// where `local_index` is the row-major offset within the 4×4 block.
-    ///
-    /// Returns `None` if any of the 4 blocks is not cached.
-    /// Does **not** update LRU or statistics — the caller must have
-    /// already ensured the blocks are cached via [`lookup`](Self::lookup)
-    /// or [`fill`](Self::fill).
-    fn gather_bilinear_quad(&self, coords: &[(u32, u32, u32, u32); 4]) -> Option<[TexelUq18; 4]>;
-
-    /// Count the number of valid cache lines.
-    fn valid_line_count(&self) -> usize;
-}
-
-// ── Cache statistics ────────────────────────────────────────────────────────
-
-/// Cumulative cache statistics for diagnostics.
-///
-/// All counters are monotonically increasing and reset only on
-/// [`TextureBlockCache::reset_stats`].
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CacheStats {
-    /// Number of cache hits (block found in cache).
-    pub hits: u64,
-
-    /// Number of cache misses (block not found, must fill from SDRAM).
-    pub misses: u64,
-
-    /// Number of evictions (valid line replaced by a new fill).
-    pub evictions: u64,
-
-    /// Number of full-cache invalidations (triggered by TEXn_CFG write).
-    pub invalidations: u64,
-}
-
-// ── Bank interleaving helpers ─────────────────────────────────────────────
-
-/// Compute the bank index for a texel at local position within a 4×4 block.
-///
-/// Bank assignment matches RTL: `bank = {local_y[0], local_x[0]}`.
-///
-/// # Arguments
-///
-/// * `local` - Row-major offset within the 4×4 block (0..16).
-///
-/// # Returns
-///
-/// Bank index (0..4).
-fn bank_index(local: u32) -> usize {
-    let lx = local & 3; // local_x = local % 4
-    let ly = local >> 2; // local_y = local / 4
-    ((ly & 1) << 1 | (lx & 1)) as usize
-}
-
-/// Compute the intra-bank slot for a texel at local position.
-///
-/// Within each bank, texels are stored in order of their local position
-/// divided by their parity group.
-/// For a 4×4 block, each bank gets exactly 4 texels.
-///
-/// Bank 0 (even_x, even_y): positions 0, 2, 8, 10 → slots 0, 1, 2, 3
-/// Bank 1 (odd_x, even_y): positions 1, 3, 9, 11 → slots 0, 1, 2, 3
-/// Bank 2 (even_x, odd_y): positions 4, 6, 12, 14 → slots 0, 1, 2, 3
-/// Bank 3 (odd_x, odd_y): positions 5, 7, 13, 15 → slots 0, 1, 2, 3
-fn bank_slot(local: u32) -> usize {
-    let lx = local & 3;
-    let ly = local >> 2;
-    // Slot = (ly/2)*2 + (lx/2), giving 0..4 within the bank.
-    ((ly >> 1) * 2 + (lx >> 1)) as usize
-}
+/// Number of 8-bit indices per cache line (4×4 index block).
+pub const INDICES_PER_LINE: usize = 16;
 
 // ── Cache tag ───────────────────────────────────────────────────────────────
 
-/// Cache tag uniquely identifying a 4×4 texel block within SDRAM.
+/// Cache tag identifying a 4×4 index block within a texture.
 ///
-/// With 32 sets (5-bit XOR index), block coordinate bits `[4:0]` are
-/// consumed by the set index, so the tag stores the full base address
-/// and the full block coordinate bits for unambiguous comparison.
-/// The tag width is `{tex_base[23:12], block_y[5:0], block_x[5:0]}` = 24 bits
-/// (12 + 6 + 6), and we store the full coordinates for clarity and
-/// compare them directly.
+/// XOR-folded set indexing maps multiple `(block_x, block_y)` pairs onto the
+/// same set, so the tag carries the full block coordinates (alongside the
+/// texture base) to disambiguate them.
+/// Storing only the upper bits would collapse pairs like `(0,0)` and `(1,1)`
+/// to identical tags whenever both coordinates sit below the 5-bit fold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct CacheTag {
-    /// Upper 12 bits of the texture base address (`tex_base_addr[23:12]`).
-    base_addr_hi: u16,
+    /// Texture base address (lower 16 bits of `tex_base[15:0]`, in u16 words).
+    tex_base_lo: u16,
 
-    /// Block Y coordinate (bits above the 5-bit set index).
-    block_y: u8,
+    /// Full `block_x` coordinate of the cached 4×4 index block.
+    block_x: u32,
 
-    /// Block X coordinate (bits above the 5-bit set index).
-    block_x: u8,
+    /// Full `block_y` coordinate of the cached 4×4 index block.
+    block_y: u32,
 }
 
 impl CacheTag {
-    /// Construct a tag from the base word address and block coordinates.
-    ///
-    /// The lower 6 bits of `block_x` and `block_y` are consumed by the
-    /// set index; the tag stores bits `[6:6]` for disambiguation.
-    fn new(base_words: u32, block_x: u32, block_y: u32) -> Self {
+    /// Construct a tag from base address and full block coordinates.
+    fn new(tex_base: u32, block_x: u32, block_y: u32) -> Self {
         Self {
-            base_addr_hi: ((base_words >> 12) & 0xFFF) as u16,
-            block_y: (block_y & 0x7F) as u8,
-            block_x: (block_x & 0x7F) as u8,
+            tex_base_lo: (tex_base & 0xFFFF) as u16,
+            block_x,
+            block_y,
         }
     }
 }
 
 // ── Cache line ──────────────────────────────────────────────────────────────
 
-/// One cache line: tag + valid bit + 16 decompressed texels in 4 banks.
-///
-/// The 4-bank layout models the RTL's PDPW16KD interleaving:
-/// `banks[{ly[0], lx[0]}][slot]` where slot indexes within the bank.
-#[derive(Debug, Clone, Default)]
+/// One direct-mapped cache line: tag + valid bit + 16 raw index bytes.
+#[derive(Debug, Clone, Copy)]
 struct CacheLine {
-    /// Tag identifying the cached block.
+    /// Tag identifying the cached 4×4 index block.
     tag: CacheTag,
 
-    /// Valid bit — cleared on invalidation, set on fill.
+    /// Valid bit — cleared on `invalidate`, set on `fill_line`.
     valid: bool,
 
-    /// 4 bilinear-interleaved banks, each holding 4 texels.
-    banks: [[TexelUq18; TEXELS_PER_BANK]; NUM_BANKS],
+    /// 16 raw 8-bit palette indices in row-major order within the 4×4 block.
+    indices: [u8; INDICES_PER_LINE],
 }
 
-impl CacheLine {
-    /// Store a row-major `[TexelUq18; 16]` block into the 4-bank layout.
-    fn store_row_major(&mut self, data: &[TexelUq18; 16]) {
-        for (local, texel) in data.iter().enumerate() {
-            let bank = bank_index(local as u32);
-            let slot = bank_slot(local as u32);
-            self.banks[bank][slot] = *texel;
+impl Default for CacheLine {
+    fn default() -> Self {
+        Self {
+            tag: CacheTag::default(),
+            valid: false,
+            indices: [0u8; INDICES_PER_LINE],
         }
     }
-
-    /// Read the 4-bank layout back as a row-major `[TexelUq18; 16]` block.
-    fn to_row_major(&self) -> [TexelUq18; 16] {
-        let mut out = [TexelUq18::default(); 16];
-        for local in 0..16u32 {
-            let bank = bank_index(local);
-            let slot = bank_slot(local);
-            out[local as usize] = self.banks[bank][slot];
-        }
-        out
-    }
-
-    /// Read a single texel by its row-major local index.
-    fn read_texel(&self, local: u32) -> TexelUq18 {
-        let bank = bank_index(local);
-        let slot = bank_slot(local);
-        self.banks[bank][slot]
-    }
 }
 
-// ── Pseudo-LRU helpers ──────────────────────────────────────────────────────
+// ── IndexCache ──────────────────────────────────────────────────────────────
 
-/// Select the victim way from the 3-bit pseudo-LRU state.
+/// Per-sampler direct-mapped index cache.
 ///
-/// Matches the RTL truth table in `texture_cache.sv` lines 282–290:
-///
-/// ```text
-/// LRU[2:0] → victim_way
-/// 000 → 0    001 → 0    010 → 1    011 → 1
-/// 100 → 2    101 → 3    110 → 2    111 → 3
-/// ```
-fn victim_way(lru_bits: u8) -> usize {
-    match lru_bits & 0x7 {
-        0b000 | 0b001 => 0,
-        0b010 | 0b011 => 1,
-        0b100 | 0b110 => 2,
-        0b101 | 0b111 => 3,
-        _ => unreachable!(),
-    }
+/// Models the bit-accurate behavior of the `texture_index_cache.sv` RTL
+/// module: XOR-folded 5-bit set indexing, single-way storage, 16-byte
+/// cache-line fills sourced from an SDRAM burst, and full-cache invalidation
+/// on `TEXn_CFG` writes.
+#[derive(Debug, Clone)]
+pub struct IndexCache {
+    /// 32 cache lines, one per set.
+    lines: [CacheLine; NUM_SETS],
+
+    /// Texture base address currently associated with this sampler, in u16
+    /// words.
+    /// Used to compute the cache tag; updated externally and folded into the
+    /// tag whenever a fill or lookup is performed.
+    tex_base_words: u32,
 }
 
-/// Update the pseudo-LRU state after accessing a given way.
-///
-/// Marks the accessed way as most-recently-used by updating the
-/// binary tree bits.
-/// Matches the RTL logic in `texture_cache.sv` lines 706–740:
-///
-/// ```text
-/// way 0: set bits [2],[1]
-/// way 1: set [2], clear [1]
-/// way 2: clear [2], set [0]
-/// way 3: clear [2], clear [0]
-/// ```
-fn update_lru(lru: &mut u8, way: usize) {
-    match way {
-        0 => *lru |= 0b110,
-        1 => *lru = (*lru | 0b100) & !0b010,
-        2 => *lru = (*lru & !0b100) | 0b001,
-        3 => *lru &= !0b101,
-        _ => unreachable!(),
-    }
-}
-
-// ── Texture block cache ─────────────────────────────────────────────────────
-
-/// L1 decoded texture block cache (4-way set-associative, EBR-mapped).
-///
-/// Stores decompressed 4×4 texel blocks in [`TexelUq18`] format across
-/// 4 bilinear-interleaved PDPW16KD banks (512×36 each).
-/// Uses 32 sets × 4 ways = 128 lines (2048 texels), with XOR-folded
-/// set indexing and 3-bit pseudo-LRU replacement per set.
-///
-/// Each bank holds 1024 entries (256 lines × 4 texels/bank).
-pub struct TextureBlockCache {
-    /// Fixed-size cache lines, indexed as `set * 4 + way`.
-    lines: Vec<CacheLine>,
-
-    /// 3-bit pseudo-LRU state per set (only bits `[2:0]` used).
-    lru: [u8; NUM_SETS],
-
-    /// Cumulative statistics.
-    pub stats: CacheStats,
-}
-
-impl Default for TextureBlockCache {
+impl Default for IndexCache {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TextureBlockCache {
-    /// Create a new cache with all lines invalid and LRU bits zeroed.
+impl IndexCache {
+    /// Create a new cache with all valid bits cleared and base address zero.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            lines: vec![CacheLine::default(); NUM_LINES],
-            lru: [0u8; NUM_SETS],
-            stats: CacheStats::default(),
+            lines: [CacheLine {
+                tag: CacheTag {
+                    tex_base_lo: 0,
+                    block_x: 0,
+                    block_y: 0,
+                },
+                valid: false,
+                indices: [0u8; INDICES_PER_LINE],
+            }; NUM_SETS],
+            tex_base_words: 0,
         }
     }
 
-    /// Reset statistics counters to zero.
-    pub fn reset_stats(&mut self) {
-        self.stats = CacheStats::default();
+    /// Set the texture base address (in u16 words) used for tag construction.
+    ///
+    /// # Arguments
+    ///
+    /// * `tex_base_words` - Texture base address as a u16-word offset within
+    ///   SDRAM.
+    pub fn set_tex_base(&mut self, tex_base_words: u32) {
+        self.tex_base_words = tex_base_words;
     }
 
-    /// Compute the 5-bit XOR-folded set index.
+    /// Compute the 5-bit XOR-folded set index for a `(u_idx, v_idx)` pair.
     ///
-    /// Matches RTL: `set_index = block_x[4:0] ^ block_y[4:0]`.
-    fn set_index(block_x: u32, block_y: u32) -> usize {
+    /// # Arguments
+    ///
+    /// * `u_idx` - Horizontal index-resolution coordinate.
+    /// * `v_idx` - Vertical index-resolution coordinate.
+    ///
+    /// # Returns
+    ///
+    /// Set index in `0..NUM_SETS`.
+    #[must_use]
+    pub fn set_index(u_idx: u16, v_idx: u16) -> usize {
+        let block_x = (u_idx >> 2) as u32;
+        let block_y = (v_idx >> 2) as u32;
         ((block_x & 0x1F) ^ (block_y & 0x1F)) as usize
     }
 
-    /// Find the way containing the given tag in the given set, if valid.
-    fn find_way(&self, set: usize, tag: &CacheTag) -> Option<usize> {
-        let base_idx = set * NUM_WAYS;
-        for way in 0..NUM_WAYS {
-            let idx = base_idx + way;
-            if self.lines[idx].valid && self.lines[idx].tag == *tag {
-                return Some(way);
-            }
-        }
-        None
+    /// Compute the 4-bit line offset within a 16-entry cache line.
+    ///
+    /// Indices within a 4×4 block are stored in row-major order:
+    /// `offset = (v_idx[1:0] << 2) | u_idx[1:0]`.
+    ///
+    /// # Arguments
+    ///
+    /// * `u_idx` - Horizontal index-resolution coordinate.
+    /// * `v_idx` - Vertical index-resolution coordinate.
+    ///
+    /// # Returns
+    ///
+    /// Line offset in `0..INDICES_PER_LINE`.
+    #[must_use]
+    pub fn line_offset(u_idx: u16, v_idx: u16) -> usize {
+        (((v_idx & 0x3) << 2) | (u_idx & 0x3)) as usize
     }
-}
 
-impl DecodedBlockProvider for TextureBlockCache {
-    fn lookup(&mut self, base_words: u32, block_x: u32, block_y: u32) -> Option<[TexelUq18; 16]> {
-        let set = Self::set_index(block_x, block_y);
-        let tag = CacheTag::new(base_words, block_x, block_y);
+    /// Look up the palette index at the given index-resolution coordinate.
+    ///
+    /// Returns `Some(idx)` on cache hit, `None` on miss.
+    /// On miss the caller is responsible for performing an SDRAM burst read
+    /// and calling [`fill_line`](Self::fill_line) before retrying.
+    ///
+    /// # Arguments
+    ///
+    /// * `u_idx` - Horizontal index-resolution coordinate.
+    /// * `v_idx` - Vertical index-resolution coordinate.
+    ///
+    /// # Returns
+    ///
+    /// `Some(idx)` if the addressed line is resident; `None` otherwise.
+    #[must_use]
+    pub fn lookup(&self, u_idx: u16, v_idx: u16) -> Option<u8> {
+        let set = Self::set_index(u_idx, v_idx);
+        let block_x = (u_idx >> 2) as u32;
+        let block_y = (v_idx >> 2) as u32;
+        let tag = CacheTag::new(self.tex_base_words, block_x, block_y);
 
-        if let Some(way) = self.find_way(set, &tag) {
-            update_lru(&mut self.lru[set], way);
-            self.stats.hits += 1;
-            let idx = set * NUM_WAYS + way;
-            Some(self.lines[idx].to_row_major())
+        let line = &self.lines[set];
+        if line.valid && line.tag == tag {
+            Some(line.indices[Self::line_offset(u_idx, v_idx)])
         } else {
-            self.stats.misses += 1;
             None
         }
     }
 
-    fn fill(&mut self, base_words: u32, block_x: u32, block_y: u32, data: [TexelUq18; 16]) {
-        let set = Self::set_index(block_x, block_y);
-        let tag = CacheTag::new(base_words, block_x, block_y);
-        let way = victim_way(self.lru[set]);
-        let idx = set * NUM_WAYS + way;
+    /// Fill the cache line for the set that maps `(u_idx, v_idx)`.
+    ///
+    /// Writes a 16-byte SDRAM burst into the resident line, sets the valid
+    /// bit, and updates the tag.
+    /// Any previously cached line in the same set is overwritten.
+    ///
+    /// # Arguments
+    ///
+    /// * `u_idx` - Horizontal index-resolution coordinate that triggered the
+    ///   fill.
+    /// * `v_idx` - Vertical index-resolution coordinate that triggered the
+    ///   fill.
+    /// * `indices` - 16 raw 8-bit indices in row-major order within the 4×4
+    ///   block (matching the SDRAM burst payload).
+    pub fn fill_line(&mut self, u_idx: u16, v_idx: u16, indices: &[u8; INDICES_PER_LINE]) {
+        let set = Self::set_index(u_idx, v_idx);
+        let block_x = (u_idx >> 2) as u32;
+        let block_y = (v_idx >> 2) as u32;
+        let tag = CacheTag::new(self.tex_base_words, block_x, block_y);
 
-        if self.lines[idx].valid {
-            self.stats.evictions += 1;
-        }
-
-        self.lines[idx].tag = tag;
-        self.lines[idx].valid = true;
-        self.lines[idx].store_row_major(&data);
-
-        update_lru(&mut self.lru[set], way);
+        let line = &mut self.lines[set];
+        line.tag = tag;
+        line.valid = true;
+        line.indices = *indices;
     }
 
-    fn invalidate(&mut self) {
+    /// Clear all valid bits.
+    ///
+    /// Triggered by UNIT-003 on `TEXn_CFG` writes; the next access after
+    /// invalidation is guaranteed to miss and trigger an SDRAM fill.
+    pub fn invalidate(&mut self) {
         for line in &mut self.lines {
             line.valid = false;
         }
-        self.lru = [0u8; NUM_SETS];
-        self.stats.invalidations += 1;
     }
 
-    fn gather_bilinear_quad(&self, coords: &[(u32, u32, u32, u32); 4]) -> Option<[TexelUq18; 4]> {
-        let mut result = [TexelUq18::default(); 4];
-        for (i, &(base_words, block_x, block_y, local)) in coords.iter().enumerate() {
-            let set = Self::set_index(block_x, block_y);
-            let tag = CacheTag::new(base_words, block_x, block_y);
-
-            let way = self.find_way(set, &tag)?;
-            let idx = set * NUM_WAYS + way;
-            result[i] = self.lines[idx].read_texel(local);
-        }
-        Some(result)
-    }
-
-    fn valid_line_count(&self) -> usize {
+    /// Number of currently valid cache lines (diagnostic).
+    #[must_use]
+    pub fn valid_line_count(&self) -> usize {
         self.lines.iter().filter(|l| l.valid).count()
     }
 }
@@ -414,276 +280,163 @@ impl DecodedBlockProvider for TextureBlockCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use qfixed::UQ;
 
-    /// Verify victim selection truth table matches RTL.
+    /// Cold cache: every lookup misses.
     #[test]
-    fn victim_selection_truth_table() {
-        assert_eq!(victim_way(0b000), 0);
-        assert_eq!(victim_way(0b001), 0);
-        assert_eq!(victim_way(0b010), 1);
-        assert_eq!(victim_way(0b011), 1);
-        assert_eq!(victim_way(0b100), 2);
-        assert_eq!(victim_way(0b101), 3);
-        assert_eq!(victim_way(0b110), 2);
-        assert_eq!(victim_way(0b111), 3);
+    fn cold_cache_misses() {
+        let cache = IndexCache::new();
+        assert!(cache.lookup(0, 0).is_none());
+        assert!(cache.lookup(15, 23).is_none());
+        assert!(cache.lookup(0xFFFF, 0xFFFF).is_none());
+        assert_eq!(cache.valid_line_count(), 0);
     }
 
-    /// Verify LRU update logic matches RTL.
+    /// Fill then lookup at the same coordinate returns the stored byte.
     #[test]
-    fn lru_update_logic() {
-        let mut lru = 0b000;
-        update_lru(&mut lru, 0);
-        assert_eq!(lru, 0b110);
+    fn fill_then_lookup_hit() {
+        let mut cache = IndexCache::new();
+        let mut payload = [0u8; INDICES_PER_LINE];
+        for (i, slot) in payload.iter_mut().enumerate() {
+            *slot = (0x10 + i) as u8;
+        }
+        cache.fill_line(0, 0, &payload);
 
-        let mut lru = 0b000;
-        update_lru(&mut lru, 1);
-        assert_eq!(lru, 0b100);
-
-        let mut lru = 0b111;
-        update_lru(&mut lru, 2);
-        assert_eq!(lru, 0b011);
-
-        let mut lru = 0b111;
-        update_lru(&mut lru, 3);
-        assert_eq!(lru, 0b010);
+        // Each of the 16 (u_idx, v_idx) positions in the 4×4 block hits its
+        // corresponding payload byte.
+        for v in 0u16..4 {
+            for u in 0u16..4 {
+                let expected = payload[IndexCache::line_offset(u, v)];
+                assert_eq!(cache.lookup(u, v), Some(expected));
+            }
+        }
     }
 
-    /// Verify 5-bit XOR-folded set indexing.
+    /// Different base addresses produce distinct tags — a fill at one base
+    /// must not satisfy a lookup at another.
     #[test]
-    fn set_index_xor_folding() {
-        assert_eq!(TextureBlockCache::set_index(0, 0), 0);
-        assert_eq!(TextureBlockCache::set_index(1, 0), 1);
-        assert_eq!(TextureBlockCache::set_index(0, 1), 1);
-        assert_eq!(TextureBlockCache::set_index(1, 1), 0);
-        assert_eq!(TextureBlockCache::set_index(0x1F, 0x1F), 0);
-        assert_eq!(TextureBlockCache::set_index(0x15, 0x0A), 0x1F);
-        assert_eq!(
-            TextureBlockCache::set_index(0x20, 0),
-            0,
-            "bit 5 should be masked"
+    fn base_addr_disambiguation() {
+        let mut cache = IndexCache::new();
+        let payload = [0xAAu8; INDICES_PER_LINE];
+
+        cache.set_tex_base(0x1000);
+        cache.fill_line(0, 0, &payload);
+        assert_eq!(cache.lookup(0, 0), Some(0xAA));
+
+        cache.set_tex_base(0x2000);
+        assert!(
+            cache.lookup(0, 0).is_none(),
+            "different tex_base must miss the existing line"
         );
     }
 
-    /// Verify tag construction with 7-bit block coordinates.
+    /// Small-texture XOR aliasing: blocks `(0,0)` and `(1,1)` fold to set 0
+    /// but are physically distinct.
+    /// A fill at one must not satisfy a lookup at the other, even though the
+    /// `block_x >> 5` / `block_y >> 5` upper bits are both zero.
+    /// This is the regression case for the cache-tag bug that masked the
+    /// VER-012 INDEXED8_2X2 left-half rendering as black.
     #[test]
-    fn tag_construction() {
-        let tag = CacheTag::new(0x1234_000, 5, 10);
-        assert_eq!(tag.base_addr_hi, ((0x1234_000u32 >> 12) & 0xFFF) as u16);
-        assert_eq!(tag.block_x, 5);
-        assert_eq!(tag.block_y, 10);
+    fn small_texture_xor_aliased_blocks_do_not_collide() {
+        let mut cache = IndexCache::new();
+        let payload = [0xCDu8; INDICES_PER_LINE];
 
-        // Block coordinates are masked to 7 bits.
-        let tag = CacheTag::new(0, 0xFF, 0xFF);
-        assert_eq!(tag.block_x, 0x7F);
-        assert_eq!(tag.block_y, 0x7F);
+        // Block (0,0) → u_idx=0, v_idx=0; set 0.
+        cache.fill_line(0, 0, &payload);
+        assert_eq!(cache.lookup(0, 0), Some(0xCD));
+
+        // Block (1,1) → u_idx=4, v_idx=4; set 0 ^ 1 ^ 1 ... wait,
+        // (block_x=1 ^ block_y=1) = 0 → also set 0.
+        assert_eq!(IndexCache::set_index(4, 4), 0);
+        assert!(
+            cache.lookup(4, 4).is_none(),
+            "block (1,1) must miss even though it shares set 0 with block (0,0)"
+        );
     }
 
-    /// Verify bank index assignment matches RTL interleaving.
+    /// XOR set-index aliasing: two coordinates that map to the same set but
+    /// have different tags evict each other on fill.
     #[test]
-    fn bank_index_assignment() {
-        // Bank 0: even_x, even_y → positions 0, 2, 8, 10
-        assert_eq!(bank_index(0), 0); // (0,0)
-        assert_eq!(bank_index(2), 0); // (2,0)
-        assert_eq!(bank_index(8), 0); // (0,2)
-        assert_eq!(bank_index(10), 0); // (2,2)
+    fn xor_aliased_addresses_evict() {
+        let mut cache = IndexCache::new();
 
-        // Bank 1: odd_x, even_y → positions 1, 3, 9, 11
-        assert_eq!(bank_index(1), 1); // (1,0)
-        assert_eq!(bank_index(3), 1); // (3,0)
-        assert_eq!(bank_index(9), 1); // (1,2)
-        assert_eq!(bank_index(11), 1); // (3,2)
+        // (block_x, block_y) = (0, 0) → set 0
+        // (block_x, block_y) = (32, 32) → block_x[4:0]^block_y[4:0] = 0 → also set 0
+        // but tag differs because block_x_upper / block_y_upper differ.
+        let u_a = 0u16;
+        let v_a = 0u16;
+        let u_b = 32u16 << 2; // block_x = 32
+        let v_b = 32u16 << 2; // block_y = 32
 
-        // Bank 2: even_x, odd_y → positions 4, 6, 12, 14
-        assert_eq!(bank_index(4), 2); // (0,1)
-        assert_eq!(bank_index(6), 2); // (2,1)
-        assert_eq!(bank_index(12), 2); // (0,3)
-        assert_eq!(bank_index(14), 2); // (2,3)
+        assert_eq!(IndexCache::set_index(u_a, v_a), 0);
+        assert_eq!(IndexCache::set_index(u_b, v_b), 0);
 
-        // Bank 3: odd_x, odd_y → positions 5, 7, 13, 15
-        assert_eq!(bank_index(5), 3); // (1,1)
-        assert_eq!(bank_index(7), 3); // (3,1)
-        assert_eq!(bank_index(13), 3); // (1,3)
-        assert_eq!(bank_index(15), 3); // (3,3)
+        let payload_a = [0x11u8; INDICES_PER_LINE];
+        let payload_b = [0x22u8; INDICES_PER_LINE];
+
+        cache.fill_line(u_a, v_a, &payload_a);
+        assert_eq!(cache.lookup(u_a, v_a), Some(0x11));
+
+        cache.fill_line(u_b, v_b, &payload_b);
+        // Second fill evicts the first — A is gone, B is resident.
+        assert!(
+            cache.lookup(u_a, v_a).is_none(),
+            "first fill should be evicted by aliased second fill"
+        );
+        assert_eq!(cache.lookup(u_b, v_b), Some(0x22));
     }
 
-    /// Verify each bank gets exactly 4 texels with unique slots.
+    /// Invalidation clears every valid bit; subsequent lookups all miss.
     #[test]
-    fn bank_slot_coverage() {
-        let mut bank_slots: [Vec<usize>; 4] = [vec![], vec![], vec![], vec![]];
-        for local in 0..16u32 {
-            let bank = bank_index(local);
-            let slot = bank_slot(local);
-            bank_slots[bank].push(slot);
-        }
-        for (b, slots) in bank_slots.iter().enumerate() {
-            assert_eq!(slots.len(), 4, "bank {b} should have 4 texels");
-            let mut sorted = slots.clone();
-            sorted.sort();
-            sorted.dedup();
-            assert_eq!(sorted.len(), 4, "bank {b} slots should be unique");
-        }
-    }
+    fn invalidate_clears_all_lines() {
+        let mut cache = IndexCache::new();
+        let payload = [0x55u8; INDICES_PER_LINE];
 
-    /// Verify round-trip: store row-major → read back row-major.
-    #[test]
-    fn row_major_round_trip() {
-        let mut data = [TexelUq18::default(); 16];
-        for (i, texel) in data.iter_mut().enumerate() {
-            texel.r = UQ::from_bits(i as u64);
-        }
+        // Fill several distinct sets.
+        cache.fill_line(0, 0, &payload); // set 0
+        cache.fill_line(4, 0, &payload); // set 1
+        cache.fill_line(0, 4, &payload); // set 1 again — overwrites
 
-        let mut line = CacheLine::default();
-        line.store_row_major(&data);
-        let out = line.to_row_major();
+        cache.fill_line(8, 0, &payload); // set 2
+        cache.fill_line(12, 0, &payload); // set 3
 
-        for i in 0..16 {
-            assert_eq!(
-                out[i].r.to_bits(),
-                data[i].r.to_bits(),
-                "texel {i} mismatch"
-            );
-        }
-    }
-
-    /// Basic hit and miss behavior.
-    #[test]
-    fn basic_hit_and_miss() {
-        let mut cache = TextureBlockCache::new();
-        let data = [TexelUq18::default(); 16];
-
-        assert!(cache.lookup(256, 0, 0).is_none());
-        assert_eq!(cache.stats.misses, 1);
-        assert_eq!(cache.stats.hits, 0);
-
-        cache.fill(256, 0, 0, data);
-        assert!(cache.lookup(256, 0, 0).is_some());
-        assert_eq!(cache.stats.hits, 1);
-        assert_eq!(cache.stats.misses, 1);
-
-        assert!(cache.lookup(256, 1, 0).is_none());
-        assert_eq!(cache.stats.misses, 2);
-    }
-
-    /// Invalidation clears all lines.
-    #[test]
-    fn invalidation_clears_cache() {
-        let mut cache = TextureBlockCache::new();
-        let data = [TexelUq18::default(); 16];
-
-        cache.fill(256, 0, 0, data);
-        cache.fill(256, 1, 1, data);
-        assert_eq!(cache.valid_line_count(), 2);
+        assert!(cache.valid_line_count() > 0);
 
         cache.invalidate();
         assert_eq!(cache.valid_line_count(), 0);
-        assert_eq!(cache.stats.invalidations, 1);
-
-        assert!(cache.lookup(256, 0, 0).is_none());
-        assert!(cache.lookup(256, 1, 1).is_none());
+        assert!(cache.lookup(0, 0).is_none());
+        assert!(cache.lookup(4, 0).is_none());
+        assert!(cache.lookup(8, 0).is_none());
+        assert!(cache.lookup(12, 0).is_none());
     }
 
-    /// Eviction occurs when 5th block maps to the same set.
+    /// XOR set-index formula matches UNIT-011.03 §"Set index (XOR folding)".
     #[test]
-    fn eviction_on_fifth_fill() {
-        let mut cache = TextureBlockCache::new();
-        let data = [TexelUq18::default(); 16];
-
-        let coords: [(u32, u32); 5] = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)];
-
-        for &(bx, by) in &coords[..4] {
-            cache.fill(256, bx, by, data);
-        }
-        assert_eq!(cache.stats.evictions, 0, "no eviction with 4 ways");
-
-        cache.fill(256, coords[4].0, coords[4].1, data);
-        assert_eq!(cache.stats.evictions, 1);
+    fn set_index_formula() {
+        // block_x = u_idx >> 2, block_y = v_idx >> 2
+        // set = block_x[4:0] ^ block_y[4:0]
+        assert_eq!(IndexCache::set_index(0, 0), 0);
+        assert_eq!(IndexCache::set_index(4, 0), 1);
+        assert_eq!(IndexCache::set_index(0, 4), 1);
+        assert_eq!(IndexCache::set_index(4, 4), 0);
+        // block_x = 0x15 (=21), block_y = 0x0A (=10) → 0x1F
+        assert_eq!(IndexCache::set_index(0x15 << 2, 0x0A << 2), 0x1F);
+        // bit 5 of block_x (= u_idx[7]) is masked out of the set index but
+        // present in the tag.
+        assert_eq!(IndexCache::set_index(0x80, 0), 0); // block_x = 0x20
     }
 
-    /// Verify LRU-directed eviction order.
+    /// Line-offset formula matches the row-major 4×4 layout.
     #[test]
-    fn lru_eviction_order() {
-        let mut cache = TextureBlockCache::new();
-        let data = [TexelUq18::default(); 16];
-
-        let coords: [(u32, u32); 4] = [(0, 0), (1, 1), (2, 2), (3, 3)];
-        for &(bx, by) in &coords {
-            cache.fill(256, bx, by, data);
-        }
-
-        cache.lookup(256, 0, 0);
-
-        cache.fill(256, 4, 4, data);
-
-        assert!(
-            cache.lookup(256, 0, 0).is_some(),
-            "recently accessed block should survive eviction"
-        );
-    }
-
-    /// Verify data integrity through fill and lookup round-trip.
-    #[test]
-    fn data_integrity_round_trip() {
-        let mut cache = TextureBlockCache::new();
-        let mut data = [TexelUq18::default(); 16];
-        for (i, texel) in data.iter_mut().enumerate() {
-            texel.r = UQ::from_bits(i as u64 * 16);
-            texel.g = UQ::from_bits(i as u64 * 8);
-        }
-
-        cache.fill(256, 5, 3, data);
-        let result = cache.lookup(256, 5, 3).expect("should hit");
-
-        for i in 0..16 {
-            assert_eq!(
-                result[i].r.to_bits(),
-                data[i].r.to_bits(),
-                "R mismatch at {i}"
-            );
-            assert_eq!(
-                result[i].g.to_bits(),
-                data[i].g.to_bits(),
-                "G mismatch at {i}"
-            );
-        }
-    }
-
-    /// Verify gather_bilinear_quad reads one texel from each bank.
-    #[test]
-    fn gather_bilinear_quad_single_block() {
-        let mut cache = TextureBlockCache::new();
-        let mut data = [TexelUq18::default(); 16];
-        for (i, texel) in data.iter_mut().enumerate() {
-            texel.r = UQ::from_bits(i as u64 + 1);
-        }
-
-        cache.fill(256, 0, 0, data);
-
-        // Bilinear quad at (0,0): texels at local positions 0, 1, 4, 5
-        // These are in banks 0, 1, 2, 3 respectively.
-        let coords = [
-            (256u32, 0u32, 0u32, 0u32), // (0,0) → bank 0
-            (256, 0, 0, 1),             // (1,0) → bank 1
-            (256, 0, 0, 4),             // (0,1) → bank 2
-            (256, 0, 0, 5),             // (1,1) → bank 3
-        ];
-        let result = cache.gather_bilinear_quad(&coords).expect("all cached");
-        assert_eq!(result[0].r.to_bits(), 1); // local 0
-        assert_eq!(result[1].r.to_bits(), 2); // local 1
-        assert_eq!(result[2].r.to_bits(), 5); // local 4
-        assert_eq!(result[3].r.to_bits(), 6); // local 5
-    }
-
-    /// Verify gather_bilinear_quad returns None on miss.
-    #[test]
-    fn gather_bilinear_quad_miss() {
-        let cache = TextureBlockCache::new();
-        let coords = [
-            (256u32, 0u32, 0u32, 0u32),
-            (256, 0, 0, 1),
-            (256, 0, 0, 4),
-            (256, 0, 0, 5),
-        ];
-        assert!(cache.gather_bilinear_quad(&coords).is_none());
+    fn line_offset_formula() {
+        assert_eq!(IndexCache::line_offset(0, 0), 0);
+        assert_eq!(IndexCache::line_offset(1, 0), 1);
+        assert_eq!(IndexCache::line_offset(2, 0), 2);
+        assert_eq!(IndexCache::line_offset(3, 0), 3);
+        assert_eq!(IndexCache::line_offset(0, 1), 4);
+        assert_eq!(IndexCache::line_offset(3, 3), 15);
+        // Bits above [1:0] are ignored — they are absorbed into block_x/block_y.
+        assert_eq!(IndexCache::line_offset(0x1234, 0x5678), {
+            ((0x5678 & 0x3) << 2) | (0x1234 & 0x3)
+        } as usize);
     }
 }

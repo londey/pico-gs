@@ -1,0 +1,53 @@
+// VER-025 Palette Slots - expected lookup texels.
+//
+// One reference texel per non-empty, non-comment line.  Each line is a
+// 36-bit UQ1.8 RGBA value packed as `{R[8:0], G[8:0], B[8:0], A[8:0]}`
+// rendered as 9 hex characters (zero-padded; the high nibble is unused
+// because the value is 36 bits wide).  `$readmemh` consumes the lines
+// below in order; `//` line comments and blank lines are skipped.
+//
+// The same file is consumed by the digital twin's `gs-tex-palette-lut`
+// integration test which runs the identical scenario sequence against
+// the Rust model and asserts byte-for-byte equality.  Any divergence
+// between this file, the Verilator testbench output, and the twin
+// output is a real bug -- fix the RTL or the twin.
+//
+// Procedural pattern used to derive the seed-dependent reference
+// values (matches `texture_palette_tb::ref_blob_pattern_uq18` and the
+// `gs-tex-palette-lut::test_helpers::seed_pattern` Rust helper):
+//
+//   For seed `s` at palette entry `e`, quadrant `q`:
+//     R8 = e ^ s
+//     G8 = ((e + q) & 0xFF) ^ rotnib8(s)
+//     B8 = ((e * 3) & 0xFF) ^ q
+//     A8 = ((e + 3*q) & 0xFF) ^ (~s & 0xFF)
+//   where rotnib8(x) = ((x & 0x0F) << 4) | ((x & 0xF0) >> 4).
+//
+// The 9-bit promoted channel is `c9 = c8 + (c8 >> 7)` per DD-038.
+//
+// Lines are grouped per scenario.  Scenario 5 carries TWO palette
+// lookups (pre/post index-cache invalidate) with identical expected
+// values -- the test is that the palette LUT is unaffected by the
+// `tex0_cache_inv` strobe.
+//
+// SCENARIO 1: dual-slot use (slot0 sampler0, slot1 sampler1)
+411f98e7e
+0c3a18ee8
+// SCENARIO 2: mid-frame palette reload (pre, post)
+21af904c0
+7c3dd040b
+// SCENARIO 3: quadrant exhaustive (NW, NE, SW, SE) at slot 0 idx 0x42
+558444433
+5e110aa66
+669dd129a
+6f3bde20f
+// SCENARIO 4: MIRROR-wrap quadrant swap (re-uses S3 overrides)
+558444433
+5e110aa66
+5e110aa66
+558444433
+669dd129a
+6f3bde20f
+// SCENARIO 5: cache invalidate semantics (pre, post)
+411f98e7e
+411f98e7e

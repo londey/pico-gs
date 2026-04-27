@@ -1,22 +1,25 @@
 //! Register: CC_MODE
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 // Instances of named component types
-pub use crate::components::cc_rgb_c_source_e as c0_rgb_c;
-pub use crate::components::cc_rgb_c_source_e as c1_rgb_c;
-pub use crate::components::cc_source_e as c0_rgb_a;
-pub use crate::components::cc_source_e as c0_rgb_b;
-pub use crate::components::cc_source_e as c0_rgb_d;
-pub use crate::components::cc_source_e as c0_alpha_a;
-pub use crate::components::cc_source_e as c0_alpha_b;
-pub use crate::components::cc_source_e as c0_alpha_c;
-pub use crate::components::cc_source_e as c0_alpha_d;
-pub use crate::components::cc_source_e as c1_rgb_a;
-pub use crate::components::cc_source_e as c1_rgb_b;
-pub use crate::components::cc_source_e as c1_rgb_d;
-pub use crate::components::cc_source_e as c1_alpha_a;
-pub use crate::components::cc_source_e as c1_alpha_b;
-pub use crate::components::cc_source_e as c1_alpha_c;
-pub use crate::components::cc_source_e as c1_alpha_d;
+pub use _root::components::cc_rgb_c_source_e as c0_rgb_c;
+pub use _root::components::cc_rgb_c_source_e as c1_rgb_c;
+pub use _root::components::cc_source_e as c0_rgb_a;
+pub use _root::components::cc_source_e as c0_rgb_b;
+pub use _root::components::cc_source_e as c0_rgb_d;
+pub use _root::components::cc_source_e as c0_alpha_a;
+pub use _root::components::cc_source_e as c0_alpha_b;
+pub use _root::components::cc_source_e as c0_alpha_c;
+pub use _root::components::cc_source_e as c0_alpha_d;
+pub use _root::components::cc_source_e as c1_rgb_a;
+pub use _root::components::cc_source_e as c1_rgb_b;
+pub use _root::components::cc_source_e as c1_rgb_d;
+pub use _root::components::cc_source_e as c1_alpha_a;
+pub use _root::components::cc_source_e as c1_alpha_b;
+pub use _root::components::cc_source_e as c1_alpha_c;
+pub use _root::components::cc_source_e as c1_alpha_d;
 
 /// CC_MODE
 ///

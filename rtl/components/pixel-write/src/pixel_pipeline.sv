@@ -62,11 +62,17 @@ module pixel_pipeline (
     input  wire [31:0]  reg_render_mode,  // RENDER_MODE register
     input  wire [31:0]  reg_z_range,      // Z_RANGE register
     input  wire [63:0]  reg_stipple,      // STIPPLE_PATTERN register
-    input  wire [31:0]  reg_tex0_cfg,     // TEX0_CFG register
-    input  wire [31:0]  reg_tex1_cfg,     // TEX1_CFG register
+    input  wire [63:0]  reg_tex0_cfg,     // TEX0_CFG register (full 64-bit)
+    input  wire [63:0]  reg_tex1_cfg,     // TEX1_CFG register (full 64-bit)
     input  wire [31:0]  reg_fb_config,    // FB_CONFIG register
     input  wire [31:0]  reg_fb_control,   // FB_CONTROL register
     input  wire [31:0]  reg_cc_mode_2,    // CC_MODE_2 register (for dst-color decode)
+
+    // Palette load triggers (from UNIT-003) routed through to UNIT-011.
+    input  wire         palette0_load_trigger,
+    input  wire [15:0]  palette0_base_addr,
+    input  wire         palette1_load_trigger,
+    input  wire [15:0]  palette1_base_addr,
 
     // ====================================================================
     // Output to UNIT-010 (Color Combiner)
@@ -125,14 +131,20 @@ module pixel_pipeline (
     input  wire         fb_ready,         // Framebuffer port ready (from arbiter)
 
     // ====================================================================
-    // Texture Cache SRAM Interface (via UNIT-007 Memory Arbiter, port 3)
+    // Texture SDRAM Interface (Port 3 master via UNIT-007 Memory Arbiter)
+    //
+    // The texture_sampler assembly module owns this port; pixel_pipeline.sv
+    // simply forwards the master signals to gpu_top's port-3 sharing FSM.
     // ====================================================================
-    input  wire [23:0]  tex0_base_addr,   // TEX0 base address (word addr)
-    input  wire         tex0_cache_inv,   // Invalidate TEX0 cache
+    input  wire         tex0_cache_inv,   // Invalidate TEX0 index cache
+    input  wire         tex1_cache_inv,   // Invalidate TEX1 index cache
 
-    output wire         tex_sram_req,     // SRAM burst read request
+    output wire         tex_sram_req,     // SRAM burst request (R/W)
+    output wire         tex_sram_we,      // 1=write (palette read-only today, always 0)
     output wire [23:0]  tex_sram_addr,    // SRAM burst start address (word addr)
+    output wire [31:0]  tex_sram_wdata,   // Single-word write data (unused)
     output wire [7:0]   tex_sram_burst_len, // Burst length (16-bit words)
+    output wire [15:0]  tex_sram_burst_wdata, // Burst write word (unused)
     input  wire [15:0]  tex_sram_burst_rdata,     // 16-bit burst read data
     input  wire         tex_sram_burst_data_valid, // Burst data valid
     input  wire         tex_sram_ack,     // Burst complete
@@ -195,21 +207,13 @@ module pixel_pipeline (
     // ====================================================================
 
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [15:0] _unused_frag_u1 = frag_u1;
-    wire [15:0] _unused_frag_v1 = frag_v1;
-    // TEX0_CFG: [0] ENABLE, [6:4] FORMAT, [11:8] WIDTH_LOG2,
-    // [15:12] HEIGHT_LOG2, [19:18] V_WRAP, [17:16] U_WRAP, [23:20] MIP_LEVELS used;
-    // [31:24] (reserved), [7] (reserved), [3:2] FILTER (NEAREST-only),
-    // [1] (reserved) unused
-    wire [11:0] _unused_tex0_cfg_bits = {reg_tex0_cfg[31:24], reg_tex0_cfg[7],
-                                         reg_tex0_cfg[3:2], reg_tex0_cfg[1]};
-    wire [23:0] _unused_tex1_cfg_bits = {reg_tex1_cfg[31:24], reg_tex1_cfg[19:8],
-                                         reg_tex1_cfg[7], reg_tex1_cfg[3:1]};
-    // LOD signals used for mip selection; blend weight and per-tex mip levels
-    // not consumed by NEAREST-only filtering.
-    wire [3:0]  _unused_lod_blend      = lod_blend;
-    wire [3:0]  _unused_tex0_mip_level = tex0_mip_level;
-    wire [3:0]  _unused_tex1_mip_level = tex1_mip_level;
+    // The full TEXn_CFG values are forwarded to the texture_sampler; the
+    // pipeline only consults the ENABLE bit directly, so the rest of the
+    // 64-bit registers come in via the unused-marker below for lint hygiene.
+    wire [62:0] _unused_tex0_cfg = reg_tex0_cfg[63:1];
+    wire [62:0] _unused_tex1_cfg = reg_tex1_cfg[63:1];
+    // LOD lane no longer consumed; latched for diagnostic visibility only.
+    wire [7:0]  _unused_frag_lod = lat_frag_lod;
     wire [23:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8],
                                             reg_render_mode[4:2]};
@@ -375,326 +379,84 @@ module pixel_pipeline (
     );
 
     // ====================================================================
-    // Texture Format Field Extraction (INT-010: TEXn_CFG FORMAT bits [6:4])
+    // Texture Configuration — INDEXED8_2X2 only (UNIT-011)
     // ====================================================================
+    // The full TEXn_CFG values flow into the texture_sampler assembly,
+    // which decodes its own fields.  The pipeline only needs to know if
+    // each sampler is enabled to decide whether to drive the request.
 
     wire        tex0_enable      = reg_tex0_cfg[0];
-    // FILTER field (reg_tex0_cfg[3:2]) is NEAREST-only and unused here.
-    wire [2:0]  tex0_format      = reg_tex0_cfg[6:4];
-    wire [3:0]  tex0_width_log2  = reg_tex0_cfg[11:8];
-    wire [3:0]  tex0_height_log2 = reg_tex0_cfg[15:12];
-    wire [1:0]  tex0_u_wrap      = reg_tex0_cfg[17:16];
-    wire [1:0]  tex0_v_wrap      = reg_tex0_cfg[19:18];
     wire        tex1_enable      = reg_tex1_cfg[0];
-    wire [2:0]  tex1_format      = reg_tex1_cfg[6:4];
+    wire        any_tex_enabled  = tex0_enable | tex1_enable;
 
-    // MIP_LEVELS field: maximum available mip levels per texture unit
-    wire [3:0]  tex0_mip_levels = reg_tex0_cfg[23:20];
-    wire [3:0]  tex1_mip_levels = reg_tex1_cfg[23:20];
-
-    // ====================================================================
-    // LOD Selection (UNIT-006: frag_lod[7:4] + TEXn_MIP_BIAS, clamped)
-    // ====================================================================
-    // frag_lod is UQ4.4 from UNIT-005: integer mip level [7:4], blend [3:0].
-    // TEXn_MIP_BIAS registers (0x12, 0x16) are defined in INT-010 but not
-    // yet wired into the pipeline; bias is currently hardcoded to zero.
-    // Final mip level is clamped to [0, MIP_LEVELS-1].
-
+    // The fragment LOD lane is no longer consumed (mipmapping was removed
+    // alongside the multi-format decoders).  Latch it for diagnostic
+    // visibility but treat it as unused below.
     reg  [7:0]  lat_frag_lod;
 
-    wire [3:0]  lod_base       = lat_frag_lod[7:4];
-    wire [3:0]  lod_blend      = lat_frag_lod[3:0];
-
-    // TEX0 mip level: lod_base + TEX0_MIP_BIAS (currently 0), clamped to [0, mip_levels-1]
-    wire [3:0]  tex0_max_mip   = (tex0_mip_levels > 4'd0)
-                               ? (tex0_mip_levels - 4'd1) : 4'd0;
-    wire [3:0]  tex0_mip_level = (lod_base > tex0_max_mip)
-                               ? tex0_max_mip : lod_base;
-
-    // TEX1 mip level: lod_base + TEX1_MIP_BIAS (currently 0), clamped to [0, mip_levels-1]
-    wire [3:0]  tex1_max_mip   = (tex1_mip_levels > 4'd0)
-                               ? (tex1_mip_levels - 4'd1) : 4'd0;
-    wire [3:0]  tex1_mip_level = (lod_base > tex1_max_mip)
-                               ? tex1_max_mip : lod_base;
-
     // ====================================================================
-    // Stage 2: Texture Decoders (per-format, combinational)
+    // Texture Sampler (UNIT-011) — INDEXED8_2X2 dual-sampler assembly
     // ====================================================================
-    // Each decoder takes a block of raw texture data and a texel index,
-    // and outputs a single UQ1.8 texel (36 bits). The format-select mux chooses
-    // the correct decoder output based on tex_format[2:0].
-    //
-    // Texture cache fill provides block data; until the cache is
-    // connected, stub block data (all-ones) produces white opaque texels.
-
-    // Stub block data (white opaque, used until texture cache connected)
-    wire [63:0]  stub_bc1_data     = 64'hFFFF_FFFF_FFFF_FFFF;
-    wire [127:0] stub_bc2_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
-    wire [127:0] stub_bc3_data     = 128'hFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF;
-    wire [63:0]  stub_bc4_data     = 64'hFFFF_FFFF_FFFF_FFFF;
-    // FORMAT=4 (BC5) removed — slot reserved
-    wire [255:0] stub_rgb565_data  = {16{16'hFFFF}};
-    wire [511:0] stub_rgba8888_data = {16{32'hFFFF_FFFF}};
-    wire [127:0] stub_r8_data      = {16{8'hFF}};
-    wire [3:0]   stub_texel_idx    = 4'd0;
-
-    // -- BC1 decoder (FORMAT=0) --
-    wire [35:0] bc1_texel_out;
-
-    texture_bc1 u_tex0_bc1 (
-        .bc1_data   (stub_bc1_data),
-        .texel_idx  (stub_texel_idx),
-
-        .texel_out  (bc1_texel_out)
-    );
-
-    // -- BC2 decoder (FORMAT=1) --
-    wire [35:0] bc2_texel_out;
-
-    texture_bc2 u_tex0_bc2 (
-        .block_data (stub_bc2_data),
-        .texel_idx  (stub_texel_idx),
-
-        .texel_out  (bc2_texel_out)
-    );
-
-    // -- BC3 decoder (FORMAT=2) --
-    wire [35:0] bc3_texel_out;
-
-    texture_bc3 u_tex0_bc3 (
-        .block_data (stub_bc3_data),
-        .texel_idx  (stub_texel_idx),
-
-        .texel_out  (bc3_texel_out)
-    );
-
-    // -- BC4 decoder (FORMAT=3) --
-    wire [35:0] bc4_texel_out;
-
-    texture_bc4 u_tex0_bc4 (
-        .block_data (stub_bc4_data),
-        .texel_idx  (stub_texel_idx),
-
-        .texel_out  (bc4_texel_out)
-    );
-
-    // -- RGB565 decoder (FORMAT=5) --
-    wire [35:0] rgb565_texel_out;
-    wire [35:0] rgba8888_texel_out;
-    wire [35:0] r8_texel_out;
-
-    texture_rgb565 u_tex0_rgb565 (
-        .block_data  (stub_rgb565_data),
-        .texel_idx   (stub_texel_idx),
-        .texel_out   (rgb565_texel_out)
-    );
-
-    // -- RGBA8888 decoder (FORMAT=5) --
-
-    texture_rgba8888 u_tex0_rgba8888 (
-        .block_data  (stub_rgba8888_data),
-        .texel_idx   (stub_texel_idx),
-        .texel_out   (rgba8888_texel_out)
-    );
-
-    // -- R8 decoder (FORMAT=6) --
-
-    texture_r8 u_tex0_r8 (
-        .block_data  (stub_r8_data),
-        .texel_idx   (stub_texel_idx),
-        .texel_out   (r8_texel_out)
-    );
-
-    // ====================================================================
-    // Format-Select Mux (3-bit tex_format selects decoder output, 36-bit wide)
-    // ====================================================================
-    // Routes the correct decoder output for the configured texture format.
-    // Eight valid encodings (0-7); all eight codes are assigned.
-    // Full 36 bits carry UQ1.8 RGBA data {R9, G9, B9, A9}.
-
-    reg [35:0] tex0_mux_texel;
-
-    always_comb begin
-        case (tex0_format)
-            3'd0:    tex0_mux_texel = bc1_texel_out;
-            3'd1:    tex0_mux_texel = bc2_texel_out;
-            3'd2:    tex0_mux_texel = bc3_texel_out;
-            3'd3:    tex0_mux_texel = bc4_texel_out;
-            3'd4:    tex0_mux_texel = 36'b0; // Reserved (BC5 removed)
-            3'd5:    tex0_mux_texel = rgb565_texel_out;
-            3'd6:    tex0_mux_texel = rgba8888_texel_out;
-            3'd7:    tex0_mux_texel = r8_texel_out;
-            default: tex0_mux_texel = 36'b0;
-        endcase
-    end
-
-    // For TEX1, use the same decoder outputs with tex1_format select.
-    // (In final integration, TEX1 will have its own decoder instances
-    // fed from its own cache. For now, reuse the shared outputs.)
-    reg [35:0] tex1_mux_texel;
-
-    always_comb begin
-        case (tex1_format)
-            3'd0:    tex1_mux_texel = bc1_texel_out;
-            3'd1:    tex1_mux_texel = bc2_texel_out;
-            3'd2:    tex1_mux_texel = bc3_texel_out;
-            3'd3:    tex1_mux_texel = bc4_texel_out;
-            3'd4:    tex1_mux_texel = 36'b0; // Reserved (BC5 removed)
-            3'd5:    tex1_mux_texel = rgb565_texel_out;
-            3'd6:    tex1_mux_texel = rgba8888_texel_out;
-            3'd7:    tex1_mux_texel = r8_texel_out;
-            default: tex1_mux_texel = 36'b0;
-        endcase
-    end
-
-    // ====================================================================
-    // Texture Sampler (UNIT-011) — UV coord processing (NEAREST-only)
-    // ====================================================================
-    // The texture_sampler assembly module wraps the Q4.12 UV inputs into a
-    // single texel coordinate (tap0_x, tap0_y) and exposes the sub-texel
-    // position (sub_u, sub_v) within the enclosing 4x4 cache block. The
-    // L1 cache returns one UQ1.8 texel which flows directly to the output.
+    // Owns UV coord processing, both per-sampler index caches, the shared
+    // palette LUT, the 3-way SDRAM port-3 arbiter, and UQ1.8 -> Q4.12
+    // promotion.  Receives the latched fragment UVs and configuration;
+    // returns Q4.12 RGBA tex_color0 / tex_color1.
 
     // Latched UV coordinates (registered in datapath FSM)
     reg [15:0] lat_u0;
     reg [15:0] lat_v0;
+    reg [15:0] lat_u1;
+    reg [15:0] lat_v1;
 
-    // -- Coordinate wires from texture_sampler --
-    wire [9:0]  ts_tap0_x, ts_tap0_y;
-    /* verilator lint_off UNUSEDSIGNAL */
-    // Only the LSB of each sub-coord parity selects the cache bank; the
-    // upper bit is exposed for future filter implementations.
-    wire [1:0]  ts_sub_u,  ts_sub_v;
-    /* verilator lint_on UNUSEDSIGNAL */
+    wire        ts_frag_ready;
+    wire        ts_texel_valid;
+    wire [63:0] ts_tex_color0;
+    wire [63:0] ts_tex_color1;
 
-    // -- Single texel register (populated by FSM during cache read) --
-    reg [35:0]  tap_texel0;
+    // The sampler accepts a single fragment per request; assert frag_valid
+    // for one cycle in PP_TEX_LOOKUP and wait for ts_texel_valid.
+    wire ts_frag_valid = (state == PP_TEX_LOOKUP);
 
-    // -- Sampled texel output (NEAREST pass-through of texel_tap0) --
-    wire [35:0] ts_texel_out;
-
-    texture_sampler u_tex0_sampler (
-        .clk         (clk),
-        .rst_n       (rst_n),
-        .u_q412      (lat_u0),
-        .v_q412      (lat_v0),
-        .width_log2  (tex0_width_log2),
-        .height_log2 (tex0_height_log2),
-        .u_wrap      (tex0_u_wrap),
-        .v_wrap      (tex0_v_wrap),
-        .tap0_x      (ts_tap0_x),
-        .tap0_y      (ts_tap0_y),
-        .sub_u       (ts_sub_u),
-        .sub_v       (ts_sub_v),
-        .texel_tap0  (tap_texel0),
-        .texel_out   (ts_texel_out)
-    );
-
-    // ====================================================================
-    // Texture Cache (TEX0) — 4-way set-associative with burst SRAM fill
-    // ====================================================================
-    // NEAREST lookup: the cache returns a single UQ1.8 texel selected by
-    // bank_select = {sub_v[0], sub_u[0]} (sub-texel parity within the 4x4
-    // block).
-
-    // Texture cache SRAM interface wires
-    wire        tc_sram_req;
-    wire [23:0] tc_sram_addr;
-    wire [7:0]  tc_sram_burst_len;
-    wire        tc_sram_we;
-    wire [31:0] tc_sram_wdata;
-
-    // Texture cache lookup result wires
-    wire        tc_cache_hit;
-    wire        tc_cache_ready;
-    wire        tc_fill_done;
-    wire [35:0] tc_texel_out;       // Single UQ1.8 texel from cache
-
-    // Bank select — parity of sub-texel position drives the per-bank read mux
-    wire [1:0]  tc_bank_select = {ts_sub_v[0], ts_sub_u[0]};
-
-    // Lookup request: asserted when FSM is in TEX_LOOKUP
-    wire tex_lookup_req = (state == PP_TEX_LOOKUP);
-
-    /* verilator lint_off PINCONNECTEMPTY */
-    texture_cache_l1 u_tex0_cache (
-        .clk                 (clk),
-        .rst_n               (rst_n),
-        .lookup_req          (tex_lookup_req),
-        .pixel_x             (ts_tap0_x),
-        .pixel_y             (ts_tap0_y),
-        .bank_select         (tc_bank_select),
-        .tex_base_addr       (tex0_base_addr),
-        .tex_format          (tex0_format),
-        .tex_width_log2      ({4'b0, tex0_width_log2}),
-        .invalidate          (tex0_cache_inv),
-        .cache_hit           (tc_cache_hit),
-        .data_valid          (),
-        .cache_ready         (tc_cache_ready),
-        .fill_done           (tc_fill_done),
-        .texel_out           (tc_texel_out),
-        .sram_req            (tc_sram_req),
-        .sram_addr           (tc_sram_addr),
-        .sram_burst_len      (tc_sram_burst_len),
-        .sram_we             (tc_sram_we),
-        .sram_wdata          (tc_sram_wdata),
-        .sram_burst_rdata    (tex_sram_burst_rdata),
+    texture_sampler u_texture_sampler (
+        .clk                  (clk),
+        .rst_n                (rst_n),
+        .frag_valid           (ts_frag_valid),
+        .frag_ready           (ts_frag_ready),
+        .frag_u0              (lat_u0),
+        .frag_v0              (lat_v0),
+        .frag_u1              (lat_u1),
+        .frag_v1              (lat_v1),
+        .tex0_cfg             (reg_tex0_cfg),
+        .tex1_cfg             (reg_tex1_cfg),
+        .tex0_cache_inv       (tex0_cache_inv),
+        .tex1_cache_inv       (tex1_cache_inv),
+        .palette0_load_trigger(palette0_load_trigger),
+        .palette0_base_addr   (palette0_base_addr),
+        .palette1_load_trigger(palette1_load_trigger),
+        .palette1_base_addr   (palette1_base_addr),
+        .texel_valid          (ts_texel_valid),
+        .tex_color0           (ts_tex_color0),
+        .tex_color1           (ts_tex_color1),
+        .sram_req             (tex_sram_req),
+        .sram_we              (tex_sram_we),
+        .sram_addr            (tex_sram_addr),
+        .sram_wdata           (tex_sram_wdata),
+        .sram_burst_len       (tex_sram_burst_len),
+        .sram_burst_wdata     (tex_sram_burst_wdata),
+        .sram_burst_rdata     (tex_sram_burst_rdata),
         .sram_burst_data_valid(tex_sram_burst_data_valid),
-        .sram_ack            (tex_sram_ack),
-        .sram_ready          (tex_sram_ready)
-    );
-    /* verilator lint_on PINCONNECTEMPTY */
-
-    // Route texture cache SRAM signals to pixel pipeline outputs
-    assign tex_sram_req       = tc_sram_req;
-    assign tex_sram_addr      = tc_sram_addr;
-    assign tex_sram_burst_len = tc_sram_burst_len;
-
-    // Unused cache outputs (write port is read-only)
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire        _unused_tc_sram_we    = tc_sram_we;
-    wire [31:0] _unused_tc_sram_wdata = tc_sram_wdata;
-    wire        _unused_tc_fill_done  = tc_fill_done;
-    wire [35:0] _unused_tex0_mux      = tex0_mux_texel;
-    wire [35:0] _unused_tex1_mux      = tex1_mux_texel;
-    /* verilator lint_on UNUSEDSIGNAL */
-
-    // ====================================================================
-    // Stage 3: Texel Promote (UQ1.8 -> Q4.12)
-    // ====================================================================
-    // Promote cached texels to Q4.12 for color combiner.
-
-    // When texture unit is disabled (ENABLE=0), output white opaque UQ1.8
-    // so MODULATE degenerates to pass-through of shade color.
-    // White opaque UQ1.8: R9=0x100, G9=0x100, B9=0x100, A9=0x100 (1.0 each).
-    localparam [35:0] TEXEL_WHITE_OPAQUE = {9'h100, 9'h100, 9'h100, 9'h100};
-    // ts_texel_out is the combinational output of texture_sampler:
-    // NEAREST pass-through of tap_texel0. Valid in PP_CC_EMIT because the
-    // single texel register has been latched by PP_TEX_READ.
-    wire [35:0] tex0_texel = tex0_enable ? ts_texel_out
-                                         : TEXEL_WHITE_OPAQUE;
-    wire [15:0] tex0_r_q412, tex0_g_q412, tex0_b_q412, tex0_a_q412;
-
-    texel_promote u_tex0_promote (
-
-        .texel_in   (tex0_texel),
-        .r_q412     (tex0_r_q412),
-        .g_q412     (tex0_g_q412),
-        .b_q412     (tex0_b_q412),
-        .a_q412     (tex0_a_q412)
+        .sram_ack             (tex_sram_ack),
+        .sram_ready           (tex_sram_ready)
     );
 
-    wire [35:0] tex1_texel = tex1_enable ? tex1_mux_texel
-                                         : TEXEL_WHITE_OPAQUE;
-    wire [15:0] tex1_r_q412, tex1_g_q412, tex1_b_q412, tex1_a_q412;
+    // Latched Q4.12 RGBA texel results from the sampler.  Captured when
+    // ts_texel_valid rises (which happens at most one cycle per request).
+    reg [63:0]  tex_color0_lat;
+    reg [63:0]  tex_color1_lat;
 
-    texel_promote u_tex1_promote (
-        .texel_in   (tex1_texel),
-        .r_q412     (tex1_r_q412),
-        .g_q412     (tex1_g_q412),
-        .b_q412     (tex1_b_q412),
-        .a_q412     (tex1_a_q412)
-    );
+    // Default outputs when a sampler is disabled: opaque white in Q4.12,
+    // so MODULATE in the color combiner degenerates to a passthrough.
+    localparam [63:0] Q412_WHITE_OPAQUE = 64'h1000_1000_1000_1000;
 
     // ====================================================================
     // Framebuffer Readback Promote (for alpha blending)
@@ -862,8 +624,8 @@ module pixel_pipeline (
                         // Fragment discarded, stay idle (consume it)
                         next_state = PP_IDLE;
                     end else if (z_bypass) begin
-                        // Skip Z read; texture lookup if enabled, else FB read/CC emit
-                        if (tex0_enable) begin
+                        // Skip Z read; texture lookup if either sampler is enabled.
+                        if (any_tex_enabled) begin
                             next_state = PP_TEX_LOOKUP;
                         end else if (dst_color_needed) begin
                             next_state = PP_FB_READ;
@@ -888,8 +650,8 @@ module pixel_pipeline (
                 if (zbuf_read_valid) begin
                     // Z data received, check Z test
                     if (z_test_pass) begin
-                        // Texture lookup if enabled, else FB read/CC emit
-                        if (tex0_enable) begin
+                        // Texture lookup if either sampler is enabled.
+                        if (any_tex_enabled) begin
                             next_state = PP_TEX_LOOKUP;
                         end else if (dst_color_needed) begin
                             next_state = PP_FB_READ;
@@ -960,36 +722,25 @@ module pixel_pipeline (
             end
 
             PP_TEX_LOOKUP: begin
-                // Texture cache lookup issued combinationally (tex_lookup_req).
-                // On hit: BRAM read initiated, wait 1 cycle for data.
-                // On miss: cache starts fill, wait for completion.
-                if (tc_cache_hit) begin
-                    next_state = PP_TEX_READ;
-                end else begin
+                // Drive `ts_frag_valid = 1` for one cycle (combinational off
+                // `state == PP_TEX_LOOKUP`).  The sampler latches the request
+                // when `ts_frag_ready` is high; advance regardless to the
+                // wait state — the sampler will hold off `texel_valid` until
+                // it has resolved any miss / palette load.
+                if (ts_frag_ready) begin
                     next_state = PP_TEX_WAIT;
                 end
             end
 
-            PP_TEX_READ: begin
-                // BRAM read data valid this cycle (1 cycle after cache_hit).
-                // NEAREST: single texel sampled per fragment.
-                if (dst_color_needed) begin
-                    next_state = PP_FB_READ;
-                end else begin
-                    next_state = PP_CC_EMIT;
+            PP_TEX_WAIT: begin
+                if (ts_texel_valid) begin
+                    next_state = dst_color_needed ? PP_FB_READ : PP_CC_EMIT;
                 end
             end
 
-            PP_TEX_WAIT: begin
-                // The texture cache has 1-cycle tag EBR read latency:
-                // cache_hit arrives here (cycle 1) after PP_TEX_LOOKUP
-                // issued lookup_req (cycle 0).  Check it first.
-                if (tc_cache_hit) begin
-                    next_state = PP_TEX_READ;
-                end else if (tc_cache_ready) begin
-                    // Fill complete — retry lookup (will hit next cycle).
-                    next_state = PP_TEX_LOOKUP;
-                end
+            PP_TEX_READ: begin
+                // Retained for FSM completeness; unused after the rework.
+                next_state = dst_color_needed ? PP_FB_READ : PP_CC_EMIT;
             end
 
             default: begin
@@ -1012,8 +763,11 @@ module pixel_pipeline (
             lat_z_bypass   <= 1'b0;
             lat_u0         <= 16'b0;
             lat_v0         <= 16'b0;
+            lat_u1         <= 16'b0;
+            lat_v1         <= 16'b0;
             lat_frag_lod   <= 8'b0;
-            tap_texel0     <= 36'b0;
+            tex_color0_lat <= Q412_WHITE_OPAQUE;
+            tex_color1_lat <= Q412_WHITE_OPAQUE;
             cc_result_pending <= 1'b0;
             zbuf_data_lat  <= 16'b0;
             fb_data_lat    <= 16'b0;
@@ -1038,6 +792,12 @@ module pixel_pipeline (
             // Default: deassert one-shot CC valid
             cc_valid       <= 1'b0;
 
+            // Latch sampler results whenever they arrive (single-shot strobe).
+            if (ts_texel_valid) begin
+                tex_color0_lat <= ts_tex_color0;
+                tex_color1_lat <= ts_tex_color1;
+            end
+
             case (state)
                 PP_IDLE: begin
                     if (frag_valid) begin
@@ -1050,6 +810,8 @@ module pixel_pipeline (
                         lat_z_bypass <= z_bypass;
                         lat_u0       <= frag_u0;
                         lat_v0       <= frag_v0;
+                        lat_u1       <= frag_u1;
+                        lat_v1       <= frag_v1;
                         lat_frag_lod <= frag_lod;
 
                         // Latch tiled addresses (combinationally computed)
@@ -1061,6 +823,12 @@ module pixel_pipeline (
                         zbuf_data_lat <= 16'hFFFF;
                         // Initialize FB data latch to zero
                         fb_data_lat   <= 16'h0000;
+
+                        // Default texture colors to opaque white so a fragment
+                        // that skips the texture stage (no sampler enabled)
+                        // still drives well-defined CC inputs.
+                        tex_color0_lat <= Q412_WHITE_OPAQUE;
+                        tex_color1_lat <= Q412_WHITE_OPAQUE;
                     end
                 end
 
@@ -1078,10 +846,8 @@ module pixel_pipeline (
                 PP_CC_EMIT: begin
                     // Drive color combiner inputs
                     cc_valid      <= 1'b1;
-                    cc_tex_color0 <= {tex0_r_q412, tex0_g_q412,
-                                      tex0_b_q412, tex0_a_q412};
-                    cc_tex_color1 <= {tex1_r_q412, tex1_g_q412,
-                                      tex1_b_q412, tex1_a_q412};
+                    cc_tex_color0 <= tex_color0_lat;
+                    cc_tex_color1 <= tex_color1_lat;
                     cc_shade0     <= lat_shade0;
                     cc_shade1     <= lat_shade1;
                     cc_frag_x     <= lat_x;
@@ -1123,19 +889,10 @@ module pixel_pipeline (
                     // No registered action needed.
                 end
 
-                PP_TEX_LOOKUP: begin
-                    // Tag check + BRAM read initiated; data arrives next cycle
-                end
-
-                PP_TEX_READ: begin
-                    // BRAM read data valid; latch the single NEAREST texel.
-                    // ts_texel_out (sampler output) becomes valid on the
-                    // NEXT cycle when this register update takes effect.
-                    tap_texel0 <= tc_texel_out;
-                end
-
-                PP_TEX_WAIT: begin
-                    // No datapath action; waiting for cache fill to complete
+                PP_TEX_LOOKUP, PP_TEX_WAIT, PP_TEX_READ: begin
+                    // Texture sampling is owned by texture_sampler.sv; the
+                    // pipeline simply waits for `ts_texel_valid` and latches
+                    // its outputs (handled above the case statement).
                 end
 
                 default: begin end

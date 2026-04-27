@@ -714,9 +714,9 @@ flowchart LR
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
 | UNIT-010 | Color Combiner | Single-instance time-multiplexed programmable color combiner that evaluates up to three passes (CC0, CC1, CC2/blend) per fragment, producing the final output color including alpha blending and fog within a 4-cycle/fragment throughput target. |
-| UNIT-011.01 | UV Coordinate Processing | Applies wrap mode, clamp, mirror-repeat to incoming Q4.12 UV coordinates; extracts the 2-bit sub-texel quadrant `{v[0],u[0]}`; outputs half-resolution index-space coordinates `(u>>1, v>>1)`. |
-| UNIT-011.03 | Index Cache | Per-sampler direct-mapped cache storing 8-bit INDEXED8_2X2 palette indices; 1 DP16KD per sampler, 32 sets × 1 way × 16 indices/line; 4×4-block cache lines covering 8×8 apparent texels at half resolution. |
-| UNIT-011.06 | Palette LUT | Shared 2-slot codebook in 4 PDPW16KD EBR; addressed by `{slot[0], idx[7:0], quadrant[1:0]}`; holds UQ1.8 RGBA colors promoted inline from RGBA8888 during SDRAM palette load; includes 3-way arbiter for palette slot 0 load, slot 1 load, and index cache fill on SDRAM Port 3. |
-| UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing decoded Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline); single format INDEXED8_2X2; best-case fragment latency 4 cycles. |
+| UNIT-011.01 | UV Coordinate Processing | Applies wrap mode to incoming Q4.12 UV coordinates, extracts the sub-texel quadrant from the wrapped low bits, and outputs half-resolution index-cache addresses to UNIT-011.03 (Index Cache). |
+| UNIT-011.03 | Index Cache | Per-sampler direct-mapped cache storing 8-bit palette indices at half the apparent texture resolution. |
+| UNIT-011.06 | Palette LUT | Shared two-slot palette lookup table providing UQ1.8 RGBA colors to both texture samplers. |
+| UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline). |
 | UNIT-012 | Z-Buffer Tile Cache | 4-way set-associative write-back Z-buffer tile cache with per-tile uninitialized flag tracking. |
 <!-- syskit-arch-end -->

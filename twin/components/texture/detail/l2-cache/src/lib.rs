@@ -91,14 +91,14 @@ pub trait CompressedBlockProvider {
 ///
 /// Each entry holds 4 u16 words (64 bits).
 /// Block size in u16 words divided by 4 gives entries per block.
+///
+/// The L2 cache is scheduled for deletion alongside the BC/RGB565/RGBA8888
+/// pipeline; the INDEXED8_2X2 format does not pass through this cache.
+/// This helper now returns a placeholder of 1 to keep the legacy crate
+/// compiling until the cache is removed.
 const fn entries_per_block(format: TexFormatE) -> usize {
-    // block_size_words: BC1=4, BC4=4, BC2=8, BC3=8, R8=8, RGB565=16, RGBA8888=32
-    // entries = block_size_words / 4
     match format {
-        TexFormatE::Bc1 | TexFormatE::Bc4 => 1, // 4 words / 4
-        TexFormatE::Bc2 | TexFormatE::Bc3 | TexFormatE::R8 => 2, // 8 words / 4
-        TexFormatE::Rgb565 => 4,                // 16 words / 4
-        TexFormatE::Rgba8888 => 8,              // 32 words / 4
+        TexFormatE::Indexed82x2 => 1,
     }
 }
 
@@ -351,13 +351,13 @@ mod tests {
         let mut provider = DirectSdramProvider::new();
 
         // Fetch BC1 block at offset 0 (4 words).
-        let data = provider.fetch_compressed(0, 0, TexFormatE::Bc1, &sdram);
+        let data = provider.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data.len(), 4);
         assert_eq!(data[0], 0);
         assert_eq!(data[3], 3);
 
         // Fetch RGB565 block at index 2 (16 words per block, offset = 32).
-        let data = provider.fetch_compressed(0, 2, TexFormatE::Rgb565, &sdram);
+        let data = provider.fetch_compressed(0, 2, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data.len(), 16);
         assert_eq!(data[0], 32);
         assert_eq!(data[15], 47);
@@ -369,7 +369,7 @@ mod tests {
         let mut cache = CompressedBlockCache::new();
 
         // First access: miss.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Bc1, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data.len(), 4);
         assert_eq!(data[0], 0);
         assert_eq!(data[3], 3);
@@ -377,14 +377,14 @@ mod tests {
         assert_eq!(cache.stats.hits, 0);
 
         // Second access: hit.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Bc1, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data[0], 0);
         assert_eq!(data[3], 3);
         assert_eq!(cache.stats.hits, 1);
         assert_eq!(cache.stats.misses, 1);
 
         // Different block: miss.
-        let data = cache.fetch_compressed(0, 1, TexFormatE::Bc1, &sdram);
+        let data = cache.fetch_compressed(0, 1, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data[0], 4);
         assert_eq!(data[3], 7);
         assert_eq!(cache.stats.misses, 2);
@@ -396,14 +396,14 @@ mod tests {
         let mut cache = CompressedBlockCache::new();
 
         // BC3: 8 words per block, 2 entries per block, 512 slots.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Bc3, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data.len(), 8);
         assert_eq!(data[0], 0);
         assert_eq!(data[7], 7);
         assert_eq!(cache.stats.misses, 1);
 
         // Hit.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Bc3, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data[0], 0);
         assert_eq!(data[7], 7);
         assert_eq!(cache.stats.hits, 1);
@@ -415,14 +415,14 @@ mod tests {
         let mut cache = CompressedBlockCache::new();
 
         // RGBA8888: 32 words per block, 8 entries per block, 128 slots.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Rgba8888, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data.len(), 32);
         assert_eq!(data[0], 0);
         assert_eq!(data[31], 31);
         assert_eq!(cache.stats.misses, 1);
 
         // Hit.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Rgba8888, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data[0], 0);
         assert_eq!(data[31], 31);
         assert_eq!(cache.stats.hits, 1);
@@ -433,13 +433,13 @@ mod tests {
         let sdram: Vec<u16> = (0..256).collect();
         let mut cache = CompressedBlockCache::new();
 
-        cache.fetch_compressed(0, 0, TexFormatE::Bc1, &sdram);
+        cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(cache.stats.misses, 1);
 
         cache.invalidate();
 
         // After invalidation, same block is a miss.
-        cache.fetch_compressed(0, 0, TexFormatE::Bc1, &sdram);
+        cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(cache.stats.misses, 2);
     }
 
@@ -449,11 +449,11 @@ mod tests {
         let mut cache = CompressedBlockCache::new();
 
         // BC1: 1024 slots. Fill slot 0 with block_index=0.
-        cache.fetch_compressed(0, 0, TexFormatE::Bc1, &sdram);
+        cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(cache.stats.evictions, 0);
 
         // Block_index=1024 maps to same slot (1024 % 1024 = 0). Evicts block 0.
-        cache.fetch_compressed(0, 1024, TexFormatE::Bc1, &sdram);
+        cache.fetch_compressed(0, 1024, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(cache.stats.evictions, 1);
         assert_eq!(cache.stats.misses, 2);
     }
@@ -464,7 +464,7 @@ mod tests {
         let mut provider = DirectSdramProvider::new();
 
         // Request RGB565 block (16 words) but only 4 available.
-        let data = provider.fetch_compressed(0, 0, TexFormatE::Rgb565, &sdram);
+        let data = provider.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(data.len(), 16);
         assert_eq!(data[0], 0xAAAA);
         assert_eq!(data[3], 0xAAAA);
@@ -474,13 +474,13 @@ mod tests {
     #[test]
     fn format_capacity() {
         // Verify slot counts match documented capacity.
-        assert_eq!(l2_num_slots(TexFormatE::Bc1), 1024);
-        assert_eq!(l2_num_slots(TexFormatE::Bc4), 1024);
-        assert_eq!(l2_num_slots(TexFormatE::Bc2), 512);
-        assert_eq!(l2_num_slots(TexFormatE::Bc3), 512);
-        assert_eq!(l2_num_slots(TexFormatE::R8), 512);
-        assert_eq!(l2_num_slots(TexFormatE::Rgb565), 256);
-        assert_eq!(l2_num_slots(TexFormatE::Rgba8888), 128);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 1024);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 1024);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 512);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 512);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 512);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 256);
+        assert_eq!(l2_num_slots(TexFormatE::Indexed82x2), 128);
     }
 
     #[test]
@@ -495,11 +495,11 @@ mod tests {
         let mut cache = CompressedBlockCache::new();
 
         // Miss → fills L2.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Bc3, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         let first_read: Vec<u16> = data.to_vec();
 
         // Hit → reads from L2 backing store.
-        let data = cache.fetch_compressed(0, 0, TexFormatE::Bc3, &sdram);
+        let data = cache.fetch_compressed(0, 0, TexFormatE::Indexed82x2, &sdram);
         let second_read: Vec<u16> = data.to_vec();
 
         assert_eq!(first_read, second_read, "round-trip data mismatch");

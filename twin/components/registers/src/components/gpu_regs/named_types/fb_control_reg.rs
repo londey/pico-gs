@@ -1,5 +1,8 @@
 //! Register: FB_CONTROL
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// FB_CONTROL
 ///
 /// Scissor rectangle

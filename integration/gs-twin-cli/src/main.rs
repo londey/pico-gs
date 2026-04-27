@@ -49,7 +49,7 @@ mod scripts {
     pub const VER_016: &str = include_str!("../../scripts/ver_016_perspective_road.hex");
 
     /// VER-017: BC1 compressed texture.
-    pub const VER_017: &str = include_str!("../../scripts/ver_017_bc1_texture.hex");
+    pub const VER_017: &str = include_str!("../../scripts/ver_017_indexed_pixel_art.hex");
 
     /// VER-018: BC2 compressed texture (explicit alpha).
     pub const VER_018: &str = include_str!("../../scripts/ver_018_bc2_texture.hex");

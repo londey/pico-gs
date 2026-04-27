@@ -91,6 +91,8 @@ These are the coordinates in the INDEXED8_2X2 index array (INT-014), where each 
 ## Implementation
 
 - `rtl/components/texture/detail/uv-coord/src/texture_uv_coord.sv`: UV coordinate wrapping, quadrant extraction, and half-resolution address output
+- `twin/components/texture/detail/uv-coord/src/lib.rs`: `gs-tex-uv-coord` digital twin — `UvCoord::process`, `compute_quadrant`, REPEAT/CLAMP/MIRROR wrap modes
+- `twin/components/texture/detail/uv-coord/src/bin/gen_uv_coord_vectors.rs`: stimulus and expected-output hex vector generator for the Verilator testbench
 
 The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/detail/uv-coord/`).
 RTL behavior must be bit-identical to the twin at the quadrant and index-coordinate level.

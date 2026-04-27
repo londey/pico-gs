@@ -122,10 +122,11 @@ RUN mkdir -p /opt \
 #
 # PeakRDL: register interface code generation (SystemRDL → SV + Rust)
 # Pillow: PNG loading for texture compression test tooling
+# numpy + scipy: k-means clustering for INDEXED8_2X2 texture compression
 RUN /opt/oss-cad-suite/bin/tabbypy3 -m pip install \
-        peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml \
+        peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml numpy scipy \
     && pip3 install --break-system-packages \
-        peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml
+        peakrdl peakrdl-regblock peakrdl-rust Pillow pyyaml numpy scipy
 
 # Install d2 diagramming tool (https://github.com/terrastruct/d2)
 # Playwright browser deps needed for d2 PNG export (rasterizes SVG via Chromium)

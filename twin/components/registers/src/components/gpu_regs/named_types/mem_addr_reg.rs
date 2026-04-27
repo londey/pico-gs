@@ -1,5 +1,8 @@
 //! Register: MEM_ADDR
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// MEM_ADDR
 ///
 /// Memory access dword address pointer (22-bit, addresses 8-byte dwords

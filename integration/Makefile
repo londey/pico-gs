@@ -38,6 +38,8 @@ TEXTURE_L1_VEC_DIR = $(TEXTURE_L1_TB_DIR)/vectors
 TEXTURE_DEC_RTL     = $(COMP_DIR)/texture/detail/block-decoder/src
 TEXTURE_DEC_VEC_DIR = $(TEXTURE_DEC_TESTS)/vectors
 TEXTURE_L2_RTL  = $(COMP_DIR)/texture/detail/l2-cache/src
+TEXTURE_PAL_RTL = $(COMP_DIR)/texture/detail/palette-lut/src
+TEXTURE_TB_DIR  = $(COMP_DIR)/texture/tests
 CC_RTL = $(COMP_DIR)/color-combiner/src
 CC_TB_DIR = $(COMP_DIR)/color-combiner/tests
 CC_VEC_DIR = $(CC_TB_DIR)/vectors
@@ -86,24 +88,12 @@ RTL_SOURCES = \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
 	$(ZBUF_RTL)/zbuf_tag_bram.sv \
 	$(ZBUF_RTL)/zbuf_tile_cache.sv \
-	$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-	$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-	$(TEXTURE_DEC_RTL)/texture_r8.sv \
-	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-	$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
+	$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+	$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+	$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(TEXTURE_DEC_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(CC_RTL)/color_combiner.sv \
@@ -135,12 +125,12 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-sram-port-conformance test-contracts-all harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined \
-	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture \
+	render-size-grid render-perspective-road render-indexed-pixel-art render-bc2-texture \
 	render-bc3-texture render-bc4-texture render-rgba8888-texture render-r8-texture \
 	render-stipple-test render-alpha-blend render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-stipple-test \
-	test-size-grid test-perspective-road test-bc1-texture test-bc2-texture \
+	test-size-grid test-perspective-road test-indexed-pixel-art test-bc2-texture \
 	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
 	test-fb-promote test-zbuf-uninit test-dither test-stipple test-raster-viz \
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
@@ -153,7 +143,8 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	gen-l1-wrap-vectors gen-l1-mirror-vectors \
 	test-l1-wrap-dt test-l1-mirror-dt \
 	gen-block-decode-vectors test-block-decode-dt test-texture-dt-all \
-	gen-cc-vectors test-cc-dt test-cc-dt-all
+	gen-cc-vectors test-cc-dt test-cc-dt-all \
+	test-texture-palette test-palette-slots
 
 # Default target
 all: bitstream
@@ -233,13 +224,7 @@ test-sync-fifo: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_sync_fifo -o tb_sync_fifo
 	$(OBJ_DIR)/tb_sync_fifo
 
-# L2 compressed block cache testbench
-test-l2-cache: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
-		$(COMP_DIR)/texture/detail/l2-cache/tests/tb_texture_l2_cache.sv \
-		--top-module tb_texture_l2_cache -o tb_texture_l2_cache
-	$(OBJ_DIR)/tb_texture_l2_cache
+# (legacy L2 compressed cache testbench removed in INDEXED8_2X2 rework)
 
 # SDRAM controller testbench (init sequence, read/write, refresh, burst)
 test-sdram-controller: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -268,29 +253,9 @@ test-display-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_display_burst -o tb_display_burst
 	$(OBJ_DIR)/tb_display_burst
 
-# Texture cache burst testbench (cache fill via burst SRAM reads)
-test-texture-cache-burst: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
-		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-			$(TEXTURE_RTL)/texture_sampler.sv \
-		$(COMP_DIR)/texture/tests/tb_texture_cache_burst.sv \
-		--top-module tb_texture_cache_burst -o tb_texture_cache_burst
-	$(OBJ_DIR)/tb_texture_cache_burst
+# (legacy texture-cache-burst testbench removed in INDEXED8_2X2 rework;
+#  superseded by VER-005 unit testbenches under
+#  rtl/components/texture/detail/{l1-cache,palette-lut}/tests/.)
 
 # Integration testbench: controller + arbiter burst data path
 test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -303,7 +268,7 @@ test-burst-integration: | $(OBJ_DIR) $(SIM_OUT_DIR)
 	$(OBJ_DIR)/tb_burst_integration
 
 # Run all burst-related testbenches
-test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-texture-cache-burst test-burst-integration
+test-burst-all: test-sdram-controller test-sram-arbiter test-display-burst test-burst-integration
 
 # ============================================================================
 # Contract verification (interfaces + bound SVA properties + conformance TBs)
@@ -359,134 +324,17 @@ test-color-combiner: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module color_combiner_tb -o tb_color_combiner
 	$(OBJ_DIR)/tb_color_combiner
 
-# VER-005: Texture decoder unit testbench
-test-texture-decoder: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-			$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texel_promote.sv \
-		$(STIPPLE_RTL)/stipple.sv \
-		$(COMP_DIR)/texture/tests/texture_decoder_tb.sv \
-		--top-module texture_decoder_tb -o tb_texture_decoder
-	$(OBJ_DIR)/tb_texture_decoder
+# Legacy multi-format texture decoder testbenches and block-decoder
+# per-module testbenches were removed in the INDEXED8_2X2 rework.  The
+# replacement is the per-component VER-005 unit testbench tree:
+#   rtl/components/texture/detail/uv-coord/tests/   (UNIT-011.01)
+#   rtl/components/texture/detail/l1-cache/tests/   (UNIT-011.03)
+#   rtl/components/texture/detail/palette-lut/tests/(UNIT-011.06)
+test-texture-decoder:
+	@echo "test-texture-decoder: superseded by VER-005 unit testbenches"
 
-# Block decoder per-module testbenches
-TEXTURE_DEC_TESTS = $(COMP_DIR)/texture/detail/block-decoder/tests
-
-test-bc-color-block: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_TESTS)/tb_bc_color_block.sv \
-		--top-module tb_bc_color_block -o tb_bc_color_block
-	$(OBJ_DIR)/tb_bc_color_block
-
-test-bc-alpha-block: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_TESTS)/tb_bc_alpha_block.sv \
-		--top-module tb_bc_alpha_block -o tb_bc_alpha_block
-	$(OBJ_DIR)/tb_bc_alpha_block
-
-test-bc1: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_bc1.sv \
-		--top-module tb_texture_bc1 -o tb_texture_bc1
-	$(OBJ_DIR)/tb_texture_bc1
-
-test-bc2: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_bc2.sv \
-		--top-module tb_texture_bc2 -o tb_texture_bc2
-	$(OBJ_DIR)/tb_texture_bc2
-
-test-bc3: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_bc3.sv \
-		--top-module tb_texture_bc3 -o tb_texture_bc3
-	$(OBJ_DIR)/tb_texture_bc3
-
-test-bc4: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_bc4.sv \
-		--top-module tb_texture_bc4 -o tb_texture_bc4
-	$(OBJ_DIR)/tb_texture_bc4
-
-test-r8: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_r8.sv \
-		--top-module tb_texture_r8 -o tb_texture_r8
-	$(OBJ_DIR)/tb_texture_r8
-
-test-rgb565: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_rgb565.sv \
-		--top-module tb_texture_rgb565 -o tb_texture_rgb565
-	$(OBJ_DIR)/tb_texture_rgb565
-
-test-rgba8888: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_rgba8888.sv \
-		--top-module tb_texture_rgba8888 -o tb_texture_rgba8888
-	$(OBJ_DIR)/tb_texture_rgba8888
-
-test-block-decode: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texture_block_decode.sv \
-		--top-module tb_texture_block_decode -o tb_texture_block_decode
-	$(OBJ_DIR)/tb_texture_block_decode
-
-test-texel-promote: | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/texel_promote.sv \
-		$(TEXTURE_DEC_TESTS)/tb_texel_promote.sv \
-		--top-module tb_texel_promote -o tb_texel_promote
-	$(OBJ_DIR)/tb_texel_promote
-
-test-block-decoder-all: test-bc-color-block test-bc-alpha-block \
-	test-bc1 test-bc2 test-bc3 test-bc4 \
-	test-r8 test-rgb565 test-rgba8888 \
-	test-block-decode test-texel-promote
-	@echo "All block decoder testbenches passed."
+test-block-decoder-all:
+	@echo "test-block-decoder-all: superseded by VER-005 unit testbenches"
 
 # UNIT-005.02: Raster derivative precomputation unit testbench
 test-raster-deriv: | $(OBJ_DIR) $(SIM_OUT_DIR)
@@ -655,76 +503,67 @@ test-uv-coord-dt: gen-uv-coord-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_uv_coord_dt -o tb_uv_coord_dt
 	$(OBJ_DIR)/tb_uv_coord_dt
 
-# Generate L1 cache wrap test vectors from digital twin
+# Legacy DT-verified L1 wrap/mirror and block-decode testbenches were
+# removed alongside the multi-format texture pipeline in the INDEXED8_2X2
+# rework.  Replacement coverage lives in the per-component VER-005
+# unit testbenches under
+#   rtl/components/texture/detail/{uv-coord,l1-cache,palette-lut}/tests/.
+
 gen-l1-wrap-vectors:
-	cargo run --bin gen_l1_cache_wrap_vectors -- $(abspath $(TEXTURE_L1_VEC_DIR))
+	@echo "gen-l1-wrap-vectors: removed in INDEXED8_2X2 rework"
 
-# Generate L1 cache mirror test vectors from digital twin
 gen-l1-mirror-vectors:
-	cargo run --bin gen_l1_cache_mirror_vectors -- $(abspath $(TEXTURE_L1_VEC_DIR))
+	@echo "gen-l1-mirror-vectors: removed in INDEXED8_2X2 rework"
 
-# DT-verified: L1 cache wrap mode
-test-l1-wrap-dt: gen-l1-wrap-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-		$(TEXTURE_L1_TB_DIR)/tb_l1_cache_wrap_dt.sv \
-		--top-module tb_l1_cache_wrap_dt -o tb_l1_cache_wrap_dt
-	$(OBJ_DIR)/tb_l1_cache_wrap_dt
+test-l1-wrap-dt:
+	@echo "test-l1-wrap-dt: removed in INDEXED8_2X2 rework"
 
-# DT-verified: L1 cache mirror mode
-test-l1-mirror-dt: gen-l1-mirror-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-		$(TEXTURE_L1_TB_DIR)/tb_l1_cache_mirror_dt.sv \
-		--top-module tb_l1_cache_mirror_dt -o tb_l1_cache_mirror_dt
-	$(OBJ_DIR)/tb_l1_cache_mirror_dt
+test-l1-mirror-dt:
+	@echo "test-l1-mirror-dt: removed in INDEXED8_2X2 rework"
 
-# Generate block decoder test vectors from digital twin
 gen-block-decode-vectors:
-	cargo run --bin gen_block_decode_vectors -- $(abspath $(TEXTURE_DEC_VEC_DIR))
+	@echo "gen-block-decode-vectors: removed in INDEXED8_2X2 rework"
 
-# DT-verified: block decoder (all formats)
-test-block-decode-dt: gen-block-decode-vectors | $(OBJ_DIR) $(SIM_OUT_DIR)
-	$(VERILATOR) $(VERILATOR_FLAGS) \
+test-block-decode-dt:
+	@echo "test-block-decode-dt: removed in INDEXED8_2X2 rework"
+
+# VER-005: Texture palette + index cache unit testbench
+#
+# `-Wno-UNUSEDSIGNAL` is applied at the file level because Verilator's
+# lint_off pragmas do not descend into `task automatic` / `function
+# automatic` scopes — the testbench heavily uses task-locals (loop
+# indices, label/actual/expected helper-task arguments) which Verilator
+# falsely flags as unused.  All other warning categories remain enabled.
+test-texture-palette: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL \
 		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		$(TEXTURE_DEC_TESTS)/tb_block_decode_dt.sv \
-		--top-module tb_block_decode_dt -o tb_block_decode_dt
-	$(OBJ_DIR)/tb_block_decode_dt
+		$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+		$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
+		$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+		$(TEXTURE_TB_DIR)/texture_palette_tb.sv \
+		--top-module texture_palette_tb -o texture_palette_tb
+	$(OBJ_DIR)/texture_palette_tb
 
-# All DT-verified texture testbenches
-test-texture-dt-all: test-uv-coord-dt test-l1-wrap-dt test-l1-mirror-dt test-block-decode-dt
+# VER-025: Palette slots integration testbench
+#
+# Mirrors `test-texture-palette` but exercises the five integration-flavoured
+# scenarios from VER-025 (dual-slot use, mid-frame reload, quadrant exhaustive,
+# MIRROR-wrap quadrant swap, cache invalidation semantics).  The reference
+# texels live in `rtl/components/texture/tests/ver_025_palette_slots.hex` and
+# are shared with the digital twin -- any divergence between this file, the
+# Verilator output, and the twin output is a real bug.
+test-palette-slots: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL \
+		$(PKG_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+		$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
+		$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+		$(TEXTURE_TB_DIR)/palette_slots_tb.sv \
+		--top-module palette_slots_tb -o palette_slots_tb
+	$(OBJ_DIR)/palette_slots_tb
+
+# All DT-verified texture testbenches (UV-coord remains)
+test-texture-dt-all: test-uv-coord-dt
 	@echo "All DT-verified texture testbenches passed."
 
 # ===========================================================================
@@ -867,8 +706,8 @@ render-perspective-road: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness perspective_road $(abspath $(SIM_OUT_DIR))/ver_016_perspective_road.png \
 		--zbuf $(abspath $(SIM_OUT_DIR))/ver_016_perspective_road_z.png
 
-render-bc1-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness bc1_texture $(abspath $(SIM_OUT_DIR))/ver_017_bc1_texture.png
+render-indexed-pixel-art: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
+	$(BUILD_DIR)/harness indexed_pixel_art $(abspath $(SIM_OUT_DIR))/ver_017_indexed_pixel_art.png
 
 render-bc2-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness bc2_texture $(abspath $(SIM_OUT_DIR))/ver_018_bc2_texture.png
@@ -892,7 +731,7 @@ render-alpha-blend: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness alpha_blend $(abspath $(SIM_OUT_DIR))/ver_024_alpha_blend.png
 
 render-all: render-gouraud render-depth-test render-textured render-color-combined render-textured-cube \
-	render-size-grid render-perspective-road render-bc1-texture render-bc2-texture render-bc3-texture \
+	render-size-grid render-perspective-road render-indexed-pixel-art render-bc2-texture render-bc3-texture \
 	render-bc4-texture render-rgba8888-texture render-r8-texture render-stipple-test \
 	render-alpha-blend
 
@@ -925,9 +764,9 @@ test-size-grid: render-size-grid
 test-perspective-road: render-perspective-road
 	diff -q $(SIM_OUT_DIR)/ver_016_perspective_road.png $(GOLDEN_DIR)/ver_016_perspective_road.png
 
-# VER-017: BC1 texture
-test-bc1-texture: render-bc1-texture
-	diff -q $(SIM_OUT_DIR)/ver_017_bc1_texture.png $(GOLDEN_DIR)/ver_017_bc1_texture.png
+# VER-017: INDEXED8_2X2 pixel-art texture
+test-indexed-pixel-art: render-indexed-pixel-art
+	diff -q $(SIM_OUT_DIR)/ver_017_indexed_pixel_art.png $(GOLDEN_DIR)/ver_017_indexed_pixel_art.png
 
 # VER-018: BC2 texture
 test-bc2-texture: render-bc2-texture
@@ -968,7 +807,7 @@ test: lint test-rasterizer-all test-early-z test-stipple test-register-file test
 		ver_014_textured_cube.png \
 		ver_015_size_grid.png \
 		ver_016_perspective_road.png \
-		ver_017_bc1_texture.png \
+		ver_017_indexed_pixel_art.png \
 		ver_018_bc2_texture.png \
 		ver_019_bc3_texture.png \
 		ver_020_bc4_texture.png \
@@ -1021,7 +860,6 @@ LEAF_LINT_FILES = \
 	$(DISPLAY_RTL)/timing_generator.sv \
 	$(DISPLAY_RTL)/tmds_encoder.sv \
 	$(EARLYZ_RTL)/early_z.sv \
-	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
 	$(STIPPLE_RTL)/stipple.sv \
 	$(DITHER_RTL)/dither.sv \
@@ -1067,30 +905,22 @@ lint:
 		$(PKG_DIR)/fp_types_pkg.sv \
 		$(CC_RTL)/color_combiner.sv \
 		--top-module color_combiner 2>&1 || fail=1; \
-	echo "Linting texel_promote.sv (with fp_types_pkg)..."; \
+	echo "(legacy texel_promote and BC block decoder lint targets removed)"; \
+	echo "Linting texture_sampler.sv (with sub-modules)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/texel_promote.sv \
-		--top-module texel_promote 2>&1 || fail=1; \
-	echo "Linting block decoders (with fp_types_pkg, shared modules)..."; \
-	$(VERILATOR) --lint-only -Wall \
-		$(PKG_DIR)/fp_types_pkg.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		--top-module texture_block_decode 2>&1 || fail=1; \
-	echo "Linting texture_sampler.sv (with texture_uv_coord)..."; \
-	$(VERILATOR) --lint-only -Wall \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-			$(TEXTURE_RTL)/texture_sampler.sv \
+		$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+		$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+		$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
+		$(TEXTURE_RTL)/texture_sampler.sv \
 		--top-module texture_sampler 2>&1 || fail=1; \
+	echo "Linting texture_palette_lut.sv (with fp_types_pkg, palette_slot_bram)..."; \
+	$(VERILATOR) --lint-only -Wall \
+		$(PKG_DIR)/fp_types_pkg.sv \
+		$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+		$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
+		--top-module texture_palette_lut 2>&1 || fail=1; \
 	echo "Linting rasterizer.sv (with raster_deriv, raster_attr_accum, raster_edge_walk, raster_recip_area, raster_recip_q, raster_setup_fifo, raster_hiz_meta)..."; \
 	$(VERILATOR) --lint-only -Wall \
 		$(PKG_DIR)/fp_types_pkg.sv \
@@ -1111,28 +941,16 @@ lint:
 		$(PKG_DIR)/fp_types_pkg.sv \
 		$(EARLYZ_RTL)/early_z.sv \
 		$(STIPPLE_RTL)/stipple.sv \
-		$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-		$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-		$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-			$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-		$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-		$(TEXTURE_DEC_RTL)/texture_r8.sv \
-		$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-		$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-		$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-		$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-		$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 		$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
-			$(TEXTURE_RTL)/texture_sampler.sv \
+		$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+		$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+		$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
+		$(TEXTURE_RTL)/texture_sampler.sv \
 		$(CC_RTL)/color_combiner.sv \
-			$(DITHER_RTL)/dither.sv \
-		$(TEXTURE_DEC_RTL)/texel_promote.sv \
+		$(DITHER_RTL)/dither.sv \
 		$(PXWRITE_RTL)/fb_promote.sv \
 		$(ZBUF_RTL)/zbuf_tag_bram.sv \
-	$(ZBUF_RTL)/zbuf_tile_cache.sv \
+		$(ZBUF_RTL)/zbuf_tile_cache.sv \
 		$(PXWRITE_RTL)/pixel_pipeline.sv \
 		--top-module pixel_pipeline 2>&1 || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "Lint FAILED"; exit 1; fi; \
@@ -1180,24 +998,12 @@ HARNESS_RTL_SOURCES = \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
 	$(ZBUF_RTL)/zbuf_tag_bram.sv \
 	$(ZBUF_RTL)/zbuf_tile_cache.sv \
-	$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-	$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-	$(TEXTURE_DEC_RTL)/texture_r8.sv \
-	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-	$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
+	$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+	$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+	$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(TEXTURE_DEC_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(CC_RTL)/color_combiner.sv \
@@ -1277,24 +1083,12 @@ SIM_RTL_SOURCES = \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
 	$(ZBUF_RTL)/zbuf_tag_bram.sv \
 	$(ZBUF_RTL)/zbuf_tile_cache.sv \
-	$(TEXTURE_DEC_RTL)/bc_color_block.sv \
-	$(TEXTURE_DEC_RTL)/bc_alpha_block.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc1.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc2.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc3.sv \
-	$(TEXTURE_DEC_RTL)/texture_bc4.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgb565.sv \
-	$(TEXTURE_DEC_RTL)/texture_rgba8888.sv \
-	$(TEXTURE_DEC_RTL)/texture_r8.sv \
-	$(TEXTURE_DEC_RTL)/texture_block_decode.sv \
-	$(TEXTURE_L1_RTL)/tex_bank_bram.sv \
-	$(TEXTURE_L1_RTL)/tex_tag_bram.sv \
-	$(TEXTURE_L1_RTL)/texture_cache_l1.sv \
-	$(TEXTURE_L2_RTL)/texture_l2_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
+	$(TEXTURE_L1_RTL)/texture_index_cache.sv \
+	$(TEXTURE_PAL_RTL)/palette_slot_bram.sv \
+	$(TEXTURE_PAL_RTL)/texture_palette_lut.sv \
 	$(TEXTURE_RTL)/texture_sampler.sv \
 	$(STIPPLE_RTL)/stipple.sv \
-	$(TEXTURE_DEC_RTL)/texel_promote.sv \
 	$(PXWRITE_RTL)/fb_promote.sv \
 	$(DITHER_RTL)/dither.sv \
 	$(CC_RTL)/color_combiner.sv \
@@ -1373,7 +1167,7 @@ help:
 	@echo "  test-textured-cube - VER-014: Textured cube golden image"
 	@echo "  test-size-grid   - VER-015: Triangle size grid golden image"
 	@echo "  test-perspective-road - VER-016: Perspective road golden image"
-	@echo "  test-bc1-texture - VER-017: BC1 texture golden image"
+	@echo "  test-indexed-pixel-art - VER-017: INDEXED8_2X2 pixel-art texture golden image"
 	@echo "  test-bc2-texture - VER-018: BC2 texture golden image"
 	@echo "  test-bc3-texture - VER-019: BC3 texture golden image"
 	@echo "  test-bc4-texture - VER-020: BC4 texture golden image"

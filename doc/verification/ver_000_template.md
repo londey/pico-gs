@@ -12,11 +12,7 @@ Or copy this template and modify.
 
 ## Verification Method
 
-Choose one:
-- **Test:** Verified by executing a test procedure
-- **Analysis:** Verified by technical evaluation
-- **Inspection:** Verified by examination
-- **Demonstration:** Verified by operation
+Test | Analysis | Inspection | Demonstration
 
 ## Verifies Requirements
 

@@ -14,12 +14,6 @@ Or copy this template and modify.
 
 <What this unit does and why it exists>
 
-A design unit is a cohesive piece of the system that can be implemented and tested somewhat independently. It might be:
-- A Verilog module
-- A C source file or library
-- A class or module in higher-level languages
-- A logical grouping of closely related code
-
 ## Implements Requirements
 
 - REQ-NNN (<requirement name>)
@@ -32,19 +26,13 @@ List all requirements this unit helps satisfy.
 
 - INT-NNN (<interface name>)
 
-Interfaces this unit implements (is the provider of).
-
 ### Consumes
 
 - INT-NNN (<interface name>)
 
-Interfaces this unit uses (is a consumer of).
-
 ### Internal Interfaces
 
 - Connects to UNIT-NNN via <description>
-
-Internal connections not formally specified as interfaces.
 
 ## Design Description
 

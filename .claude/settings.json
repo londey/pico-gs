@@ -19,7 +19,9 @@
       "Bash(python3 spi_gpu/tests/scripts/gen/generate_all.py)",
       "Bash(find:*)",
       "Read(//workspaces/**)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(peakrdl --version)",
+      "Bash(awk ' *)"
     ]
   }
 }

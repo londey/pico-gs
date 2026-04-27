@@ -45,7 +45,7 @@ GENERATORS = [
     ("ver_014_textured_cube.hex", ver_014),
     ("ver_015_size_grid.hex", ver_015),
     ("ver_016_perspective_road.hex", ver_016),
-    ("ver_017_bc1_texture.hex", ver_017),
+    ("ver_017_indexed_pixel_art.hex", ver_017),
     ("ver_018_bc2_texture.hex", ver_018),
     ("ver_019_bc3_texture.hex", ver_019),
     ("ver_020_bc4_texture.hex", ver_020),

@@ -1,12 +1,13 @@
-"""VER-014: Textured Cube Golden Image Test — hex generator.
+"""VER-014: Textured Cube Golden Image Test (INDEXED8_2X2) — hex generator.
 
-12-triangle cube (6 faces × 2 triangles) with depth testing and
-white/black checker texture.  Each face has a distinct diffuse color.
-All faces are submitted (no back-face culling); the Z-buffer resolves
-visibility.  Each triangle is submitted as 3 independent vertices
-(nokick, nokick, kick_012).
+12-triangle cube (6 faces × 2 triangles) with depth testing and a
+16x16 apparent INDEXED8_2X2 white/black checker texture (encoded in the
+four quadrants of palette entry 0).  Each face has a distinct diffuse
+colour; all faces are submitted (no back-face culling) and the
+Z-buffer resolves visibility.  Each triangle is submitted as 3
+independent vertices (nokick, nokick, kick_012).
 
-Three phases: zclear, setup, triangles.
+Four phases: zclear, palette, setup, triangles.
 """
 
 import math
@@ -22,9 +23,11 @@ ZBUFFER_BASE_512 = 0x0800
 # Place texture after the Z-buffer to avoid overlap.
 # Color FB: 0x0000..0x03FF (512x512 = 256K words)
 # Z-buffer: 0x0800..0x0BFF (512x512 = 256K words)
-# Texture:  0x0C00 onwards
+# Texture:  0x0C00 onwards (INDEXED8_2X2 index array)
+# Palette:  0x0880 (one slot of 4096 B = 8 of these 512-byte units)
 TEX0_BASE_ADDR_512 = 0x0C00
 TEX0_BASE_WORD = 0x0C00 * 256
+PALETTE0_BASE_ADDR_512 = 0x0880
 
 # ---------------------------------------------------------------------------
 # Unit cube definition (model space)
@@ -94,16 +97,30 @@ def _zclear_phase() -> list[str]:
     return lines
 
 
+def _palette_phase() -> list[str]:
+    """Stage the palette payload and INDEXED8_2X2 index array, trigger PALETTE0."""
+    lines = []
+    lines.append(emit_phase("palette"))
+    lines.append(emit_blank())
+
+    palette_entries = [
+        (RGBA_WHITE, RGBA_BLACK, RGBA_BLACK, RGBA_WHITE),  # entry 0: checker
+    ]
+    lines.extend(emit_palette_upload(PALETTE0_BASE_ADDR_512, palette_entries, slot=0))
+    lines.append(emit_blank())
+
+    # 16×16 apparent → 8×8 index grid → 4 × 4×4 index blocks (64 bytes total).
+    indices = make_uniform_index_block(0, n_blocks=4)
+    lines.extend(emit_indexed_texture_block(TEX0_BASE_WORD, indices,
+                                            label="all-zero index blocks (4×16 B)"))
+    lines.append(emit_blank())
+    return lines
+
+
 def _setup_phase() -> list[str]:
     """Configure texture and render mode for depth-tested textured rendering."""
     lines = []
     lines.append(emit_phase("setup"))
-    lines.append(emit_blank())
-
-    # Upload 16x16 white/black checker texture
-    lines.extend(emit_checker_texture(TEX0_BASE_WORD, 4,
-                                       RGB565_WHITE, RGB565_BLACK,
-                                       "white/black checker"))
     lines.append(emit_blank())
 
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
@@ -111,9 +128,14 @@ def _setup_phase() -> list[str]:
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
 
-    tex_cfg = pack_tex0_cfg(1, 0, TEX_FMT_RGB565, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
+    tex_cfg = pack_tex_cfg_indexed(
+        enable=1, width_log2=4, height_log2=4,
+        u_wrap=0, v_wrap=0, palette_idx=0,
+        base_addr_512=TEX0_BASE_ADDR_512,
+    )
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
-                       "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0C00"))
+                       "ENABLE=1 NEAREST INDEXED8_2X2 16x16 REPEAT "
+                       "PALETTE_IDX=0 base=0x0C00"))
 
     lines.append(emit(ADDR_CC_MODE, CC_MODE_MODULATE,
                        "MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE"))
@@ -212,17 +234,21 @@ def _triangles_phase() -> list[str]:
 
 def generate() -> list[str]:
     lines = []
-    lines.append(emit_comment("VER-014: Textured Cube Golden Image Test"))
+    lines.append(emit_comment("VER-014: Textured Cube Golden Image Test (INDEXED8_2X2)"))
     lines.append(emit_comment(""))
-    lines.append(emit_comment("12-triangle cube with per-face color, depth testing, checker texture."))
-    lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z far)"))
-    lines.append(emit_comment("Phase 'setup': configure texture and render mode"))
+    lines.append(emit_comment("12-triangle cube with per-face colour, depth testing,"))
+    lines.append(emit_comment("INDEXED8_2X2 white/black checker texture (encoded in the"))
+    lines.append(emit_comment("four quadrants of palette entry 0)."))
+    lines.append(emit_comment("Phase 'zclear':    initialise Z-buffer to 0x0000 (reverse-Z far)"))
+    lines.append(emit_comment("Phase 'palette':   stage palette + index array, trigger PALETTE0"))
+    lines.append(emit_comment("Phase 'setup':     configure texture and render mode"))
     lines.append(emit_comment("Phase 'triangles': submit cube triangles (MVP-transformed)"))
     lines.append(emit_blank())
     lines.append(emit_framebuffer(512, 512))
-    lines.append(emit_texture("checker_wb", f"{TEX0_BASE_WORD:05X}", "RGB565", 4))
     lines.append(emit_blank())
     lines.extend(_zclear_phase())
+    lines.append(emit_blank())
+    lines.extend(_palette_phase())
     lines.append(emit_blank())
     lines.extend(_setup_phase())
     lines.append(emit_blank())

@@ -1,7 +1,10 @@
-"""VER-013: Color-Combined Output Golden Image Test — hex generator.
+"""VER-013: Color-Combined Output Golden Image Test (INDEXED8_2X2) — hex generator.
 
-Textured triangle with MODULATE color combiner.  White/mid-gray checker
-texture, Gouraud-shaded red/green/blue vertex colors.
+Textured triangle with MODULATE colour combiner.  16x16 apparent
+INDEXED8_2X2 texture: every index points at palette entry 0, whose
+quadrants encode a white/mid-grey checker
+(``[NW=white, NE=grey, SW=grey, SE=white]``).  Gouraud-shaded
+red/green/blue vertex colours exercise the combiner.
 """
 
 from common import *
@@ -9,38 +12,53 @@ from common import *
 TEX0_BASE_ADDR_512 = 0x0800
 TEX0_BASE_WORD = 0x80000
 
-# CC_MODE_MODULATE imported from common.py
+PALETTE0_BASE_ADDR_512 = 0x0880
 
 
 def generate() -> list[str]:
     lines = []
-    lines.append(emit_comment("VER-013: Color-Combined Output Golden Image Test"))
+    lines.append(emit_comment("VER-013: Color-Combined Output Golden Image Test (INDEXED8_2X2)"))
     lines.append(emit_comment(""))
     lines.append(emit_comment("Textured triangle with MODULATE combiner (TEX0 * SHADE0)."))
-    lines.append(emit_comment("16x16 white/mid-gray checker; red/green/blue vertex colors."))
+    lines.append(emit_comment("16x16 apparent INDEXED8_2X2; palette entry 0 quadrants"))
+    lines.append(emit_comment("encode a white/mid-grey checker via the 2x2 quadrant lookup."))
     lines.append(emit_blank())
     lines.append(emit_framebuffer(512, 512))
-    lines.append(emit_phase("main"))
-    lines.append(emit_blank())
 
-    # Clear framebuffer
+    # ── Phase 'palette': stage palette payload + indices, trigger load ──
+    lines.append(emit_phase("palette"))
+    lines.append(emit_blank())
     lines.extend(emit_fb_clear(0x0000, 9, 9))
     lines.append(emit_blank())
 
-    # Upload 16x16 white/mid-gray checker texture
-    lines.extend(emit_checker_texture(TEX0_BASE_WORD, 4,
-                                       RGB565_WHITE, RGB565_MID_GRAY,
-                                       "white/gray checker"))
+    palette_entries = [
+        (RGBA_WHITE, RGBA_MID_GREY, RGBA_MID_GREY, RGBA_WHITE),
+    ]
+    lines.extend(emit_palette_upload(PALETTE0_BASE_ADDR_512, palette_entries, slot=0))
     lines.append(emit_blank())
 
+    # 16×16 apparent → 8×8 index grid → 4 × 4×4 index blocks (64 bytes total).
+    indices = make_uniform_index_block(0, n_blocks=4)
+    lines.extend(emit_indexed_texture_block(TEX0_BASE_WORD, indices,
+                                            label="all-zero index blocks (4×16 B)"))
+    lines.append(emit_blank())
+
+    # ── Phase 'main': configure samplers and submit triangle ──
+    lines.append(emit_phase("main"))
+    lines.append(emit_blank())
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, 0x0000, 9, 9),
                        "color_base=0x0000 z_base=0x0000 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
 
-    tex_cfg = pack_tex0_cfg(1, 0, TEX_FMT_RGB565, 4, 4, 0, 0, 0, TEX0_BASE_ADDR_512)
+    tex_cfg = pack_tex_cfg_indexed(
+        enable=1, width_log2=4, height_log2=4,
+        u_wrap=0, v_wrap=0, palette_idx=0,
+        base_addr_512=TEX0_BASE_ADDR_512,
+    )
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
-                       "ENABLE=1 NEAREST RGB565 16x16 REPEAT base=0x0800"))
+                       "ENABLE=1 NEAREST INDEXED8_2X2 16x16 REPEAT "
+                       "PALETTE_IDX=0 base=0x0800"))
 
     lines.append(emit(ADDR_CC_MODE, CC_MODE_MODULATE,
                        "MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE"))

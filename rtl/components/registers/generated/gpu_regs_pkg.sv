@@ -130,11 +130,11 @@ package gpu_regs_pkg;
     } gpu_regs__tex_cfg_reg__V_WRAP__out_t;
 
     typedef struct {
-        logic [3:0] value;
-    } gpu_regs__tex_cfg_reg__MIP_LEVELS__out_t;
+        logic value;
+    } gpu_regs__tex_cfg_reg__PALETTE_IDX__out_t;
 
     typedef struct {
-        logic [7:0] value;
+        logic [6:0] value;
     } gpu_regs__tex_cfg_reg__RSVD_MID__out_t;
 
     typedef struct {
@@ -154,11 +154,29 @@ package gpu_regs_pkg;
         gpu_regs__tex_cfg_reg__HEIGHT_LOG2__out_t HEIGHT_LOG2;
         gpu_regs__tex_cfg_reg__U_WRAP__out_t U_WRAP;
         gpu_regs__tex_cfg_reg__V_WRAP__out_t V_WRAP;
-        gpu_regs__tex_cfg_reg__MIP_LEVELS__out_t MIP_LEVELS;
+        gpu_regs__tex_cfg_reg__PALETTE_IDX__out_t PALETTE_IDX;
         gpu_regs__tex_cfg_reg__RSVD_MID__out_t RSVD_MID;
         gpu_regs__tex_cfg_reg__BASE_ADDR__out_t BASE_ADDR;
         gpu_regs__tex_cfg_reg__RSVD_HI__out_t RSVD_HI;
     } gpu_regs__tex_cfg_reg__out_t;
+
+    typedef struct {
+        logic [15:0] value;
+    } gpu_regs__palette_reg__BASE_ADDR__out_t;
+
+    typedef struct {
+        logic value;
+    } gpu_regs__palette_reg__LOAD_TRIGGER__out_t;
+
+    typedef struct {
+        logic [46:0] value;
+    } gpu_regs__palette_reg__RSVD__out_t;
+
+    typedef struct {
+        gpu_regs__palette_reg__BASE_ADDR__out_t BASE_ADDR;
+        gpu_regs__palette_reg__LOAD_TRIGGER__out_t LOAD_TRIGGER;
+        gpu_regs__palette_reg__RSVD__out_t RSVD;
+    } gpu_regs__palette_reg__out_t;
 
     typedef struct {
         logic [3:0] value;
@@ -611,6 +629,8 @@ package gpu_regs_pkg;
         gpu_regs__vertex_reg__out_t VERTEX_KICK_RECT;
         gpu_regs__tex_cfg_reg__out_t TEX0_CFG;
         gpu_regs__tex_cfg_reg__out_t TEX1_CFG;
+        gpu_regs__palette_reg__out_t PALETTE0;
+        gpu_regs__palette_reg__out_t PALETTE1;
         gpu_regs__cc_mode_reg__out_t CC_MODE;
         gpu_regs__const_color_reg__out_t CONST_COLOR;
         gpu_regs__cc_mode_2_reg__out_t CC_MODE_2;
@@ -631,14 +651,8 @@ package gpu_regs_pkg;
         tex_filter_e__NEAREST = 'h0
     } tex_filter_e_e;
 
-    typedef enum logic [2:0] {
-        tex_format_e__BC1 = 'h0,
-        tex_format_e__BC2 = 'h1,
-        tex_format_e__BC3 = 'h2,
-        tex_format_e__BC4 = 'h3,
-        tex_format_e__RGB565 = 'h5,
-        tex_format_e__RGBA8888 = 'h6,
-        tex_format_e__R8 = 'h7
+    typedef enum logic {
+        tex_format_e__INDEXED8_2X2 = 'h0
     } tex_format_e_e;
 
     typedef enum logic [1:0] {

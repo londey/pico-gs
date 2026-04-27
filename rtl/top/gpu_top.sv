@@ -209,6 +209,13 @@ module gpu_top (
     wire        tex0_cache_inv;
     wire        tex1_cache_inv;
 
+    // Palette load triggers (from register_file → texture_sampler via
+    // pixel_pipeline forwarding).
+    wire        palette0_load_trigger;
+    wire [15:0] palette0_base_addr;
+    wire        palette1_load_trigger;
+    wire [15:0] palette1_base_addr;
+
     // Memory access (MEM_ADDR / MEM_DATA)
     wire [63:0] mem_addr_out;
     wire [63:0] mem_data_out;
@@ -393,6 +400,12 @@ module gpu_top (
         .tex1_cfg(tex1_cfg),
         .tex0_cache_inv(tex0_cache_inv),
         .tex1_cache_inv(tex1_cache_inv),
+
+        // Palette slot load triggers (UNIT-011.06 via UNIT-006/UNIT-011)
+        .palette0_load_trigger(palette0_load_trigger),
+        .palette0_base_addr   (palette0_base_addr),
+        .palette1_load_trigger(palette1_load_trigger),
+        .palette1_base_addr   (palette1_base_addr),
 
         // Memory access
         .mem_addr_out(mem_addr_out),
@@ -1092,14 +1105,14 @@ module gpu_top (
     // Pack Z_RANGE from individual fields
     wire [31:0] z_range_packed = {z_range_max, z_range_min};
 
-    // TEX0 base address: register stores base_addr_512 in tex0_cfg[47:32].
-    // Convert to word address: word_addr = base_addr_512 << 8 (512 bytes = 256 words).
-    wire [23:0] tex0_base_addr = {tex0_cfg[47:32], 8'b0};
-
-    // Pixel pipeline texture SRAM interface wires (to arbiter port 3)
+    // Pixel pipeline texture SRAM interface wires (to arbiter port 3).
+    // The pixel_pipeline forwards the texture_sampler's port-3 master.
     wire        pp_tex_sram_req;
+    wire        pp_tex_sram_we;
     wire [23:0] pp_tex_sram_addr;
+    wire [31:0] pp_tex_sram_wdata;
     wire [7:0]  pp_tex_sram_burst_len;
+    wire [15:0] pp_tex_sram_burst_wdata;
 
     // Unused rasterizer fragment output signals
     /* verilator lint_off UNUSEDSIGNAL */
@@ -1116,9 +1129,9 @@ module gpu_top (
     wire        _unused_rect_valid  = rect_valid;
     wire        _unused_mem_rd      = mem_data_rd;
     wire [63:0] _unused_mem_addr    = mem_addr_out; // DMA uses mem_data_dword_addr instead
-    wire        _unused_tex1_inv    = tex1_cache_inv;
-    wire [15:0] _unused_tex0_cfg_upper = tex0_cfg[63:48];
-    wire [63:0] _unused_tex1_cfg_full  = tex1_cfg;
+    // Both TEXn_CFG values are now consumed by the pixel_pipeline (which
+    // forwards them to texture_sampler).  Keep these tap wires for future
+    // diagnostic visibility.
     wire [9:0]  _unused_scissor_x   = scissor_x;
     wire [9:0]  _unused_scissor_y   = scissor_y;
     wire [9:0]  _unused_scissor_w   = scissor_width;
@@ -1128,6 +1141,13 @@ module gpu_top (
     wire        _unused_color_grade = color_grade_enable;
     // Arbiter port 3 single-word read data unused (texture uses burst reads)
     wire [31:0] _unused_p3_rdata       = arb_port3_rdata;
+    // The texture_sampler exposes a full master interface (read-only today
+    // for INDEXED8_2X2); the write-side outputs are tied off here because
+    // the port-3 sharing FSM uses its own write-path operands for DMA and
+    // PERF_TIMESTAMP traffic.
+    wire        _unused_pp_tex_we      = pp_tex_sram_we;
+    wire [31:0] _unused_pp_tex_wdata   = pp_tex_sram_wdata;
+    wire [15:0] _unused_pp_tex_burst_wdata = pp_tex_sram_burst_wdata;
     /* verilator lint_on UNUSEDSIGNAL */
 
     pixel_pipeline u_pixel_pipeline (
@@ -1152,11 +1172,17 @@ module gpu_top (
         .reg_render_mode(render_mode_packed),
         .reg_z_range(z_range_packed),
         .reg_stipple(stipple_pattern),
-        .reg_tex0_cfg(tex0_cfg[31:0]),
-        .reg_tex1_cfg(tex1_cfg[31:0]),
+        .reg_tex0_cfg(tex0_cfg),
+        .reg_tex1_cfg(tex1_cfg),
         .reg_fb_config(fb_config_packed),
         .reg_fb_control(fb_control_packed),
         .reg_cc_mode_2(cc_mode_2),
+
+        // Palette load triggers (UNIT-011.06; routed through to texture_sampler)
+        .palette0_load_trigger(palette0_load_trigger),
+        .palette0_base_addr   (palette0_base_addr),
+        .palette1_load_trigger(palette1_load_trigger),
+        .palette1_base_addr   (palette1_base_addr),
 
         // Output to color combiner
         .cc_valid(pp_cc_valid),
@@ -1199,12 +1225,15 @@ module gpu_top (
         .fb_read_valid(arb_port1_burst_data_valid),
         .fb_ready(arb_port1_ready),
 
-        // Texture cache SRAM interface (arbiter port 3)
-        .tex0_base_addr(tex0_base_addr),
+        // Texture sampler SDRAM port-3 master forwarding
         .tex0_cache_inv(tex0_cache_inv),
+        .tex1_cache_inv(tex1_cache_inv),
         .tex_sram_req(pp_tex_sram_req),
+        .tex_sram_we(pp_tex_sram_we),
         .tex_sram_addr(pp_tex_sram_addr),
+        .tex_sram_wdata(pp_tex_sram_wdata),
         .tex_sram_burst_len(pp_tex_sram_burst_len),
+        .tex_sram_burst_wdata(pp_tex_sram_burst_wdata),
         .tex_sram_burst_rdata(tex_burst_rdata),
         .tex_sram_burst_data_valid(tex_burst_data_valid),
         .tex_sram_ack(tex_ack),

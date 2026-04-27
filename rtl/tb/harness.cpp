@@ -1,13 +1,31 @@
-// Integration test harness for VER-010 through VER-014 golden image tests.
+// Spec-ref: unit_011_texture_sampler.md
+// Spec-ref: unit_011.03_index_cache.md
+// Spec-ref: unit_011.06_palette_lut.md
 //
-// This file provides a compilable skeleton that documents the intended
-// architecture of the full integration harness. Each section is annotated
-// with TODO comments describing what must be implemented.
+// Integration test harness for VER-010 through VER-024 golden image
+// tests.  Wires the Verilated gpu_top to the behavioral SDRAM model
+// (sdram_model.{hpp,cpp}) and serves the SDRAM commands the controller
+// drives, including the new UNIT-011 texture-pipeline traffic:
+//
+//   * UNIT-011.03 index-cache fill bursts (8 x 16-bit words per 4x4
+//     INDEXED8_2X2 index block).
+//   * UNIT-011.06 palette load bursts (up to 32 x 16-bit words per
+//     sub-burst; 64 sub-bursts per 4096-byte slot).
+//
+// Both burst patterns originate from the texture_sampler.sv 3-way
+// arbiter on SDRAM port 3; this harness simply replies to whatever
+// sequence of READ commands the SDRAM controller emits, so no
+// burst-pattern-specific FSM lives in C++.  Palette blobs and index
+// arrays are written into SDRAM by the GPU's mem_dma path during the
+// `palette` phase of each test script (MEM_FILL + MEM_DATA register
+// writes), then bursted back out by the on-chip palette load FSM and
+// fragment-driven index-fill FSMs.
 //
 // References:
 //   INT-011 (SDRAM Memory Layout)
 //   INT-014 (Texture Memory Layout)
-//   UNIT-011 (Texture Sampler)
+//   UNIT-011 (Texture Sampler), UNIT-011.03 (Index Cache),
+//   UNIT-011.06 (Palette LUT)
 
 #include <algorithm>
 #include <array>
@@ -50,51 +68,15 @@
 using RegWrite = HexRegWrite;
 
 // ---------------------------------------------------------------------------
-// Texture generators
+// Texture pre-load (legacy)
 //
-// Texture DATA is not stored in .hex files (only ## TEXTURE: directives).
-// The harness generates procedural textures and pre-loads them into SDRAM.
+// The current INDEXED8_2X2 test scripts upload palette blobs and index
+// arrays through the GPU's MEM_FILL / MEM_DATA register-write path, so
+// no host-side texture generation is required.  The `## TEXTURE:`
+// directive remains in the hex parser for backward compatibility but no
+// active test script uses it.  preload_textures() below logs and skips
+// any directive it does not recognise rather than failing the run.
 // ---------------------------------------------------------------------------
-
-/// Generate a 16x16 RGB565 checker pattern (white/black, 4x4 blocks).
-static std::vector<uint8_t> generate_checker_texture_wb() {
-    constexpr int TEX_SIZE = 16;
-    constexpr int BLOCK_SIZE = 4;
-    std::vector<uint8_t> data(TEX_SIZE * TEX_SIZE * 2);
-
-    for (int y = 0; y < TEX_SIZE; y++) {
-        for (int x = 0; x < TEX_SIZE; x++) {
-            int block_x = x / BLOCK_SIZE;
-            int block_y = y / BLOCK_SIZE;
-            uint16_t color = ((block_x + block_y) % 2 == 0) ? 0xFFFF : 0x0000;
-
-            int idx = (y * TEX_SIZE + x) * 2;
-            data[idx + 0] = static_cast<uint8_t>(color & 0xFF);
-            data[idx + 1] = static_cast<uint8_t>((color >> 8) & 0xFF);
-        }
-    }
-    return data;
-}
-
-/// Generate a 16x16 RGB565 checker pattern (white/mid-gray, 4x4 blocks).
-static std::vector<uint8_t> generate_checker_texture_wg() {
-    constexpr int TEX_SIZE = 16;
-    constexpr int BLOCK_SIZE = 4;
-    std::vector<uint8_t> data(TEX_SIZE * TEX_SIZE * 2);
-
-    for (int y = 0; y < TEX_SIZE; y++) {
-        for (int x = 0; x < TEX_SIZE; x++) {
-            int block_x = x / BLOCK_SIZE;
-            int block_y = y / BLOCK_SIZE;
-            uint16_t color = ((block_x + block_y) % 2 == 0) ? 0xFFFF : 0x8410;
-
-            int idx = (y * TEX_SIZE + x) * 2;
-            data[idx + 0] = static_cast<uint8_t>(color & 0xFF);
-            data[idx + 1] = static_cast<uint8_t>((color >> 8) & 0xFF);
-        }
-    }
-    return data;
-}
 
 // ---------------------------------------------------------------------------
 // Test name to hex file path mapping
@@ -112,7 +94,7 @@ static std::string hex_file_for_test(const std::string& test_name) {
         {"textured_cube",     "scripts/ver_014_textured_cube.hex"},
         {"size_grid",         "scripts/ver_015_size_grid.hex"},
         {"perspective_road",  "scripts/ver_016_perspective_road.hex"},
-        {"bc1_texture",       "scripts/ver_017_bc1_texture.hex"},
+        {"indexed_pixel_art", "scripts/ver_017_indexed_pixel_art.hex"},
         {"bc2_texture",       "scripts/ver_018_bc2_texture.hex"},
         {"bc3_texture",       "scripts/ver_019_bc3_texture.hex"},
         {"bc4_texture",       "scripts/ver_020_bc4_texture.hex"},
@@ -129,27 +111,23 @@ static std::string hex_file_for_test(const std::string& test_name) {
     return {};
 }
 
-/// Pre-load textures into SDRAM based on ## TEXTURE: directives.
+/// Process any `## TEXTURE:` directives in the hex script.
+///
+/// All active INDEXED8_2X2 scripts upload palette blobs and index
+/// arrays through MEM_FILL / MEM_DATA writes during the `palette` phase
+/// (handled later by execute_script), so no host-side pre-load is
+/// required.  This function is retained as a hook for tests that want
+/// to pre-stage data directly into the SDRAM model and logs (then
+/// skips) any directive it sees so the absence of a generator is not
+/// silently masked.
 static void preload_textures(SdramModel& sdram, const HexScript& script) {
+    (void)sdram;
     for (const auto& tex : script.textures) {
-        std::vector<uint8_t> pixels;
-        if (tex.type == "checker_wb") {
-            pixels = generate_checker_texture_wb();
-        } else if (tex.type == "checker_wg") {
-            pixels = generate_checker_texture_wg();
-        } else {
-            std::cerr << std::format("WARNING: Unknown texture type '{}', skipping\n", tex.type);
-            continue;
-        }
-
-        sdram.fill_texture(
-            tex.base_word,
-            TexFormat::RGB565,
-            std::span<const uint8_t>(pixels),
-            tex.width_log2
-        );
-        std::cout << std::format(
-            "Texture '{}' pre-loaded at word address 0x{:X}\n", tex.type, tex.base_word
+        std::cerr << std::format(
+            "WARNING: '## TEXTURE: {}' is no longer wired to a host-side "
+            "generator (INDEXED8_2X2 scripts upload via MEM_DATA); "
+            "skipping directive at base 0x{:X}.\n",
+            tex.type, tex.base_word
         );
     }
 }
@@ -608,7 +586,7 @@ int main(int argc, char** argv) {
         std::cerr << std::format(
             "Usage: {} <test_name> [output.png] [--zbuf zbuf.png] [--trace]\n"
             "  test_name: gouraud, depth_test, textured, color_combined, textured_cube,\n"
-            "             size_grid, perspective_road, bc1_texture, bc2_texture,\n"
+            "             size_grid, perspective_road, indexed_pixel_art, bc2_texture,\n"
             "             bc3_texture, bc4_texture, rgba8888_texture, r8_texture,\n"
             "             stipple_test, alpha_blend\n",
             argv[0]

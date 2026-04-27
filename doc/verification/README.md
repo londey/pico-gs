@@ -35,7 +35,7 @@ Verification methods:
 - [VER-002: Early Z-Test Unit Testbench](ver_002_early_z.md)
 - [VER-003: Register File Unit Testbench](ver_003_register_file.md)
 - [VER-004: Color Combiner Unit Testbench](ver_004_color_combiner.md)
-- [VER-005: Palette LUT and Index Cache Unit Testbench](ver_005_texture_decoder.md)
+- [VER-005: Texture Palette LUT Unit Testbench](ver_005_texture_palette.md)
 - [VER-010: Gouraud Triangle Golden Image Test](ver_010_gouraud_triangle.md)
 - [VER-011: Depth-Tested Overlapping Triangles Golden Image Test](ver_011_depth_tested_triangles.md)
 - [VER-012: Textured Triangle Golden Image Test](ver_012_textured_triangle.md)
@@ -60,7 +60,7 @@ Each file should be created from `ver_000_template.md` and placed in this direct
 | VER-002 | `ver_002_early_z.md` | `tb_early_z` | REQ-005.02, UNIT-006 |
 | VER-003 | `ver_003_register_file.md` | `tb_register_file` | UNIT-003 |
 | VER-004 | `ver_004_color_combiner.md` | `color_combiner_tb` | REQ-004.01, UNIT-010 (blocked: UNIT-010 is WIP) |
-| VER-005 | `ver_005_texture_decoder.md` | `palette_lut_tb` | REQ-003.06, REQ-003.09, UNIT-011.06 |
+| VER-005 | `ver_005_texture_palette.md` | `palette_lut_tb` | REQ-003.06, REQ-003.09, UNIT-011.06 |
 
 ### Golden Image Integration Tests (VER-010 through VER-014)
 

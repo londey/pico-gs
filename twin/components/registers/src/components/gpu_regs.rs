@@ -1,7 +1,12 @@
 //! Addrmap: GPU Register Map
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// Named types defined within this component's body
 pub mod named_types {
+    #[allow(unused_imports)]
+    use super::_root; // alias to root module of generated code
     pub mod cc_mode_2_reg;
     pub mod cc_mode_reg;
     pub mod color_reg;
@@ -13,6 +18,7 @@ pub mod named_types {
     pub mod mem_addr_reg;
     pub mod mem_data_reg;
     pub mod mem_fill_reg;
+    pub mod palette_reg;
     pub mod perf_timestamp_reg;
     pub mod render_mode_reg;
     pub mod st0_st1_reg;
@@ -23,28 +29,30 @@ pub mod named_types {
 }
 
 // Instances of named component types
-pub use crate::components::gpu_regs::named_types::cc_mode_2_reg as cc_mode_2;
-pub use crate::components::gpu_regs::named_types::cc_mode_reg as cc_mode;
-pub use crate::components::gpu_regs::named_types::color_reg as color;
-pub use crate::components::gpu_regs::named_types::const_color_reg as const_color;
-pub use crate::components::gpu_regs::named_types::fb_config_reg as fb_config;
-pub use crate::components::gpu_regs::named_types::fb_control_reg as fb_control;
-pub use crate::components::gpu_regs::named_types::fb_display_reg as fb_display;
-pub use crate::components::gpu_regs::named_types::id_reg as id;
-pub use crate::components::gpu_regs::named_types::mem_addr_reg as mem_addr;
-pub use crate::components::gpu_regs::named_types::mem_data_reg as mem_data;
-pub use crate::components::gpu_regs::named_types::mem_fill_reg as mem_fill;
-pub use crate::components::gpu_regs::named_types::perf_timestamp_reg as perf_timestamp;
-pub use crate::components::gpu_regs::named_types::render_mode_reg as render_mode;
-pub use crate::components::gpu_regs::named_types::st0_st1_reg as st0_st1;
-pub use crate::components::gpu_regs::named_types::stipple_pattern_reg as stipple_pattern;
-pub use crate::components::gpu_regs::named_types::tex_cfg_reg as tex0_cfg;
-pub use crate::components::gpu_regs::named_types::tex_cfg_reg as tex1_cfg;
-pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_nokick;
-pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_kick_012;
-pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_kick_021;
-pub use crate::components::gpu_regs::named_types::vertex_reg as vertex_kick_rect;
-pub use crate::components::gpu_regs::named_types::z_range_reg as z_range;
+pub use _root::components::gpu_regs::named_types::cc_mode_2_reg as cc_mode_2;
+pub use _root::components::gpu_regs::named_types::cc_mode_reg as cc_mode;
+pub use _root::components::gpu_regs::named_types::color_reg as color;
+pub use _root::components::gpu_regs::named_types::const_color_reg as const_color;
+pub use _root::components::gpu_regs::named_types::fb_config_reg as fb_config;
+pub use _root::components::gpu_regs::named_types::fb_control_reg as fb_control;
+pub use _root::components::gpu_regs::named_types::fb_display_reg as fb_display;
+pub use _root::components::gpu_regs::named_types::id_reg as id;
+pub use _root::components::gpu_regs::named_types::mem_addr_reg as mem_addr;
+pub use _root::components::gpu_regs::named_types::mem_data_reg as mem_data;
+pub use _root::components::gpu_regs::named_types::mem_fill_reg as mem_fill;
+pub use _root::components::gpu_regs::named_types::palette_reg as palette0;
+pub use _root::components::gpu_regs::named_types::palette_reg as palette1;
+pub use _root::components::gpu_regs::named_types::perf_timestamp_reg as perf_timestamp;
+pub use _root::components::gpu_regs::named_types::render_mode_reg as render_mode;
+pub use _root::components::gpu_regs::named_types::st0_st1_reg as st0_st1;
+pub use _root::components::gpu_regs::named_types::stipple_pattern_reg as stipple_pattern;
+pub use _root::components::gpu_regs::named_types::tex_cfg_reg as tex0_cfg;
+pub use _root::components::gpu_regs::named_types::tex_cfg_reg as tex1_cfg;
+pub use _root::components::gpu_regs::named_types::vertex_reg as vertex_nokick;
+pub use _root::components::gpu_regs::named_types::vertex_reg as vertex_kick_012;
+pub use _root::components::gpu_regs::named_types::vertex_reg as vertex_kick_021;
+pub use _root::components::gpu_regs::named_types::vertex_reg as vertex_kick_rect;
+pub use _root::components::gpu_regs::named_types::z_range_reg as z_range;
 
 /// GPU Register Map
 ///
@@ -218,13 +226,18 @@ impl<'io, IO: peakrdl_rust::io::RegisterIO> GpuRegs<'io, IO> {
     /// TEXn_CFG
     ///
     /// Texture sampler configuration (single 64-bit register per unit).
-    /// All pixel data uses 4x4 block-tiled layout in SDRAM.
+    /// FORMAT is fixed at INDEXED8_2X2: each apparent texel is an
+    /// 8-bit palette index resolved through the active palette slot
+    /// (selected by PALETTE_IDX) into a UQ1.8 RGBA quadrant color.
     /// BASE_ADDR is a 16-bit value multiplied by 512 to form the
-    /// byte address (512-byte granularity, 32 MiB addressable).
+    /// SDRAM byte address of the index array (512-byte granularity,
+    /// 32 MiB addressable).  Palette slot contents are loaded
+    /// independently via PALETTE0/PALETTE1 (0x12/0x13).
     /// Octahedral wrap mode implements coupled diagonal mirroring:
     /// crossing one axis edge flips the other axis coordinate.
-    /// Any write to this register invalidates the texture cache
-    /// for the corresponding texture unit.
+    /// Any write to this register invalidates the index cache for
+    /// the corresponding texture unit; palette slot contents are
+    /// not affected.
     #[inline(always)]
     #[must_use]
     pub const fn tex0_cfg(&self) -> peakrdl_rust::reg::Reg<'io, tex0_cfg::TexCfgReg, IO> {
@@ -236,18 +249,71 @@ impl<'io, IO: peakrdl_rust::io::RegisterIO> GpuRegs<'io, IO> {
     /// TEXn_CFG
     ///
     /// Texture sampler configuration (single 64-bit register per unit).
-    /// All pixel data uses 4x4 block-tiled layout in SDRAM.
+    /// FORMAT is fixed at INDEXED8_2X2: each apparent texel is an
+    /// 8-bit palette index resolved through the active palette slot
+    /// (selected by PALETTE_IDX) into a UQ1.8 RGBA quadrant color.
     /// BASE_ADDR is a 16-bit value multiplied by 512 to form the
-    /// byte address (512-byte granularity, 32 MiB addressable).
+    /// SDRAM byte address of the index array (512-byte granularity,
+    /// 32 MiB addressable).  Palette slot contents are loaded
+    /// independently via PALETTE0/PALETTE1 (0x12/0x13).
     /// Octahedral wrap mode implements coupled diagonal mirroring:
     /// crossing one axis edge flips the other axis coordinate.
-    /// Any write to this register invalidates the texture cache
-    /// for the corresponding texture unit.
+    /// Any write to this register invalidates the index cache for
+    /// the corresponding texture unit; palette slot contents are
+    /// not affected.
     #[inline(always)]
     #[must_use]
     pub const fn tex1_cfg(&self) -> peakrdl_rust::reg::Reg<'io, tex1_cfg::TexCfgReg, IO> {
         unsafe {
             peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x88).cast(), self.io)
+        }
+    }
+
+    /// PALETTEn
+    ///
+    /// Palette slot N load control.
+    /// Writing this register with LOAD_TRIGGER=1 starts an SDRAM
+    /// burst load of 4096 bytes (256 entries x 4 RGBA8888 quadrant
+    /// colors) from byte address BASE_ADDR x 512 into the selected
+    /// on-chip palette slot.  Each UNORM8 channel is promoted to
+    /// UQ1.8 inline (UQ1.8 = UNORM8 << 1).
+    /// LOAD_TRIGGER is a self-clearing pulse — hardware clears it
+    /// when the load completes; reads return 0 when idle.  There
+    /// is no hardware status flag indicating completion; firmware
+    /// must serialize palette loads before dependent triangle
+    /// submissions or otherwise account for the load latency.
+    /// Palette slots are isolated: writing PALETTE0 does not
+    /// disturb slot 1 and vice versa.  Index-cache fills preempt
+    /// pending palette loads on the shared SDRAM Port 3 arbiter.
+    #[inline(always)]
+    #[must_use]
+    pub const fn palette0(&self) -> peakrdl_rust::reg::Reg<'io, palette0::PaletteReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x90).cast(), self.io)
+        }
+    }
+
+    /// PALETTEn
+    ///
+    /// Palette slot N load control.
+    /// Writing this register with LOAD_TRIGGER=1 starts an SDRAM
+    /// burst load of 4096 bytes (256 entries x 4 RGBA8888 quadrant
+    /// colors) from byte address BASE_ADDR x 512 into the selected
+    /// on-chip palette slot.  Each UNORM8 channel is promoted to
+    /// UQ1.8 inline (UQ1.8 = UNORM8 << 1).
+    /// LOAD_TRIGGER is a self-clearing pulse — hardware clears it
+    /// when the load completes; reads return 0 when idle.  There
+    /// is no hardware status flag indicating completion; firmware
+    /// must serialize palette loads before dependent triangle
+    /// submissions or otherwise account for the load latency.
+    /// Palette slots are isolated: writing PALETTE0 does not
+    /// disturb slot 1 and vice versa.  Index-cache fills preempt
+    /// pending palette loads on the shared SDRAM Port 3 arbiter.
+    #[inline(always)]
+    #[must_use]
+    pub const fn palette1(&self) -> peakrdl_rust::reg::Reg<'io, palette1::PaletteReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x98).cast(), self.io)
         }
     }
 

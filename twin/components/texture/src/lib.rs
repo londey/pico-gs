@@ -1,37 +1,35 @@
+// Spec-ref: unit_011_texture_sampler.md
+
 //! Texture sampling component of the pico-gs digital twin.
 //!
-//! Facade crate that re-exports the texture pipeline sub-crates and
-//! provides the top-level [`tex_sample::TextureSampler`] and
-//! [`tex_sample::TrilinearBlender`] trait.
+//! Facade crate that wires together the INDEXED8_2X2 sampling pipeline:
 //!
-//! # Sub-crate layout
+//! | Crate | UNIT | Stage |
+//! |-------|------|-------|
+//! | [`gs_tex_uv_coord`] | UNIT-011.01 | UV wrap + half-resolution split |
+//! | [`gs_tex_l1_cache`] | UNIT-011.03 | Half-resolution index cache |
+//! | [`gs_tex_palette_lut`] | UNIT-011.06 | Shared 2-slot palette LUT |
 //!
-//! | Crate | Pipeline stage |
-//! |-------|----------------|
-//! | [`gs_tex_l1_cache`] | L1 decoded block cache |
-//! | [`gs_tex_l2_cache`] | L2 compressed block cache |
-//! | [`gs_tex_block_decoder`] | Format decoders + block fetcher |
+//! The top-level [`tex_sample::TextureSampler`] facade owns one
+//! [`gs_tex_l1_cache::IndexCache`] per hardware sampler; the shared
+//! [`gs_tex_palette_lut::PaletteLut`] is owned by the orchestrator and
+//! passed by reference into [`tex_sample::tex_sample`] each fragment.
 
 pub mod tex_sample;
 
 // ── Re-exports for downstream consumers ─────────────────────────────────────
 
-/// L1 decoded texture block cache.
-pub mod tex_cache {
+/// Half-resolution texture index cache (UNIT-011.03).
+pub mod tex_index_cache {
     pub use gs_tex_l1_cache::*;
 }
 
-/// L2 compressed texture block cache.
-pub mod tex_compressed {
-    pub use gs_tex_l2_cache::*;
+/// Shared two-slot palette LUT (UNIT-011.06).
+pub mod tex_palette {
+    pub use gs_tex_palette_lut::*;
 }
 
-/// Texture format decoders and block fetcher.
-pub mod tex_decode {
-    pub use gs_tex_block_decoder::tex_decode::*;
-}
-
-/// Block fetcher trait and implementation.
-pub mod tex_fetch {
-    pub use gs_tex_block_decoder::tex_fetch::*;
+/// UV coordinate wrap + quadrant extraction (UNIT-011.01).
+pub mod tex_uv {
+    pub use gs_tex_uv_coord::*;
 }

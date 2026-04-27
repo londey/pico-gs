@@ -12,10 +12,7 @@ Or copy this template and modify.
 
 ## Type
 
-Choose one:
-- **Internal:** Defined by this project
-- **External Standard:** Defined by an external specification (e.g., PNG, SPI, USB)
-- **External Service:** Defined by an external service (e.g., REST API)
+Internal | External Standard | External Service
 
 ## External Specification
 
@@ -35,23 +32,7 @@ Choose one:
 
 ### Details
 
-<Detailed specification>
-
-For hardware interfaces, consider:
-- Signal definitions
-- Timing requirements
-- Electrical characteristics
-
-For data formats, consider:
-- Field definitions
-- Encoding
-- Constraints and valid ranges
-
-For APIs, consider:
-- Endpoints / functions
-- Parameters
-- Return values
-- Error conditions
+<Detailed specification. See `doc/interfaces/README.md` for a completeness checklist by interface type.>
 
 ## Constraints
 

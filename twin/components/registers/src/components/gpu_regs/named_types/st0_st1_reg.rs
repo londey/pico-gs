@@ -1,5 +1,8 @@
 //! Register: ST0_ST1
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// ST0_ST1
 ///
 /// Texture units 0+1 pre-divided coordinates S=U/W, T=V/W (Q4.12 fixed-point, range +/-8.0).

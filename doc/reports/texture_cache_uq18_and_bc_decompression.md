@@ -43,7 +43,7 @@ This report investigated five interrelated design questions before committing th
 
 - INT-032 (`doc/interfaces/int_032_texture_cache_architecture.md`) — Cache architecture specification
 - INT-014 (`doc/interfaces/int_014_texture_memory_layout.md`) — Texture memory layout
-- REQ-003.03 (`doc/requirements/req_003.03_compressed_textures.md`) — Compressed texture requirement
+- REQ-003.03 (compressed-texture requirement; document since removed during INDEXED8_2X2 pivot) — Compressed texture requirement
 - ARCHITECTURE.md — EBR budget (lines 320–333), DSP budget, pipeline description
 - `spi_gpu/src/render/texture_cache.sv` — RTL cache implementation (700 lines)
 - `spi_gpu/src/render/texture_bc1.sv` — BC1 decoder (146 lines)

@@ -150,7 +150,45 @@ fn ver_011_depth_test() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VER-012: Textured Triangle (needs texture pipeline — ignored for now)
+//  Palette-blob helpers for INDEXED8_2X2 scenes
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Build a 4096-byte palette blob with entry 0 set to a per-quadrant
+/// `[NW, NE, SW, SE]` pattern of RGBA8888 colours.  All other entries
+/// are zero.  Mirrors the layout in the new INDEXED8_2X2 hex scripts so
+/// the test can pre-load slot 0 directly without round-tripping the
+/// payload through SDRAM staging.
+fn make_quadrant_blob(nw: [u8; 4], ne: [u8; 4], sw: [u8; 4], se: [u8; 4]) -> [u8; 4096] {
+    let mut blob = [0u8; 4096];
+    blob[0..4].copy_from_slice(&nw);
+    blob[4..8].copy_from_slice(&ne);
+    blob[8..12].copy_from_slice(&sw);
+    blob[12..16].copy_from_slice(&se);
+    blob
+}
+
+/// Build a 4096-byte palette blob whose entry 0 and entry 1 are each a
+/// uniform RGBA8888 colour (all four quadrants identical).  Used by the
+/// scripts that key on indexed lookup rather than the quadrant trick
+/// (e.g. VER-016's per-square checker).
+fn make_uniform_blob(entry0: [u8; 4], entry1: [u8; 4]) -> [u8; 4096] {
+    let mut blob = [0u8; 4096];
+    for q in 0..4 {
+        blob[q * 4..q * 4 + 4].copy_from_slice(&entry0);
+    }
+    for q in 0..4 {
+        let off = 16 + q * 4;
+        blob[off..off + 4].copy_from_slice(&entry1);
+    }
+    blob
+}
+
+const WHITE_RGBA: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
+const BLACK_RGBA: [u8; 4] = [0x00, 0x00, 0x00, 0xFF];
+const MID_GREY_RGBA: [u8; 4] = [0x80, 0x80, 0x80, 0xFF];
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VER-012: Textured Triangle (INDEXED8_2X2)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const VER_012_HEX: &str = include_str!("../../scripts/ver_012_textured.hex");
@@ -162,14 +200,27 @@ fn ver_012_textured_triangle() {
 
     let script = hex_parser::parse_hex_str(VER_012_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
-    gpu.reg_write_script(&script.all_commands());
+
+    // Pre-load palette slot 0 with the per-quadrant white/black checker
+    // (NW=white, NE=black, SW=black, SE=white) used by VER-012.  The hex
+    // script also stages and triggers this load via PALETTE0; the
+    // explicit pre-load makes the test resilient to SDRAM staging
+    // changes.
+    gpu.load_palette(
+        0,
+        &make_quadrant_blob(WHITE_RGBA, BLACK_RGBA, BLACK_RGBA, WHITE_RGBA),
+    );
+
+    for phase in &script.phases {
+        gpu.reg_write_script(&phase.commands);
+    }
 
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-012 golden image: {}", png_path.display());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VER-013: Color-Combined Output (needs texture + color combiner — ignored)
+//  VER-013: Color-Combined Output (INDEXED8_2X2)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const VER_013_HEX: &str = include_str!("../../scripts/ver_013_color_combined.hex");
@@ -181,14 +232,24 @@ fn ver_013_color_combined() {
 
     let script = hex_parser::parse_hex_str(VER_013_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
-    gpu.reg_write_script(&script.all_commands());
+
+    // Pre-load palette slot 0: per-quadrant white/mid-grey checker
+    // matching the VER-013 hex script (NW=white, NE=grey, SW=grey, SE=white).
+    gpu.load_palette(
+        0,
+        &make_quadrant_blob(WHITE_RGBA, MID_GREY_RGBA, MID_GREY_RGBA, WHITE_RGBA),
+    );
+
+    for phase in &script.phases {
+        gpu.reg_write_script(&phase.commands);
+    }
 
     gpu.framebuffer_to_png(&png_path).unwrap();
     eprintln!("VER-013 golden image: {}", png_path.display());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VER-014: Textured Cube (needs texture + Z-test + KICK_021 — ignored)
+//  VER-014: Textured Cube (INDEXED8_2X2)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const VER_014_HEX: &str = include_str!("../../scripts/ver_014_textured_cube.hex");
@@ -202,6 +263,14 @@ fn ver_014_textured_cube() {
 
     let script = hex_parser::parse_hex_str(VER_014_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+
+    // Pre-load palette slot 0: per-quadrant white/black checker matching
+    // the VER-014 hex script (NW=white, NE=black, SW=black, SE=white).
+    gpu.load_palette(
+        0,
+        &make_quadrant_blob(WHITE_RGBA, BLACK_RGBA, BLACK_RGBA, WHITE_RGBA),
+    );
+
     for phase in &script.phases {
         gpu.reg_write_script(&phase.commands);
     }
@@ -254,6 +323,13 @@ fn ver_016_perspective_road() {
 
     let script = hex_parser::parse_hex_str(VER_016_HEX).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
+
+    // Pre-load palette slot 0: entry 0 = solid white, entry 1 = solid
+    // black (uniform across all four quadrants).  Matches the VER-016
+    // hex script which uses per-block index variation rather than the
+    // quadrant trick to encode the 4x4 grid of 16x16 squares.
+    gpu.load_palette(0, &make_uniform_blob(WHITE_RGBA, BLACK_RGBA));
+
     for phase in &script.phases {
         gpu.reg_write_script(&phase.commands);
     }
@@ -265,15 +341,15 @@ fn ver_016_perspective_road() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VER-017: BC1 Texture (uses ## INCLUDE: for shared texture data)
+//  VER-017: INDEXED8_2X2 pixel-art texture (256x256 Skyline base-colour)
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn ver_017_bc1_texture() {
-    let png_path = dt_out_dir().join("ver_017_bc1_texture.png");
+fn ver_017_indexed_pixel_art() {
+    let png_path = dt_out_dir().join("ver_017_indexed_pixel_art.png");
     let _ = test_harness::write_placeholder_png(&png_path);
 
-    let hex_path = scripts_dir().join("ver_017_bc1_texture.hex");
+    let hex_path = scripts_dir().join("ver_017_indexed_pixel_art.hex");
     let script = hex_parser::parse_hex_file(&hex_path).unwrap();
     let mut gpu = Gpu::new(script.fb_width, script.fb_height);
     gpu.reg_write_script(&script.all_commands());

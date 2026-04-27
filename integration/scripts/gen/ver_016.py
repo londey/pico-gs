@@ -1,14 +1,17 @@
-"""VER-016: Perspective Road Z-Test — hex generator.
+"""VER-016: Perspective Road Z-Test (INDEXED8_2X2) — hex generator.
 
-Four textured triangles (two quads) forming a road that stretches from the
-bottom of the screen into the distance.  Uses the full MVP pipeline so depth
-varies smoothly from near (bottom) to far (top).  64x64 checker texture with
-16x16 squares shows perspective foreshortening and bilinear filtering.
+Four textured triangles (two quads) forming a road that stretches from
+the bottom of the screen into the distance.  Uses the full MVP pipeline
+so depth varies smoothly from near (bottom) to far (top).  64x64
+apparent INDEXED8_2X2 texture laid out as a 4x4 grid of 16x16 squares;
+index 0 = solid white quadrants, index 1 = solid black quadrants
+(uniform per-entry, so the visible pattern is encoded by the per-block
+index variation rather than the quadrant trick).
 
-The road is split into two strips to keep V coordinates within Q4.12 range
-(max 4.0 instead of 8.0 which would overflow).
+The road is split into two strips to keep V coordinates within Q4.12
+range (max 4.0 instead of 8.0 which would overflow).
 
-Three phases: zclear, setup, triangles.
+Four phases: zclear, palette, setup, triangles.
 """
 
 import math
@@ -24,14 +27,14 @@ ZBUFFER_BASE_512 = 0x0800
 TEX0_BASE_ADDR_512 = 0x0C00
 TEX0_BASE_WORD = 0x0C00 * 256
 
-TEX_LOG2 = 6          # 64x64 texture
-SQUARE_SIZE = 16      # 16x16 texel checker squares
+PALETTE0_BASE_ADDR_512 = 0x0880
+
+TEX_LOG2 = 6          # 64x64 apparent texture
+SQUARE_SIZE = 16      # 16x16 apparent texel checker squares
 
 # ---------------------------------------------------------------------------
 # Road geometry in world space
 # ---------------------------------------------------------------------------
-# A flat road on the XZ plane (Y=0), stretching from z_near to z_far.
-# Split into NUM_STRIPS quads to keep V coordinates within Q4.12 range.
 ROAD_WIDTH = 2.0
 ROAD_NEAR = 2.0    # near edge (close to camera)
 ROAD_FAR = 50.0    # far edge (vanishing point)
@@ -43,63 +46,34 @@ UV_REPEATS_U = 2.0    # across the road
 UV_REPEATS_V = 7.0    # along the road (max V per vertex; fits Q4.12 signed)
 
 
-def _emit_block_checker_texture(base_word: int, width_log2: int,
-                                square_size: int,
-                                color_a: int, color_b: int,
-                                label: str) -> list[str]:
-    """Emit a checker texture where each square is block-aligned.
+def _build_indexed_checker(width_log2: int, square_size: int,
+                           index_a: int, index_b: int) -> bytes:
+    """Build the 4x4 block-tiled index array for a square checker texture.
 
-    Uses MEM_FILL to paint the entire texture with color_a, then
-    overwrites color_b runs with additional MEM_FILL commands.
-    Each checker square must be a multiple of 4 (block size).
-
-    base_word: SDRAM word address for the texture.
-    width_log2: log2 of texture dimension (square texture).
-    square_size: side length of each checker square in texels (must be >= 4).
-    color_a: RGB565 fill color (majority / base).
-    color_b: RGB565 overwrite color.
+    Each 16x16 apparent-pixel square corresponds to 2x2 INDEXED8_2X2
+    blocks (one block covers 8x8 apparent texels).  All indices in a
+    given block have the same value, so the per-quadrant lookup is
+    trivial and the visible pattern is determined entirely by the
+    inter-block checker.
     """
-    size = 1 << width_log2
-    blocks_per_row = size >> 2
-    blocks_per_square = square_size >> 2
-    total_words = size * size
+    apparent = 1 << width_log2
+    index_dim = apparent >> 1
+    blocks_per_row = index_dim >> 2
+    # Each square is 2 blocks across (since 1 block = 8 apparent texels
+    # and 1 square = 16 apparent texels).
+    blocks_per_square = (square_size // 2) // 4
 
-    lines = []
-    lines.append(emit_comment(
-        f"Upload {size}x{size} {label} texture at word 0x{base_word:05X}"))
-
-    # Step 1: MEM_FILL entire texture with color_a.
-    lines.append(emit(ADDR_MEM_FILL,
-                       pack_mem_fill(base_word, color_a, total_words),
-                       f"Fill {size}x{size} with 0x{color_a:04X}"))
-
-    # Step 2: overwrite color_b blocks with MEM_FILL (one per contiguous run).
+    out = bytearray(blocks_per_row * blocks_per_row * 16)
     for by in range(blocks_per_row):
-        run_start = None
-        for bx in range(blocks_per_row + 1):
-            # Determine checker color for this block.
-            if bx < blocks_per_row:
-                sq_x = (bx * 4) // square_size
-                sq_y = (by * 4) // square_size
-                is_b = (sq_x + sq_y) % 2 != 0
-            else:
-                is_b = False  # flush any pending run
-
-            if is_b and run_start is None:
-                run_start = bx
-            elif not is_b and run_start is not None:
-                run_len = bx - run_start  # blocks
-                block_idx = by * blocks_per_row + run_start
-                word_addr = base_word + block_idx * 16
-                run_words = run_len * 16
-
-                lines.append(emit(ADDR_MEM_FILL,
-                                   pack_mem_fill(word_addr, color_b, run_words),
-                                   f"row {by} bx {run_start}..{bx - 1} "
-                                   f"({run_len} blk, {run_words} words)"))
-                run_start = None
-
-    return lines
+        for bx in range(blocks_per_row):
+            sq_x = bx // blocks_per_square
+            sq_y = by // blocks_per_square
+            value = index_b if (sq_x + sq_y) % 2 else index_a
+            block_idx = by * blocks_per_row + bx
+            base = block_idx * 16
+            for i in range(16):
+                out[base + i] = value
+    return bytes(out)
 
 
 def _zclear_phase() -> list[str]:
@@ -108,17 +82,40 @@ def _zclear_phase() -> list[str]:
     lines.append(emit_phase("zclear"))
     lines.append(emit_blank())
 
-    # Clear color buffer
     lines.extend(emit_fb_clear(0x0000, 9, 9))
     lines.append(emit_blank())
 
-    # Z-buffer clear is handled by the tile cache lazy-fill:
-    # FB_CONFIG write resets Hi-Z metadata, and on cache miss to an
-    # uninitialized tile the cache fills the line with 0x0000.
+    # Z-buffer clear is handled by the tile cache lazy-fill: FB_CONFIG
+    # write resets Hi-Z metadata, and on cache miss to an uninitialised
+    # tile the cache fills the line with 0x0000.
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
+    return lines
+
+
+def _palette_phase() -> list[str]:
+    """Stage palette payload + index array, trigger PALETTE0 load."""
+    lines = []
+    lines.append(emit_phase("palette"))
+    lines.append(emit_blank())
+
+    # Two palette entries: 0 = solid white, 1 = solid black (opaque).
+    palette_entries = [
+        (RGBA_WHITE, RGBA_WHITE, RGBA_WHITE, RGBA_WHITE),
+        (RGBA_BLACK, RGBA_BLACK, RGBA_BLACK, RGBA_BLACK),
+    ]
+    lines.extend(emit_palette_upload(PALETTE0_BASE_ADDR_512, palette_entries, slot=0))
+    lines.append(emit_blank())
+
+    indices = _build_indexed_checker(TEX_LOG2, SQUARE_SIZE,
+                                     index_a=0, index_b=1)
+    lines.extend(emit_indexed_texture_block(
+        TEX0_BASE_WORD, indices,
+        label=f"{1 << TEX_LOG2}x{1 << TEX_LOG2} INDEXED8_2X2 checker indices",
+    ))
+    lines.append(emit_blank())
     return lines
 
 
@@ -128,24 +125,20 @@ def _setup_phase() -> list[str]:
     lines.append(emit_phase("setup"))
     lines.append(emit_blank())
 
-    # Upload 64x64 white/black checker texture (16x16 squares)
-    lines.extend(_emit_block_checker_texture(
-        TEX0_BASE_WORD, TEX_LOG2, SQUARE_SIZE,
-        RGB565_WHITE, RGB565_BLACK,
-        "white/black checker (16x16 squares)"))
-    lines.append(emit_blank())
-
     lines.append(emit(ADDR_FB_CONFIG, pack_fb_config(0x0000, ZBUFFER_BASE_512, 9, 9),
                        "color_base=0x0000 z_base=0x0800 w_log2=9 h_log2=9"))
     lines.append(emit(ADDR_FB_CONTROL, pack_fb_control(0, 0, 512, 512),
                        "scissor x=0 y=0 w=512 h=512"))
 
-    # filt=1 (BILINEAR), fmt=RGB565, width_log2=6, height_log2=6
-    tex_cfg = pack_tex0_cfg(1, 1, TEX_FMT_RGB565, TEX_LOG2, TEX_LOG2, 0, 0, 0,
-                            TEX0_BASE_ADDR_512)
+    tex_cfg = pack_tex_cfg_indexed(
+        enable=1, width_log2=TEX_LOG2, height_log2=TEX_LOG2,
+        u_wrap=0, v_wrap=0, palette_idx=0,
+        base_addr_512=TEX0_BASE_ADDR_512,
+    )
     lines.append(emit(ADDR_TEX0_CFG, tex_cfg,
-                       f"ENABLE=1 BILINEAR RGB565 {1 << TEX_LOG2}x"
-                       f"{1 << TEX_LOG2} REPEAT base=0x{TEX0_BASE_ADDR_512:04X}"))
+                       f"ENABLE=1 NEAREST INDEXED8_2X2 {1 << TEX_LOG2}x"
+                       f"{1 << TEX_LOG2} REPEAT PALETTE_IDX=0 "
+                       f"base=0x{TEX0_BASE_ADDR_512:04X}"))
 
     lines.append(emit(ADDR_CC_MODE, CC_MODE_MODULATE,
                        "MODULATE: cycle0=TEX0*SHADE0 cycle1=COMBINED*ONE"))
@@ -195,9 +188,7 @@ def _triangles_phase() -> list[str]:
     vp_w, vp_h = 512.0, 512.0
 
     # Build NUM_STRIPS+1 rows of vertices along the road (left, right per row).
-    # Z is interpolated linearly from ROAD_NEAR to ROAD_FAR.
-    # V is interpolated from 0.0 to UV_REPEATS_V.
-    rows = []  # each row: [(left_screen_vert), (right_screen_vert)]
+    rows = []
     for row in range(NUM_STRIPS + 1):
         t = row / NUM_STRIPS
         z_world = ROAD_NEAR + t * (ROAD_FAR - ROAD_NEAR)
@@ -218,7 +209,6 @@ def _triangles_phase() -> list[str]:
             row_verts.append((sx_q4, sy_q4, z16, u_coord, v_coord, w))
         rows.append(row_verts)
 
-    # Emit 2 triangles per strip (standard quad split).
     for s in range(NUM_STRIPS):
         nl, nr = rows[s]      # near-left, near-right
         fl, fr = rows[s + 1]  # far-left, far-right
@@ -238,20 +228,22 @@ def _triangles_phase() -> list[str]:
 
 def generate() -> list[str]:
     lines = []
-    lines.append(emit_comment("VER-016: Perspective Road Z-Test"))
+    lines.append(emit_comment("VER-016: Perspective Road Z-Test (INDEXED8_2X2)"))
     lines.append(emit_comment(""))
     lines.append(emit_comment("Four-triangle road (2 quads) stretching into the distance."))
-    lines.append(emit_comment("Tests Z interpolation and perspective depth gradient."))
-    lines.append(emit_comment("64x64 checker texture with 16x16 squares, bilinear filtered."))
-    lines.append(emit_comment("Road split into 2 strips to keep V within Q4.12 range (max 4.0)."))
-    lines.append(emit_comment("Phase 'zclear': initialize Z-buffer to 0x0000 (reverse-Z far)"))
-    lines.append(emit_comment("Phase 'setup': configure texture and render mode"))
+    lines.append(emit_comment("64x64 apparent INDEXED8_2X2 texture: 4x4 grid of 16x16 squares,"))
+    lines.append(emit_comment("index 0 = white, index 1 = black (uniform per-entry)."))
+    lines.append(emit_comment("Road split into strips to keep V within Q4.12 range (max 4.0)."))
+    lines.append(emit_comment("Phase 'zclear':    initialise Z-buffer to 0x0000 (reverse-Z far)"))
+    lines.append(emit_comment("Phase 'palette':   stage palette + index array, trigger PALETTE0"))
+    lines.append(emit_comment("Phase 'setup':     configure texture and render mode"))
     lines.append(emit_comment("Phase 'triangles': submit road strips (MVP-transformed)"))
     lines.append(emit_blank())
     lines.append(emit_framebuffer(512, 512))
-    lines.append(emit_texture("checker_wb", f"{TEX0_BASE_WORD:05X}", "RGB565", TEX_LOG2))
     lines.append(emit_blank())
     lines.extend(_zclear_phase())
+    lines.append(emit_blank())
+    lines.extend(_palette_phase())
     lines.append(emit_blank())
     lines.extend(_setup_phase())
     lines.append(emit_blank())

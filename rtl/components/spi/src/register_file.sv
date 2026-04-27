@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_003_register_file.md `e52160e524059e7e` 2026-03-22
+// Spec-ref: unit_003_register_file.md `97303aa29b0ac810` 2026-04-25
 // Register File - GPU State and Vertex State Machine (INT-010 v10.0)
 // Decodes register addresses and manages vertex submission
 // Implements the vertex state machine that triggers triangle rasterization
@@ -86,8 +86,16 @@ module register_file (
     // Texture configuration
     output reg  [63:0]  tex0_cfg,            // TEX0 configuration
     output reg  [63:0]  tex1_cfg,            // TEX1 configuration
-    output reg          tex0_cache_inv,      // TEX0 cache invalidation pulse
-    output reg          tex1_cache_inv,      // TEX1 cache invalidation pulse
+    output reg          tex0_cache_inv,      // TEX0 index cache invalidation pulse
+    output reg          tex1_cache_inv,      // TEX1 index cache invalidation pulse
+    output reg          tex0_palette_idx,    // TEX0_CFG[24] — selected palette slot for sampler 0
+    output reg          tex1_palette_idx,    // TEX1_CFG[24] — selected palette slot for sampler 1
+
+    // Palette slot load control (REQ-003.09 / INT-010 PALETTE0/PALETTE1)
+    output reg          palette0_load_trigger, // One-cycle pulse when PALETTE0 written with LOAD_TRIGGER=1
+    output reg          palette1_load_trigger, // One-cycle pulse when PALETTE1 written with LOAD_TRIGGER=1
+    output reg  [15:0]  palette0_base_addr,    // BASE_ADDR field from most recent PALETTE0 write
+    output reg  [15:0]  palette1_base_addr,    // BASE_ADDR field from most recent PALETTE1 write
 
     // Memory access (MEM_ADDR / MEM_DATA)
     output reg  [63:0]  mem_addr_out,        // MEM_ADDR register value
@@ -125,6 +133,8 @@ module register_file (
     localparam ADDR_VERTEX_KICK_RECT   = 7'h09;  // Two-corner rectangle emit
     localparam ADDR_TEX0_CFG           = 7'h10;  // Texture unit 0 configuration
     localparam ADDR_TEX1_CFG           = 7'h11;  // Texture unit 1 configuration
+    localparam ADDR_PALETTE0           = 7'h12;  // Palette slot 0 load control
+    localparam ADDR_PALETTE1           = 7'h13;  // Palette slot 1 load control
     localparam ADDR_CC_MODE            = 7'h18;  // Color combiner mode (passes 0 + 1)
     localparam ADDR_CONST_COLOR        = 7'h19;  // Constant color 0+1
     localparam ADDR_CC_MODE_2          = 7'h1A;  // Color combiner pass 2 (blend) mode
@@ -179,6 +189,8 @@ module register_file (
     reg [63:0] const_color_reg;         // CONST_COLOR register
     reg [63:0] tex0_cfg_reg;            // TEX0_CFG register
     reg [63:0] tex1_cfg_reg;            // TEX1_CFG register
+    reg [15:0] palette0_base_r;         // PALETTE0 BASE_ADDR (LOAD_TRIGGER is fire-and-forget, not stored)
+    reg [15:0] palette1_base_r;         // PALETTE1 BASE_ADDR (LOAD_TRIGGER is fire-and-forget, not stored)
     reg [63:0] mem_addr_reg;            // MEM_ADDR register
     // mem_data write value is held in the mem_data_out output register
 
@@ -278,6 +290,17 @@ module register_file (
     always_comb begin
         tex0_cfg = tex0_cfg_reg;
         tex1_cfg = tex1_cfg_reg;
+        tex0_palette_idx = tex0_cfg_reg[24];
+        tex1_palette_idx = tex1_cfg_reg[24];
+    end
+
+    // ========================================================================
+    // Combinational Decode: PALETTE0/PALETTE1 BASE_ADDR → outputs
+    // ========================================================================
+
+    always_comb begin
+        palette0_base_addr = palette0_base_r;
+        palette1_base_addr = palette1_base_r;
     end
 
     // ========================================================================
@@ -334,6 +357,8 @@ module register_file (
     reg [63:0] next_const_color;
     reg [63:0] next_tex0_cfg;
     reg [63:0] next_tex1_cfg;
+    reg [15:0] next_palette0_base;
+    reg [15:0] next_palette1_base;
     reg [63:0] next_mem_addr;
 
     // FB_DISPLAY pending state
@@ -373,6 +398,8 @@ module register_file (
     reg [19:0]   next_mem_fill_count;
     reg          next_tex0_cache_inv;
     reg          next_tex1_cache_inv;
+    reg          next_palette0_load_trigger;
+    reg          next_palette1_load_trigger;
     reg          next_mem_data_wr;
     reg [21:0]   next_mem_data_dword_addr;
     reg          next_mem_data_rd;
@@ -404,6 +431,8 @@ module register_file (
         next_const_color           = const_color_reg;
         next_tex0_cfg              = tex0_cfg_reg;
         next_tex1_cfg              = tex1_cfg_reg;
+        next_palette0_base         = palette0_base_r;
+        next_palette1_base         = palette1_base_r;
         next_mem_addr              = mem_addr_reg;
         next_fb_display_pending    = fb_display_pending;
         next_fb_display_pending_val = fb_display_pending_val;
@@ -444,6 +473,8 @@ module register_file (
         next_mem_fill_trigger = 1'b0;
         next_tex0_cache_inv   = 1'b0;
         next_tex1_cache_inv   = 1'b0;
+        next_palette0_load_trigger = 1'b0;
+        next_palette1_load_trigger = 1'b0;
         next_ts_mem_wr        = 1'b0;
         next_mem_data_wr         = 1'b0;
         next_mem_data_dword_addr = mem_addr_reg[21:0]; // Capture pre-increment addr
@@ -628,6 +659,18 @@ module register_file (
                     next_tex1_cache_inv = 1'b1;
                 end
 
+                ADDR_PALETTE0: begin
+                    // Store BASE_ADDR; pulse trigger only when LOAD_TRIGGER bit set.
+                    // LOAD_TRIGGER (bit 16) is fire-and-forget — never persisted.
+                    next_palette0_base         = cmd_wdata[15:0];
+                    next_palette0_load_trigger = cmd_wdata[16];
+                end
+
+                ADDR_PALETTE1: begin
+                    next_palette1_base         = cmd_wdata[15:0];
+                    next_palette1_load_trigger = cmd_wdata[16];
+                end
+
                 ADDR_CC_MODE: begin
                     next_cc_mode = cmd_wdata;
                 end
@@ -731,6 +774,8 @@ module register_file (
             const_color_reg     <= 64'h0;
             tex0_cfg_reg        <= 64'h0;
             tex1_cfg_reg        <= 64'h0;
+            palette0_base_r     <= 16'h0;
+            palette1_base_r     <= 16'h0;
             mem_addr_reg        <= 64'h0;
 
             // Reset FB_DISPLAY pending state
@@ -770,6 +815,8 @@ module register_file (
             mem_fill_count   <= 20'h0;
             tex0_cache_inv   <= 1'b0;
             tex1_cache_inv   <= 1'b0;
+            palette0_load_trigger <= 1'b0;
+            palette1_load_trigger <= 1'b0;
             mem_data_wr         <= 1'b0;
             mem_data_dword_addr <= 22'h0;
             mem_data_rd         <= 1'b0;
@@ -798,6 +845,8 @@ module register_file (
             const_color_reg     <= next_const_color;
             tex0_cfg_reg        <= next_tex0_cfg;
             tex1_cfg_reg        <= next_tex1_cfg;
+            palette0_base_r     <= next_palette0_base;
+            palette1_base_r     <= next_palette1_base;
             mem_addr_reg        <= next_mem_addr;
 
             // FB_DISPLAY pending state
@@ -837,6 +886,8 @@ module register_file (
             mem_fill_count   <= next_mem_fill_count;
             tex0_cache_inv   <= next_tex0_cache_inv;
             tex1_cache_inv   <= next_tex1_cache_inv;
+            palette0_load_trigger <= next_palette0_load_trigger;
+            palette1_load_trigger <= next_palette1_load_trigger;
             mem_data_wr         <= next_mem_data_wr;
             mem_data_dword_addr <= next_mem_data_dword_addr;
             mem_data_rd         <= next_mem_data_rd;

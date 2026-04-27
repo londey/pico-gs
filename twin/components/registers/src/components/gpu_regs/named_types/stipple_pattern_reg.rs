@@ -1,5 +1,8 @@
 //! Register: STIPPLE_PATTERN
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// STIPPLE_PATTERN
 ///
 /// 8x8 stipple bitmask (row-major, bit 0 = pixel (0,0)).

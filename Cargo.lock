@@ -230,10 +230,6 @@ dependencies = [
 [[package]]
 name = "gs-tex-l1-cache"
 version = "0.1.0"
-dependencies = [
- "gs-twin-core",
- "qfixed",
-]
 
 [[package]]
 name = "gs-tex-l2-cache"
@@ -241,6 +237,15 @@ version = "0.1.0"
 dependencies = [
  "gpu-registers",
  "gs-twin-core",
+]
+
+[[package]]
+name = "gs-tex-palette-lut"
+version = "0.1.0"
+dependencies = [
+ "gpu-registers",
+ "gs-twin-core",
+ "qfixed",
 ]
 
 [[package]]
@@ -256,9 +261,8 @@ name = "gs-texture"
 version = "0.1.0"
 dependencies = [
  "gpu-registers",
- "gs-tex-block-decoder",
  "gs-tex-l1-cache",
- "gs-tex-l2-cache",
+ "gs-tex-palette-lut",
  "gs-tex-uv-coord",
  "gs-twin-core",
  "qfixed",

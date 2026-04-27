@@ -1,5 +1,8 @@
 //! Register: PERF_TIMESTAMP
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// PERF_TIMESTAMP
 ///
 /// Command-stream timestamp marker.

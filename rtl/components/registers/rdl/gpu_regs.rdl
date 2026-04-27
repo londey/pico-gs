@@ -38,14 +38,12 @@ enum cull_mode_e {
     CULL_CCW   = 2'd2 { desc = "Cull counter-clockwise triangles"; };
 };
 
+// Texture pixel format.  Only INDEXED8_2X2 is implemented; the 4-bit FORMAT
+// field width is retained for ABI stability (values 4'd1–4'd15 reserved for
+// future use).  See INT-014 for the INDEXED8_2X2 SDRAM memory layout and
+// REQ-003.09 for palette semantics.
 enum tex_format_e {
-    BC1        = 4'd0 { desc = "4 bpp, 64 bits per 4x4 block, opaque or 1-bit alpha"; };
-    BC2        = 4'd1 { desc = "8 bpp, 128 bits per 4x4 block, explicit alpha"; };
-    BC3        = 4'd2 { desc = "8 bpp, 128 bits per 4x4 block, interpolated alpha"; };
-    BC4        = 4'd3 { desc = "4 bpp, 64 bits per 4x4 block, single channel"; };
-    RGB565     = 4'd5 { desc = "16 bpp, 5-6-5 uncompressed, 4x4 tiled"; };
-    RGBA8888   = 4'd6 { desc = "32 bpp, 8-8-8-8 uncompressed, 4x4 tiled"; };
-    R8         = 4'd7 { desc = "8 bpp, single channel, 4x4 tiled"; };
+    INDEXED8_2X2 = 4'd0 { desc = "8 bpp palette index, 2x2 quadrant color selection (only legal value; 1-15 reserved)"; };
 };
 
 // Texture filter mode.  The 2-bit FILTER field is preserved for ABI
@@ -192,13 +190,18 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     reg tex_cfg_reg {
         name = "TEXn_CFG";
         desc = "Texture sampler configuration (single 64-bit register per unit).
-               All pixel data uses 4x4 block-tiled layout in SDRAM.
+               FORMAT is fixed at INDEXED8_2X2: each apparent texel is an
+               8-bit palette index resolved through the active palette slot
+               (selected by PALETTE_IDX) into a UQ1.8 RGBA quadrant color.
                BASE_ADDR is a 16-bit value multiplied by 512 to form the
-               byte address (512-byte granularity, 32 MiB addressable).
+               SDRAM byte address of the index array (512-byte granularity,
+               32 MiB addressable).  Palette slot contents are loaded
+               independently via PALETTE0/PALETTE1 (0x12/0x13).
                Octahedral wrap mode implements coupled diagonal mirroring:
                crossing one axis edge flips the other axis coordinate.
-               Any write to this register invalidates the texture cache
-               for the corresponding texture unit.";
+               Any write to this register invalidates the index cache for
+               the corresponding texture unit; palette slot contents are
+               not affected.";
         field {} ENABLE[0:0]                                = 0;
         field {} RSVD_1[1:1]                                = 0;
         field { encode = tex_filter_e; }  FILTER[3:2]       = 0;
@@ -207,8 +210,8 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
         field {} HEIGHT_LOG2[15:12]                         = 0;
         field { encode = wrap_mode_e; }   U_WRAP[17:16]     = 0;
         field { encode = wrap_mode_e; }   V_WRAP[19:18]     = 0;
-        field {} MIP_LEVELS[23:20]                          = 0;
-        field {} RSVD_MID[31:24]                            = 0;
+        field {} PALETTE_IDX[24:24]                         = 0;
+        field {} RSVD_MID[31:25]                            = 0;
         field {} BASE_ADDR[47:32]                           = 0;
         field {} RSVD_HI[63:48]                             = 0;
     };
@@ -216,7 +219,54 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     tex_cfg_reg TEX0_CFG @ 0x080;  // index 0x10
     tex_cfg_reg TEX1_CFG @ 0x088;  // index 0x11
 
-    // index 0x12-0x17: Reserved (freed by texture register consolidation)
+    // -------------------------------------------------------------------
+    // Palette slot load registers (index 0x12-0x13)
+    // -------------------------------------------------------------------
+    //
+    // The texture sampler holds two resident palette slots in shared
+    // on-chip EBR (UNIT-011.06 Palette LUT).  Firmware loads each slot
+    // independently by writing the corresponding PALETTEn register with
+    // BASE_ADDR set and LOAD_TRIGGER=1.  The palette load FSM inside
+    // texture_sampler.sv issues an SDRAM burst (via Port 3 on a 3-way
+    // arbiter shared with index cache fills), promotes each RGBA8888
+    // byte to UQ1.8 inline (UQ1.8 = UNORM8 << 1), and writes 256 entries
+    // x 4 quadrant colors into the selected slot.
+    //
+    // Behavioral contract (see REQ-003.09 / INT-010):
+    //   - LOAD_TRIGGER is a self-clearing pulse; reads return 0 when idle.
+    //   - In-flight index cache fills preempt a pending palette load on
+    //     the SDRAM Port 3 arbiter so fragment rendering is not stalled.
+    //   - Per-slot isolation: a load of slot N does not stall sampling
+    //     reads from slot M (N != M).
+    //   - There is no hardware status indicating load completion and no
+    //     hardware fault for sampling an unloaded slot; firmware must
+    //     load each slot before submitting triangles that reference it.
+    //   - Palette slot contents persist across TEXn_CFG writes.
+
+    reg palette_reg {
+        name = "PALETTEn";
+        desc = "Palette slot N load control.
+               Writing this register with LOAD_TRIGGER=1 starts an SDRAM
+               burst load of 4096 bytes (256 entries x 4 RGBA8888 quadrant
+               colors) from byte address BASE_ADDR x 512 into the selected
+               on-chip palette slot.  Each UNORM8 channel is promoted to
+               UQ1.8 inline (UQ1.8 = UNORM8 << 1).
+               LOAD_TRIGGER is a self-clearing pulse — hardware clears it
+               when the load completes; reads return 0 when idle.  There
+               is no hardware status flag indicating completion; firmware
+               must serialize palette loads before dependent triangle
+               submissions or otherwise account for the load latency.
+               Palette slots are isolated: writing PALETTE0 does not
+               disturb slot 1 and vice versa.  Index-cache fills preempt
+               pending palette loads on the shared SDRAM Port 3 arbiter.";
+        field {} BASE_ADDR[15:0]    = 0;   // SDRAM byte address / 512
+        field {} LOAD_TRIGGER[16:16] = 0;  // self-clearing; write 1 to start load
+        field {} RSVD[63:17]        = 0;
+    };
+    palette_reg PALETTE0 @ 0x090;  // index 0x12
+    palette_reg PALETTE1 @ 0x098;  // index 0x13
+
+    // index 0x14-0x17: Reserved
 
     // ===================================================================
     // Color Combiner (index 0x18–0x1F) 

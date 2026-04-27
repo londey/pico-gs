@@ -126,14 +126,10 @@ fn block_from(words: &[u16]) -> [u16; 32] {
 /// returns transparent black.
 fn compute_expected(format: u8, block_words: &[u16; 32], indices: &[u8; 4]) -> [TexelUq18; 4] {
     let fmt = match format {
-        0 => Some(TexFormatE::Bc1),
-        1 => Some(TexFormatE::Bc2),
-        2 => Some(TexFormatE::Bc3),
-        3 => Some(TexFormatE::Bc4),
-        5 => Some(TexFormatE::Rgb565),
-        6 => Some(TexFormatE::Rgba8888),
-        7 => Some(TexFormatE::R8),
-        _ => None, // Reserved format 4 (or any invalid) → transparent black
+        // Legacy format codes 0..=7 all collapse to INDEXED8_2X2 in the
+        // shimmed dispatch below; this generator is scheduled for removal.
+        0..=7 if format != 4 => Some(TexFormatE::Indexed82x2),
+        _ => None, // Reserved or invalid → transparent black
     };
 
     let decoded = match fmt {

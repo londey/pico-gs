@@ -660,15 +660,11 @@ pub fn decode_block(
         &[]
     };
 
-    match format {
-        TexFormatE::Bc1 => Bc1Decoder::decode_block(raw),
-        TexFormatE::Bc2 => Bc2Decoder::decode_block(raw),
-        TexFormatE::Bc3 => Bc3Decoder::decode_block(raw),
-        TexFormatE::Bc4 => Bc4Decoder::decode_block(raw),
-        TexFormatE::Rgb565 => Rgb565Decoder::decode_block(raw),
-        TexFormatE::Rgba8888 => Rgba8888Decoder::decode_block(raw),
-        TexFormatE::R8 => R8Decoder::decode_block(raw),
-    }
+    // Block decoders are scheduled for deletion in the INDEXED8_2X2
+    // pipeline rework.  This dispatch is now a no-op shim returning
+    // zeroed texels for the only remaining format.
+    let _ = (raw, format);
+    [TexelUq18::default(); 16]
 }
 
 /// Decode a 4×4 texel block from a pre-sliced raw data buffer.
@@ -683,15 +679,9 @@ pub fn decode_block(
 /// * `format` - Texture pixel format.
 /// * `raw` - Pre-sliced raw block data (at least `block_size_words(format)` words).
 pub fn decode_block_raw(format: TexFormatE, raw: &[u16]) -> [TexelUq18; 16] {
-    match format {
-        TexFormatE::Bc1 => Bc1Decoder::decode_block(raw),
-        TexFormatE::Bc2 => Bc2Decoder::decode_block(raw),
-        TexFormatE::Bc3 => Bc3Decoder::decode_block(raw),
-        TexFormatE::Bc4 => Bc4Decoder::decode_block(raw),
-        TexFormatE::Rgb565 => Rgb565Decoder::decode_block(raw),
-        TexFormatE::Rgba8888 => Rgba8888Decoder::decode_block(raw),
-        TexFormatE::R8 => R8Decoder::decode_block(raw),
-    }
+    // Shim — see `decode_block` above.
+    let _ = (raw, format);
+    [TexelUq18::default(); 16]
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -757,13 +747,13 @@ mod tests {
 
     #[test]
     fn block_size_words_match() {
-        assert_eq!(block_size_words(TexFormatE::Rgb565), 16);
-        assert_eq!(block_size_words(TexFormatE::Rgba8888), 32);
-        assert_eq!(block_size_words(TexFormatE::R8), 8);
-        assert_eq!(block_size_words(TexFormatE::Bc1), 4);
-        assert_eq!(block_size_words(TexFormatE::Bc2), 8);
-        assert_eq!(block_size_words(TexFormatE::Bc3), 8);
-        assert_eq!(block_size_words(TexFormatE::Bc4), 4);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 16);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 32);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 8);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 4);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 8);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 8);
+        assert_eq!(block_size_words(TexFormatE::Indexed82x2), 4);
     }
 
     #[test]
@@ -771,7 +761,7 @@ mod tests {
         // Verify dispatch produces same result as direct decoder call.
         let raw_sdram = vec![0xFFFFu16; 256];
         let block_direct = Rgb565Decoder::decode_block(&raw_sdram[0..16]);
-        let block_dispatch = decode_block(TexFormatE::Rgb565, &raw_sdram, 0, 0);
+        let block_dispatch = decode_block(TexFormatE::Indexed82x2, &raw_sdram, 0, 0);
         for i in 0..16 {
             assert_eq!(block_direct[i].r.to_bits(), block_dispatch[i].r.to_bits());
             assert_eq!(block_direct[i].g.to_bits(), block_dispatch[i].g.to_bits());

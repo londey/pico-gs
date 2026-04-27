@@ -1,14 +1,17 @@
 //! Register: CC_MODE_2
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 // Instances of named component types
-pub use crate::components::cc_rgb_c_source_e as c2_rgb_c;
-pub use crate::components::cc_source_e as c2_rgb_a;
-pub use crate::components::cc_source_e as c2_rgb_b;
-pub use crate::components::cc_source_e as c2_rgb_d;
-pub use crate::components::cc_source_e as c2_alpha_a;
-pub use crate::components::cc_source_e as c2_alpha_b;
-pub use crate::components::cc_source_e as c2_alpha_c;
-pub use crate::components::cc_source_e as c2_alpha_d;
+pub use _root::components::cc_rgb_c_source_e as c2_rgb_c;
+pub use _root::components::cc_source_e as c2_rgb_a;
+pub use _root::components::cc_source_e as c2_rgb_b;
+pub use _root::components::cc_source_e as c2_rgb_d;
+pub use _root::components::cc_source_e as c2_alpha_a;
+pub use _root::components::cc_source_e as c2_alpha_b;
+pub use _root::components::cc_source_e as c2_alpha_c;
+pub use _root::components::cc_source_e as c2_alpha_d;
 
 /// CC_MODE_2
 ///

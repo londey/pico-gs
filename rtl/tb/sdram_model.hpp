@@ -1,3 +1,7 @@
+// Spec-ref: unit_011_texture_sampler.md
+// Spec-ref: unit_011.03_index_cache.md
+// Spec-ref: unit_011.06_palette_lut.md
+//
 // Behavioral SDRAM model header for the integration test harness.
 //
 // This model simulates the W9825G6KH-6 SDRAM (32 MB, 16-bit data bus)
@@ -6,30 +10,31 @@
 //
 // The model is a *behavioral* stub: it provides correct read/write
 // semantics without modeling SDRAM timing (ACTIVATE, CAS latency, etc.).
-// Cycle-accurate timing will be added when the full Verilator harness
-// connects to the SDRAM controller ports.
+// connect_sdram() in harness.cpp wraps this model with the SDRAM command
+// decoder and CAS-latency read pipeline that the SDRAM controller drives.
+//
+// Texture-pipeline burst patterns served by this model (UNIT-011):
+//
+//   * Index cache fill (UNIT-011.03):
+//       8 x 16-bit words = 16 bytes = 16 x 8-bit palette indices
+//       (one 4x4 INDEXED8_2X2 index block, INT-014 layout).
+//       FSM in texture_sampler.sv: IDLE -> F_REQ -> F_BURST -> F_INSTALL.
+//
+//   * Palette load (UNIT-011.06):
+//       Up to 32 x 16-bit words per sub-burst (port-3 arbiter cap).
+//       64 sub-bursts cover one 4096-byte slot (256 entries x
+//       4 quadrants x RGBA8888).
+//       FSM in texture_palette_lut.sv: IDLE -> ARMING -> BURSTING -> DONE.
+//       Sub-bursts are interruptible by index-cache fills (which preempt
+//       palette traffic at the 3-way arbiter inside texture_sampler.sv).
 //
 // References:
 //   INT-011 (SDRAM Memory Layout) -- 4x4 block-tiled address layout,
 //       memory map, surface base addresses.
-//   INT-014 (Texture Memory Layout) -- Texture format block sizes and
-//       block-tiled organization.
-//   UNIT-011 (Texture Sampler) -- Cache miss burst lengths
-//       per texture format:
-//
-//       | Format   | burst_len (16-bit words) | Bytes |
-//       |----------|--------------------------|-------|
-//       | BC1      | 4                        | 8     |
-//       | BC2      | 8                        | 16    |
-//       | BC3      | 8                        | 16    |
-//       | BC4      | 4                        | 8     |
-//       | RGB565   | 16                       | 32    |
-//       | RGBA8888 | 32                       | 64    |
-//       | R8       | 8                        | 16    |
-//
-//       The behavioral model must serve data at these burst lengths when
-//       the Verilated memory arbiter issues burst read requests during
-//       texture cache miss fills.
+//   INT-014 (Texture Memory Layout) -- INDEXED8_2X2 index array layout
+//       and palette blob layout.
+//   UNIT-011 (Texture Sampler), UNIT-011.03 (Index Cache),
+//   UNIT-011.06 (Palette LUT) -- burst lengths and FSM behaviour.
 
 #pragma once
 
@@ -40,76 +45,27 @@
 #include <vector>
 
 /// Texture format codes matching INT-014 TEXn_CFG.FORMAT field encoding.
+///
+/// UNIT-011 currently supports INDEXED8_2X2 only.  RGB565 is retained for
+/// the framebuffer scan-out helpers and for the legacy `fill_texture`
+/// uncompressed-upload path used by the (now-obsolete) BC test scripts.
 enum class TexFormat : uint8_t {
-    BC1 = 0,      ///< 4 bpp, 8 bytes per 4x4 block
-    BC2 = 1,      ///< 8 bpp, 16 bytes per 4x4 block
-    BC3 = 2,      ///< 8 bpp, 16 bytes per 4x4 block
-    BC4 = 3,      ///< 4 bpp, 8 bytes per 4x4 block (single channel)
-    RGB565 = 4,   ///< 16 bpp, 32 bytes per 4x4 block
-    RGBA8888 = 5, ///< 32 bpp, 64 bytes per 4x4 block
-    R8 = 6,       ///< 8 bpp, 16 bytes per 4x4 block (single channel)
+    INDEXED8_2X2 = 0, ///< 8 bpp indexed (UNIT-011 active path)
+    RGB565 = 4,       ///< 16 bpp uncompressed (framebuffer / scan-out)
 };
 
 /// UNIT-011 burst lengths per format (in 16-bit words).
-/// These are the number of sequential 16-bit words the texture cache
-/// reads from SDRAM on a cache miss fill.
-static constexpr uint8_t BURST_LEN_BC1 = 4;
-static constexpr uint8_t BURST_LEN_BC2 = 8;
-static constexpr uint8_t BURST_LEN_BC3 = 8;
-static constexpr uint8_t BURST_LEN_BC4 = 4;
-static constexpr uint8_t BURST_LEN_RGB565 = 16;
-static constexpr uint8_t BURST_LEN_RGBA8888 = 32;
-static constexpr uint8_t BURST_LEN_R8 = 8;
-
-/// Return the UNIT-011 burst length for a given texture format.
 ///
-/// @param fmt  Texture format code.
-/// @return Burst length in 16-bit words.
-/// @throws std::invalid_argument if fmt is not a recognized TexFormat value.
-inline uint8_t burst_len_for_format(TexFormat fmt) {
-    switch (fmt) {
-        case TexFormat::BC1:
-            return BURST_LEN_BC1;
-        case TexFormat::BC2:
-            return BURST_LEN_BC2;
-        case TexFormat::BC3:
-            return BURST_LEN_BC3;
-        case TexFormat::BC4:
-            return BURST_LEN_BC4;
-        case TexFormat::RGB565:
-            return BURST_LEN_RGB565;
-        case TexFormat::RGBA8888:
-            return BURST_LEN_RGBA8888;
-        case TexFormat::R8:
-            return BURST_LEN_R8;
-    }
-    throw std::invalid_argument("burst_len_for_format: unknown TexFormat");
-}
+/// INDEXED8_2X2 is the active texture format: each 4x4 index-block fill
+/// reads 8 x 16-bit words = 16 index bytes.
+static constexpr uint8_t BURST_LEN_INDEX_BLOCK = 8;
 
-/// Return the bytes per 4x4 block for a given texture format (INT-014).
+/// Palette load FSM (UNIT-011.06) sub-burst length cap (in 16-bit words).
 ///
-/// @param fmt  Texture format code.
-/// @return Bytes per 4x4 block.
-/// @throws std::invalid_argument if fmt is not a recognized TexFormat value.
-inline uint8_t bytes_per_block(TexFormat fmt) {
-    switch (fmt) {
-        case TexFormat::BC1:
-            return 8;
-        case TexFormat::BC2:
-            return 16;
-        case TexFormat::BC3:
-            return 16;
-        case TexFormat::BC4:
-            return 8;
-        case TexFormat::RGB565:
-            return 32;
-        case TexFormat::RGBA8888:
-            return 64;
-        case TexFormat::R8:
-            return 16;
-    }
-    throw std::invalid_argument("bytes_per_block: unknown TexFormat");
-}
+/// The 3-way port-3 arbiter inside texture_sampler.sv limits each
+/// palette sub-burst to 32 words; 64 such sub-bursts cover one 4096-byte
+/// palette slot.
+static constexpr uint8_t BURST_LEN_PALETTE_SUBBURST = 32;
 
 /// Behavioral SDRAM model.
 ///
@@ -137,34 +93,57 @@ public:
     /// @param data       16-bit value to write.
     void write_word(uint32_t word_addr, uint16_t data);
 
-    /// Upload raw texture block data into SDRAM.
+    /// Upload raw byte data into SDRAM as 16-bit little-endian words.
     ///
-    /// The data is written starting at base_word_addr (in 16-bit word
-    /// units). The caller provides pre-tiled texture data (i.e., data
-    /// already laid out in INT-011 4x4 block-tiled order, as produced
-    /// by the asset build tool).
+    /// Used by the harness to pre-stage palette blobs and index arrays
+    /// directly into SDRAM (bypassing the GPU's MEM_DATA / MEM_FILL path)
+    /// for tests that want to skip the firmware-driven upload phase.
     ///
     /// @param base_word_addr  Starting word address in SDRAM.
-    /// @param data            Raw texture bytes to upload.
+    /// @param data            Raw bytes to upload.
     void upload_raw(uint32_t base_word_addr, std::span<const uint8_t> data);
 
-    /// Fill a texture region with pixel data, converting from linear
-    /// row-major pixel order to INT-011 4x4 block-tiled layout.
+    /// Pre-load an INDEXED8_2X2 palette blob into SDRAM.
     ///
-    /// This is the high-level texture upload function that performs the
-    /// block-tiling address transformation.
+    /// Convenience wrapper around upload_raw() with the per-INT-014
+    /// palette layout asserted (4096 bytes = 256 entries x 4 quadrants x
+    /// RGBA8888).  After this call the on-chip palette LUT can be
+    /// populated by issuing a PALETTEn write with LOAD_TRIGGER=1 — the
+    /// load FSM will burst the same bytes back through arbiter port 3.
     ///
-    /// For block-compressed formats (BC1, BC2, BC3, BC4), input data is
-    /// already in block order and is uploaded linearly via upload_raw().
+    /// @param palette_base_word  Word address (= byte_addr / 2) where the
+    ///                           4096-byte palette blob is to live.  This
+    ///                           must equal `PALETTEn.BASE_ADDR * 256`.
+    /// @param blob               Palette payload; must be exactly 4096
+    ///                           bytes long.
+    /// @throws std::invalid_argument if blob is not 4096 bytes.
+    void preload_palette_blob(uint32_t palette_base_word,
+                              std::span<const uint8_t> blob);
+
+    /// Pre-load an INDEXED8_2X2 index array into SDRAM.
     ///
-    /// For uncompressed formats (RGB565, RGBA8888, R8), input data is in
-    /// linear row-major pixel order and is rearranged into 4x4 block-tiled
-    /// layout per INT-011.
+    /// The bytes are written verbatim — the caller is responsible for
+    /// providing the data in 4x4 block-tiled order (INT-014 §3).  Used
+    /// for tests that want to skip the MEM_DATA upload phase.
+    ///
+    /// @param index_base_word  Word address (= byte_addr / 2) of the
+    ///                         index array base, matching TEX_CFG.BASE.
+    /// @param indices          Index payload (8-bit per index, tiled).
+    void preload_index_array(uint32_t index_base_word,
+                             std::span<const uint8_t> indices);
+
+    /// Fill an RGB565 texture region with pixel data, converting from
+    /// linear row-major pixel order to INT-011 4x4 block-tiled layout.
+    ///
+    /// Retained for the framebuffer scan-out helper and legacy callers.
+    /// INDEXED8_2X2 textures use preload_index_array() / GPU MEM_DATA
+    /// uploads instead.
     ///
     /// @param base_word_addr  SDRAM word address for the texture base.
-    /// @param fmt             Texture format (determines bytes per pixel/block).
-    /// @param pixel_data      Linear row-major pixel data.
+    /// @param fmt             Texture format (must be RGB565).
+    /// @param pixel_data      Linear row-major RGB565 pixel data.
     /// @param width_log2      Log2 of texture width in pixels (e.g. 4 for 16px).
+    /// @throws std::invalid_argument if fmt is not RGB565.
     void fill_texture(
         uint32_t base_word_addr,
         TexFormat fmt,
@@ -175,9 +154,11 @@ public:
     /// Burst read a sequence of consecutive 16-bit words from the model.
     ///
     /// Reads sequential 16-bit words starting at start_word_addr into the
-    /// caller-supplied buffer. This models the SDRAM controller's sequential
-    /// burst read as described in UNIT-011, where the texture cache issues
-    /// burst reads of varying length per texture format.
+    /// caller-supplied buffer.  This models the SDRAM controller's
+    /// sequential burst read used by:
+    ///   * UNIT-011.03 index cache fills (8-word bursts)
+    ///   * UNIT-011.06 palette load sub-bursts (up to 32 words each)
+    ///   * UNIT-006 framebuffer reads
     ///
     /// Out-of-range addresses read as 0.
     ///

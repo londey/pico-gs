@@ -1,5 +1,8 @@
 //! Register: CONST_COLOR
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// CONST_COLOR
 ///
 /// Two per-draw-call constant colors packed into one 64-bit register (RGBA8888 UNORM8 each).

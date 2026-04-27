@@ -1,10 +1,13 @@
 //! Register: RENDER_MODE
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 // Instances of named component types
-pub use crate::components::alpha_test_e as alpha_test_func;
-pub use crate::components::cull_mode_e as cull_mode;
-pub use crate::components::dither_pattern_e as dither_pattern;
-pub use crate::components::z_compare_e as z_compare;
+pub use _root::components::alpha_test_e as alpha_test_func;
+pub use _root::components::cull_mode_e as cull_mode;
+pub use _root::components::dither_pattern_e as dither_pattern;
+pub use _root::components::z_compare_e as z_compare;
 
 /// RENDER_MODE
 ///

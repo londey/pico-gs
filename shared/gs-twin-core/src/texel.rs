@@ -1,10 +1,12 @@
 //! UQ1.8 texel type — the sole texture cache storage format.
 //!
-//! All texture formats (BC1–BC4, RGB565, RGBA8888, R8) are decoded to
-//! [`TexelUq18`] before entering the cache and the fragment pipeline.
+//! The current pipeline supports only the INDEXED8_2X2 texture format,
+//! whose 8-bit indices are resolved through a 2-slot palette LUT into
+//! UQ1.8 RGBA quadrant colors before entering the fragment pipeline.
 //!
-//! This module is the shared leaf dependency for `tex_cache`, `tex_decode`,
-//! `tex_filter`, and `tex_sample`.
+//! This module is the shared leaf dependency for the texture sampling
+//! crates (`gs-tex-uv-coord`, `gs-tex-l1-cache`, `gs-tex-palette-lut`,
+//! `gs-texture`).
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 use qfixed::{Q, UQ};
@@ -17,10 +19,10 @@ use crate::fragment::ColorQ412;
 ///
 /// Each channel is a 9-bit unsigned fixed-point value in \[0.0, 1.0\]
 /// where `0x100` represents exactly 1.0.
-/// All texture formats (BC1–BC4, RGB565, RGBA8888, R8) are decoded to
-/// this format before entering the cache and the fragment pipeline.
+/// INDEXED8_2X2 indices are resolved through the palette LUT into this
+/// format before entering the fragment pipeline.
 ///
-/// The 36-bit layout in EBR (per UNIT-011.04):
+/// The 36-bit palette codebook layout (per UNIT-011.06):
 /// `[35:27]=R9, [26:18]=G9, [17:9]=B9, [8:0]=A9`.
 ///
 /// # RTL Implementation Notes
@@ -48,24 +50,16 @@ pub struct TexelUq18 {
 
 /// Return the 4×4 block size in u16 words for the given texture format.
 ///
-/// This is format-level metadata shared by caches and decoders:
-///
-/// | Format | Block Size (u16 words) |
-/// |----------|------------------------|
-/// | BC1 | 4 |
-/// | BC4 | 4 |
-/// | BC2 | 8 |
-/// | BC3 | 8 |
-/// | R8 | 8 |
-/// | RGB565 | 16 |
-/// | RGBA8888 | 32 |
+/// Legacy helper retained for the (soon-to-be-deleted) `gs-tex-block-decoder`
+/// and `gs-tex-l2-cache` crates.  The current INDEXED8_2X2 pipeline does
+/// not use 4×4 blocks; the index cache is line-based and the value
+/// returned here is a placeholder until those crates are removed.
 #[must_use]
 pub fn block_size_words(format: TexFormatE) -> u32 {
     match format {
-        TexFormatE::Bc1 | TexFormatE::Bc4 => 4,
-        TexFormatE::Bc2 | TexFormatE::Bc3 | TexFormatE::R8 => 8,
-        TexFormatE::Rgb565 => 16,
-        TexFormatE::Rgba8888 => 32,
+        // INDEXED8_2X2 is not block-tiled.  The legacy decoder/L2 cache
+        // crates that consume this helper are scheduled for deletion.
+        TexFormatE::Indexed82x2 => 0,
     }
 }
 

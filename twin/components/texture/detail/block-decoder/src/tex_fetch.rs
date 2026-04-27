@@ -20,11 +20,78 @@
 
 use gpu_registers::components::tex_format_e::TexFormatE;
 
-use gs_tex_l1_cache::{CacheStats, DecodedBlockProvider, TextureBlockCache};
 use gs_tex_l2_cache::{CompressedBlockCache, CompressedBlockProvider, L2CacheStats};
 use gs_twin_core::texel::TexelUq18;
 
 use crate::tex_decode;
+
+// Placeholder cache statistics retained while this crate is scheduled for
+// deletion (Task 6). The real `gs-tex-l1-cache` no longer models a decoded
+// block cache, so this struct only preserves the legacy diagnostic API surface
+// to keep downstream code compiling.
+/// Legacy decoded-cache statistics shim (scheduled for removal in Task 6).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CacheStats {
+    /// Cumulative hits.
+    pub hits: u64,
+    /// Cumulative misses.
+    pub misses: u64,
+    /// Cumulative evictions.
+    pub evictions: u64,
+    /// Cumulative invalidations.
+    pub invalidations: u64,
+}
+
+/// Legacy decoded-cache provider trait shim (scheduled for removal in Task 6).
+pub trait DecodedBlockProvider {
+    /// Look up a decoded block.
+    fn lookup(&mut self, base_words: u32, block_x: u32, block_y: u32) -> Option<[TexelUq18; 16]>;
+    /// Fill a cache line with a decoded block.
+    fn fill(&mut self, base_words: u32, block_x: u32, block_y: u32, data: [TexelUq18; 16]);
+    /// Invalidate all entries.
+    fn invalidate(&mut self);
+    /// Count valid lines.
+    fn valid_line_count(&self) -> usize;
+}
+
+/// Legacy decoded-cache shim that always misses (scheduled for removal in Task 6).
+#[derive(Debug, Default)]
+pub struct TextureBlockCache {
+    /// Statistics counters.
+    pub stats: CacheStats,
+    /// Number of fills since last invalidation.
+    fills: u64,
+}
+
+impl TextureBlockCache {
+    /// Create a new empty cache.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl DecodedBlockProvider for TextureBlockCache {
+    fn lookup(
+        &mut self,
+        _base_words: u32,
+        _block_x: u32,
+        _block_y: u32,
+    ) -> Option<[TexelUq18; 16]> {
+        self.stats.misses += 1;
+        None
+    }
+    fn fill(&mut self, _base_words: u32, _block_x: u32, _block_y: u32, _data: [TexelUq18; 16]) {
+        self.fills = self.fills.saturating_add(1);
+    }
+    fn invalidate(&mut self) {
+        self.fills = 0;
+        self.stats.invalidations += 1;
+    }
+    fn valid_line_count(&self) -> usize {
+        usize::try_from(self.fills).unwrap_or(usize::MAX)
+    }
+}
 
 // ── BlockFetcher trait ──────────────────────────────────────────────────────
 
@@ -157,14 +224,14 @@ mod tests {
         let mut fetcher = ConcreteFetcher::new();
 
         // First fetch: miss.
-        let block = fetcher.get_block(0, 0, 0, 0, TexFormatE::Rgb565, &sdram);
+        let block = fetcher.get_block(0, 0, 0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(fetcher.cache_stats().misses, 1);
         assert_eq!(fetcher.cache_stats().hits, 0);
         // Verify white pixel (RGB565 0xFFFF → UQ1.8 all 0x100).
         assert_eq!(block[0].r.to_bits(), 0x100);
 
         // Second fetch: hit.
-        let _block = fetcher.get_block(0, 0, 0, 0, TexFormatE::Rgb565, &sdram);
+        let _block = fetcher.get_block(0, 0, 0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(fetcher.cache_stats().hits, 1);
         assert_eq!(fetcher.cache_stats().misses, 1);
     }
@@ -174,7 +241,7 @@ mod tests {
         let sdram = vec![0u16; 1024];
         let mut fetcher = ConcreteFetcher::new();
 
-        fetcher.get_block(0, 0, 0, 0, TexFormatE::Rgb565, &sdram);
+        fetcher.get_block(0, 0, 0, 0, TexFormatE::Indexed82x2, &sdram);
         assert_eq!(fetcher.cached_block_count(), 1);
 
         fetcher.invalidate();

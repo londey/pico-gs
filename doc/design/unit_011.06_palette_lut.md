@@ -3,8 +3,8 @@
 ## Purpose
 
 Shared two-slot palette lookup table providing UQ1.8 RGBA colors to both texture samplers.
-Each slot holds 256 palette entries × 4 quadrant colors = 1024 UQ1.8 RGBA values, stored in two PDPW16KD EBR blocks.
-An SDRAM load FSM accepts palette data from firmware (via `PALETTEn.LOAD_TRIGGER` in INT-010), bursts 4096 bytes from SDRAM, promotes each RGBA8888 channel to UQ1.8 inline, and writes the result into the slot's EBR pair.
+Each slot holds 256 palette entries × 4 quadrant colors = 1024 UQ1.8 RGBA values, stored as one logical 1024×36 dual-port memory implemented with two DP16KD EBR blocks in 1024×18 mode (one carrying the high 18 bits of each color, one carrying the low 18 bits).
+An SDRAM load FSM accepts palette data from firmware (via `PALETTEn.LOAD_TRIGGER` in INT-010), bursts 4096 bytes from SDRAM, promotes each RGBA8888 channel to UQ1.8 inline, and writes the result into the addressed slot.
 A per-slot `ready` flag gates the fragment pipeline; stale or in-progress slots hold UNIT-006 stalled until the load completes.
 
 ## Implements Requirements
@@ -36,33 +36,47 @@ A per-slot `ready` flag gates the fragment pipeline; stale or in-progress slots 
 ### EBR Organization
 
 ```text
-Shared Palette LUT (both samplers):
+Slot-banked palette storage (4 EBR total):
 
-  2 slots × 256 entries × 4 quadrant colors = 2048 UQ1.8 RGBA values
-  UQ1.8 RGBA: 4 × 9 bits = 36 bits per color
-  EBR primitive: PDPW16KD in 512×36 mode
-  2 PDPW16KD per slot × 2 slots = 4 EBR total
+  2 slots × 1024 colors per slot × 36 bits = 73,728 bits total codebook capacity
+  EBR primitive: DP16KD (true dual-port) in 1024×18 mode
+  Per slot: 2 DP16KD wired in parallel as one logical 1024×36 dual-port memory
+    - bank H carries color[35:18] (high half of UQ1.8 RGBA)
+    - bank L carries color[17:0]  (low  half of UQ1.8 RGBA)
+  Both halves share the same 10-bit address.
+  2 EBR per slot × 2 slots = 4 EBR total.
 
-  Read address: {slot[0], entry[7:0], quadrant[1:0]} → 10-bit word address (1024 entries × 36 bits)
-  Each 512×36 EBR holds one slot's NW+NE colors (quadrant[1]=0) or SW+SE colors (quadrant[1]=1).
-  Within each EBR: row = {entry[7:0], quadrant[0]} → 9-bit address into the 512-deep primitive.
+  Read address: {idx[7:0], quadrant[1:0]} → 10-bit flat index into the
+  selected slot's 1024-entry codebook.  Returns one 36-bit UQ1.8 RGBA
+  color per cycle (1-cycle latency).
 ```
 
-Both samplers share the same four EBR blocks.
-Reads from sampler 0 and sampler 1 may be issued in the same cycle if they target different EBR words; the pseudo-dual-port configuration handles simultaneous read and write (read during lookup, write during load).
+#### Port assignment
+
+This revision uses **only port A** of each DP16KD pair; port B is reserved for a future dual-sampler enhancement (see §Future Enhancements).
+
+**Port A** — today: all sampler reads (sampler 0 wins on same-slot conflict) AND load-FSM writes, mutually exclusive because the load FSM asserts `slot_ready=0` and stalls the samplers via UNIT-006 for the duration of the burst.
+Future: sampler 0 reads + load-FSM writes (still mutually exclusive via `slot_ready`).
+
+**Port B** — today: tied off (write enable, read enable, address, and data inputs held to 0; output ignored).
+Future: sampler 1 reads (no writes — the load FSM continues to use port A).
+
+Cross-slot sampler reads are already concurrent today: when sampler 0 reads slot 0 and sampler 1 reads slot 1 they target different EBR pairs and proceed in parallel without conflict.
+Same-slot reads serialize via sampler-0 priority on the slot's port-A read-address mux; this restriction goes away in the deferred port-B enablement.
 
 ### Read Addressing
 
 For a fragment with palette index `idx[7:0]`, quadrant `quadrant[1:0]`, and sampler palette-slot selection `slot = TEXn_CFG.PALETTE_IDX`:
 
 ```text
-ebr_select = slot[0]             // selects EBR pair (slot 0 or slot 1)
-ebr_addr   = {idx[7:0], quadrant[0]}   // 9-bit address within the selected 512×36 EBR
-row_sel    = quadrant[1]         // selects upper or lower half of the 36-bit output word
+slot_select = slot[0]                      // selects which slot's DP16KD pair to drive
+addr_a      = {idx[7:0], quadrant[1:0]}    // 10-bit flat address into the 1024-deep slot
+data_a      = {bank_H_dout[17:0], bank_L_dout[17:0]}  // 36-bit UQ1.8 RGBA, 1-cycle latency
 ```
 
-The 36-bit word from the EBR carries two adjacent quadrant entries (packed as `{color_q1, color_q0}` where `q0 = {quadrant[1], 0}` and `q1 = {quadrant[1], 1}`).
-`quadrant[0]` (the `row_sel` bit) muxes between the two packed entries to yield the final 36-bit UQ1.8 RGBA color.
+When both samplers select the same slot in the same cycle, sampler 0's `{idx, quadrant}` is presented to that slot's port-A address and sampler 1 receives sampler 0's data on this cycle.
+The parent `texture_sampler.sv` is responsible for serialising such conflicts (e.g., by stalling sampler 1).
+There is no in-word colour packing — every 36-bit codebook word holds exactly one quadrant colour.
 
 ### SDRAM Load FSM
 
@@ -73,23 +87,26 @@ The load FSM for each slot operates independently:
 
 ```text
 IDLE
-  │  PALETTEn.LOAD_TRIGGER pulse received
+  │  PALETTEn.LOAD_TRIGGER pulse received (latched into per-slot pending bit)
   ▼
 ARMING
   │  Assert slotN_ready = 0 (stall any sampler using this slot)
-  │  Compute SDRAM byte address = BASE_ADDR × 512
+  │  Compute SDRAM word address = BASE_ADDR × 256 (BASE_ADDR is in 512-byte units;
+  │      port 3 addresses are in 16-bit-word units)
+  │  Reset entry_idx and entry_quadrant counters
   ▼
-BURSTING (repeated: 512 × 8-byte words = 4096 bytes total)
-  │  Request port 3 burst (up to 32 × 16-bit words per sub-burst)
-  │  Per received 64-bit word (8 bytes = 2 RGBA8888 entries):
-  │    Unpack entry A: R8, G8, B8, A8 → promote each via ch8_to_uq18 → 36-bit UQ1.8 RGBA
-  │    Unpack entry B: same
-  │    Write both entries to EBR at next codebook address
-  │    Increment codebook address
-  │  Repeat until 1024 entries written (512 × 64-bit words consumed)
+BURSTING (2048 × 16-bit words = 4096 bytes total per slot)
+  │  Request port-3 sub-burst (up to 32 × 16-bit words per sub-burst)
+  │  Per pair of received 16-bit words (one RGBA8888 entry = 4 bytes):
+  │    word 0 → latch R8 (lo byte), G8 (hi byte)
+  │    word 1 → combine with B8 (lo byte), A8 (hi byte) → promote each
+  │              channel via ch8_to_uq18 → form 36-bit UQ1.8 RGBA color →
+  │              write to slot port A at address {entry_idx[7:0], entry_quadrant[1:0]}
+  │    Advance entry_quadrant (and increment entry_idx when it wraps)
+  │  On sram_ack: if 2048 words consumed → DONE, else → ARMING (re-request residual)
   ▼
 DONE
-  │  Assert slotN_ready = 1
+  │  Assert slotN_ready = 1; clear the pending bit
   ▼
 IDLE
 ```
@@ -127,17 +144,35 @@ This maps UQ1.8 1.0 (0x100) to Q4.12 1.0 (0x1000).
 
 ### EBR Notes
 
-**Primitive:** PDPW16KD (ECP5 pseudo-dual-port EBR)
-**Mode:** 512×36 (maximum width mode)
+**Primitive:** DP16KD (ECP5 true dual-port EBR)
+**Mode:** 1024×18 per port (16 data + 2 parity bits)
 **Count:** 2 per slot × 2 slots = 4 EBR total
-The pseudo-dual-port configuration allows simultaneous read (for texel lookup) and write (for palette load) without arbitration, provided the read and write addresses differ.
-During load, the read port is still available; a sampler accessing a ready slot can read concurrently with a load writing to the other slot's EBR pair.
+
+Each slot's two DP16KDs run in parallel as one logical 1024×36 dual-port memory: one carries the high 18 bits of each color, the other carries the low 18 bits.
+DP16KD's true dual-port topology gives each EBR two independent read/write ports; today only port A is used, with sampler reads and load-FSM writes serialized by the `slot_ready` flag.
+The unused port B is the basis for the deferred dual-sampler enhancement described in §Future Enhancements.
+
+Cross-slot accesses (sampler 0 reads slot 0, sampler 1 reads slot 1) target different EBR pairs and run in parallel today without any port-B involvement.
 
 See REQ-011.02 for the complete EBR budget across the GPU.
+
+### Future Enhancements
+
+**Dual-sampler parallel reads (deferred — non-critical for this revision).**
+Today both samplers share port A of each DP16KD pair, so a same-slot collision serializes via sampler-0 priority on the read-address mux.
+The unused port B already provides the hardware basis for guaranteed parallel reads:
+
+1. Wire each slot's port-B address mux to sampler 1.
+2. Keep the load FSM on port A.
+   The load FSM stalls samplers via `slot_ready=0` for the duration of a burst, so port B is naturally idle while a slot is being written — no read/write arbitration is required on port B.
+
+After this change, any combination of `(slot, idx, quadrant)` requested by samplers 0 and 1 in the same cycle is serviced in parallel — there is no remaining per-EBR conflict.
+No additional EBR is required; the budget remains 4 DP16KD per REQ-011.02.
 
 ## Implementation
 
 - `rtl/components/texture/detail/palette-lut/src/texture_palette_lut.sv`: Palette EBR arrays, read-address decode, load FSM, `ch8_to_uq18` promotion, `slot_ready` flags
+- `twin/components/texture/detail/palette-lut/src/lib.rs`: `gs-tex-palette-lut` digital twin — `PaletteLut` storage, `ch8_to_uq18` promotion, EBR address decode, atomic `load_slot` model, per-slot `ready` flags
 
 The authoritative algorithmic design is the gs-texture twin crate (`twin/components/texture/detail/palette-lut/`).
 The RTL read-addressing, channel promotion, and load FSM must be bit-identical to the twin.

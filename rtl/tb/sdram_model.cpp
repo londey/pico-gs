@@ -1,36 +1,56 @@
-// Behavioral SDRAM model implementation (stub).
+// Spec-ref: unit_011_texture_sampler.md
+// Spec-ref: unit_011.03_index_cache.md
+// Spec-ref: unit_011.06_palette_lut.md
 //
-// This is a minimal implementation that provides correct word-level
-// read/write semantics. The timing-accurate SDRAM command protocol
-// (ACTIVATE, READ with CAS latency, burst sequences, etc.) is not
-// yet modeled -- this stub treats SDRAM as a simple flat memory array.
+// Behavioral SDRAM model implementation.
 //
-// TODO: Implement cycle-accurate SDRAM timing model:
-//   - ACTIVATE latency (tRCD = 2 cycles at 100 MHz)
-//   - CAS latency (CL=3)
-//   - Sequential burst reads/writes with proper pipelining
-//   - PRECHARGE timing (tRP = 2 cycles)
-//   - Auto-refresh scheduling (8192 refreshes per 64 ms)
-//   - Bank state tracking (4 banks)
+// This is a minimal, byte-array-backed SDRAM model that provides correct
+// word-level read/write semantics.  Cycle-level command timing
+// (ACTIVATE / READ / WRITE / PRECHARGE, CAS latency, refresh, bank
+// state) is layered on by connect_sdram() in harness.cpp.
 //
-// fill_texture() implements the full INT-011 4x4 block-tiling transform
-// for linear pixel data input (RGB565, RGBA8888, R8 uncompressed formats).
-// Block-compressed formats (BC1-BC4) are uploaded linearly via upload_raw().
+// Texture-pipeline burst patterns served by this model:
 //
-// burst_read() / burst_write() methods are implemented below, providing
-// sequential word-level access matching the SDRAM controller burst interface.
-// UNIT-011 burst lengths per texture format are supported.
+//   * UNIT-011.03 index cache fills:
+//       8 x 16-bit words per fill (16 bytes = one 4x4 INDEXED8_2X2
+//       index block in INT-014 layout).  Triggered when a sampler
+//       misses in its on-chip half-resolution index cache and the
+//       texture_sampler.sv fill FSM steps F_REQ -> F_BURST -> F_INSTALL.
+//
+//   * UNIT-011.06 palette load sub-bursts:
+//       Up to 32 x 16-bit words per sub-burst (port-3 arbiter cap).
+//       64 sub-bursts cover one 4096-byte palette slot (256 entries x
+//       4 quadrants x RGBA8888).  The texture_palette_lut.sv load FSM
+//       (IDLE -> ARMING -> BURSTING -> DONE) is preempted by index
+//       fills at the 3-way arbiter inside texture_sampler.sv; this
+//       model does not need to know about preemption since it only
+//       responds to whatever READ commands the SDRAM controller drives.
+//
+// preload_palette_blob() / preload_index_array() are convenience
+// wrappers used by tests that want to skip the firmware-driven
+// MEM_DATA / MEM_FILL upload phase and stage data directly into SDRAM.
+// Production tests upload through the GPU's mem_dma path so the
+// behavioral model receives real WRITE commands from the controller.
 //
 // References:
 //   INT-011 (SDRAM Memory Layout)
 //   INT-014 (Texture Memory Layout)
 //   UNIT-011 (Texture Sampler)
+//   UNIT-011.03 (Index Cache)
+//   UNIT-011.06 (Palette LUT)
 
 #include "sdram_model.hpp"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+
+namespace {
+/// Bytes per palette slot (UNIT-011.06): 256 entries x 4 quadrants x 4
+/// bytes per RGBA8888 channel = 4096 bytes.  Matches the
+/// `texture_palette_lut.sv` load FSM transfer length.
+constexpr std::size_t PALETTE_SLOT_BYTES = 4096;
+}
 
 SdramModel::SdramModel(uint32_t num_words) : mem_(num_words, 0) {}
 
@@ -56,6 +76,20 @@ void SdramModel::upload_raw(uint32_t base_word_addr, std::span<const uint8_t> da
             static_cast<uint16_t>(data[i * 2]) | (static_cast<uint16_t>(data[i * 2 + 1]) << 8);
         write_word(base_word_addr + static_cast<uint32_t>(i), word);
     }
+}
+
+void SdramModel::preload_palette_blob(uint32_t palette_base_word,
+                                      std::span<const uint8_t> blob) {
+    if (blob.size() != PALETTE_SLOT_BYTES) {
+        throw std::invalid_argument(
+            "preload_palette_blob: blob must be exactly 4096 bytes");
+    }
+    upload_raw(palette_base_word, blob);
+}
+
+void SdramModel::preload_index_array(uint32_t index_base_word,
+                                     std::span<const uint8_t> indices) {
+    upload_raw(index_base_word, indices);
 }
 
 void SdramModel::burst_read(uint32_t start_word_addr, std::span<uint16_t> buffer) const {
@@ -121,18 +155,16 @@ SdramModel::read_framebuffer(uint32_t base_word, int width_log2, int height) con
 void SdramModel::fill_texture(
     uint32_t base_word_addr, TexFormat fmt, std::span<const uint8_t> pixel_data, uint32_t width_log2
 ) {
-    // Block-compressed formats (BC1, BC2, BC3, BC4): input data is already
-    // in block order (each block is a self-contained unit), so linear
-    // upload is correct.
-    if (fmt == TexFormat::BC1 || fmt == TexFormat::BC2 || fmt == TexFormat::BC3 ||
-        fmt == TexFormat::BC4) {
-        upload_raw(base_word_addr, pixel_data);
-        return;
+    if (fmt != TexFormat::RGB565) {
+        throw std::invalid_argument(
+            "fill_texture: only RGB565 is supported (INDEXED8_2X2 textures "
+            "use preload_index_array() / preload_palette_blob() or the "
+            "MEM_DATA/MEM_FILL upload path)"
+        );
     }
 
-    // Uncompressed formats (RGB565, RGBA8888, R8): input data is in linear
-    // row-major pixel order and must be rearranged into 4x4 block-tiled
-    // layout per INT-011.
+    // RGB565 uncompressed: input data is in linear row-major pixel order
+    // and must be rearranged into 4x4 block-tiled layout per INT-011.
     //
     // INT-011 block-tiled address calculation:
     //   block_x   = pixel_x >> 2
@@ -143,107 +175,24 @@ void SdramModel::fill_texture(
     //   word_addr = base_word + block_idx * 16 + (local_y * 4 + local_x)
 
     uint32_t width = 1u << width_log2;
+    // RGB565: 2 bytes per pixel, one 16-bit SDRAM word per pixel.
+    uint32_t height = static_cast<uint32_t>(pixel_data.size() / 2) / width;
+    // Raw loop retained: reinterpret_cast span access with block-tiled
+    // address arithmetic does not map cleanly to a standard algorithm.
+    const auto* src = reinterpret_cast<const uint16_t*>(pixel_data.data());
 
-    if (fmt == TexFormat::RGB565) {
-        // RGB565: 2 bytes per pixel, one 16-bit SDRAM word per pixel.
-        uint32_t height = static_cast<uint32_t>(pixel_data.size() / 2) / width;
-        // Raw loop retained: reinterpret_cast span access with block-tiled
-        // address arithmetic does not map cleanly to a standard algorithm.
-        const auto* src = reinterpret_cast<const uint16_t*>(pixel_data.data());
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t block_x = x >> 2;
+            uint32_t block_y = y >> 2;
+            uint32_t local_x = x & 3;
+            uint32_t local_y = y & 3;
+            uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
+            uint32_t word_addr = base_word_addr + block_idx * 16 + (local_y * 4 + local_x);
 
-        for (uint32_t y = 0; y < height; y++) {
-            for (uint32_t x = 0; x < width; x++) {
-                uint32_t block_x = x >> 2;
-                uint32_t block_y = y >> 2;
-                uint32_t local_x = x & 3;
-                uint32_t local_y = y & 3;
-                uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
-                uint32_t word_addr = base_word_addr + block_idx * 16 + (local_y * 4 + local_x);
-
-                // Source pixel in linear row-major order (little-endian u16).
-                uint16_t pixel = src[y * width + x];
-                write_word(word_addr, pixel);
-            }
+            // Source pixel in linear row-major order (little-endian u16).
+            uint16_t pixel = src[y * width + x];
+            write_word(word_addr, pixel);
         }
-    } else if (fmt == TexFormat::RGBA8888) {
-        // RGBA8888: 4 bytes per pixel, two 16-bit SDRAM words per pixel.
-        // Per INT-014: each texel is a little-endian u32 stored as two
-        // consecutive 16-bit words.  The 4x4 block contains 16 texels
-        // = 32 words.  Each texel at position (local_x, local_y) within
-        // the block occupies two consecutive word addresses:
-        //   low_word_addr  = base + block_idx * 32 + (local_y * 4 + local_x) * 2
-        //   high_word_addr = low_word_addr + 1
-        uint32_t height = static_cast<uint32_t>(pixel_data.size() / 4) / width;
-        // Raw loop retained: block-tiled scatter with dual-word writes per
-        // texel does not map to a standard algorithm.
-        const auto* src = reinterpret_cast<const uint32_t*>(pixel_data.data());
-
-        for (uint32_t y = 0; y < height; y++) {
-            for (uint32_t x = 0; x < width; x++) {
-                uint32_t block_x = x >> 2;
-                uint32_t block_y = y >> 2;
-                uint32_t local_x = x & 3;
-                uint32_t local_y = y & 3;
-                uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
-                // 32 words per block for RGBA8888 (16 texels x 2 words each).
-                uint32_t word_addr = base_word_addr + block_idx * 32 + (local_y * 4 + local_x) * 2;
-
-                // Source pixel in linear row-major order (little-endian u32).
-                uint32_t pixel = src[y * width + x];
-                uint16_t low_word = static_cast<uint16_t>(pixel & 0xFFFF);
-                uint16_t high_word = static_cast<uint16_t>(pixel >> 16);
-                write_word(word_addr, low_word);
-                write_word(word_addr + 1, high_word);
-            }
-        }
-    } else if (fmt == TexFormat::R8) {
-        // R8: 1 byte per pixel.  Each 4x4 block is 16 bytes = 8 SDRAM
-        // words.  Two pixels share one 16-bit word (little-endian: even
-        // pixel in low byte, odd pixel in high byte).
-        //
-        // Within a block, pixels are stored row-major.  Two adjacent
-        // pixels in the x-direction share a word:
-        //   word_offset = (local_y * 4 + local_x) / 2
-        //   byte_lane   = (local_y * 4 + local_x) % 2
-        //
-        // Raw loop retained: read-modify-write with block-tiled scatter
-        // and per-byte lane selection does not map to a standard algorithm.
-        uint32_t height = static_cast<uint32_t>(pixel_data.size()) / width;
-
-        for (uint32_t y = 0; y < height; y++) {
-            for (uint32_t x = 0; x < width; x++) {
-                uint32_t block_x = x >> 2;
-                uint32_t block_y = y >> 2;
-                uint32_t local_x = x & 3;
-                uint32_t local_y = y & 3;
-                uint32_t block_idx = (block_y << (width_log2 - 2)) | block_x;
-                uint32_t texel_idx = local_y * 4 + local_x;
-                // 8 words per block for R8 (16 bytes / 2 bytes per word).
-                uint32_t word_addr = base_word_addr + block_idx * 8 + texel_idx / 2;
-
-                uint8_t pixel = pixel_data[y * width + x];
-
-                // Read-modify-write to place the byte in the correct lane.
-                uint16_t existing = read_word(word_addr);
-                if ((texel_idx & 1) == 0) {
-                    // Even texel index: low byte
-                    existing = (existing & 0xFF00) | pixel;
-                } else {
-                    // Odd texel index: high byte
-                    existing = (existing & 0x00FF) | (static_cast<uint16_t>(pixel) << 8);
-                }
-                write_word(word_addr, existing);
-            }
-        }
-    } else {
-        // Unknown format -- should not be reachable since the switch in
-        // burst_len_for_format/bytes_per_block covers all enum values.
-        fprintf(
-            stderr,
-            "WARNING: fill_texture: unknown format %u, "
-            "falling back to linear upload.\n",
-            static_cast<unsigned>(fmt)
-        );
-        upload_raw(base_word_addr, pixel_data);
     }
 }

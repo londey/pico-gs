@@ -325,10 +325,9 @@ This project uses **syskit** for specification-driven development. Specification
 
 ### Working with code
 
-- Source files may contain `Spec-ref:` comments linking to design units — **preserve these; never edit the hash manually**.
+- Source files may contain `Spec-ref:` comments linking to design units — preserve them; they are navigational pointers to the governing spec.
 - Before modifying code, check `doc/design/` for a relevant design unit (`unit_NNN_*.md`) that describes the component's intended behavior.
-- After code changes, run `.syskit/scripts/impl-check.sh` to verify spec-to-implementation freshness.
-- After spec changes, run `.syskit/scripts/impl-stamp.sh UNIT-NNN` to update Spec-ref hashes in source files.
+- After code changes, run `.syskit/scripts/impl-check.sh` to verify Spec-ref consistency (missing / orphan / untracked).
 
 ### Documentation principle
 

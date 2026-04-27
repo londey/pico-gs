@@ -1,5 +1,8 @@
 //! Register: Z_RANGE
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// Z_RANGE
 ///
 /// Depth range clipping (Z scissor) min/max

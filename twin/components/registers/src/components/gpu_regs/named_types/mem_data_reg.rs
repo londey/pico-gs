@@ -1,5 +1,8 @@
 //! Register: MEM_DATA
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// MEM_DATA
 ///
 /// Memory data register (bidirectional 64-bit, auto-increments MEM_ADDR by 1).

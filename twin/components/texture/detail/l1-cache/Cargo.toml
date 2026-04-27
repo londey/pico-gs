@@ -4,16 +4,6 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "L1 decoded texture block cache for the pico-gs digital twin"
+description = "Index cache (UNIT-011.03) for the pico-gs INDEXED8_2X2 texture pipeline digital twin"
 
 [dependencies]
-gs-twin-core = { path = "../../../../../shared/gs-twin-core" }
-qfixed = { path = "../../../../../crates/qfixed" }
-
-[[bin]]
-name = "gen_l1_cache_mirror_vectors"
-path = "src/bin/gen_l1_cache_mirror_vectors.rs"
-
-[[bin]]
-name = "gen_l1_cache_wrap_vectors"
-path = "src/bin/gen_l1_cache_wrap_vectors.rs"

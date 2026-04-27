@@ -36,6 +36,7 @@ use gs_memory::GpuMemory;
 use gs_pixel_write::tile_buffer::{self, ColorTileBuffer};
 use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
+use gs_texture::tex_palette::PaletteLut;
 use gs_texture::tex_sample::TextureSampler;
 use gs_twin_core::fragment::{ColorQ412, ColoredFragment, RasterFragment};
 use gs_twin_core::hiz::HizMetadata;
@@ -60,11 +61,14 @@ pub struct Gpu {
     /// Register file state matching register_file.sv.
     pub regs: reg::RegisterFile,
 
-    /// Texture unit 0 sampler (owns block cache).
+    /// Texture unit 0 sampler (owns half-resolution index cache).
     tex0_sampler: TextureSampler,
 
-    /// Texture unit 1 sampler (owns block cache).
+    /// Texture unit 1 sampler (owns half-resolution index cache).
     tex1_sampler: TextureSampler,
+
+    /// Shared two-slot palette LUT consumed by both samplers (UNIT-011.06).
+    pub palette_lut: PaletteLut,
 
     /// Hi-Z block metadata store (UNIT-005.06).
     pub hiz: HizMetadata,
@@ -106,6 +110,7 @@ impl Gpu {
             regs: reg::RegisterFile::default(),
             tex0_sampler: TextureSampler::default(),
             tex1_sampler: TextureSampler::default(),
+            palette_lut: PaletteLut::default(),
             hiz: HizMetadata::new(),
             uninit_flags: UninittedFlagArray::new(),
             zbuf_cache: ZbufTileCache::new(),
@@ -168,7 +173,52 @@ impl Gpu {
                 let byte_addr = (dword_addr as usize) * 8;
                 self.memory.write_dword(byte_addr, data);
             }
+            GpuAction::PaletteLoad { slot, base_addr } => {
+                self.execute_palette_load(slot, base_addr);
+            }
         }
+    }
+
+    /// Execute a `PALETTEn` load: read the 4096-byte palette payload from
+    /// SDRAM at `base_addr * 512` and copy it into the palette LUT slot.
+    ///
+    /// Models the RTL palette load FSM (UNIT-011.06) as a single atomic
+    /// transaction.  Out-of-range slot indices are silently ignored
+    /// (matches the RTL "unknown register" default).
+    fn execute_palette_load(&mut self, slot: u8, base_addr: u16) {
+        use gs_texture::tex_palette::PALETTE_BLOB_BYTES;
+
+        let slot_idx = slot as usize;
+        if slot_idx >= 2 {
+            return;
+        }
+        let byte_addr = (base_addr as usize) * 512;
+        let word_addr = byte_addr / 2;
+        let mut blob = [0u8; PALETTE_BLOB_BYTES];
+        // Decode each pair of bytes from a 16-bit SDRAM word, little-endian.
+        for (i, byte) in blob.iter_mut().enumerate() {
+            let widx = word_addr + (i / 2);
+            let word = self.memory.sdram.get(widx).copied().unwrap_or(0);
+            *byte = if i & 1 == 0 {
+                (word & 0xFF) as u8
+            } else {
+                (word >> 8) as u8
+            };
+        }
+        self.palette_lut.load_slot(slot_idx, &blob);
+    }
+
+    /// Convenience helper that loads a palette slot directly from a
+    /// 4096-byte blob, bypassing SDRAM staging and the PALETTEn register
+    /// write path.  Provided for integration tests that want to set up
+    /// palette state without modelling the full SPI command stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `slot` - Palette slot to load (`0` or `1`).
+    /// * `blob` - 4096-byte palette payload in INT-014 layout.
+    pub fn load_palette(&mut self, slot: usize, blob: &[u8; 4096]) {
+        self.palette_lut.load_slot(slot, blob);
     }
 
     /// Process a sequence of register writes.
@@ -277,6 +327,7 @@ impl Gpu {
             frag,
             &mut self.tex0_sampler,
             &mut self.tex1_sampler,
+            &self.palette_lut,
             &self.memory.sdram,
         );
 

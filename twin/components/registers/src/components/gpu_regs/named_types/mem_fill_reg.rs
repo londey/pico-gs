@@ -1,5 +1,8 @@
 //! Register: MEM_FILL
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// MEM_FILL
 ///
 /// Hardware memory fill (write-triggers-fill).

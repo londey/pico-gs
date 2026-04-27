@@ -1,22 +1,13 @@
 //! Field Enum: FORMAT
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TexFormatE {
-    /// 4 bpp, 64 bits per 4x4 block, opaque or 1-bit alpha
-    Bc1 = 0,
-    /// 8 bpp, 128 bits per 4x4 block, explicit alpha
-    Bc2 = 1,
-    /// 8 bpp, 128 bits per 4x4 block, interpolated alpha
-    Bc3 = 2,
-    /// 4 bpp, 64 bits per 4x4 block, single channel
-    Bc4 = 3,
-    /// 16 bpp, 5-6-5 uncompressed, 4x4 tiled
-    Rgb565 = 5,
-    /// 32 bpp, 8-8-8-8 uncompressed, 4x4 tiled
-    Rgba8888 = 6,
-    /// 8 bpp, single channel, 4x4 tiled
-    R8 = 7,
+    /// 8 bpp palette index, 2x2 quadrant color selection (only legal value; 1-15 reserved)
+    Indexed82x2 = 0,
 }
 
 impl TexFormatE {
@@ -26,13 +17,7 @@ impl TexFormatE {
     /// Returns an error if the bit pattern does not match any encoded variants.
     pub const fn from_bits(bits: u8) -> Result<Self, peakrdl_rust::encode::UnknownVariant<u8>> {
         match bits {
-            0 => Ok(Self::Bc1),
-            1 => Ok(Self::Bc2),
-            2 => Ok(Self::Bc3),
-            3 => Ok(Self::Bc4),
-            5 => Ok(Self::Rgb565),
-            6 => Ok(Self::Rgba8888),
-            7 => Ok(Self::R8),
+            0 => Ok(Self::Indexed82x2),
             bits => Err(peakrdl_rust::encode::UnknownVariant::new(bits)),
         }
     }

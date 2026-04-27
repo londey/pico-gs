@@ -1,5 +1,8 @@
+// Spec-ref: unit_003_register_file.md
 // Testbench for register_file module
-// Tests Z_RANGE register and mode_color_write output
+// Tests Z_RANGE register, mode_color_write output, TEX0_CFG PALETTE_IDX
+// passthrough, and PALETTE0/PALETTE1 LOAD_TRIGGER pulse + base storage
+// (VER-003 steps 14-17).
 
 `timescale 1ns/1ps
 
@@ -60,11 +63,19 @@ module tb_register_file;
 
     // Color combiner + texture
     wire [63:0] cc_mode, const_color, tex0_cfg, tex1_cfg;
+    wire [31:0] cc_mode_2;
     wire        tex0_cache_inv, tex1_cache_inv;
+    wire        tex0_palette_idx, tex1_palette_idx;
+    wire        fb_config_trigger;
+
+    // Palette slot load control (REQ-003.09 / INT-010 PALETTE0/PALETTE1)
+    wire        palette0_load_trigger, palette1_load_trigger;
+    wire [15:0] palette0_base_addr, palette1_base_addr;
 
     // Memory access
     wire [63:0] mem_addr_out, mem_data_out;
     wire        mem_data_wr, mem_data_rd;
+    wire [21:0] mem_data_dword_addr;
 
     // Timestamp
     wire        ts_mem_wr;
@@ -77,7 +88,18 @@ module tb_register_file;
     reg         vsync_edge;
     reg  [7:0]  fifo_depth;
 
+    // Suppress unused-signal warnings for outputs not exercised here.
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire _unused_fb_cfg_trigger  = fb_config_trigger;
+    wire _unused_cc_mode_2       = |cc_mode_2;
+    wire _unused_mem_data_dword  = |mem_data_dword_addr;
+    wire _unused_tex1_palette    = tex1_palette_idx;
+    /* verilator lint_on UNUSEDSIGNAL */
+
     // Register addresses (INT-010 v10.0)
+    localparam ADDR_TEX0_CFG    = 7'h10;
+    localparam ADDR_PALETTE0    = 7'h12;
+    localparam ADDR_PALETTE1    = 7'h13;
     localparam ADDR_RENDER_MODE = 7'h30;
     localparam ADDR_Z_RANGE     = 7'h31;
 
@@ -135,15 +157,24 @@ module tb_register_file;
         .fb_display_width_log2(fb_display_width_log2),
         .fb_line_double(fb_line_double),
         .color_grade_enable(color_grade_enable),
+        .fb_config_trigger(fb_config_trigger),
         .cc_mode(cc_mode),
+        .cc_mode_2(cc_mode_2),
         .const_color(const_color),
         .tex0_cfg(tex0_cfg),
         .tex1_cfg(tex1_cfg),
         .tex0_cache_inv(tex0_cache_inv),
         .tex1_cache_inv(tex1_cache_inv),
+        .tex0_palette_idx(tex0_palette_idx),
+        .tex1_palette_idx(tex1_palette_idx),
+        .palette0_load_trigger(palette0_load_trigger),
+        .palette1_load_trigger(palette1_load_trigger),
+        .palette0_base_addr(palette0_base_addr),
+        .palette1_base_addr(palette1_base_addr),
         .mem_addr_out(mem_addr_out),
         .mem_data_out(mem_data_out),
         .mem_data_wr(mem_data_wr),
+        .mem_data_dword_addr(mem_data_dword_addr),
         .mem_data_rd(mem_data_rd),
         .mem_data_in(64'h0),
         .ts_mem_wr(ts_mem_wr),
@@ -325,6 +356,116 @@ module tb_register_file;
         @(posedge clk);
         check16("z_range_min persists after TRI_MODE write", z_range_min, 16'h1234);
         check16("z_range_max persists after TRI_MODE write", z_range_max, 16'hABCD);
+
+        // ============================================================
+        // Test 7 (VER-003 step 14 extension): TEX0_CFG PALETTE_IDX field
+        // ============================================================
+        $display("--- Test 7: TEX0_CFG PALETTE_IDX (bit 24) ---");
+
+        // Write TEX0_CFG with bit 24 set (PALETTE_IDX = 1)
+        write_reg(ADDR_TEX0_CFG, 64'h0000_0000_0100_0000);
+        @(posedge clk);
+        check_bit("tex0_palette_idx = 1 (bit 24 set)", tex0_palette_idx, 1'b1);
+
+        // Write TEX0_CFG with bit 24 clear (PALETTE_IDX = 0)
+        write_reg(ADDR_TEX0_CFG, 64'h0000_0000_0000_0000);
+        @(posedge clk);
+        check_bit("tex0_palette_idx = 0 (bit 24 clear)", tex0_palette_idx, 1'b0);
+
+        // ============================================================
+        // Test 8 (VER-003 step 15): PALETTE0 trigger pulse + base storage
+        // ============================================================
+        $display("--- Test 8: PALETTE0 trigger pulse (step 15) ---");
+
+        // Write PALETTE0 with BASE_ADDR=0xABCD, LOAD_TRIGGER=1 (bit 16).
+        // Drive cmd_valid for one full clock cycle, deasserting AFTER the
+        // posedge that latches the write. The #1 settle delay avoids a race
+        // between the testbench's blocking `cmd_valid=0` and the DUT's
+        // always_ff sampling at the same edge.
+        @(posedge clk);
+        #1;
+        cmd_valid = 1'b1;
+        cmd_rw    = 1'b0;
+        cmd_addr  = ADDR_PALETTE0;
+        cmd_wdata = 64'h0000_0000_0001_ABCD;
+        @(posedge clk);
+        #1;
+        cmd_valid = 1'b0;
+        // We are now in the cycle following the latching edge: trigger high.
+        check_bit("palette0_load_trigger high after write", palette0_load_trigger, 1'b1);
+        check16("palette0_base_addr = 0xABCD", palette0_base_addr, 16'hABCD);
+
+        // Next cycle: trigger should self-clear, base address must persist
+        @(posedge clk);
+        #1;
+        check_bit("palette0_load_trigger self-clears", palette0_load_trigger, 1'b0);
+        check16("palette0_base_addr persists = 0xABCD", palette0_base_addr, 16'hABCD);
+
+        // ============================================================
+        // Test 9 (VER-003 step 16): PALETTE1 trigger pulse + base storage
+        // ============================================================
+        $display("--- Test 9: PALETTE1 trigger pulse (step 16) ---");
+
+        @(posedge clk);
+        #1;
+        cmd_valid = 1'b1;
+        cmd_rw    = 1'b0;
+        cmd_addr  = ADDR_PALETTE1;
+        cmd_wdata = 64'h0000_0000_0001_5A5A;
+        @(posedge clk);
+        #1;
+        cmd_valid = 1'b0;
+        check_bit("palette1_load_trigger high after write", palette1_load_trigger, 1'b1);
+        check16("palette1_base_addr = 0x5A5A", palette1_base_addr, 16'h5A5A);
+
+        @(posedge clk);
+        #1;
+        check_bit("palette1_load_trigger self-clears", palette1_load_trigger, 1'b0);
+        check16("palette1_base_addr persists = 0x5A5A", palette1_base_addr, 16'h5A5A);
+
+        // ============================================================
+        // Test 10 (VER-003 step 17): PALETTE0/PALETTE1 independent storage
+        // ============================================================
+        $display("--- Test 10: PALETTE0/PALETTE1 independent storage (step 17) ---");
+
+        // Write PALETTE0 with BASE_ADDR=0x1111 (no trigger)
+        write_reg(ADDR_PALETTE0, 64'h0000_0000_0000_1111);
+        @(posedge clk);
+        check16("palette0_base_addr = 0x1111", palette0_base_addr, 16'h1111);
+
+        // Write PALETTE1 with BASE_ADDR=0x2222 (no trigger)
+        write_reg(ADDR_PALETTE1, 64'h0000_0000_0000_2222);
+        @(posedge clk);
+        check16("palette1_base_addr = 0x2222", palette1_base_addr, 16'h2222);
+        check16("palette0_base_addr still = 0x1111", palette0_base_addr, 16'h1111);
+
+        // Update only PALETTE0; PALETTE1 must be unaffected
+        write_reg(ADDR_PALETTE0, 64'h0000_0000_0000_3333);
+        @(posedge clk);
+        check16("palette0_base_addr updated to 0x3333", palette0_base_addr, 16'h3333);
+        check16("palette1_base_addr remains 0x2222", palette1_base_addr, 16'h2222);
+
+        // ============================================================
+        // Test 11: PALETTE0 write with LOAD_TRIGGER=0 — no pulse
+        // ============================================================
+        $display("--- Test 11: PALETTE0 no-trigger write ---");
+
+        @(posedge clk);
+        #1;
+        cmd_valid = 1'b1;
+        cmd_rw    = 1'b0;
+        cmd_addr  = ADDR_PALETTE0;
+        cmd_wdata = 64'h0000_0000_0000_4444; // bit 16 clear
+        @(posedge clk);
+        #1;
+        cmd_valid = 1'b0;
+        check_bit("palette0_load_trigger stays 0 with LOAD_TRIGGER=0",
+                  palette0_load_trigger, 1'b0);
+        check16("palette0_base_addr updated to 0x4444", palette0_base_addr, 16'h4444);
+        @(posedge clk);
+        #1;
+        check_bit("palette0_load_trigger still 0 next cycle",
+                  palette0_load_trigger, 1'b0);
 
         // ============================================================
         // Summary

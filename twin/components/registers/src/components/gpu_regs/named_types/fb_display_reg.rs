@@ -1,5 +1,8 @@
 //! Register: FB_DISPLAY
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// FB_DISPLAY
 ///
 /// Display scanout configuration (write-blocks-until-vsync).

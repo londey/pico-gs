@@ -1,5 +1,8 @@
 //! Field Enum: C0_RGB_C
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CcRgbCSourceE {

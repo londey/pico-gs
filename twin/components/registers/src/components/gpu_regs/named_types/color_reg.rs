@@ -1,5 +1,8 @@
 //! Register: COLOR
 
+#[allow(unused_imports)]
+use super::_root; // alias to root module of generated code
+
 /// COLOR
 ///
 /// COLOR0[31:0] + COLOR1[63:32] vertex colors (RGBA8888 UNORM8 each)

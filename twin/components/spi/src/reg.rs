@@ -51,6 +51,12 @@ pub const ADDR_TEX0_CFG: u8 = 0x10;
 /// TEX1_CFG: texture unit 1 configuration.
 pub const ADDR_TEX1_CFG: u8 = 0x11;
 
+/// PALETTE0: palette slot 0 load control (BASE_ADDR + LOAD_TRIGGER).
+pub const ADDR_PALETTE0: u8 = 0x12;
+
+/// PALETTE1: palette slot 1 load control (BASE_ADDR + LOAD_TRIGGER).
+pub const ADDR_PALETTE1: u8 = 0x13;
+
 /// CC_MODE: color combiner equation configuration.
 pub const ADDR_CC_MODE: u8 = 0x18;
 
@@ -132,6 +138,19 @@ pub enum GpuAction {
         dword_addr: u32,
         /// 64-bit data to write.
         data: u64,
+    },
+
+    /// Palette load triggered (PALETTE0 or PALETTE1 written with
+    /// `LOAD_TRIGGER=1`).  The orchestrator reads the 4096-byte payload
+    /// from SDRAM at `base_addr * 512` and loads it into the palette LUT
+    /// slot.  Models the RTL load FSM as a single atomic transaction
+    /// (the twin is transaction-level, not cycle-accurate).
+    PaletteLoad {
+        /// Palette slot to load (`0` for PALETTE0, `1` for PALETTE1).
+        slot: u8,
+        /// `BASE_ADDR` field from the PALETTEn register (multiplied by
+        /// 512 to form the SDRAM byte address of the 4096-byte payload).
+        base_addr: u16,
     },
 }
 
@@ -274,6 +293,10 @@ impl RegisterFile {
                 self.tex1_cfg = reg_from_raw(data);
                 GpuAction::Tex1Config(self.tex1_cfg)
             }
+
+            ADDR_PALETTE0 => decode_palette_write(0, data),
+
+            ADDR_PALETTE1 => decode_palette_write(1, data),
 
             ADDR_CC_MODE => {
                 self.cc_mode = reg_from_raw(data);
@@ -479,6 +502,27 @@ impl RegisterFile {
     /// Access the TEX1_CFG register latch.
     pub fn tex1_cfg(&self) -> TexCfgReg {
         self.tex1_cfg
+    }
+}
+
+/// Decode a `PALETTEn` register write into the matching [`GpuAction`].
+///
+/// Returns [`GpuAction::PaletteLoad`] when the `LOAD_TRIGGER` bit (bit
+/// 16) is set in the write data, otherwise [`GpuAction::None`].  The
+/// `BASE_ADDR` field (bits 15:0) is forwarded so the orchestrator can
+/// fetch the payload from SDRAM at `base_addr * 512`.
+///
+/// Mirrors the RTL `palette_load_trigger` one-cycle pulse generation in
+/// `register_file.sv`: the trigger bit itself is never persisted; only
+/// the side-effect of starting a load is observable.
+fn decode_palette_write(slot: u8, data: u64) -> GpuAction {
+    use gpu_registers::{PALETTE_BASE_ADDR_MASK, PALETTE_LOAD_TRIGGER_BIT};
+
+    if data & PALETTE_LOAD_TRIGGER_BIT != 0 {
+        let base_addr = (data & PALETTE_BASE_ADDR_MASK) as u16;
+        GpuAction::PaletteLoad { slot, base_addr }
+    } else {
+        GpuAction::None
     }
 }
 

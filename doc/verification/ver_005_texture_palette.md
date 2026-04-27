@@ -104,9 +104,6 @@ The testbench drives known SDRAM-load sequences, index lookups, and quadrant sel
 
 ## Notes
 
-- The previous VER-005 document (`ver_005_texture_decoder.md`) covered the BC1–BC5/RGB565/RGBA8888/R8 block decompressor (UNIT-011.04), which has been removed.
-  This document supersedes it.
-  The file has been renamed from `ver_005_texture_decoder.md` to `ver_005_texture_palette.md`.
 - See UNIT-011.06 (Palette LUT) for the UNORM8→UQ1.8 promotion formula (`ch8_to_uq18`), the 4-EBR PDPW16KD addressing scheme, and the SDRAM load FSM.
 - See UNIT-011.03 (Index Cache) for the direct-mapped DP16KD organization, XOR set indexing, and cache invalidation protocol.
 - See `doc/verification/test_strategy.md` for the Verilator simulation framework, palette lifecycle coverage goals, and test execution procedures.
