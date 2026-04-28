@@ -429,9 +429,11 @@ module texture_palette_lut (
 
                 // ----------------------------------------------------------------
                 L_ARMING: begin
-                    // Wait for the arbiter to be ready, then issue the next
-                    // sub-burst request.  `sram_req` stays asserted for one
-                    // cycle; the arbiter latches it when granting.
+                    // Wait for the outer SDRAM to be ready, then issue the
+                    // next sub-burst request.  sram_req stays asserted
+                    // through L_BURSTING (see below) so a transient
+                    // sram_ready=0 (refresh, display poll, in-flight grant)
+                    // does not lose the request and hang the load FSM.
                     if (sram_ready) begin
                         sram_req          <= 1'b1;
                         sram_addr         <= next_sub_burst_addr;
@@ -443,8 +445,12 @@ module texture_palette_lut (
 
                 // ----------------------------------------------------------------
                 L_BURSTING: begin
-                    // Drop the burst request after the arbiter has accepted it.
-                    sram_req <= 1'b0;
+                    // Keep the burst request asserted across the entire
+                    // sub-burst.  Dropping sram_req mid-burst hands the
+                    // inner arbiter a single-cycle window to grant; if the
+                    // outer SDRAM is busy in that window (refresh, display
+                    // poll, etc.) the request is lost and the load FSM
+                    // hangs waiting for an ack that never arrives.
 
                     // Capture incoming words.
                     if (word_capture) begin
@@ -487,7 +493,9 @@ module texture_palette_lut (
                         // Either the sub-burst completed naturally or the
                         // arbiter preempted it; in either case we look at
                         // `slot_word_ofs_r` to decide whether the slot is
-                        // fully loaded.
+                        // fully loaded.  Drop sram_req so the inner arbiter
+                        // doesn't see a stale request between sub-bursts.
+                        sram_req <= 1'b0;
                         if (slot_word_ofs_r >= 12'(WORDS_PER_SLOT)) begin
                             load_state <= L_DONE;
                         end else begin

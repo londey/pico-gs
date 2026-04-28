@@ -106,6 +106,7 @@ module tb_sram_port_conformance;
         .port3_addr            (p3_if.req.addr),
         .port3_wdata           (p3_if.req.wdata),
         .port3_burst_len       (p3_if.req.burst_len),
+        .port3_burst_col_step2 (p3_if.burst_col_step2),
         .port3_burst_wdata     (p3_if.req.burst_wdata),
         .port3_rdata           (p3_if.resp.rdata),
         .port3_burst_rdata     (p3_if.resp.burst_rdata),

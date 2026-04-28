@@ -366,9 +366,15 @@ module texture_sampler
 
     arb_owner_t arb_owner_r;
 
-    wire arb_pick_s0  = (arb_owner_r == ARB_IDLE) && s0_fill_req;
-    wire arb_pick_s1  = (arb_owner_r == ARB_IDLE) && !s0_fill_req && s1_fill_req;
-    wire arb_pick_pal = (arb_owner_r == ARB_IDLE) && !s0_fill_req && !s1_fill_req && pal_sram_req;
+    // Priority: palette load > sampler fills.  Palette load must complete
+    // before any fragment can sample, so giving samplers priority over
+    // palette can starve the load FSM (palette never gets granted, sampler
+    // R_PALWAIT loops forever, frag_ready stays 0 — full pipeline deadlock).
+    // Once palette finishes (slot_ready[0|1]=1), the load FSM stops asserting
+    // pal_sram_req and samplers run unimpeded.
+    wire arb_pick_pal = (arb_owner_r == ARB_IDLE) && pal_sram_req;
+    wire arb_pick_s0  = (arb_owner_r == ARB_IDLE) && !pal_sram_req && s0_fill_req;
+    wire arb_pick_s1  = (arb_owner_r == ARB_IDLE) && !pal_sram_req && !s0_fill_req && s1_fill_req;
 
     wire arb_owns_s0  = (arb_owner_r == ARB_S0);
     wire arb_owns_s1  = (arb_owner_r == ARB_S1);
@@ -395,10 +401,19 @@ module texture_sampler
     // Route response signals back to the active client.
     assign pal_sram_burst_data_valid = arb_owns_pal && sram_burst_data_valid;
     assign pal_sram_ack              = arb_owns_pal && sram_ack;
-    // The palette FSM proceeds when it sees `sram_ready` while owning, or
-    // is being latched as the new owner this cycle.
-    assign pal_sram_ready = (arb_owner_r == ARB_IDLE) ? arb_pick_pal
-                                                      : (arb_owns_pal && sram_ready);
+    // The palette FSM proceeds when it can issue a request (no higher-
+    // priority sampler fill pending and the outer SDRAM is ready) or when
+    // it already owns the bus and the outer SDRAM is ready.  The previous
+    // formulation gated pal_sram_ready on arb_pick_pal — which itself
+    // required pal_sram_req — creating a chicken-and-egg deadlock that
+    // prevented the palette load FSM from ever asserting sram_req in the
+    // first place.
+    // Palette has top priority in the inner arbiter, so pal_sram_ready in
+    // ARB_IDLE depends only on the outer SDRAM ready (no need to gate on
+    // sampler fill requests — they wait for palette).
+    assign pal_sram_ready = (arb_owner_r == ARB_IDLE)
+                                ? sram_ready
+                                : (arb_owns_pal && sram_ready);
 
     wire s0_burst_data_valid = arb_owns_s0 && sram_burst_data_valid;
     wire s1_burst_data_valid = arb_owns_s1 && sram_burst_data_valid;
@@ -416,9 +431,9 @@ module texture_sampler
             unique case (arb_owner_r)
                 ARB_IDLE: begin
                     if (sram_ready) begin
-                        if (arb_pick_s0)       arb_owner_r <= ARB_S0;
+                        if (arb_pick_pal)      arb_owner_r <= ARB_PAL;
+                        else if (arb_pick_s0)  arb_owner_r <= ARB_S0;
                         else if (arb_pick_s1)  arb_owner_r <= ARB_S1;
-                        else if (arb_pick_pal) arb_owner_r <= ARB_PAL;
                     end
                 end
                 ARB_S0:  if (sram_ack) arb_owner_r <= ARB_IDLE;
@@ -588,11 +603,15 @@ module texture_sampler
         end else begin
             // Default one-shot deassertions.
             texel_valid_r <= 1'b0;
-            // Miss flags self-clear once the fill FSM has accepted them.
-            if (s0_fill_state != F_IDLE) begin
+            // Miss flags clear only once the fill FSM has actually been
+            // granted (transition F_REQ -> F_BURST).  Clearing earlier on
+            // F_IDLE -> F_REQ races the F_REQ entry edge and can leave
+            // the request FSM and fill FSM out of sync, causing R_FILL to
+            // exit before the burst even issues.
+            if (arb_owns_s0) begin
                 s0_miss_pending_r <= 1'b0;
             end
-            if (s1_fill_state != F_IDLE) begin
+            if (arb_owns_s1) begin
                 s1_miss_pending_r <= 1'b0;
             end
 

@@ -361,6 +361,7 @@ module tb_sram_arbiter;
         .port3_addr(p3_addr),
         .port3_wdata(p3_wdata),
         .port3_burst_len(p3_burst_len),
+        .port3_burst_col_step2(1'b0),
         .port3_burst_wdata(p3_burst_wdata),
         .port3_rdata(p3_rdata),
         .port3_burst_rdata(p3_burst_rdata),

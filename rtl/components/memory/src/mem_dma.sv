@@ -41,8 +41,9 @@ module mem_dma (
     // ====================================================================
     output reg          dma_req,              // Arbiter request
     output wire         dma_we,               // Always 1 (write-only)
-    output reg  [23:0]  dma_addr,             // 24-bit word address
+    output reg  [23:0]  dma_addr,             // 24-bit byte address (LSB always 0)
     output reg  [7:0]   dma_burst_len,        // Burst length (16-bit words)
+    output reg          dma_burst_col_step2,  // 1 for MEM_FILL (stride 2), 0 for MEM_DATA (stride 1)
     output reg  [15:0]  dma_burst_wdata,      // 16-bit burst write data (combinational)
     output wire         dma_busy,             // Stalls command FIFO
 
@@ -59,9 +60,13 @@ module mem_dma (
 
     // dma_ready is used implicitly: the port 3 mux in gpu_top only forwards
     // dma_req to the arbiter when arb_port3_ready is asserted, so the DMA
-    // engine does not need to check readiness itself.
+    // engine does not need to check readiness itself.  mem_fill_base[23] is
+    // dropped during the word-to-byte address conversion (byte_addr =
+    // base*2); 24-bit byte addresses cap the addressable range at 16 MB,
+    // matching the on-board SDRAM.
     /* verilator lint_off UNUSEDSIGNAL */
-    wire _unused_dma_ready = dma_ready;
+    wire _unused_dma_ready  = dma_ready;
+    wire _unused_fill_base_msb = mem_fill_base[23];
     /* verilator lint_on UNUSEDSIGNAL */
 
     // ====================================================================
@@ -106,7 +111,7 @@ module mem_dma (
     // Maximum burst size for fill operations (port 3 preemption limit)
     // ====================================================================
 
-    localparam [7:0] MAX_FILL_BURST = 8'd32;
+    localparam [7:0] MAX_FILL_BURST = 8'd1;
 
     // ====================================================================
     // Burst Write Data Mux (combinational)
@@ -138,16 +143,17 @@ module mem_dma (
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state           <= DMA_IDLE;
-            dma_req         <= 1'b0;
-            dma_addr        <= 24'b0;
-            dma_burst_len   <= 8'b0;
-            lat_data        <= 64'b0;
-            data_word_idx   <= 2'b0;
-            fill_addr       <= 24'b0;
-            fill_value      <= 16'b0;
-            fill_remaining  <= 20'b0;
-            burst_words_sent <= 6'b0;
+            state               <= DMA_IDLE;
+            dma_req             <= 1'b0;
+            dma_addr            <= 24'b0;
+            dma_burst_len       <= 8'b0;
+            dma_burst_col_step2 <= 1'b0;
+            lat_data            <= 64'b0;
+            data_word_idx       <= 2'b0;
+            fill_addr           <= 24'b0;
+            fill_value          <= 16'b0;
+            fill_remaining      <= 20'b0;
+            burst_words_sent    <= 6'b0;
 
         end else begin
             case (state)
@@ -160,22 +166,33 @@ module mem_dma (
                         lat_data      <= mem_data;
                         data_word_idx <= 2'd0;
 
-                        // Issue burst request (burst_len=4 for 4 × 16-bit words)
-                        dma_req       <= 1'b1;
-                        dma_addr      <= {mem_dword_addr, 2'b00};
-                        dma_burst_len <= 8'd4;
-                        state         <= DMA_DATA_REQ;
+                        // Issue burst request (burst_len=4 for 4 × 16-bit words).
+                        // MEM_DATA writes to consecutive byte addresses (no
+                        // step-2): the four 16-bit words land in adjacent
+                        // mem_ slots so downstream texture-sampler reads pick
+                        // up the dword as a contiguous block.
+                        dma_req             <= 1'b1;
+                        dma_addr            <= {mem_dword_addr, 2'b00};
+                        dma_burst_len       <= 8'd4;
+                        dma_burst_col_step2 <= 1'b0;
+                        state               <= DMA_DATA_REQ;
 
                     end else if (mem_fill_trigger && mem_fill_count != 20'b0) begin
-                        // Latch MEM_FILL parameters
-                        fill_addr      <= mem_fill_base;
-                        fill_value     <= mem_fill_value;
-                        fill_remaining <= mem_fill_count;
+                        // Latch MEM_FILL parameters.  mem_fill_base is in
+                        // 16-bit-word units (byte_addr = base*2); convert
+                        // to byte addresses on the SDRAM bus and use
+                        // col_step2=1 so each 16-bit word lands on the
+                        // next even byte address — matching the layout
+                        // the pixel pipeline writes to (UNIT-006).
+                        fill_addr        <= {mem_fill_base[22:0], 1'b0};
+                        fill_value       <= mem_fill_value;
+                        fill_remaining   <= mem_fill_count;
                         burst_words_sent <= 6'b0;
 
                         // Issue first burst request
-                        dma_req       <= 1'b1;
-                        dma_addr      <= mem_fill_base;
+                        dma_req             <= 1'b1;
+                        dma_addr            <= {mem_fill_base[22:0], 1'b0};
+                        dma_burst_col_step2 <= 1'b1;
                         // Compute initial burst length
                         dma_burst_len <= (mem_fill_count >= {12'b0, MAX_FILL_BURST})
                                          ? MAX_FILL_BURST
@@ -199,9 +216,10 @@ module mem_dma (
                 DMA_DATA_XFER: begin
                     if (dma_ack) begin
                         // Burst complete
-                        dma_req       <= 1'b0;
-                        dma_burst_len <= 8'b0;
-                        state         <= DMA_IDLE;
+                        dma_req             <= 1'b0;
+                        dma_burst_len       <= 8'b0;
+                        dma_burst_col_step2 <= 1'b0;
+                        state               <= DMA_IDLE;
                     end else if (dma_burst_wdata_req) begin
                         // Advance to next word
                         data_word_idx <= data_word_idx + 2'd1;
@@ -218,17 +236,22 @@ module mem_dma (
                         state            <= DMA_FILL_XFER;
                     end else if (dma_ack) begin
                         // Single-word burst: completed with no wdata_req
-                        // (burst_count was 1, so burst_count > 1 was false)
-                        fill_addr      <= fill_addr + 24'd1;
+                        // (burst_count was 1, so burst_count > 1 was false).
+                        // Advance fill_addr by 2 because col_step2=1 — each
+                        // 16-bit word occupies two byte-addresses (one even
+                        // word slot plus its odd alias dropped by the SDRAM
+                        // controller).
+                        fill_addr      <= fill_addr + 24'd2;
                         fill_remaining <= fill_remaining - 20'd1;
 
                         if (fill_remaining <= 20'd1) begin
-                            dma_req       <= 1'b0;
-                            dma_burst_len <= 8'b0;
-                            state         <= DMA_IDLE;
+                            dma_req             <= 1'b0;
+                            dma_burst_len       <= 8'b0;
+                            dma_burst_col_step2 <= 1'b0;
+                            state               <= DMA_IDLE;
                         end else begin
                             burst_words_sent <= 6'b0;
-                            dma_addr <= fill_addr + 24'd1;
+                            dma_addr <= fill_addr + 24'd2;
                             if ((fill_remaining - 20'd1) >= {12'b0, MAX_FILL_BURST}) begin
                                 dma_burst_len <= MAX_FILL_BURST;
                             end else begin
@@ -247,18 +270,22 @@ module mem_dma (
                     if (dma_ack) begin
                         // Burst complete (natural or preempted).
                         // words_completed accounts for simultaneous wdata_req.
-                        fill_addr      <= fill_addr + {18'b0, words_completed};
+                        // With col_step2=1 each completed word advances the
+                        // byte address by two — shift left by 1 to get the
+                        // byte-stride.
+                        fill_addr      <= fill_addr + {17'b0, words_completed, 1'b0};
                         fill_remaining <= fill_remaining - {14'b0, words_completed};
 
                         if (fill_remaining <= {14'b0, words_completed}) begin
                             // Fill complete
-                            dma_req       <= 1'b0;
-                            dma_burst_len <= 8'b0;
-                            state         <= DMA_IDLE;
+                            dma_req             <= 1'b0;
+                            dma_burst_len       <= 8'b0;
+                            dma_burst_col_step2 <= 1'b0;
+                            state               <= DMA_IDLE;
                         end else begin
                             // More words to fill — issue next burst
                             burst_words_sent <= 6'b0;
-                            dma_addr <= fill_addr + {18'b0, words_completed};
+                            dma_addr <= fill_addr + {17'b0, words_completed, 1'b0};
 
                             // Compute next burst length
                             if ((fill_remaining - {14'b0, words_completed}) >= {12'b0, MAX_FILL_BURST}) begin

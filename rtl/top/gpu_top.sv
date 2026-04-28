@@ -489,6 +489,7 @@ module gpu_top (
     wire [23:0] arb_port3_addr;
     wire [31:0] arb_port3_wdata;
     wire [7:0]  arb_port3_burst_len;
+    wire        arb_port3_burst_col_step2;
     wire [15:0] arb_port3_burst_wdata;
     wire [31:0] arb_port3_rdata;
     wire [15:0] arb_port3_burst_rdata;
@@ -569,6 +570,7 @@ module gpu_top (
         .port3_addr(arb_port3_addr),
         .port3_wdata(arb_port3_wdata),
         .port3_burst_len(arb_port3_burst_len),
+        .port3_burst_col_step2(arb_port3_burst_col_step2),
         .port3_burst_wdata(arb_port3_burst_wdata),
         .port3_rdata(arb_port3_rdata),
         .port3_burst_rdata(arb_port3_burst_rdata),
@@ -657,6 +659,7 @@ module gpu_top (
     wire        dma_we;
     wire [23:0] dma_addr;
     wire [7:0]  dma_burst_len;
+    wire        dma_burst_col_step2;
     wire [15:0] dma_burst_wdata;
     wire        dma_ack;
     wire        dma_burst_wdata_req;
@@ -675,6 +678,7 @@ module gpu_top (
         .dma_we           (dma_we),
         .dma_addr         (dma_addr),
         .dma_burst_len    (dma_burst_len),
+        .dma_burst_col_step2 (dma_burst_col_step2),
         .dma_burst_wdata  (dma_burst_wdata),
         .dma_busy         (dma_busy),
         .dma_ack          (dma_ack),
@@ -784,21 +788,28 @@ module gpu_top (
         end
     end
 
-    // Priority mux: texture reads > DMA writes > timestamp writes
-    assign arb_port3_req       = tex_req
-                                 || (dma_req && !tex_req)
-                                 || (ts_pending && !tex_req && !dma_req);
-    assign arb_port3_we        = tex_req ? 1'b0 : 1'b1;  // texture=read, DMA/timestamp=write
-    assign arb_port3_addr      = tex_req ? tex_addr
-                                 : dma_req ? dma_addr
-                                 : ts_arb_addr;
-    assign arb_port3_wdata     = tex_req ? 32'b0
-                                 : dma_req ? 32'b0
-                                 : ts_arb_wdata;
-    assign arb_port3_burst_len = tex_req ? tex_burst_len
-                                 : dma_req ? dma_burst_len
-                                 : 8'b0;
-    assign arb_port3_burst_wdata = dma_req_granted ? dma_burst_wdata : 16'b0;
+    // Priority mux: texture reads > DMA writes > timestamp writes.
+    // Once a request is granted (sticky `*_req_granted` flag set in the
+    // tracking FSM above), the mux holds the bus for that owner until
+    // arb_port3_ack — otherwise a newly-arriving higher-priority requester
+    // would yank arb_port3_addr / arb_port3_we / arb_port3_burst_len out
+    // from under the in-flight burst and corrupt it.
+    wire any_p3_grant = tex_req_granted | dma_req_granted | ts_req_granted;
+    wire pick_p3_tex  = tex_req_granted | (!any_p3_grant & tex_req);
+    wire pick_p3_dma  = dma_req_granted | (!any_p3_grant & !tex_req & dma_req);
+    wire pick_p3_ts   = ts_req_granted  | (!any_p3_grant & !tex_req & !dma_req & ts_pending);
+
+    assign arb_port3_req            = pick_p3_tex | pick_p3_dma | pick_p3_ts;
+    assign arb_port3_we             = pick_p3_tex ? 1'b0 : 1'b1;
+    assign arb_port3_addr           = pick_p3_tex ? tex_addr
+                                    : pick_p3_dma ? dma_addr
+                                    :               ts_arb_addr;
+    assign arb_port3_wdata          = pick_p3_ts ? ts_arb_wdata : 32'b0;
+    assign arb_port3_burst_len      = pick_p3_tex ? tex_burst_len
+                                    : pick_p3_dma ? dma_burst_len
+                                    :               8'b0;
+    assign arb_port3_burst_col_step2 = pick_p3_dma & dma_burst_col_step2;
+    assign arb_port3_burst_wdata    = dma_req_granted ? dma_burst_wdata : 16'b0;
 
     // Route burst read data back to texture cache (UNIT-006)
     assign tex_burst_rdata      = arb_port3_burst_rdata;
