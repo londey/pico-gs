@@ -12,7 +12,15 @@
 //   * Sets:          32  (5-bit XOR-folded set index)
 //   * Ways:          1   (direct-mapped)
 //   * Line size:     16 bytes  (4×4 index block — 8×8 apparent texels)
-//   * Tag width:     tex_base_lo[15:0] + block_x[15:5] + block_y[15:5]
+//   * Tag width:     tex_base_lo[15:0] + block_x[7:0] + block_y[7:0]
+//
+//   The tag must include the *full* block coordinates: the XOR-folded
+//   set index `block_x[4:0] ^ block_y[4:0]` collapses up to 32 distinct
+//   blocks onto each set, so the lower 5 bits cannot be elided.  Storing
+//   only the upper bits silently turns every aliased pair into a tag
+//   match and the cache returns whichever block was filled last (see
+//   `gs-tex-l1-cache::small_texture_xor_aliased_blocks_do_not_collide`
+//   for the corresponding twin regression test).
 //
 // Address fields
 //   block_x     = u_idx >> 2
@@ -114,14 +122,14 @@ module texture_index_cache #(
     // ========================================================================
     // Tag storage (32 entries; one tag per set — direct-mapped)
     //
-    // Tag layout (38 bits total):
-    //   [37:22] = tex_base_lo (16 bits)
-    //   [21:11] = block_x_upper (block_x[15:5], 11 bits)
-    //   [10:0]  = block_y_upper (block_y[15:5], 11 bits)
-    // Implemented in flip-flops (small footprint; 32 × 38 ≈ 1216 FF).
+    // Tag layout (32 bits total):
+    //   [31:16] = tex_base_lo (16 bits)
+    //   [15:8]  = block_x      (8 bits, full coordinate)
+    //   [7:0]   = block_y      (8 bits, full coordinate)
+    // Implemented in flip-flops (small footprint; 32 × 32 = 1024 FF).
     // ========================================================================
 
-    localparam integer TAG_W = 38;
+    localparam integer TAG_W = 32;
 
     reg [TAG_W-1:0] tag_store [0:NUM_SETS-1];
     reg [NUM_SETS-1:0] valid_r;
@@ -135,15 +143,7 @@ module texture_index_cache #(
     wire [4:0]  set_index    = block_x[4:0] ^ block_y[4:0];    // XOR-folded set
     wire [3:0]  line_offset  = {v_idx_i[1:0], u_idx_i[1:0]};   // {v[1:0], u[1:0]}
 
-    // Upper bits of block coordinates that participate in the tag.
-    //   block_x_upper = block_x[7:5] (3 bits) — pad with 0 to 11 bits to match
-    //                                            the twin's `block_x[15:5]` view
-    //                                            (high bits beyond u_idx range
-    //                                            are always zero in this RTL).
-    wire [10:0] block_x_upper = {8'b0, block_x[7:5]};
-    wire [10:0] block_y_upper = {8'b0, block_y[7:5]};
-
-    wire [TAG_W-1:0] lookup_tag = {tex_base_lo_i, block_x_upper, block_y_upper};
+    wire [TAG_W-1:0] lookup_tag = {tex_base_lo_i, block_x, block_y};
 
     // ========================================================================
     // Fill combinational decode (mirrors lookup decode for the fill axis)
@@ -152,9 +152,7 @@ module texture_index_cache #(
     wire [7:0]  fill_block_x      = {fill_u_idx_i[9:2]};
     wire [7:0]  fill_block_y      = {fill_v_idx_i[9:2]};
     wire [4:0]  fill_set_index    = fill_block_x[4:0] ^ fill_block_y[4:0];
-    wire [10:0] fill_block_x_upper = {8'b0, fill_block_x[7:5]};
-    wire [10:0] fill_block_y_upper = {8'b0, fill_block_y[7:5]};
-    wire [TAG_W-1:0] fill_tag = {tex_base_lo_i, fill_block_x_upper, fill_block_y_upper};
+    wire [TAG_W-1:0] fill_tag = {tex_base_lo_i, fill_block_x, fill_block_y};
 
     // The fill data buffer arrives in row-major order across the entire 4×4
     // line, so the [1:0] sub-block bits of the fill coordinates are not
