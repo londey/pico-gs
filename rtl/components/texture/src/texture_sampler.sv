@@ -38,7 +38,6 @@
 //      tex_sample.rs (digital twin reference).
 
 module texture_sampler
-    import fp_types_pkg::*;
 (
     input  wire         clk,
     input  wire         rst_n,
@@ -548,16 +547,16 @@ module texture_sampler
     localparam logic [63:0] Q412_OPAQUE_WHITE = 64'h1000_1000_1000_1000;
 
     // Per-cycle UQ1.8 -> Q4.12 promotion using the package helper.
-    wire [15:0] s0_r_q412 = promote_uq18_to_q412(s0_palette_texel[35:27]);
-    wire [15:0] s0_g_q412 = promote_uq18_to_q412(s0_palette_texel[26:18]);
-    wire [15:0] s0_b_q412 = promote_uq18_to_q412(s0_palette_texel[17: 9]);
-    wire [15:0] s0_a_q412 = promote_uq18_to_q412(s0_palette_texel[ 8: 0]);
+    wire [15:0] s0_r_q412 = fp_types_pkg::promote_uq18_to_q412(s0_palette_texel[35:27]);
+    wire [15:0] s0_g_q412 = fp_types_pkg::promote_uq18_to_q412(s0_palette_texel[26:18]);
+    wire [15:0] s0_b_q412 = fp_types_pkg::promote_uq18_to_q412(s0_palette_texel[17: 9]);
+    wire [15:0] s0_a_q412 = fp_types_pkg::promote_uq18_to_q412(s0_palette_texel[ 8: 0]);
     wire [63:0] s0_color_q412 = {s0_r_q412, s0_g_q412, s0_b_q412, s0_a_q412};
 
-    wire [15:0] s1_r_q412 = promote_uq18_to_q412(s1_palette_texel[35:27]);
-    wire [15:0] s1_g_q412 = promote_uq18_to_q412(s1_palette_texel[26:18]);
-    wire [15:0] s1_b_q412 = promote_uq18_to_q412(s1_palette_texel[17: 9]);
-    wire [15:0] s1_a_q412 = promote_uq18_to_q412(s1_palette_texel[ 8: 0]);
+    wire [15:0] s1_r_q412 = fp_types_pkg::promote_uq18_to_q412(s1_palette_texel[35:27]);
+    wire [15:0] s1_g_q412 = fp_types_pkg::promote_uq18_to_q412(s1_palette_texel[26:18]);
+    wire [15:0] s1_b_q412 = fp_types_pkg::promote_uq18_to_q412(s1_palette_texel[17: 9]);
+    wire [15:0] s1_a_q412 = fp_types_pkg::promote_uq18_to_q412(s1_palette_texel[ 8: 0]);
     wire [63:0] s1_color_q412 = {s1_r_q412, s1_g_q412, s1_b_q412, s1_a_q412};
 
     // Disabled sampler shortcut.

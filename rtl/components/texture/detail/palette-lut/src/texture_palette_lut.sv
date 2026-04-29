@@ -14,15 +14,15 @@
 // REQ-011.02 / REQ-003.08 for the EBR budget.
 //
 // Port assignment in this revision:
-//   Port A — all sampler reads AND load-FSM writes for the active slot.
-//            Reads and writes are mutually exclusive because the load
-//            FSM asserts `slot_ready_o[N] = 0` for the duration of a
-//            slot N burst, stalling samplers via UNIT-006.
-//   Port B — tied off (read enable, write enable, address, and data
-//            inputs held to 0; output ignored).  Reserved for the
-//            deferred dual-sampler enhancement described in UNIT-011.06
-//            §Future Enhancements (wire port B's address mux to
-//            sampler 1 to remove all same-slot serialization).
+//   `palette_slot_bram` exposes a single port that carries all sampler
+//   reads AND load-FSM writes for the active slot.  Reads and writes
+//   are mutually exclusive because the load FSM asserts
+//   `slot_ready_o[N] = 0` for the duration of a slot N burst, stalling
+//   samplers via UNIT-006.  A second BRAM port is described in
+//   UNIT-011.06 §Future Enhancements (sampler-1 reads in parallel with
+//   sampler-0 reads to remove all same-slot serialization) and will be
+//   added — via explicit DP16KD instantiation — when that enhancement
+//   is scheduled.
 //
 // Lookup:
 //   For each sampler {0,1} the inputs `{slotN[0], idxN[7:0], quadN[1:0]}`
@@ -191,26 +191,13 @@ module texture_palette_lut (
     wire [35:0] slot0_a_do;
     wire [35:0] slot1_a_do;
 
-    // Port B is reserved for the deferred dual-sampler enhancement
-    // (UNIT-011.06 §Future Enhancements).  Tie its inputs off today
-    // and capture its data output into a wire we explicitly mark
-    // unused so Verilator does not complain about an empty port.
-
-    wire [35:0] slot0_b_do;
-    wire [35:0] slot1_b_do;
-
     palette_slot_bram u_slot0 (
         .clk    (clk),
         .a_we   (slot0_a_we),
         .a_re   (slot0_a_re),
         .a_addr (slot0_a_addr),
         .a_di   (load_wdata),
-        .a_do   (slot0_a_do),
-        .b_we   (1'b0),
-        .b_re   (1'b0),
-        .b_addr (10'b0),
-        .b_di   (36'b0),
-        .b_do   (slot0_b_do)
+        .a_do   (slot0_a_do)
     );
 
     palette_slot_bram u_slot1 (
@@ -219,12 +206,7 @@ module texture_palette_lut (
         .a_re   (slot1_a_re),
         .a_addr (slot1_a_addr),
         .a_di   (load_wdata),
-        .a_do   (slot1_a_do),
-        .b_we   (1'b0),
-        .b_re   (1'b0),
-        .b_addr (10'b0),
-        .b_di   (36'b0),
-        .b_do   (slot1_b_do)
+        .a_do   (slot1_a_do)
     );
 
     // ========================================================================
@@ -531,7 +513,6 @@ module texture_palette_lut (
 
     /* verilator lint_off UNUSEDSIGNAL */
     wire        _unused_commit_color = commit_color;
-    wire [71:0] _unused_b_do         = {slot0_b_do, slot1_b_do};
     /* verilator lint_on UNUSEDSIGNAL */
 
 endmodule
