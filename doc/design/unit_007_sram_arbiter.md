@@ -31,7 +31,7 @@ None
 ### Internal Interfaces
 
 - Port 0 (highest priority): UNIT-008 (Display Controller) display read
-- Port 1: UNIT-006 (Pixel Pipeline) color tile buffer burst read (tile prefetch, blend enabled) and burst write (tile flush)
+- Port 1: UNIT-013 (Color Tile Cache) 16-word burst fill and 16-word burst writeback
 - Port 2: UNIT-012 (Z-Buffer Tile Cache) Z-buffer read/write
 - Port 3 (lowest priority): UNIT-011 (Texture Sampler) texture cache fill reads (dispatched via UNIT-006)
 - Downstream: connects to SDRAM controller via req/ack handshake
@@ -111,19 +111,19 @@ The only asynchronous CDC boundary in the system is between the SPI slave interf
 This single-domain design eliminates synchronizer latency on request/acknowledge paths, enabling back-to-back grants on consecutive clock cycles.
 
 **Fixed-Priority Arbitration:**
-Priority order: Port 0 (display) > Port 1 (framebuffer) > Port 2 (Z-buffer) > Port 3 (texture).
+Priority order: Port 0 (display) > Port 1 (color tile cache) > Port 2 (Z-buffer) > Port 3 (texture).
 This ensures display refresh never stalls.
 
 **Temporal Access Pattern Note:**
 With early Z-test support (UNIT-006), a Z-prepass can be performed where only Z-buffer writes occur (color_write disabled).
-During the Z-prepass, Port 1 (framebuffer) sees no traffic, effectively giving Port 2 (Z-buffer) higher throughput since it only competes with Port 0 (display).
+During the Z-prepass, Port 1 (color tile cache) sees no traffic, effectively giving Port 2 (Z-buffer) higher throughput since it only competes with Port 0 (display).
 During the subsequent color pass, Port 2 traffic is reduced (fewer Z writes due to early rejection), improving Port 1 throughput.
 The Z-buffer tile cache (UNIT-012) owns Port 2; it arbitrates between Z-read and Z-write requests issued by UNIT-006 and forwards them through Port 2 as fill/evict bursts.
 This temporal separation improves overall SDRAM utilization without requiring changes to the arbiter logic.
 
-Port 1 access pattern uses the color tile buffer (UNIT-006): at tile entry, when blending is enabled, a 16-word burst read pre-fetches the destination tile; at tile exit, a 16-word burst write flushes all written pixels.
-When blending is disabled, only the flush write is issued.
-Both the tile prefetch read and the tile flush write use the same burst mechanism and the same 16-word maximum burst length already enforced for Port 1.
+Port 1 access pattern is driven exclusively by UNIT-013 (Color Tile Cache): on a cache miss, a 16-word burst read fills the new tile; on eviction of a dirty line, a 16-word burst write flushes it to SDRAM.
+Both fill and evict bursts use the same 16-word maximum burst length enforced for Port 1.
+Port 1 is never driven by UNIT-006 directly; all framebuffer color read and write traffic flows through UNIT-013.
 
 Hi-Z tile rejection (UNIT-005.06) adds a further reduction in Port 2 traffic: entire 4×4 tiles provably occluded by previously-written geometry are rejected before any fragment reaches UNIT-006, eliminating the corresponding Z-buffer SDRAM reads and writes.
 This is additive with the per-pixel early Z reduction and operates at tile granularity upstream of the pixel pipeline.
@@ -265,7 +265,7 @@ An incorrectly timed model (e.g., zero-latency ack) will mask real timing hazard
 **Unified clock update:** With the GPU core clock unified to 100 MHz (matching the SDRAM controller clock), the arbiter operates in a single clock domain.
 Previously, if the GPU core ran at a different frequency than the memory, CDC synchronizers would have been required on the request/acknowledge handshake paths between requestors and the memory controller.
 The unified 100 MHz clock eliminates this requirement entirely, reducing latency and simplifying timing analysis.
-All four requestor ports (UNIT-008 display read, UNIT-006 color tile buffer burst read/write, UNIT-012 Z-buffer read/write, UNIT-006 texture read for up to 2 samplers) are now synchronous to the same `clk_core` that drives the SDRAM controller.
+All four requestor ports (UNIT-008 display read, UNIT-013 color tile cache burst fill/evict, UNIT-012 Z-buffer read/write, UNIT-011 texture read for up to 2 samplers) are now synchronous to the same `clk_core` that drives the SDRAM controller.
 
 **Display scanout burst length:** The display controller (UNIT-008) issues burst reads of `source_width / 4` bursts × 16 words per burst for each source scanline, where `source_width = 1 << FB_DISPLAY.FB_WIDTH_LOG2`.
 For a 512-wide source (WIDTH_LOG2=9): 128 tile bursts × 16 words = 2,048 SDRAM reads per scanline.

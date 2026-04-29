@@ -172,9 +172,10 @@ flowchart TB
 
 ```
 
-The color tile buffer is a pair of 4×4 register files (16 RGB565 entries each), effectively a two-tile cache: one tile is actively drawn while the other is being read from or written to SDRAM via burst transfers.
-The tile is always loaded at block entry (not only when blending is enabled), ensuring all color buffer accesses use burst mode.
-It supplies DST_COLOR as a source to all color combiner passes and is flushed back as a 16-word burst write at block exit.
+The color tile cache (UNIT-013) is a 4-way set-associative, 32-set, write-back cache storing 4×4 RGB565 tiles (16 pixels per line).
+It sits between the pixel pipeline and SDRAM arbiter Port 1, supplying DST_COLOR reads and accepting color writes from UNIT-006.
+On a cache miss the new tile is filled via a 16-word burst read; dirty evictions are written back as a 16-word burst write.
+A per-tile uninitialized-flag EBR (1×16,384 mode) enables lazy-fill-with-zeros on first write, avoiding SDRAM reads for tiles that have never been written.
 
 ##### Texture Pipeline
 
@@ -348,10 +349,10 @@ Cache misses trigger a short 8-word SDRAM burst to fill a 4×4 index block.
 The pixel pipeline (UNIT-006) performs early Z testing, dispatches texture fetch requests to UNIT-011, and receives decoded Q4.12 texel data in return; it receives true perspective-correct U, V coordinates and frag_lod directly from the rasterizer — no per-pixel division is performed in the pixel pipeline.
 The color combiner (UNIT-010) is a single time-multiplexed instance that evaluates `(A-B)*C+D` independently for RGB and alpha, executing up to three passes per fragment within a 4-cycle/fragment throughput target.
 Pass 0 and pass 1 replicate the prior two-stage behavior: pass 0's output feeds pass 1 via the COMBINED source, enabling multi-texture blending, fog, and specular-add; for simple single-equation rendering, pass 1 is configured as a pass-through.
-The DST_COLOR source (destination pixel from the on-chip color tile buffer) is available to all three passes.
+The DST_COLOR source (destination pixel from the color tile cache) is available to all three passes.
 Pass 2 conventionally implements alpha blending and fog by mapping the selected blend mode to the same `(A-B)*C+D` equation, but DST_COLOR can be selected in any pass for custom effects.
-The color tile buffer (a 4×4, 16×16-bit register file) holds the current destination tile, pre-fetched from SDRAM at the start of each tile when blending is enabled, and flushed back as a 16-word burst write at tile exit.
-After pass 2 and ordered dithering, fragments are written through the tile buffer to the double-buffered framebuffer in SDRAM.
+The color tile cache (UNIT-013) is a 4-way set-associative, 32-set write-back cache that sits between the pixel pipeline and SDRAM arbiter Port 1: it owns Port 1 traffic exclusively, supplying DST_COLOR reads and absorbing color writes from UNIT-006 as tile_idx + pixel_off requests; SDRAM bursts occur only on cache miss or dirty eviction.
+After pass 2 and ordered dithering, fragments are written through the color tile cache to the double-buffered framebuffer in SDRAM.
 
 The Z-buffer tile cache (UNIT-012) is an independent component that sits between the pixel pipeline and the SDRAM arbiter: it caches 4×4 tiles of 16-bit Z values in DP16KD BRAM (4-way, 16 sets, write-back), owns the per-tile uninitialized flag array (16,384 1-bit flags in DP16KD) for lazy-fill tracking, and supplies Z-read results and accepts Z-write requests from UNIT-006 while managing fill/evict bursts to SDRAM independently via arbiter port 2.
 A four-port fixed-priority memory arbiter (UNIT-007) manages all SDRAM traffic: display scanout (highest), framebuffer writes, Z-buffer tile cache access, and texture cache fills (lowest).
@@ -396,7 +397,7 @@ flowchart TD
 
     HIZ_META["Hi-Z Metadata<br/>(8 DP16KD)"]
     ZCACHE["Z-Buffer Tile Cache<br/>(4-way, 4×4 tiles)"]
-    CTBUF["Color Tile Buffer<br/>(4×4 register file)"]
+    CTCACHE["Color Tile Cache<br/>(UNIT-013, 4-way 32-set)"]
     ZBUF[("Z-Buffer<br/>SDRAM")]
     TEXMEM[("Texture Data<br/>SDRAM")]
     FB[("Framebuffer<br/>SDRAM")]
@@ -408,10 +409,9 @@ flowchart TD
     ZCACHE -. "fill/evict burst" .-> ZBUF
     TEXMEM -. "cache fill" .-> TEX0
     TEXMEM -. "cache fill" .-> TEX1
-    FB -. "tile load (blend enabled)" .-> CTBUF
-    CTBUF -. "DST_COLOR" .-> CC2
-    PW -. "color write" .-> CTBUF
-    CTBUF -. "tile flush burst" .-> FB
+    CTCACHE -. "DST_COLOR" .-> CC2
+    PW -. "color write (tile_idx+pixel_off)" .-> CTCACHE
+    CTCACHE -. "fill/evict burst (Port 1)" .-> FB
 
     subgraph display["Display · per scanline"]
         SCAN["Scanline Prefetch<br/>(burst read)"]
@@ -438,10 +438,10 @@ Each column shows a value's lifetime from production (first ●) to last consump
 | Texture Sample | ● | ● | ● | ● | ● | ● | ● | ● | | | Texture read (cache miss) |
 | Color Combiner pass 0 | ● | ● | ● | ● | | | ● | ● | ● | | |
 | Color Combiner pass 1 | ● | ● | ● | ● | | | ● | ● | ● | ● | |
-| Color Combiner pass 2 | ● | ● | | | | | | | | ● | Tile prefetch (blend enabled; 16-word burst read on tile entry) |
+| Color Combiner pass 2 | ● | ● | | | | | | | | ● | DST_COLOR read from color tile cache (Port 1 burst on cache miss) |
 | Alpha Test | ● | ● | | | | | | | | ● | |
 | Dither | ● | ● | | | | | | | | ● | |
-| Pixel Write | ● | ● | | | | | | | | ● | Tile buffer flush (16-word burst write on tile exit), Z write |
+| Pixel Write | ● | ● | | | | | | | | ● | Color write to tile cache (Port 1 burst on dirty eviction); Z write |
 
 **Widths:** x, y are Q12.4 (32 bits total); z is 16-bit unsigned; uv is 4 × Q4.12 (64 bits for both TEX0 + TEX1 coordinates; each 16-bit component is Q4.12 signed, carrying true perspective-correct U, V ready for texel addressing); lod is UQ4.4 (8 bits, derived from interpolated Q = 1/W by the rasterizer; emitted by the rasterizer but not consumed by the texture sampler — mipmapping is not supported); all colors (shade, tex, comb, color) are Q4.12 RGBA (4 × 16-bit = 64 bits).
 Register-file values **CONST0**, **CONST1**, and **CC_MODE** are side inputs to the combiner, not per-fragment data.
@@ -569,9 +569,9 @@ A 512×512 framebuffer occupies 512 KB; a double-buffered framebuffer plus Z-buf
 | Consumer | Rate (512×480 @ 60 Hz) | Priority | Notes |
 |---|---|---|---|
 | Display scanout | ~30 MB/s | Highest | Burst reads, 1 word/pixel; rate scales with `1<<FB_WIDTH_LOG2` |
-| FB color writes | Variable | 2 | Burst-coalesced |
-| Z-buffer R/W | Variable | 3 | Cached (tile cache) |
-| Texture fills | Variable | Lowest | Cached (texture cache) |
+| FB color R/W | Variable | 2 | Write-back tile cache (UNIT-013); SDRAM traffic only on miss/eviction |
+| Z-buffer R/W | Variable | 3 | Write-back tile cache (UNIT-012) |
+| Texture fills | Variable | Lowest | Cached (texture index cache + palette LUT) |
 
 Display scanout consumes ~15% of peak bandwidth at 512×480 (the default configuration), leaving ~170 MB/s for rendering.
 At 256×240 with LINE_DOUBLE enabled, display scanout halves to ~15 MB/s, freeing additional bandwidth for rendering.
@@ -601,8 +601,8 @@ Eight DP16KD blocks store per-tile metadata: a 9-bit min_z value (Z[15:7] of the
 A sentinel value of 9'h1FF (all-ones) means no Z-writes have occurred to that tile since the last clear.
 The rasterizer's FSM enters the HIZ_TEST state after TILE_TEST passes; if the tile's stored min_z is not the sentinel and exceeds the incoming fragment Z[15:7] under the active comparison function, the entire tile is skipped without entering EDGE_TEST or emitting any fragments.
 
-The Z-cache (UNIT-006) holds a companion 128×128 1-bit uninitialized flag array in a separate DP16KD (32-bit wide, 512 addresses, 16,384 flags).
-This flag tracks whether each 4×4 tile has been written since the last clear; its ownership in UNIT-006 keeps it co-located with the Z-cache logic that consumes it for lazy initialization.
+The Z-cache (UNIT-012) holds a companion 128×128 1-bit uninitialized flag array in a separate DP16KD (32-bit wide, 512 addresses, 16,384 flags).
+This flag tracks whether each 4×4 tile has been written since the last clear; its ownership in UNIT-012 keeps it co-located with the Z-cache logic that consumes it for lazy initialization.
 
 This enables two optimizations:
 
@@ -616,17 +616,24 @@ Hi-Z is bypassed when Z_TEST_EN=0 or Z_COMPARE=ALWAYS (no rejection possible wit
 
 **Cost:** 8 EBR (DP16KD, 36-bit wide) for Hi-Z metadata + 1 EBR (DP16KD, 32-bit wide) for Z-cache uninitialized flags, ~200–300 LUTs.
 
-### Burst Coalescing and Color Tile Buffer
+### Color Tile Cache (UNIT-013)
 
-The color tile buffer is a 4×4, 16-word register file that sits inside the pixel pipeline.
-All framebuffer color writes target this on-chip buffer rather than SDRAM directly.
-When blending is enabled, the buffer is pre-loaded with the destination tile via a 16-word burst read from SDRAM at the start of each tile; the loaded values are available as the DST_COLOR source for color combiner pass 2.
-At tile exit (all 16 fragments processed, or a tile boundary crossed), the buffer is flushed to SDRAM as a 16-word burst write.
+The color tile cache (UNIT-013) is a 4-way set-associative, 32-set, write-back cache storing 4×4 RGB565 tiles (16 pixels per cache line), modelled on the Z-buffer tile cache (UNIT-012).
+It sits between the pixel pipeline (UNIT-006) and SDRAM arbiter Port 1, which it owns exclusively.
 
-Within an active SDRAM row, sequential 16-bit writes deliver 1 word/cycle after the initial overhead, so a 16-pixel tile write completes in ~24 cycles (1.5 cycles/pixel) versus ~9 cycles per individual write.
-When blending is disabled, the tile prefetch read is skipped; only the flush write is issued, preserving the non-blending throughput of the prior write-coalescing design.
+UNIT-006 issues read and write requests to UNIT-013 using a `tile_idx + pixel_off` address; UNIT-013 manages the SDRAM byte address calculation internally from FB_CONFIG.
+On a cache miss, a 16-word burst read fills the incoming tile from SDRAM before servicing the request.
+On eviction of a dirty line, a 16-word burst write flushes it to SDRAM.
+A per-tile uninitialized-flag EBR (1×16,384 mode) tracks tiles that have never been written; on first write to an uninitialized tile, UNIT-013 fills the cache line with zeros without reading SDRAM, analogous to UNIT-012's lazy-fill-with-0xFFFF behavior.
 
-**Cost:** ~100–150 LUTs, zero EBR (distributed RAM).
+Software controls the cache lifecycle via `FB_CACHE_CTRL @ 0x45` (INT-010): `FLUSH_TRIGGER[0]` writes back all dirty tiles (lines remain valid) and `INVALIDATE_TRIGGER[1]` drops all valid+dirty bits and resets the uninit flag array.
+Both operations block the SPI command stream until complete, matching the `MEM_FILL` and `FB_DISPLAY` blocking patterns.
+Drivers must issue FLUSH before swapping front/back buffer via FB_DISPLAY, and INVALIDATE after retargeting FB_CONFIG.COLOR_BASE.
+
+Within an active SDRAM row, sequential 16-bit burst writes deliver 1 word/cycle after the initial overhead, so a 16-pixel tile flush completes in ~24 cycles.
+For workloads with good spatial locality, the cache substantially reduces Port 1 SDRAM traffic compared to per-tile unconditional flush/fill.
+
+**Cost:** 2 × DP16KD (data), 1–4 × PDPW16KD (tags), 1 × DP16KD (uninit flags) = 4–7 EBR, ~250 LUTs, 0 DSP.
 
 ### EBR Budget
 
@@ -637,7 +644,7 @@ The texture subsystem uses a per-sampler half-resolution index cache (1 DP16KD e
 | Texture index cache (2 samplers) | 2 | 1 per sampler; DP16KD, 32 sets × 16 indices/line |
 | Texture palette LUT (shared) | 4 | 4 PDPW16KD; 2 slots × 256 entries × 4 quadrants, UQ1.8 RGBA |
 | Z-buffer tile cache | 4–5 | 4-way, 16 sets, 4×4 tiles |
-| Z-cache uninitialized flags | 1 | DP16KD 32-bit wide; 16,384 1-bit flags as 512 words (UNIT-006) |
+| Z-cache uninitialized flags | 1 | DP16KD 32-bit wide; 16,384 1-bit flags as 512 words (UNIT-012) |
 | Hi-Z block metadata | 8 | DP16KD 36-bit wide; 9-bit min_z per tile (Z[15:7], sentinel 0x1FF), 4 entries per word |
 | Command FIFO | 2 | 512×72 async CDC |
 | Reciprocal LUT (area) | 1 | DP16KD 36×512, inv_area seed+delta |
@@ -645,8 +652,8 @@ The texture subsystem uses a per-sampler half-resolution index cache (1 DP16KD e
 | Dither matrix | 1 | 16×16 blue noise |
 | Color grading LUT | 1 | 128-entry RGB |
 | Scanline FIFO | 1 | 1024×16 display |
-| Color tile buffer | 0 | 4×4 × 16-bit register file; implemented in distributed LUTs |
-| **Total** | **26–27** | **of 56 available (ECP5-25K)** |
+| Color tile cache (UNIT-013) | 4–7 | 2 × DP16KD data + 1–4 × PDPW16KD tags + 1 × DP16KD uninit flags; 4-way, 32-set, 4×4 RGB565 tiles |
+| **Total** | **30–34** | **of 56 available (ECP5-25K)** |
 
 ### Throughput
 
@@ -682,6 +689,7 @@ flowchart LR
         UNIT_011_06["UNIT-011.06: Palette LUT"]
     end
     UNIT_012["UNIT-012: Z-Buffer Tile Cache"]
+    UNIT_013["UNIT-013: Color Tile Cache"]
     UNIT_001 -->|INT-001| UNIT_001
     UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
@@ -709,7 +717,7 @@ flowchart LR
 | UNIT-005.05 | Iteration FSM | Drives the 4×4 tile-ordered bounding box walk, hierarchical tile rejection, edge testing, perspective correction pipeline, and fragment output handshake. |
 | UNIT-005.06 | Hi-Z Block Metadata | Per-tile metadata store that enables two Z-buffer optimizations: fast clear (bulk-writing sentinel values to metadata in 512 cycles instead of filling SDRAM in ~266,000 cycles) and hierarchical Z (Hi-Z) tile rejection (rejecting entire 4x4 tiles in the rasterizer before any fragments are emitted). |
 | UNIT-005 | Rasterizer | Incremental derivative-based rasterization engine with internal perspective correction. |
-| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via a 4×4 color tile buffer. |
+| UNIT-006 | Pixel Pipeline | Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via the color tile cache (UNIT-013). |
 | UNIT-007 | Memory Arbiter | Arbitrates SDRAM access between display and render |
 | UNIT-008 | Display Controller | Scanline FIFO and display pipeline |
 | UNIT-009 | DVI TMDS Encoder | TMDS encoding and differential output |
@@ -719,4 +727,5 @@ flowchart LR
 | UNIT-011.06 | Palette LUT | Shared two-slot palette lookup table providing UQ1.8 RGBA colors to both texture samplers. |
 | UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline). |
 | UNIT-012 | Z-Buffer Tile Cache | 4-way set-associative write-back Z-buffer tile cache with per-tile uninitialized flag tracking. |
+| UNIT-013 | Color Tile Cache | 4-way set-associative write-back color tile cache (32 sets, 4×4 RGB565 tiles) with per-tile uninitialized flag tracking; owns SDRAM arbiter Port 1. |
 <!-- syskit-arch-end -->

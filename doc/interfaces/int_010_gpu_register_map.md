@@ -104,7 +104,9 @@ All register semantics are identical regardless of command source.
 | 0x41 | FB_DISPLAY | R/W | **Display scanout + LUT control + FB_WIDTH_LOG2 + LINE_DOUBLE (non-blocking)** |
 | 0x42 | - | - | Reserved (previously FB_ZBUFFER; Z base address now in FB_CONFIG) |
 | 0x43 | FB_CONTROL | R/W | **Scissor rectangle** |
-| 0x44-0x46 | - | - | Reserved |
+| 0x44 | MEM_FILL | W | **Memory fill operation (blocking-write)** |
+| 0x45 | FB_CACHE_CTRL | W | **Color-buffer cache flush/invalidate (blocking-write)** |
+| 0x46 | - | - | Reserved |
 | 0x47 | FB_DISPLAY_SYNC | R/W | **Display scanout + LUT control (vsync-blocking, same format as FB_DISPLAY)** |
 | 0x48-0x4F | - | - | Reserved (framebuffer config) |
 | **Performance Timestamp** ||||
@@ -825,6 +827,78 @@ Scissor rectangle for fragment clipping.
 | HUD overlay | HUD region |
 
 **Reset Value**: 0x00000000_3FF003FF (full screen scissor 1024×1024 at 0,0)
+
+---
+
+### 0x44: MEM_FILL (Memory Fill — Blocking)
+
+Triggers a hardware-accelerated SDRAM fill operation.
+Writes blocks the SPI command stream until the fill completes.
+
+```
+[63:52]   Reserved (write as 0)
+[51:32]   COUNT: Number of 16-bit words to fill (20 bits)
+[31:16]   VALUE: 16-bit fill constant written to every word
+[15:0]    FILL_BASE: Fill target base address >> 9 (512-byte aligned, 16 bits)
+          Effective address range: 0x000000 – 0x1FFFE00 (32 MiB SDRAM)
+```
+
+**Behavior:**
+
+- Asserts `mem_fill_trigger` for one cycle in UNIT-003 (Register File)
+- SDRAM fill unit writes VALUE to COUNT consecutive 16-bit words starting at `FILL_BASE × 512`
+- SPI command stream does not advance until fill completes
+
+**Driver usage:** Issue `MEM_FILL` targeting the color buffer before `FB_CACHE_CTRL.INVALIDATE_TRIGGER` when clearing the framebuffer; the cache invalidate ensures stale cached lines are not written back over the freshly-filled SDRAM region.
+
+**Reset Value:** N/A (write-only trigger)
+
+---
+
+### 0x45: FB_CACHE_CTRL (Color-Buffer Cache Control — Blocking)
+
+Software-controlled flush and invalidate triggers for the color-buffer tile cache (UNIT-013).
+Writes block the SPI command stream until the requested operation completes, matching the `MEM_FILL` (0x44) and `FB_DISPLAY_SYNC` (0x47) blocking semantics.
+
+```
+[63:2]    Reserved (write as 0)
+[1]       INVALIDATE_TRIGGER: Self-clearing invalidate trigger
+          When written as 1: drops all valid and dirty bits in the cache and resets
+          the per-tile uninitialized flag array (16,384 cycles sweep).
+          Lines that were dirty are discarded without writeback.
+          After the sweep, subsequent first-touch writes lazy-fill with zeros
+          rather than reading SDRAM (REQ-005.08).
+          Hardware clears this bit and asserts invalidate_done when complete.
+[0]       FLUSH_TRIGGER: Self-clearing flush trigger
+          When written as 1: writes back all dirty 4×4 tiles to SDRAM via
+          16-word burst writes on UNIT-007 port 1.
+          Lines remain valid after flush; dirty bits are cleared.
+          Hardware clears this bit and asserts flush_done when complete.
+```
+
+**Blocking behavior:**
+Writing this register with either bit set causes the SPI command stream to stall (SPI CS held asserted) until the cache operation completes and the corresponding `flush_done` or `invalidate_done` pulse is received by UNIT-003.
+Writing both bits simultaneously is undefined; driver software must issue them as separate writes.
+
+**Driver usage — double-buffered swap:**
+```
+// Before every framebuffer swap:
+gpu_write(FB_CACHE_CTRL, FLUSH_TRIGGER);  // Write-back dirty lines; blocks until done
+gpu_write(FB_DISPLAY_SYNC, new_fb_addr);  // Swap; blocks until vsync
+```
+
+**Driver usage — render-target retarget (e.g., after MEM_FILL clear):**
+```
+// After clearing and before rendering to a new color base:
+gpu_write(MEM_FILL, fill_params);            // Clear SDRAM; blocks until done
+gpu_write(FB_CONFIG, new_color_z_config);    // Switch render target
+gpu_write(FB_CACHE_CTRL, INVALIDATE_TRIGGER); // Drop stale cache state; blocks until done
+// Render to new target...
+```
+
+**Consuming units:** UNIT-013 (Color-Buffer Tile Cache) receives the flush and invalidate pulses; UNIT-003 (Register File) emits the pulses and waits for ack.
+
+**Reset Value:** N/A (write-only trigger; self-clearing)
 
 ---
 

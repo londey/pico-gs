@@ -14,6 +14,7 @@
 - UNIT-005.01 (Triangle Setup)
 - UNIT-005 (Rasterizer)
 - UNIT-006 (Pixel Pipeline)
+- UNIT-013 (Color Tile Cache — color write path interposed between pixel pipeline and SDRAM)
 
 ## Preconditions
 

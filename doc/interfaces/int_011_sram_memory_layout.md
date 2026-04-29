@@ -358,24 +358,24 @@ For a 256×240 surface with LINE_DOUBLE=1, display bandwidth ≈ 7.4 MB/s — le
 
 ---
 
-### Framebuffer Read/Write via Color Tile Buffer (Port 1)
+### Framebuffer Read/Write via Color Tile Cache (Port 1)
 
 ```
 Priority: LOW (yields to display)
-Pattern: Per-tile burst read (blend enabled) + per-tile burst write; 4×4 tile order within bounding box
-Bandwidth: Variable, up to ~28–35 Mpixels/sec write; up to equal read bandwidth when blend is active
-Access: 16-word burst read at tile entry (blend enabled only); 16-word burst write at tile exit
+Pattern: Cache-driven burst fill on miss + burst eviction on dirty victim; access pattern is demand-driven, not per-tile predictable
+Bandwidth: Variable; cache absorbs repeated accesses to the same tile (expected hit rate ~85–95%); SDRAM traffic proportional to unique tile footprint and dirty eviction rate
+Access: 16-word burst fill on cache miss (SDRAM read); 16-word burst evict on dirty victim writeback; uninit-flag fill skips SDRAM entirely
 ```
 
-**Color Tile Buffer (UNIT-006)**:
-- Rasterizer walks the triangle bounding box in 4×4 tile order (aligned with block-tiled layout and Z-cache block size)
-- At tile entry, if blending is enabled: a 16-word burst read from the destination tile's SDRAM address pre-fetches the destination pixels into the on-chip color tile buffer
-- Fragments within the tile are processed through the full pixel pipeline; color writes land in the on-chip tile buffer (no per-pixel SDRAM write)
-- At tile exit: a 16-word burst write from the color tile buffer to the tile's SDRAM address flushes all written pixels in one transaction
-- When blending is disabled: the tile prefetch read is skipped; only the flush write is issued (same bandwidth as the prior write-coalescing design)
-- A full tile flush: 16-word burst write, ~22 cycles (ACTIVATE + tRCD + 16 writes + tWR + PRECHARGE)
-- A partial tile (edge/corner): flush still issues a 16-word burst; partially-modified words carry the pre-fetched destination values for unmodified pixel positions
-- Row changes: tiles within the same SDRAM row proceed without PRECHARGE; a new tile column may cross row boundaries (~5 cycle overhead per row change)
+**Color-Buffer Tile Cache (UNIT-013)**:
+- The color-buffer tile cache (4-way set-associative, 32 sets, 4×4 RGB565 tiles) sits between UNIT-006 (Pixel Pipeline) and UNIT-007 (Memory Arbiter) port 1.
+- UNIT-006 issues color read requests (DST_COLOR for alpha blending) and color write requests to UNIT-013; UNIT-013 services them from the cache on hit, or fills from SDRAM on miss.
+- On cache miss with a clean or invalid victim: a 16-word burst read from the tile's SDRAM address fills the cache line (~23 cycles).
+- On cache miss with a dirty victim: a 16-word burst write evicts the dirty line first (~22 cycles), then a fill burst reads the new tile.
+- On first access to any tile after `FB_CACHE_CTRL.INVALIDATE_TRIGGER`: the uninit flag for that tile is set; UNIT-013 lazy-fills the line with 0x0000 (16 cycles, no SDRAM read) and clears the flag on the first write.
+- Dirty lines are written back to SDRAM either on eviction or when the driver issues `FB_CACHE_CTRL.FLUSH_TRIGGER` before a framebuffer swap.
+- A full tile eviction: 16-word burst write, ~22 cycles (ACTIVATE + tRCD + 16 writes + tWR + PRECHARGE).
+- Row changes: tiles within the same SDRAM row proceed without PRECHARGE; a tile crossing a row boundary incurs ~5-cycle overhead.
 
 ---
 
@@ -413,13 +413,13 @@ Access: 16-word burst fill on cache miss; 16-word burst evict on dirty eviction
 Clear: Hi-Z fast-clear invalidates metadata in EBR; lazy-fill initializes SDRAM on first tile access
 ```
 
-**Z-Buffer Tile Cache**: A 4-way set-associative Z-buffer tile cache (16 sets, 4×4 tiles) in UNIT-006 absorbs Z read/write traffic.
+**Z-Buffer Tile Cache**: A 4-way set-associative Z-buffer tile cache (UNIT-012, 128 sets, 4×4 tiles) absorbs Z read/write traffic.
 Each cache line holds a 4×4 tile of 16-bit Z values (256 bits = 16 × 16-bit words).
 Expected hit rate: 85–95% for typical scenes, reducing Z-buffer SDRAM traffic by 5–7×.
 
 **SDRAM Access Sequence** (cache miss):
 1. Dirty line eviction: 16-word burst write to the evicted tile's address (~22 cycles)
-2. New line fill: UNIT-006 checks the uninitialized flag for the tile; if set, the fill supplies 0xFFFF for all 16 Z values and clears the flag without reading SDRAM (lazy initialization after a Hi-Z fast clear); if clear, a 16-word burst read from the tile's SDRAM address is issued (~23 cycles)
+2. New line fill: UNIT-012 checks the uninitialized flag for the tile; if set, the fill supplies 0xFFFF for all 16 Z values and clears the flag without reading SDRAM (lazy initialization after a Hi-Z fast clear); if clear, a 16-word burst read from the tile's SDRAM address is issued (~23 cycles)
 3. Total cache miss cost: ~45 cycles for a normal fill, or ~22 cycles for an uninitialized-flag fill (no SDRAM read needed), amortized over up to 16 subsequent Z hits
 
 **Z-Buffer Access Sequence** (with early Z-test and Hi-Z, per pipeline stage):
@@ -457,8 +457,8 @@ The 4×4 block-tiled layout ensures most accesses are 16-word bursts within a si
 |----------|-----------|------------|-------|
 | Display scanout | ~30 MB/s (max) | 15% | 16-word tile bursts; 512-wide surface at 60 Hz (LINE_DOUBLE=0) |
 | Display scanout | ~7.4 MB/s (min) | 3.7% | 256-wide surface with LINE_DOUBLE=1 at 60 Hz |
-| Framebuffer write (Port 1) | ~40 MB/s | 20% | 16-word tile burst writes at tile exit via color tile buffer |
-| Framebuffer read (Port 1, blend) | ~40 MB/s (max) | 20% | 16-word tile burst reads at tile entry; only when blending enabled; equal to write bandwidth in worst case |
+| Framebuffer write (Port 1) | ~40 MB/s | 20% | 16-word burst eviction writes via color tile cache (UNIT-013); hit rate reduces actual SDRAM traffic |
+| Framebuffer read (Port 1, blend) | ~40 MB/s (max) | 20% | 16-word burst fill reads on cache miss; cache hits for DST_COLOR reads require no SDRAM access |
 | Z-buffer R/W | ~10 MB/s | 5% | Tile cache absorbs 85–95% of Z traffic; Hi-Z tile rejection and fast-clear lazy-fill reduce SDRAM traffic further |
 | Texture fetch | ~5–15 MB/s | 2.5–7.5% | Sequential cache fills; >90% hit rate |
 | Auto-refresh | ~1.6 MB/s | 0.8% | Non-negotiable SDRAM maintenance |

@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via a 4×4 color tile buffer.
+Stipple test, depth range clipping, early Z-test, texture dispatch to UNIT-011, color combination (three passes via UNIT-010), ordered dithering, and framebuffer write via the color tile cache (UNIT-013).
 UNIT-006 is a thin pipeline orchestrator: it sequences fragment processing stages and passes UV/LOD/configuration signals to UNIT-011 (Texture Sampler), receiving back Q4.12 texel data for the color combiner.
 
 UNIT-006 implements the **Pixel Pipeline** substage of the Render Pipeline as defined in ARCHITECTURE.md.
 Fragments arrive from UNIT-005 having already passed through the Block Pipeline (Hi-Z Test, Z Tile Load, Color Tile Load, and Edge Test + Interpolation).
-The color tile buffer pre-fetch — loading the current destination tile's RGB565 pixels from SDRAM — is the Block Pipeline's **Color Tile Load** step; it feeds the `DST_COLOR` operand to the Pixel Pipeline's color combiner passes.
+The color tile cache (UNIT-013) pre-fetches the current destination tile's RGB565 pixels from SDRAM; it feeds the `DST_COLOR` operand to the Pixel Pipeline's color combiner passes.
 The Z tile pre-fetch (**Z Tile Load**) is performed by UNIT-012 (Z-Buffer Tile Cache) and supplies per-fragment stored Z values to the early Z-test stage of this unit.
 
 ## Implements Requirements
@@ -46,7 +46,7 @@ None (texture cache architecture is now provided by UNIT-011).
 - Reads/writes Z-buffer via UNIT-012 (Z-buffer tile cache); UNIT-012 arbitrates SDRAM access through UNIT-007
 - Receives render mode, dither, blend, scissor, and Z-range configuration from UNIT-003 (Register File)
 - Receives CC_MODE and CONST_COLOR from UNIT-003 for UNIT-010 (Color Combiner)
-- Outputs final RGB565 pixel + Z value to SDRAM via UNIT-007 (tile-burst through color tile buffer)
+- Issues color read/write requests to UNIT-013 (Color Tile Cache) via tile_idx + pixel_off address; UNIT-013 manages SDRAM burst fills and writebacks through UNIT-007 Port 1
 
 ## Clock Domain
 
@@ -140,14 +140,14 @@ See UNIT-011 for the detailed texture sampling design.
 
 Alpha blending (REQ-005.03) is implemented as the third pass of UNIT-010 (CC pass 2), configured by RENDER_MODE.ALPHA_BLEND:
 
-- The color tile buffer holds the current 4×4 framebuffer tile (16 RGB565 pixels) as the `DST_COLOR` source.
-- On first access to a new tile when blending is enabled, UNIT-006 issues a 16-word burst read (port 1) to fill the tile buffer from SDRAM.
-- The `DST_COLOR` source from the tile buffer (promoted to Q4.12 via MSB-replication) is available to all CC passes; conventionally pass 2 computes the blend equation using the `(A-B)*C+D` combiner:
+- UNIT-013 (Color Tile Cache) holds the current 4×4 framebuffer tile (16 RGB565 pixels) as the `DST_COLOR` source; UNIT-006 reads the cached destination pixel via a tile_idx + pixel_off read request to UNIT-013.
+- On a cache miss, UNIT-013 fills the tile from SDRAM as a 16-word burst read (Port 1) before returning data to UNIT-006; on a cache hit, no SDRAM access occurs.
+- The `DST_COLOR` source (promoted to Q4.12 via `fb_promote.sv`) is available to all CC passes; conventionally pass 2 computes the blend equation using the `(A-B)*C+D` combiner:
   - **DISABLED:** CC pass 2 is a passthrough; no framebuffer read is required.
   - **ADD:** `result = saturate(CC1_out + dst_color × 1.0)`
   - **SUBTRACT:** `result = saturate(dst_color − CC1_out × alpha)`
   - **BLEND:** `result = CC1_out × alpha + dst_color × (1.0 − alpha)` (Porter-Duff source-over)
-- The updated pixel is written back to the tile buffer slot; the tile is flushed to SDRAM as a 16-word burst write when the pipeline moves to a new tile or rendering completes.
+- The updated RGB565 pixel is written back to UNIT-013 via a tile_idx + pixel_off write request; UNIT-013 marks the line dirty and writes back to SDRAM on eviction or flush.
 
 **Ordered Dithering + Framebuffer Write + Z Write:**
 
@@ -156,39 +156,39 @@ Alpha blending (REQ-005.03) is implemented as the third pass of UNIT-010 (CC pas
   2. Add dither offset to the Q4.12 value before truncation to RGB565
 - Extract UNORM: R5 = clamp(color.R × 31, 0, 31), G6 = clamp(color.G × 63, 0, 63), B5 = clamp(color.B × 31, 0, 31)
 - Pack into RGB565
-- If RENDER_MODE.COLOR_WRITE_EN=1 and pixel inside scissor: write color to tiled framebuffer at FB_CONFIG address
+- If RENDER_MODE.COLOR_WRITE_EN=1 and pixel inside scissor: issue a color-write request to UNIT-013 (tile_idx, pixel_off, rgb565_value); UNIT-013 updates the cached tile and marks the line dirty
 - If RENDER_MODE.Z_WRITE_EN=1: issue a Z-write request to UNIT-012 (write-back to SDRAM); additionally, send the written Z and tile index to UNIT-005.06 (Hi-Z Block Metadata) via the Hi-Z update channel — if `new_z[15:7] < stored_min_z`, the metadata entry is updated to record the new minimum
 - Alpha channel is discarded (RGB565 has no alpha storage)
 
 ### Tiled Framebuffer Address Calculation
 
-The framebuffer and Z-buffer use 4×4 block-tiled layout (INT-011).
-For a pixel at (x, y) in a surface with width `2^WIDTH_LOG2` pixels, where `WIDTH_LOG2 = fb_width_log2` from UNIT-003 (Register File):
+The Z-buffer uses 4×4 block-tiled layout (INT-011); its address calculation remains in UNIT-006 for Z-read and Z-write requests issued to UNIT-012.
+Color framebuffer address calculation has moved into UNIT-013 (Color Tile Cache): UNIT-006 passes a `tile_idx` and `pixel_off` (sub-tile pixel index) to UNIT-013, which computes the full SDRAM byte address internally from FB_CONFIG.
+
+For reference, the tile_idx and pixel_off encoding for a pixel at (x, y) in a surface with width `2^WIDTH_LOG2`:
 
 ```text
 block_x   = x >> 2
 block_y   = y >> 2
 local_x   = x & 3
 local_y   = y & 3
-block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x
-byte_addr = base + block_idx * 32 + (local_y * 4 + local_x) * 2
+tile_idx  = (block_y << (WIDTH_LOG2 - 2)) | block_x
+pixel_off = local_y * 4 + local_x
 ```
-
-`WIDTH_LOG2` is taken from the `fb_width_log2` output of UNIT-003 at the time of the write.
-It is never hardcoded; different render passes (e.g. rendering to a 256-wide off-screen target vs. the 512-wide display framebuffer) use whatever value FB_CONFIG.WIDTH_LOG2 holds.
 
 Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes.
 
 ## Implementation
 
 - `rtl/pkg/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
-- `twin/components/pixel-write/src/lib.rs`: Digital twin pixel-write stage (tile buffer read-modify-write, framebuffer burst flush, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`)
+- `twin/components/pixel-write/src/lib.rs`: Digital twin pixel-write stage (color cache read-modify-write, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`; color cache I/O delegated to `gs-pixel-write` via UNIT-013)
 - `rtl/components/pixel-write/src/pixel_pipeline.sv`: Main implementation
 - `rtl/components/pixel-write/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
-- `rtl/components/pixel-write/src/color_tile_buffer.sv`: 4×4 register-file tile buffer (16×16-bit), burst fill/flush arbiter interface
 - `rtl/components/dither/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)
 - `rtl/components/early-z/src/early_z.sv`: Depth range test + early Z-test logic
 - `rtl/components/stipple/src/stipple.sv`: Stipple pattern test
+
+Color tile cache RTL and digital twin are owned by UNIT-013.
 Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned by UNIT-011.
 
 ## Verification
@@ -203,9 +203,9 @@ Texture sampling RTL (texture decoders, texture cache, texel promotion) is owned
 
 ## Design Notes
 
-**Arbiter port ownership:** UNIT-006 owns arbiter ports 1 and 3 (UNIT-007); UNIT-012 owns port 2:
+**Arbiter port ownership:** UNIT-006 owns arbiter port 3 only; UNIT-012 owns port 2; UNIT-013 owns port 1:
 
-- Port 1: framebuffer tile burst read (16-word fill when blending is enabled and a new tile is entered) and tile burst write (16-word flush on tile exit or end-of-render)
+- Port 1: color tile cache burst fill and writeback (16-word) — owned by UNIT-013 (Color Tile Cache); UNIT-006 does not drive Port 1 directly
 - Port 2: Z-buffer read/write — owned by UNIT-012 (Z-buffer tile cache)
 - Port 3: texture index cache fill reads (8-word burst per 4×4 index block) and palette slot loads (multi-burst, 4096 bytes per slot) — issued on behalf of UNIT-011 via its internal 3-way arbiter
 
@@ -238,11 +238,10 @@ UNIT-006 forwards UV values to UNIT-011 unchanged; no perspective division occur
    CC0 and CC1 take TEX_COLOR0, TEX_COLOR1, SHADE0, SHADE1, CONST0, CONST1, COMBINED as inputs.
    CC2 (blend pass) additionally takes DST_COLOR (promoted destination pixel from the color tile buffer) and implements alpha blending via a CC equation template selected by RENDER_MODE.ALPHA_BLEND.
    Outputs the final blended color downstream.
-4. **Fragment Output (dither + write via tile buffer):** Ordered dithering, pixel write to the color tile buffer; burst tile flush to SDRAM (implemented within UNIT-006).
+4. **Fragment Output (dither + write via color tile cache):** Ordered dithering, pixel write to UNIT-013 (Color Tile Cache); burst tile fill/evict managed by UNIT-013, not UNIT-006.
 
-**Estimated FPGA Resources (UNIT-006 only, excluding UNIT-010 and UNIT-011):**
+**Estimated FPGA Resources (UNIT-006 only, excluding UNIT-010, UNIT-011, and UNIT-013):**
 
-- Color tile buffer: ~50 LUTs (16×16-bit register file + burst arbiter interface), 0 EBR
-- FB promote: ~200-400 LUTs (combinational, shared with tile buffer fill path)
+- FB promote (`fb_promote.sv`): ~200-400 LUTs (combinational)
 - Dither module: 1 EBR block (256×18 blue noise), ~100-200 LUTs
 - Total pipeline throughput: 1 fragment per 4 cycles at 100 MHz (25 Mfragments/sec), limited by the 3-pass CC schedule

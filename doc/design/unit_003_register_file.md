@@ -38,6 +38,7 @@ None
 - Outputs palette base addresses (palette0_base_addr, palette1_base_addr) as continuous wires to UNIT-011 (Texture Sampler)
 - Outputs color combiner configuration (cc_mode, const_color) to color combiner (UNIT-010)
 - Outputs mem_fill trigger and parameters to the SDRAM fill unit
+- Outputs `fb_cache_flush_trigger` and `fb_cache_invalidate_trigger` one-cycle pulses to UNIT-013 (Color-Buffer Tile Cache) when FB_CACHE_CTRL (0x45) is written with the corresponding bit set; blocks command-stream advance until `flush_done` or `invalidate_done` asserts (same wait-for-ack mechanism as MEM_FILL and FB_DISPLAY_SYNC)
 - Outputs fb_display_sync trigger signals to UNIT-008 (Display Controller)
 - Outputs ts_mem_wr / ts_mem_addr / ts_mem_data to gpu_top.sv; gpu_top.sv serializes these onto arbiter port 3 as single-word writes when port 3 is not serving a texture fill request (see DD-026)
 - Reads gpu_busy from rasterizer, vblank from display controller, fifo_depth from UNIT-002 for status register
@@ -116,6 +117,10 @@ None
 | `palette0_base_addr` | 16 | Palette 0 SDRAM base address (PALETTE0[15:0], ×512 byte addr) |
 | `palette1_load_trigger` | 1 | One-cycle pulse when PALETTE1 is written with LOAD_TRIGGER=1 |
 | `palette1_base_addr` | 16 | Palette 1 SDRAM base address (PALETTE1[15:0], ×512 byte addr) |
+| `fb_cache_flush_trigger` | 1 | One-cycle pulse when FB_CACHE_CTRL[0] (FLUSH_TRIGGER) is written as 1 |
+| `fb_cache_invalidate_trigger` | 1 | One-cycle pulse when FB_CACHE_CTRL[1] (INVALIDATE_TRIGGER) is written as 1 |
+| `flush_done` | 1 | Input: one-cycle ack from UNIT-013 when flush completes; unblocks command stream |
+| `invalidate_done` | 1 | Input: one-cycle ack from UNIT-013 when invalidate sweep completes; unblocks command stream |
 
 ### Internal State
 
@@ -136,6 +141,7 @@ None
 - **vblank_prev** [0]: Previous vblank value for rising-edge detection
 - **palette0_reg** [63:0]: PALETTE0 register (BASE_ADDR in bits [15:0], LOAD_TRIGGER self-clearing pulse in bit [16])
 - **palette1_reg** [63:0]: PALETTE1 register (BASE_ADDR in bits [15:0], LOAD_TRIGGER self-clearing pulse in bit [16])
+- **fb_cache_waiting** [0]: Asserted while the command stream is blocked waiting for `flush_done` or `invalidate_done` from UNIT-013; deasserted when the ack arrives
 
 **Register Address Map:**
 
@@ -160,6 +166,7 @@ None
 | 0x41 | FB_DISPLAY | W (blocks until vsync) |
 | 0x43 | FB_CONTROL | R/W |
 | 0x44 | MEM_FILL | W (triggers fill operation) |
+| 0x45 | FB_CACHE_CTRL | W (triggers flush or invalidate; blocks until done) |
 | 0x50 | PERF_TIMESTAMP | R/W |
 | 0x70 | MEM_ADDR | R/W |
 | 0x71 | MEM_DATA | R/W |
@@ -206,6 +213,12 @@ The register file maintains a 3-entry vertex ring buffer indexed by vertex_count
   `fb_width_log2` drives the tiled address stride in UNIT-005 (Rasterizer) and UNIT-006 (Pixel Pipeline): stride = `1 << fb_width_log2` tiles per row.
   `fb_height_log2` drives the bounding box scissor upper bound in UNIT-005: Y clamp = `(1 << fb_height_log2) - 1`.
 - **FB_CONTROL (0x43):** Scissor rectangle configuration.
+- **FB_CACHE_CTRL (0x45):** Blocking register — write stalls the SPI command stream until the requested cache operation completes.
+  Writing with bit [0] (FLUSH_TRIGGER) set: asserts `fb_cache_flush_trigger` for one cycle to UNIT-013, then holds the command stream blocked until `flush_done` asserts.
+  Writing with bit [1] (INVALIDATE_TRIGGER) set: asserts `fb_cache_invalidate_trigger` for one cycle to UNIT-013, then holds the command stream blocked until `invalidate_done` asserts.
+  Both trigger bits are self-clearing (deasserted the cycle after the write).
+  Writing both bits simultaneously is undefined; firmware must issue them as separate writes.
+  The wait-for-ack mechanism mirrors the existing FB_DISPLAY blocking pattern: the register file holds `cmd_ready` deasserted toward the command FIFO until the ack pulse arrives.
 
 **Cycle Counter:**
 - `vblank_prev` tracks previous vblank level for rising-edge detection
@@ -259,6 +272,9 @@ Formal testbench: **VER-003** (`tb_register_file` — Verilator unit testbench).
 - Verify PALETTE0/PALETTE1 write without LOAD_TRIGGER=1 does not assert the pulse
 - Verify palette0_base_addr / palette1_base_addr outputs reflect the stored BASE_ADDR after write
 - Verify back-to-back PALETTE0 writes (second write overrides pending base address; trigger fires for each write where LOAD_TRIGGER=1)
+- Verify FB_CACHE_CTRL write with FLUSH_TRIGGER=1 asserts fb_cache_flush_trigger for one cycle and holds command stream blocked until flush_done asserts
+- Verify FB_CACHE_CTRL write with INVALIDATE_TRIGGER=1 asserts fb_cache_invalidate_trigger for one cycle and holds command stream blocked until invalidate_done asserts
+- Verify both trigger bits self-clear the cycle after the write
 - Verify FB_DISPLAY blocks SPI pipeline until vsync; confirm outputs updated atomically
 - Verify cycle_counter resets to 0 on vsync rising edge
 - Verify cycle_counter increments once per clk_core cycle and saturates at 0xFFFFFFFF

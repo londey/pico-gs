@@ -143,7 +143,7 @@ See INT-011 for the canonical block-tiled address formula and alternative surfac
 | Texture Memory | `0x180000` | Remaining space |
 
 **FPGA resources**: The command FIFO is 32 entries deep (72 bits each), implemented as a custom soft FIFO backed by a regular memory array (not a Lattice EBR FIFO macro) so that the bitstream can pre-populate the memory with boot commands (see DD-019).
-The memory arbiter (UNIT-007) has 4 ports with fixed priority: display read (port 0, highest), framebuffer write (port 1, owned by pixel pipeline), Z-buffer read/write (port 2, owned by pixel pipeline), texture index cache fills / palette slot loads / timestamp writes (port 3, lowest — shared via the 3-way arbiter internal to texture_sampler.sv plus time-division with PERF_TIMESTAMP SDRAM writes; see UNIT-007 for the sharing policy).
+The memory arbiter (UNIT-007) has 4 ports with fixed priority: display read (port 0, highest), color tile cache fill/evict (port 1, owned by UNIT-013), Z-buffer read/write (port 2, owned by UNIT-012), texture index cache fills / palette slot loads / timestamp writes (port 3, lowest — shared via the 3-way arbiter internal to texture_sampler.sv plus time-division with PERF_TIMESTAMP SDRAM writes; see UNIT-007 for the sharing policy).
 The display controller's scanline FIFO holds ~1024 words (~1.6 scanlines) to absorb SDRAM access latency (including CAS latency and row activation overhead).
 
 **SDRAM sequential access**: The external SDRAM (W9825G6KH) supports efficient sequential column reads and writes within an active row.

@@ -20,12 +20,14 @@ None (top-level area)
 
 ## Verification Method
 
-**Inspection:** Verify that framebuffer and Z-buffer SDRAM write paths originate from UNIT-006 (Pixel Pipeline) and not from UNIT-005 (Rasterizer).
+**Inspection:** Verify that framebuffer SDRAM write paths originate from UNIT-013 (Color Tile Cache) and Z-buffer SDRAM write paths originate from UNIT-012 (Z-buffer Tile Cache), and that neither write path originates from UNIT-005 (Rasterizer).
 Child requirements carry individual Test-level verification via VER-002 (early Z), VER-011 (depth-tested triangles), and VER-013/VER-014 (blend and full pipeline golden image tests).
 
 ## Notes
 
 This is one of 13 top-level requirement areas organizing the specification hierarchy.
 UNIT-005 (Rasterizer) emits fragments to UNIT-006 via a valid/ready handshake bus; it does not perform direct framebuffer or Z-buffer writes.
-All SDRAM writes for this requirement area are owned by UNIT-006 through SDRAM arbiter ports 1 (framebuffer — burst tile writes via color tile buffer) and 2 (Z-buffer) (see UNIT-007).
-Port 1 also issues burst tile reads when alpha blending is enabled (see REQ-005.03).
+SDRAM framebuffer writes and reads for this requirement area are owned by UNIT-013 (Color Tile Cache) through SDRAM arbiter port 1 (see UNIT-007).
+SDRAM Z-buffer writes are owned by UNIT-012 (Z-buffer Tile Cache) through SDRAM arbiter port 2 (see UNIT-007).
+Port 1 issues burst tile reads on cache miss when alpha blending is enabled (see REQ-005.03 and UNIT-013).
+Software must issue FB_CACHE_CTRL.FLUSH_TRIGGER before presenting a completed frame via FB_DISPLAY (see REQ-005.09).

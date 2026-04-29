@@ -16,6 +16,7 @@ The test confirms that the near triangle occludes the far triangle at every over
 - UNIT-005 (Rasterizer — including Hi-Z tile rejection in UNIT-005.05)
 - UNIT-006 (Pixel Pipeline — early Z-test path)
 - UNIT-012 (Z-Buffer Tile Cache — Z-buffer read/write, uninitialized flag lazy-fill, Hi-Z metadata update)
+- UNIT-013 (Color Tile Cache — color write path, SDRAM arbiter port 1 ownership)
 
 ## Preconditions
 
@@ -166,6 +167,10 @@ The integration harness drives the following register-write sequence into UNIT-0
   Per-pixel early Z (UNIT-006, `early_z.sv`) remains the subject of VER-002; the two mechanisms operate at different granularities and are independently verified.
 - This test does not exercise texture hardware; the early Z-test path in UNIT-006 is exercised without invoking UNIT-011 (Texture Sampler).
   UNIT-006's scope in this test is limited to early Z-test and framebuffer write; Z-buffer read/write is exercised through UNIT-012.
+- **UNIT-013 color write path:** All color writes now flow through UNIT-013 (Color Tile Cache) on SDRAM arbiter port 1 before reaching the framebuffer.
+  The cache is pixel-exact transparent (write-back policy preserves values; uninit lazy-fill produces 0x0000 which matches a zero-filled SDRAM model default), so the golden image result is not changed by UNIT-013 integration.
+  The golden image requires re-approval after UNIT-013 is integrated if any behavioral difference emerges (e.g., uninit lazy-fill value differs from SDRAM model default, or cache eviction ordering changes the sequence of SDRAM writes visible at readback time).
+  Port 1 (color framebuffer) is now owned by UNIT-013; port 2 (Z-buffer) remains owned by UNIT-012.
 - **The Z-buffer read and write paths are owned by the Z-buffer tile cache (UNIT-012)**, which arbitrates between UNIT-006 requests and the SDRAM arbiter port 2.
   The rasterizer emits fragments via the valid/ready handshake interface; the pixel pipeline's FSM (UNIT-006) issues Z-read and Z-write requests to UNIT-012, which services them from its 4-way set-associative tile cache and evicts dirty tiles to SDRAM via arbiter port 2.
   This test exercises the integrated pipeline including arbiter port 2 ownership by UNIT-012.

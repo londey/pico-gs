@@ -64,7 +64,7 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
 
 - **Description:** Each RTL module or subsystem is exercised in isolation with a dedicated C++ or SV testbench that drives inputs and checks outputs cycle-by-cycle.
   Test vectors are embedded in the testbench source or loaded from CSV files in `integration/scripts/`.
-- **Applicable to:** VER-001 (rasterizer), VER-002 (early Z), VER-003 (register file), VER-004 (color combiner), VER-005 (texture palette LUT).
+- **Applicable to:** VER-001 (rasterizer), VER-002 (early Z), VER-003 (register file), VER-004 (color combiner), VER-005 (texture palette LUT), VER-006 (color tile cache — `tb_color_tile_cache.sv`, UNIT-013).
 
 ### Golden Image Approval Testing
 
@@ -82,7 +82,10 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
   For cases where hardware rounding differs between RTL revisions, a tolerance of ±1 LSB per channel may be accepted; document any such tolerance in the relevant VER document.
 - **Approved files location:** `integration/golden/`
 - **Applicable to:** VER-010 (Gouraud triangle), VER-011 (depth-tested overlapping triangles), VER-012 (textured triangle), VER-013 (color-combined output), VER-014 (textured cube).
-- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline orchestration (UNIT-006), texture sampling or cache behavior (UNIT-011), color combiner arithmetic (UNIT-010), `tex_format` encoding (INT-010), or texture format (collapsing to INDEXED8_2X2) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
+- **Re-approval triggers:** Any intentional change to rasterizer interpolation (UNIT-005), pixel pipeline orchestration (UNIT-006), color tile cache behavior (UNIT-013), texture sampling or cache behavior (UNIT-011), color combiner arithmetic (UNIT-010), `tex_format` encoding (INT-010), or texture format (collapsing to INDEXED8_2X2) requires re-running the affected tests, visually inspecting the output, and committing updated golden images.
+  UNIT-013 integration (introducing the color tile cache between UNIT-006 and SDRAM arbiter port 1) triggers re-approval of all pixel-write golden image tests (VER-010, VER-011, VER-015, VER-024) once the RTL is integrated.
+  The cache is pixel-exact transparent for write-only paths (blending disabled), so re-approval is expected to produce identical images; re-approval confirms this empirically.
+  For VER-024 (alpha blend), the flush phase (FB_CACHE_CTRL.FLUSH_TRIGGER) must complete before framebuffer readback; the golden image comparison is not valid without the flush.
   The PR2 texture architecture change (INDEXED8_2X2 replacing all previous formats) triggers re-approval of all texture-sampling golden image tests (VER-012, VER-013, VER-014, VER-016); current golden images are expected to fail after PR2 lands.
   The commit message must describe the change that caused the image to update.
 
@@ -96,6 +99,9 @@ Nearer fragments have *higher* Z values and pass the GEQUAL test against farther
   - Accepts a command script (encoded as register-write sequences per INT-010 and INT-012) and drives UNIT-003 register-file inputs.
   - After simulation completes, reads back framebuffer contents from the SDRAM model and serializes them as a `.ppm` file.
     The framebuffer readback uses the WIDTH_LOG2 value written to FB_CONFIG in the test command script; each test must write an explicit FB_CONFIG that establishes the surface dimensions before rendering.
+- **Cache coherency for blended primitives:** For tests that enable alpha blending (VER-024), the color tile cache (UNIT-013) performs a read-modify-write for every blended fragment: DST_COLOR is read from the cache, blended by UNIT-010, and written back.
+  Self-overlapping blends (primitives that cover pixels already in the cache from earlier draw calls in the same frame) are transparent because the cache returns the most-recently-written value for the tile.
+  No explicit coherency flushing is required between draw calls within a frame; a flush is only required before the SDRAM framebuffer is read externally (e.g., before FB_DISPLAY swap or before the test harness reads back the SDRAM model).
 - **Post-integration re-approval:** All five golden image tests (VER-010 through VER-014) require golden image re-approval after the pixel pipeline integration change (UNIT-006 stub → functional, UNIT-005 incremental interpolation redesign).
   VER-010 and VER-011 require re-approval because the incremental interpolation redesign may shift interpolated color and Z values.
   VER-012, VER-013, and VER-014 additionally require re-approval after PR2 (INDEXED8_2X2 texture architecture), because all texture format, cache, and palette configuration changes directly alter sampled texel values.

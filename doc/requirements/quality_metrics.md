@@ -39,12 +39,16 @@ Host application resource metrics (RP2350 SRAM/Flash usage, firmware code size) 
   - SPI receive FIFO: ~8 Kbits (1 KB, EBR)
   - Command FIFO: distributed RAM (~2.3 Kbits, 72 bits × 32 entries, not EBR)
   - Texture subsystem (UNIT-011): ~54 Kbits (~7 KB, 6 EBR blocks total — 4 shared palette PDPW16KD + 2 per-sampler index DP16KD) (REQ-003.08, REQ-003.09, UNIT-011)
-  - **Total EBR allocated:** ~94 Kbits (~12 KB)
-  - **Headroom:** ~662 Kbits (~83 KB) for future features
+  - Z-buffer tile cache (UNIT-012): ~64–80 Kbits (4–5 EBR blocks — data + tag EBRs + 1 uninit-flag DP16KD)
+  - Hi-Z block metadata (UNIT-005.06): ~144 Kbits (8 × DP16KD, 36-bit wide)
+  - Color tile cache (UNIT-013): ~64–112 Kbits (4–7 EBR blocks — 2 × DP16KD data + 1–4 × PDPW16KD tags + 1 × DP16KD uninit flags)
+  - **Total EBR allocated:** ~366–430 Kbits (~46–54 KB, 17–21 EBR blocks)
+  - **Headroom:** ~578–642 Kbits (~72–80 KB) for future features
 - **Measurement Method:** nextpnr-ecp5 BRAM utilization report
-- **References:** REQ-011.02, REQ-003.08, REQ-003.09, UNIT-011 (Texture Sampler), UNIT-008 (Display Controller)
+- **References:** REQ-011.02, REQ-003.08, REQ-003.09, UNIT-011 (Texture Sampler), UNIT-008 (Display Controller), UNIT-012 (Z-Buffer Tile Cache), UNIT-013 (Color Tile Cache)
 - **Rationale:** The texture subsystem uses two on-chip palette EBR slots (shared across both samplers) plus one direct-mapped index cache per sampler.
   Palette codebooks are loaded from SDRAM by firmware via PALETTE0/PALETTE1.LOAD_TRIGGER and are resident on-chip during sampling.
+  The Z-buffer and color tile caches each consume 4–7 EBR blocks for their data, tag, and uninitialized-flag arrays.
   The command FIFO (UNIT-002) uses distributed RAM backed by a regular memory array (not EBR) to support bitstream-initialized boot commands (REQ-001.04).
   Its 32-entry depth is accounted for in LUT utilization rather than BRAM.
 

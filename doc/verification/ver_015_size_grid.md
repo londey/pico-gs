@@ -16,6 +16,7 @@ The test confirms that the rasterizer correctly handles triangles from sub-tile 
 - UNIT-005.01 (Triangle Setup — edge function setup for triangles of varying size)
 - UNIT-005 (Rasterizer — derivative precision with large inv_area for tiny triangles; 4×4 tile traversal for large triangles)
 - UNIT-006 (Pixel Pipeline — color write path)
+- UNIT-013 (Color Tile Cache — color write path; broad pixel coverage across many tiles implicitly exercises cache thrash and eviction patterns)
 
 ## Preconditions
 
@@ -84,3 +85,6 @@ All triangles use:
 - The golden image requires re-approval after any change to the rasterizer's derivative precomputation (UNIT-005.03), edge-function evaluation, or 4×4 tile traversal logic (UNIT-005.05).
 - Dithering is disabled for deterministic output.
 - Z-testing is disabled to isolate rasterizer size-dependent behavior from depth buffer interaction.
+- **UNIT-013 cache thrash coverage:** The eight triangles at sizes 1–128 px produce pixel writes spread across many distinct 4×4 tiles, implicitly exercising cache set conflicts and eviction paths in UNIT-013.
+  The cache is pixel-exact transparent (write-back, no read path involved because blending is disabled), so the golden image result is unaffected by UNIT-013 integration.
+  The golden image requires re-approval after UNIT-013 integration only if uninit lazy-fill or eviction ordering produces output that differs from the zero-filled SDRAM model default.

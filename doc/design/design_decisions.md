@@ -35,6 +35,79 @@ When adding a new decision, copy this template:
 
 <!-- Add decisions below, newest first -->
 
+## DD-043: Write-Back Color Tile Cache (UNIT-013)
+
+**Date:** 2026-04-29
+**Status:** Accepted
+
+### Context
+
+The pixel pipeline (UNIT-006) previously accessed the color framebuffer through an internal `color_tile_buffer.sv` register file (16 × 16-bit distributed LUT, 0 EBR).
+That buffer pre-fetched one 4×4 tile on every tile entry (regardless of whether the tile would be revisited) and flushed unconditionally on every tile exit.
+For workloads with moderate overdraw this generated one 16-word SDRAM read and one 16-word SDRAM write per tile visited by any triangle, yielding a near-constant Port 1 bandwidth cost independent of actual fragment throughput.
+Additionally, the register-file implementation could not exploit EBR burst efficiency for multi-tile streaming and provided no hit-rate benefit across sequential triangles covering the same screen region.
+
+Alpha-blend DST_COLOR reads shared the same tile-buffer design, requiring a mandatory burst read on tile entry when blending was enabled.
+
+Three design decisions were needed simultaneously: (a) the cache topology and writeback policy, (b) how software triggers cache management at buffer-swap boundaries, and (c) whether the per-tile uninitialized-flag pattern from UNIT-012 should be reused and where it should live.
+
+### Decision
+
+**(a) Write-back tile cache replacing per-pixel direct Port 1 writes.**
+Replace `color_tile_buffer.sv` (UNIT-006 internal) with an independent `color_tile_cache.sv` (UNIT-013), modelled on the Z-buffer tile cache (UNIT-012).
+UNIT-013 is 4-way set-associative with 32 sets; each cache line holds a 4×4 RGB565 tile (16 pixels, 32 bytes).
+UNIT-006 issues `tile_idx + pixel_off` read and write requests; UNIT-013 computes the full SDRAM byte address from FB_CONFIG internally.
+Port 1 ownership transfers from UNIT-006 to UNIT-013; UNIT-006 no longer drives Port 1 directly.
+A 16-word burst read fills a line on miss; a 16-word burst write evicts a dirty line on replacement.
+A per-tile uninitialized-flag EBR (DP16KD, 1×16,384 mode) enables lazy-fill-with-zeros on the first write to any tile, avoiding SDRAM reads for tiles not yet touched in the current frame.
+
+**(b) Software-driven flush via FB_CACHE_CTRL.**
+A new CSR `FB_CACHE_CTRL @ 0x45` (INT-010) provides two self-clearing trigger bits:
+`FLUSH_TRIGGER[0]` writes back all dirty lines (lines remain valid); `INVALIDATE_TRIGGER[1]` drops all valid+dirty bits and resets the uninit flag array.
+Both operations block the SPI command stream until complete, matching the `MEM_FILL` and `FB_DISPLAY` blocking patterns.
+Drivers must issue FLUSH before swapping front/back buffer via FB_DISPLAY, and INVALIDATE after retargeting `FB_CONFIG.COLOR_BASE`.
+No automatic interaction with FB_DISPLAY is implemented; cache policy remains in the driver.
+
+**(c) Promotion of UninittedFlagArray to gs-twin-core.**
+`UninittedFlagArray` is promoted from `gs-zbuf` to `gs-twin-core` so that both UNIT-012 and UNIT-013 digital twins can share the same implementation.
+UNIT-013's digital twin (`color_cache.rs` in `twin/components/pixel-write/src/`) replaces the existing single-tile `ColorTileBuffer` in `tile_buffer.rs`.
+
+### Rationale
+
+**Cache vs. streaming buffer:** The streaming-buffer design (unconditional fill + flush per tile entry/exit) is optimal only if every tile is visited by exactly one triangle and all fragments within the tile are shaded.
+For scenes with overdraw — multiple triangles covering the same tile — the buffer re-reads and re-flushes the tile on every triangle boundary, amplifying Port 1 bandwidth proportionally to overdraw.
+A write-back cache eliminates the re-read on the second and subsequent visits to the same tile within a frame (cache hit; zero SDRAM traffic).
+The expected hit rate for typical scene complexity is similar to UNIT-012 (85–95%), reducing Port 1 SDRAM traffic by 5–10× compared to the streaming buffer.
+
+**EBR vs. distributed LUT for tile storage:** The streaming buffer used distributed LUTs (0 EBR) because it held only one tile and latency was irrelevant (tile-boundary stall was already required).
+A 4-way × 32-set cache requires 128 tile slots (128 × 32 bytes = 4 KiB of data), which exceeds practical distributed-LUT capacity on ECP5-25K.
+Two DP16KD blocks provide the data storage; 1–4 PDPW16KD blocks provide the tag array.
+The 4–7 EBR cost is acceptable given the projected SDRAM bandwidth saving and the remaining EBR headroom (30–34 of 56 blocks used post-UNIT-013).
+
+**Software-driven flush over auto-flush:** Auto-flush at FB_DISPLAY would require the cache to observe the FB_DISPLAY register write and synchronize the flush with the display controller's first scanline read.
+This couples two units that are otherwise independent and makes the GPU harder to reason about formally.
+Explicit software flush keeps the policy in the driver and makes the ordering guarantee observable by any test harness.
+
+**Uninit-flag reuse:** The pattern of per-tile uninitialized flags for lazy-fill was already validated and proven in UNIT-012.
+Promoting `UninittedFlagArray` to `gs-twin-core` avoids duplication and ensures both caches use the identical algorithm.
+
+### Consequences
+
+`color_tile_buffer.sv` is removed from UNIT-006.
+UNIT-006 gains a tile_idx + pixel_off interface to UNIT-013.
+UNIT-013 (`color_tile_cache.sv`) is a new RTL module instantiated in `gpu_top.sv` between UNIT-006 and UNIT-007 Port 1.
+`gpu_regs.rdl` gains `FB_CACHE_CTRL @ 0x45`; generated SV and `twin/components/registers/src/lib.rs` are updated accordingly.
+UNIT-003 (Register File) gains flush/invalidate trigger decode and blocking-write acknowledgement logic.
+`UninittedFlagArray` moves from `twin/components/zbuf/` to `shared/gs-twin-core/`.
+`twin/components/pixel-write/src/tile_buffer.rs` is replaced by `color_cache.rs`.
+`pipeline/pipeline.yaml` gains a `color_tile_cache` unit with 4–7 EBR, ~250 LUT4, 0 DSP.
+A new Verilator testbench `tb_color_tile_cache.sv` verifies RTL against the digital twin.
+Drivers must follow the FLUSH-before-swap and INVALIDATE-after-retarget protocol; existing drivers that omit FLUSH may display stale cached pixels after buffer swap.
+DD-042 is unaffected (texture subsystem is independent of the color cache).
+This DD supersedes the "Burst Coalescing and Color Tile Buffer" streaming-buffer design described in the historical ARCHITECTURE.md prior to this change.
+
+---
+
 ## DD-042: Single-Format INDEXED8_2X2 Texture Architecture with 2-Slot Palette
 
 **Date:** 2026-04-25
