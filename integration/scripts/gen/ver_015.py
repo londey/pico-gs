@@ -87,4 +87,6 @@ def generate() -> list[str]:
 
         lines.append(emit_blank())
 
+    lines.extend(emit_fb_cache_flush())
+
     return lines

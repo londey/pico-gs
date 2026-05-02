@@ -149,4 +149,6 @@ def generate() -> list[str]:
     lines.extend(_tri_checker_phase())
     lines.append(emit_blank())
     lines.extend(_tri_diamond_phase())
+    lines.append(emit_blank())
+    lines.extend(emit_fb_cache_flush())
     return lines

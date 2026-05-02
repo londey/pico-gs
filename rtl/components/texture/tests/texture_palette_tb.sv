@@ -250,7 +250,7 @@ module texture_palette_tb;
     reg  [127:0] ic_fill_data;
     reg          ic_invalidate;
 
-    texture_index_cache #(.SAMPLER_ID(0)) u_index_cache (
+    texture_index_cache #(.SAMPLER_ID(1'b0)) u_index_cache (
         .clk           (clk),
         .rst_n         (rst_n),
         .tex_base_lo_i (ic_tex_base_lo),

@@ -18,7 +18,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from common import write_hex_file
-from textures import generate_all_textures
 
 import ver_010
 import ver_011
@@ -28,11 +27,6 @@ import ver_014
 import ver_015
 import ver_016
 import ver_017
-import ver_018
-import ver_019
-import ver_020
-import ver_021
-import ver_022
 import ver_023
 import ver_024
 
@@ -46,11 +40,6 @@ GENERATORS = [
     ("ver_015_size_grid.hex", ver_015),
     ("ver_016_perspective_road.hex", ver_016),
     ("ver_017_indexed_pixel_art.hex", ver_017),
-    ("ver_018_bc2_texture.hex", ver_018),
-    ("ver_019_bc3_texture.hex", ver_019),
-    ("ver_020_bc4_texture.hex", ver_020),
-    ("ver_021_rgba8888_texture.hex", ver_021),
-    ("ver_022_r8_texture.hex", ver_022),
     ("ver_023_stipple_test.hex", ver_023),
     ("ver_024_alpha_blend.hex", ver_024),
 ]
@@ -67,12 +56,6 @@ def main():
         args.output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
     os.makedirs(args.output_dir, exist_ok=True)
-
-    # Generate shared texture data files first (test scripts may INCLUDE them)
-    tex_dir = os.path.join(args.output_dir, "textures")
-    print("Generating shared texture data files...")
-    generate_all_textures(tex_dir)
-    print()
 
     # Generate test scripts
     print("Generating test scripts...")

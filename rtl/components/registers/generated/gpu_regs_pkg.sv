@@ -569,6 +569,24 @@ package gpu_regs_pkg;
     } gpu_regs__mem_fill_reg__out_t;
 
     typedef struct {
+        logic value;
+    } gpu_regs__fb_cache_ctrl_reg__FLUSH_TRIGGER__out_t;
+
+    typedef struct {
+        logic value;
+    } gpu_regs__fb_cache_ctrl_reg__INVALIDATE_TRIGGER__out_t;
+
+    typedef struct {
+        logic [61:0] value;
+    } gpu_regs__fb_cache_ctrl_reg__RSVD__out_t;
+
+    typedef struct {
+        gpu_regs__fb_cache_ctrl_reg__FLUSH_TRIGGER__out_t FLUSH_TRIGGER;
+        gpu_regs__fb_cache_ctrl_reg__INVALIDATE_TRIGGER__out_t INVALIDATE_TRIGGER;
+        gpu_regs__fb_cache_ctrl_reg__RSVD__out_t RSVD;
+    } gpu_regs__fb_cache_ctrl_reg__out_t;
+
+    typedef struct {
         logic [22:0] value;
     } gpu_regs__perf_timestamp_reg__SDRAM_ADDR__out_t;
 
@@ -641,6 +659,7 @@ package gpu_regs_pkg;
         gpu_regs__fb_display_reg__out_t FB_DISPLAY;
         gpu_regs__fb_control_reg__out_t FB_CONTROL;
         gpu_regs__mem_fill_reg__out_t MEM_FILL;
+        gpu_regs__fb_cache_ctrl_reg__out_t FB_CACHE_CTRL;
         gpu_regs__perf_timestamp_reg__out_t PERF_TIMESTAMP;
         gpu_regs__mem_addr_reg__out_t MEM_ADDR;
         gpu_regs__mem_data_reg__out_t MEM_DATA;

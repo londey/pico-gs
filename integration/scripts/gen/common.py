@@ -29,9 +29,17 @@ ADDR_RENDER_MODE = 0x30
 ADDR_FB_CONFIG = 0x40
 ADDR_FB_CONTROL = 0x43
 ADDR_MEM_FILL = 0x44
+ADDR_FB_CACHE_CTRL = 0x45
 ADDR_STIPPLE_PATTERN = 0x32
 ADDR_MEM_ADDR = 0x70
 ADDR_MEM_DATA = 0x71
+
+# FB_CACHE_CTRL trigger bit fields (UNIT-013, INT-010 §0x45).  Each is a
+# self-clearing pulse: writing 1 starts the operation, the bit reads back
+# as 0.  Writing both bits in the same transaction is undefined per
+# INT-010 §0x45; the twin gives invalidate priority for determinism.
+FB_CACHE_CTRL_FLUSH_TRIGGER = 1 << 0
+FB_CACHE_CTRL_INVALIDATE_TRIGGER = 1 << 1
 
 # Human-readable register names for comments
 REG_NAMES = {
@@ -50,6 +58,7 @@ REG_NAMES = {
     0x40: "FB_CONFIG",
     0x43: "FB_CONTROL",
     0x44: "MEM_FILL",
+    0x45: "FB_CACHE_CTRL",
     0x32: "STIPPLE_PATTERN",
     0x70: "MEM_ADDR",
     0x71: "MEM_DATA",
@@ -60,17 +69,7 @@ REG_NAMES = {
 # ---------------------------------------------------------------------------
 
 TEX_FMT_INDEXED8_2X2 = 0
-# Codes 1..15 are reserved.  The legacy multi-format encodings below
-# are kept for the obsolete BC / RGBA / R8 hex generators (VER-017
-# through VER-022) only — those scripts are dead as of PR2.
-TEX_FMT_BC1 = 0
-TEX_FMT_BC2 = 1
-TEX_FMT_BC3 = 2
-TEX_FMT_BC4 = 3
-# 4 is reserved (BC5 removed)
-TEX_FMT_RGB565 = 5
-TEX_FMT_RGBA8888 = 6
-TEX_FMT_R8 = 7
+# Codes 1..15 are reserved.
 
 # PALETTEn register field positions and widths (matching gpu_regs.rdl).
 PALETTE_BASE_ADDR_MASK = 0xFFFF        # bits [15:0]
@@ -444,6 +443,23 @@ def emit_fb_clear(color_base_512: int, w_log2: int, h_log2: int,
                        pack_mem_fill(base_word, value, count),
                        mem_fill_comment(base_word, value, count)))
     return lines
+
+
+def emit_fb_cache_flush() -> List[str]:
+    """Emit FB_CACHE_CTRL.FLUSH_TRIGGER to drain dirty color tile cache lines.
+
+    Image-based VER-NNN tests must call this as the final step of
+    ``generate()`` so the harness's SDRAM-side framebuffer extraction
+    sees the latest pixels.  The register write blocks the command
+    stream until UNIT-013 acks ``flush_done`` (INT-010 §0x45); the
+    harness then waits for ``ccache_state == 0`` before reading SDRAM.
+    """
+    return [
+        emit_phase("flush"),
+        emit_blank(),
+        emit(ADDR_FB_CACHE_CTRL, FB_CACHE_CTRL_FLUSH_TRIGGER,
+             "FLUSH_TRIGGER"),
+    ]
 
 
 def vertex_comment_q4(x_q4: int, y_q4: int, z: int, q: int | None = None) -> str:

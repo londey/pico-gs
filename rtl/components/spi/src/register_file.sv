@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_003_register_file.md `97303aa29b0ac810` 2026-04-25
+// Spec-ref: unit_003_register_file.md `0efd38eb9fc82d88` 2026-04-29
 // Register File - GPU State and Vertex State Machine (INT-010 v10.0)
 // Decodes register addresses and manages vertex submission
 // Implements the vertex state machine that triggers triangle rasterization
@@ -97,6 +97,12 @@ module register_file (
     output reg  [15:0]  palette0_base_addr,    // BASE_ADDR field from most recent PALETTE0 write
     output reg  [15:0]  palette1_base_addr,    // BASE_ADDR field from most recent PALETTE1 write
 
+    // Color-buffer tile cache control (FB_CACHE_CTRL @ 0x45 → UNIT-013)
+    output reg          fb_cache_flush_trigger,      // One-cycle pulse on FLUSH_TRIGGER write
+    output reg          fb_cache_invalidate_trigger, // One-cycle pulse on INVALIDATE_TRIGGER write
+    input  wire         flush_done,                  // Ack from UNIT-013: flush complete
+    input  wire         invalidate_done,             // Ack from UNIT-013: invalidate sweep complete
+
     // Memory access (MEM_ADDR / MEM_DATA)
     output reg  [63:0]  mem_addr_out,        // MEM_ADDR register value
     output reg  [63:0]  mem_data_out,        // MEM_DATA write value
@@ -145,6 +151,7 @@ module register_file (
     localparam ADDR_FB_DISPLAY         = 7'h41;  // Display scanout (blocks until vsync)
     localparam ADDR_FB_CONTROL         = 7'h43;  // Scissor rectangle
     localparam ADDR_MEM_FILL           = 7'h44;  // Memory fill trigger
+    localparam ADDR_FB_CACHE_CTRL      = 7'h45;  // Color tile cache flush/invalidate (blocking)
     localparam ADDR_PERF_TIMESTAMP     = 7'h50;  // Performance timestamp
     localparam ADDR_MEM_ADDR           = 7'h70;  // Memory address pointer
     localparam ADDR_MEM_DATA           = 7'h71;  // Memory data (bidirectional)
@@ -197,6 +204,9 @@ module register_file (
     // FB_DISPLAY blocking: pending value waits for vsync
     reg        fb_display_pending;      // A pending FB_DISPLAY write is waiting
     reg [63:0] fb_display_pending_val;  // Pending FB_DISPLAY value
+
+    // FB_CACHE_CTRL blocking: command stream stalls until UNIT-013 acks flush/invalidate
+    reg        fb_cache_waiting;        // Asserted between trigger emit and flush_done/invalidate_done ack
 
     // Frame-relative cycle counter (32-bit unsigned saturating, resets on vsync)
     reg [31:0] cycle_counter;
@@ -365,6 +375,11 @@ module register_file (
     reg        next_fb_display_pending;
     reg [63:0] next_fb_display_pending_val;
 
+    // FB_CACHE_CTRL pending state
+    reg        next_fb_cache_flush_trigger;
+    reg        next_fb_cache_invalidate_trigger;
+    reg        next_fb_cache_waiting;
+
     // Vertex state machine
     reg [1:0]  next_vertex_count;
 
@@ -436,6 +451,7 @@ module register_file (
         next_mem_addr              = mem_addr_reg;
         next_fb_display_pending    = fb_display_pending;
         next_fb_display_pending_val = fb_display_pending_val;
+        next_fb_cache_waiting      = fb_cache_waiting;
         next_vertex_count          = vertex_count;
         next_mem_fill_base         = mem_fill_base;
         next_mem_fill_value        = mem_fill_value;
@@ -475,6 +491,8 @@ module register_file (
         next_tex1_cache_inv   = 1'b0;
         next_palette0_load_trigger = 1'b0;
         next_palette1_load_trigger = 1'b0;
+        next_fb_cache_flush_trigger      = 1'b0;
+        next_fb_cache_invalidate_trigger = 1'b0;
         next_ts_mem_wr        = 1'b0;
         next_mem_data_wr         = 1'b0;
         next_mem_data_dword_addr = mem_addr_reg[21:0]; // Capture pre-increment addr
@@ -494,6 +512,11 @@ module register_file (
         if (fb_display_pending && vsync_edge) begin
             next_fb_display         = fb_display_pending_val;
             next_fb_display_pending = 1'b0;
+        end
+
+        // ---- FB_CACHE_CTRL ack: release waiting flag when UNIT-013 reports done ----
+        if (flush_done || invalidate_done) begin
+            next_fb_cache_waiting = 1'b0;
         end
 
         // ---- Register write dispatch ----
@@ -718,6 +741,22 @@ module register_file (
                     next_mem_fill_count   = cmd_wdata[59:40];
                 end
 
+                ADDR_FB_CACHE_CTRL: begin
+                    // FLUSH_TRIGGER (bit[0]) and INVALIDATE_TRIGGER (bit[1]):
+                    // emit one-cycle pulse to UNIT-013 and assert fb_cache_waiting
+                    // until the corresponding ack arrives.  Writing both bits
+                    // simultaneously is undefined per INT-010 §0x45; firmware
+                    // must issue them as separate writes.
+                    if (cmd_wdata[0]) begin
+                        next_fb_cache_flush_trigger = 1'b1;
+                        next_fb_cache_waiting       = 1'b1;
+                    end
+                    if (cmd_wdata[1]) begin
+                        next_fb_cache_invalidate_trigger = 1'b1;
+                        next_fb_cache_waiting            = 1'b1;
+                    end
+                end
+
                 ADDR_PERF_TIMESTAMP: begin
                     // Capture cycle_counter and request SDRAM write
                     next_ts_mem_wr   = 1'b1;
@@ -781,6 +820,11 @@ module register_file (
             // Reset FB_DISPLAY pending state
             fb_display_pending     <= 1'b0;
             fb_display_pending_val <= 64'h0;
+
+            // Reset FB_CACHE_CTRL state
+            fb_cache_flush_trigger      <= 1'b0;
+            fb_cache_invalidate_trigger <= 1'b0;
+            fb_cache_waiting            <= 1'b0;
 
             // Reset vertex state machine
             vertex_count <= 2'b00;
@@ -853,6 +897,11 @@ module register_file (
             fb_display_pending     <= next_fb_display_pending;
             fb_display_pending_val <= next_fb_display_pending_val;
 
+            // FB_CACHE_CTRL trigger pulses + wait flag
+            fb_cache_flush_trigger      <= next_fb_cache_flush_trigger;
+            fb_cache_invalidate_trigger <= next_fb_cache_invalidate_trigger;
+            fb_cache_waiting            <= next_fb_cache_waiting;
+
             // Vertex state machine
             vertex_count <= next_vertex_count;
             for (int i = 0; i < 3; i++) begin
@@ -919,6 +968,7 @@ module register_file (
             ADDR_FB_DISPLAY:      cmd_rdata = 64'b0;  // Write-only (blocking register)
             ADDR_FB_CONTROL:      cmd_rdata = fb_control_reg;
             ADDR_MEM_FILL:        cmd_rdata = 64'b0;  // Write-only (trigger register)
+            ADDR_FB_CACHE_CTRL:   cmd_rdata = 64'b0;  // Write-only (trigger register)
             ADDR_CC_MODE:         cmd_rdata = cc_mode_reg;
             ADDR_CC_MODE_2:       cmd_rdata = cc_mode_2_reg;
             ADDR_CONST_COLOR:     cmd_rdata = const_color_reg;

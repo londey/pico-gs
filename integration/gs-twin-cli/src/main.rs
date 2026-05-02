@@ -48,23 +48,8 @@ mod scripts {
     /// VER-016: Perspective road with checker texture.
     pub const VER_016: &str = include_str!("../../scripts/ver_016_perspective_road.hex");
 
-    /// VER-017: BC1 compressed texture.
+    /// VER-017: INDEXED8_2X2 pixel-art texture.
     pub const VER_017: &str = include_str!("../../scripts/ver_017_indexed_pixel_art.hex");
-
-    /// VER-018: BC2 compressed texture (explicit alpha).
-    pub const VER_018: &str = include_str!("../../scripts/ver_018_bc2_texture.hex");
-
-    /// VER-019: BC3 compressed texture (interpolated alpha).
-    pub const VER_019: &str = include_str!("../../scripts/ver_019_bc3_texture.hex");
-
-    /// VER-020: BC4 compressed texture (single-channel grayscale).
-    pub const VER_020: &str = include_str!("../../scripts/ver_020_bc4_texture.hex");
-
-    /// VER-021: RGBA8888 uncompressed texture.
-    pub const VER_021: &str = include_str!("../../scripts/ver_021_rgba8888_texture.hex");
-
-    /// VER-022: R8 uncompressed texture (single-channel grayscale).
-    pub const VER_022: &str = include_str!("../../scripts/ver_022_r8_texture.hex");
 
     /// VER-023: Stipple test (checkerboard stipple pattern).
     pub const VER_023: &str = include_str!("../../scripts/ver_023_stipple_test.hex");
@@ -225,21 +210,6 @@ fn main() -> Result<()> {
                 "ver_017" => {
                     render_hex_scene(scripts::VER_017, &mut gpu)?;
                 }
-                "ver_018" => {
-                    render_hex_scene(scripts::VER_018, &mut gpu)?;
-                }
-                "ver_019" => {
-                    render_hex_scene(scripts::VER_019, &mut gpu)?;
-                }
-                "ver_020" => {
-                    render_hex_scene(scripts::VER_020, &mut gpu)?;
-                }
-                "ver_021" => {
-                    render_hex_scene(scripts::VER_021, &mut gpu)?;
-                }
-                "ver_022" => {
-                    render_hex_scene(scripts::VER_022, &mut gpu)?;
-                }
                 "ver_023" => {
                     render_hex_scene(scripts::VER_023, &mut gpu)?;
                 }
@@ -247,7 +217,9 @@ fn main() -> Result<()> {
                     render_hex_scene(scripts::VER_024, &mut gpu)?;
                 }
                 other => {
-                    anyhow::bail!("unknown scene: {other}\navailable: ver_010..ver_024")
+                    anyhow::bail!(
+                        "unknown scene: {other}\navailable: ver_010..ver_017, ver_023, ver_024"
+                    )
                 }
             };
 

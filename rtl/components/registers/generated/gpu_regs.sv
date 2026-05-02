@@ -85,6 +85,7 @@ module gpu_regs (
         logic FB_DISPLAY;
         logic FB_CONTROL;
         logic MEM_FILL;
+        logic FB_CACHE_CTRL;
         logic PERF_TIMESTAMP;
         logic MEM_ADDR;
         logic MEM_DATA;
@@ -123,6 +124,7 @@ module gpu_regs (
         decoded_reg_strb.FB_DISPLAY = cpuif_req_masked & (cpuif_addr == 10'h208);
         decoded_reg_strb.FB_CONTROL = cpuif_req_masked & (cpuif_addr == 10'h218);
         decoded_reg_strb.MEM_FILL = cpuif_req_masked & (cpuif_addr == 10'h220);
+        decoded_reg_strb.FB_CACHE_CTRL = cpuif_req_masked & (cpuif_addr == 10'h228);
         decoded_reg_strb.PERF_TIMESTAMP = cpuif_req_masked & (cpuif_addr == 10'h280);
         decoded_reg_strb.MEM_ADDR = cpuif_req_masked & (cpuif_addr == 10'h380);
         decoded_reg_strb.MEM_DATA = cpuif_req_masked & (cpuif_addr == 10'h388);
@@ -703,6 +705,20 @@ module gpu_regs (
         } MEM_FILL;
         struct {
             struct {
+                logic next;
+                logic load_next;
+            } FLUSH_TRIGGER;
+            struct {
+                logic next;
+                logic load_next;
+            } INVALIDATE_TRIGGER;
+            struct {
+                logic [61:0] next;
+                logic load_next;
+            } RSVD;
+        } FB_CACHE_CTRL;
+        struct {
+            struct {
                 logic [22:0] next;
                 logic load_next;
             } SDRAM_ADDR;
@@ -1161,6 +1177,17 @@ module gpu_regs (
                 logic [3:0] value;
             } RSVD;
         } MEM_FILL;
+        struct {
+            struct {
+                logic value;
+            } FLUSH_TRIGGER;
+            struct {
+                logic value;
+            } INVALIDATE_TRIGGER;
+            struct {
+                logic [61:0] value;
+            } RSVD;
+        } FB_CACHE_CTRL;
         struct {
             struct {
                 logic [22:0] value;
@@ -4175,6 +4202,75 @@ module gpu_regs (
         end
     end
     assign hwif_out.MEM_FILL.RSVD.value = field_storage.MEM_FILL.RSVD.value;
+    // Field: gpu_regs.FB_CACHE_CTRL.FLUSH_TRIGGER
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_CACHE_CTRL.FLUSH_TRIGGER.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_CACHE_CTRL && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_CACHE_CTRL.FLUSH_TRIGGER.value & ~decoded_wr_biten[0:0]) | (decoded_wr_data[0:0] & decoded_wr_biten[0:0]);
+            load_next_c = '1;
+        end
+        field_combo.FB_CACHE_CTRL.FLUSH_TRIGGER.next = next_c;
+        field_combo.FB_CACHE_CTRL.FLUSH_TRIGGER.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_CACHE_CTRL.FLUSH_TRIGGER.value <= 1'h0;
+        end else begin
+            if(field_combo.FB_CACHE_CTRL.FLUSH_TRIGGER.load_next) begin
+                field_storage.FB_CACHE_CTRL.FLUSH_TRIGGER.value <= field_combo.FB_CACHE_CTRL.FLUSH_TRIGGER.next;
+            end
+        end
+    end
+    assign hwif_out.FB_CACHE_CTRL.FLUSH_TRIGGER.value = field_storage.FB_CACHE_CTRL.FLUSH_TRIGGER.value;
+    // Field: gpu_regs.FB_CACHE_CTRL.INVALIDATE_TRIGGER
+    always_comb begin
+        automatic logic [0:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_CACHE_CTRL && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value & ~decoded_wr_biten[1:1]) | (decoded_wr_data[1:1] & decoded_wr_biten[1:1]);
+            load_next_c = '1;
+        end
+        field_combo.FB_CACHE_CTRL.INVALIDATE_TRIGGER.next = next_c;
+        field_combo.FB_CACHE_CTRL.INVALIDATE_TRIGGER.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value <= 1'h0;
+        end else begin
+            if(field_combo.FB_CACHE_CTRL.INVALIDATE_TRIGGER.load_next) begin
+                field_storage.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value <= field_combo.FB_CACHE_CTRL.INVALIDATE_TRIGGER.next;
+            end
+        end
+    end
+    assign hwif_out.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value = field_storage.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value;
+    // Field: gpu_regs.FB_CACHE_CTRL.RSVD
+    always_comb begin
+        automatic logic [61:0] next_c;
+        automatic logic load_next_c;
+        next_c = field_storage.FB_CACHE_CTRL.RSVD.value;
+        load_next_c = '0;
+        if(decoded_reg_strb.FB_CACHE_CTRL && decoded_req_is_wr) begin // SW write
+            next_c = (field_storage.FB_CACHE_CTRL.RSVD.value & ~decoded_wr_biten[63:2]) | (decoded_wr_data[63:2] & decoded_wr_biten[63:2]);
+            load_next_c = '1;
+        end
+        field_combo.FB_CACHE_CTRL.RSVD.next = next_c;
+        field_combo.FB_CACHE_CTRL.RSVD.load_next = load_next_c;
+    end
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            field_storage.FB_CACHE_CTRL.RSVD.value <= 62'h0;
+        end else begin
+            if(field_combo.FB_CACHE_CTRL.RSVD.load_next) begin
+                field_storage.FB_CACHE_CTRL.RSVD.value <= field_combo.FB_CACHE_CTRL.RSVD.next;
+            end
+        end
+    end
+    assign hwif_out.FB_CACHE_CTRL.RSVD.value = field_storage.FB_CACHE_CTRL.RSVD.value;
     // Field: gpu_regs.PERF_TIMESTAMP.SDRAM_ADDR
     always_comb begin
         automatic logic [22:0] next_c;
@@ -4483,6 +4579,11 @@ module gpu_regs (
             readback_data_var[39:24] = field_storage.MEM_FILL.FILL_VALUE.value;
             readback_data_var[59:40] = field_storage.MEM_FILL.FILL_COUNT.value;
             readback_data_var[63:60] = field_storage.MEM_FILL.RSVD.value;
+        end
+        if(rd_mux_addr == 10'h228) begin
+            readback_data_var[0] = field_storage.FB_CACHE_CTRL.FLUSH_TRIGGER.value;
+            readback_data_var[1] = field_storage.FB_CACHE_CTRL.INVALIDATE_TRIGGER.value;
+            readback_data_var[63:2] = field_storage.FB_CACHE_CTRL.RSVD.value;
         end
         if(rd_mux_addr == 10'h280) begin
             readback_data_var[22:0] = field_storage.PERF_TIMESTAMP.SDRAM_ADDR.value;

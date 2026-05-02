@@ -333,6 +333,7 @@ module tb_sram_arbiter;
         .port1_addr(p1_addr),
         .port1_wdata(p1_wdata),
         .port1_burst_len(p1_burst_len),
+        .port1_burst_col_step2(1'b0),
         .port1_burst_wdata(p1_burst_wdata),
         .port1_rdata(p1_rdata),
         .port1_burst_rdata(p1_burst_rdata),

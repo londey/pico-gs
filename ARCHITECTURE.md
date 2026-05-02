@@ -689,7 +689,7 @@ flowchart LR
         UNIT_011_06["UNIT-011.06: Palette LUT"]
     end
     UNIT_012["UNIT-012: Z-Buffer Tile Cache"]
-    UNIT_013["UNIT-013: Color Tile Cache"]
+    UNIT_013["UNIT-013: Color-Buffer Tile Cache"]
     UNIT_001 -->|INT-001| UNIT_001
     UNIT_009 -->|INT-002| UNIT_009
     UNIT_003 -->|INT-010| UNIT_001
@@ -727,5 +727,5 @@ flowchart LR
 | UNIT-011.06 | Palette LUT | Shared two-slot palette lookup table providing UQ1.8 RGBA colors to both texture samplers. |
 | UNIT-011 | Texture Sampler | Two-sampler texture pipeline providing Q4.12 RGBA texel data to UNIT-006 (Pixel Pipeline). |
 | UNIT-012 | Z-Buffer Tile Cache | 4-way set-associative write-back Z-buffer tile cache with per-tile uninitialized flag tracking. |
-| UNIT-013 | Color Tile Cache | 4-way set-associative write-back color tile cache (32 sets, 4×4 RGB565 tiles) with per-tile uninitialized flag tracking; owns SDRAM arbiter Port 1. |
+| UNIT-013 | Color-Buffer Tile Cache | 4-way set-associative write-back color-buffer tile cache with per-tile uninitialized flag tracking. |
 <!-- syskit-arch-end -->

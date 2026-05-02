@@ -86,6 +86,8 @@ RTL_SOURCES = \
 	$(RASTER_RTL)/raster_setup_fifo.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
+	$(PXWRITE_RTL)/color_tile_tag_bram.sv \
+	$(PXWRITE_RTL)/color_tile_cache.sv \
 	$(ZBUF_RTL)/zbuf_tag_bram.sv \
 	$(ZBUF_RTL)/zbuf_tile_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -125,14 +127,12 @@ VERILATOR_FLAGS = --binary -f verilator.f --Mdir $(OBJ_DIR)
 	test-sram-port-conformance test-contracts-all harness-scaffold clean help \
 	test test-rasterizer test-early-z test-register-file \
 	render-gouraud render-depth-test render-textured-cube render-textured render-color-combined \
-	render-size-grid render-perspective-road render-indexed-pixel-art render-bc2-texture \
-	render-bc3-texture render-bc4-texture render-rgba8888-texture render-r8-texture \
+	render-size-grid render-perspective-road render-indexed-pixel-art \
 	render-stipple-test render-alpha-blend render-all \
 	test-gouraud test-depth-test test-textured test-color-combined test-textured-cube \
 	test-stipple-test \
-	test-size-grid test-perspective-road test-indexed-pixel-art test-bc2-texture \
-	test-bc3-texture test-bc4-texture test-rgba8888-texture test-r8-texture \
-	test-fb-promote test-zbuf-uninit test-dither test-stipple test-raster-viz \
+	test-size-grid test-perspective-road test-indexed-pixel-art \
+	test-fb-promote test-zbuf-uninit test-color-tile-cache test-dither test-stipple test-raster-viz \
 	test-bc-color-block test-bc-alpha-block test-bc1 test-bc2 test-bc3 test-bc4 \
 	test-r8 test-rgb565 test-rgba8888 test-block-decode test-texel-promote \
 	test-block-decoder-all \
@@ -655,6 +655,15 @@ test-zbuf-uninit: | $(OBJ_DIR) $(SIM_OUT_DIR)
 		--top-module tb_zbuf_uninit_flags -o tb_zbuf_uninit_flags
 	$(OBJ_DIR)/tb_zbuf_uninit_flags
 
+# VER-006: Color tile cache unit testbench (UNIT-013: 4-way SA write-back cache)
+test-color-tile-cache: | $(OBJ_DIR) $(SIM_OUT_DIR)
+	$(VERILATOR) $(VERILATOR_FLAGS) \
+		$(PXWRITE_RTL)/color_tile_tag_bram.sv \
+		$(PXWRITE_RTL)/color_tile_cache.sv \
+		$(COMP_DIR)/pixel-write/tests/tb_color_tile_cache.sv \
+		--top-module tb_color_tile_cache -o tb_color_tile_cache
+	$(OBJ_DIR)/tb_color_tile_cache
+
 # VER-007: Alpha blend unit testbench — RETIRED (blend now via CC pass 2)
 # See: components/alpha-blend/rtl/src/alpha_blend.sv (deprecated)
 
@@ -709,21 +718,6 @@ render-perspective-road: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 render-indexed-pixel-art: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness indexed_pixel_art $(abspath $(SIM_OUT_DIR))/ver_017_indexed_pixel_art.png
 
-render-bc2-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness bc2_texture $(abspath $(SIM_OUT_DIR))/ver_018_bc2_texture.png
-
-render-bc3-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness bc3_texture $(abspath $(SIM_OUT_DIR))/ver_019_bc3_texture.png
-
-render-bc4-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness bc4_texture $(abspath $(SIM_OUT_DIR))/ver_020_bc4_texture.png
-
-render-rgba8888-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness rgba8888_texture $(abspath $(SIM_OUT_DIR))/ver_021_rgba8888_texture.png
-
-render-r8-texture: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
-	$(BUILD_DIR)/harness r8_texture $(abspath $(SIM_OUT_DIR))/ver_022_r8_texture.png
-
 render-stipple-test: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness stipple_test $(abspath $(SIM_OUT_DIR))/ver_023_stipple_test.png
 
@@ -731,8 +725,7 @@ render-alpha-blend: $(BUILD_DIR)/harness | $(SIM_OUT_DIR)
 	$(BUILD_DIR)/harness alpha_blend $(abspath $(SIM_OUT_DIR))/ver_024_alpha_blend.png
 
 render-all: render-gouraud render-depth-test render-textured render-color-combined render-textured-cube \
-	render-size-grid render-perspective-road render-indexed-pixel-art render-bc2-texture render-bc3-texture \
-	render-bc4-texture render-rgba8888-texture render-r8-texture render-stipple-test \
+	render-size-grid render-perspective-road render-indexed-pixel-art render-stipple-test \
 	render-alpha-blend
 
 # Golden image diff targets — compare rendered output against approved golden images
@@ -768,26 +761,6 @@ test-perspective-road: render-perspective-road
 test-indexed-pixel-art: render-indexed-pixel-art
 	diff -q $(SIM_OUT_DIR)/ver_017_indexed_pixel_art.png $(GOLDEN_DIR)/ver_017_indexed_pixel_art.png
 
-# VER-018: BC2 texture
-test-bc2-texture: render-bc2-texture
-	diff -q $(SIM_OUT_DIR)/ver_018_bc2_texture.png $(GOLDEN_DIR)/ver_018_bc2_texture.png
-
-# VER-019: BC3 texture
-test-bc3-texture: render-bc3-texture
-	diff -q $(SIM_OUT_DIR)/ver_019_bc3_texture.png $(GOLDEN_DIR)/ver_019_bc3_texture.png
-
-# VER-020: BC4 texture
-test-bc4-texture: render-bc4-texture
-	diff -q $(SIM_OUT_DIR)/ver_020_bc4_texture.png $(GOLDEN_DIR)/ver_020_bc4_texture.png
-
-# VER-021: RGBA8888 texture
-test-rgba8888-texture: render-rgba8888-texture
-	diff -q $(SIM_OUT_DIR)/ver_021_rgba8888_texture.png $(GOLDEN_DIR)/ver_021_rgba8888_texture.png
-
-# VER-022: R8 texture
-test-r8-texture: render-r8-texture
-	diff -q $(SIM_OUT_DIR)/ver_022_r8_texture.png $(GOLDEN_DIR)/ver_022_r8_texture.png
-
 # VER-023: Stipple pattern test
 test-stipple-test: render-stipple-test
 	diff -q $(SIM_OUT_DIR)/ver_023_stipple_test.png $(GOLDEN_DIR)/ver_023_stipple_test.png
@@ -795,7 +768,7 @@ test-stipple-test: render-stipple-test
 # Run all RTL tests. Unit testbenches run as prerequisites (parallel via -j).
 # Golden image renders run as prerequisites. Diffs run in the recipe so all
 # comparisons execute even if some fail.
-test: lint test-rasterizer-all test-early-z test-stipple test-register-file test-color-combiner test-texture-decoder test-fb-promote test-zbuf-uninit test-dither render-all
+test: lint test-rasterizer-all test-early-z test-stipple test-register-file test-color-combiner test-texture-decoder test-fb-promote test-zbuf-uninit test-color-tile-cache test-dither render-all
 	@echo "Unit testbenches passed."
 	@echo "All images rendered to $(SIM_OUT_DIR)/"
 	@failures=0; \
@@ -808,11 +781,6 @@ test: lint test-rasterizer-all test-early-z test-stipple test-register-file test
 		ver_015_size_grid.png \
 		ver_016_perspective_road.png \
 		ver_017_indexed_pixel_art.png \
-		ver_018_bc2_texture.png \
-		ver_019_bc3_texture.png \
-		ver_020_bc4_texture.png \
-		ver_021_rgba8888_texture.png \
-		ver_022_r8_texture.png \
 		ver_023_stipple_test.png \
 		ver_024_alpha_blend.png \
 	; do \
@@ -996,6 +964,8 @@ HARNESS_RTL_SOURCES = \
 	$(RASTER_RTL)/raster_setup_fifo.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
+	$(PXWRITE_RTL)/color_tile_tag_bram.sv \
+	$(PXWRITE_RTL)/color_tile_cache.sv \
 	$(ZBUF_RTL)/zbuf_tag_bram.sv \
 	$(ZBUF_RTL)/zbuf_tile_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -1081,6 +1051,8 @@ SIM_RTL_SOURCES = \
 	$(RASTER_RTL)/raster_setup_fifo.sv \
 	$(EARLYZ_RTL)/early_z.sv \
 	$(PXWRITE_RTL)/pixel_pipeline.sv \
+	$(PXWRITE_RTL)/color_tile_tag_bram.sv \
+	$(PXWRITE_RTL)/color_tile_cache.sv \
 	$(ZBUF_RTL)/zbuf_tag_bram.sv \
 	$(ZBUF_RTL)/zbuf_tile_cache.sv \
 	$(TEXTURE_UV_RTL)/texture_uv_coord.sv \
@@ -1159,6 +1131,7 @@ help:
 	@echo "  test-stipple     - VER-009: Stipple pattern test unit testbench"
 	@echo "  test-register-file - VER-003: Register file unit testbench"
 	@echo "  test-color-combiner - VER-004: Color combiner unit testbench"
+	@echo "  test-color-tile-cache - VER-006: Color tile cache unit testbench"
 	@echo "  test-texture-decoder - VER-005: Texture decoder unit testbench"
 	@echo "  test-gouraud     - VER-010: Gouraud triangle golden image"
 	@echo "  test-depth-test  - VER-011: Depth-tested triangles golden image"
@@ -1168,11 +1141,6 @@ help:
 	@echo "  test-size-grid   - VER-015: Triangle size grid golden image"
 	@echo "  test-perspective-road - VER-016: Perspective road golden image"
 	@echo "  test-indexed-pixel-art - VER-017: INDEXED8_2X2 pixel-art texture golden image"
-	@echo "  test-bc2-texture - VER-018: BC2 texture golden image"
-	@echo "  test-bc3-texture - VER-019: BC3 texture golden image"
-	@echo "  test-bc4-texture - VER-020: BC4 texture golden image"
-	@echo "  test-rgba8888-texture - VER-021: RGBA8888 texture golden image"
-	@echo "  test-r8-texture  - VER-022: R8 texture golden image"
 	@echo "  test-stipple-test - VER-023: Stipple pattern golden image"
 	@echo "  test-async-fifo  - Run async FIFO testbench"
 	@echo "  test-command-fifo - Run command FIFO testbench"

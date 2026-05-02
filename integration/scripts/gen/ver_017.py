@@ -127,4 +127,6 @@ def generate() -> list[str]:
                                vertex_comment(x, y, 0x0000)))
             lines.append(emit_blank())
 
+    lines.extend(emit_fb_cache_flush())
+
     return lines

@@ -61,4 +61,5 @@ A design unit might be a hardware module, a source file, a library, or a logical
 - [UNIT-011.06: Palette LUT](unit_011.06_palette_lut.md)
 - [UNIT-011: Texture Sampler](unit_011_texture_sampler.md)
 - [UNIT-012: Z-Buffer Tile Cache](unit_012_zbuf_tile_cache.md)
+- [UNIT-013: Color-Buffer Tile Cache](unit_013_color_tile_cache.md)
 <!-- TOC-END -->

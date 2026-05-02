@@ -11,6 +11,7 @@ pub mod named_types {
     pub mod cc_mode_reg;
     pub mod color_reg;
     pub mod const_color_reg;
+    pub mod fb_cache_ctrl_reg;
     pub mod fb_config_reg;
     pub mod fb_control_reg;
     pub mod fb_display_reg;
@@ -33,6 +34,7 @@ pub use _root::components::gpu_regs::named_types::cc_mode_2_reg as cc_mode_2;
 pub use _root::components::gpu_regs::named_types::cc_mode_reg as cc_mode;
 pub use _root::components::gpu_regs::named_types::color_reg as color;
 pub use _root::components::gpu_regs::named_types::const_color_reg as const_color;
+pub use _root::components::gpu_regs::named_types::fb_cache_ctrl_reg as fb_cache_ctrl;
 pub use _root::components::gpu_regs::named_types::fb_config_reg as fb_config;
 pub use _root::components::gpu_regs::named_types::fb_control_reg as fb_control;
 pub use _root::components::gpu_regs::named_types::fb_display_reg as fb_display;
@@ -486,6 +488,40 @@ impl<'io, IO: peakrdl_rust::io::RegisterIO> GpuRegs<'io, IO> {
     pub const fn mem_fill(&self) -> peakrdl_rust::reg::Reg<'io, mem_fill::MemFillReg, IO> {
         unsafe {
             peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x220).cast(), self.io)
+        }
+    }
+
+    /// FB_CACHE_CTRL
+    ///
+    /// Color-buffer tile cache control (write-triggers-blocking).
+    /// Software-controlled flush and invalidate triggers for the
+    /// color-buffer tile cache (UNIT-013).  Writes block the SPI
+    /// command stream until the requested operation completes,
+    /// matching the MEM_FILL (0x44) and FB_DISPLAY_SYNC (0x47)
+    /// blocking semantics.
+    /// FLUSH_TRIGGER (bit 0): Self-clearing flush trigger.  When
+    /// written as 1, writes back all dirty 4x4 tiles to SDRAM via
+    /// 16-word burst writes on UNIT-007 port 1.  Lines remain
+    /// valid after flush; dirty bits are cleared.  Hardware
+    /// clears this bit and asserts flush_done when complete.
+    /// INVALIDATE_TRIGGER (bit 1): Self-clearing invalidate
+    /// trigger.  When written as 1, drops all valid and dirty
+    /// bits in the cache and resets the per-tile uninitialized
+    /// flag array (16,384 cycles sweep).  Lines that were dirty
+    /// are discarded without writeback.  After the sweep,
+    /// subsequent first-touch writes lazy-fill with zeros rather
+    /// than reading SDRAM (REQ-005.08).  Hardware clears this
+    /// bit and asserts invalidate_done when complete.
+    /// Writing both bits simultaneously is undefined; driver
+    /// software must issue them as separate writes.  See INT-010
+    /// section 0x45.
+    #[inline(always)]
+    #[must_use]
+    pub const fn fb_cache_ctrl(
+        &self,
+    ) -> peakrdl_rust::reg::Reg<'io, fb_cache_ctrl::FbCacheCtrlReg, IO> {
+        unsafe {
+            peakrdl_rust::reg::Reg::from_ptr_with(self.ptr.wrapping_byte_add(0x228).cast(), self.io)
         }
     }
 

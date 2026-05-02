@@ -68,3 +68,26 @@ pub const PALETTE_BASE_ADDR_MASK: u64 = 0xFFFF;
 
 /// Bit position of `PALETTEn.LOAD_TRIGGER` (self-clearing pulse).
 pub const PALETTE_LOAD_TRIGGER_BIT: u64 = 1 << 16;
+
+/// 7-bit register index of FB_CACHE_CTRL (color tile cache flush/invalidate).
+///
+/// See INT-010 §0x45 for the full register description and blocking
+/// semantics.  The RDL byte address `0x228` corresponds to SPI register
+/// index `0x45` because the RDL uses byte addresses with an 8-byte stride
+/// per register (`0x45 * 8 = 0x228`).
+pub const FB_CACHE_CTRL: u8 = 0x45;
+
+/// Bit position of `FB_CACHE_CTRL.FLUSH_TRIGGER` (self-clearing pulse).
+///
+/// Writing 1 to this bit triggers a write-back of all dirty 4×4 tiles
+/// in the color-buffer cache (UNIT-013) and blocks the SPI command stream
+/// until the flush completes.  See INT-010 §0x45.
+pub const FB_CACHE_CTRL_FLUSH_TRIGGER_BIT: u8 = 0;
+
+/// Bit position of `FB_CACHE_CTRL.INVALIDATE_TRIGGER` (self-clearing pulse).
+///
+/// Writing 1 to this bit drops all valid and dirty bits in the
+/// color-buffer cache (UNIT-013) and resets the per-tile uninitialized
+/// flag array, blocking the SPI command stream until the sweep completes.
+/// See INT-010 §0x45.
+pub const FB_CACHE_CTRL_INVALIDATE_TRIGGER_BIT: u8 = 1;

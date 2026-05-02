@@ -182,28 +182,30 @@ units:
       Pass 2 reads DST_COLOR from the color tile buffer for blend/fog.
       4-cycle/fragment throughput target with passes pipelined back-to-back.
 
-  color_tile_buffer:
-    name: Color Tile Buffer
+  color_tile_cache:
+    name: Color Tile Cache (UNIT-013)
     pipeline: pixel
     dsp: 0
-    ebr: 0
-    lut4: 50            # 4x4 x 16-bit register file in distributed LUTs
+    ebr: 7              # 2×DP16KD data + 4×PDPW16KD tag + 1×DP16KD uninit flags
+    lut4: 250           # FSM + tag compare + address generation
     status: planned
-    rtl: [color_tile_buffer.sv]
+    rtl: [color_tile_cache.sv, color_tile_tag_bram.sv]
     twin: gs-pixel-write
+    design_doc: unit_013_color_tile_cache.md
     stages:
-      - id: tile_prefetch
-        latency: 1
-        stall: sdram_port_1    # 16-word burst read on tile entry (blend enabled only)
-        conditional: blend_enabled
-      - id: tile_flush
-        latency: 1
-        stall: sdram_port_1    # 16-word burst write on tile exit
+      - id: cache_lookup
+        latency: 2      # Fast path: S_IDLE → S_RD_HIT (last-tag hit)
+        stall: sdram_port_1    # Cache miss → SDRAM fill (16-word burst)
+      - id: cache_write
+        latency: 1      # S_WR_UPDATE (write hit)
+        stall: sdram_port_1    # Cache miss before write → SDRAM fill then write
     notes: >
-      Pre-fetches destination tile from SDRAM (16-word burst) at tile entry when blending is enabled.
-      Supplies DST_COLOR to color combiner pass 2.
-      Flushes completed tile to SDRAM (16-word burst write) at tile exit.
-      When blending is disabled, prefetch is skipped; only the flush write is issued.
+      4-way 32-set write-back EBR cache for RGB565 color-buffer access.
+      Absorbs per-pixel SDRAM traffic; only dirty evictions and cache-miss fills
+      use SDRAM port 1.  ~94% same-tile hit rate with 4×4 rasterization order.
+      Software issues FB_CACHE_CTRL.FLUSH_TRIGGER before FB_DISPLAY swap.
+      FB_CACHE_CTRL.INVALIDATE_TRIGGER resets uninit flags for lazy-fill after
+      retargeting COLOR_BASE.  Exclusively owns SDRAM arbiter port 1.
 
   alpha_test:
     name: Alpha Test
@@ -219,7 +221,7 @@ units:
         latency: 0
     can_kill: true
 
-  # alpha_blend: retired — blending is now implemented as color combiner pass 2 via color_tile_buffer.
+  # alpha_blend: retired — blending is now implemented as color combiner pass 2 via color_tile_cache.
 
   dither:
     name: Ordered Dither
@@ -248,7 +250,7 @@ units:
         latency: 1
         stall: sdram_port_2
       - id: color_write
-        latency: 0          # writes to color_tile_buffer (on-chip); SDRAM burst issued at tile exit by color_tile_buffer unit
+        latency: 0          # writes to color_tile_cache (UNIT-013); SDRAM burst on dirty eviction
 
   # -- Display ---------------------------------------------------------------
 

@@ -33,7 +33,7 @@ pub use gs_twin_core::triangle;
 
 use gs_color_combiner::CcInputs;
 use gs_memory::GpuMemory;
-use gs_pixel_write::tile_buffer::{self, ColorTileBuffer};
+use gs_pixel_write::{ColorCacheContext, ColorTileCache};
 use gs_rasterizer::rasterize;
 use gs_spi::reg::{self, GpuAction, RegWrite};
 use gs_texture::tex_palette::PaletteLut;
@@ -79,8 +79,9 @@ pub struct Gpu {
     /// Z-buffer tile cache (4-way set-associative, lazy-fill).
     zbuf_cache: ZbufTileCache,
 
-    /// Color tile buffer (4x4 RGB565 cache for burst SDRAM access).
-    color_tile_buffer: ColorTileBuffer,
+    /// Color-buffer tile cache (UNIT-013, 4-way set-associative
+    /// write-back with pseudo-LRU and per-tile uninit-flag lazy-fill).
+    color_cache: ColorTileCache,
 
     /// Default framebuffer width (used when fb_config hasn't been set).
     pub default_width: u32,
@@ -114,7 +115,7 @@ impl Gpu {
             hiz: HizMetadata::new(),
             uninit_flags: UninittedFlagArray::new(),
             zbuf_cache: ZbufTileCache::new(),
-            color_tile_buffer: ColorTileBuffer::new(),
+            color_cache: ColorTileCache::new(),
             default_width: width,
             default_height: height,
             debug_pixel: None,
@@ -140,12 +141,12 @@ impl Gpu {
             }
             GpuAction::FbConfig => {
                 // Reset Hi-Z metadata, uninit flags, Z-buffer cache,
-                // and color tile buffer on any FB_CONFIG write
+                // and color tile cache on any FB_CONFIG write
                 // (UNIT-005.06 fast-clear trigger).
                 self.hiz.reset_all();
                 self.uninit_flags.reset_all();
                 self.zbuf_cache.invalidate();
-                self.color_tile_buffer.invalidate();
+                self.color_cache.invalidate();
             }
             GpuAction::MemFill { base, value, count } => {
                 let byte_addr = (base as usize) * 2;
@@ -162,6 +163,16 @@ impl Gpu {
                     self.uninit_flags.reset_all();
                     self.zbuf_cache.invalidate();
                 }
+
+                // Detect color-buffer MEM_FILL (fill of the color region)
+                // and invalidate the color tile cache.  After a MEM_FILL
+                // + INVALIDATE the first writes lazy-fill with zeros
+                // rather than re-reading the freshly-filled SDRAM data
+                // (REQ-005.08, UNIT-013).
+                let color_base_word = (fb_cfg.color_base() as u32) << 8;
+                if base == color_base_word {
+                    self.color_cache.invalidate();
+                }
             }
             GpuAction::Tex0Config(cfg) => {
                 self.tex0_sampler.set_tex_cfg(cfg);
@@ -175,6 +186,26 @@ impl Gpu {
             }
             GpuAction::PaletteLoad { slot, base_addr } => {
                 self.execute_palette_load(slot, base_addr);
+            }
+            GpuAction::FbCacheFlush => {
+                // Models the RTL FB_CACHE_CTRL.FLUSH_TRIGGER pulse
+                // (INT-010 §0x45): write back all dirty cache lines to
+                // SDRAM; lines remain valid after the flush.  The twin
+                // is transaction-level, so the flush completes
+                // instantaneously.
+                let fb_cfg = self.regs.fb_config();
+                let mut ctx = ColorCacheContext {
+                    memory: &mut self.memory,
+                    color_base: fb_cfg.color_base(),
+                    wl2: fb_cfg.width_log2(),
+                };
+                self.color_cache.flush(&mut ctx);
+            }
+            GpuAction::FbCacheInvalidate => {
+                // Models the RTL FB_CACHE_CTRL.INVALIDATE_TRIGGER pulse
+                // (INT-010 §0x45): drop all valid+dirty bits and reset
+                // the per-tile uninit flag array (no SDRAM access).
+                self.color_cache.invalidate();
             }
         }
     }
@@ -277,11 +308,14 @@ impl Gpu {
             }
         }
 
-        // Flush color tile buffer at end of triangle to ensure all
-        // dirty pixels are written back to SDRAM.
-        let fb_cfg = self.regs.fb_config();
-        self.color_tile_buffer
-            .flush_if_dirty(&mut self.memory, &fb_cfg);
+        // Note: the color tile cache is intentionally NOT flushed at
+        // end of triangle — the cache is write-back, so dirty lines
+        // are written back on eviction or via an explicit
+        // FB_CACHE_CTRL.FLUSH (UNIT-013).  CC pass 2 DST_COLOR reads
+        // go through the cache so back-to-back triangles see each
+        // other's writes; framebuffer export helpers
+        // (`framebuffer_to_png` / `extract_framebuffer_rgb565`) flush
+        // explicitly before reading SDRAM.
     }
 
     /// Execute the pixel fragment pipeline from rasterizer output through
@@ -399,13 +433,23 @@ impl Gpu {
         // unchanged, so there is no implicit "blend disabled" path.
         let cc_mode_2 = self.regs.cc_mode_2();
 
-        // Read destination pixel from color tile buffer (prefetch on tile entry)
-        self.color_tile_buffer
-            .ensure_tile(&mut self.memory, &fb_cfg, frag.x as u32, frag.y as u32);
-        let local_x = (frag.x as u32) & 3;
-        let local_y = (frag.y as u32) & 3;
-        let dst_rgb565 = self.color_tile_buffer.read_pixel(local_x, local_y);
-        let dst_color = tile_buffer::promote_rgb565(dst_rgb565);
+        // Read destination pixel from the color tile cache (UNIT-013).
+        // Misses pull a 4x4 tile burst from SDRAM (or lazy-fill with
+        // 0x0000 if the tile's uninit flag is set); writes are
+        // absorbed in the cache and written back on eviction.
+        let wl2 = fb_cfg.width_log2();
+        let tile_cols_log2 = wl2 as u32 - 2;
+        let tile_idx = (((frag.y as u32) >> 2) << tile_cols_log2) | ((frag.x as u32) >> 2);
+        let pixel_off = (((frag.y as u32) & 3) * 4 + ((frag.x as u32) & 3)) as usize;
+        let dst_rgb565 = {
+            let mut ctx = ColorCacheContext {
+                memory: &mut self.memory,
+                color_base: fb_cfg.color_base(),
+                wl2,
+            };
+            Rgb565(self.color_cache.read(tile_idx, pixel_off, &mut ctx))
+        };
+        let dst_color = gs_pixel_write::promote_rgb565(dst_rgb565);
 
         let cc2_inputs = gs_color_combiner::CcInputs {
             tex0: ColorQ412::default(),
@@ -484,12 +528,22 @@ impl Gpu {
 
             let color = Rgb565(((r5 as u16) << 11) | ((g6 as u16) << 5) | (b5 as u16));
 
-            // Write to the color tile buffer instead of directly to SDRAM.
-            // The tile buffer was already ensured/prefetched in the
-            // fragment pipeline (CC pass 2), so we can write directly.
-            let local_x = fx & 3;
-            let local_y = fy & 3;
-            self.color_tile_buffer.write_pixel(local_x, local_y, color);
+            // Write into the color tile cache (UNIT-013).  The cache
+            // line was already populated by the CC pass-2 DST_COLOR
+            // read above (or freshly allocated via lazy-fill); the
+            // write marks the line dirty and clears the tile's uninit
+            // flag.  Dirty lines are written back to SDRAM on eviction
+            // or via FB_CACHE_CTRL.FLUSH.
+            let tile_cols_log2 = wl2 as u32 - 2;
+            let tile_idx = ((fy >> 2) << tile_cols_log2) | (fx >> 2);
+            let pixel_off = (((fy & 3) * 4) + (fx & 3)) as usize;
+            let mut ctx = ColorCacheContext {
+                memory: &mut self.memory,
+                color_base: fb_cfg.color_base(),
+                wl2,
+            };
+            self.color_cache
+                .write(tile_idx, pixel_off, color.0, &mut ctx);
         }
     }
 
@@ -513,15 +567,39 @@ impl Gpu {
     }
 
     /// Export the current framebuffer as a PNG image.
-    pub fn framebuffer_to_png(&self, path: &std::path::Path) -> Result<(), image::ImageError> {
+    ///
+    /// Flushes the color tile cache first so all dirty lines are
+    /// visible in SDRAM before the read.
+    pub fn framebuffer_to_png(&mut self, path: &std::path::Path) -> Result<(), image::ImageError> {
+        self.flush_color_cache();
         let (base, wl2, w, h) = self.effective_fb_dims();
         self.memory.save_png(base, wl2, w, h, path)
     }
 
     /// Extract the current framebuffer as a linear `Vec<u16>` of RGB565 pixels.
-    pub fn extract_framebuffer_rgb565(&self) -> Vec<u16> {
+    ///
+    /// Flushes the color tile cache first so all dirty lines are
+    /// visible in SDRAM before the read.
+    pub fn extract_framebuffer_rgb565(&mut self) -> Vec<u16> {
+        self.flush_color_cache();
         let (base, wl2, w, h) = self.effective_fb_dims();
         self.memory.extract_rgb565_linear(base, wl2, w, h)
+    }
+
+    /// Flush all dirty color tile cache lines back to SDRAM.
+    ///
+    /// Lines remain valid after the flush so subsequent accesses still
+    /// hit (matches UNIT-013 `FB_CACHE_CTRL.FLUSH` semantics).  Called
+    /// implicitly by the framebuffer export helpers and explicitly by
+    /// `GpuAction::FbCacheFlush`.
+    fn flush_color_cache(&mut self) {
+        let fb_cfg = self.regs.fb_config();
+        let mut ctx = ColorCacheContext {
+            memory: &mut self.memory,
+            color_base: fb_cfg.color_base(),
+            wl2: fb_cfg.width_log2(),
+        };
+        self.color_cache.flush(&mut ctx);
     }
 
     /// Export the current Z-buffer as a grayscale PNG image.

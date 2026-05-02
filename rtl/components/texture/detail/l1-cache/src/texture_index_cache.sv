@@ -63,7 +63,7 @@
 //      INT-014 (Texture Memory Layout).
 
 module texture_index_cache #(
-    parameter integer SAMPLER_ID = 0  // 0 or 1; identifies sampler for cache invalidation routing
+    parameter bit SAMPLER_ID = 1'b0  // 0 or 1; identifies sampler for cache invalidation routing
 ) (
     input  wire         clk,            // 100 MHz core clock
     input  wire         rst_n,          // Active-low synchronous reset
@@ -105,8 +105,7 @@ module texture_index_cache #(
     // invalidation per sampler).  Mark it explicitly used to silence Verilator.
     // ========================================================================
 
-    localparam integer SAMPLER_ID_LP = SAMPLER_ID;
-    wire _unused_sampler_id = |SAMPLER_ID_LP[31:0];
+    wire _unused_sampler_id = SAMPLER_ID;
 
     // ========================================================================
     // Cache geometry constants

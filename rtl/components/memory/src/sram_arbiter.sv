@@ -40,6 +40,7 @@ module sram_arbiter (
     input  wire [23:0]  port1_addr,
     input  wire [31:0]  port1_wdata,
     input  wire [7:0]   port1_burst_len,
+    input  wire         port1_burst_col_step2, // Color cache: stride 2 (FB byte-address convention)
     input  wire [15:0]  port1_burst_wdata,
     output reg  [31:0]  port1_rdata,
     output wire [15:0]  port1_burst_rdata,
@@ -259,7 +260,8 @@ module sram_arbiter (
 
                     // Set burst length and column stride
                     mem_burst_len       <= init_burst_len;
-                    mem_burst_col_step2 <= ((next_grant == 2'd2) && port2_burst_col_step2)
+                    mem_burst_col_step2 <= ((next_grant == 2'd1) && port1_burst_col_step2)
+                                        || ((next_grant == 2'd2) && port2_burst_col_step2)
                                         || ((next_grant == 2'd3) && port3_burst_col_step2);
 
                     // Determine if this is a burst or single-word

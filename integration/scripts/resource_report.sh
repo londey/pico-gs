@@ -7,8 +7,12 @@
 # per-module ECP5 primitive counts (LUT4, TRELLIS_FF, CCU2C, DP16KD,
 # MULT18X18D, PDPW16KD) and instance counts from submodule listings.
 #
-# Parameterised module names ($paramod$hash\name) are shortened and
-# their counts summed.
+# Parameterised module names are shortened by shorten_paramod():
+#   - Hash-based      "$paramod$hash\name"        -> "name"
+#   - Parameter-named "$paramod\name\PARAM=value" -> "name(PARAM=value)"
+# Hash-based variants collapse to one row (counts summed); parameter-named
+# variants stay distinct so per-variant resource counts are not double-counted
+# when multiplied by the hierarchy instance count.
 
 set -u
 
@@ -28,6 +32,23 @@ MULT18_LIMIT=28
     echo "==========================================================================="
 
     awk '
+    # Shorten Yosys $paramod module names. Two formats appear in stat output:
+    #   $paramod$hash\name        -> name              (hash-based)
+    #   $paramod\name\PARAM=value -> name(PARAM=value) (parameter-named)
+    function shorten_paramod(s,    rest, bs) {
+        if (index(s, "$paramod") != 1) return s
+        if (substr(s, 9, 1) == "\\") {
+            rest = substr(s, 10)
+            bs = index(rest, "\\")
+            if (bs > 0) {
+                return substr(rest, 1, bs - 1) "(" substr(rest, bs + 1) ")"
+            }
+            return rest
+        }
+        sub(/.*\\/, "", s)
+        return s
+    }
+
     # Strip Yosys timestamp prefix: [00000.618070]
     { sub(/^\[[0-9]+\.[0-9]+\] /, "") }
 
@@ -36,8 +57,7 @@ MULT18_LIMIT=28
         mod = $0
         gsub(/^=== | ===$/, "", mod)
         if (mod == "design hierarchy") { mod = ""; next }
-        # Shorten $paramod names: "$paramod$hash\name" -> "name"
-        if (index(mod, "$paramod") == 1) sub(/.*\\/, "", mod)
+        mod = shorten_paramod(mod)
         next
     }
 
@@ -70,7 +90,7 @@ MULT18_LIMIT=28
             name = $2
             if (cnt > 0 && name !~ /^(LUT4|TRELLIS_FF|TRELLIS_DPR16X4|CCU2C|DP16KD|MULT18X18D|PDPW16KD|EHXPLLL|\$_TBUF_|wires|wire|public|ports|port|cells|submodules|memories|memory|processes)$/) {
                 # Shorten $paramod child names too.
-                if (index(name, "$paramod") == 1) sub(/.*\\/, "", name)
+                name = shorten_paramod(name)
                 # Record: parent "mod" has "cnt" instances of child "name".
                 # Use comma-separated key; accumulate for parameterised merges.
                 child_key = mod SUBSEP name
@@ -112,9 +132,25 @@ MULT18_LIMIT=28
             mods[j+1] = key
         }
 
+        # Module column width: max of "Utilization" and the longest printable
+        # module name (matches the zero-resource skip in the main loop below).
+        mod_w = length("Utilization")
+        for (i = 0; i < n; i++) {
+            m = mods[i]
+            vl = ((m, "LUT4")       in cells) ? cells[m, "LUT4"]       : 0
+            vf = ((m, "TRELLIS_FF") in cells) ? cells[m, "TRELLIS_FF"] : 0
+            vc = ((m, "CCU2C")      in cells) ? cells[m, "CCU2C"]      : 0
+            vd = ((m, "DP16KD")     in cells) ? cells[m, "DP16KD"]     : 0
+            vm = ((m, "MULT18X18D") in cells) ? cells[m, "MULT18X18D"] : 0
+            vp = ((m, "PDPW16KD")   in cells) ? cells[m, "PDPW16KD"]   : 0
+            if (vl + vf + vc + vd + vm + vp > 0 && length(m) > mod_w) mod_w = length(m)
+        }
+
         # Header.
-        fmt  = "  %-28s %4s %6s %8s %6s %7s %7s %7s\n"
-        sep  = "  ----------------------------  ---  -----  -------  -----  ------  ------  ------"
+        dashes = ""
+        for (i = 0; i < mod_w; i++) dashes = dashes "-"
+        fmt = "  %-" mod_w "s %4s %6s %8s %6s %7s %7s %7s\n"
+        sep = "  " dashes "  ---  -----  -------  -----  ------  ------  ------"
         printf fmt, "Module", "Inst", "LUT4", "TRLS_FF", "CCU2C", "DP16KD", "MULT18", "PDPW16"
         print sep
 
@@ -171,10 +207,10 @@ MULT18_LIMIT=28
         um = (tot_mul > 0) ? sprintf("%d%%", tot_mul * 100 / mul_lim) : "-"
 
         printf fmt, "Utilization", "", ul, uf, uc, ud, um, ""
+        print sep
     }
     ' "$YOSYS_LOG"
 
-    echo "  ----------------------------  ---  -----  -------  -----  ------  ------  ------"
     echo "  * PDPW16KD shares physical block RAM with DP16KD (56 total)"
     echo "  * Inst column shows instance count; TOTAL reflects per-module x instances"
     echo "==========================================================================="

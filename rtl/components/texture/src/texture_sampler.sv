@@ -204,7 +204,7 @@ module texture_sampler
     wire        s1_fill_valid;
     wire [127:0] s1_fill_data;
 
-    texture_index_cache #(.SAMPLER_ID(0)) u_idx_cache0 (
+    texture_index_cache #(.SAMPLER_ID(1'b0)) u_idx_cache0 (
         .clk           (clk),
         .rst_n         (rst_n),
         .tex_base_lo_i (s0_base_r),
@@ -220,7 +220,7 @@ module texture_sampler
         .invalidate_i  (tex0_cache_inv)
     );
 
-    texture_index_cache #(.SAMPLER_ID(1)) u_idx_cache1 (
+    texture_index_cache #(.SAMPLER_ID(1'b1)) u_idx_cache1 (
         .clk           (clk),
         .rst_n         (rst_n),
         .tex_base_lo_i (s1_base_r),

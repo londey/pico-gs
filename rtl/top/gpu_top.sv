@@ -420,6 +420,12 @@ module gpu_top (
         .ts_mem_addr(ts_mem_addr),
         .ts_mem_data(ts_mem_data),
 
+        // FB_CACHE_CTRL handshake with color tile cache (UNIT-013)
+        .fb_cache_flush_trigger(rf_fb_cache_flush_trigger),
+        .fb_cache_invalidate_trigger(rf_fb_cache_invalidate_trigger),
+        .flush_done(ctcache_flush_done),
+        .invalidate_done(ctcache_invalidate_done),
+
         // Status inputs
         .gpu_busy(gpu_busy),
         .vblank(vblank),
@@ -541,6 +547,7 @@ module gpu_top (
         .port1_addr(arb_port1_addr),
         .port1_wdata(arb_port1_wdata),
         .port1_burst_len(arb_port1_burst_len),
+        .port1_burst_col_step2(1'b1), // Color tile cache: stride-2 (byte-addressed RGB565 FB convention)
         .port1_burst_wdata(arb_port1_burst_wdata),
         .port1_rdata(arb_port1_rdata),
         .port1_burst_rdata(arb_port1_burst_rdata),
@@ -638,14 +645,9 @@ module gpu_top (
     // Temporary port assignments
     // Port 0: Display controller burst signals now driven by u_display_ctrl
 
-    // Port 1: Pixel pipeline framebuffer (single-word, no burst)
-    // Use burst_len=1 for single-pixel 16-bit writes to avoid the
-    // single-word (32-bit) mode which writes two consecutive SDRAM words
-    // (low half + high half), clobbering the adjacent pixel in the tiled
-    // framebuffer layout.  Reads also use burst_len=1 so the SDRAM
-    // controller returns a single 16-bit word via the burst interface.
-    assign arb_port1_burst_len = (pp_fb_write_req || pp_fb_read_req) ? 8'd1 : 8'd0;
-    assign arb_port1_burst_wdata = pp_fb_write_data;
+    // Port 1: Color tile cache (UNIT-013) — burst-16 for both fill reads
+    // and eviction writes.  All port-1 SDRAM transfers move a complete
+    // 4×4 tile (16 × 16-bit words).  Driven from the cache below.
 
     // Port 2: Z-buffer tile cache (burst-16: full 4×4 tile per SDRAM request)
     assign arb_port2_burst_len = (zcache_sdram_wr_req || zcache_sdram_rd_req) ? 8'd16 : 8'd0;
@@ -1071,12 +1073,32 @@ module gpu_top (
     wire        rast_hiz_clear_busy;
     assign hiz_clear_req = fb_config_trigger;
 
-    // Pixel pipeline SDRAM interface wires
-    wire        pp_fb_write_req;
-    wire [23:0] pp_fb_write_addr;
-    wire [15:0] pp_fb_write_data;
-    wire        pp_fb_read_req;
-    wire [23:0] pp_fb_read_addr;
+    // Pixel pipeline → color tile cache (UNIT-013) interface wires
+    wire        pp_color_wr_req;
+    wire [13:0] pp_color_wr_tile_idx;
+    wire [3:0]  pp_color_wr_pixel_off;
+    wire [15:0] pp_color_wr_data;
+    wire        pp_color_rd_req;
+    wire [13:0] pp_color_rd_tile_idx;
+    wire [3:0]  pp_color_rd_pixel_off;
+
+    // Color tile cache → pixel pipeline / SDRAM (UNIT-013)
+    wire [15:0] ctcache_rd_data;
+    wire        ctcache_rd_valid;
+    wire        ctcache_wr_ready;
+    wire        ctcache_ready;
+    wire        ctcache_sdram_rd_req;
+    wire [23:0] ctcache_sdram_rd_addr;
+    wire        ctcache_sdram_wr_req;
+    wire [23:0] ctcache_sdram_wr_addr;
+    wire [15:0] ctcache_sdram_wr_data;
+
+    // Register file → color tile cache (UNIT-013) flush / invalidate handshake
+    wire        rf_fb_cache_flush_trigger;
+    wire        rf_fb_cache_invalidate_trigger;
+    wire        ctcache_flush_done;
+    wire        ctcache_invalidate_done;
+
     wire        pp_zb_read_req;
     wire [13:0] pp_zb_read_tile_idx;
     wire [3:0]  pp_zb_read_pixel_off;
@@ -1226,15 +1248,18 @@ module gpu_top (
         .zbuf_write_pixel_off(pp_zb_write_pixel_off),
         .zbuf_write_data(pp_zb_write_data),
 
-        // Framebuffer interface (arbiter port 1)
-        .fb_write_req(pp_fb_write_req),
-        .fb_write_addr(pp_fb_write_addr),
-        .fb_write_data(pp_fb_write_data),
-        .fb_read_req(pp_fb_read_req),
-        .fb_read_addr(pp_fb_read_addr),
-        .fb_read_data(arb_port1_burst_rdata),
-        .fb_read_valid(arb_port1_burst_data_valid),
-        .fb_ready(arb_port1_ready),
+        // Color tile cache interface (UNIT-013, owns arbiter port 1)
+        .color_wr_req(pp_color_wr_req),
+        .color_wr_tile_idx(pp_color_wr_tile_idx),
+        .color_wr_pixel_off(pp_color_wr_pixel_off),
+        .color_wr_data(pp_color_wr_data),
+        .color_rd_req(pp_color_rd_req),
+        .color_rd_tile_idx(pp_color_rd_tile_idx),
+        .color_rd_pixel_off(pp_color_rd_pixel_off),
+        .color_rd_data(ctcache_rd_data),
+        .color_rd_valid(ctcache_rd_valid),
+        .color_wr_ready(ctcache_wr_ready),
+        .color_cache_ready(ctcache_ready),
 
         // Texture sampler SDRAM port-3 master forwarding
         .tex0_cache_inv(tex0_cache_inv),
@@ -1260,15 +1285,65 @@ module gpu_top (
     );
 
     // ========================================================================
-    // Arbiter Port 1: Framebuffer (owned by pixel pipeline, UNIT-006)
+    // Color Tile Cache (UNIT-013)
     // ========================================================================
-    // Mux between FB write and FB read requests.
-    // Only one should be active at a time (FSM serialized).
+    // Sits between pixel_pipeline and arbiter port 1.  Caches 4×4 RGB565
+    // tiles with lazy-fill (zero) on first write to an uninitialized tile.
+    // Owns all port-1 SDRAM traffic (fill reads, eviction writes, flush).
 
-    assign arb_port1_req   = pp_fb_write_req | pp_fb_read_req;
-    assign arb_port1_we    = pp_fb_write_req;
-    assign arb_port1_addr  = pp_fb_write_req ? pp_fb_write_addr : pp_fb_read_addr;
-    assign arb_port1_wdata = {16'b0, pp_fb_write_data};
+    color_tile_cache u_color_tile_cache (
+        .clk(clk_core),
+        .rst_n(rst_n_core),
+
+        // Pixel pipeline read port
+        .rd_req(pp_color_rd_req),
+        .rd_tile_idx(pp_color_rd_tile_idx),
+        .rd_pixel_off(pp_color_rd_pixel_off),
+        .rd_data(ctcache_rd_data),
+        .rd_valid(ctcache_rd_valid),
+
+        // Pixel pipeline write port
+        .wr_req(pp_color_wr_req),
+        .wr_tile_idx(pp_color_wr_tile_idx),
+        .wr_pixel_off(pp_color_wr_pixel_off),
+        .wr_data(pp_color_wr_data),
+        .wr_ready(ctcache_wr_ready),
+
+        // Cache control (FB_CACHE_CTRL handshake from register_file)
+        .cache_ready(ctcache_ready),
+        .flush(rf_fb_cache_flush_trigger),
+        .flush_done(ctcache_flush_done),
+        .invalidate(rf_fb_cache_invalidate_trigger),
+        .invalidate_done(ctcache_invalidate_done),
+
+        // SDRAM (arbiter port 1)
+        .sdram_rd_req(ctcache_sdram_rd_req),
+        .sdram_rd_addr(ctcache_sdram_rd_addr),
+        .sdram_rd_data(arb_port1_burst_rdata),
+        .sdram_rd_valid(arb_port1_burst_data_valid),
+        .sdram_wr_req(ctcache_sdram_wr_req),
+        .sdram_wr_addr(ctcache_sdram_wr_addr),
+        .sdram_wr_data(ctcache_sdram_wr_data),
+        .sdram_ready(arb_port1_ready),
+        .sdram_burst_wdata_req(arb_port1_burst_wdata_req),
+
+        // Configuration
+        .fb_color_base(fb_color_base),
+        .fb_width_log2(fb_width_log2)
+    );
+
+    // ========================================================================
+    // Arbiter Port 1: Color Tile Cache (UNIT-013)
+    // ========================================================================
+    // All port-1 transfers are 16-word bursts (full 4×4 tile per request).
+
+    assign arb_port1_req         = ctcache_sdram_rd_req | ctcache_sdram_wr_req;
+    assign arb_port1_we          = ctcache_sdram_wr_req;
+    assign arb_port1_addr        = ctcache_sdram_wr_req ? ctcache_sdram_wr_addr
+                                                        : ctcache_sdram_rd_addr;
+    assign arb_port1_wdata       = {16'b0, ctcache_sdram_wr_data};
+    assign arb_port1_burst_len   = 8'd16;
+    assign arb_port1_burst_wdata = ctcache_sdram_wr_data;
 
     // ========================================================================
     // Z-Buffer Tile Cache (UNIT-006)

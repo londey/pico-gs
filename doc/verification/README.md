@@ -36,6 +36,7 @@ Verification methods:
 - [VER-003: Register File Unit Testbench](ver_003_register_file.md)
 - [VER-004: Color Combiner Unit Testbench](ver_004_color_combiner.md)
 - [VER-005: Texture Palette LUT Unit Testbench](ver_005_texture_palette.md)
+- [VER-006: Color Tile Cache Unit Testbench](ver_006_color_tile_cache.md)
 - [VER-010: Gouraud Triangle Golden Image Test](ver_010_gouraud_triangle.md)
 - [VER-011: Depth-Tested Overlapping Triangles Golden Image Test](ver_011_depth_tested_triangles.md)
 - [VER-012: Textured Triangle Golden Image Test](ver_012_textured_triangle.md)
@@ -43,6 +44,7 @@ Verification methods:
 - [VER-014: Textured Cube Golden Image Test](ver_014_textured_cube.md)
 - [VER-015: Triangle Size Grid Golden Image Test](ver_015_size_grid.md)
 - [VER-016: Perspective Road Golden Image Test](ver_016_perspective_road.md)
+- [ver_017_indexed_pixel_art.md](ver_017_indexed_pixel_art.md)
 - [VER-024: Alpha Blend Modes Golden Image Test](ver_024_alpha_blend.md)
 - [VER-025: Palette Slot Verification](ver_025_palette_slots.md)
 <!-- TOC-END -->

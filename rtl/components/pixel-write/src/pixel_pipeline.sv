@@ -1,6 +1,6 @@
 `default_nettype none
 
-// Spec-ref: unit_006_pixel_pipeline.md `34e87e3db2dfabb8` 2026-04-25
+// Spec-ref: unit_006_pixel_pipeline.md
 // Spec-ref: unit_005.06_hiz_block_metadata.md `4c168133e627c4f6` 2026-04-13
 //
 // Pixel Pipeline — Top-Level Module (UNIT-006)
@@ -16,17 +16,22 @@
 // The color combiner (UNIT-010) is instantiated externally in gpu_top.sv;
 // this module receives the CC result via cc_in_* ports.
 //
+// Color framebuffer reads (DST_COLOR) and writes flow through UNIT-013
+// (Color Tile Cache) using a tile_idx + pixel_off address; UNIT-013 owns
+// arbiter port 1 and absorbs SDRAM round-trips on hits.
+//
 // Pipeline FSM:
 //   IDLE    -> Accept fragment, stipple + range test (combinational)
 //   Z_READ  -> Issue Z-buffer read request (skip if Z bypass)
 //   Z_WAIT  -> Wait for Z-buffer read data valid
-//   FB_READ -> Issue framebuffer read for CC pass 2 dst_color (skip if no blend)
-//   FB_WAIT -> Wait for framebuffer read data valid
+//   FB_READ -> Issue color cache read for CC pass 2 dst_color (skip if no blend)
+//   FB_WAIT -> Wait for color cache read data valid
 //   CC_EMIT -> Feed fragment + dst_color to color combiner (3-pass)
 //   CC_WAIT -> Wait for color combiner result (all 3 passes including blend)
-//   WRITE   -> Write framebuffer + Z-buffer
+//   WRITE   -> Write color cache + Z-buffer
 //
 // See: UNIT-006 (Pixel Pipeline), UNIT-011 (Texture Sampler),
+//      UNIT-013 (Color Tile Cache),
 //      INT-010 (GPU Register Map), INT-014 (Texture Memory Layout)
 
 module pixel_pipeline (
@@ -118,17 +123,27 @@ module pixel_pipeline (
     output wire [15:0]  zbuf_write_data,  // Z-buffer write data
 
     // ====================================================================
-    // Framebuffer Interface (via UNIT-007 Memory Arbiter, port 1)
+    // Color Tile Cache Interface (UNIT-013, owns arbiter port 1)
     // ====================================================================
-    output wire         fb_write_req,     // Framebuffer write request
-    output wire [23:0]  fb_write_addr,    // Framebuffer write address
-    output wire [15:0]  fb_write_data,    // RGB565 pixel data
+    // Color writes and DST_COLOR reads use tile_idx + pixel_off addressing;
+    // UNIT-013 internally computes the SDRAM byte address from FB_CONFIG.
 
-    output wire         fb_read_req,      // Framebuffer read request (for alpha blend)
-    output wire [23:0]  fb_read_addr,     // Framebuffer read address
-    input  wire [15:0]  fb_read_data,     // RGB565 pixel readback
-    input  wire         fb_read_valid,    // Framebuffer read data valid
-    input  wire         fb_ready,         // Framebuffer port ready (from arbiter)
+    // Color write port (post-CC framebuffer write)
+    output wire         color_wr_req,        // Assert to issue a color write
+    output wire [13:0]  color_wr_tile_idx,   // 14-bit tile index
+    output wire [3:0]   color_wr_pixel_off,  // Sub-tile pixel index (0..15)
+    output wire [15:0]  color_wr_data,       // RGB565 pixel data
+
+    // Color read port (DST_COLOR for CC pass 2 alpha blend)
+    output wire         color_rd_req,        // Assert to issue a color read
+    output wire [13:0]  color_rd_tile_idx,   // 14-bit tile index
+    output wire [3:0]   color_rd_pixel_off,  // Sub-tile pixel index (0..15)
+    input  wire [15:0]  color_rd_data,       // RGB565 readback from cache
+    input  wire         color_rd_valid,      // Read data valid (1 cy pulse)
+
+    // Cache status
+    input  wire         color_wr_ready,      // 1 cy pulse when write commits
+    input  wire         color_cache_ready,   // High when cache can accept a request
 
     // ====================================================================
     // Texture SDRAM Interface (Port 3 master via UNIT-007 Memory Arbiter)
@@ -196,10 +211,11 @@ module pixel_pipeline (
     // ====================================================================
     // FB_CONFIG Field Extraction
     // ====================================================================
+    //
+    // The framebuffer base address is consumed by UNIT-012 (Z) and
+    // UNIT-013 (color) directly; UNIT-006 only needs the width to
+    // derive tile indices.
 
-    // Base addresses are 15 bits (bit 15 would overflow the 24-bit byte
-    // address space: max base * 512 = 32767 * 512 = 16,776,704 < 2^24).
-    wire [14:0] fb_color_base = reg_fb_config[14:0];
     wire [3:0]  fb_width_log2 = reg_fb_config[19:16];
 
     // ====================================================================
@@ -217,7 +233,7 @@ module pixel_pipeline (
     wire [23:0] _unused_render_mode_bits = {reg_render_mode[31:16],
                                             reg_render_mode[12:8],
                                             reg_render_mode[4:2]};
-    wire [12:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15]};
+    wire [27:0] _unused_fb_cfg_bits = {reg_fb_config[31:20], reg_fb_config[15:0]};
     wire [31:0] _unused_fb_ctrl = reg_fb_control;
     // CC_MODE_2[11:8] is the RGB C selector (CcRgbCSourceE) which cannot
     // encode DST_COLOR (9 in that enum means TEX1_ALPHA), so the
@@ -257,47 +273,35 @@ module pixel_pipeline (
     // ====================================================================
     // Tiled Framebuffer Address Calculation (UNIT-006 §Tiled Framebuffer)
     // ====================================================================
-    // 4x4 block-tiled layout:
+    // 4×4 block-tiled layout (shared by Z-buffer and color buffer):
     //   block_x   = x >> 2
     //   block_y   = y >> 2
     //   local_x   = x & 3
     //   local_y   = y & 3
-    //   block_idx = (block_y << (WIDTH_LOG2 - 2)) | block_x
-    //   byte_addr = base * 512 + block_idx * 32 + (local_y * 4 + local_x) * 2
+    //   tile_idx  = (block_y << (WIDTH_LOG2 - 2)) | block_x
+    //   pixel_off = local_y * 4 + local_x
     //
-    // base is fb_color_base in units of 512 bytes (Z-buffer addressing in zbuf_tile_cache).
-    // The SDRAM controller expects 24-bit byte addresses; bit 0 is unused
-    // (16-bit word alignment). All addresses computed here are byte-aligned.
-    //
-    // Computed combinationally for the incoming fragment position.
+    // Byte-address composition (base + tile_idx*32 + pixel_off*2) lives
+    // inside the tile caches (UNIT-012 for Z, UNIT-013 for color).
+    // UNIT-006 only emits tile_idx + pixel_off.
 
-    // Framebuffer tiled address wires
     wire [7:0]  tile_block_x    = frag_x[9:2];
     wire [7:0]  tile_block_y    = frag_y[9:2];
     wire [1:0]  tile_local_x    = frag_x[1:0];
     wire [1:0]  tile_local_y    = frag_y[1:0];
     wire [3:0]  tile_blocks_log2 = (fb_width_log2 >= 4'd2)
                                  ? (fb_width_log2 - 4'd2) : 4'd0;
+    /* verilator lint_off UNUSEDSIGNAL */
+    // Upper bits of the 24-bit shift result are not consumed: only the
+    // 14-bit tile_idx field flows downstream to the tile caches.
     wire [23:0] tile_block_idx  = ({16'b0, tile_block_y} << tile_blocks_log2)
                                 | {16'b0, tile_block_x};
-    // Base address in bytes: base * 512 = base << 9
-    wire [23:0] fb_base_addr = {fb_color_base[14:0], 9'b0};
-    // Z-buffer address calculation moved to zbuf_tile_cache module
-    // Block offset in bytes: block_idx * 32 = block_idx << 5
-    wire [23:0] tile_block_offset = tile_block_idx << 5;
-    // Pixel offset within block in bytes: (local_y * 4 + local_x) * 2
-    wire [4:0]  tile_pixel_off  = {tile_local_y, tile_local_x, 1'b0};
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    wire [23:0] fb_tiled_addr   = fb_base_addr + tile_block_offset
-                                + {19'b0, tile_pixel_off};
-    // (zb_tiled_addr removed — Z-buffer addressing is in zbuf_tile_cache)
-
-    // Pre-computed addresses for current fragment (registered)
-    reg  [23:0] fb_addr_reg;
-
-    // Tile cache addressing (registered alongside fb_addr_reg)
-    reg  [13:0] zb_tile_idx_reg;  // tile_block_idx[13:0]
-    reg  [3:0]  zb_pixel_off_reg; // {local_y[1:0], local_x[1:0]}
+    // Tile cache addressing (latched from the incoming fragment)
+    // — shared between the Z-buffer cache and the color buffer cache.
+    reg  [13:0] tile_idx_reg;     // tile_block_idx[13:0]
+    reg  [3:0]  pixel_off_reg;    // {local_y[1:0], local_x[1:0]}
 
     // ====================================================================
     // Fragment Latch Registers (captured from input on accept)
@@ -551,11 +555,11 @@ module pixel_pipeline (
     // the non-blocking update happens at the same clock edge the arbiter
     // latches port_wdata — the arbiter would see the previous fragment's data.
     assign zbuf_read_req       = (state == PP_Z_READ);
-    assign zbuf_read_tile_idx  = zb_tile_idx_reg;
-    assign zbuf_read_pixel_off = zb_pixel_off_reg;
+    assign zbuf_read_tile_idx  = tile_idx_reg;
+    assign zbuf_read_pixel_off = pixel_off_reg;
     assign zbuf_write_req       = (state == PP_Z_WRITE);
-    assign zbuf_write_tile_idx  = zb_tile_idx_reg;
-    assign zbuf_write_pixel_off = zb_pixel_off_reg;
+    assign zbuf_write_tile_idx  = tile_idx_reg;
+    assign zbuf_write_pixel_off = pixel_off_reg;
     assign zbuf_write_data      = post_cc_z;
 
     // Hi-Z metadata update — driven on the Z-write cycle so the metadata
@@ -568,13 +572,15 @@ module pixel_pipeline (
                              | {6'b0, post_cc_x[9:2]};
     assign hiz_wr_new_z      = post_cc_z[15:7];
 
-    // FB write request: asserted when in PP_WRITE with color_write_en
-    assign fb_write_req    = (state == PP_WRITE) && color_write_en;
-    assign fb_write_addr   = fb_addr_reg;
-    assign fb_write_data   = rgb565_pixel;
-    // FB read request: asserted when in PP_FB_READ
-    assign fb_read_req     = (state == PP_FB_READ);
-    assign fb_read_addr    = fb_addr_reg;
+    // Color cache write request: asserted when in PP_WRITE with color_write_en
+    assign color_wr_req       = (state == PP_WRITE) && color_write_en;
+    assign color_wr_tile_idx  = tile_idx_reg;
+    assign color_wr_pixel_off = pixel_off_reg;
+    assign color_wr_data      = rgb565_pixel;
+    // Color cache read request (DST_COLOR for CC pass 2): asserted in PP_FB_READ
+    assign color_rd_req       = (state == PP_FB_READ);
+    assign color_rd_tile_idx  = tile_idx_reg;
+    assign color_rd_pixel_off = pixel_off_reg;
 
     // ====================================================================
     // Fragment Accept Logic
@@ -666,17 +672,23 @@ module pixel_pipeline (
             end
 
             PP_FB_READ: begin
-                // Hold FB read request until arbiter accepts.
-                // FB read provides destination color for CC pass 2 (blend).
-                if (fb_ready) begin
+                // Hold color-cache read request until the cache accepts it.
+                // The cache asserts color_cache_ready while it can take a
+                // request (S_IDLE, no uninit sweep in progress); once it
+                // moves out of S_IDLE on the same cycle the request is
+                // observed, color_cache_ready falls and we advance.  Read
+                // result returns later via color_rd_valid in PP_FB_WAIT.
+                // Read result provides DST_COLOR for CC pass 2 (alpha blend).
+                if (color_cache_ready) begin
                     next_state = PP_FB_WAIT;
                 end
             end
 
             PP_FB_WAIT: begin
-                if (fb_read_valid) begin
-                    // FB data received; proceed to emit fragment to CC
-                    // (fb_data_lat now holds destination for pass 2 blend)
+                if (color_rd_valid) begin
+                    // DST_COLOR arrived; proceed to emit fragment to CC
+                    // (fb_data_lat now holds the destination pixel for
+                    // pass 2 alpha blending).
                     next_state = PP_CC_EMIT;
                 end
             end
@@ -697,10 +709,14 @@ module pixel_pipeline (
             end
 
             PP_WRITE: begin
-                // Write framebuffer (if color_write_en).
-                // Hold request until arbiter accepts (fb_ready=1).
-                // If color write disabled, skip directly.
-                if (!color_write_en || fb_ready) begin
+                // Issue color cache write (if color_write_en).
+                // Wait for color_wr_ready (one-cycle pulse the cache emits
+                // when the write commits to the BRAM line); deasserted
+                // color_cache_ready (e.g. uninit sweep) holds us here
+                // implicitly because the cache will not transition into
+                // S_WR_UPDATE until it is back in S_IDLE.
+                // If color write is disabled, skip directly.
+                if (!color_write_en || color_wr_ready) begin
                     // Z-buffer write proceeds when z_write_en is set,
                     // regardless of whether the Z read was bypassed.
                     // z_bypass only skips the Z-buffer READ (ALWAYS compare
@@ -771,9 +787,8 @@ module pixel_pipeline (
             cc_result_pending <= 1'b0;
             zbuf_data_lat  <= 16'b0;
             fb_data_lat    <= 16'b0;
-            fb_addr_reg    <= 24'b0;
-            zb_tile_idx_reg  <= 14'b0;
-            zb_pixel_off_reg <= 4'b0;
+            tile_idx_reg   <= 14'b0;
+            pixel_off_reg  <= 4'b0;
 
             cc_valid       <= 1'b0;
             cc_tex_color0  <= 64'b0;
@@ -814,10 +829,10 @@ module pixel_pipeline (
                         lat_v1       <= frag_v1;
                         lat_frag_lod <= frag_lod;
 
-                        // Latch tiled addresses (combinationally computed)
-                        fb_addr_reg  <= fb_tiled_addr;
-                        zb_tile_idx_reg  <= tile_block_idx[13:0];
-                        zb_pixel_off_reg <= {tile_local_y, tile_local_x};
+                        // Latch tiled tile_idx + pixel_off (used for both
+                        // the Z-buffer cache and the color tile cache).
+                        tile_idx_reg  <= tile_block_idx[13:0];
+                        pixel_off_reg <= {tile_local_y, tile_local_x};
 
                         // Initialize Z data latch to max (for bypass case)
                         zbuf_data_lat <= 16'hFFFF;
@@ -869,19 +884,21 @@ module pixel_pipeline (
                 end
 
                 PP_FB_READ: begin
-                    // FB read request is combinational (fb_read_req).
-                    // No registered action needed here.
+                    // Color cache read request is combinational
+                    // (color_rd_req asserted while in this state); no
+                    // registered action needed.
                 end
 
                 PP_FB_WAIT: begin
-                    if (fb_read_valid) begin
-                        fb_data_lat <= fb_read_data;
+                    if (color_rd_valid) begin
+                        fb_data_lat <= color_rd_data;
                     end
                 end
 
                 PP_WRITE: begin
-                    // FB write data driven combinationally (fb_write_data = rgb565_pixel).
-                    // No registered action needed.
+                    // Color cache write data driven combinationally
+                    // (color_wr_data = rgb565_pixel); no registered
+                    // action needed.
                 end
 
                 PP_Z_WRITE: begin

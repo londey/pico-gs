@@ -79,6 +79,7 @@ module tb_sram_port_conformance;
         .port1_addr            (p1_if.req.addr),
         .port1_wdata           (p1_if.req.wdata),
         .port1_burst_len       (p1_if.req.burst_len),
+        .port1_burst_col_step2 (p1_if.burst_col_step2),
         .port1_burst_wdata     (p1_if.req.burst_wdata),
         .port1_rdata           (p1_if.resp.rdata),
         .port1_burst_rdata     (p1_if.resp.burst_rdata),

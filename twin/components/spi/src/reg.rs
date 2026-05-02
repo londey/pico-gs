@@ -87,6 +87,19 @@ pub const ADDR_FB_CONTROL: u8 = 0x43;
 /// MEM_FILL: hardware memory fill (clear framebuffer/z-buffer).
 pub const ADDR_MEM_FILL: u8 = 0x44;
 
+/// FB_CACHE_CTRL: color-buffer tile cache flush/invalidate triggers (UNIT-013).
+///
+/// See INT-010 §0x45.  Writing bit 0 (FLUSH_TRIGGER) writes back all dirty
+/// 4x4 tiles to SDRAM; writing bit 1 (INVALIDATE_TRIGGER) drops all valid
+/// and dirty bits and resets the per-tile uninitialized flag array.
+pub const ADDR_FB_CACHE_CTRL: u8 = 0x45;
+
+/// Bit position of `FB_CACHE_CTRL.FLUSH_TRIGGER` (self-clearing pulse).
+pub const FB_CACHE_CTRL_FLUSH_TRIGGER_BIT: u64 = 1 << 0;
+
+/// Bit position of `FB_CACHE_CTRL.INVALIDATE_TRIGGER` (self-clearing pulse).
+pub const FB_CACHE_CTRL_INVALIDATE_TRIGGER_BIT: u64 = 1 << 1;
+
 /// PERF_TIMESTAMP: command-stream timestamp marker.
 pub const ADDR_PERF_TIMESTAMP: u8 = 0x50;
 
@@ -152,6 +165,20 @@ pub enum GpuAction {
         /// 512 to form the SDRAM byte address of the 4096-byte payload).
         base_addr: u16,
     },
+
+    /// Color-buffer tile cache flush (UNIT-013, INT-010 §0x45).
+    ///
+    /// Triggered by writing `FB_CACHE_CTRL` with `FLUSH_TRIGGER=1`.  The
+    /// orchestrator writes back all dirty cache lines to SDRAM; lines
+    /// remain valid after the flush so subsequent accesses still hit.
+    FbCacheFlush,
+
+    /// Color-buffer tile cache invalidate (UNIT-013, INT-010 §0x45).
+    ///
+    /// Triggered by writing `FB_CACHE_CTRL` with `INVALIDATE_TRIGGER=1`.
+    /// Drops all valid and dirty bits and resets the per-tile uninit
+    /// flag array; subsequent first-touch writes lazy-fill with zeros.
+    FbCacheInvalidate,
 }
 
 // Re-export Rgba8888 from gs-twin-core for backwards compatibility
@@ -352,6 +379,8 @@ impl RegisterFile {
                 }
             }
 
+            ADDR_FB_CACHE_CTRL => decode_fb_cache_ctrl_write(data),
+
             ADDR_MEM_ADDR => {
                 let reg: gpu_registers::components::gpu_regs::named_types::mem_addr_reg::MemAddrReg =
                     reg_from_raw(data);
@@ -521,6 +550,27 @@ fn decode_palette_write(slot: u8, data: u64) -> GpuAction {
     if data & PALETTE_LOAD_TRIGGER_BIT != 0 {
         let base_addr = (data & PALETTE_BASE_ADDR_MASK) as u16;
         GpuAction::PaletteLoad { slot, base_addr }
+    } else {
+        GpuAction::None
+    }
+}
+
+/// Decode an `FB_CACHE_CTRL` register write into the matching [`GpuAction`].
+///
+/// Returns [`GpuAction::FbCacheInvalidate`] when bit 1 is set, otherwise
+/// [`GpuAction::FbCacheFlush`] when bit 0 is set, otherwise
+/// [`GpuAction::None`].  Writing both bits simultaneously is undefined
+/// per INT-010 §0x45; this decoder gives invalidate priority so the
+/// orchestrator behavior is deterministic.
+///
+/// Mirrors the RTL `register_file.sv` flush/invalidate pulse generation:
+/// the trigger bits are never persisted; only the side-effect of starting
+/// the operation is observable.
+fn decode_fb_cache_ctrl_write(data: u64) -> GpuAction {
+    if data & FB_CACHE_CTRL_INVALIDATE_TRIGGER_BIT != 0 {
+        GpuAction::FbCacheInvalidate
+    } else if data & FB_CACHE_CTRL_FLUSH_TRIGGER_BIT != 0 {
+        GpuAction::FbCacheFlush
     } else {
         GpuAction::None
     }

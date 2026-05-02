@@ -248,4 +248,6 @@ def generate() -> list[str]:
     lines.extend(_setup_phase())
     lines.append(emit_blank())
     lines.extend(_triangles_phase())
+    lines.append(emit_blank())
+    lines.extend(emit_fb_cache_flush())
     return lines

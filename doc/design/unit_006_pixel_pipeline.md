@@ -182,6 +182,7 @@ Both color and Z values are 16 bits per pixel; each 4×4 block occupies 32 bytes
 
 - `rtl/pkg/fp_types_pkg.sv`: Q4.12 fixed-point type, constants, and promotion functions (shared package)
 - `twin/components/pixel-write/src/lib.rs`: Digital twin pixel-write stage (color cache read-modify-write, Hi-Z metadata update; Z-buffer I/O delegated to `gs-zbuf`; color cache I/O delegated to `gs-pixel-write` via UNIT-013)
+- `twin/components/pixel-write/src/fb_promote.rs`: Digital twin RGB565→Q4.12 framebuffer readback promotion (matches `fb_promote.sv`)
 - `rtl/components/pixel-write/src/pixel_pipeline.sv`: Main implementation
 - `rtl/components/pixel-write/src/fb_promote.sv`: RGB565→Q4.12 framebuffer readback promotion (REQ-004.02)
 - `rtl/components/dither/src/dither.sv`: Ordered dithering with blue noise EBR (REQ-005.10)

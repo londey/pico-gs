@@ -489,7 +489,37 @@ addrmap gpu_regs #(longint unsigned ADDR_STRIDE = 8) {
     };
     mem_fill_reg MEM_FILL @ 0x220;  // index 0x44
 
-    // index 0x45-0x4F: Reserved
+    reg fb_cache_ctrl_reg {
+        name = "FB_CACHE_CTRL";
+        desc = "Color-buffer tile cache control (write-triggers-blocking).
+               Software-controlled flush and invalidate triggers for the
+               color-buffer tile cache (UNIT-013).  Writes block the SPI
+               command stream until the requested operation completes,
+               matching the MEM_FILL (0x44) and FB_DISPLAY_SYNC (0x47)
+               blocking semantics.
+               FLUSH_TRIGGER (bit 0): Self-clearing flush trigger.  When
+               written as 1, writes back all dirty 4x4 tiles to SDRAM via
+               16-word burst writes on UNIT-007 port 1.  Lines remain
+               valid after flush; dirty bits are cleared.  Hardware
+               clears this bit and asserts flush_done when complete.
+               INVALIDATE_TRIGGER (bit 1): Self-clearing invalidate
+               trigger.  When written as 1, drops all valid and dirty
+               bits in the cache and resets the per-tile uninitialized
+               flag array (16,384 cycles sweep).  Lines that were dirty
+               are discarded without writeback.  After the sweep,
+               subsequent first-touch writes lazy-fill with zeros rather
+               than reading SDRAM (REQ-005.08).  Hardware clears this
+               bit and asserts invalidate_done when complete.
+               Writing both bits simultaneously is undefined; driver
+               software must issue them as separate writes.  See INT-010
+               section 0x45.";
+        field {} FLUSH_TRIGGER[0:0]      = 0;   // self-clearing; write 1 to flush dirty tiles
+        field {} INVALIDATE_TRIGGER[1:1] = 0;   // self-clearing; write 1 to drop cache state
+        field {} RSVD[63:2]              = 0;
+    };
+    fb_cache_ctrl_reg FB_CACHE_CTRL @ 0x228;  // index 0x45
+
+    // index 0x46-0x4F: Reserved
 
     // ===================================================================
     // Performance Timestamp (index 0x50)

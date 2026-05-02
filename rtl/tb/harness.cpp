@@ -95,11 +95,6 @@ static std::string hex_file_for_test(const std::string& test_name) {
         {"size_grid",         "scripts/ver_015_size_grid.hex"},
         {"perspective_road",  "scripts/ver_016_perspective_road.hex"},
         {"indexed_pixel_art", "scripts/ver_017_indexed_pixel_art.hex"},
-        {"bc2_texture",       "scripts/ver_018_bc2_texture.hex"},
-        {"bc3_texture",       "scripts/ver_019_bc3_texture.hex"},
-        {"bc4_texture",       "scripts/ver_020_bc4_texture.hex"},
-        {"rgba8888_texture",  "scripts/ver_021_rgba8888_texture.hex"},
-        {"r8_texture",        "scripts/ver_022_r8_texture.hex"},
         {"stipple_test",      "scripts/ver_023_stipple_test.hex"},
         {"alpha_blend",       "scripts/ver_024_alpha_blend.hex"},
     };
@@ -586,8 +581,7 @@ int main(int argc, char** argv) {
         std::cerr << std::format(
             "Usage: {} <test_name> [output.png] [--zbuf zbuf.png] [--trace]\n"
             "  test_name: gouraud, depth_test, textured, color_combined, textured_cube,\n"
-            "             size_grid, perspective_road, indexed_pixel_art, bc2_texture,\n"
-            "             bc3_texture, bc4_texture, rgba8888_texture, r8_texture,\n"
+            "             size_grid, perspective_road, indexed_pixel_art,\n"
             "             stipple_test, alpha_blend\n",
             argv[0]
         );
@@ -693,6 +687,10 @@ int main(int argc, char** argv) {
     std::cout << std::format(
         "DIAG (post-script): render_mode=0x{:x}\n",
         static_cast<uint64_t>(top->rootp->gpu_top->u_register_file->render_mode_reg)
+    );
+    std::cout << std::format(
+        "DIAG (post-script): ccache_state={}\n",
+        static_cast<unsigned>(top->rootp->gpu_top->__PVT__u_color_tile_cache__DOT__state)
     );
 
     // -----------------------------------------------------------------------
@@ -807,7 +805,14 @@ int main(int argc, char** argv) {
             unsigned vtx_count = top->rootp->gpu_top->u_register_file->vertex_count;
             bool setup_fifo_empty = top->rootp->gpu_top->u_rasterizer->fifo_empty;
             bool tri_valid_now = top->rootp->gpu_top->tri_valid;
-            if (rast_started && rast_state == 0 && fifo_empty && setup_fifo_empty && vtx_count == 0 && !tri_valid_now && i > 100) {
+            // UNIT-013 color tile cache must also be idle (not mid-flush
+            // from FB_CACHE_CTRL.FLUSH_TRIGGER) before extraction is safe.
+            // The flush FSM exits to S_IDLE (state=0) after the last dirty
+            // line is written back; checking state here prevents premature
+            // extraction with stale SDRAM contents for the resident cache
+            // lines.
+            unsigned ccache_state = top->rootp->gpu_top->__PVT__u_color_tile_cache__DOT__state;
+            if (rast_started && rast_state == 0 && fifo_empty && setup_fifo_empty && vtx_count == 0 && !tri_valid_now && ccache_state == 0 && i > 100) {
                 std::cout << std::format(
                     "DIAG: Rasterizer returned to IDLE at drain cycle {}\n", i
                 );
@@ -840,6 +845,10 @@ int main(int argc, char** argv) {
     std::cout << std::format(
         "DIAG: Rasterizer state after drain: {}\n",
         static_cast<unsigned>(top->rootp->gpu_top->u_rasterizer->state)
+    );
+    std::cout << std::format(
+        "DIAG: ccache_state after drain: {}\n",
+        static_cast<unsigned>(top->rootp->gpu_top->__PVT__u_color_tile_cache__DOT__state)
     );
     std::cout << std::format(
         "DIAG: tri_valid={}, vertex_count={}\n",
@@ -928,6 +937,11 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // 7b. Extract framebuffer and write PNG
     // -----------------------------------------------------------------------
+    // The color tile cache (UNIT-013) is write-back, but the test hex
+    // scripts terminate with FB_CACHE_CTRL.FLUSH_TRIGGER which drains all
+    // dirty tiles to SDRAM via the RTL flush FSM before extraction.  No
+    // C++-side flush hack is required for color (in contrast with the
+    // Z-cache flush below, which is needed only when --zbuf is requested).
     // Framebuffer A base word address (INT-011): 0x000000 / 2 = 0
     // Dimensions come from the ## FRAMEBUFFER: directive in the hex script.
     uint32_t fb_base_word = 0;

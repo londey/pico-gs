@@ -1,18 +1,25 @@
 //! Pixel write — final framebuffer and Z-buffer output.
 //!
-//! Writes the fragment's RGB565 color to the framebuffer and
-//! optionally updates the Z-buffer, controlled by per-draw-call
-//! write-enable flags.
+//! Writes the fragment's RGB565 color to the framebuffer (via the
+//! color-buffer tile cache, UNIT-013) and optionally updates the
+//! Z-buffer in SDRAM, controlled by per-draw-call write-enable flags.
 //! When Z-writes are enabled, the Hi-Z metadata store (UNIT-005.06)
 //! is also updated with the written Z value.
 //!
 //! The Z-buffer tile cache and per-tile uninit flags live in the
 //! `gs-zbuf` crate (RTL: `zbuf_tile_cache.sv`).
-//! See UNIT-006, pixel_write stage.
-
-pub mod tile_buffer;
+//! The color-buffer tile cache and its uninit-flag array live in
+//! [`color_cache`] (RTL: `color_tile_cache.sv`, UNIT-013).
+//!
+//! See UNIT-006 (pixel pipeline stage) and UNIT-013 (color tile cache).
 
 // Spec-ref: unit_006_pixel_pipeline.md `34e87e3db2dfabb8` 2026-04-25
+
+pub mod color_cache;
+pub mod fb_promote;
+
+pub use color_cache::{ColorCacheContext, ColorTileCache};
+pub use fb_promote::promote_rgb565;
 
 use gpu_registers::components::gpu_regs::named_types::fb_config_reg::FbConfigReg;
 use gs_memory::GpuMemory;
@@ -20,26 +27,33 @@ use gs_twin_core::fragment::PixelOut;
 use gs_twin_core::hiz::HizMetadata;
 use gs_zbuf::UninittedFlagArray;
 
-/// Write a fragment to the framebuffer and Z-buffer in SDRAM.
+/// Write a fragment to the framebuffer (via the color tile cache) and
+/// the Z-buffer (direct SDRAM via the Z-side flags / Hi-Z store).
 ///
-/// Performs tiled writes to both the color buffer and Z-buffer, and
-/// updates the Hi-Z metadata store when Z-writes are enabled.
+/// Color writes flow through `color_cache` to absorb per-pixel SDRAM
+/// traffic and serve future DST_COLOR alpha-blend reads.
+/// Z writes still go directly to SDRAM via tiled addressing; the
+/// Z-side cache lives in `gs-zbuf` and is invoked separately by the
+/// pipeline orchestrator.
 /// On the first Z-write to a tile (indicated by `uninit_flags`), the
 /// flag is cleared to mark the tile as initialized.
 ///
 /// # Arguments
 ///
 /// * `frag` - Final pixel output (RGB565 color + depth).
-/// * `memory` - GPU memory (SDRAM backing store).
+/// * `memory` - GPU memory (SDRAM backing store) — used for Z writes.
+/// * `color_cache` - Color-buffer tile cache (UNIT-013).
 /// * `fb_config` - Framebuffer configuration (base addresses, dimensions).
 /// * `color_write_en` - Whether color writes are enabled.
 /// * `z_write_en` - Whether Z-buffer writes are enabled.
 /// * `hiz` - Hi-Z metadata store (UNIT-005.06); updated on Z-writes.
-/// * `uninit_flags` - Per-tile uninitialized flags; cleared on first
-///   Z-write to each tile.
+/// * `uninit_flags` - Per-tile Z uninitialized flags; cleared on the
+///   first Z-write to each tile.
+#[allow(clippy::too_many_arguments)]
 pub fn pixel_write(
     frag: &PixelOut,
     memory: &mut GpuMemory,
+    color_cache: &mut ColorTileCache,
     fb_config: &FbConfigReg,
     color_write_en: bool,
     z_write_en: bool,
@@ -51,7 +65,15 @@ pub fn pixel_write(
     let fy = u32::from(frag.y);
 
     if color_write_en {
-        memory.write_tiled(fb_config.color_base(), wl2, fx, fy, frag.color.0);
+        let tile_cols_log2 = wl2 as u32 - 2;
+        let tile_idx = ((fy >> 2) << tile_cols_log2) | (fx >> 2);
+        let pixel_off = (((fy & 3) * 4) + (fx & 3)) as usize;
+        let mut ctx = ColorCacheContext {
+            memory,
+            color_base: fb_config.color_base(),
+            wl2,
+        };
+        color_cache.write(tile_idx, pixel_off, frag.color.0, &mut ctx);
     }
 
     if z_write_en {
@@ -110,6 +132,7 @@ mod tests {
     #[test]
     fn z_write_updates_hiz_first_write() {
         let mut memory = GpuMemory::new();
+        let mut color_cache = ColorTileCache::new();
         let mut hiz = HizMetadata::new();
         let mut uninit = UninittedFlagArray::new();
         let fb_cfg = make_fb_config(0, 64, 9); // 512-wide, z_base=64
@@ -118,6 +141,7 @@ mod tests {
         pixel_write(
             &frag,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             true,
@@ -144,6 +168,7 @@ mod tests {
     #[test]
     fn z_write_does_not_lower_min_z_on_larger_value() {
         let mut memory = GpuMemory::new();
+        let mut color_cache = ColorTileCache::new();
         let mut hiz = HizMetadata::new();
         let mut uninit = UninittedFlagArray::new();
         let fb_cfg = make_fb_config(0, 64, 9);
@@ -154,6 +179,7 @@ mod tests {
         pixel_write(
             &frag1,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             true,
@@ -166,6 +192,7 @@ mod tests {
         pixel_write(
             &frag2,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             true,
@@ -180,6 +207,7 @@ mod tests {
     #[test]
     fn z_write_updates_min_z_on_smaller_value() {
         let mut memory = GpuMemory::new();
+        let mut color_cache = ColorTileCache::new();
         let mut hiz = HizMetadata::new();
         let mut uninit = UninittedFlagArray::new();
         let fb_cfg = make_fb_config(0, 64, 9);
@@ -190,6 +218,7 @@ mod tests {
         pixel_write(
             &frag1,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             true,
@@ -202,6 +231,7 @@ mod tests {
         pixel_write(
             &frag3,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             true,
@@ -216,6 +246,7 @@ mod tests {
     #[test]
     fn z_write_disabled_does_not_modify_hiz() {
         let mut memory = GpuMemory::new();
+        let mut color_cache = ColorTileCache::new();
         let mut hiz = HizMetadata::new();
         let mut uninit = UninittedFlagArray::new();
         let fb_cfg = make_fb_config(0, 64, 9);
@@ -225,6 +256,7 @@ mod tests {
         pixel_write(
             &frag,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             false,
@@ -258,6 +290,7 @@ mod tests {
     #[test]
     fn uninit_flag_set_on_first_z_write() {
         let mut memory = GpuMemory::new();
+        let mut color_cache = ColorTileCache::new();
         let mut hiz = HizMetadata::new();
         let mut uninit = UninittedFlagArray::new();
         let fb_cfg = make_fb_config(0, 64, 9);
@@ -269,6 +302,7 @@ mod tests {
         pixel_write(
             &frag,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             false,
             true,
@@ -304,6 +338,7 @@ mod tests {
     #[test]
     fn color_write_stores_rgb565() {
         let mut memory = GpuMemory::new();
+        let mut color_cache = ColorTileCache::new();
         let mut hiz = HizMetadata::new();
         let mut uninit = UninittedFlagArray::new();
         let fb_cfg = make_fb_config(0, 64, 9);
@@ -312,12 +347,21 @@ mod tests {
         pixel_write(
             &frag,
             &mut memory,
+            &mut color_cache,
             &fb_cfg,
             true,
             false,
             &mut hiz,
             &mut uninit,
         );
+
+        // Color writes go to the cache; flush to observe in SDRAM.
+        let mut ctx = ColorCacheContext {
+            memory: &mut memory,
+            color_base: fb_cfg.color_base(),
+            wl2: fb_cfg.width_log2(),
+        };
+        color_cache.flush(&mut ctx);
 
         let stored = memory.read_tiled(fb_cfg.color_base(), fb_cfg.width_log2(), 4, 4);
         assert_eq!(stored, 0x1234, "color should be written to SDRAM");

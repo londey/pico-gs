@@ -231,5 +231,10 @@ def generate() -> list[str]:
         "BLEND: (COMBINED-DST_COLOR)*COMBINED_ALPHA + DST_COLOR",
         QUAD, QUAD,
         "BLEND: src*alpha + dst*(1-alpha) (Porter-Duff source-over)."))
+    lines.append(emit_blank())
+
+    # Commit any dirty color tile cache lines to SDRAM so the
+    # framebuffer scan-out / PNG export sees the latest pixels.
+    lines.extend(emit_fb_cache_flush())
 
     return lines

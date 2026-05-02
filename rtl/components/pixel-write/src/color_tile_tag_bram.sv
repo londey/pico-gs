@@ -1,0 +1,191 @@
+`default_nettype none
+
+// Spec-ref: unit_013_color_tile_cache.md
+//
+// Color-Buffer Tile Cache Tag BRAM — 32×9 SDP using PDPW16KD
+//
+// Single write port (9-bit) and single read port (9-bit) wrapping one
+// ECP5 PDPW16KD EBR in 512×36 pseudo dual-port wide mode.
+// Only 32 entries (5-bit address) are used for tag storage; the remaining
+// 480 entries are unused.  Tag data occupies bits [8:0]; bits [35:9]
+// are tied low on writes and ignored on reads.
+//
+// One instance is used per cache way; four instances in
+// `color_tile_cache.sv` allow all four way tags to be read in parallel
+// in a single cycle.
+//
+// See: DD-037 (PDPW16KD EBR), UNIT-013 (Color-Buffer Tile Cache),
+//      UNIT-012 (Z-Buffer Tile Cache analogue, 128×7)
+
+module color_tile_tag_bram (
+    input  wire       clk,
+    input  wire       clkr,    // Read-port clock (tie to clk; no CDC)
+    // Write port
+    input  wire       wr_en,
+    input  wire [4:0] wr_addr, // 32 entries (5-bit set index)
+    input  wire [8:0] wr_data, // 9-bit tag (tile_idx[13:5])
+    // Read port (1-cycle latency)
+    input  wire [4:0] rd_addr,
+    output wire [8:0] rd_data
+);
+
+`ifdef SYNTHESIS
+
+    // PDPW16KD: 512×36 pseudo dual-port wide
+    // Write port A: 9-bit address (upper 4 tied low), 36-bit data (upper 27 tied low)
+    // Read  port B: 9-bit address via ADR13:ADR5 (upper 4 tied low), 9 of 36 bits used
+    wire [35:0] do_full;
+
+    PDPW16KD #(
+        .DATA_WIDTH_W  (36),
+        .DATA_WIDTH_R  (36),
+        .REGMODE       ("NOREG"),
+        .RESETMODE     ("SYNC"),
+        .GSR           ("ENABLED"),
+        .INIT_DATA     ("STATIC"),
+        .CSDECODE_W    ("0b000"),
+        .CSDECODE_R    ("0b000")
+    ) u_ebr (
+        // Write port
+        .CLKW  (clk),
+        .CEW   (wr_en),
+        .CSW0  (1'b0),
+        .CSW1  (1'b0),
+        .CSW2  (1'b0),
+        .BE3   (1'b1),
+        .BE2   (1'b1),
+        .BE1   (1'b1),
+        .BE0   (1'b1),
+        // Write address: 5-bit set index in ADW[4:0], upper 4 bits tied low
+        .ADW8  (1'b0),
+        .ADW7  (1'b0),
+        .ADW6  (1'b0),
+        .ADW5  (1'b0),
+        .ADW4  (wr_addr[4]),
+        .ADW3  (wr_addr[3]),
+        .ADW2  (wr_addr[2]),
+        .ADW1  (wr_addr[1]),
+        .ADW0  (wr_addr[0]),
+        // Write data: 9-bit tag in [8:0], upper bits tied low
+        .DI35  (1'b0),
+        .DI34  (1'b0),
+        .DI33  (1'b0),
+        .DI32  (1'b0),
+        .DI31  (1'b0),
+        .DI30  (1'b0),
+        .DI29  (1'b0),
+        .DI28  (1'b0),
+        .DI27  (1'b0),
+        .DI26  (1'b0),
+        .DI25  (1'b0),
+        .DI24  (1'b0),
+        .DI23  (1'b0),
+        .DI22  (1'b0),
+        .DI21  (1'b0),
+        .DI20  (1'b0),
+        .DI19  (1'b0),
+        .DI18  (1'b0),
+        .DI17  (1'b0),
+        .DI16  (1'b0),
+        .DI15  (1'b0),
+        .DI14  (1'b0),
+        .DI13  (1'b0),
+        .DI12  (1'b0),
+        .DI11  (1'b0),
+        .DI10  (1'b0),
+        .DI9   (1'b0),
+        .DI8   (wr_data[8]),
+        .DI7   (wr_data[7]),
+        .DI6   (wr_data[6]),
+        .DI5   (wr_data[5]),
+        .DI4   (wr_data[4]),
+        .DI3   (wr_data[3]),
+        .DI2   (wr_data[2]),
+        .DI1   (wr_data[1]),
+        .DI0   (wr_data[0]),
+        // Read port
+        .CLKR  (clkr),
+        .CER   (1'b1),
+        .OCER  (1'b1),
+        .RST   (1'b0),
+        .CSR0  (1'b0),
+        .CSR1  (1'b0),
+        .CSR2  (1'b0),
+        // Read address: 5-bit set index via ADR[9:5], upper 4 and lower 5 tied low
+        .ADR13 (1'b0),
+        .ADR12 (1'b0),
+        .ADR11 (1'b0),
+        .ADR10 (1'b0),
+        .ADR9  (rd_addr[4]),
+        .ADR8  (rd_addr[3]),
+        .ADR7  (rd_addr[2]),
+        .ADR6  (rd_addr[1]),
+        .ADR5  (rd_addr[0]),
+        .ADR4  (1'b0),
+        .ADR3  (1'b0),
+        .ADR2  (1'b0),
+        .ADR1  (1'b0),
+        .ADR0  (1'b0),
+        // Read data (full 36-bit output, only [8:0] used)
+        .DO35  (do_full[35]),
+        .DO34  (do_full[34]),
+        .DO33  (do_full[33]),
+        .DO32  (do_full[32]),
+        .DO31  (do_full[31]),
+        .DO30  (do_full[30]),
+        .DO29  (do_full[29]),
+        .DO28  (do_full[28]),
+        .DO27  (do_full[27]),
+        .DO26  (do_full[26]),
+        .DO25  (do_full[25]),
+        .DO24  (do_full[24]),
+        .DO23  (do_full[23]),
+        .DO22  (do_full[22]),
+        .DO21  (do_full[21]),
+        .DO20  (do_full[20]),
+        .DO19  (do_full[19]),
+        .DO18  (do_full[18]),
+        .DO17  (do_full[17]),
+        .DO16  (do_full[16]),
+        .DO15  (do_full[15]),
+        .DO14  (do_full[14]),
+        .DO13  (do_full[13]),
+        .DO12  (do_full[12]),
+        .DO11  (do_full[11]),
+        .DO10  (do_full[10]),
+        .DO9   (do_full[9]),
+        .DO8   (do_full[8]),
+        .DO7   (do_full[7]),
+        .DO6   (do_full[6]),
+        .DO5   (do_full[5]),
+        .DO4   (do_full[4]),
+        .DO3   (do_full[3]),
+        .DO2   (do_full[2]),
+        .DO1   (do_full[1]),
+        .DO0   (do_full[0])
+    );
+
+    assign rd_data = do_full[8:0];
+
+    // Unused upper read bits
+    wire [26:0] _unused_do_hi = do_full[35:9];
+
+`else
+
+    // Behavioral model for Verilator simulation
+    logic [8:0] mem [0:31];
+    logic [8:0] rd_data_r;
+
+    always_ff @(posedge clk)
+        if (wr_en) mem[wr_addr] <= wr_data;
+
+    always_ff @(posedge clkr)
+        rd_data_r <= mem[rd_addr];
+
+    assign rd_data = rd_data_r;
+
+`endif
+
+endmodule
+
+`default_nettype wire
