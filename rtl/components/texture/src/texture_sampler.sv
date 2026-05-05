@@ -195,45 +195,62 @@ module texture_sampler
     wire        s0_lookup_valid;
     wire        s0_hit;
     wire [7:0]  s0_idx_byte;
-    wire        s0_fill_valid;
-    wire [127:0] s0_fill_data;
+    wire        s0_fill_first;
+    wire        s0_fill_word_valid;
+    wire [15:0] s0_fill_word_data;
+    wire        s0_fill_word_last;
+    wire        s0_fill_busy;
 
     wire        s1_lookup_valid;
     wire        s1_hit;
     wire [7:0]  s1_idx_byte;
-    wire        s1_fill_valid;
-    wire [127:0] s1_fill_data;
+    wire        s1_fill_first;
+    wire        s1_fill_word_valid;
+    wire [15:0] s1_fill_word_data;
+    wire        s1_fill_word_last;
+    wire        s1_fill_busy;
+
+    // The cache exposes `fill_busy_o` as the contract signal the parent
+    // must use to gate lookups (UNIT-011.03 §Sampler-side serialization).
+    // In this assembly the sampler's request FSM already prevents lookup
+    // issue during a fill (R_FILL ≠ R_LOOKUP), so the signal is observed
+    // for spec-binding assertions but not consumed by FSM logic.
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire _unused_fill_busy = s0_fill_busy | s1_fill_busy;
+    /* verilator lint_on UNUSEDSIGNAL */
 
     texture_index_cache #(.SAMPLER_ID(1'b0)) u_idx_cache0 (
-        .clk           (clk),
-        .rst_n         (rst_n),
-        .tex_base_lo_i (s0_base_r),
-        .valid_i       (s0_lookup_valid),
-        .u_idx_i       (s0_u_idx_r),
-        .v_idx_i       (s0_v_idx_r),
-        .hit_o         (s0_hit),
-        .idx_byte_o    (s0_idx_byte),
-        .fill_valid_i  (s0_fill_valid),
-        .fill_u_idx_i  (s0_u_idx_r),
-        .fill_v_idx_i  (s0_v_idx_r),
-        .fill_data_i   (s0_fill_data),
-        .invalidate_i  (tex0_cache_inv)
+        .clk                (clk),
+        .rst_n              (rst_n),
+        .tex_base_lo_i      (s0_base_r),
+        .valid_i            (s0_lookup_valid),
+        .u_idx_i            (s0_u_idx_r),
+        .v_idx_i            (s0_v_idx_r),
+        .hit_o              (s0_hit),
+        .idx_byte_o         (s0_idx_byte),
+        .fill_first_i       (s0_fill_first),
+        .fill_word_valid_i  (s0_fill_word_valid),
+        .fill_word_data_i   (s0_fill_word_data),
+        .fill_word_last_i   (s0_fill_word_last),
+        .fill_busy_o        (s0_fill_busy),
+        .invalidate_i       (tex0_cache_inv)
     );
 
     texture_index_cache #(.SAMPLER_ID(1'b1)) u_idx_cache1 (
-        .clk           (clk),
-        .rst_n         (rst_n),
-        .tex_base_lo_i (s1_base_r),
-        .valid_i       (s1_lookup_valid),
-        .u_idx_i       (s1_u_idx_r),
-        .v_idx_i       (s1_v_idx_r),
-        .hit_o         (s1_hit),
-        .idx_byte_o    (s1_idx_byte),
-        .fill_valid_i  (s1_fill_valid),
-        .fill_u_idx_i  (s1_u_idx_r),
-        .fill_v_idx_i  (s1_v_idx_r),
-        .fill_data_i   (s1_fill_data),
-        .invalidate_i  (tex1_cache_inv)
+        .clk                (clk),
+        .rst_n              (rst_n),
+        .tex_base_lo_i      (s1_base_r),
+        .valid_i            (s1_lookup_valid),
+        .u_idx_i            (s1_u_idx_r),
+        .v_idx_i            (s1_v_idx_r),
+        .hit_o              (s1_hit),
+        .idx_byte_o         (s1_idx_byte),
+        .fill_first_i       (s1_fill_first),
+        .fill_word_valid_i  (s1_fill_word_valid),
+        .fill_word_data_i   (s1_fill_word_data),
+        .fill_word_last_i   (s1_fill_word_last),
+        .fill_busy_o        (s1_fill_busy),
+        .invalidate_i       (tex1_cache_inv)
     );
 
     // ========================================================================
@@ -331,18 +348,22 @@ module texture_sampler
 
     // ========================================================================
     // Per-sampler fill FSM state
+    //
+    // Streaming-fill variant: the SDRAM burst is written into the index
+    // cache one EBR word per cycle as it arrives.  No staging buffer is
+    // required — the cache commits the new tag/valid bit on the same edge
+    // that captures the eighth (terminal) burst word.  See UNIT-011.03
+    // §Fill State Machine.
     // ========================================================================
 
     typedef enum logic [1:0] {
-        F_IDLE    = 2'd0,
-        F_REQ     = 2'd1,
-        F_BURST   = 2'd2,
-        F_INSTALL = 2'd3
+        F_IDLE  = 2'd0,
+        F_REQ   = 2'd1,
+        F_BURST = 2'd2
     } fill_state_t;
 
     fill_state_t s0_fill_state, s1_fill_state;
-    reg [127:0]  s0_burst_buf, s1_burst_buf;
-    reg [3:0]    s0_burst_cnt, s1_burst_cnt;
+    reg [2:0]    s0_burst_cnt, s1_burst_cnt;
 
     wire s0_fill_req = (s0_fill_state == F_REQ);
     wire s1_fill_req = (s1_fill_state == F_REQ);
@@ -453,13 +474,12 @@ module texture_sampler
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             s0_fill_state <= F_IDLE;
-            s0_burst_buf  <= 128'b0;
-            s0_burst_cnt  <= 4'd0;
+            s0_burst_cnt  <= 3'd0;
         end else begin
             unique case (s0_fill_state)
                 F_IDLE: begin
                     if (s0_miss_pending_r) begin
-                        s0_burst_cnt  <= 4'd0;
+                        s0_burst_cnt  <= 3'd0;
                         s0_fill_state <= F_REQ;
                     end
                 end
@@ -470,34 +490,35 @@ module texture_sampler
                 end
                 F_BURST: begin
                     if (s0_burst_data_valid) begin
-                        s0_burst_buf[s0_burst_cnt*16 +: 16] <= sram_burst_rdata;
-                        s0_burst_cnt <= s0_burst_cnt + 4'd1;
+                        s0_burst_cnt <= s0_burst_cnt + 3'd1;
                     end
                     if (s0_burst_ack) begin
-                        s0_fill_state <= F_INSTALL;
+                        s0_fill_state <= F_IDLE;
                     end
-                end
-                F_INSTALL: begin
-                    s0_fill_state <= F_IDLE;
                 end
                 default: s0_fill_state <= F_IDLE;
             endcase
         end
     end
 
-    assign s0_fill_valid = (s0_fill_state == F_INSTALL);
-    assign s0_fill_data  = s0_burst_buf;
+    // F_REQ holds `fill_first_i` to latch the cache's pending tag/set; the
+    // first `fill_word_valid_i` does not arrive until the next state, which
+    // satisfies the design-doc invariant that `fill_first_i` precedes the
+    // first burst word by ≥1 cycle.
+    assign s0_fill_first      = (s0_fill_state == F_REQ);
+    assign s0_fill_word_valid = (s0_fill_state == F_BURST) && s0_burst_data_valid;
+    assign s0_fill_word_data  = sram_burst_rdata;
+    assign s0_fill_word_last  = s0_fill_word_valid && (s0_burst_cnt == 3'd7);
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             s1_fill_state <= F_IDLE;
-            s1_burst_buf  <= 128'b0;
-            s1_burst_cnt  <= 4'd0;
+            s1_burst_cnt  <= 3'd0;
         end else begin
             unique case (s1_fill_state)
                 F_IDLE: begin
                     if (s1_miss_pending_r) begin
-                        s1_burst_cnt  <= 4'd0;
+                        s1_burst_cnt  <= 3'd0;
                         s1_fill_state <= F_REQ;
                     end
                 end
@@ -508,23 +529,21 @@ module texture_sampler
                 end
                 F_BURST: begin
                     if (s1_burst_data_valid) begin
-                        s1_burst_buf[s1_burst_cnt*16 +: 16] <= sram_burst_rdata;
-                        s1_burst_cnt <= s1_burst_cnt + 4'd1;
+                        s1_burst_cnt <= s1_burst_cnt + 3'd1;
                     end
                     if (s1_burst_ack) begin
-                        s1_fill_state <= F_INSTALL;
+                        s1_fill_state <= F_IDLE;
                     end
-                end
-                F_INSTALL: begin
-                    s1_fill_state <= F_IDLE;
                 end
                 default: s1_fill_state <= F_IDLE;
             endcase
         end
     end
 
-    assign s1_fill_valid = (s1_fill_state == F_INSTALL);
-    assign s1_fill_data  = s1_burst_buf;
+    assign s1_fill_first      = (s1_fill_state == F_REQ);
+    assign s1_fill_word_valid = (s1_fill_state == F_BURST) && s1_burst_data_valid;
+    assign s1_fill_word_data  = sram_burst_rdata;
+    assign s1_fill_word_last  = s1_fill_word_valid && (s1_burst_cnt == 3'd7);
 
     // ========================================================================
     // Sampler request FSM

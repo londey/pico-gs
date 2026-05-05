@@ -4,7 +4,9 @@
 
 Per-sampler direct-mapped cache storing 8-bit palette indices at half the apparent texture resolution.
 One DP16KD EBR per sampler provides single-cycle index access on cache hit.
-On miss, issues an SDRAM burst read (8 words = 16 bytes per 4×4 index block) via arbiter port 3 to fill a cache line, then resumes the stalled fragment.
+On miss, issues an SDRAM burst read (8 × 16-bit words = 16 bytes per 4×4 index block) via arbiter port 3 and streams the burst directly into the EBR — one EBR write per arriving SDRAM word — then resumes the stalled fragment.
+The cache asserts `fill_busy_o` for the duration of the burst; the parent texture sampler blocks all lookup issue while busy, so lookups and fills never overlap.
+Tag and valid bit flop together on the cycle after the terminal SDRAM word lands, making the new line atomically visible to the next lookup.
 
 ## Implements Requirements
 
@@ -24,8 +26,8 @@ On miss, issues an SDRAM burst read (8 words = 16 bytes per 4×4 index block) vi
 
 - Receives index-resolution cache read requests `(u_idx, v_idx)` from UNIT-011.01
 - Returns one 8-bit index byte per request on hit (single cycle)
-- On miss: issues SDRAM burst read via UNIT-007 port 3; fills 16-entry cache line; returns index to UNIT-011.06
-- Stalls UNIT-006 fragment pipeline while fill is in progress
+- On miss: issues SDRAM burst read via UNIT-007 port 3; streams the 8-word burst into the cache line; returns index to UNIT-011.06
+- Asserts `fill_busy_o` for the duration of the fill; the parent texture sampler blocks all lookup issue while `fill_busy_o` is high, which serializes lookups behind any in-flight fill and propagates the stall to UNIT-006
 
 ## Design Description
 
@@ -38,9 +40,12 @@ Per-Sampler Index Cache (2 samplers, independent):
   8-bit index per entry
   Cache line: 4×4 index block (16 bytes) covering an 8×8 apparent-texel area
 
-  EBR primitive: DP16KD in 2048×9 mode
-  Single bank per sampler
-  Total: 1 EBR per sampler, 2 EBR for 2 samplers
+  EBR primitive: DP16KD in 1024×18 mode
+  Each EBR word stores 2 adjacent indices (low byte = even u, high byte = odd u),
+  matching the 16-bit SDRAM word delivered each burst cycle.
+  8 EBR words per cache line (one per SDRAM burst cycle).
+  Single bank per sampler.
+  Total: 1 EBR per sampler, 2 EBR for 2 samplers.
 ```
 
 ### Address Fields
@@ -60,15 +65,22 @@ The same XOR scheme is retained from the previous L1 cache design (see DD-037 an
 
 ```text
 line_offset = {v_idx[1:0], u_idx[1:0]}   // 4 bits → 16 index entries per line
+word_offset = {v_idx[1:0], u_idx[1]}     // 3 bits → 8 EBR words per line
+lane_select = u_idx[0]                   // selects low/high byte within the EBR word
 ```
 
-**EBR address:**
+**EBR address (lookup and fill):**
 
 ```text
-ebr_addr[10:0] = {set[4:0], line_offset[3:0], ...}  // 9-bit word address within 2048-deep EBR
+ebr_addr[9:0] = {2'b00, set[4:0], word_offset[2:0]}  // 1024-deep EBR, only 256 words used
 ```
 
-Each EBR word stores one 8-bit index (lower 8 bits of the 9-bit DP16KD data word; the ninth bit is unused).
+The upper two address bits are tied to zero; only the lower 256 words of the 1024-deep EBR are populated.
+
+Each EBR word holds two adjacent indices in row-major order:
+the byte for `u_idx[0] = 0` lives in `data[7:0]`, and the byte for `u_idx[0] = 1` lives in `data[15:8]`.
+The two parity bits (`data[17:16]`) are unused.
+This packing is the natural alignment of the 4×4 row-major INDEXED8_2X2 block (INT-014) with SDRAM's 16-bit word width — each SDRAM word delivers exactly one EBR word's worth of payload.
 
 **Tag:**
 
@@ -86,8 +98,8 @@ Storing only the upper bits would leave aliased blocks indistinguishable in the 
 ### Outputs
 
 - One 8-bit palette index `idx[7:0]` to UNIT-011.06 on hit
-- Cache miss signal to trigger SDRAM fill
-- Pipeline stall signal to UNIT-006
+- `miss_o` strobe to the parent sampler's miss handler, which drives the SDRAM port 3 burst request
+- `fill_busy_o` to the sampler — held high from `SDRAM_REQ` through the cycle the terminal write commits; the sampler propagates this as a stall to UNIT-006
 
 ### Replacement Policy
 
@@ -106,31 +118,46 @@ Stale indices are never served after a configuration change.
 On miss, the fill FSM sequences:
 
 ```text
-IDLE → SDRAM_REQ → SDRAM_BURST (8 words) → WRITE_LINE → IDLE
+IDLE → SDRAM_REQ → SDRAM_STREAM (8 words) → IDLE
 ```
 
-- **SDRAM_REQ:** Assert port 3 request with burst address (from INT-014 block-tiled index layout) and length = 8 words (16 bytes)
-- **SDRAM_BURST:** Receive 8 × 16-bit words from UNIT-007; accumulate 16 bytes = 16 index entries
-- **WRITE_LINE:** Write 16 index entries into the EBR line; update tag and set valid bit
-- **IDLE:** Remove pipeline stall; return `idx[7:0]` for the requested position
+- **SDRAM_REQ:** Assert port 3 request with burst address (from INT-014 block-tiled index layout) and length = 8 words (16 bytes). Raise `fill_busy_o` and hold it through the burst. The parent sampler asserts `fill_first_i` for one cycle here, alongside the `(u_idx, v_idx)` that triggered the miss; the cache combinationally derives the new tag from those coordinates and resets its internal 3-bit fill counter to zero. `fill_first_i` precedes the first `fill_word_valid_i` by at least one cycle (matching the SDRAM controller's request-to-first-word latency).
+- **SDRAM_STREAM:** Each cycle that UNIT-007 returns a valid burst word, write it into the EBR at `{2'b00, set, word_idx}` where `word_idx` is generated by an internal 3-bit counter that increments on every `fill_word_valid_i`. The two indices packed in the SDRAM word are written as one 18-bit EBR word (parity bits zero). Tag and valid bit are *not* updated during the streaming cycles.
+- **IDLE:** On the cycle following the terminal EBR write (signalled by `fill_word_last_i`), the cache flops the new tag into `tag_store[set]` and sets `valid_r[set]` in the same clock edge — making the line atomically visible. `fill_busy_o` drops on the same edge. The stalled fragment in UNIT-006 retries the lookup on the cycle after.
+
+**Streaming correctness invariants:**
+
+- **Concurrent commit.** `tag_store[set]` and `valid_r[set]` flop in the same clock edge after `fill_word_last_i`. There is no cycle in which the new tag is visible without the new valid bit, nor vice versa. This gives the bound assertion `tag_store[s]` and `valid_r[s]` always describe the same line at every clock boundary.
+- **Sampler-side serialization.** The sampler (UNIT-011) blocks all lookup issue while `fill_busy_o` is high, so the cache observes no concurrent lookup–fill traffic on any set. The cache contains no per-set fill-collision gating.
+- **Read port idle during fill.** Because no lookup is in flight while `fill_busy_o` is high, the DP16KD read port is unused during the streaming window; the write port carries the burst exclusively.
 
 ### EBR Notes
 
 **Primitive:** DP16KD (ECP5 true dual-port EBR)
-**Mode:** 2048×9 (9-bit word, 2048 deep)
+**Mode:** 1024×18 (18-bit word, 1024 deep — only 256 words used: 32 sets × 8 words/line)
 **Per sampler:** 1 EBR
-The true dual-port configuration allows simultaneous index read (for texel fetch) and index write (for cache fill) without arbitration, provided read and write addresses differ.
-During fill, the read port is held idle.
+**REGMODE:** `NOREG` on the read port (single-cycle synchronous read; the parent assembly absorbs the read-data latency).
+
+The 18-bit word width is chosen to match the SDRAM data width: each burst cycle delivers one 16-bit SDRAM word, which becomes one EBR write of two packed indices.
+This collapses the previous two-stage `SDRAM_BURST → WRITE_LINE` design (which required 16 simultaneous write ports and could not be inferred onto a single DP16KD) into a one-write-per-cycle stream that maps directly onto the primitive.
+The two parity lanes (`data[17:16]`) are tied off.
+
+The true dual-port configuration is retained for two reasons:
+
+1. The lookup-cycle read uses the read port; the streaming fill uses the write port. Although the sampler blocks lookups during a fill (so they never overlap), keeping the ports physically separate avoids any read-during-write hazard inside the EBR primitive and makes the DP16KD instantiation parameters straightforward.
+2. Future support for back-to-back lookup-on-other-set during fill (if the sampler's blocking policy is later relaxed) can be enabled without changing the EBR primitive — only the sampler-side gating.
 
 See REQ-011.02 for the complete EBR budget across the GPU.
 
 ## Implementation
 
-- `rtl/components/texture/detail/l1-cache/src/texture_index_cache.sv`: Index cache arrays, tag storage, set indexing, fill FSM, invalidation logic
+- `rtl/components/texture/detail/l1-cache/src/texture_index_cache.sv`: Index cache arrays, tag storage, set indexing, streaming fill port (`fill_first_i`, `fill_word_valid_i`, `fill_word_data_i[15:0]`, `fill_word_last_i`, `fill_busy_o`), internal 3-bit fill counter, invalidation logic
 - `twin/components/texture/detail/l1-cache/src/lib.rs`: Bit-accurate digital twin model — `IndexCache` struct, XOR-folded set index, line-offset decode, direct-mapped lookup/fill/invalidate
 
 The authoritative algorithmic design is the `gs-tex-l1-cache` twin crate (`twin/components/texture/detail/l1-cache/`).
-The RTL tag-comparison and XOR set-indexing behavior must be bit-identical to the twin.
+The twin remains transactional: `IndexCache::fill_line` accepts the complete 16-byte payload as one atomic call.
+This is the bit-equivalent of the RTL streaming fill, because the RTL only asserts the valid bit on the terminal write — every external observer sees the line transition `invalid → fully populated` in a single observable event, exactly as the twin models it.
+RTL tag-comparison and XOR set-indexing behavior must be bit-identical to the twin.
 
 ## Design Notes
 
