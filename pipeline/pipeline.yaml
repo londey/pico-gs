@@ -10,7 +10,7 @@ device:
 
 budget:
   dsp: 16
-  ebr: 39
+  ebr: 48     # Reflects actual unit accounting; previous 39 target was understated against real synth (was missing zbuf data + tag EBR).
 
 # -- Hardware Units ----------------------------------------------------------
 
@@ -99,8 +99,8 @@ units:
     name: Z-Buffer Cache
     pipeline: pixel
     dsp: 0
-    ebr: 1            # uninit flag array
-    lut4: 300
+    ebr: 7            # 2 data DP16KD + 4 tag PDPW16KD + 1 uninit DP16KD
+    lut4: 2000        # FSM, valid/dirty/LRU register arrays, address arithmetic
     status: implemented
     rtl: [pixel_pipeline.sv]
     twin: gs-zbuf

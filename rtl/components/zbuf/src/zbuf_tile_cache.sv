@@ -86,17 +86,17 @@ module zbuf_tile_cache (
     // ====================================================================
     // Derived Parameters
     // ====================================================================
-    localparam NUM_EBR        = 8;                 // DP16KD blocks for data
+    localparam NUM_EBR        = 2;                 // DP16KD blocks for data
     localparam NUM_WAYS       = 4;
     localparam PIXELS_PER_TILE = 16;               // 4×4 tile
-    localparam NUM_SETS       = NUM_EBR * 16;      // 128 sets
+    localparam NUM_SETS       = NUM_EBR * 16;      // 32 sets
     localparam NUM_LINES      = NUM_WAYS * NUM_SETS;
 
-    localparam SET_BITS       = $clog2(NUM_SETS);        // 7
-    localparam TAG_WIDTH      = 14 - SET_BITS;           // 7
+    localparam SET_BITS       = $clog2(NUM_SETS);        // 5
+    localparam TAG_WIDTH      = 14 - SET_BITS;           // 9
     localparam LINE_IDX_W     = SET_BITS + 2;            // {set, way} index width
     localparam BRAM_ENTRIES   = NUM_WAYS * NUM_SETS * PIXELS_PER_TILE;
-    localparam BRAM_ADDR_W    = $clog2(BRAM_ENTRIES);    // 13
+    localparam BRAM_ADDR_W    = $clog2(BRAM_ENTRIES);    // 11
 
     // ====================================================================
     // Uninit Flag EBR — DP16KD in 1×16384 mode (true dual-port)

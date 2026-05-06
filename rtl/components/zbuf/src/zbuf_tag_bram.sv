@@ -2,12 +2,12 @@
 
 // Spec-ref: unit_012_zbuf_tile_cache.md `cdf298cadd037658` 2026-04-04
 //
-// Z-Buffer Cache Tag BRAM — 128×7 SDP using PDPW16KD
+// Z-Buffer Cache Tag BRAM — 32×9 SDP using PDPW16KD
 //
-// Single write port (7-bit) and single read port (7-bit) wrapping one
+// Single write port (9-bit) and single read port (9-bit) wrapping one
 // ECP5 PDPW16KD EBR in 512×36 pseudo dual-port wide mode.
-// Only 128 entries (7-bit address) are used for tag storage; the remaining
-// 384 entries are unused.  Tag data occupies bits [6:0]; bits [35:7]
+// Only 32 entries (5-bit address) are used for tag storage; the remaining
+// 480 entries are unused.  Tag data occupies bits [8:0]; bits [35:9]
 // are tied low on writes and ignored on reads.
 //
 // See: DD-037 (PDPW16KD EBR), UNIT-012 (Z-Buffer Tile Cache), UNIT-011.03 (L1 Decompressed Cache)
@@ -16,12 +16,12 @@ module zbuf_tag_bram (
     input  wire       clk,
     // Write port
     input  wire       we,
-    input  wire [6:0] waddr,   // 128 entries (7-bit set index)
-    input  wire [6:0] wdata,   // 7-bit tag
+    input  wire [4:0] waddr,   // 32 entries (5-bit set index)
+    input  wire [8:0] wdata,   // 9-bit tag
     // Read port (1-cycle latency, output holds when re=0)
     input  wire       re,
-    input  wire [6:0] raddr,
-    output wire [6:0] rdata
+    input  wire [4:0] raddr,
+    output wire [8:0] rdata
 );
 
 `ifdef SYNTHESIS
@@ -51,17 +51,17 @@ module zbuf_tag_bram (
         .BE2   (1'b1),
         .BE1   (1'b1),
         .BE0   (1'b1),
-        // Write address: 7-bit set index in ADW[6:0], upper 2 bits tied low
+        // Write address: 5-bit set index in ADW[4:0], upper 4 bits tied low
         .ADW8  (1'b0),
         .ADW7  (1'b0),
-        .ADW6  (waddr[6]),
-        .ADW5  (waddr[5]),
+        .ADW6  (1'b0),
+        .ADW5  (1'b0),
         .ADW4  (waddr[4]),
         .ADW3  (waddr[3]),
         .ADW2  (waddr[2]),
         .ADW1  (waddr[1]),
         .ADW0  (waddr[0]),
-        // Write data: tag in [6:0], upper bits tied low
+        // Write data: tag in [8:0], upper bits tied low
         .DI35  (1'b0),
         .DI34  (1'b0),
         .DI33  (1'b0),
@@ -89,8 +89,8 @@ module zbuf_tag_bram (
         .DI11  (1'b0),
         .DI10  (1'b0),
         .DI9   (1'b0),
-        .DI8   (1'b0),
-        .DI7   (1'b0),
+        .DI8   (wdata[8]),
+        .DI7   (wdata[7]),
         .DI6   (wdata[6]),
         .DI5   (wdata[5]),
         .DI4   (wdata[4]),
@@ -106,11 +106,11 @@ module zbuf_tag_bram (
         .CSR0  (1'b0),
         .CSR1  (1'b0),
         .CSR2  (1'b0),
-        // Read address: 7-bit set index via ADR[11:5], upper 2 and lower 5 tied low
+        // Read address: 5-bit set index via ADR[9:5], upper 4 and lower 5 tied low
         .ADR13 (1'b0),
         .ADR12 (1'b0),
-        .ADR11 (raddr[6]),
-        .ADR10 (raddr[5]),
+        .ADR11 (1'b0),
+        .ADR10 (1'b0),
         .ADR9  (raddr[4]),
         .ADR8  (raddr[3]),
         .ADR7  (raddr[2]),
@@ -160,16 +160,16 @@ module zbuf_tag_bram (
         .DO0   (do_full[0])
     );
 
-    assign rdata = do_full[6:0];
+    assign rdata = do_full[8:0];
 
     // Unused upper read bits
-    wire [28:0] _unused_do_hi = do_full[35:7];
+    wire [26:0] _unused_do_hi = do_full[35:9];
 
 `else
 
     // Behavioral model for Verilator simulation
-    logic [6:0] mem [0:127];
-    logic [6:0] rdata_r;
+    logic [8:0] mem [0:31];
+    logic [8:0] rdata_r;
 
     always_ff @(posedge clk)
         if (we) mem[waddr] <= wdata;

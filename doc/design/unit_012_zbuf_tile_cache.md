@@ -11,7 +11,7 @@ Reports tile minimum-Z feedback to UNIT-005.06 (Hi-Z Block Metadata) on eviction
 
 - REQ-005.07 (Z-Buffer Operations) -- Z-buffer tile cache, lazy-fill on uninitialized tiles, uninit flag clear on first Z-write
 - REQ-005.08 (Clear Framebuffer) -- uninit flag reset sweep (512 cycles) on Z-buffer clear, lazy-fill contract (uninitialized tiles supply 0xFFFF)
-- REQ-011.02 (Resource Constraints) -- 1 DP16KD uninit flag block within the 39-block EBR budget; 8 DP16KD data BRAM blocks; 4 PDPW16KD tag BRAM blocks
+- REQ-011.02 (Resource Constraints) -- 1 DP16KD uninit flag block within the 39-block EBR budget; 2 DP16KD data BRAM blocks; 4 PDPW16KD tag BRAM blocks
 
 ## Interfaces
 
@@ -42,23 +42,23 @@ No CDC logic required.
 
 ### Internal State
 
-**Z-value data BRAM (8 DP16KD blocks):**
+**Z-value data BRAM (2 DP16KD blocks):**
 Stores 16-bit Z values for all cache lines.
-Organization: `NUM_WAYS(4) x NUM_SETS(128) x PIXELS_PER_TILE(16)` = 8,192 entries x 16 bits = 131,072 bits = 8 DP16KD blocks (16,384 bits each).
+Organization: `NUM_WAYS(4) x NUM_SETS(32) x PIXELS_PER_TILE(16)` = 2,048 entries x 16 bits = 32,768 bits = 2 DP16KD blocks (16,384 bits each).
 Dual-port access: Port A for reads (hit pre-read, eviction scan, post-fill read), Port B for writes (fill, lazy-fill, write-update).
 
 **Tag BRAM (4 x PDPW16KD, one per way):**
-Each PDPW16KD stores 128 entries of 7-bit tags (one per set) using the 512x36 pseudo dual-port wide mode.
-Only 128 of 512 entries are used; tag data occupies bits [6:0].
+Each PDPW16KD stores 32 entries of 9-bit tags (one per set) using the 512x36 pseudo dual-port wide mode.
+Only 32 of 512 entries are used; tag data occupies bits [8:0].
 The 4 separate EBR blocks allow all 4 way tags to be read in parallel in a single cycle.
 See `zbuf_tag_bram.sv` for the ECP5-specific primitive instantiation.
 
 **Pseudo-LRU state (FFs):**
-3-bit binary tree per set, stored in flip-flops (128 x 3 = 384 FFs).
+3-bit binary tree per set, stored in flip-flops (32 x 3 = 96 FFs).
 Tree structure: bit 2 selects left (ways 0,1) vs right (ways 2,3); bit 1 selects way 0 vs 1; bit 0 selects way 2 vs 3.
 
 **Valid/dirty bits (FFs):**
-Per-way, per-set valid and dirty flags stored in flip-flops (128 x 4 x 2 = 1,024 FFs).
+Per-way, per-set valid and dirty flags stored in flip-flops (32 x 4 x 2 = 256 FFs).
 Broadcast-cleared on `invalidate`.
 
 **Uninit flag EBR (1 DP16KD):**
@@ -73,7 +73,7 @@ These two write sources are mutually exclusive because the pipeline is flushed b
 **Last-tag cache (single-entry FF cache):**
 Stores the set, tag, and way of the most recent access.
 Enables a 2-cycle fast-path hit (S_IDLE -> S_RD_HIT) for consecutive accesses to the same tile, bypassing the 1-cycle tag EBR read latency.
-With 4x4 rasterization order, approximately 94% of accesses hit the last-tag cache.
+With 4x4 rasterization order, approximately 94% of accesses hit the last-tag cache, so the smaller 32-set associative store mainly serves miss handling and write-back buffering.
 
 ### Algorithm / Behavior
 
@@ -144,12 +144,12 @@ Both tile index decomposition (set/tag split) and SDRAM burst addressing use onl
 
 | Resource | Count | Description |
 |----------|-------|-------------|
-| DP16KD (data BRAM) | 8 | Z-value storage: 8,192 x 16-bit |
-| PDPW16KD (tag BRAM) | 4 | Tag storage: 128 x 7-bit per way, 512x36 mode |
+| DP16KD (data BRAM) | 2 | Z-value storage: 2,048 x 16-bit |
+| PDPW16KD (tag BRAM) | 4 | Tag storage: 32 x 9-bit per way, 512x36 mode |
 | DP16KD (uninit flags) | 1 | 16,384 x 1-bit uninitialized flags |
-| **Total EBR** | **13** | 8 data + 4 tag + 1 uninit |
-| Flip-flops | ~1,500 | Valid/dirty (1,024), LRU (384), FSM + control (~100) |
-| LUTs | ~800-1,200 | Tag comparison, address generation, FSM, min-Z tracking |
+| **Total EBR** | **7** | 2 data + 4 tag + 1 uninit |
+| Flip-flops | ~450 | Valid/dirty (256), LRU (96), FSM + control (~100) |
+| LUTs | ~1,800-2,200 | Per-set valid/dirty/LRU register-array decode + muxing dominates; FSM, address arithmetic, and min-Z tracking are small fractions. Empirical anchor: `color_tile_cache` has identical structure with NUM_SETS=32 and synthesises to 1,783 LUT4. |
 | DSP slices | 0 | No multiply operations |
 | Arbiter port | Port 2 | Exclusive ownership of UNIT-007 port 2 |
 

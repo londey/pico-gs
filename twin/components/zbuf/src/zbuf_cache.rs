@@ -21,7 +21,7 @@ use gs_memory::GpuMemory;
 const NUM_WAYS: usize = 4;
 
 /// Number of sets.
-const NUM_SETS: usize = 16;
+const NUM_SETS: usize = 32;
 
 /// Words per cache line (4x4 tile).
 const LINE_WORDS: usize = 16;
